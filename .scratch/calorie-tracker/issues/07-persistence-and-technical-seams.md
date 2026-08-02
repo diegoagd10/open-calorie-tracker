@@ -4,6 +4,7 @@ Status: needs-triage
 Labels: wayfinder:grilling, needs-triage
 Parent: ../spec.md
 Blocked by: none
+Assigned: Codex (current session)
 
 ## Question
 
