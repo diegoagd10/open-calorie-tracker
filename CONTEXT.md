@@ -6,7 +6,7 @@
 - **Daily log** — the chronological record of a user's food entries for one calendar date.
 - **Food entry** — one recorded consumption event in a daily log. It has a date, an optional meal context, a quantity, and a nutritional snapshot.
 - **Food item** — a reusable nutritional definition for a packaged product, ingredient, or saved dish.
-- **Nutritional profile** — the calories and nutrients associated with one serving or declared quantity of a food item.
+- **Nutritional profile** — the calories and nutrients associated with one serving or declared quantity of a food item; calories are required, other nutrient values may be unknown, and the quantity basis is declared.
 - **Ingredient** — a food item used as a component of a saved dish or identified by an image.
 - **Food candidate** — a proposed food item or nutritional match produced by a lookup or AI-assisted flow and awaiting user confirmation.
 - **Recipe** — a named, reusable combination of ingredients that produces a nutritional profile per serving.

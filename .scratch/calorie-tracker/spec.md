@@ -23,12 +23,12 @@ The UX decision in this map must produce a self-contained design brief and mock 
 <!-- Closed tickets are indexed here. Open tickets are discovered from the issue tracker. -->
 
 - [UX: daily log and food-entry flows](issues/01-ux-daily-log-and-entry-flows.md) — Dark-first English day log with three food sources, a shared detail/review surface, editable AI review, and a Saved Foods meal builder; [design brief](design/ux-daily-log-and-entry-flows.md).
+- [Domain: food sources and AI confirmation](issues/03-food-input-and-ai-confirmation.md) — Manual entries confirm on save; barcode and AI candidates require review, with mandatory calories and quantity basis, explicit failure handling, editable AI portions/matches, and manual fallback for unmatched ingredients.
 
 ## Not yet specified
 
 - Whether this first release is local single-user only or needs accounts, authentication, and synchronization.
 - The canonical quantity and serving semantics for manual entries, barcode results, image estimates, and recipes.
-- How much uncertainty the product exposes for AI estimates and incomplete external nutrition records.
 - The precise role of the food library, saved recipes, and historical snapshots when source data changes.
 - Deployment, file storage, backup, and privacy expectations for uploaded food images.
 - The acceptance criteria and build sequence that follow once these decisions are resolved.

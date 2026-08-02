@@ -1,0 +1,965 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#0c0e0f;color:#eef1f2;font-family:'IBM Plex Sans',system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+a{color:#55b37a;text-decoration:none}
+a:hover{color:#83cda1}
+</style>
+</helmet>
+
+<section style="padding:56px 56px 96px;display:flex;flex-direction:column;gap:40px">
+
+  <div style="display:flex;align-items:flex-start;gap:16px;max-width:900px">
+    <span style="font-family:'IBM Plex Mono';font-size:11px;font-weight:500;color:#0c0e0f;background:#55b37a;padding:4px 8px;border-radius:5px">1a</span>
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <h1 style="margin:0;font-size:28px;font-weight:600;letter-spacing:-0.02em">Calories — dark-first food journal</h1>
+      <p style="margin:0;font-size:14px;line-height:1.6;color:#9aa2a8;text-wrap:pretty">Day-first mocks for Log, Food Database, Scan Food, Saved Foods and Create Meal, plus every required state. Charcoal surfaces, one green action accent, muted per-nutrient chart colours, and status never carried by colour alone — every bar states name, amount, unit and reference type.</p>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px;font-family:'IBM Plex Mono';font-size:10px;color:#7d868c">
+        <span style="border:1px solid #2f3438;border-radius:5px;padding:4px 8px">bg #16181a</span>
+        <span style="border:1px solid #2f3438;border-radius:5px;padding:4px 8px">surface #1e2124</span>
+        <span style="border:1px solid #2f3438;border-radius:5px;padding:4px 8px">accent #55b37a</span>
+        <span style="border:1px solid #2f3438;border-radius:5px;padding:4px 8px">warn #d9a441</span>
+        <span style="border:1px solid #2f3438;border-radius:5px;padding:4px 8px">error #d4635f</span>
+        <span style="border:1px solid #2f3438;border-radius:5px;padding:4px 8px">IBM Plex Sans / Mono</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= DESKTOP ================= -->
+  <sc-if value="{{ showDesktop }}" hint-placeholder-val="{{ true }}">
+  <div style="display:flex;flex-direction:column;gap:24px">
+    <h2 style="margin:0;font-size:13px;font-weight:600;letter-spacing:0.12em;text-transform:uppercase;color:#7d868c">Desktop</h2>
+    <div style="display:flex;flex-wrap:wrap;gap:40px">
+
+      <!-- D1 Daily log desktop -->
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <div style="display:flex;align-items:baseline;gap:10px"><span style="font-size:13px;font-weight:600">D1 · Daily Log — populated</span><span style="font-family:'IBM Plex Mono';font-size:11px;color:#7d868c">1280 × 800</span></div>
+        <div data-screen-label="D1 Daily Log desktop" style="width:1280px;height:800px;background:#16181a;border:1px solid #2f3438;border-radius:14px;overflow:hidden;display:flex">
+          <div style="width:212px;flex:none;border-right:1px solid #2f3438;background:#131516;display:flex;flex-direction:column;padding:22px 14px;gap:26px">
+            <div style="display:flex;align-items:center;gap:9px;padding:0 8px"><div style="width:16px;height:16px;border-radius:5px;background:#55b37a"></div><span style="font-size:14px;font-weight:600">Calories</span></div>
+            <div style="display:flex;flex-direction:column;gap:2px">
+              <div style="display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:8px;background:#1e2124;color:#eef1f2"><div style="width:15px;height:15px;display:flex;flex-direction:column;justify-content:center;gap:2px;flex:none"><div style="height:2px;border-radius:1px;background:#55b37a"></div><div style="height:2px;border-radius:1px;background:#55b37a"></div><div style="height:2px;width:9px;border-radius:1px;background:#55b37a"></div></div><span style="font-size:13px;font-weight:600">Log</span></div>
+              <div style="display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:8px;color:#9aa2a8"><div style="width:15px;height:15px;position:relative;flex:none"><div style="position:absolute;left:1px;top:1px;width:8px;height:8px;border:1.5px solid #9aa2a8;border-radius:50%"></div><div style="position:absolute;right:1px;bottom:1px;width:5px;height:2px;border-radius:1px;background:#9aa2a8;transform:rotate(45deg)"></div></div><span style="font-size:13px">Food Database</span></div>
+              <div style="display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:8px;color:#9aa2a8"><div style="width:15px;height:15px;display:flex;align-items:center;justify-content:center;flex:none"><div style="width:10px;height:13px;background:#9aa2a8;clip-path:polygon(0 0,100% 0,100% 100%,50% 70%,0 100%)"></div></div><span style="font-size:13px">Saved Foods</span></div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:8px;margin-top:auto">
+              <div style="font-family:'IBM Plex Mono';font-size:10px;letter-spacing:0.08em;text-transform:uppercase;color:#6c757a;padding-left:10px">Quick add</div>
+              <div style="display:flex;flex-direction:column;gap:6px">
+                <div style="display:flex;justify-content:space-between;align-items:center;padding:9px 10px;border:1px solid #2f3438;border-radius:8px;font-size:12px;color:#c8cfd3">Greek yogurt, 170 g<span style="font-family:'IBM Plex Mono';font-size:11px;color:#7d868c">+</span></div>
+                <div style="display:flex;justify-content:space-between;align-items:center;padding:9px 10px;border:1px solid #2f3438;border-radius:8px;font-size:12px;color:#c8cfd3">Flat white<span style="font-family:'IBM Plex Mono';font-size:11px;color:#7d868c">+</span></div>
+              </div>
+              <div style="padding:9px 10px;border-radius:8px;font-size:12px;color:#9aa2a8">Daily Targets</div>
+            </div>
+          </div>
+
+          <div style="flex:1;display:flex;flex-direction:column;min-width:0">
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:20px 28px;border-bottom:1px solid #2f3438">
+              <div style="display:flex;align-items:center;gap:14px">
+                <div style="display:flex;align-items:center;gap:2px">
+                  <div style="width:30px;height:30px;border:1px solid #2f3438;border-radius:8px 0 0 8px;display:flex;align-items:center;justify-content:center;color:#9aa2a8;font-size:13px">‹</div>
+                  <div style="width:30px;height:30px;border:1px solid #2f3438;border-left:none;border-radius:0 8px 8px 0;display:flex;align-items:center;justify-content:center;color:#9aa2a8;font-size:13px">›</div>
+                </div>
+                <div style="display:flex;flex-direction:column;gap:2px">
+                  <div style="font-size:19px;font-weight:600;letter-spacing:-0.01em">Sunday, 2 August</div>
+                  <div style="font-family:'IBM Plex Mono';font-size:11px;color:#7d868c">Today · 6 entries</div>
+                </div>
+                <div style="border:1px solid #2f3438;border-radius:8px;padding:6px 10px;font-size:12px;color:#9aa2a8;white-space:nowrap">Pick date</div>
+              </div>
+              <div style="display:flex;align-items:center;gap:10px">
+                <div style="border:1px solid #2f3438;border-radius:9px;padding:9px 14px;font-size:13px;color:#c8cfd3">Daily Targets</div>
+                <div style="background:#55b37a;color:#0c0e0f;border-radius:9px;padding:10px 18px;font-size:13px;font-weight:600">Add Food</div>
+              </div>
+            </div>
+
+            <div style="flex:1;overflow:hidden;display:flex;flex-direction:column;gap:20px;padding:22px 28px">
+              <div style="display:flex;gap:16px">
+                <div style="flex:none;width:296px;background:#1e2124;border:1px solid #2f3438;border-radius:12px;padding:18px;display:flex;align-items:center;gap:18px">
+                  <div style="width:118px;height:118px;flex:none;border-radius:50%;background:conic-gradient(#55b37a 71%,#2a2e32 0);display:flex;align-items:center;justify-content:center">
+                    <div style="width:94px;height:94px;border-radius:50%;background:#1e2124;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px">
+                      <span style="font-family:'IBM Plex Mono';font-size:26px;font-weight:600;letter-spacing:-0.02em;line-height:1">1,486</span>
+                      <span style="font-family:'IBM Plex Mono';font-size:10px;color:#9aa2a8">of 2,100</span>
+                    </div>
+                  </div>
+                  <div style="display:flex;flex-direction:column;gap:6px">
+                    <span style="font-size:14px;font-weight:600">Calories</span>
+                    <span style="font-family:'IBM Plex Mono';font-size:10px;letter-spacing:0.07em;text-transform:uppercase;color:#7d868c">Daily goal</span>
+                    <span style="font-family:'IBM Plex Mono';font-size:12px;color:#9aa2a8;margin-top:6px">71% of goal</span>
+                    <span style="font-family:'IBM Plex Mono';font-size:12px;color:#9aa2a8">614 kcal left</span>
+                  </div>
+                </div>
+                <div style="flex:1;display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
+                  <div style="background:#1e2124;border:1px solid #2f3438;border-radius:10px;padding:12px;display:flex;align-items:center;gap:12px">
+                    <div style="width:48px;height:48px;flex:none;border-radius:50%;background:conic-gradient(#5b8ecb 87%,#2a2e32 0);display:flex;align-items:center;justify-content:center"><div style="width:36px;height:36px;border-radius:50%;background:#1e2124;display:flex;align-items:center;justify-content:center;font-family:'IBM Plex Mono';font-size:10px;font-weight:600;color:#9aa2a8">87%</div></div>
+                    <div style="display:flex;flex-direction:column;gap:3px;min-width:0">
+                      <div style="display:flex;align-items:baseline;gap:6px"><span style="font-size:12px;font-weight:500;color:#c8cfd3">Protein</span><span style="font-family:'IBM Plex Mono';font-size:9px;letter-spacing:0.07em;text-transform:uppercase;color:#7d868c">Min</span></div>
+                      <div style="font-family:'IBM Plex Mono';font-size:15px;font-weight:600">78<span style="font-size:11px;color:#9aa2a8"> / 90 g</span></div>
+                    </div>
+                  </div>
+                  <div style="background:#1e2124;border:1px solid #2f3438;border-radius:10px;padding:12px;display:flex;align-items:center;gap:12px">
+                    <div style="width:48px;height:48px;flex:none;border-radius:50%;background:conic-gradient(#9a7fd0 47%,#2a2e32 0);display:flex;align-items:center;justify-content:center"><div style="width:36px;height:36px;border-radius:50%;background:#1e2124;display:flex;align-items:center;justify-content:center;font-family:'IBM Plex Mono';font-size:10px;font-weight:600;color:#9aa2a8">47%</div></div>
+                    <div style="display:flex;flex-direction:column;gap:3px;min-width:0">
+                      <div style="display:flex;align-items:baseline;gap:6px"><span style="font-size:12px;font-weight:500;color:#c8cfd3">Carbs</span><span style="font-family:'IBM Plex Mono';font-size:9px;letter-spacing:0.07em;text-transform:uppercase;color:#7d868c">Range</span></div>
+                      <div style="font-family:'IBM Plex Mono';font-size:15px;font-weight:600">164<span style="font-size:11px;color:#9aa2a8"> / 210–290 g</span></div>
+                    </div>
+                  </div>
+                  <div style="background:#1e2124;border:1px solid #2f3438;border-radius:10px;padding:12px;display:flex;align-items:center;gap:12px">
+                    <div style="width:48px;height:48px;flex:none;border-radius:50%;background:conic-gradient(#d9884f 74%,#2a2e32 0);display:flex;align-items:center;justify-content:center"><div style="width:36px;height:36px;border-radius:50%;background:#1e2124;display:flex;align-items:center;justify-content:center;font-family:'IBM Plex Mono';font-size:10px;font-weight:600;color:#9aa2a8">74%</div></div>
+                    <div style="display:flex;flex-direction:column;gap:3px;min-width:0">
+                      <div style="display:flex;align-items:baseline;gap:6px"><span style="font-size:12px;font-weight:500;color:#c8cfd3">Fat</span><span style="font-family:'IBM Plex Mono';font-size:9px;letter-spacing:0.07em;text-transform:uppercase;color:#7d868c">Reference</span></div>
+                      <div style="font-family:'IBM Plex Mono';font-size:15px;font-weight:600">52<span style="font-size:11px;color:#9aa2a8"> / 70 g</span></div>
+                    </div>
+                  </div>
+                  <div style="background:#1e2124;border:1px solid #2f3438;border-radius:10px;padding:12px;display:flex;align-items:center;gap:12px">
+                    <div style="width:48px;height:48px;flex:none;border-radius:50%;background:conic-gradient(#4fae9f 63%,#2a2e32 0);display:flex;align-items:center;justify-content:center"><div style="width:36px;height:36px;border-radius:50%;background:#1e2124;display:flex;align-items:center;justify-content:center;font-family:'IBM Plex Mono';font-size:10px;font-weight:600;color:#9aa2a8">63%</div></div>
+                    <div style="display:flex;flex-direction:column;gap:3px;min-width:0">
+                      <div style="display:flex;align-items:baseline;gap:6px"><span style="font-size:12px;font-weight:500;color:#c8cfd3">Fiber</span><span style="font-family:'IBM Plex Mono';font-size:9px;letter-spacing:0.07em;text-transform:uppercase;color:#7d868c">Min</span></div>
+                      <div style="font-family:'IBM Plex Mono';font-size:15px;font-weight:600">19<span style="font-size:11px;color:#9aa2a8"> / 30 g</span></div>
+                    </div>
+                  </div>
+                  <div style="background:#1e2124;border:1px solid #2f3438;border-radius:10px;padding:12px;display:flex;align-items:center;gap:12px">
+                    <div style="width:48px;height:48px;flex:none;border-radius:50%;background:conic-gradient(#cf7d9e 82%,#2a2e32 0);display:flex;align-items:center;justify-content:center"><div style="width:36px;height:36px;border-radius:50%;background:#1e2124;display:flex;align-items:center;justify-content:center;font-family:'IBM Plex Mono';font-size:10px;font-weight:600;color:#9aa2a8">82%</div></div>
+                    <div style="display:flex;flex-direction:column;gap:3px;min-width:0">
+                      <div style="display:flex;align-items:baseline;gap:6px"><span style="font-size:12px;font-weight:500;color:#c8cfd3">Sugar</span><span style="font-family:'IBM Plex Mono';font-size:9px;letter-spacing:0.07em;text-transform:uppercase;color:#7d868c">Upper limit</span></div>
+                      <div style="font-family:'IBM Plex Mono';font-size:15px;font-weight:600">41<span style="font-size:11px;color:#9aa2a8"> / 50 g</span></div>
+                    </div>
+                  </div>
+                  <div style="background:#231e1e;border:1px solid #6b3b39;border-radius:10px;padding:12px;display:flex;align-items:center;gap:12px">
+                    <div style="width:48px;height:48px;flex:none;border-radius:50%;background:#d4635f;display:flex;align-items:center;justify-content:center"><div style="width:36px;height:36px;border-radius:50%;background:#231e1e;display:flex;align-items:center;justify-content:center;font-family:'IBM Plex Mono';font-size:10px;font-weight:600;color:#d4635f">113%</div></div>
+                    <div style="display:flex;flex-direction:column;gap:3px;min-width:0">
+                      <div style="display:flex;align-items:baseline;gap:6px"><span style="font-size:12px;font-weight:600;color:#f0d3d2">Sodium</span><span style="font-family:'IBM Plex Mono';font-size:9px;letter-spacing:0.07em;text-transform:uppercase;color:#d4635f">Over limit</span></div>
+                      <div style="font-family:'IBM Plex Mono';font-size:15px;font-weight:600;color:#f0d3d2">2,610<span style="font-size:11px;color:#c79b99"> / 2,300 mg</span></div>
+                      <div style="font-family:'IBM Plex Mono';font-size:10px;color:#d4635f">310 mg over</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div style="display:flex;flex-direction:column;gap:10px;min-height:0">
+                <div style="display:flex;justify-content:space-between;align-items:baseline"><span style="font-size:13px;font-weight:600">Today’s entries</span><span style="font-family:'IBM Plex Mono';font-size:11px;color:#7d868c">Newest first</span></div>
+                <div style="display:flex;flex-direction:column;gap:8px">
+                  <div style="display:flex;align-items:center;gap:16px;background:#1e2124;border:1px solid #2f3438;border-radius:10px;padding:13px 16px">
+                    <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:4px">
+                      <div style="display:flex;align-items:center;gap:8px"><span style="font-size:14px;font-weight:600">Chicken burrito bowl</span><span style="font-size:10px;color:#9aa2a8;border:1px solid #3a4147;border-radius:4px;padding:1px 6px">Lunch</span></div>
+                      <div style="font-family:'IBM Plex Mono';font-size:11px;color:#7d868c">13:20 · 1 bowl</div>
+                    </div>
+                    <div style="display:flex;gap:22px;font-family:'IBM Plex Mono';font-size:12px;color:#9aa2a8">
+                      <span style="color:#eef1f2;font-weight:600">642 kcal</span><span>P 41 g</span><span>C 63 g</span><span>F 22 g</span>
+                    </div>
+                    <div style="width:26px;height:26px;border-radius:7px;display:flex;align-items:center;justify-content:center;color:#9aa2a8;font-size:14px">···</div>
+                  </div>
+                  <div style="display:flex;align-items:center;gap:16px;background:#1e2124;border:1px solid #2f3438;border-radius:10px;padding:13px 16px">
+                    <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:4px">
+                      <div style="display:flex;align-items:center;gap:8px"><span style="font-size:14px;font-weight:600">Greek yogurt with walnuts</span><span style="font-size:10px;color:#9aa2a8;border:1px solid #3a4147;border-radius:4px;padding:1px 6px">Snack</span></div>
+                      <div style="font-family:'IBM Plex Mono';font-size:11px;color:#7d868c">10:45 · 170 g</div>
+                    </div>
+                    <div style="display:flex;gap:22px;font-family:'IBM Plex Mono';font-size:12px;color:#9aa2a8">
+                      <span style="color:#eef1f2;font-weight:600">248 kcal</span><span>P 17 g</span><span>C 9 g</span><span>F 15 g</span>
+                    </div>
+                    <div style="width:26px;height:26px;border-radius:7px;display:flex;align-items:center;justify-content:center;color:#9aa2a8;font-size:14px">···</div>
+                  </div>
+                  <div style="display:flex;align-items:center;gap:16px;background:#1e2124;border:1px solid #2f3438;border-radius:10px;padding:13px 16px">
+                    <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:4px">
+                      <div style="display:flex;align-items:center;gap:8px"><span style="font-size:14px;font-weight:600">Oats, banana, peanut butter</span><span style="font-size:10px;color:#9aa2a8;border:1px solid #3a4147;border-radius:4px;padding:1px 6px">Breakfast</span></div>
+                      <div style="font-family:'IBM Plex Mono';font-size:11px;color:#7d868c">08:05 · 1 serving · Saved meal</div>
+                    </div>
+                    <div style="display:flex;gap:22px;font-family:'IBM Plex Mono';font-size:12px;color:#9aa2a8">
+                      <span style="color:#eef1f2;font-weight:600">521 kcal</span><span>P 18 g</span><span>C 68 g</span><span>F 19 g</span>
+                    </div>
+                    <div style="width:26px;height:26px;border-radius:7px;display:flex;align-items:center;justify-content:center;color:#9aa2a8;font-size:14px">···</div>
+                  </div>
+                  <div style="display:flex;align-items:center;gap:16px;background:#1e2124;border:1px solid #2f3438;border-radius:10px;padding:13px 16px;opacity:0.8">
+                    <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:4px">
+                      <div style="font-size:14px;font-weight:600">Flat white</div>
+                      <div style="font-family:'IBM Plex Mono';font-size:11px;color:#7d868c">07:30 · 1 cup</div>
+                    </div>
+                    <div style="display:flex;gap:22px;font-family:'IBM Plex Mono';font-size:12px;color:#9aa2a8">
+                      <span style="color:#eef1f2;font-weight:600">75 kcal</span><span>P 4 g</span><span>C 6 g</span><span>F 4 g</span>
+                    </div>
+                    <div style="width:26px;height:26px;border-radius:7px;display:flex;align-items:center;justify-content:center;color:#9aa2a8;font-size:14px">···</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <sc-if value="{{ showAnnotations }}" hint-placeholder-val="{{ true }}"><div style="max-width:1280px;font-family:'IBM Plex Mono';font-size:11px;line-height:1.6;color:#7d868c">Add Food sits beside the day header, never in the nav. Sodium is over its upper limit: bar stays full, card switches to alert surface + border, and the overage is stated in text — colour is never the only signal.</div></sc-if>
+      </div>
+
+      <!-- D2 Food database + review panel -->
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <div style="display:flex;align-items:baseline;gap:10px"><span style="font-size:13px;font-weight:600">D2 · Food Database + Food Detail panel</span><span style="font-family:'IBM Plex Mono';font-size:11px;color:#7d868c">1280 × 800</span></div>
+        <div data-screen-label="D2 Food Database desktop" style="width:1280px;height:800px;background:#16181a;border:1px solid #2f3438;border-radius:14px;overflow:hidden;display:flex">
+          <div style="width:212px;flex:none;border-right:1px solid #2f3438;background:#131516;display:flex;flex-direction:column;padding:22px 14px;gap:26px">
+            <div style="display:flex;align-items:center;gap:9px;padding:0 8px"><div style="width:16px;height:16px;border-radius:5px;background:#55b37a"></div><span style="font-size:14px;font-weight:600">Calories</span></div>
+            <div style="display:flex;flex-direction:column;gap:2px">
+              <div style="display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:8px;color:#9aa2a8"><div style="width:15px;height:15px;display:flex;flex-direction:column;justify-content:center;gap:2px;flex:none"><div style="height:2px;border-radius:1px;background:#9aa2a8"></div><div style="height:2px;border-radius:1px;background:#9aa2a8"></div><div style="height:2px;width:9px;border-radius:1px;background:#9aa2a8"></div></div><span style="font-size:13px">Log</span></div>
+              <div style="display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:8px;background:#1e2124"><div style="width:15px;height:15px;position:relative;flex:none"><div style="position:absolute;left:1px;top:1px;width:8px;height:8px;border:1.5px solid #55b37a;border-radius:50%"></div><div style="position:absolute;right:1px;bottom:1px;width:5px;height:2px;border-radius:1px;background:#55b37a;transform:rotate(45deg)"></div></div><span style="font-size:13px;font-weight:600">Food Database</span></div>
+              <div style="display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:8px;color:#9aa2a8"><div style="width:15px;height:15px;display:flex;align-items:center;justify-content:center;flex:none"><div style="width:10px;height:13px;background:#9aa2a8;clip-path:polygon(0 0,100% 0,100% 100%,50% 70%,0 100%)"></div></div><span style="font-size:13px">Saved Foods</span></div>
+            </div>
+          </div>
+
+          <div style="flex:1;display:flex;flex-direction:column;min-width:0;border-right:1px solid #2f3438">
+            <div style="padding:22px 24px 16px;display:flex;flex-direction:column;gap:14px;border-bottom:1px solid #2f3438">
+              <div style="display:flex;align-items:center;gap:10px;background:#1e2124;border:1px solid #3a4147;border-radius:10px;padding:11px 14px">
+                <div style="width:13px;height:13px;border:1.5px solid #9aa2a8;border-radius:50%"></div>
+                <span style="font-size:14px">greek yogurt</span>
+                <span style="margin-left:auto;font-family:'IBM Plex Mono';font-size:11px;color:#7d868c">24 results</span>
+              </div>
+              <div style="display:flex;gap:8px">
+                <span style="background:#55b37a;color:#0c0e0f;font-size:12px;font-weight:600;border-radius:16px;padding:6px 14px">All</span>
+                <span style="border:1px solid #2f3438;color:#c8cfd3;font-size:12px;border-radius:16px;padding:6px 14px">My Meals</span>
+                <span style="border:1px solid #2f3438;color:#c8cfd3;font-size:12px;border-radius:16px;padding:6px 14px">My Favorites</span>
+                <span style="border:1px solid #2f3438;color:#c8cfd3;font-size:12px;border-radius:16px;padding:6px 14px">My Foods</span>
+              </div>
+            </div>
+            <div style="flex:1;overflow:hidden;padding:16px 24px;display:flex;flex-direction:column;gap:8px">
+              <div style="display:flex;align-items:center;gap:14px;background:#1e2124;border:1px solid #55b37a;border-radius:10px;padding:13px 15px">
+                <div style="flex:1;display:flex;flex-direction:column;gap:4px"><span style="font-size:14px;font-weight:600">Greek yogurt, plain 2%</span><span style="font-family:'IBM Plex Mono';font-size:11px;color:#7d868c">Fage · 170 g container · Saved</span></div>
+                <span style="font-family:'IBM Plex Mono';font-size:13px;font-weight:600">146 kcal</span>
+              </div>
+              <div style="display:flex;align-items:center;gap:14px;background:#1e2124;border:1px solid #2f3438;border-radius:10px;padding:13px 15px">
+                <div style="flex:1;display:flex;flex-direction:column;gap:4px"><span style="font-size:14px;font-weight:600">Greek yogurt, 0% fat</span><span style="font-family:'IBM Plex Mono';font-size:11px;color:#7d868c">Open Food Facts · 100 g</span></div>
+                <span style="font-family:'IBM Plex Mono';font-size:13px;font-weight:600">59 kcal</span>
+              </div>
+              <div style="display:flex;align-items:center;gap:14px;background:#1e2124;border:1px solid #2f3438;border-radius:10px;padding:13px 15px">
+                <div style="flex:1;display:flex;flex-direction:column;gap:4px"><span style="font-size:14px;font-weight:600">Greek yogurt with honey</span><span style="font-family:'IBM Plex Mono';font-size:11px;color:#7d868c">My Foods · 1 bowl</span></div>
+                <span style="font-family:'IBM Plex Mono';font-size:13px;font-weight:600">211 kcal</span>
+              </div>
+              <div style="display:flex;align-items:center;gap:14px;background:#1e2124;border:1px solid #2f3438;border-radius:10px;padding:13px 15px">
+                <div style="flex:1;display:flex;flex-direction:column;gap:4px"><span style="font-size:14px;font-weight:600">Greek yogurt & walnut bowl</span><span style="font-family:'IBM Plex Mono';font-size:11px;color:#7d868c">My Meals · 1 serving</span></div>
+                <span style="font-family:'IBM Plex Mono';font-size:13px;font-weight:600">248 kcal</span>
+              </div>
+              <div style="display:flex;align-items:center;gap:14px;background:#1e2124;border:1px solid #2f3438;border-radius:10px;padding:13px 15px">
+                <div style="flex:1;display:flex;flex-direction:column;gap:4px"><span style="font-size:14px;font-weight:600">Greek style yogurt, vanilla</span><span style="font-family:'IBM Plex Mono';font-size:11px;color:#7d868c">Open Food Facts · 150 g pot</span></div>
+                <span style="font-family:'IBM Plex Mono';font-size:13px;font-weight:600">183 kcal</span>
+              </div>
+            </div>
+          </div>
+
+          <div style="width:392px;flex:none;background:#131516;display:flex;flex-direction:column">
+            <div style="padding:22px 24px 16px;border-bottom:1px solid #2f3438;display:flex;flex-direction:column;gap:6px">
+              <div style="display:flex;justify-content:space-between;align-items:flex-start">
+                <div style="display:flex;flex-direction:column;gap:5px">
+                  <span style="font-size:17px;font-weight:600">Greek yogurt, plain 2%</span>
+                  <span style="font-family:'IBM Plex Mono';font-size:11px;color:#7d868c">Fage · from Food Database</span>
+                </div>
+                <span style="color:#9aa2a8;font-size:15px">✕</span>
+              </div>
+            </div>
+            <div style="flex:1;padding:20px 24px;display:flex;flex-direction:column;gap:18px">
+              <div style="display:flex;flex-direction:column;gap:8px">
+                <span style="font-family:'IBM Plex Mono';font-size:10px;letter-spacing:0.08em;text-transform:uppercase;color:#7d868c">Serving</span>
+                <div style="display:flex;gap:8px">
+                  <span style="flex:1;background:#1e2124;border:1px solid #55b37a;border-radius:8px;padding:9px 12px;font-size:13px">container (170 g)</span>
+                  <span style="flex:1;background:#1e2124;border:1px solid #2f3438;border-radius:8px;padding:9px 12px;font-size:13px;color:#9aa2a8">100 g</span>
+                </div>
+              </div>
+              <div style="display:flex;align-items:center;justify-content:space-between">
+                <span style="font-family:'IBM Plex Mono';font-size:10px;letter-spacing:0.08em;text-transform:uppercase;color:#7d868c">Quantity</span>
+                <div style="display:flex;align-items:center;gap:2px">
+                  <div style="width:38px;height:38px;border:1px solid #2f3438;border-radius:9px 0 0 9px;display:flex;align-items:center;justify-content:center;font-size:16px;color:#c8cfd3">−</div>
+                  <div style="width:62px;height:38px;border-top:1px solid #2f3438;border-bottom:1px solid #2f3438;display:flex;align-items:center;justify-content:center;font-family:'IBM Plex Mono';font-size:15px;font-weight:600">1.5</div>
+                  <div style="width:38px;height:38px;border:1px solid #2f3438;border-radius:0 9px 9px 0;display:flex;align-items:center;justify-content:center;font-size:16px;color:#c8cfd3">+</div>
+                </div>
+              </div>
+              <div style="background:#1e2124;border:1px solid #2f3438;border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:12px">
+                <div style="display:flex;align-items:baseline;justify-content:space-between">
+                  <span style="font-size:13px;font-weight:600">Calories</span>
+                  <span style="font-family:'IBM Plex Mono';font-size:30px;font-weight:600;letter-spacing:-0.02em">219<span style="font-size:13px;color:#9aa2a8"> kcal</span></span>
+                </div>
+                <div style="height:1px;background:#2f3438"></div>
+                <div style="display:flex;flex-direction:column;gap:9px;font-family:'IBM Plex Mono';font-size:12px">
+                  <div style="display:flex;justify-content:space-between"><span style="color:#9aa2a8">Protein</span><span>25.5 g</span></div>
+                  <div style="display:flex;justify-content:space-between"><span style="color:#9aa2a8">Carbs</span><span>13.5 g</span></div>
+                  <div style="display:flex;justify-content:space-between"><span style="color:#9aa2a8">Fat</span><span>6.0 g</span></div>
+                  <div style="display:flex;justify-content:space-between"><span style="color:#9aa2a8">Fiber</span><span>0 g</span></div>
+                  <div style="display:flex;justify-content:space-between"><span style="color:#9aa2a8">Sugar</span><span>12.0 g</span></div>
+                  <div style="display:flex;justify-content:space-between"><span style="color:#9aa2a8">Sodium</span><span>135 mg</span></div>
+                </div>
+                <div style="font-family:'IBM Plex Mono';font-size:10px;color:#7d868c">Recalculated live for 1.5 × container</div>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:8px">
+                <span style="font-family:'IBM Plex Mono';font-size:10px;letter-spacing:0.08em;text-transform:uppercase;color:#7d868c">Meal tag · optional</span>
+                <div style="display:flex;gap:6px">
+                  <span style="border:1px solid #2f3438;border-radius:14px;padding:5px 12px;font-size:12px;color:#9aa2a8">Breakfast</span>
+                  <span style="border:1px solid #2f3438;border-radius:14px;padding:5px 12px;font-size:12px;color:#9aa2a8">Lunch</span>
+                  <span style="border:1px solid #2f3438;border-radius:14px;padding:5px 12px;font-size:12px;color:#9aa2a8">Dinner</span>
+                  <span style="border:1px solid #55b37a;color:#83cda1;border-radius:14px;padding:5px 12px;font-size:12px">Snack</span>
+                </div>
+              </div>
+            </div>
+            <div style="padding:16px 24px 22px;border-top:1px solid #2f3438;display:flex;flex-direction:column;gap:8px">
+              <div style="background:#55b37a;color:#0c0e0f;border-radius:10px;padding:13px;text-align:center;font-size:14px;font-weight:600">Add to Log</div>
+              <div style="border:1px solid #2f3438;color:#c8cfd3;border-radius:10px;padding:12px;text-align:center;font-size:13px">Save to Saved Foods</div>
+            </div>
+          </div>
+        </div>
+        <sc-if value="{{ showAnnotations }}" hint-placeholder-val="{{ true }}"><div style="max-width:1280px;font-family:'IBM Plex Mono';font-size:11px;line-height:1.6;color:#7d868c">The Food Detail and Review panel is one shared surface — identical for database results, barcode lookups, label scans and Saved Foods. Nothing enters the log without this confirmation step.</div></sc-if>
+      </div>
+
+    </div>
+  </div>
+  </sc-if>
+
+  <!-- ================= MOBILE ================= -->
+  <sc-if value="{{ showMobile }}" hint-placeholder-val="{{ true }}">
+  <div style="display:flex;flex-direction:column;gap:24px">
+    <h2 style="margin:0;font-size:13px;font-weight:600;letter-spacing:0.12em;text-transform:uppercase;color:#7d868c">Mobile — Daily Log</h2>
+    <div style="display:flex;flex-wrap:wrap;gap:32px">
+
+      <!-- M1 empty log -->
+      <div style="display:flex;flex-direction:column;gap:10px;width:390px">
+        <div style="font-size:13px;font-weight:600">M1 · Daily Log — empty</div>
+        <div data-screen-label="M1 empty log" style="width:390px;height:844px;background:#16181a;border:1px solid #2f3438;border-radius:26px;overflow:hidden;display:flex;flex-direction:column">
+          <div style="display:flex;justify-content:space-between;padding:14px 22px 6px;font-size:12px;font-weight:600"><span>9:41</span><span style="color:#9aa2a8">▮▮▮</span></div>
+          <div style="padding:10px 20px 14px;display:flex;align-items:center;justify-content:space-between">
+            <div style="width:32px;height:32px;border:1px solid #2f3438;border-radius:9px;display:flex;align-items:center;justify-content:center;color:#9aa2a8">‹</div>
+            <div style="display:flex;flex-direction:column;align-items:center;gap:2px"><span style="font-size:17px;font-weight:600">Sunday, 2 August</span><span style="font-family:'IBM Plex Mono';font-size:11px;color:#7d868c">Today</span></div>
+            <div style="width:32px;height:32px;border:1px solid #2f3438;border-radius:9px;display:flex;align-items:center;justify-content:center;color:#9aa2a8">›</div>
+          </div>
+          <div style="margin:0 20px;background:#1e2124;border:1px solid #2f3438;border-radius:12px;padding:18px;display:flex;flex-direction:column;gap:14px;align-items:center">
+            <div style="display:flex;width:100%;justify-content:space-between;align-items:baseline"><span style="font-size:13px;font-weight:600">Calories</span><span style="font-family:'IBM Plex Mono';font-size:10px;letter-spacing:0.07em;text-transform:uppercase;color:#7d868c">No goal set</span></div>
+            <div style="width:132px;height:132px;border-radius:50%;background:#2a2e32;display:flex;align-items:center;justify-content:center">
+              <div style="width:106px;height:106px;border-radius:50%;background:#1e2124;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px">
+                <span style="font-family:'IBM Plex Mono';font-size:32px;font-weight:600;line-height:1;letter-spacing:-0.02em;color:#5c656b">0</span>
+                <span style="font-family:'IBM Plex Mono';font-size:10px;color:#7d868c">kcal today</span>
+              </div>
+            </div>
+            <div style="width:100%;border:1px solid #55b37a;color:#83cda1;border-radius:9px;padding:10px;text-align:center;font-size:13px;font-weight:600">Set calorie goal</div>
+          </div>
+          <div style="padding:26px 20px;display:flex;flex-direction:column;gap:10px">
+            <span style="font-family:'IBM Plex Mono';font-size:10px;letter-spacing:0.08em;text-transform:uppercase;color:#7d868c">Nutrients · Daily Reference</span>
+            <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;opacity:0.55">
+              <div style="background:#1e2124;border:1px solid #2f3438;border-radius:10px;padding:11px;display:flex;flex-direction:column;align-items:center;gap:7px"><div style="width:44px;height:44px;border-radius:50%;background:#2a2e32;display:flex;align-items:center;justify-content:center"><div style="width:33px;height:33px;border-radius:50%;background:#1e2124;display:flex;align-items:center;justify-content:center;font-family:'IBM Plex Mono';font-size:9px;color:#7d868c">0%</div></div><div style="font-size:11px;color:#c8cfd3">Protein</div><div style="font-family:'IBM Plex Mono';font-size:11px;color:#9aa2a8">0 / 90 g</div></div>
+              <div style="background:#1e2124;border:1px solid #2f3438;border-radius:10px;padding:11px;display:flex;flex-direction:column;align-items:center;gap:7px"><div style="width:44px;height:44px;border-radius:50%;background:#2a2e32;display:flex;align-items:center;justify-content:center"><div style="width:33px;height:33px;border-radius:50%;background:#1e2124;display:flex;align-items:center;justify-content:center;font-family:'IBM Plex Mono';font-size:9px;color:#7d868c">0%</div></div><div style="font-size:11px;color:#c8cfd3">Carbs</div><div style="font-family:'IBM Plex Mono';font-size:11px;color:#9aa2a8">0 / 210 g</div></div>
+              <div style="background:#1e2124;border:1px solid #2f3438;border-radius:10px;padding:11px;display:flex;flex-direction:column;align-items:center;gap:7px"><div style="width:44px;height:44px;border-radius:50%;background:#2a2e32;display:flex;align-items:center;justify-content:center"><div style="width:33px;height:33px;border-radius:50%;background:#1e2124;display:flex;align-items:center;justify-content:center;font-family:'IBM Plex Mono';font-size:9px;color:#7d868c">0%</div></div><div style="font-size:11px;color:#c8cfd3">Fat</div><div style="font-family:'IBM Plex Mono';font-size:11px;color:#9aa2a8">0 / 70 g</div></div>
+              <div style="background:#1e2124;border:1px solid #2f3438;border-radius:10px;padding:11px;display:flex;flex-direction:column;align-items:center;gap:7px"><div style="width:44px;height:44px;border-radius:50%;background:#2a2e32;display:flex;align-items:center;justify-content:center"><div style="width:33px;height:33px;border-radius:50%;background:#1e2124;display:flex;align-items:center;justify-content:center;font-family:'IBM Plex Mono';font-size:9px;color:#7d868c">0%</div></div><div style="font-size:11px;color:#c8cfd3">Fiber</div><div style="font-family:'IBM Plex Mono';font-size:11px;color:#9aa2a8">0 / 30 g</div></div>
+            </div>
+          </div>
+          <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:0 44px;text-align:center">
+            <div style="width:44px;height:44px;border:1px dashed #3a4147;border-radius:12px"></div>
+            <div style="font-size:15px;font-weight:600">Nothing logged yet</div>
+            <div style="font-size:13px;line-height:1.5;color:#9aa2a8;text-wrap:pretty">Your entries for today will appear here, newest first.</div>
+          </div>
+          <div style="padding:0 20px 14px"><div style="background:#55b37a;color:#0c0e0f;border-radius:12px;padding:15px;text-align:center;font-size:15px;font-weight:600">Add Food</div></div>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);border-top:1px solid #2f3438;padding:10px 12px 24px;background:#131516">
+            <div style="display:flex;flex-direction:column;align-items:center;gap:5px"><div style="width:18px;height:18px;display:flex;flex-direction:column;justify-content:center;gap:3px;flex:none"><div style="height:2px;border-radius:1px;background:#55b37a"></div><div style="height:2px;border-radius:1px;background:#55b37a"></div><div style="height:2px;width:11px;border-radius:1px;background:#55b37a"></div></div><span style="font-size:10px;font-weight:600;color:#55b37a">Log</span></div>
+            <div style="display:flex;flex-direction:column;align-items:center;gap:5px"><div style="width:18px;height:18px;position:relative;flex:none"><div style="position:absolute;left:1px;top:1px;width:11px;height:11px;border:1.5px solid #9aa2a8;border-radius:50%"></div><div style="position:absolute;right:1px;bottom:1px;width:6px;height:2px;border-radius:1px;background:#9aa2a8;transform:rotate(45deg)"></div></div><span style="font-size:10px;color:#9aa2a8">Food Database</span></div>
+            <div style="display:flex;flex-direction:column;align-items:center;gap:5px"><div style="width:18px;height:18px;display:flex;align-items:center;justify-content:center;flex:none"><div style="width:12px;height:15px;background:#9aa2a8;clip-path:polygon(0 0,100% 0,100% 100%,50% 70%,0 100%)"></div></div><span style="font-size:10px;color:#9aa2a8">Saved Foods</span></div>
+          </div>
+        </div>
+        <sc-if value="{{ showAnnotations }}" hint-placeholder-val="{{ true }}"><div style="font-family:'IBM Plex Mono';font-size:11px;line-height:1.6;color:#7d868c">No invented target. Calories show consumed only, with a Set calorie goal CTA; nutrient cards stay visible at Daily Reference values, dimmed.</div></sc-if>
+      </div>
+
+      <!-- M2 populated -->
+      <div style="display:flex;flex-direction:column;gap:10px;width:390px">
+        <div style="font-size:13px;font-weight:600">M2 · Daily Log — populated + overflow menu</div>
+        <div data-screen-label="M2 populated log" style="width:390px;height:844px;background:#16181a;border:1px solid #2f3438;border-radius:26px;overflow:hidden;display:flex;flex-direction:column;position:relative">
+          <div style="display:flex;justify-content:space-between;padding:14px 22px 6px;font-size:12px;font-weight:600"><span>9:41</span><span style="color:#9aa2a8">▮▮▮</span></div>
+          <div style="padding:10px 20px 14px;display:flex;align-items:center;justify-content:space-between">
+            <div style="width:32px;height:32px;border:1px solid #2f3438;border-radius:9px;display:flex;align-items:center;justify-content:center;color:#9aa2a8">‹</div>
+            <div style="display:flex;flex-direction:column;align-items:center;gap:2px"><span style="font-size:17px;font-weight:600">Sunday, 2 August</span><span style="font-family:'IBM Plex Mono';font-size:11px;color:#7d868c">Today · 6 entries</span></div>
+            <div style="width:32px;height:32px;border:1px solid #2f3438;border-radius:9px;display:flex;align-items:center;justify-content:center;color:#9aa2a8">›</div>
+          </div>
+          <div style="margin:0 20px;background:#1e2124;border:1px solid #2f3438;border-radius:12px;padding:16px;display:flex;align-items:center;gap:16px">
+            <div style="width:104px;height:104px;flex:none;border-radius:50%;background:conic-gradient(#55b37a 71%,#2a2e32 0);display:flex;align-items:center;justify-content:center">
+              <div style="width:83px;height:83px;border-radius:50%;background:#1e2124;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px">
+                <span style="font-family:'IBM Plex Mono';font-size:22px;font-weight:600;line-height:1;letter-spacing:-0.02em">1,486</span>
+                <span style="font-family:'IBM Plex Mono';font-size:9px;color:#9aa2a8">of 2,100</span>
+              </div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:5px">
+              <span style="font-size:13px;font-weight:600">Calories</span>
+              <span style="font-family:'IBM Plex Mono';font-size:10px;letter-spacing:0.07em;text-transform:uppercase;color:#7d868c">Daily goal</span>
+              <span style="font-family:'IBM Plex Mono';font-size:11px;color:#9aa2a8;margin-top:4px">71% of goal</span>
+              <span style="font-family:'IBM Plex Mono';font-size:11px;color:#9aa2a8">614 kcal left</span>
+            </div>
+          </div>
+          <div style="padding:14px 20px 6px;display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
+            <div style="background:#1e2124;border:1px solid #2f3438;border-radius:10px;padding:10px;display:flex;flex-direction:column;align-items:center;gap:6px"><div style="width:46px;height:46px;border-radius:50%;background:conic-gradient(#5b8ecb 87%,#2a2e32 0);display:flex;align-items:center;justify-content:center"><div style="width:35px;height:35px;border-radius:50%;background:#1e2124;display:flex;align-items:center;justify-content:center;font-family:'IBM Plex Mono';font-size:9px;font-weight:600;color:#9aa2a8">87%</div></div><div style="display:flex;align-items:baseline;gap:5px"><span style="font-size:11px;color:#c8cfd3">Protein</span><span style="font-family:'IBM Plex Mono';font-size:8px;text-transform:uppercase;letter-spacing:0.06em;color:#7d868c">Min</span></div><div style="font-family:'IBM Plex Mono';font-size:11px;color:#9aa2a8">78 / 90 g</div></div>
+            <div style="background:#1e2124;border:1px solid #2f3438;border-radius:10px;padding:10px;display:flex;flex-direction:column;align-items:center;gap:6px"><div style="width:46px;height:46px;border-radius:50%;background:conic-gradient(#9a7fd0 57%,#2a2e32 0);display:flex;align-items:center;justify-content:center"><div style="width:35px;height:35px;border-radius:50%;background:#1e2124;display:flex;align-items:center;justify-content:center;font-family:'IBM Plex Mono';font-size:9px;font-weight:600;color:#9aa2a8">57%</div></div><div style="display:flex;align-items:baseline;gap:5px"><span style="font-size:11px;color:#c8cfd3">Carbs</span><span style="font-family:'IBM Plex Mono';font-size:8px;text-transform:uppercase;letter-spacing:0.06em;color:#7d868c">Range</span></div><div style="font-family:'IBM Plex Mono';font-size:11px;color:#9aa2a8">164 / 210 g</div></div>
+            <div style="background:#1e2124;border:1px solid #2f3438;border-radius:10px;padding:10px;display:flex;flex-direction:column;align-items:center;gap:6px"><div style="width:46px;height:46px;border-radius:50%;background:conic-gradient(#d9884f 74%,#2a2e32 0);display:flex;align-items:center;justify-content:center"><div style="width:35px;height:35px;border-radius:50%;background:#1e2124;display:flex;align-items:center;justify-content:center;font-family:'IBM Plex Mono';font-size:9px;font-weight:600;color:#9aa2a8">74%</div></div><div style="display:flex;align-items:baseline;gap:5px"><span style="font-size:11px;color:#c8cfd3">Fat</span><span style="font-family:'IBM Plex Mono';font-size:8px;text-transform:uppercase;letter-spacing:0.06em;color:#7d868c">Ref</span></div><div style="font-family:'IBM Plex Mono';font-size:11px;color:#9aa2a8">52 / 70 g</div></div>
+            <div style="background:#1e2124;border:1px solid #2f3438;border-radius:10px;padding:10px;display:flex;flex-direction:column;align-items:center;gap:6px"><div style="width:46px;height:46px;border-radius:50%;background:conic-gradient(#4fae9f 63%,#2a2e32 0);display:flex;align-items:center;justify-content:center"><div style="width:35px;height:35px;border-radius:50%;background:#1e2124;display:flex;align-items:center;justify-content:center;font-family:'IBM Plex Mono';font-size:9px;font-weight:600;color:#9aa2a8">63%</div></div><div style="display:flex;align-items:baseline;gap:5px"><span style="font-size:11px;color:#c8cfd3">Fiber</span><span style="font-family:'IBM Plex Mono';font-size:8px;text-transform:uppercase;letter-spacing:0.06em;color:#7d868c">Min</span></div><div style="font-family:'IBM Plex Mono';font-size:11px;color:#9aa2a8">19 / 30 g</div></div>
+            <div style="background:#1e2124;border:1px solid #2f3438;border-radius:10px;padding:10px;display:flex;flex-direction:column;align-items:center;gap:6px"><div style="width:46px;height:46px;border-radius:50%;background:conic-gradient(#cf7d9e 82%,#2a2e32 0);display:flex;align-items:center;justify-content:center"><div style="width:35px;height:35px;border-radius:50%;background:#1e2124;display:flex;align-items:center;justify-content:center;font-family:'IBM Plex Mono';font-size:9px;font-weight:600;color:#9aa2a8">82%</div></div><div style="display:flex;align-items:baseline;gap:5px"><span style="font-size:11px;color:#c8cfd3">Sugar</span><span style="font-family:'IBM Plex Mono';font-size:8px;text-transform:uppercase;letter-spacing:0.06em;color:#7d868c">Limit</span></div><div style="font-family:'IBM Plex Mono';font-size:11px;color:#9aa2a8">41 / 50 g</div></div>
+            <div style="background:#1e2124;border:1px solid #2f3438;border-radius:10px;padding:10px;display:flex;flex-direction:column;align-items:center;gap:6px"><div style="width:46px;height:46px;border-radius:50%;background:conic-gradient(#d9a441 80%,#2a2e32 0);display:flex;align-items:center;justify-content:center"><div style="width:35px;height:35px;border-radius:50%;background:#1e2124;display:flex;align-items:center;justify-content:center;font-family:'IBM Plex Mono';font-size:9px;font-weight:600;color:#9aa2a8">80%</div></div><div style="display:flex;align-items:baseline;gap:5px"><span style="font-size:11px;color:#c8cfd3">Sodium</span><span style="font-family:'IBM Plex Mono';font-size:8px;text-transform:uppercase;letter-spacing:0.06em;color:#7d868c">Limit</span></div><div style="font-family:'IBM Plex Mono';font-size:11px;color:#9aa2a8">1,840 / 2,300</div></div>
+          </div>
+          <div style="flex:1;overflow:hidden;padding:16px 20px 0;display:flex;flex-direction:column;gap:8px">
+            <div style="display:flex;justify-content:space-between;align-items:baseline"><span style="font-size:13px;font-weight:600">Entries</span><span style="font-family:'IBM Plex Mono';font-size:10px;color:#7d868c">Newest first</span></div>
+            <div style="background:#1e2124;border:1px solid #2f3438;border-radius:11px;padding:13px 14px;display:flex;gap:12px">
+              <div style="flex:1;display:flex;flex-direction:column;gap:5px">
+                <div style="display:flex;align-items:center;gap:7px"><span style="font-size:14px;font-weight:600">Chicken burrito bowl</span><span style="font-size:9px;color:#9aa2a8;border:1px solid #3a4147;border-radius:4px;padding:1px 5px">Lunch</span></div>
+                <div style="font-family:'IBM Plex Mono';font-size:11px;color:#7d868c">13:20 · 1 bowl</div>
+                <div style="display:flex;gap:12px;font-family:'IBM Plex Mono';font-size:11px;color:#9aa2a8"><span style="color:#eef1f2;font-weight:600">642 kcal</span><span>P 41</span><span>C 63</span><span>F 22</span></div>
+              </div>
+              <div style="color:#9aa2a8;font-size:14px">···</div>
+            </div>
+            <div style="background:#1e2124;border:1px solid #2f3438;border-radius:11px;padding:13px 14px;display:flex;gap:12px">
+              <div style="flex:1;display:flex;flex-direction:column;gap:5px">
+                <div style="display:flex;align-items:center;gap:7px"><span style="font-size:14px;font-weight:600">Greek yogurt, walnuts</span><span style="font-size:9px;color:#9aa2a8;border:1px solid #3a4147;border-radius:4px;padding:1px 5px">Snack</span></div>
+                <div style="font-family:'IBM Plex Mono';font-size:11px;color:#7d868c">10:45 · 170 g</div>
+                <div style="display:flex;gap:12px;font-family:'IBM Plex Mono';font-size:11px;color:#9aa2a8"><span style="color:#eef1f2;font-weight:600">248 kcal</span><span>P 17</span><span>C 9</span><span>F 15</span></div>
+              </div>
+              <div style="color:#9aa2a8;font-size:14px">···</div>
+            </div>
+          </div>
+          <div style="position:absolute;right:20px;top:560px;width:196px;background:#26292d;border:1px solid #3a4147;border-radius:11px;overflow:hidden">
+            <div style="padding:13px 14px;font-size:13px;border-bottom:1px solid #3a4147">Edit Entry</div>
+            <div style="padding:13px 14px;font-size:13px;color:#d4635f">Delete Entry</div>
+          </div>
+          <div style="position:absolute;left:0;right:0;bottom:104px;padding:0 20px"><div style="background:#55b37a;color:#0c0e0f;border-radius:12px;padding:15px;text-align:center;font-size:15px;font-weight:600">Add Food</div></div>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);border-top:1px solid #2f3438;padding:10px 12px 24px;background:#131516;margin-top:72px">
+            <div style="display:flex;flex-direction:column;align-items:center;gap:5px"><div style="width:18px;height:18px;display:flex;flex-direction:column;justify-content:center;gap:3px;flex:none"><div style="height:2px;border-radius:1px;background:#55b37a"></div><div style="height:2px;border-radius:1px;background:#55b37a"></div><div style="height:2px;width:11px;border-radius:1px;background:#55b37a"></div></div><span style="font-size:10px;font-weight:600;color:#55b37a">Log</span></div>
+            <div style="display:flex;flex-direction:column;align-items:center;gap:5px"><div style="width:18px;height:18px;position:relative;flex:none"><div style="position:absolute;left:1px;top:1px;width:11px;height:11px;border:1.5px solid #9aa2a8;border-radius:50%"></div><div style="position:absolute;right:1px;bottom:1px;width:6px;height:2px;border-radius:1px;background:#9aa2a8;transform:rotate(45deg)"></div></div><span style="font-size:10px;color:#9aa2a8">Food Database</span></div>
+            <div style="display:flex;flex-direction:column;align-items:center;gap:5px"><div style="width:18px;height:18px;display:flex;align-items:center;justify-content:center;flex:none"><div style="width:12px;height:15px;background:#9aa2a8;clip-path:polygon(0 0,100% 0,100% 100%,50% 70%,0 100%)"></div></div><span style="font-size:10px;color:#9aa2a8">Saved Foods</span></div>
+          </div>
+        </div>
+        <sc-if value="{{ showAnnotations }}" hint-placeholder-val="{{ true }}"><div style="font-family:'IBM Plex Mono';font-size:11px;line-height:1.6;color:#7d868c">One chronological feed, no meal sections. Meal tag is an optional label. Overflow menu offers Edit Entry / Delete Entry only — nutrition values are edited in Saved Foods.</div></sc-if>
+      </div>
+
+      <!-- M3 past date + delete confirm -->
+      <div style="display:flex;flex-direction:column;gap:10px;width:390px">
+        <div style="font-size:13px;font-weight:600">M3 · Past date + delete confirmation</div>
+        <div data-screen-label="M3 past date delete confirm" style="width:390px;height:844px;background:#16181a;border:1px solid #2f3438;border-radius:26px;overflow:hidden;display:flex;flex-direction:column;position:relative">
+          <div style="display:flex;justify-content:space-between;padding:14px 22px 6px;font-size:12px;font-weight:600"><span>9:41</span><span style="color:#9aa2a8">▮▮▮</span></div>
+          <div style="padding:10px 20px 6px;display:flex;align-items:center;justify-content:space-between">
+            <div style="width:32px;height:32px;border:1px solid #2f3438;border-radius:9px;display:flex;align-items:center;justify-content:center;color:#9aa2a8">‹</div>
+            <div style="display:flex;flex-direction:column;align-items:center;gap:2px"><span style="font-size:17px;font-weight:600">Tuesday, 29 July</span><span style="font-family:'IBM Plex Mono';font-size:11px;color:#7d868c">4 days ago</span></div>
+            <div style="width:32px;height:32px;border:1px solid #2f3438;border-radius:9px;display:flex;align-items:center;justify-content:center;color:#9aa2a8">›</div>
+          </div>
+          <div style="display:flex;justify-content:center;padding:6px 0 14px"><span style="border:1px solid #55b37a;color:#83cda1;border-radius:16px;padding:6px 16px;font-size:12px;font-weight:600">Back to Today</span></div>
+          <div style="margin:0 20px;background:#1e2124;border:1px solid #2f3438;border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:10px;filter:blur(0px);opacity:0.5">
+            <div style="display:flex;justify-content:space-between;align-items:baseline"><span style="font-size:13px;font-weight:600">Calories</span><span style="font-family:'IBM Plex Mono';font-size:10px;text-transform:uppercase;letter-spacing:0.07em;color:#7d868c">Daily goal</span></div>
+            <div style="display:flex;align-items:center;gap:16px">
+              <div style="width:96px;height:96px;flex:none;border-radius:50%;background:#d9a441;display:flex;align-items:center;justify-content:center">
+                <div style="width:77px;height:77px;border-radius:50%;background:#1e2124;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px"><span style="font-family:'IBM Plex Mono';font-size:20px;font-weight:600;line-height:1">2,240</span><span style="font-family:'IBM Plex Mono';font-size:9px;color:#9aa2a8">of 2,100</span></div>
+              </div>
+              <div style="font-family:'IBM Plex Mono';font-size:12px;color:#d9a441">140 kcal<br>over goal</div>
+            </div>
+          </div>
+          <div style="flex:1;padding:16px 20px 0;display:flex;flex-direction:column;gap:8px;opacity:0.5">
+            <div style="background:#1e2124;border:1px solid #2f3438;border-radius:11px;padding:13px 14px;display:flex;gap:12px"><div style="flex:1;display:flex;flex-direction:column;gap:5px"><div style="font-size:14px;font-weight:600">Margherita pizza, half</div><div style="font-family:'IBM Plex Mono';font-size:11px;color:#7d868c">20:10 · 1 serving</div></div><div style="color:#9aa2a8;font-size:14px">···</div></div>
+            <div style="background:#1e2124;border:1px solid #2f3438;border-radius:11px;padding:13px 14px;display:flex;gap:12px"><div style="flex:1;display:flex;flex-direction:column;gap:5px"><div style="font-size:14px;font-weight:600">Tuna sandwich</div><div style="font-family:'IBM Plex Mono';font-size:11px;color:#7d868c">12:55 · 1 item</div></div><div style="color:#9aa2a8;font-size:14px">···</div></div>
+          </div>
+          <div style="position:absolute;inset:0;background:rgba(8,10,11,0.72);display:flex;align-items:center;justify-content:center;padding:0 28px">
+            <div style="width:100%;background:#1e2124;border:1px solid #3a4147;border-radius:16px;padding:22px;display:flex;flex-direction:column;gap:10px">
+              <div style="font-size:16px;font-weight:600">Delete this entry?</div>
+              <div style="font-size:13px;line-height:1.55;color:#9aa2a8;text-wrap:pretty">Margherita pizza, half — 20:10, 612 kcal. This removes it from 29 July only.</div>
+              <div style="display:flex;flex-direction:column;gap:8px;margin-top:8px">
+                <div style="background:#d4635f;color:#150c0c;border-radius:10px;padding:13px;text-align:center;font-size:14px;font-weight:600">Delete Entry</div>
+                <div style="border:1px solid #3a4147;color:#c8cfd3;border-radius:10px;padding:12px;text-align:center;font-size:13px">Cancel</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <sc-if value="{{ showAnnotations }}" hint-placeholder-val="{{ true }}"><div style="font-family:'IBM Plex Mono';font-size:11px;line-height:1.6;color:#7d868c">Viewing a past day surfaces a Back to Today shortcut. Calories over goal use amber (a goal overrun is not an error); a nutrient upper limit uses red.</div></sc-if>
+      </div>
+
+      <!-- M4 undo toast + add food sheet -->
+      <div style="display:flex;flex-direction:column;gap:10px;width:390px">
+        <div style="font-size:13px;font-weight:600">M4 · Undo toast + Add Food source sheet</div>
+        <div data-screen-label="M4 undo toast and add food sheet" style="width:390px;height:844px;background:#16181a;border:1px solid #2f3438;border-radius:26px;overflow:hidden;display:flex;flex-direction:column;position:relative">
+          <div style="display:flex;justify-content:space-between;padding:14px 22px 6px;font-size:12px;font-weight:600"><span>9:41</span><span style="color:#9aa2a8">▮▮▮</span></div>
+          <div style="padding:10px 20px 14px;display:flex;flex-direction:column;align-items:center;gap:2px"><span style="font-size:17px;font-weight:600">Sunday, 2 August</span><span style="font-family:'IBM Plex Mono';font-size:11px;color:#7d868c">Today · 5 entries</span></div>
+          <div style="margin:0 20px 16px;background:#1e2124;border:1px solid #2f3438;border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:10px;opacity:0.45">
+            <div style="display:flex;justify-content:space-between;align-items:baseline"><span style="font-size:13px;font-weight:600">Calories</span><span style="font-family:'IBM Plex Mono';font-size:10px;text-transform:uppercase;letter-spacing:0.07em;color:#7d868c">Daily goal</span></div>
+            <div style="display:flex;align-items:center;gap:16px">
+              <div style="width:96px;height:96px;flex:none;border-radius:50%;background:conic-gradient(#55b37a 42%,#2a2e32 0);display:flex;align-items:center;justify-content:center">
+                <div style="width:77px;height:77px;border-radius:50%;background:#1e2124;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px"><span style="font-family:'IBM Plex Mono';font-size:20px;font-weight:600;line-height:1">874</span><span style="font-family:'IBM Plex Mono';font-size:9px;color:#9aa2a8">of 2,100</span></div>
+              </div>
+              <div style="font-family:'IBM Plex Mono';font-size:12px;color:#9aa2a8">42% of goal</div>
+            </div>
+          </div>
+          <div style="padding:0 20px;display:flex;flex-direction:column;gap:8px;opacity:0.45">
+            <div style="background:#1e2124;border:1px solid #2f3438;border-radius:11px;padding:13px 14px;font-size:14px;font-weight:600">Greek yogurt, walnuts</div>
+            <div style="background:#1e2124;border:1px solid #2f3438;border-radius:11px;padding:13px 14px;font-size:14px;font-weight:600">Flat white</div>
+          </div>
+          <div style="position:absolute;left:16px;right:16px;bottom:406px;background:#26292d;border:1px solid #3a4147;border-radius:12px;padding:14px 16px;display:flex;align-items:center;gap:12px">
+            <div style="width:7px;height:7px;border-radius:50%;background:#55b37a"></div>
+            <span style="flex:1;font-size:13px">Entry deleted</span>
+            <span style="font-size:13px;font-weight:600;color:#83cda1">Undo</span>
+          </div>
+          <div style="position:absolute;inset:0;background:rgba(8,10,11,0.6)"></div>
+          <div style="position:absolute;left:0;right:0;bottom:0;background:#1e2124;border-top:1px solid #3a4147;border-radius:20px 20px 0 0;padding:14px 20px 28px;display:flex;flex-direction:column;gap:6px">
+            <div style="width:38px;height:4px;border-radius:2px;background:#3a4147;align-self:center;margin-bottom:10px"></div>
+            <div style="font-size:16px;font-weight:600;margin-bottom:4px">Add Food</div>
+            <div style="font-size:12px;color:#9aa2a8;margin-bottom:10px">Choose a source. You’ll review before anything is logged.</div>
+            <div style="display:flex;align-items:center;gap:14px;border:1px solid #2f3438;border-radius:12px;padding:15px 16px"><div style="width:20px;height:20px;position:relative;flex:none"><div style="position:absolute;left:1px;top:1px;width:13px;height:13px;border:1.5px solid #55b37a;border-radius:50%"></div><div style="position:absolute;right:1px;bottom:1px;width:7px;height:2px;border-radius:1px;background:#55b37a;transform:rotate(45deg)"></div></div><div style="flex:1"><div style="font-size:14px;font-weight:600">Food Database</div><div style="font-size:11px;color:#9aa2a8;margin-top:2px">Search products and your own foods</div></div><span style="color:#7d868c">›</span></div>
+            <div style="display:flex;align-items:center;gap:14px;border:1px solid #2f3438;border-radius:12px;padding:15px 16px"><div style="width:20px;height:20px;border:1.5px solid #55b37a;border-radius:6px"></div><div style="flex:1"><div style="font-size:14px;font-weight:600">Scan Food</div><div style="font-size:11px;color:#9aa2a8;margin-top:2px">Photo, barcode, or nutrition label</div></div><span style="color:#7d868c">›</span></div>
+            <div style="display:flex;align-items:center;gap:14px;border:1px solid #2f3438;border-radius:12px;padding:15px 16px"><div style="width:20px;height:20px;display:flex;align-items:center;justify-content:center;flex:none"><div style="width:14px;height:17px;background:#55b37a;clip-path:polygon(0 0,100% 0,100% 100%,50% 70%,0 100%)"></div></div><div style="flex:1"><div style="font-size:14px;font-weight:600">Saved Foods</div><div style="font-size:11px;color:#9aa2a8;margin-top:2px">Your meals, favorites and foods</div></div><span style="color:#7d868c">›</span></div>
+          </div>
+        </div>
+        <sc-if value="{{ showAnnotations }}" hint-placeholder-val="{{ true }}"><div style="font-family:'IBM Plex Mono';font-size:11px;line-height:1.6;color:#7d868c">Delete → short success toast with Undo (6 s). The Add Food sheet has exactly three sources and is never a nav destination.</div></sc-if>
+      </div>
+
+    </div>
+
+    <h2 style="margin:20px 0 0;font-size:13px;font-weight:600;letter-spacing:0.12em;text-transform:uppercase;color:#7d868c">Mobile — Food Database &amp; shared review</h2>
+    <div style="display:flex;flex-wrap:wrap;gap:32px">
+
+      <!-- M5 recents -->
+      <div style="display:flex;flex-direction:column;gap:10px;width:390px">
+        <div style="font-size:13px;font-weight:600">M5 · Food Database — recents (first open)</div>
+        <div data-screen-label="M5 food database recents" style="width:390px;height:844px;background:#16181a;border:1px solid #2f3438;border-radius:26px;overflow:hidden;display:flex;flex-direction:column">
+          <div style="display:flex;justify-content:space-between;padding:14px 22px 6px;font-size:12px;font-weight:600"><span>9:41</span><span style="color:#9aa2a8">▮▮▮</span></div>
+          <div style="padding:12px 20px 12px;display:flex;flex-direction:column;gap:12px">
+            <div style="font-size:19px;font-weight:600">Food Database</div>
+            <div style="display:flex;align-items:center;gap:10px;background:#1e2124;border:1px solid #2f3438;border-radius:11px;padding:12px 14px"><div style="width:13px;height:13px;border:1.5px solid #6c757a;border-radius:50%"></div><span style="font-size:14px;color:#7d868c">Search foods and products</span></div>
+            <div style="display:flex;gap:7px">
+              <span style="background:#55b37a;color:#0c0e0f;font-size:12px;font-weight:600;border-radius:15px;padding:6px 13px">All</span>
+              <span style="border:1px solid #2f3438;color:#c8cfd3;font-size:12px;border-radius:15px;padding:6px 13px">My Meals</span>
+              <span style="border:1px solid #2f3438;color:#c8cfd3;font-size:12px;border-radius:15px;padding:6px 13px">My Favorites</span>
+              <span style="border:1px solid #2f3438;color:#c8cfd3;font-size:12px;border-radius:15px;padding:6px 13px">My Foods</span>
+            </div>
+          </div>
+          <div style="flex:1;padding:6px 20px 0;display:flex;flex-direction:column;gap:8px">
+            <span style="font-family:'IBM Plex Mono';font-size:10px;letter-spacing:0.08em;text-transform:uppercase;color:#7d868c">Recently logged</span>
+            <div style="background:#1e2124;border:1px solid #2f3438;border-radius:11px;padding:13px 14px;display:flex;align-items:center;gap:12px"><div style="flex:1"><div style="font-size:14px;font-weight:600">Chicken burrito bowl</div><div style="font-family:'IBM Plex Mono';font-size:11px;color:#7d868c;margin-top:3px">Logged today · 1 bowl</div></div><span style="font-family:'IBM Plex Mono';font-size:12px;font-weight:600">642 kcal</span></div>
+            <div style="background:#1e2124;border:1px solid #2f3438;border-radius:11px;padding:13px 14px;display:flex;align-items:center;gap:12px"><div style="flex:1"><div style="font-size:14px;font-weight:600">Greek yogurt, plain 2%</div><div style="font-family:'IBM Plex Mono';font-size:11px;color:#7d868c;margin-top:3px">Fage · 170 g container</div></div><span style="font-family:'IBM Plex Mono';font-size:12px;font-weight:600">146 kcal</span></div>
+            <div style="background:#1e2124;border:1px solid #2f3438;border-radius:11px;padding:13px 14px;display:flex;align-items:center;gap:12px"><div style="flex:1"><div style="font-size:14px;font-weight:600">Oats, banana, peanut butter</div><div style="font-family:'IBM Plex Mono';font-size:11px;color:#7d868c;margin-top:3px">My Meals · 1 serving</div></div><span style="font-family:'IBM Plex Mono';font-size:12px;font-weight:600">521 kcal</span></div>
+            <div style="background:#1e2124;border:1px solid #2f3438;border-radius:11px;padding:13px 14px;display:flex;align-items:center;gap:12px"><div style="flex:1"><div style="font-size:14px;font-weight:600">Flat white</div><div style="font-family:'IBM Plex Mono';font-size:11px;color:#7d868c;margin-top:3px">My Foods · 1 cup</div></div><span style="font-family:'IBM Plex Mono';font-size:12px;font-weight:600">75 kcal</span></div>
+            <div style="background:#1e2124;border:1px solid #2f3438;border-radius:11px;padding:13px 14px;display:flex;align-items:center;gap:12px"><div style="flex:1"><div style="font-size:14px;font-weight:600">Rye bread, sliced</div><div style="font-family:'IBM Plex Mono';font-size:11px;color:#7d868c;margin-top:3px">Open Food Facts · 1 slice</div></div><span style="font-family:'IBM Plex Mono';font-size:12px;font-weight:600">83 kcal</span></div>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);border-top:1px solid #2f3438;padding:10px 12px 24px;background:#131516">
+            <div style="display:flex;flex-direction:column;align-items:center;gap:5px"><div style="width:18px;height:18px;display:flex;flex-direction:column;justify-content:center;gap:3px;flex:none"><div style="height:2px;border-radius:1px;background:#9aa2a8"></div><div style="height:2px;border-radius:1px;background:#9aa2a8"></div><div style="height:2px;width:11px;border-radius:1px;background:#9aa2a8"></div></div><span style="font-size:10px;color:#9aa2a8">Log</span></div>
+            <div style="display:flex;flex-direction:column;align-items:center;gap:5px"><div style="width:18px;height:18px;position:relative;flex:none"><div style="position:absolute;left:1px;top:1px;width:11px;height:11px;border:1.5px solid #55b37a;border-radius:50%"></div><div style="position:absolute;right:1px;bottom:1px;width:6px;height:2px;border-radius:1px;background:#55b37a;transform:rotate(45deg)"></div></div><span style="font-size:10px;font-weight:600;color:#55b37a">Food Database</span></div>
+            <div style="display:flex;flex-direction:column;align-items:center;gap:5px"><div style="width:18px;height:18px;display:flex;align-items:center;justify-content:center;flex:none"><div style="width:12px;height:15px;background:#9aa2a8;clip-path:polygon(0 0,100% 0,100% 100%,50% 70%,0 100%)"></div></div><span style="font-size:10px;color:#9aa2a8">Saved Foods</span></div>
+          </div>
+        </div>
+        <sc-if value="{{ showAnnotations }}" hint-placeholder-val="{{ true }}"><div style="font-family:'IBM Plex Mono';font-size:11px;line-height:1.6;color:#7d868c">Recents appear before any search. Each row states its source line — external database vs. My Meals / My Foods — so provenance is never ambiguous.</div></sc-if>
+      </div>
+
+      <!-- M6 loading skeleton -->
+      <div style="display:flex;flex-direction:column;gap:10px;width:390px">
+        <div style="font-size:13px;font-weight:600">M6 · Search loading (skeleton)</div>
+        <div data-screen-label="M6 loading skeleton" style="width:390px;height:844px;background:#16181a;border:1px solid #2f3438;border-radius:26px;overflow:hidden;display:flex;flex-direction:column">
+          <div style="display:flex;justify-content:space-between;padding:14px 22px 6px;font-size:12px;font-weight:600"><span>9:41</span><span style="color:#9aa2a8">▮▮▮</span></div>
+          <div style="padding:12px 20px 12px;display:flex;flex-direction:column;gap:12px">
+            <div style="font-size:19px;font-weight:600">Food Database</div>
+            <div style="display:flex;align-items:center;gap:10px;background:#1e2124;border:1px solid #3a4147;border-radius:11px;padding:12px 14px"><div style="width:13px;height:13px;border:1.5px solid #9aa2a8;border-radius:50%"></div><span style="font-size:14px">oat milk</span></div>
+            <div style="display:flex;gap:7px"><span style="background:#55b37a;color:#0c0e0f;font-size:12px;font-weight:600;border-radius:15px;padding:6px 13px">All</span><span style="border:1px solid #2f3438;color:#c8cfd3;font-size:12px;border-radius:15px;padding:6px 13px">My Meals</span><span style="border:1px solid #2f3438;color:#c8cfd3;font-size:12px;border-radius:15px;padding:6px 13px">My Favorites</span><span style="border:1px solid #2f3438;color:#c8cfd3;font-size:12px;border-radius:15px;padding:6px 13px">My Foods</span></div>
+          </div>
+          <div style="flex:1;padding:6px 20px 0;display:flex;flex-direction:column;gap:8px">
+            <span style="font-family:'IBM Plex Mono';font-size:10px;letter-spacing:0.08em;text-transform:uppercase;color:#7d868c">Searching…</span>
+            <div style="background:#1e2124;border:1px solid #2f3438;border-radius:11px;padding:15px 14px;display:flex;flex-direction:column;gap:9px"><div style="width:62%;height:11px;border-radius:4px;background:#2a2e32"></div><div style="width:38%;height:9px;border-radius:4px;background:#242830"></div></div>
+            <div style="background:#1e2124;border:1px solid #2f3438;border-radius:11px;padding:15px 14px;display:flex;flex-direction:column;gap:9px"><div style="width:74%;height:11px;border-radius:4px;background:#2a2e32"></div><div style="width:44%;height:9px;border-radius:4px;background:#242830"></div></div>
+            <div style="background:#1e2124;border:1px solid #2f3438;border-radius:11px;padding:15px 14px;display:flex;flex-direction:column;gap:9px"><div style="width:52%;height:11px;border-radius:4px;background:#2a2e32"></div><div style="width:30%;height:9px;border-radius:4px;background:#242830"></div></div>
+            <div style="background:#1e2124;border:1px solid #2f3438;border-radius:11px;padding:15px 14px;display:flex;flex-direction:column;gap:9px;opacity:0.6"><div style="width:66%;height:11px;border-radius:4px;background:#2a2e32"></div><div style="width:34%;height:9px;border-radius:4px;background:#242830"></div></div>
+            <div style="background:#1e2124;border:1px solid #2f3438;border-radius:11px;padding:15px 14px;display:flex;flex-direction:column;gap:9px;opacity:0.35"><div style="width:58%;height:11px;border-radius:4px;background:#2a2e32"></div><div style="width:40%;height:9px;border-radius:4px;background:#242830"></div></div>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);border-top:1px solid #2f3438;padding:10px 12px 24px;background:#131516">
+            <div style="display:flex;flex-direction:column;align-items:center;gap:5px"><div style="width:18px;height:18px;display:flex;flex-direction:column;justify-content:center;gap:3px;flex:none"><div style="height:2px;border-radius:1px;background:#9aa2a8"></div><div style="height:2px;border-radius:1px;background:#9aa2a8"></div><div style="height:2px;width:11px;border-radius:1px;background:#9aa2a8"></div></div><span style="font-size:10px;color:#9aa2a8">Log</span></div>
+            <div style="display:flex;flex-direction:column;align-items:center;gap:5px"><div style="width:18px;height:18px;position:relative;flex:none"><div style="position:absolute;left:1px;top:1px;width:11px;height:11px;border:1.5px solid #55b37a;border-radius:50%"></div><div style="position:absolute;right:1px;bottom:1px;width:6px;height:2px;border-radius:1px;background:#55b37a;transform:rotate(45deg)"></div></div><span style="font-size:10px;font-weight:600;color:#55b37a">Food Database</span></div>
+            <div style="display:flex;flex-direction:column;align-items:center;gap:5px"><div style="width:18px;height:18px;display:flex;align-items:center;justify-content:center;flex:none"><div style="width:12px;height:15px;background:#9aa2a8;clip-path:polygon(0 0,100% 0,100% 100%,50% 70%,0 100%)"></div></div><span style="font-size:10px;color:#9aa2a8">Saved Foods</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- M7 service error -->
+      <div style="display:flex;flex-direction:column;gap:10px;width:390px">
+        <div style="font-size:13px;font-weight:600">M7 · External service error — retryable</div>
+        <div data-screen-label="M7 service error" style="width:390px;height:844px;background:#16181a;border:1px solid #2f3438;border-radius:26px;overflow:hidden;display:flex;flex-direction:column">
+          <div style="display:flex;justify-content:space-between;padding:14px 22px 6px;font-size:12px;font-weight:600"><span>9:41</span><span style="color:#9aa2a8">▮▮▮</span></div>
+          <div style="padding:12px 20px 12px;display:flex;flex-direction:column;gap:12px">
+            <div style="font-size:19px;font-weight:600">Food Database</div>
+            <div style="display:flex;align-items:center;gap:10px;background:#1e2124;border:1px solid #3a4147;border-radius:11px;padding:12px 14px"><div style="width:13px;height:13px;border:1.5px solid #9aa2a8;border-radius:50%"></div><span style="font-size:14px">oat milk</span></div>
+            <div style="display:flex;gap:7px"><span style="background:#55b37a;color:#0c0e0f;font-size:12px;font-weight:600;border-radius:15px;padding:6px 13px">All</span><span style="border:1px solid #2f3438;color:#c8cfd3;font-size:12px;border-radius:15px;padding:6px 13px">My Meals</span><span style="border:1px solid #2f3438;color:#c8cfd3;font-size:12px;border-radius:15px;padding:6px 13px">My Favorites</span><span style="border:1px solid #2f3438;color:#c8cfd3;font-size:12px;border-radius:15px;padding:6px 13px">My Foods</span></div>
+          </div>
+          <div style="margin:6px 20px;background:#231f18;border:1px solid #6b552b;border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:10px">
+            <div style="display:flex;align-items:center;gap:9px"><div style="width:7px;height:7px;border-radius:50%;background:#d9a441"></div><span style="font-size:14px;font-weight:600;color:#f0e2c4">Food database unavailable</span></div>
+            <div style="font-size:13px;line-height:1.55;color:#d9cba8;text-wrap:pretty">The external service didn’t respond. Your own foods and meals are still searchable.</div>
+            <div style="display:flex;gap:8px;margin-top:2px">
+              <span style="flex:1;border:1px solid #6b552b;color:#f0e2c4;border-radius:9px;padding:11px;text-align:center;font-size:13px;font-weight:600">Retry</span>
+              <span style="flex:1;border:1px solid #3a4147;color:#c8cfd3;border-radius:9px;padding:11px;text-align:center;font-size:13px">Search My Foods</span>
+            </div>
+          </div>
+          <div style="flex:1;padding:8px 20px 0;display:flex;flex-direction:column;gap:8px">
+            <span style="font-family:'IBM Plex Mono';font-size:10px;letter-spacing:0.08em;text-transform:uppercase;color:#7d868c">From your library</span>
+            <div style="background:#1e2124;border:1px solid #2f3438;border-radius:11px;padding:13px 14px;display:flex;align-items:center;gap:12px"><div style="flex:1"><div style="font-size:14px;font-weight:600">Oat milk, barista</div><div style="font-family:'IBM Plex Mono';font-size:11px;color:#7d868c;margin-top:3px">My Foods · 100 ml</div></div><span style="font-family:'IBM Plex Mono';font-size:12px;font-weight:600">59 kcal</span></div>
+            <div style="background:#1e2124;border:1px solid #2f3438;border-radius:11px;padding:13px 14px;display:flex;align-items:center;gap:12px"><div style="flex:1"><div style="font-size:14px;font-weight:600">Oat milk latte</div><div style="font-family:'IBM Plex Mono';font-size:11px;color:#7d868c;margin-top:3px">My Meals · 1 cup</div></div><span style="font-family:'IBM Plex Mono';font-size:12px;font-weight:600">124 kcal</span></div>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);border-top:1px solid #2f3438;padding:10px 12px 24px;background:#131516">
+            <div style="display:flex;flex-direction:column;align-items:center;gap:5px"><div style="width:18px;height:18px;display:flex;flex-direction:column;justify-content:center;gap:3px;flex:none"><div style="height:2px;border-radius:1px;background:#9aa2a8"></div><div style="height:2px;border-radius:1px;background:#9aa2a8"></div><div style="height:2px;width:11px;border-radius:1px;background:#9aa2a8"></div></div><span style="font-size:10px;color:#9aa2a8">Log</span></div>
+            <div style="display:flex;flex-direction:column;align-items:center;gap:5px"><div style="width:18px;height:18px;position:relative;flex:none"><div style="position:absolute;left:1px;top:1px;width:11px;height:11px;border:1.5px solid #55b37a;border-radius:50%"></div><div style="position:absolute;right:1px;bottom:1px;width:6px;height:2px;border-radius:1px;background:#55b37a;transform:rotate(45deg)"></div></div><span style="font-size:10px;font-weight:600;color:#55b37a">Food Database</span></div>
+            <div style="display:flex;flex-direction:column;align-items:center;gap:5px"><div style="width:18px;height:18px;display:flex;align-items:center;justify-content:center;flex:none"><div style="width:12px;height:15px;background:#9aa2a8;clip-path:polygon(0 0,100% 0,100% 100%,50% 70%,0 100%)"></div></div><span style="font-size:10px;color:#9aa2a8">Saved Foods</span></div>
+          </div>
+        </div>
+        <sc-if value="{{ showAnnotations }}" hint-placeholder-val="{{ true }}"><div style="font-family:'IBM Plex Mono';font-size:11px;line-height:1.6;color:#7d868c">Failure is amber, not red — nothing is broken in the user's data. Retry is offered alongside a working local fallback.</div></sc-if>
+      </div>
+
+      <!-- M8 shared detail mobile -->
+      <div style="display:flex;flex-direction:column;gap:10px;width:390px">
+        <div style="font-size:13px;font-weight:600">M8 · Shared Food Detail &amp; Review</div>
+        <div data-screen-label="M8 food detail review" style="width:390px;height:844px;background:#16181a;border:1px solid #2f3438;border-radius:26px;overflow:hidden;display:flex;flex-direction:column">
+          <div style="display:flex;justify-content:space-between;padding:14px 22px 6px;font-size:12px;font-weight:600"><span>9:41</span><span style="color:#9aa2a8">▮▮▮</span></div>
+          <div style="padding:10px 20px 14px;display:flex;align-items:center;gap:14px"><span style="color:#9aa2a8;font-size:16px">‹</span><span style="font-size:15px;font-weight:600">Review food</span></div>
+          <div style="flex:1;padding:0 20px;display:flex;flex-direction:column;gap:18px;overflow:hidden">
+            <div style="display:flex;flex-direction:column;gap:5px"><span style="font-size:20px;font-weight:600;letter-spacing:-0.01em">Greek yogurt, plain 2%</span><span style="font-family:'IBM Plex Mono';font-size:11px;color:#7d868c">Fage · from Food Database</span></div>
+            <div style="display:flex;flex-direction:column;gap:8px">
+              <span style="font-family:'IBM Plex Mono';font-size:10px;letter-spacing:0.08em;text-transform:uppercase;color:#7d868c">Serving</span>
+              <div style="display:flex;gap:8px"><span style="flex:1;background:#1e2124;border:1px solid #55b37a;border-radius:9px;padding:11px;text-align:center;font-size:13px">container (170 g)</span><span style="flex:1;background:#1e2124;border:1px solid #2f3438;border-radius:9px;padding:11px;text-align:center;font-size:13px;color:#9aa2a8">100 g</span></div>
+            </div>
+            <div style="display:flex;align-items:center;justify-content:space-between">
+              <span style="font-family:'IBM Plex Mono';font-size:10px;letter-spacing:0.08em;text-transform:uppercase;color:#7d868c">Quantity</span>
+              <div style="display:flex;align-items:center;gap:2px">
+                <div style="width:46px;height:46px;border:1px solid #2f3438;border-radius:11px 0 0 11px;display:flex;align-items:center;justify-content:center;font-size:18px;color:#c8cfd3">−</div>
+                <div style="width:70px;height:46px;border-top:1px solid #2f3438;border-bottom:1px solid #2f3438;display:flex;align-items:center;justify-content:center;font-family:'IBM Plex Mono';font-size:16px;font-weight:600">1.5</div>
+                <div style="width:46px;height:46px;border:1px solid #2f3438;border-radius:0 11px 11px 0;display:flex;align-items:center;justify-content:center;font-size:18px;color:#c8cfd3">+</div>
+              </div>
+            </div>
+            <div style="background:#1e2124;border:1px solid #2f3438;border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:12px">
+              <div style="display:flex;align-items:baseline;justify-content:space-between"><span style="font-size:13px;font-weight:600">Calories</span><span style="font-family:'IBM Plex Mono';font-size:32px;font-weight:600;letter-spacing:-0.02em">219<span style="font-size:13px;color:#9aa2a8"> kcal</span></span></div>
+              <div style="height:1px;background:#2f3438"></div>
+              <div style="display:flex;flex-direction:column;gap:9px;font-family:'IBM Plex Mono';font-size:12px">
+                <div style="display:flex;justify-content:space-between"><span style="color:#9aa2a8">Protein</span><span>25.5 g</span></div>
+                <div style="display:flex;justify-content:space-between"><span style="color:#9aa2a8">Carbs</span><span>13.5 g</span></div>
+                <div style="display:flex;justify-content:space-between"><span style="color:#9aa2a8">Fat</span><span>6.0 g</span></div>
+                <div style="display:flex;justify-content:space-between"><span style="color:#9aa2a8">Fiber</span><span>0 g</span></div>
+                <div style="display:flex;justify-content:space-between"><span style="color:#9aa2a8">Sugar</span><span>12.0 g</span></div>
+                <div style="display:flex;justify-content:space-between"><span style="color:#9aa2a8">Sodium</span><span>135 mg</span></div>
+              </div>
+              <div style="font-family:'IBM Plex Mono';font-size:10px;color:#7d868c">Recalculated live for 1.5 × container</div>
+            </div>
+            <div style="display:flex;gap:8px">
+              <div style="flex:1;border:1px solid #2f3438;border-radius:10px;padding:11px 12px"><div style="font-family:'IBM Plex Mono';font-size:10px;text-transform:uppercase;letter-spacing:0.07em;color:#7d868c">Time</div><div style="font-family:'IBM Plex Mono';font-size:14px;margin-top:4px">10:45</div></div>
+              <div style="flex:1;border:1px solid #2f3438;border-radius:10px;padding:11px 12px"><div style="font-family:'IBM Plex Mono';font-size:10px;text-transform:uppercase;letter-spacing:0.07em;color:#7d868c">Date</div><div style="font-family:'IBM Plex Mono';font-size:14px;margin-top:4px">2 Aug</div></div>
+              <div style="flex:1;border:1px solid #2f3438;border-radius:10px;padding:11px 12px"><div style="font-family:'IBM Plex Mono';font-size:10px;text-transform:uppercase;letter-spacing:0.07em;color:#7d868c">Meal</div><div style="font-size:13px;margin-top:4px;color:#83cda1">Snack</div></div>
+            </div>
+          </div>
+          <div style="padding:14px 20px 26px;display:flex;flex-direction:column;gap:8px">
+            <div style="background:#55b37a;color:#0c0e0f;border-radius:12px;padding:15px;text-align:center;font-size:15px;font-weight:600">Add to Log</div>
+            <div style="border:1px solid #2f3438;color:#c8cfd3;border-radius:12px;padding:13px;text-align:center;font-size:13px">Save to Saved Foods</div>
+          </div>
+        </div>
+        <sc-if value="{{ showAnnotations }}" hint-placeholder-val="{{ true }}"><div style="font-family:'IBM Plex Mono';font-size:11px;line-height:1.6;color:#7d868c">Time defaults to now and is editable before saving; date is editable for historical entries.</div></sc-if>
+      </div>
+
+    </div>
+
+    <h2 style="margin:20px 0 0;font-size:13px;font-weight:600;letter-spacing:0.12em;text-transform:uppercase;color:#7d868c">Mobile — Scan Food</h2>
+    <div style="display:flex;flex-wrap:wrap;gap:32px">
+
+      <!-- M9 camera hub -->
+      <div style="display:flex;flex-direction:column;gap:10px;width:390px">
+        <div style="font-size:13px;font-weight:600">M9 · Scan Food camera hub</div>
+        <div data-screen-label="M9 camera hub" style="width:390px;height:844px;background:#0d0f10;border:1px solid #2f3438;border-radius:26px;overflow:hidden;display:flex;flex-direction:column">
+          <div style="display:flex;justify-content:space-between;padding:14px 22px 6px;font-size:12px;font-weight:600"><span>9:41</span><span style="color:#9aa2a8">▮▮▮</span></div>
+          <div style="padding:10px 20px;display:flex;align-items:center;justify-content:space-between"><span style="color:#9aa2a8;font-size:16px">✕</span><span style="font-size:14px;font-weight:600">Scan Food</span><span style="font-size:12px;color:#9aa2a8">Flash</span></div>
+          <div style="flex:1;margin:8px 16px;border-radius:16px;background:repeating-linear-gradient(135deg,#171a1c,#171a1c 12px,#1b1f21 12px,#1b1f21 24px);position:relative;display:flex;align-items:center;justify-content:center">
+            <div style="width:250px;height:250px;border-radius:14px;border:1px solid rgba(255,255,255,0.16);position:relative">
+              <div style="position:absolute;left:-1px;top:-1px;width:34px;height:34px;border-left:2px solid #55b37a;border-top:2px solid #55b37a;border-radius:14px 0 0 0"></div>
+              <div style="position:absolute;right:-1px;top:-1px;width:34px;height:34px;border-right:2px solid #55b37a;border-top:2px solid #55b37a;border-radius:0 14px 0 0"></div>
+              <div style="position:absolute;left:-1px;bottom:-1px;width:34px;height:34px;border-left:2px solid #55b37a;border-bottom:2px solid #55b37a;border-radius:0 0 0 14px"></div>
+              <div style="position:absolute;right:-1px;bottom:-1px;width:34px;height:34px;border-right:2px solid #55b37a;border-bottom:2px solid #55b37a;border-radius:0 0 14px 0"></div>
+            </div>
+            <div style="position:absolute;bottom:20px;left:0;right:0;text-align:center;font-family:'IBM Plex Mono';font-size:11px;color:#8d979d">Camera preview · frame the whole plate</div>
+          </div>
+          <div style="padding:16px 0 6px;display:flex;align-items:center;justify-content:center;gap:34px">
+            <span style="font-size:12px;color:#9aa2a8;width:56px;text-align:center">Gallery</span>
+            <div style="width:70px;height:70px;border-radius:50%;border:3px solid #55b37a;display:flex;align-items:center;justify-content:center"><div style="width:56px;height:56px;border-radius:50%;background:#55b37a"></div></div>
+            <span style="font-size:12px;color:#9aa2a8;width:56px;text-align:center">Flip</span>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px;padding:14px 20px 30px">
+            <div style="text-align:center;padding:9px 0;border-radius:9px;background:#1e2124;font-size:12px;font-weight:600">Scan Food</div>
+            <div style="text-align:center;padding:9px 0;border-radius:9px;font-size:12px;color:#9aa2a8">Barcode</div>
+            <div style="text-align:center;padding:9px 0;border-radius:9px;font-size:12px;color:#9aa2a8">Food Label</div>
+          </div>
+        </div>
+        <sc-if value="{{ showAnnotations }}" hint-placeholder-val="{{ true }}"><div style="font-family:'IBM Plex Mono';font-size:11px;line-height:1.6;color:#7d868c">Persistent bottom mode switcher; Scan Food is default. Capture → analysis state → editable review.</div></sc-if>
+      </div>
+
+      <!-- M10 AI review -->
+      <div style="display:flex;flex-direction:column;gap:10px;width:390px">
+        <div style="font-size:13px;font-weight:600">M10 · Scan Food — AI ingredient review</div>
+        <div data-screen-label="M10 AI ingredient review" style="width:390px;height:844px;background:#16181a;border:1px solid #2f3438;border-radius:26px;overflow:hidden;display:flex;flex-direction:column">
+          <div style="display:flex;justify-content:space-between;padding:14px 22px 6px;font-size:12px;font-weight:600"><span>9:41</span><span style="color:#9aa2a8">▮▮▮</span></div>
+          <div style="padding:10px 20px 12px;display:flex;align-items:center;gap:14px"><span style="color:#9aa2a8;font-size:16px">‹</span><span style="font-size:15px;font-weight:600">Review identified meal</span></div>
+          <div style="margin:0 20px 12px;height:96px;border-radius:12px;background:repeating-linear-gradient(135deg,#1b1f21,#1b1f21 12px,#202527 12px,#202527 24px);display:flex;align-items:center;justify-content:center;font-family:'IBM Plex Mono';font-size:11px;color:#7d868c">captured photo</div>
+          <div style="margin:0 20px 12px;display:flex;align-items:center;gap:9px;border:1px solid #6b552b;background:#231f18;border-radius:10px;padding:11px 13px"><div style="width:6px;height:6px;border-radius:50%;background:#d9a441"></div><span style="font-size:12px;line-height:1.45;color:#f0e2c4">Estimated from a photo. Review each ingredient before adding.</span></div>
+          <div style="flex:1;padding:0 20px;display:flex;flex-direction:column;gap:8px;overflow:hidden">
+            <div style="display:flex;justify-content:space-between;align-items:center"><span style="font-size:13px;font-weight:600">4 ingredients</span><span style="font-size:12px;color:#83cda1;font-weight:600">Edit entire meal with AI</span></div>
+            <div style="background:#1e2124;border:1px solid #2f3438;border-radius:11px;padding:13px 14px;display:flex;flex-direction:column;gap:7px">
+              <div style="display:flex;align-items:center;gap:8px"><span style="font-size:14px;font-weight:600;flex:1">Grilled chicken breast</span><span style="font-family:'IBM Plex Mono';font-size:9px;text-transform:uppercase;letter-spacing:0.06em;color:#d9a441;border:1px solid #6b552b;border-radius:4px;padding:1px 5px">Estimated</span></div>
+              <div style="font-family:'IBM Plex Mono';font-size:11px;color:#7d868c">≈ 140 g · 231 kcal · P 43 · C 0 · F 5</div>
+              <div style="display:flex;gap:6px;margin-top:2px"><span style="border:1px solid #2f3438;border-radius:7px;padding:6px 10px;font-size:11px;color:#c8cfd3">Edit</span><span style="border:1px solid #2f3438;border-radius:7px;padding:6px 10px;font-size:11px;color:#83cda1">Edit with AI</span><span style="border:1px solid #2f3438;border-radius:7px;padding:6px 10px;font-size:11px;color:#c48b89">Delete</span></div>
+            </div>
+            <div style="background:#1e2124;border:1px solid #2f3438;border-radius:11px;padding:13px 14px;display:flex;flex-direction:column;gap:7px">
+              <div style="display:flex;align-items:center;gap:8px"><span style="font-size:14px;font-weight:600;flex:1">White rice, cooked</span><span style="font-family:'IBM Plex Mono';font-size:9px;text-transform:uppercase;letter-spacing:0.06em;color:#d9a441;border:1px solid #6b552b;border-radius:4px;padding:1px 5px">Low confidence</span></div>
+              <div style="font-family:'IBM Plex Mono';font-size:11px;color:#7d868c">≈ 180 g · 234 kcal · P 4 · C 52 · F 0</div>
+              <div style="display:flex;gap:6px;margin-top:2px"><span style="border:1px solid #2f3438;border-radius:7px;padding:6px 10px;font-size:11px;color:#c8cfd3">Edit</span><span style="border:1px solid #2f3438;border-radius:7px;padding:6px 10px;font-size:11px;color:#83cda1">Edit with AI</span><span style="border:1px solid #2f3438;border-radius:7px;padding:6px 10px;font-size:11px;color:#c48b89">Delete</span></div>
+            </div>
+            <div style="background:#1e2124;border:1px solid #2f3438;border-radius:11px;padding:13px 14px;display:flex;flex-direction:column;gap:7px">
+              <div style="display:flex;align-items:center;gap:8px"><span style="font-size:14px;font-weight:600;flex:1">Black beans</span><span style="font-family:'IBM Plex Mono';font-size:9px;text-transform:uppercase;letter-spacing:0.06em;color:#83cda1;border:1px solid #37624a;border-radius:4px;padding:1px 5px">Edited by you</span></div>
+              <div style="font-family:'IBM Plex Mono';font-size:11px;color:#7d868c">90 g · 118 kcal · P 8 · C 20 · F 0</div>
+            </div>
+            <div style="background:#1e2124;border:1px solid #2f3438;border-radius:11px;padding:13px 14px;display:flex;flex-direction:column;gap:7px">
+              <div style="display:flex;align-items:center;gap:8px"><span style="font-size:14px;font-weight:600;flex:1">Guacamole</span><span style="font-family:'IBM Plex Mono';font-size:9px;text-transform:uppercase;letter-spacing:0.06em;color:#d9a441;border:1px solid #6b552b;border-radius:4px;padding:1px 5px">Estimated</span></div>
+              <div style="font-family:'IBM Plex Mono';font-size:11px;color:#7d868c">≈ 45 g · 72 kcal · P 1 · C 4 · F 6</div>
+            </div>
+            <div style="border:1px dashed #3a4147;border-radius:11px;padding:12px;text-align:center;font-size:13px;color:#9aa2a8">Add ingredient</div>
+          </div>
+          <div style="padding:14px 20px 26px;display:flex;flex-direction:column;gap:10px;border-top:1px solid #2f3438;margin-top:12px">
+            <div style="display:flex;justify-content:space-between;align-items:baseline"><span style="font-size:13px;color:#9aa2a8">Meal total</span><span style="font-family:'IBM Plex Mono';font-size:22px;font-weight:600">655 kcal</span></div>
+            <div style="background:#55b37a;color:#0c0e0f;border-radius:12px;padding:15px;text-align:center;font-size:15px;font-weight:600">Add to Log</div>
+          </div>
+        </div>
+        <sc-if value="{{ showAnnotations }}" hint-placeholder-val="{{ true }}"><div style="font-family:'IBM Plex Mono';font-size:11px;line-height:1.6;color:#7d868c">Every AI-derived row carries an explicit state chip. User corrections are marked Edited by you and are never overwritten by later AI passes.</div></sc-if>
+      </div>
+
+      <!-- M11 per-ingredient AI proposal -->
+      <div style="display:flex;flex-direction:column;gap:10px;width:390px">
+        <div style="font-size:13px;font-weight:600">M11 · Per-ingredient “Edit with AI” proposal</div>
+        <div data-screen-label="M11 ingredient AI proposal" style="width:390px;height:844px;background:#16181a;border:1px solid #2f3438;border-radius:26px;overflow:hidden;display:flex;flex-direction:column;position:relative">
+          <div style="display:flex;justify-content:space-between;padding:14px 22px 6px;font-size:12px;font-weight:600"><span>9:41</span><span style="color:#9aa2a8">▮▮▮</span></div>
+          <div style="padding:10px 20px 12px;display:flex;align-items:center;gap:14px;opacity:0.4"><span style="color:#9aa2a8;font-size:16px">‹</span><span style="font-size:15px;font-weight:600">Review identified meal</span></div>
+          <div style="flex:1;padding:0 20px;display:flex;flex-direction:column;gap:8px;opacity:0.4">
+            <div style="background:#1e2124;border:1px solid #2f3438;border-radius:11px;padding:13px 14px;font-size:14px;font-weight:600">Grilled chicken breast</div>
+            <div style="background:#1e2124;border:1px solid #2f3438;border-radius:11px;padding:13px 14px;font-size:14px;font-weight:600">White rice, cooked</div>
+            <div style="background:#1e2124;border:1px solid #2f3438;border-radius:11px;padding:13px 14px;font-size:14px;font-weight:600">Black beans</div>
+          </div>
+          <div style="position:absolute;inset:0;background:rgba(8,10,11,0.66)"></div>
+          <div style="position:absolute;left:0;right:0;bottom:0;background:#1e2124;border-top:1px solid #3a4147;border-radius:20px 20px 0 0;padding:14px 20px 28px;display:flex;flex-direction:column;gap:14px">
+            <div style="width:38px;height:4px;border-radius:2px;background:#3a4147;align-self:center"></div>
+            <div style="display:flex;flex-direction:column;gap:4px"><span style="font-size:16px;font-weight:600">Edit with AI</span><span style="font-size:12px;color:#9aa2a8">White rice, cooked · ≈ 180 g</span></div>
+            <div style="border:1px solid #3a4147;border-radius:10px;padding:12px 13px;font-size:13px;color:#c8cfd3">“it was brown rice, about one cup”</div>
+            <div style="display:flex;flex-direction:column;gap:10px;background:#16181a;border:1px solid #2f3438;border-radius:12px;padding:14px">
+              <span style="font-family:'IBM Plex Mono';font-size:10px;text-transform:uppercase;letter-spacing:0.08em;color:#7d868c">Proposed change</span>
+              <div style="display:flex;align-items:center;gap:10px">
+                <div style="flex:1;display:flex;flex-direction:column;gap:4px"><span style="font-size:12px;color:#9aa2a8;text-decoration:line-through">White rice, 180 g</span><span style="font-family:'IBM Plex Mono';font-size:11px;color:#7d868c;text-decoration:line-through">234 kcal · C 52</span></div>
+                <span style="color:#7d868c">→</span>
+                <div style="flex:1;display:flex;flex-direction:column;gap:4px"><span style="font-size:13px;font-weight:600">Brown rice, 195 g</span><span style="font-family:'IBM Plex Mono';font-size:11px;color:#83cda1">216 kcal · C 45</span></div>
+              </div>
+              <div style="font-family:'IBM Plex Mono';font-size:10px;color:#7d868c">Meal total 655 → 637 kcal</div>
+            </div>
+            <div style="display:flex;gap:8px">
+              <span style="flex:1;border:1px solid #3a4147;color:#c8cfd3;border-radius:11px;padding:13px;text-align:center;font-size:13px">Discard</span>
+              <span style="flex:1;background:#55b37a;color:#0c0e0f;border-radius:11px;padding:13px;text-align:center;font-size:14px;font-weight:600">Apply change</span>
+            </div>
+          </div>
+        </div>
+        <sc-if value="{{ showAnnotations }}" hint-placeholder-val="{{ true }}"><div style="font-family:'IBM Plex Mono';font-size:11px;line-height:1.6;color:#7d868c">AI returns a visible before → after proposal. Applying edits the review, not the log; adding still requires Add to Log.</div></sc-if>
+      </div>
+
+      <!-- M12 whole meal AI proposal -->
+      <div style="display:flex;flex-direction:column;gap:10px;width:390px">
+        <div style="font-size:13px;font-weight:600">M12 · “Edit entire meal with AI” proposal</div>
+        <div data-screen-label="M12 meal AI proposal" style="width:390px;height:844px;background:#16181a;border:1px solid #2f3438;border-radius:26px;overflow:hidden;display:flex;flex-direction:column">
+          <div style="display:flex;justify-content:space-between;padding:14px 22px 6px;font-size:12px;font-weight:600"><span>9:41</span><span style="color:#9aa2a8">▮▮▮</span></div>
+          <div style="padding:10px 20px 14px;display:flex;align-items:center;gap:14px"><span style="color:#9aa2a8;font-size:16px">‹</span><span style="font-size:15px;font-weight:600">Edit entire meal with AI</span></div>
+          <div style="padding:0 20px 14px"><div style="border:1px solid #3a4147;border-radius:11px;padding:13px;font-size:13px;color:#c8cfd3;line-height:1.5">“no guacamole, and the portion was for two people so halve everything”</div></div>
+          <div style="flex:1;padding:0 20px;display:flex;flex-direction:column;gap:8px">
+            <div style="display:flex;align-items:center;gap:8px"><span style="font-family:'IBM Plex Mono';font-size:10px;text-transform:uppercase;letter-spacing:0.08em;color:#7d868c">Proposal · 4 changes</span></div>
+            <div style="background:#1e2124;border:1px solid #2f3438;border-radius:11px;padding:12px 14px;display:flex;align-items:center;gap:10px"><div style="flex:1"><div style="font-size:13px;font-weight:600">Grilled chicken breast</div><div style="font-family:'IBM Plex Mono';font-size:11px;color:#7d868c;margin-top:3px">140 g → 70 g · 231 → 116 kcal</div></div><span style="font-family:'IBM Plex Mono';font-size:9px;text-transform:uppercase;letter-spacing:0.06em;color:#83cda1;border:1px solid #37624a;border-radius:4px;padding:1px 5px">Changed</span></div>
+            <div style="background:#1e2124;border:1px solid #2f3438;border-radius:11px;padding:12px 14px;display:flex;align-items:center;gap:10px"><div style="flex:1"><div style="font-size:13px;font-weight:600">Brown rice</div><div style="font-family:'IBM Plex Mono';font-size:11px;color:#7d868c;margin-top:3px">195 g → 98 g · 216 → 108 kcal</div></div><span style="font-family:'IBM Plex Mono';font-size:9px;text-transform:uppercase;letter-spacing:0.06em;color:#83cda1;border:1px solid #37624a;border-radius:4px;padding:1px 5px">Changed</span></div>
+            <div style="background:#1e2124;border:1px solid #2f3438;border-radius:11px;padding:12px 14px;display:flex;align-items:center;gap:10px"><div style="flex:1"><div style="font-size:13px;font-weight:600">Black beans</div><div style="font-family:'IBM Plex Mono';font-size:11px;color:#7d868c;margin-top:3px">90 g → 45 g · 118 → 59 kcal</div></div><span style="font-family:'IBM Plex Mono';font-size:9px;text-transform:uppercase;letter-spacing:0.06em;color:#83cda1;border:1px solid #37624a;border-radius:4px;padding:1px 5px">Changed</span></div>
+            <div style="background:#1e2124;border:1px solid #6b3b39;border-radius:11px;padding:12px 14px;display:flex;align-items:center;gap:10px"><div style="flex:1"><div style="font-size:13px;font-weight:600;color:#c8cfd3;text-decoration:line-through">Guacamole</div><div style="font-family:'IBM Plex Mono';font-size:11px;color:#7d868c;margin-top:3px">72 kcal removed</div></div><span style="font-family:'IBM Plex Mono';font-size:9px;text-transform:uppercase;letter-spacing:0.06em;color:#d4635f;border:1px solid #6b3b39;border-radius:4px;padding:1px 5px">Removed</span></div>
+            <div style="background:#1e2124;border:1px solid #2f3438;border-radius:12px;padding:14px;margin-top:6px;display:flex;justify-content:space-between;align-items:baseline"><span style="font-size:13px;color:#9aa2a8">Meal total</span><span style="font-family:'IBM Plex Mono';font-size:14px;color:#9aa2a8;text-decoration:line-through">637</span><span style="font-family:'IBM Plex Mono';font-size:22px;font-weight:600">283 kcal</span></div>
+          </div>
+          <div style="padding:14px 20px 26px;display:flex;flex-direction:column;gap:8px">
+            <div style="font-size:11px;line-height:1.5;color:#7d868c;text-align:center">Nothing is logged until you confirm.</div>
+            <div style="display:flex;gap:8px">
+              <span style="flex:1;border:1px solid #3a4147;color:#c8cfd3;border-radius:12px;padding:14px;text-align:center;font-size:13px">Discard</span>
+              <span style="flex:1;background:#55b37a;color:#0c0e0f;border-radius:12px;padding:14px;text-align:center;font-size:14px;font-weight:600">Apply &amp; review</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- M13 barcode not found -->
+      <div style="display:flex;flex-direction:column;gap:10px;width:390px">
+        <div style="font-size:13px;font-weight:600">M13 · Barcode — product not found</div>
+        <div data-screen-label="M13 barcode not found" style="width:390px;height:844px;background:#0d0f10;border:1px solid #2f3438;border-radius:26px;overflow:hidden;display:flex;flex-direction:column;position:relative">
+          <div style="display:flex;justify-content:space-between;padding:14px 22px 6px;font-size:12px;font-weight:600"><span>9:41</span><span style="color:#9aa2a8">▮▮▮</span></div>
+          <div style="padding:10px 20px;display:flex;align-items:center;justify-content:space-between"><span style="color:#9aa2a8;font-size:16px">✕</span><span style="font-size:14px;font-weight:600">Barcode</span><span style="font-size:12px;color:#9aa2a8">Flash</span></div>
+          <div style="flex:1;margin:8px 16px;border-radius:16px;background:repeating-linear-gradient(135deg,#171a1c,#171a1c 12px,#1b1f21 12px,#1b1f21 24px);display:flex;align-items:center;justify-content:center;position:relative">
+            <div style="width:270px;height:130px;border-radius:12px;border:1px solid rgba(255,255,255,0.16)"></div>
+            <div style="position:absolute;bottom:20px;font-family:'IBM Plex Mono';font-size:11px;color:#8d979d">Detected 5060337502191</div>
+          </div>
+          <div style="position:absolute;left:0;right:0;bottom:0;background:#1e2124;border-top:1px solid #3a4147;border-radius:20px 20px 0 0;padding:14px 20px 28px;display:flex;flex-direction:column;gap:12px">
+            <div style="width:38px;height:4px;border-radius:2px;background:#3a4147;align-self:center"></div>
+            <div style="display:flex;align-items:center;gap:9px"><div style="width:7px;height:7px;border-radius:50%;background:#d9a441"></div><span style="font-size:16px;font-weight:600">No product found</span></div>
+            <div style="font-size:13px;line-height:1.55;color:#9aa2a8;text-wrap:pretty">Barcode <span style="font-family:'IBM Plex Mono';color:#c8cfd3">5060337502191</span> isn’t in the database yet. You can still log it.</div>
+            <div style="display:flex;flex-direction:column;gap:8px;margin-top:4px">
+              <div style="background:#55b37a;color:#0c0e0f;border-radius:11px;padding:14px;text-align:center;font-size:14px;font-weight:600">Create food in Saved Foods</div>
+              <div style="border:1px solid #3a4147;color:#c8cfd3;border-radius:11px;padding:13px;text-align:center;font-size:13px">Search by name instead</div>
+              <div style="display:flex;gap:8px">
+                <span style="flex:1;border:1px solid #3a4147;color:#c8cfd3;border-radius:11px;padding:12px;text-align:center;font-size:13px">Scan again</span>
+                <span style="flex:1;border:1px solid #3a4147;color:#c8cfd3;border-radius:11px;padding:12px;text-align:center;font-size:13px">Enter barcode manually</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- M14 label partial -->
+      <div style="display:flex;flex-direction:column;gap:10px;width:390px">
+        <div style="font-size:13px;font-weight:600">M14 · Food Label — partial extraction</div>
+        <div data-screen-label="M14 label partial extraction" style="width:390px;height:844px;background:#16181a;border:1px solid #2f3438;border-radius:26px;overflow:hidden;display:flex;flex-direction:column">
+          <div style="display:flex;justify-content:space-between;padding:14px 22px 6px;font-size:12px;font-weight:600"><span>9:41</span><span style="color:#9aa2a8">▮▮▮</span></div>
+          <div style="padding:10px 20px 12px;display:flex;align-items:center;gap:14px"><span style="color:#9aa2a8;font-size:16px">‹</span><span style="font-size:15px;font-weight:600">Review label</span></div>
+          <div style="margin:0 20px 12px;display:flex;align-items:flex-start;gap:9px;border:1px solid #6b552b;background:#231f18;border-radius:10px;padding:11px 13px"><div style="width:6px;height:6px;border-radius:50%;background:#d9a441;margin-top:5px"></div><span style="font-size:12px;line-height:1.45;color:#f0e2c4">3 fields couldn’t be read. Fill them in or leave them empty.</span></div>
+          <div style="flex:1;padding:0 20px;display:flex;flex-direction:column;gap:12px;overflow:hidden">
+            <div style="display:flex;gap:12px">
+              <div style="width:88px;height:110px;border-radius:10px;background:repeating-linear-gradient(135deg,#1b1f21,#1b1f21 10px,#202527 10px,#202527 20px);display:flex;align-items:center;justify-content:center;font-family:'IBM Plex Mono';font-size:9px;color:#7d868c;text-align:center;padding:6px">label photo</div>
+              <div style="flex:1;display:flex;flex-direction:column;gap:8px">
+                <div style="border:1px solid #2f3438;border-radius:9px;padding:9px 11px"><div style="font-family:'IBM Plex Mono';font-size:9px;text-transform:uppercase;letter-spacing:0.07em;color:#7d868c">Product name</div><div style="font-size:13px;margin-top:3px">Muesli, no added sugar</div></div>
+                <div style="border:1px solid #6b552b;border-radius:9px;padding:9px 11px;background:#231f18"><div style="font-family:'IBM Plex Mono';font-size:9px;text-transform:uppercase;letter-spacing:0.07em;color:#d9a441">Brand · not detected</div><div style="font-size:13px;margin-top:3px;color:#8a9196">Add brand</div></div>
+                <div style="border:1px solid #2f3438;border-radius:9px;padding:9px 11px"><div style="font-family:'IBM Plex Mono';font-size:9px;text-transform:uppercase;letter-spacing:0.07em;color:#7d868c">Serving size</div><div style="font-size:13px;margin-top:3px">45 g</div></div>
+              </div>
+            </div>
+            <div style="background:#1e2124;border:1px solid #2f3438;border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:10px">
+              <div style="display:flex;justify-content:space-between;align-items:baseline"><span style="font-size:13px;font-weight:600">Per serving</span><span style="font-family:'IBM Plex Mono';font-size:10px;text-transform:uppercase;letter-spacing:0.07em;color:#7d868c">Editable</span></div>
+              <div style="display:flex;flex-direction:column;gap:8px;font-family:'IBM Plex Mono';font-size:12px">
+                <div style="display:flex;justify-content:space-between;align-items:center"><span style="color:#9aa2a8">Calories</span><span style="border-bottom:1px solid #3a4147;padding:2px 8px">168 kcal</span></div>
+                <div style="display:flex;justify-content:space-between;align-items:center"><span style="color:#9aa2a8">Protein</span><span style="border-bottom:1px solid #3a4147;padding:2px 8px">5.1 g</span></div>
+                <div style="display:flex;justify-content:space-between;align-items:center"><span style="color:#9aa2a8">Carbs</span><span style="border-bottom:1px solid #3a4147;padding:2px 8px">26.4 g</span></div>
+                <div style="display:flex;justify-content:space-between;align-items:center"><span style="color:#9aa2a8">Fat</span><span style="border-bottom:1px solid #3a4147;padding:2px 8px">4.8 g</span></div>
+                <div style="display:flex;justify-content:space-between;align-items:center"><span style="color:#d9a441">Fiber · unreadable</span><span style="border-bottom:1px solid #6b552b;padding:2px 8px;color:#8a9196">— g</span></div>
+                <div style="display:flex;justify-content:space-between;align-items:center"><span style="color:#d9a441">Sodium · unreadable</span><span style="border-bottom:1px solid #6b552b;padding:2px 8px;color:#8a9196">— mg</span></div>
+              </div>
+            </div>
+            <div style="display:flex;align-items:center;justify-content:space-between"><span style="font-family:'IBM Plex Mono';font-size:10px;text-transform:uppercase;letter-spacing:0.08em;color:#7d868c">Quantity</span>
+              <div style="display:flex;align-items:center;gap:2px">
+                <div style="width:44px;height:44px;border:1px solid #2f3438;border-radius:11px 0 0 11px;display:flex;align-items:center;justify-content:center;font-size:18px;color:#c8cfd3">−</div>
+                <div style="width:66px;height:44px;border-top:1px solid #2f3438;border-bottom:1px solid #2f3438;display:flex;align-items:center;justify-content:center;font-family:'IBM Plex Mono';font-size:16px;font-weight:600">1</div>
+                <div style="width:44px;height:44px;border:1px solid #2f3438;border-radius:0 11px 11px 0;display:flex;align-items:center;justify-content:center;font-size:18px;color:#c8cfd3">+</div>
+              </div>
+            </div>
+          </div>
+          <div style="padding:14px 20px 26px;display:flex;flex-direction:column;gap:8px">
+            <div style="background:#55b37a;color:#0c0e0f;border-radius:12px;padding:15px;text-align:center;font-size:15px;font-weight:600">Add to Log</div>
+            <div style="border:1px solid #2f3438;color:#c8cfd3;border-radius:12px;padding:13px;text-align:center;font-size:13px">Save to Saved Foods</div>
+          </div>
+        </div>
+        <sc-if value="{{ showAnnotations }}" hint-placeholder-val="{{ true }}"><div style="font-family:'IBM Plex Mono';font-size:11px;line-height:1.6;color:#7d868c">Unreadable fields are labelled in text as well as amber-outlined, and can be left empty rather than guessed.</div></sc-if>
+      </div>
+
+    </div>
+
+    <h2 style="margin:20px 0 0;font-size:13px;font-weight:600;letter-spacing:0.12em;text-transform:uppercase;color:#7d868c">Mobile — Saved Foods, Create Meal, Daily Targets</h2>
+    <div style="display:flex;flex-wrap:wrap;gap:32px">
+
+      <!-- M15 saved foods -->
+      <div style="display:flex;flex-direction:column;gap:10px;width:390px">
+        <div style="font-size:13px;font-weight:600">M15 · Saved Foods library</div>
+        <div data-screen-label="M15 saved foods" style="width:390px;height:844px;background:#16181a;border:1px solid #2f3438;border-radius:26px;overflow:hidden;display:flex;flex-direction:column">
+          <div style="display:flex;justify-content:space-between;padding:14px 22px 6px;font-size:12px;font-weight:600"><span>9:41</span><span style="color:#9aa2a8">▮▮▮</span></div>
+          <div style="padding:12px 20px 12px;display:flex;flex-direction:column;gap:12px">
+            <div style="font-size:19px;font-weight:600">Saved Foods</div>
+            <div style="display:flex;align-items:center;gap:10px;background:#1e2124;border:1px solid #2f3438;border-radius:11px;padding:12px 14px"><div style="width:13px;height:13px;border:1.5px solid #6c757a;border-radius:50%"></div><span style="font-size:14px;color:#7d868c">Search your library</span></div>
+            <div style="display:flex;gap:7px"><span style="background:#55b37a;color:#0c0e0f;font-size:12px;font-weight:600;border-radius:15px;padding:6px 13px">All</span><span style="border:1px solid #2f3438;color:#c8cfd3;font-size:12px;border-radius:15px;padding:6px 13px">My Meals</span><span style="border:1px solid #2f3438;color:#c8cfd3;font-size:12px;border-radius:15px;padding:6px 13px">My Favorites</span><span style="border:1px solid #2f3438;color:#c8cfd3;font-size:12px;border-radius:15px;padding:6px 13px">My Foods</span></div>
+            <div style="display:flex;gap:8px"><span style="flex:1;border:1px solid #55b37a;color:#83cda1;border-radius:10px;padding:11px;text-align:center;font-size:13px;font-weight:600">Create Food</span><span style="flex:1;border:1px solid #55b37a;color:#83cda1;border-radius:10px;padding:11px;text-align:center;font-size:13px;font-weight:600">Create Meal</span></div>
+          </div>
+          <div style="flex:1;padding:2px 20px 0;display:flex;flex-direction:column;gap:8px;overflow:hidden">
+            <div style="background:#1e2124;border:1px solid #2f3438;border-radius:11px;padding:13px 14px;display:flex;align-items:center;gap:12px"><div style="flex:1"><div style="display:flex;align-items:center;gap:7px"><span style="font-size:14px;font-weight:600">Oats, banana, peanut butter</span><span style="font-size:11px;color:#d9a441">★</span></div><div style="font-family:'IBM Plex Mono';font-size:11px;color:#7d868c;margin-top:3px">Meal · 1 serving of 2</div></div><span style="font-family:'IBM Plex Mono';font-size:12px;font-weight:600">521 kcal</span></div>
+            <div style="background:#1e2124;border:1px solid #2f3438;border-radius:11px;padding:13px 14px;display:flex;align-items:center;gap:12px"><div style="flex:1"><div style="font-size:14px;font-weight:600">Greek yogurt, plain 2%</div><div style="font-family:'IBM Plex Mono';font-size:11px;color:#7d868c;margin-top:3px">Product · saved from Barcode</div></div><span style="font-family:'IBM Plex Mono';font-size:12px;font-weight:600">146 kcal</span></div>
+            <div style="background:#1e2124;border:1px solid #2f3438;border-radius:11px;padding:13px 14px;display:flex;align-items:center;gap:12px"><div style="flex:1"><div style="display:flex;align-items:center;gap:7px"><span style="font-size:14px;font-weight:600">Flat white</span><span style="font-size:11px;color:#d9a441">★</span></div><div style="font-family:'IBM Plex Mono';font-size:11px;color:#7d868c;margin-top:3px">My Food · manual · 1 cup</div></div><span style="font-family:'IBM Plex Mono';font-size:12px;font-weight:600">75 kcal</span></div>
+            <div style="background:#1e2124;border:1px solid #2f3438;border-radius:11px;padding:13px 14px;display:flex;align-items:center;gap:12px"><div style="flex:1"><div style="font-size:14px;font-weight:600">Chicken burrito bowl</div><div style="font-family:'IBM Plex Mono';font-size:11px;color:#7d868c;margin-top:3px">Meal · saved from Scan Food</div></div><span style="font-family:'IBM Plex Mono';font-size:12px;font-weight:600">642 kcal</span></div>
+            <div style="background:#1e2124;border:1px solid #2f3438;border-radius:11px;padding:13px 14px;display:flex;align-items:center;gap:12px"><div style="flex:1"><div style="font-size:14px;font-weight:600">Muesli, no added sugar</div><div style="font-family:'IBM Plex Mono';font-size:11px;color:#7d868c;margin-top:3px">Product · saved from Food Label</div></div><span style="font-family:'IBM Plex Mono';font-size:12px;font-weight:600">168 kcal</span></div>
+            <div style="background:#1e2124;border:1px solid #2f3438;border-radius:11px;padding:13px 14px;display:flex;align-items:center;gap:12px"><div style="flex:1"><div style="font-size:14px;font-weight:600">Rye bread, sliced</div><div style="font-family:'IBM Plex Mono';font-size:11px;color:#7d868c;margin-top:3px">Product · 1 slice</div></div><span style="font-family:'IBM Plex Mono';font-size:12px;font-weight:600">83 kcal</span></div>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);border-top:1px solid #2f3438;padding:10px 12px 24px;background:#131516;margin-top:12px">
+            <div style="display:flex;flex-direction:column;align-items:center;gap:5px"><div style="width:18px;height:18px;display:flex;flex-direction:column;justify-content:center;gap:3px;flex:none"><div style="height:2px;border-radius:1px;background:#9aa2a8"></div><div style="height:2px;border-radius:1px;background:#9aa2a8"></div><div style="height:2px;width:11px;border-radius:1px;background:#9aa2a8"></div></div><span style="font-size:10px;color:#9aa2a8">Log</span></div>
+            <div style="display:flex;flex-direction:column;align-items:center;gap:5px"><div style="width:18px;height:18px;position:relative;flex:none"><div style="position:absolute;left:1px;top:1px;width:11px;height:11px;border:1.5px solid #9aa2a8;border-radius:50%"></div><div style="position:absolute;right:1px;bottom:1px;width:6px;height:2px;border-radius:1px;background:#9aa2a8;transform:rotate(45deg)"></div></div><span style="font-size:10px;color:#9aa2a8">Food Database</span></div>
+            <div style="display:flex;flex-direction:column;align-items:center;gap:5px"><div style="width:18px;height:18px;display:flex;align-items:center;justify-content:center;flex:none"><div style="width:12px;height:15px;background:#55b37a;clip-path:polygon(0 0,100% 0,100% 100%,50% 70%,0 100%)"></div></div><span style="font-size:10px;font-weight:600;color:#55b37a">Saved Foods</span></div>
+          </div>
+        </div>
+        <sc-if value="{{ showAnnotations }}" hint-placeholder-val="{{ true }}"><div style="font-family:'IBM Plex Mono';font-size:11px;line-height:1.6;color:#7d868c">Manual creation lives here, not in Food Database. Each row states its type and where it came from.</div></sc-if>
+      </div>
+
+      <!-- M16 create meal -->
+      <div style="display:flex;flex-direction:column;gap:10px;width:390px">
+        <div style="font-size:13px;font-weight:600">M16 · Create Meal builder</div>
+        <div data-screen-label="M16 create meal" style="width:390px;height:844px;background:#16181a;border:1px solid #2f3438;border-radius:26px;overflow:hidden;display:flex;flex-direction:column">
+          <div style="display:flex;justify-content:space-between;padding:14px 22px 6px;font-size:12px;font-weight:600"><span>9:41</span><span style="color:#9aa2a8">▮▮▮</span></div>
+          <div style="padding:10px 20px 12px;display:flex;align-items:center;justify-content:space-between"><span style="color:#9aa2a8;font-size:16px">‹</span><span style="font-size:15px;font-weight:600">Create Meal</span><span style="font-size:13px;color:#83cda1;font-weight:600">Save</span></div>
+          <div style="flex:1;padding:0 20px;display:flex;flex-direction:column;gap:12px;overflow:hidden">
+            <div style="display:flex;gap:12px">
+              <div style="width:72px;height:72px;border-radius:11px;border:1px dashed #3a4147;display:flex;align-items:center;justify-content:center;font-size:10px;color:#7d868c;text-align:center;padding:6px">Add photo</div>
+              <div style="flex:1;display:flex;flex-direction:column;gap:8px">
+                <div style="border-bottom:1px solid #2f3438;padding:6px 2px 8px"><div style="font-family:'IBM Plex Mono';font-size:9px;text-transform:uppercase;letter-spacing:0.07em;color:#7d868c">Meal name</div><div style="font-size:15px;font-weight:600;margin-top:4px">Sunday chicken bowl</div></div>
+                <div style="display:flex;align-items:center;justify-content:space-between"><span style="font-size:12px;color:#9aa2a8">Servings produced</span>
+                  <div style="display:flex;align-items:center;gap:2px"><div style="width:32px;height:32px;border:1px solid #2f3438;border-radius:8px 0 0 8px;display:flex;align-items:center;justify-content:center;color:#c8cfd3">−</div><div style="width:40px;height:32px;border-top:1px solid #2f3438;border-bottom:1px solid #2f3438;display:flex;align-items:center;justify-content:center;font-family:'IBM Plex Mono';font-size:14px;font-weight:600">2</div><div style="width:32px;height:32px;border:1px solid #2f3438;border-radius:0 8px 8px 0;display:flex;align-items:center;justify-content:center;color:#c8cfd3">+</div></div>
+                </div>
+              </div>
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:4px"><span style="font-size:13px;font-weight:600">Ingredients</span><span style="font-family:'IBM Plex Mono';font-size:10px;color:#7d868c">3 items</span></div>
+            <div style="background:#1e2124;border:1px solid #2f3438;border-radius:11px;padding:12px 14px;display:flex;align-items:center;gap:12px"><div style="flex:1"><div style="font-size:14px;font-weight:600">Grilled chicken breast</div><div style="font-family:'IBM Plex Mono';font-size:11px;color:#7d868c;margin-top:3px">280 g · from Scan Food</div></div><span style="font-family:'IBM Plex Mono';font-size:12px;font-weight:600">462</span><span style="color:#9aa2a8;font-size:14px">···</span></div>
+            <div style="background:#1e2124;border:1px solid #2f3438;border-radius:11px;padding:12px 14px;display:flex;align-items:center;gap:12px"><div style="flex:1"><div style="font-size:14px;font-weight:600">Brown rice, cooked</div><div style="font-family:'IBM Plex Mono';font-size:11px;color:#7d868c;margin-top:3px">390 g · from Food Database</div></div><span style="font-family:'IBM Plex Mono';font-size:12px;font-weight:600">432</span><span style="color:#9aa2a8;font-size:14px">···</span></div>
+            <div style="background:#1e2124;border:1px solid #2f3438;border-radius:11px;padding:12px 14px;display:flex;align-items:center;gap:12px"><div style="flex:1"><div style="font-size:14px;font-weight:600">Black beans</div><div style="font-family:'IBM Plex Mono';font-size:11px;color:#7d868c;margin-top:3px">180 g · from Saved Foods</div></div><span style="font-family:'IBM Plex Mono';font-size:12px;font-weight:600">236</span><span style="color:#9aa2a8;font-size:14px">···</span></div>
+            <div style="border:1px dashed #3a4147;border-radius:11px;padding:13px;text-align:center;font-size:13px;color:#83cda1;font-weight:600">Add Ingredient</div>
+            <div style="background:#1e2124;border:1px solid #2f3438;border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:10px;margin-top:2px">
+              <div style="display:flex;justify-content:space-between;align-items:baseline"><span style="font-size:12px;color:#9aa2a8">Recipe total</span><span style="font-family:'IBM Plex Mono';font-size:15px;font-weight:600">1,130 kcal</span></div>
+              <div style="height:1px;background:#2f3438"></div>
+              <div style="display:flex;justify-content:space-between;align-items:baseline"><span style="font-size:12px;color:#9aa2a8">Per serving (÷2)</span><span style="font-family:'IBM Plex Mono';font-size:22px;font-weight:600">565 kcal</span></div>
+              <div style="display:flex;gap:14px;font-family:'IBM Plex Mono';font-size:11px;color:#9aa2a8"><span>P 48 g</span><span>C 62 g</span><span>F 12 g</span></div>
+            </div>
+          </div>
+          <div style="padding:14px 20px 26px;display:flex;flex-direction:column;gap:10px">
+            <div style="display:flex;align-items:center;gap:10px;font-size:13px;color:#c8cfd3"><div style="width:36px;height:20px;border-radius:10px;background:#55b37a;display:flex;align-items:center;justify-content:flex-end;padding:0 3px"><div style="width:15px;height:15px;border-radius:50%;background:#0c0e0f"></div></div>Add one serving to today’s log</div>
+            <div style="background:#55b37a;color:#0c0e0f;border-radius:12px;padding:15px;text-align:center;font-size:15px;font-weight:600">Save meal</div>
+          </div>
+        </div>
+        <sc-if value="{{ showAnnotations }}" hint-placeholder-val="{{ true }}"><div style="font-family:'IBM Plex Mono';font-size:11px;line-height:1.6;color:#7d868c">Ingredients can be gathered from any source over time. Recipe total and per-serving nutrition update as the list changes.</div></sc-if>
+      </div>
+
+      <!-- M17 daily targets -->
+      <div style="display:flex;flex-direction:column;gap:10px;width:390px">
+        <div style="font-size:13px;font-weight:600">M17 · Daily Targets settings</div>
+        <div data-screen-label="M17 daily targets" style="width:390px;height:844px;background:#16181a;border:1px solid #2f3438;border-radius:26px;overflow:hidden;display:flex;flex-direction:column">
+          <div style="display:flex;justify-content:space-between;padding:14px 22px 6px;font-size:12px;font-weight:600"><span>9:41</span><span style="color:#9aa2a8">▮▮▮</span></div>
+          <div style="padding:10px 20px 16px;display:flex;align-items:center;gap:14px"><span style="color:#9aa2a8;font-size:16px">‹</span><span style="font-size:15px;font-weight:600">Daily Targets</span></div>
+          <div style="flex:1;padding:0 20px;display:flex;flex-direction:column;gap:16px">
+            <div style="background:#1e2124;border:1px solid #2f3438;border-radius:12px;padding:18px;display:flex;flex-direction:column;gap:12px">
+              <div style="font-size:13px;font-weight:600">Daily calorie goal</div>
+              <div style="display:flex;align-items:center;gap:2px">
+                <div style="width:46px;height:52px;border:1px solid #2f3438;border-radius:11px 0 0 11px;display:flex;align-items:center;justify-content:center;font-size:18px;color:#c8cfd3">−</div>
+                <div style="flex:1;height:52px;border-top:1px solid #2f3438;border-bottom:1px solid #2f3438;display:flex;align-items:baseline;justify-content:center;gap:6px"><span style="font-family:'IBM Plex Mono';font-size:24px;font-weight:600">2,100</span><span style="font-family:'IBM Plex Mono';font-size:12px;color:#9aa2a8">kcal</span></div>
+                <div style="width:46px;height:52px;border:1px solid #2f3438;border-radius:0 11px 11px 0;display:flex;align-items:center;justify-content:center;font-size:18px;color:#c8cfd3">+</div>
+              </div>
+              <div style="font-size:12px;line-height:1.55;color:#9aa2a8;text-wrap:pretty">Optional. Calories shows what you’ve eaten if you leave this unset. This app doesn’t calculate a recommendation for you.</div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:8px">
+              <span style="font-family:'IBM Plex Mono';font-size:10px;letter-spacing:0.08em;text-transform:uppercase;color:#7d868c">Nutrient references</span>
+              <div style="background:#1e2124;border:1px solid #2f3438;border-radius:11px;padding:13px 14px;display:flex;align-items:center;gap:12px"><span style="flex:1;font-size:13px">Protein</span><span style="font-family:'IBM Plex Mono';font-size:11px;color:#7d868c">Minimum</span><span style="font-family:'IBM Plex Mono';font-size:13px">90 g</span></div>
+              <div style="background:#1e2124;border:1px solid #2f3438;border-radius:11px;padding:13px 14px;display:flex;align-items:center;gap:12px"><span style="flex:1;font-size:13px">Carbs</span><span style="font-family:'IBM Plex Mono';font-size:11px;color:#7d868c">Range</span><span style="font-family:'IBM Plex Mono';font-size:13px">210–290 g</span></div>
+              <div style="background:#1e2124;border:1px solid #2f3438;border-radius:11px;padding:13px 14px;display:flex;align-items:center;gap:12px"><span style="flex:1;font-size:13px">Fat</span><span style="font-family:'IBM Plex Mono';font-size:11px;color:#7d868c">Reference</span><span style="font-family:'IBM Plex Mono';font-size:13px">70 g</span></div>
+              <div style="background:#1e2124;border:1px solid #2f3438;border-radius:11px;padding:13px 14px;display:flex;align-items:center;gap:12px"><span style="flex:1;font-size:13px">Sodium</span><span style="font-family:'IBM Plex Mono';font-size:11px;color:#7d868c">Upper limit</span><span style="font-family:'IBM Plex Mono';font-size:13px">2,300 mg</span></div>
+              <div style="font-size:11px;line-height:1.5;color:#7d868c;padding:2px">Reference values come from published nutrition guidance, not from a personal assessment.</div>
+            </div>
+          </div>
+          <div style="padding:14px 20px 26px"><div style="background:#55b37a;color:#0c0e0f;border-radius:12px;padding:15px;text-align:center;font-size:15px;font-weight:600">Save targets</div></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+  </sc-if>
+
+</section>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;showAnnotations&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Mock sheet&quot;},&quot;showDesktop&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Mock sheet&quot;},&quot;showMobile&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Mock sheet&quot;}}">
+class Component extends DCLogic {
+  renderVals() {
+    return {
+      showAnnotations: this.props.showAnnotations ?? true,
+      showDesktop: this.props.showDesktop ?? true,
+      showMobile: this.props.showMobile ?? true
+    };
+  }
+}
+</script>
+</body>
+</html>
