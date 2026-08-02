@@ -5,10 +5,14 @@
   "type": "module",
   "scripts": {
     "extract": "node src/extract-ingredients.js",
-    "setup-key": "node src/setup-api-key.js"
+    "setup-key": "node src/setup-api-key.js",
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "test": "node --test test/lookup.test.js"
   },
   "dependencies": {
     "dotenv": "^16.4.7",
+    "express": "^5.2.1",
     "openai": "^5.0.0"
   },
   "packageManager": "pnpm@11.17.0"
