@@ -1,0 +1,15 @@
+{
+  "name": "food-ingredient-extractor",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "extract": "node src/extract-ingredients.js",
+    "setup-key": "node src/setup-api-key.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.7",
+    "openai": "^5.0.0"
+  },
+  "packageManager": "pnpm@11.17.0"
+}
