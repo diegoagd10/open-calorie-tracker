@@ -31,11 +31,11 @@ The UX decision in this map must produce a self-contained design brief and mock 
 - [Domain: daily log and nutrition semantics](issues/02-daily-log-and-nutrition-semantics.md) — Daily logs use the User's local timezone and optional meal tags; quantities scale declared food bases, summaries use explicit nutrient ordering and missing-data warnings, and precise calculations are rounded only for display.
 - [Technical: persistence and module seams](issues/07-persistence-and-technical-seams.md) — TypeScript and Drizzle use versioned explicit migrations; relational persistence preserves immutable snapshots, while calculations, external providers, image storage, errors, writes, and tests are isolated behind deep Modules and Adapters.
 - [Domain: daily nutrient targets and limits](issues/09-daily-nutrient-targets-and-limits.md) — Adult 19+ estimates use explicit profile inputs, EER maintenance and an attributed dynamic Lose/Gain model; confirmed targets activate versioned macro ranges and general upper/minimum references without turning label values into personal medical limits.
+- [Technical: deployment, file storage, and backup mechanics](issues/10-deployment-storage-and-backups.md) — Docker Compose is the supported self-hosted shape; a mounted DATA_DIR holds SQLite, images, and exports, while logs/secrets stay separate and upgrades/backups are explicit operator-controlled workflows.
 
 ## Not yet specified
 
-- Deployment, file storage, and backup mechanics for the self-hosted instance.
-- The acceptance criteria and build sequence that follow once these decisions are resolved.
+<!-- No unresolved decision fog remains. The implementation-ready plan is the next handoff. -->
 
 ## Out of scope
 
