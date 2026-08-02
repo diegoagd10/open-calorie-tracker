@@ -17,6 +17,7 @@ The UX decision in this map must produce a self-contained design brief and mock 
 - Intended implementation direction: HTMX browser interactions, Node.js/Express backend, SQLite persistence, and an ORM/migration workflow unless a later decision changes that direction.
 - Skills to consult while resolving the map: `wayfinder`, `grilling`, `domain-modeling`, `codebase-design`, `prototype`, and `research` when external facts are needed.
 - Standing preference: keep the interface understandable and server-rendered; do not let AI silently create or log uncertain nutrition data without user confirmation.
+- Collapsed implementation specification: [Calories application spec](product-spec.md).
 
 ## Decisions so far
 
