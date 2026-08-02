@@ -25,6 +25,7 @@ The UX decision in this map must produce a self-contained design brief and mock 
 - [UX: daily log and food-entry flows](issues/01-ux-daily-log-and-entry-flows.md) — Dark-first English day log with three food sources, a shared detail/review surface, editable AI review, and a Saved Foods meal builder; [design brief](design/ux-daily-log-and-entry-flows.md).
 - [Domain: food sources and AI confirmation](issues/03-food-input-and-ai-confirmation.md) — Manual entries confirm on save; barcode and AI candidates require review, with mandatory calories and quantity basis, explicit failure handling, editable AI portions/matches, and manual fallback for unmatched ingredients.
 - [Domain: meal builder and saved dishes](issues/04-recipe-builder-and-favorites.md) — Meals are one-unit combinations of confirmed Food items; ingredient portions sum into Meal nutrition, historical entries stay unchanged, and favorites independently save Food items or mark existing Meals.
+- [Research: food data and estimation policy](issues/05-food-data-and-estimation-policy.md) — Open Food Facts is a barcode candidate source with incomplete/quality limits; free-text ingredient matching needs a separate validated adapter, and image extraction remains editable candidate data with manual fallback.
 
 ## Not yet specified
 

@@ -2,7 +2,7 @@
 
 Fecha: 2026-08-02
 Ticket: [05-food-data-and-estimation-policy](../issues/05-food-data-and-estimation-policy.md)
-Estado: evidencia capturada; la decisión de producto queda pendiente de triage.
+Estado: evidencia capturada y aceptada como insumo de Wayfinder; las decisiones de producto y los límites pendientes están registrados en los tickets vinculados.
 
 ## Resumen ejecutivo
 
