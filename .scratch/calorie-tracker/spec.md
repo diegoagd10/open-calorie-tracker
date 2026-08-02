@@ -29,6 +29,7 @@ The UX decision in this map must produce a self-contained design brief and mock 
 - [Research: nutrition reference targets and limits](issues/08-nutrition-reference-limits.md) — Nutrition references distinguish user targets, minimums, ranges, and upper limits; no universal macronutrient maximum is invented, and general non-medical profiles require source/version labeling.
 - [Domain: local user and privacy scope](issues/06-local-user-and-privacy-scope.md) — V1 is self-hosted and single-user; the User owns retained images and data, configures the AI provider, can export/delete data, and is responsible for instance privacy and credentials.
 - [Domain: daily log and nutrition semantics](issues/02-daily-log-and-nutrition-semantics.md) — Daily logs use the User's local timezone and optional meal tags; quantities scale declared food bases, summaries use explicit nutrient ordering and missing-data warnings, and precise calculations are rounded only for display.
+- [Technical: persistence and module seams](issues/07-persistence-and-technical-seams.md) — TypeScript and Drizzle use versioned explicit migrations; relational persistence preserves immutable snapshots, while calculations, external providers, image storage, errors, writes, and tests are isolated behind deep Modules and Adapters.
 
 ## Not yet specified
 

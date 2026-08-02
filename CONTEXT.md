@@ -8,6 +8,7 @@
 - **Food entry** — one recorded consumption event in a daily log. It has a date, an optional meal context, a quantity, a nutritional snapshot, and may reference the reusable Food item used to create it.
 - **Food item** — a reusable nutritional definition for a packaged product, ingredient, or saved dish.
 - **Nutritional profile** — the calories and nutrients associated with one serving or declared quantity of a food item; calories are required, other nutrient values may be unknown, and the quantity basis is declared.
+- **Nutritional snapshot** — the immutable nutritional values and declared quantity basis captured on a Food entry when it is logged; later changes to a reusable Food item or Meal do not rewrite it.
 - **Ingredient** — a food item used as a component of a saved dish or identified by an image.
 - **Food candidate** — a proposed food item or nutritional match produced by a lookup or AI-assisted flow and awaiting user confirmation.
 - **Food image** — a retained image associated with the Food item or Meal it helps identify, create, or correct.
