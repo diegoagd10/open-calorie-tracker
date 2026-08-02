@@ -1,4 +1,23 @@
-# Food ingredient extractor
+# Barcode nutrition lookup prototype
+
+This isolated prototype accepts a UPC, EAN, or GTIN number and looks up the product through Open Food Facts. It uses an Express 5 backend and an HTMX form; there is no custom browser JavaScript.
+
+## Run it
+
+```bash
+pnpm install
+pnpm start
+```
+
+Then open <http://localhost:3000> and try `3017620422003`.
+
+The JSON endpoint is also available at `/api/products/:barcode`.
+
+Product records can be incomplete because Open Food Facts is community-maintained.
+
+---
+
+## Existing ingredient extractor
 
 Small Node.js CLI that sends a local image to an OpenAI vision model. It prints `no food` when the image is not clearly food; otherwise it prints the identified ingredients as JSON.
 
