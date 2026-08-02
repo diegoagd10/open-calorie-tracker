@@ -18,6 +18,7 @@
 - **Serving** — a quantity unit used to scale a nutritional profile when it is added to a daily log or Meal.
 - **Meal tag** — an optional label on a food entry such as Breakfast, Lunch, Dinner, or Snack; it categorizes an entry without changing the chronological log.
 - **Daily summary** — the calculated total of the nutritional snapshots in one daily log. It shows, in order, Calories, Protein, Total carbohydrates, Fat, Fiber, Added sugar, Total sugar, Saturated fat, and Sodium. Total carbohydrates, Added sugar, and Total sugar are independent measures, with Added sugar shown before Total sugar. Protein has no default reference in v1; reference indicators appear only when the User configures them.
+- **Nutrition reference profile** — a versioned set of general targets, minimums, ranges, or upper limits for the v1 adult/14+ population; it is informational and is not medical advice.
 
 ## Model boundaries
 
