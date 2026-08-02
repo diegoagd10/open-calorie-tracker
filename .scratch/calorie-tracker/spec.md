@@ -6,7 +6,7 @@ Type: decision map
 
 ## Destination
 
-Reach a clear, implementation-ready product and technical plan for an open-source web application that lets an individual log food by date, calculate daily calories and nutrients, edit past entries, and create reusable recipes. Codex will implement the application after the map is clear.
+Reach a clear, implementation-ready product and technical plan for an open-source web application that lets an individual log food by date, calculate daily calories and nutrients, edit past entries, and create reusable Meals. Codex will implement the application after the map is clear.
 
 The UX decision in this map must produce a self-contained design brief and mock requirements that can be handed to a separate AI design tool. That tool designs the interface; this effort retains responsibility for implementing the chosen interface and all functionality.
 
@@ -28,10 +28,10 @@ The UX decision in this map must produce a self-contained design brief and mock 
 - [Research: food data and estimation policy](issues/05-food-data-and-estimation-policy.md) — Open Food Facts is a barcode candidate source with incomplete/quality limits; free-text ingredient matching needs a separate validated adapter, and image extraction remains editable candidate data with manual fallback.
 - [Research: nutrition reference targets and limits](issues/08-nutrition-reference-limits.md) — Nutrition references distinguish user targets, minimums, ranges, and upper limits; no universal macronutrient maximum is invented, and general non-medical profiles require source/version labeling.
 - [Domain: local user and privacy scope](issues/06-local-user-and-privacy-scope.md) — V1 is self-hosted and single-user; the User owns retained images and data, configures the AI provider, can export/delete data, and is responsible for instance privacy and credentials.
+- [Domain: daily log and nutrition semantics](issues/02-daily-log-and-nutrition-semantics.md) — Daily logs use the User's local timezone and optional meal tags; quantities scale declared food bases, summaries use explicit nutrient ordering and missing-data warnings, and precise calculations are rounded only for display.
 
 ## Not yet specified
 
-- The canonical quantity and serving semantics for manual entries, barcode results, and image estimates.
 - Deployment, file storage, and backup mechanics for the self-hosted instance.
 - The acceptance criteria and build sequence that follow once these decisions are resolved.
 

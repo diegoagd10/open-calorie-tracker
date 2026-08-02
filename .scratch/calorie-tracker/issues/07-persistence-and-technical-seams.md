@@ -3,7 +3,7 @@
 Status: needs-triage
 Labels: wayfinder:grilling, needs-triage
 Parent: ../spec.md
-Blocked by: 02-daily-log-and-nutrition-semantics.md, 03-food-input-and-ai-confirmation.md, 04-recipe-builder-and-favorites.md, 05-food-data-and-estimation-policy.md, 06-local-user-and-privacy-scope.md
+Blocked by: none
 
 ## Question
 
