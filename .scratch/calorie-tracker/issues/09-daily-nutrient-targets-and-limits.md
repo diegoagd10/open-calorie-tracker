@@ -15,3 +15,5 @@ Which nutrition references should the product offer as User-configured targets, 
 ### Research artifact (2026-08-02)
 
 See [Research: medical calorie and macro estimation](../research/09-medical-calorie-and-macro-estimation.md). The evidence supports general maintenance-energy estimates such as the 2023 National Academies EER equations, but not a universal personal prescription. It also distinguishes adult 19+ equations and references from adolescent 14–18 values, so the provisional adult/14+ scope needs an explicit product decision before any calculator is designed. The artifact does not resolve this ticket.
+
+See [Research: weight-change calorie model](../research/09-weight-change-model.md). The NASEM EER is the maintenance baseline; a Lose/Gain target-date calculation requires an independently implemented, attributed dynamic model in the style of the NIDDK Body Weight Planner. The NIDDK tool is not a complete macro-target calculator, and no public source repository or software license for its hosted implementation was identified. This artifact does not resolve the ticket.
