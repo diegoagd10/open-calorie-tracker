@@ -2,7 +2,7 @@
 
 Fecha: 2026-08-02
 Ticket: [08-nutrition-reference-limits](../issues/08-nutrition-reference-limits.md)
-Estado: evidencia capturada; la decisión de producto queda pendiente de triage.
+Estado: evidencia capturada y aceptada como insumo de Wayfinder; las decisiones de producto quedan en el dominio de daily-log semantics.
 Alcance: referencias públicas de Estados Unidos para una interfaz general de tracking; no es una recomendación médica personalizada.
 
 ## Resumen ejecutivo

@@ -26,12 +26,13 @@ The UX decision in this map must produce a self-contained design brief and mock 
 - [Domain: food sources and AI confirmation](issues/03-food-input-and-ai-confirmation.md) — Manual entries confirm on save; barcode and AI candidates require review, with mandatory calories and quantity basis, explicit failure handling, editable AI portions/matches, and manual fallback for unmatched ingredients.
 - [Domain: meal builder and saved dishes](issues/04-recipe-builder-and-favorites.md) — Meals are one-unit combinations of confirmed Food items; ingredient portions sum into Meal nutrition, historical entries stay unchanged, and favorites independently save Food items or mark existing Meals.
 - [Research: food data and estimation policy](issues/05-food-data-and-estimation-policy.md) — Open Food Facts is a barcode candidate source with incomplete/quality limits; free-text ingredient matching needs a separate validated adapter, and image extraction remains editable candidate data with manual fallback.
+- [Research: nutrition reference targets and limits](issues/08-nutrition-reference-limits.md) — Nutrition references distinguish user targets, minimums, ranges, and upper limits; no universal macronutrient maximum is invented, and general non-medical profiles require source/version labeling.
+- [Domain: local user and privacy scope](issues/06-local-user-and-privacy-scope.md) — V1 is self-hosted and single-user; the User owns retained images and data, configures the AI provider, can export/delete data, and is responsible for instance privacy and credentials.
 
 ## Not yet specified
 
-- Whether this first release is local single-user only or needs accounts, authentication, and synchronization.
 - The canonical quantity and serving semantics for manual entries, barcode results, and image estimates.
-- Deployment, file storage, backup, and privacy expectations for uploaded food images.
+- Deployment, file storage, and backup mechanics for the self-hosted instance.
 - The acceptance criteria and build sequence that follow once these decisions are resolved.
 
 ## Out of scope
