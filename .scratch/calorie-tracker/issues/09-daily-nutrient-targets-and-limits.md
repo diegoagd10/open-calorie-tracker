@@ -4,6 +4,7 @@ Status: needs-info
 Labels: wayfinder:grilling, needs-info
 Parent: ../spec.md
 Blocked by: none
+Assigned: Codex (current session)
 
 ## Question
 
