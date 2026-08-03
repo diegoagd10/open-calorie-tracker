@@ -1,0 +1,21 @@
+services:
+  calories:
+    build: .
+    ports:
+      - "${PORT:-3000}:3000"
+    environment:
+      PORT: 3000
+      DATA_DIR: /data
+      TIMEZONE: ${TIMEZONE:-UTC}
+      OPEN_FOOD_FACTS_USER_AGENT: ${OPEN_FOOD_FACTS_USER_AGENT:-Calories/1.0 (self-hosted)}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-5.6-terra}
+    volumes:
+      - "${DATA_DIR:-./data}:/data"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:3000/health').then(r => { if (!r.ok) process.exit(1) }).catch(() => process.exit(1))\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s

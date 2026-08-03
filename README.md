@@ -1,57 +1,40 @@
-# Barcode nutrition lookup prototype
+# Calories
 
-This isolated prototype accepts a UPC, EAN, or GTIN number and looks up the product through Open Food Facts. It uses an Express 5 backend and an HTMX form; there is no custom browser JavaScript.
+Calories is a self-hosted, single-user food and nutrition tracker. The first screen is a server-rendered Daily log. Confirmed Foods and one-unit Meals are reusable, while each logged Food entry keeps its own immutable Nutritional snapshot.
 
-## Run it
+## Development
 
 ```bash
 pnpm install
-pnpm start
+pnpm migrate
+pnpm dev
 ```
 
-Then open <http://localhost:3000> and try `3017620422003`.
+Open <http://localhost:3000>. Durable data defaults to `./data`; set `DATA_DIR` and `TIMEZONE` to configure the local instance. `pnpm typecheck` runs TypeScript checking and `pnpm test` runs the isolated and request-level tests.
 
-The JSON endpoint is also available at `/api/products/:barcode`.
+The application uses TypeScript/ESM, Express 5, HTMX, SQLite, Drizzle schema definitions, and explicit versioned migrations. Runtime startup does not mutate the schema implicitly; run `pnpm migrate` or the deployment migration command first.
 
-Product records can be incomplete because Open Food Facts is community-maintained.
+## Provider configuration
 
----
+Provider credentials stay server-side. Optional values include:
 
-## Existing ingredient extractor
+- `OPEN_FOOD_FACTS_USER_AGENT` for identifying barcode requests;
+- `OPENAI_API_KEY` and `OPENAI_MODEL` for Food image analysis; and
+- `MAX_IMAGE_BYTES` for retained image validation.
 
-Small Node.js CLI that sends a local image to an OpenAI vision model. It prints `no food` when the image is not clearly food; otherwise it prints the identified ingredients as JSON.
+External records and AI proposals remain transient candidates until the User reviews and explicitly confirms them. Provider failures are classified so only temporary availability failures offer retry.
 
-`gpt-image-2` is an image-generation model whose output is an image, so it is not suitable for returning ingredient text. This script uses the configurable `OPENAI_MODEL` setting and defaults to `gpt-5.6-terra`, a vision-capable text-output model.
+## Production
 
-## Setup
+Docker Compose is the supported self-hosted deployment. `DATA_DIR` contains `calories.sqlite`, retained `images/`, and generated `exports/`. HTTPS and public exposure belong to an optional reverse proxy. See [`docs/deployment.md`](docs/deployment.md) for backup, restore, and upgrade procedures.
+
+## Existing ingredient CLI
+
+The original image ingredient extractor remains available as a separate CLI:
 
 ```bash
-pnpm install
 pnpm setup-key
-```
-
-Open the local URL printed by `pnpm setup-key`, enter your API key, and close the page after it says it was saved. The key is written to `.env` with owner-only permissions and is ignored by git. Then run:
-
-```bash
 pnpm extract ./path/to/image.jpg
 ```
 
-For a non-food image, stdout is exactly:
-
-```text
-no food
-```
-
-For a food image, stdout looks like:
-
-```json
-{
-  "ingredients": ["rice", "chicken", "broccoli"]
-}
-```
-
-You can override the model without changing the code:
-
-```bash
-OPENAI_MODEL=gpt-4.1-mini pnpm extract ./path/to/image.jpg
-```
+It prints `no food` for a non-food image and JSON ingredients for a food image.

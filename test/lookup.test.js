@@ -1,19 +1,24 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { normalizeOpenFoodFactsProduct } from "../src/adapters/open-food-facts.js";
 
-test("lookup renders nutrition values per serving for the trail mix label", async () => {
-  const response = await fetch("http://127.0.0.1:3000/lookup", {
-    method: "POST",
-    headers: { "content-type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ barcode: "078742231587" }),
+test("Open Food Facts lookup normalization renders trail mix serving values", () => {
+  const candidate = normalizeOpenFoodFactsProduct({
+    code: "078742231587",
+    product_name: "Trail mix",
+    nutrition_data_per: "serving",
+    serving_size: "40 g",
+    nutriments: {
+      "energy-kcal_serving": 184,
+      proteins_serving: 13,
+      sodium_serving: 0.14,
+      sodium_unit: "g",
+      "vitamin-a_serving": 1.04,
+      "vitamin-a_unit": "mg",
+    },
   });
-  const html = await response.text();
-
-  assert.equal(response.status, 200);
-  assert.match(html, />per serving/);
-  assert.match(html, /<dd>184 <span>kcal<\/span><\/dd>/);
-  assert.match(html, /<dd>13 <span>g<\/span><\/dd>/);
-  assert.match(html, /<dd>140 <span>mg<\/span><\/dd>/);
-  assert.match(html, /<dd>1\.04 <span>mg<\/span><\/dd>/);
-  assert.doesNotMatch(html, /575 <span>kcal<\/span>/);
+  assert.equal(candidate.nutrients.calories, 184);
+  assert.equal(candidate.nutrients.protein, 13);
+  assert.equal(candidate.nutrients.sodium, 140);
+  assert.equal(candidate.complete, true);
 });

@@ -3,32 +3,17 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Calories barcode lookup</title>
+    <meta http-equiv="refresh" content="0; url=/log">
+    <title>Calories</title>
     <link rel="stylesheet" href="/styles.css">
-    <script src="https://unpkg.com/htmx.org@2.0.4"></script>
   </head>
   <body>
-    <main class="shell">
-      <section class="hero">
-        <p class="eyebrow">Food lookup test</p>
-        <h1>Find nutrition by barcode</h1>
-        <p class="intro">Enter the UPC, EAN, or GTIN printed below a product barcode.</p>
+    <main class="app-shell">
+      <section class="empty-state">
+        <p class="eyebrow">Calories</p>
+        <h1>Open the Daily log</h1>
+        <p>The application is server-rendered. Continue to <a href="/log">your Daily log</a>.</p>
       </section>
-
-      <form class="lookup-form" hx-post="/lookup" hx-target="#result" hx-swap="innerHTML">
-        <label for="barcode">Barcode number</label>
-        <div class="form-row">
-          <input id="barcode" name="barcode" inputmode="numeric" autocomplete="off" placeholder="3017620422003" required>
-          <button type="submit">Look up</button>
-        </div>
-        <p class="hint">Try <code>3017620422003</code> as a sample.</p>
-      </form>
-
-      <div id="result" class="result-placeholder">
-        <p>Your product nutrition will appear here.</p>
-      </div>
-
-      <p class="source-note">Product data comes from Open Food Facts and may be incomplete.</p>
     </main>
   </body>
 </html>
