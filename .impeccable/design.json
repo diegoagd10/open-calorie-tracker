@@ -1,0 +1,94 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-08-03T00:00:00Z",
+  "title": "Design System: Calories UI Mock",
+  "extensions": {
+    "colorMeta": {
+      "canvas": { "role": "neutral", "displayName": "Night canvas", "canonical": "#0b1020", "tonalRamp": ["#0b1020", "#101728", "#17223a", "#1e2840", "#283650", "#465a7a", "#77839c", "#eef0ff"] },
+      "surface": { "role": "neutral", "displayName": "Instrument surface", "canonical": "#151c2d", "tonalRamp": ["#101728", "#151c2d", "#1e2840", "#283650", "#2c3954", "#465a7a", "#9aa4bb", "#eef0ff"] },
+      "blue": { "role": "secondary", "displayName": "Readout blue", "canonical": "#83b9ee", "tonalRamp": ["#11253d", "#244a70", "#3976a5", "#5898c8", "#6eabd9", "#83b9ee", "#b1d5f6", "#e6f2ff"] },
+      "purple": { "role": "secondary", "displayName": "Readout purple", "canonical": "#c7a8f2", "tonalRamp": ["#211833", "#49346b", "#76529b", "#9b75c6", "#b18ddd", "#c7a8f2", "#decafa", "#f4ecff"] },
+      "orange": { "role": "secondary", "displayName": "Readout orange", "canonical": "#e8a66d", "tonalRamp": ["#321d0d", "#6c3a17", "#a45d26", "#ca7939", "#db914f", "#e8a66d", "#f3c396", "#fff0dc"] },
+      "teal": { "role": "secondary", "displayName": "Readout teal", "canonical": "#71d6c1", "tonalRamp": ["#0d2d2b", "#1b5b57", "#2d8980", "#48b2a5", "#5fc8b9", "#71d6c1", "#a6e6dd", "#e8fffb"] },
+      "pink": { "role": "secondary", "displayName": "Readout pink", "canonical": "#ed8fae", "tonalRamp": ["#3a1725", "#742d49", "#a94867", "#ca6282", "#df7898", "#ed8fae", "#f7bfd0", "#fff0f5"] },
+      "accent": { "role": "primary", "displayName": "Ultraviolet commit", "canonical": "#b8a3ff", "tonalRamp": ["#171129", "#32285d", "#554a89", "#7769b4", "#9886dc", "#b8a3ff", "#d4c8ff", "#f1edff"] },
+      "amber": { "role": "tertiary", "displayName": "Amber caution", "canonical": "#f4bf68", "tonalRamp": ["#2a1d0b", "#5a3d17", "#8b6028", "#b17e3e", "#d09c54", "#f4bf68", "#f8d18f", "#fff1cf"] },
+      "danger": { "role": "tertiary", "displayName": "Soft danger", "canonical": "#f47f78", "tonalRamp": ["#2a1211", "#5a2421", "#873932", "#b45148", "#d4675e", "#f47f78", "#ffaca4", "#ffe0dc"] }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Measured display", "purpose": "Calorie and Meal totals only." },
+      "label": { "displayName": "Instrument label", "purpose": "Measurements, timestamps, and structural metadata only." }
+    },
+    "motion": [
+      { "name": "view-in", "value": "0.28s ease-out", "purpose": "A short lift when switching between static mock views." },
+      { "name": "reduced-motion", "value": "duration .01ms", "purpose": "Preserve readable state changes for reduced-motion users." }
+    ],
+    "breakpoints": [
+      { "name": "compact-summary", "value": "1180px" },
+      { "name": "mobile-shell", "value": "900px" },
+      { "name": "phone", "value": "620px" }
+    ],
+    "narrative": {
+      "northStar": "The Local Food Log Instrument",
+      "overview": "Calories treats the current day as a work surface rather than a dashboard. The interface is a quiet, precise instrument for recording food, reading data quality, and choosing what to trust.",
+      "keyCharacteristics": ["Deep ink tonal layering", "Rare ultraviolet commit accent", "Measured mono data", "Hairline borders instead of shadows", "Five-destination mobile rail with centered Add Food"],
+      "rules": [
+        { "name": "The Rare Accent Rule", "body": "Ultraviolet is a commit signal, not decoration.", "section": "colors" },
+        { "name": "The Measurement Rule", "body": "Mono is for data and orientation, never for decorative technical flavor.", "section": "typography" },
+        { "name": "The Flat Instrument Rule", "body": "A surface earns depth by changing tone or state, not by floating on a generic shadow.", "section": "elevation" }
+      ],
+      "dos": ["Do keep the current day and next action visible.", "Do keep source and uncertainty adjacent to data.", "Do preserve touch targets and visible focus."],
+      "donts": ["Don't use gradients, glossy glass, or decorative shadows.", "Don't use color as the only status indicator.", "Don't make uncertain data look confirmed."]
+    }
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "An ultraviolet commit action used for Add Food, Add to Log, and Save Meal.",
+      "html": "<button class=\"ds-btn-primary\">Add Food</button>",
+      "css": ".ds-btn-primary { display:inline-flex; align-items:center; min-height:40px; padding:0 15px; border:1px solid #b8a3ff; border-radius:7px; color:#171129; background:#b8a3ff; font:600 13px 'DM Sans', sans-serif; } .ds-btn-primary:hover { background:#d4c8ff; } .ds-btn-primary:focus-visible { outline:2px solid #b8a3ff; outline-offset:3px; }"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "A raised tonal action for secondary decisions.",
+      "html": "<button class=\"ds-btn-secondary\">Save to Saved Foods</button>",
+      "css": ".ds-btn-secondary { display:inline-flex; align-items:center; min-height:40px; padding:0 15px; border:1px solid #465a7a; border-radius:7px; color:#cbd2e3; background:#1e2840; font:600 13px 'DM Sans', sans-serif; } .ds-btn-secondary:hover { border-color:#617398; color:#eef0ff; background:#283650; } .ds-btn-secondary:focus-visible { outline:2px solid #b8a3ff; outline-offset:3px; }"
+    },
+    {
+      "name": "Search Field",
+      "kind": "input",
+      "refersTo": "input-search",
+      "description": "A dark, bordered search field with mono shortcut affordance.",
+      "html": "<label class=\"ds-search\"><span>Search foods</span><input placeholder=\"Search foods, brands, or ingredients\"></label>",
+      "css": ".ds-search { display:flex; align-items:center; min-height:42px; padding:0 12px; border:1px solid #2c3954; border-radius:7px; color:#9aa4bb; background:#151c2d; font:13px 'DM Sans', sans-serif; } .ds-search span { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); } .ds-search input { min-width:0; flex:1; border:0; outline:0; color:#eef0ff; background:transparent; font:13px 'DM Sans', sans-serif; } .ds-search:focus-within { border-color:#6f83bd; } .ds-search:focus-within input { outline:2px solid #b8a3ff; outline-offset:3px; }"
+    },
+    {
+      "name": "Navigation Item",
+      "kind": "nav",
+      "refersTo": "navigation",
+      "description": "A 44px rail item that becomes one of five bottom-navigation destinations on phones, including Daily Targets.",
+      "html": "<button class=\"ds-nav-item ds-nav-item-active\"><span>Log</span><small>01</small></button>",
+      "css": ".ds-nav-item { display:flex; align-items:center; width:100%; min-height:44px; padding:0 11px; border:1px solid transparent; border-radius:7px; color:#9aa4bb; background:transparent; font:15px 'DM Sans', sans-serif; text-align:left; } .ds-nav-item-active { border-color:#39496b; color:#eef0ff; background:#18233c; } .ds-nav-item-active .icon { color:#b8a3ff; } .ds-nav-item small { margin-left:auto; color:#9585d1; font:10px 'IBM Plex Mono', monospace; } .ds-nav-item:focus-visible { outline:2px solid #b8a3ff; outline-offset:3px; }"
+    },
+    {
+      "name": "Mobile Navigation",
+      "kind": "nav",
+      "refersTo": "mobile-navigation",
+      "description": "A fixed five-column phone rail with Log, Food Database, centered Add Food, Saved Foods, and Daily Targets.",
+      "html": "<nav class=\"mobile-nav\"><button class=\"mobile-nav-item is-active\">Log</button><button class=\"mobile-nav-item\">Database</button><button class=\"mobile-nav-item mobile-nav-item--add\"><span>+</span></button><button class=\"mobile-nav-item\">Saved</button><button class=\"mobile-nav-item\">Targets</button></nav>",
+      "css": ".mobile-nav { display:grid; grid-template-columns:repeat(5, minmax(0, 1fr)); min-height:70px; padding:7px 9px max(7px, env(safe-area-inset-bottom)); border-top:1px solid #465a7a; background:#0f1626; } .mobile-nav-item { min-height:44px; color:#77839c; background:transparent; font:8px 'IBM Plex Mono', monospace; } .mobile-nav-item.is-active { color:#b8a3ff; background:#18233c; } .mobile-nav-item--add > span { width:36px; height:36px; border:1px solid #d4c8ff; border-radius:50%; color:#171129; background:#d4c8ff; }"
+    },
+    {
+      "name": "Review Source Chip",
+      "kind": "chip",
+      "refersTo": "source-chip",
+      "description": "A compact source and certainty label that keeps candidate status visible.",
+      "html": "<span class=\"ds-chip\">External candidate</span>",
+      "css": ".ds-chip { display:inline-flex; align-items:center; min-height:20px; padding:0 6px; border:1px solid #6c5736; border-radius:4px; color:#e5bc73; background:transparent; font:600 8px 'IBM Plex Mono', monospace; letter-spacing:.04em; text-transform:uppercase; }"
+    }
+  ]
+}
