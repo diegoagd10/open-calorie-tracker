@@ -3880,17 +3880,19 @@ svg {
   display: flex;
   align-items: center;
   justify-content: center;
-  flex-direction: column;
+  flex-direction: row;
+  gap: 2px;
   text-align: center;
 }
 
 .nutrient-instrument--ring-grid .nutrient-measure strong {
-  font: 500 13px/1 var(--mono);
+  font: 500 10px/1 var(--mono);
+  letter-spacing: -.06em;
 }
 
 .nutrient-instrument--ring-grid .nutrient-measure span {
-  margin: 3px 0 0;
-  font-size: 8px;
+  margin: 0;
+  font-size: 7px;
 }
 
 .nutrient-instrument--ring-grid .nutrient-ring-label {
@@ -3966,16 +3968,18 @@ svg {
   content: "";
   pointer-events: none;
   transform: translateX(-50%);
+  display: none;
 }
 
 .mobile-nav-item--add > span {
   position: relative;
   z-index: 1;
-  width: 36px;
-  height: 36px;
-  margin-top: -12px;
+  width: 42px;
+  height: 28px;
+  margin-top: 0;
   border: 1px solid var(--accent-strong);
-  background: var(--accent-strong);
+  border-radius: 999px;
+  background: var(--accent);
 }
 
 .mobile-nav-item--add > span .icon {
