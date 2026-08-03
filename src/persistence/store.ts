@@ -15,6 +15,7 @@ import {
   type NutrientKey,
   type NutrientReferences,
   type NutrientValues,
+  type NutritionalSnapshot,
   type NutritionProfile,
   type Quantity,
 } from "../domain/nutrition.js";
@@ -63,7 +64,7 @@ export interface MealRecord {
   updatedAt: string;
 }
 
-export interface EntryRecord {
+export interface FoodEntryRecord {
   id: number;
   foodId: number | null;
   mealId: number | null;
@@ -72,11 +73,7 @@ export interface EntryRecord {
   localDate?: string;
   localTime?: string;
   mealTag: MealTag | null;
-  quantity: Quantity;
-  quantityBasis: string;
-  baseQuantity: number;
-  snapshot: NutrientValues;
-  baseNutrition: NutrientValues;
+  snapshot: NutritionalSnapshot;
   createdAt: string;
   updatedAt: string;
 }
@@ -91,7 +88,7 @@ export interface CreateFoodInput {
   nutrients: NutritionProfile;
 }
 
-export interface EntryInput {
+export interface FoodEntryInput {
   foodId?: number;
   mealId?: number;
   profile?: FoodProfile;
@@ -100,7 +97,7 @@ export interface EntryInput {
   mealTag?: MealTag | null;
 }
 
-export interface EntryUpdate {
+export interface FoodEntryUpdate {
   quantity?: string | number;
   loggedAtUtc?: string;
   mealTag?: MealTag | null;
@@ -118,6 +115,12 @@ export interface TargetRecord {
   active: boolean;
 }
 
+export interface LocalUser {
+  id: number;
+  timezone: string;
+  timezoneSource: "bootstrap" | "browser" | "configured";
+}
+
 export interface ImageRecord {
   id: number;
   managedName: string;
@@ -128,6 +131,8 @@ export interface ImageRecord {
   mealId: number | null;
   createdAt: string;
 }
+
+export type ImageMetadata = Pick<ImageRecord, "managedName" | "originalName" | "mimeType" | "byteSize">;
 
 function now(): string {
   return new Date().toISOString();
@@ -241,17 +246,18 @@ export class Store {
     this.sqlite = connection.sqlite;
   }
 
-  ensureUser(initialTimezone: string): { id: number; timezone: string } {
-    const existing = this.sqlite.prepare("SELECT id, timezone FROM users ORDER BY id LIMIT 1").get() as { id: number; timezone: string } | undefined;
-    if (existing) return existing;
+  ensureUser(initialTimezone: string): LocalUser {
+    const existing = this.sqlite.prepare("SELECT id, timezone, timezone_source FROM users ORDER BY id LIMIT 1").get() as { id: number; timezone: string; timezone_source: LocalUser["timezoneSource"] } | undefined;
+    if (existing) return { id: Number(existing.id), timezone: existing.timezone, timezoneSource: existing.timezone_source };
     if (!isValidTimezone(initialTimezone)) throw new Error("Invalid timezone.");
     const timestamp = now();
-    const result = this.sqlite.prepare("INSERT INTO users (timezone, created_at, updated_at) VALUES (?, ?, ?)").run(initialTimezone, timestamp, timestamp);
-    return { id: Number(result.lastInsertRowid), timezone: initialTimezone };
+    const result = this.sqlite.prepare("INSERT INTO users (timezone, timezone_source, created_at, updated_at) VALUES (?, 'bootstrap', ?, ?)").run(initialTimezone, timestamp, timestamp);
+    return { id: Number(result.lastInsertRowid), timezone: initialTimezone, timezoneSource: "bootstrap" };
   }
 
-  getUser(): { id: number; timezone: string } | null {
-    return (this.sqlite.prepare("SELECT id, timezone FROM users ORDER BY id LIMIT 1").get() as { id: number; timezone: string } | undefined) ?? null;
+  getUser(): LocalUser | null {
+    const row = this.sqlite.prepare("SELECT id, timezone, timezone_source FROM users ORDER BY id LIMIT 1").get() as { id: number; timezone: string; timezone_source: LocalUser["timezoneSource"] } | undefined;
+    return row ? { id: Number(row.id), timezone: row.timezone, timezoneSource: row.timezone_source } : null;
   }
 
   getTimezone(fallback = "UTC"): string {
@@ -261,7 +267,15 @@ export class Store {
   updateTimezone(timezone: string): void {
     if (!isValidTimezone(timezone)) throw new Error("Invalid timezone.");
     const user = this.ensureUser(timezone);
-    this.sqlite.prepare("UPDATE users SET timezone = ?, updated_at = ? WHERE id = ?").run(timezone, now(), user.id);
+    this.sqlite.prepare("UPDATE users SET timezone = ?, timezone_source = 'configured', updated_at = ? WHERE id = ?").run(timezone, now(), user.id);
+  }
+
+  seedBrowserTimezone(timezone: string): boolean {
+    if (!isValidTimezone(timezone)) throw new Error("Invalid timezone.");
+    const user = this.getUser();
+    if (!user) return false;
+    const result = this.sqlite.prepare("UPDATE users SET timezone = ?, timezone_source = 'browser', updated_at = ? WHERE id = ? AND timezone_source = 'bootstrap'").run(timezone, now(), user.id);
+    return result.changes > 0;
   }
 
   createFood(input: CreateFoodInput): FoodRecord {
@@ -278,6 +292,15 @@ export class Store {
       VALUES (?, ?, ?, ?, ?, ?, ${nutrientColumns.map(() => "?").join(", ")}, ?, ?)
     `).run(name, input.brand?.trim() || null, input.description?.trim() || null, input.source || "manual", quantityBasis, basisQuantity, ...nutrientColumns.map((column) => values[column]), timestamp, timestamp);
     return this.getFood(Number(result.lastInsertRowid)) as FoodRecord;
+  }
+
+  createFoodWithImage(input: CreateFoodInput, image: ImageMetadata): FoodRecord {
+    const foodId = this.sqlite.transaction(() => {
+      const food = this.createFood(input);
+      this.addImageRecord({ ...image, foodId: food.id, mealId: null });
+      return food.id;
+    })();
+    return this.getFood(foodId) as FoodRecord;
   }
 
   getFood(id: number): FoodRecord | null {
@@ -335,12 +358,15 @@ export class Store {
     const food = this.getFood(id);
     if (!food) throw new Error("Food not found.");
     const timestamp = now();
-    const result = this.sqlite.prepare(`
-      INSERT INTO foods (name, brand, description, source, quantity_basis, basis_quantity, ${nutrientColumns.join(", ")}, created_at, updated_at)
-      SELECT name, brand, description, 'favorite', quantity_basis, basis_quantity, ${nutrientColumns.join(", ")}, ?, ? FROM foods WHERE id = ?
-    `).run(timestamp, timestamp, id);
-    const copyId = Number(result.lastInsertRowid);
-    this.sqlite.prepare("INSERT INTO favorites (food_id, created_at) VALUES (?, ?)").run(copyId, timestamp);
+    const copyId = this.sqlite.transaction(() => {
+      const result = this.sqlite.prepare(`
+        INSERT INTO foods (name, brand, description, source, quantity_basis, basis_quantity, ${nutrientColumns.join(", ")}, created_at, updated_at)
+        SELECT name, brand, description, 'favorite', quantity_basis, basis_quantity, ${nutrientColumns.join(", ")}, ?, ? FROM foods WHERE id = ?
+      `).run(timestamp, timestamp, id);
+      const insertedId = Number(result.lastInsertRowid);
+      this.sqlite.prepare("INSERT INTO favorites (food_id, created_at) VALUES (?, ?)").run(insertedId, timestamp);
+      return insertedId;
+    })();
     return this.getFood(copyId) as FoodRecord;
   }
 
@@ -348,18 +374,21 @@ export class Store {
     this.sqlite.prepare("DELETE FROM favorites WHERE food_id = ?").run(id);
   }
 
-  saveEntryAsFavorite(entryId: number): FoodRecord {
-    const entry = this.getEntry(entryId);
+  saveFoodEntryAsFavorite(entryId: number): FoodRecord {
+    const entry = this.getFoodEntry(entryId);
     if (!entry) throw new Error("Food entry not found.");
-    const food = this.createFood({
-      name: entry.title,
-      source: "entry-favorite",
-      quantityBasis: `${entry.quantity.display} ${entry.quantity.unit}`,
-      basisQuantity: 1,
-      nutrients: nutritionAsProfile(entry.snapshot),
-    });
-    this.sqlite.prepare("INSERT INTO favorites (food_id, created_at) VALUES (?, ?)").run(food.id, now());
-    return this.getFood(food.id) as FoodRecord;
+    const copyId = this.sqlite.transaction(() => {
+      const food = this.createFood({
+        name: entry.title,
+        source: "entry-favorite",
+        quantityBasis: `${entry.snapshot.quantity.display} ${entry.snapshot.quantity.unit}`,
+        basisQuantity: 1,
+        nutrients: nutritionAsProfile(entry.snapshot.nutrients),
+      });
+      this.sqlite.prepare("INSERT INTO favorites (food_id, created_at) VALUES (?, ?)").run(food.id, now());
+      return food.id;
+    })();
+    return this.getFood(copyId) as FoodRecord;
   }
 
   createMeal(name: string, description?: string | null): MealRecord {
@@ -458,9 +487,9 @@ export class Store {
     this.sqlite.prepare("DELETE FROM favorites WHERE meal_id = ?").run(id);
   }
 
-  private entryRecordFromRow(row: Record<string, unknown>, timezone?: string): EntryRecord {
-      const parsed = jsonObject(String(row.snapshot_json)) ?? {};
-      const baseNutrition = (parsed.base as NutrientValues | undefined) ?? rowNutrition(row);
+  private foodEntryRecordFromRow(row: Record<string, unknown>, timezone?: string): FoodEntryRecord {
+    const parsed = jsonObject(String(row.snapshot_json)) ?? {};
+    const baseNutrition = (parsed.base as NutrientValues | undefined) ?? rowNutrition(row);
     const baseQuantity = Number(parsed.baseQuantity ?? 1);
     const snapshot = rowNutrition(row);
     const quantity = { value: Number(row.quantity_value), display: String(row.quantity_display), unit: String(row.quantity_unit) };
@@ -474,17 +503,19 @@ export class Store {
       localDate: local?.date,
       localTime: local?.time,
       mealTag: (row.meal_tag as MealTag | null) ?? null,
-      quantity,
-      quantityBasis: String(row.quantity_basis),
-      baseQuantity,
-      snapshot,
-      baseNutrition,
+      snapshot: {
+        nutrients: snapshot,
+        baseNutrients: baseNutrition,
+        quantity,
+        quantityBasis: String(row.quantity_basis),
+        basisQuantity: baseQuantity,
+      },
       createdAt: String(row.created_at),
       updatedAt: String(row.updated_at),
     };
   }
 
-  private insertEntry(input: EntryInput, profile: FoodProfile, title: string, sourceId: { foodId?: number; mealId?: number }): EntryRecord {
+  private insertFoodEntry(input: FoodEntryInput, profile: FoodProfile, title: string, sourceId: { foodId?: number; mealId?: number }): FoodEntryRecord {
     const quantity = parseQuantity(input.quantity, profile.quantityBasis);
     const baseNutrition = normalizeNutrition(profile.nutrients);
     const baseQuantity = profile.basisQuantity ?? 1;
@@ -495,10 +526,10 @@ export class Store {
       INSERT INTO food_entries (food_id, meal_id, title, logged_at_utc, meal_tag, quantity_value, quantity_display, quantity_unit, quantity_basis, snapshot_json, ${nutrientColumns.join(", ")}, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ${nutrientColumns.map(() => "?").join(", ")}, ?, ?)
     `).run(sourceId.foodId ?? null, sourceId.mealId ?? null, title, new Date(input.loggedAtUtc).toISOString(), validateTag(input.mealTag), quantity.value, quantity.display, quantity.unit, profile.quantityBasis, JSON.stringify({ base: baseNutrition, baseQuantity, snapshot }), ...nutrientColumns.map((column) => values[column]), timestamp, timestamp);
-    return this.getEntry(Number(result.lastInsertRowid)) as EntryRecord;
+    return this.getFoodEntry(Number(result.lastInsertRowid)) as FoodEntryRecord;
   }
 
-  addFoodEntry(input: EntryInput): EntryRecord {
+  addFoodEntry(input: FoodEntryInput): FoodEntryRecord {
     let profile = input.profile;
     let title = profile?.name;
     if (input.foodId !== undefined) {
@@ -508,35 +539,35 @@ export class Store {
       title = food.name;
     }
     if (!profile || !title) throw new Error("A Food or Food profile is required.");
-    return this.insertEntry(input, profile, title, { foodId: input.foodId });
+    return this.insertFoodEntry(input, profile, title, { foodId: input.foodId });
   }
 
-  addMealEntry(input: EntryInput): EntryRecord {
+  addMealEntry(input: FoodEntryInput): FoodEntryRecord {
     if (input.mealId === undefined) throw new Error("Meal is required.");
     const meal = this.getMeal(input.mealId);
     if (!meal) throw new Error("Meal not found.");
-    return this.insertEntry(input, { name: meal.name, quantityBasis: "meal unit", nutrients: nutritionAsProfile(meal.nutrients) }, meal.name, { mealId: meal.id });
+    return this.insertFoodEntry(input, { name: meal.name, quantityBasis: "meal unit", nutrients: nutritionAsProfile(meal.nutrients) }, meal.name, { mealId: meal.id });
   }
 
-  getEntry(id: number): EntryRecord | null {
+  getFoodEntry(id: number): FoodEntryRecord | null {
     const row = this.sqlite.prepare("SELECT * FROM food_entries WHERE id = ?").get(id) as Record<string, unknown> | undefined;
-    return row ? this.entryRecordFromRow(row) : null;
+    return row ? this.foodEntryRecordFromRow(row) : null;
   }
 
-  listEntriesByDate(date: string, timezone: string): EntryRecord[] {
+  listFoodEntriesByDate(date: string, timezone: string): FoodEntryRecord[] {
     const rows = this.sqlite.prepare("SELECT * FROM food_entries ORDER BY logged_at_utc DESC").all() as Record<string, unknown>[];
     return rows
-      .map((row) => this.entryRecordFromRow(row, timezone))
+      .map((row) => this.foodEntryRecordFromRow(row, timezone))
       .filter((entry) => entry.localDate === date);
   }
 
-  updateEntry(id: number, changes: EntryUpdate, timezone: string): EntryRecord {
-    const existing = this.getEntry(id);
+  updateFoodEntry(id: number, changes: FoodEntryUpdate, timezone: string): FoodEntryRecord {
+    const existing = this.getFoodEntry(id);
     if (!existing) throw new Error("Food entry not found.");
-    let baseNutrition = existing.baseNutrition;
+    let baseNutrition = existing.snapshot.baseNutrients;
     let title = changes.title?.trim() || existing.title;
-    let quantityBasis = existing.quantityBasis;
-    let baseQuantity = existing.baseQuantity;
+    let quantityBasis = existing.snapshot.quantityBasis;
+    let baseQuantity = existing.snapshot.basisQuantity;
     let foodId = existing.foodId;
     let mealId = existing.mealId;
     if (changes.profile) {
@@ -547,30 +578,31 @@ export class Store {
       foodId = null;
       mealId = null;
     }
-    const quantity = parseQuantity(changes.quantity ?? existing.quantity.value, quantityBasis);
+    const quantity = parseQuantity(changes.quantity ?? existing.snapshot.quantity.value, quantityBasis);
     const snapshot = scaleNutrition(nutritionAsProfile(baseNutrition), quantity.value / baseQuantity);
     const loggedAtUtc = changes.loggedAtUtc ? new Date(changes.loggedAtUtc).toISOString() : existing.loggedAtUtc;
+    const mealTag = changes.mealTag === undefined ? existing.mealTag : changes.mealTag;
     const values = nutritionParams(snapshot);
     this.sqlite.prepare(`
       UPDATE food_entries SET food_id = ?, meal_id = ?, title = ?, logged_at_utc = ?, meal_tag = ?, quantity_value = ?, quantity_display = ?, quantity_unit = ?, quantity_basis = ?, snapshot_json = ?, ${nutrientColumns.map((column) => `${column} = ?`).join(", ")}, updated_at = ? WHERE id = ?
-    `).run(foodId, mealId, title, loggedAtUtc, validateTag(changes.mealTag ?? existing.mealTag), quantity.value, quantity.display, quantity.unit, quantityBasis, JSON.stringify({ base: baseNutrition, baseQuantity, snapshot }), ...nutrientColumns.map((column) => values[column]), now(), id);
-    return this.getEntry(id) as EntryRecord;
+    `).run(foodId, mealId, title, loggedAtUtc, validateTag(mealTag), quantity.value, quantity.display, quantity.unit, quantityBasis, JSON.stringify({ base: baseNutrition, baseQuantity, snapshot }), ...nutrientColumns.map((column) => values[column]), now(), id);
+    return this.getFoodEntry(id) as FoodEntryRecord;
   }
 
-  deleteEntry(id: number): EntryRecord | null {
-    const entry = this.getEntry(id);
+  deleteFoodEntry(id: number): FoodEntryRecord | null {
+    const entry = this.getFoodEntry(id);
     if (!entry) return null;
     this.sqlite.prepare("DELETE FROM food_entries WHERE id = ?").run(id);
     return entry;
   }
 
-  restoreEntry(entry: EntryRecord): EntryRecord {
-    const values = nutritionParams(entry.snapshot);
+  restoreFoodEntry(entry: FoodEntryRecord): FoodEntryRecord {
+    const values = nutritionParams(entry.snapshot.nutrients);
     this.sqlite.prepare(`
       INSERT OR REPLACE INTO food_entries (id, food_id, meal_id, title, logged_at_utc, meal_tag, quantity_value, quantity_display, quantity_unit, quantity_basis, snapshot_json, ${nutrientColumns.join(", ")}, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ${nutrientColumns.map(() => "?").join(", ")}, ?, ?)
-    `).run(entry.id, entry.foodId, entry.mealId, entry.title, entry.loggedAtUtc, entry.mealTag, entry.quantity.value, entry.quantity.display, entry.quantity.unit, entry.quantityBasis, JSON.stringify({ base: entry.baseNutrition, baseQuantity: entry.baseQuantity, snapshot: entry.snapshot }), ...nutrientColumns.map((column) => values[column]), entry.createdAt, now());
-    return this.getEntry(entry.id) as EntryRecord;
+    `).run(entry.id, entry.foodId, entry.mealId, entry.title, entry.loggedAtUtc, entry.mealTag, entry.snapshot.quantity.value, entry.snapshot.quantity.display, entry.snapshot.quantity.unit, entry.snapshot.quantityBasis, JSON.stringify({ base: entry.snapshot.baseNutrients, baseQuantity: entry.snapshot.basisQuantity, snapshot: entry.snapshot.nutrients }), ...nutrientColumns.map((column) => values[column]), entry.createdAt, now());
+    return this.getFoodEntry(entry.id) as FoodEntryRecord;
   }
 
   createTarget(input: { kind: string; plan?: string | null; calories?: number | null; references: NutrientReferences; metadata?: Record<string, unknown> | null; active?: boolean }): TargetRecord {
@@ -620,6 +652,17 @@ export class Store {
     return { ...input, id: Number(result.lastInsertRowid), createdAt };
   }
 
+  createMealFromConfirmedFoods(inputs: Array<{ food: CreateFoodInput; quantity: string | number; unit?: string }>, image?: ImageMetadata): MealRecord {
+    const mealId = this.sqlite.transaction(() => {
+      const foods = inputs.map(({ food }) => this.createFood(food));
+      const meal = this.createMeal("Food image meal");
+      inputs.forEach((input, index) => this.addMealIngredient(meal.id, foods[index].id, input.quantity, input.unit));
+      if (image) this.addImageRecord({ ...image, foodId: null, mealId: meal.id });
+      return meal.id;
+    })();
+    return this.getMeal(mealId) as MealRecord;
+  }
+
   getImage(id: number): ImageRecord | null {
     const row = this.sqlite.prepare("SELECT * FROM images WHERE id = ?").get(id) as Record<string, unknown> | undefined;
     return row ? {
@@ -644,6 +687,11 @@ export class Store {
     if (!image) return null;
     this.sqlite.prepare("DELETE FROM images WHERE id = ?").run(id);
     return image;
+  }
+
+  restoreImageRecord(image: ImageRecord): ImageRecord {
+    this.sqlite.prepare("INSERT OR REPLACE INTO images (id, managed_name, original_name, mime_type, byte_size, food_id, meal_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)").run(image.id, image.managedName, image.originalName, image.mimeType, image.byteSize, image.foodId, image.mealId, image.createdAt);
+    return this.getImage(image.id) as ImageRecord;
   }
 
   exportRecords(): Record<string, unknown> {
@@ -692,13 +740,20 @@ export async function clearOwnedFiles(dataDir: string): Promise<void> {
   await fsp.mkdir(path.join(dataDir, "exports"), { recursive: true });
 }
 
+async function removeDeleteBackups(dataDir: string, directories: string[]): Promise<void> {
+  const names = await fsp.readdir(dataDir);
+  const prefixes = directories.map((directory) => `${path.basename(directory)}.delete-`);
+  await Promise.all(names.filter((name) => prefixes.some((prefix) => name.startsWith(prefix))).map((name) => fsp.rm(path.join(dataDir, name), { recursive: true, force: true })));
+}
+
 export async function deleteAllOwnedData(dataDir: string, store: Store): Promise<void> {
   const token = randomUUID();
   const directories = [path.join(dataDir, "images"), path.join(dataDir, "exports")];
   const staged: Array<{ original: string; backup: string }> = [];
   let recordsDeleted = false;
+  await fsp.mkdir(dataDir, { recursive: true });
+  await removeDeleteBackups(dataDir, directories);
   try {
-    await fsp.mkdir(dataDir, { recursive: true });
     for (const original of directories) {
       const backup = `${original}.delete-${token}`;
       if (fs.existsSync(original)) {
@@ -709,7 +764,11 @@ export async function deleteAllOwnedData(dataDir: string, store: Store): Promise
     }
     store.deleteAllRecords();
     recordsDeleted = true;
-    await Promise.all(staged.map(({ backup }) => fsp.rm(backup, { recursive: true, force: true })));
+    try {
+      await Promise.all(staged.map(({ backup }) => fsp.rm(backup, { recursive: true, force: true })));
+    } catch {
+      throw new Error("Records were deleted, but filesystem cleanup failed. Retry delete-all.");
+    }
   } catch (error) {
     if (!recordsDeleted) {
       await Promise.all(directories.map((original) => fsp.rm(original, { recursive: true, force: true })));

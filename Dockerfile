@@ -21,4 +21,4 @@ COPY --from=build /app/drizzle ./drizzle
 COPY --from=build /app/public ./public
 VOLUME ["/data"]
 EXPOSE 3000
-CMD ["sh", "-c", "node dist/src/cli.js migrate && node dist/src/server.js"]
+CMD ["node", "dist/src/server.js"]

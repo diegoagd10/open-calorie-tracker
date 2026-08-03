@@ -29,6 +29,11 @@ test("estimate supports only the explicit adult profile and uses separate refere
   assert.equal(estimate.metadata.referenceProfileVersion, "adult-general-v1");
 });
 
+test("Lose and Gain plans reject trajectories that contradict the selected intention", () => {
+  assert.throws(() => estimateNutrition({ age: 30, sex: "female", heightCm: 165, weightKg: 65, activity: "Inactive", plan: "Lose", targetWeightKg: 70, targetDate: "2026-07-01", today: "2026-01-01" }), /Lose plan target weight/);
+  assert.throws(() => estimateNutrition({ age: 30, sex: "female", heightCm: 165, weightKg: 65, activity: "Inactive", plan: "Gain", targetWeightKg: 60, targetDate: "2026-07-01", today: "2026-01-01" }), /Gain plan target weight/);
+});
+
 test("Lose and Gain proposals use a dynamic model and stay inactive until confirmed", async () => {
   const maintain = estimateNutrition({ age: 30, sex: "male", heightCm: 180, weightKg: 90, activity: "Active", plan: "Maintain", today: "2026-01-01" });
   const lose = estimateNutrition({ age: 30, sex: "male", heightCm: 180, weightKg: 90, activity: "Active", plan: "Lose", targetWeightKg: 80, targetDate: "2026-07-01", today: "2026-01-01" });

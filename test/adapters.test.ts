@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { OpenFoodFactsAdapter, normalizeBarcode, normalizeOpenFoodFactsProduct } from "../src/adapters/open-food-facts.js";
-import { ProviderFailure } from "../src/adapters/errors.js";
+import { asProviderFailure, ProviderFailure } from "../src/adapters/errors.js";
 import { normalizeLabelCandidate, validateImageInput } from "../src/adapters/label.js";
 import { sanitizeLogFields } from "../src/infra/logger.js";
 import { TermFoodSearchAdapter, normalizeTermCandidate } from "../src/adapters/term-search.js";
@@ -66,4 +66,9 @@ test("term search adapter validates queries and normalizes provider records", as
   const adapter = new TermFoodSearchAdapter({ endpoint: "https://provider.test/search", fetchImpl: async () => new Response(JSON.stringify({ results: [{ name: "Lentils", quantityBasis: "cup", calories: 230 }] }), { status: 200 }) });
   assert.equal((await adapter.search("lentils"))[0].name, "Lentils");
   await assert.rejects(adapter.search("x"), (error: unknown) => error instanceof ProviderFailure && error.kind === "invalid");
+});
+
+test("only network-shaped TypeErrors are retryable provider failures", () => {
+  assert.equal(asProviderFailure(new TypeError("invalid provider payload"), "fake").kind, "unexpected");
+  assert.equal(asProviderFailure(new TypeError("fetch failed"), "fake").kind, "temporarily_unavailable");
 });

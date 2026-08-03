@@ -33,7 +33,9 @@ export function classifyHttpFailure(status: number, provider: string): ProviderF
 
 export function asProviderFailure(error: unknown, provider: string): ProviderFailure {
   if (error instanceof ProviderFailure) return error;
-  if (error instanceof TypeError) return new ProviderFailure("temporarily_unavailable", `${provider} could not be reached.`, { retryable: true, manualFallback: true });
+  if (error instanceof TypeError && /fetch|network|socket|connect|timeout|timed out|aborted/i.test(error.message)) {
+    return new ProviderFailure("temporarily_unavailable", `${provider} could not be reached.`, { retryable: true, manualFallback: true });
+  }
   if (error && typeof error === "object" && "status" in error && (Number(error.status) === 429 || Number(error.status) >= 500)) {
     return new ProviderFailure("temporarily_unavailable", `${provider} is temporarily unavailable.`, { retryable: true, manualFallback: true });
   }

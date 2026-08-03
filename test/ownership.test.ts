@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { applyMigrations } from "../src/db/migrations.js";
 import { closeDatabase, openDatabase, type DatabaseConnection } from "../src/db/client.js";
-import { Store, clearOwnedFiles, writeExport } from "../src/persistence/store.js";
+import { Store, deleteAllOwnedData, writeExport } from "../src/persistence/store.js";
 import { ImageStorage } from "../src/storage/images.js";
 
 const connections: DatabaseConnection[] = [];
@@ -36,9 +36,10 @@ test("exports include structured records and retained images without rewriting s
   assert.equal((await fs.readFile(path.join(exportDirectory, "images", image.managedName))).toString(), "image");
 
   store.deleteFood(food.id);
-  assert.equal(store.getEntry(entry.id)?.snapshot.calories, 300);
-  store.deleteAllRecords();
-  await clearOwnedFiles(directory);
-  assert.equal(store.getEntry(entry.id), null);
+  assert.equal(store.getFoodEntry(entry.id)?.snapshot.nutrients.calories, 300);
+  await fs.mkdir(path.join(directory, "images.delete-stale"), { recursive: true });
+  await deleteAllOwnedData(directory, store);
+  assert.equal(store.getFoodEntry(entry.id), null);
   assert.deepEqual(await fs.readdir(path.join(directory, "exports")), []);
+  await assert.rejects(fs.access(path.join(directory, "images.delete-stale")));
 });

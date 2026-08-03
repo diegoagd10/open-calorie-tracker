@@ -9,7 +9,7 @@ import {
   type NutrientReferences,
   type NutrientValues,
 } from "../domain/nutrition.js";
-import { nutrientsForDisplay, type EntryRecord, type FoodRecord, type MealRecord, type TargetRecord } from "../persistence/store.js";
+import { nutrientsForDisplay, type FoodEntryRecord, type FoodRecord, type MealRecord, type TargetRecord } from "../persistence/store.js";
 
 export function escapeHtml(value: unknown): string {
   return String(value ?? "")
@@ -56,26 +56,38 @@ function hasProgressReference(reference: NutrientSummary["reference"]): boolean 
   return Boolean(reference && reference.enabled !== false && ["target", "minimum", "range", "upper"].includes(reference.type));
 }
 
+function renderReviewNutritionList(nutrients: Partial<NutrientValues>, basisQuantity = 1): string {
+  const scale = Number.isFinite(basisQuantity) && basisQuantity > 0 ? basisQuantity : 1;
+  return `<dl class="nutrition-list" data-review-nutrition>
+    ${NUTRIENT_DEFINITIONS.map((definition) => {
+      const value = nutrients[definition.key];
+      const known = value !== null && value !== undefined;
+      const displayValue = known ? Number(value) / scale : value;
+      return `<div class="nutrition-item${known ? "" : " nutrition-item--unknown"}"><dt>${escapeHtml(definition.label)}</dt><dd data-review-value="${escapeHtml(definition.key)}" data-base-value="${known ? displayValue : ""}" data-review-kind="${escapeHtml(definition.kind)}">${escapeHtml(formatNutritionValue(definition.key, displayValue))} <span>${escapeHtml(definition.unit)}</span></dd>${known ? "" : "<small>Unknown</small>"}</div>`;
+    }).join("")}
+  </dl>`;
+}
+
 export function renderFoodCard(food: FoodRecord, href = `/review?foodId=${food.id}`): string {
   return `<article class="food-card">
     <div><p class="eyebrow">${escapeHtml(food.source)}</p><h3>${escapeHtml(food.name)}</h3>${food.brand ? `<p class="muted">${escapeHtml(food.brand)}</p>` : ""}<p class="muted">${escapeHtml(food.quantityBasis)} / ${escapeHtml(formatNutritionValue("calories", food.nutrients.calories))} kcal</p></div>
-    <a class="button button--quiet" href="${escapeHtml(href)}">Review</a>
+    <div class="inline-form"><a class="button button--quiet" href="${escapeHtml(href)}">Review</a><form method="post" action="/foods/${food.id}/${food.favorite ? "unfavorite" : "favorite"}"><button class="button button--quiet" type="submit">${food.favorite ? "Remove Favorite" : "Save Favorite"}</button></form></div>
   </article>`;
 }
 
 export function renderMealCard(meal: MealRecord): string {
   return `<article class="food-card">
     <div><p class="eyebrow">${meal.favorite ? "Favorite meal" : "My meal"}</p><h3>${escapeHtml(meal.name)}</h3><p class="muted">${meal.ingredients.length} ingredient${meal.ingredients.length === 1 ? "" : "s"} / ${escapeHtml(formatNutritionValue("calories", meal.nutrients.calories))} kcal per meal unit</p></div>
-    <a class="button button--quiet" href="/review?mealId=${meal.id}">Review</a>
+    <div class="inline-form"><a class="button button--quiet" href="/review?mealId=${meal.id}">Review</a><form method="post" action="/meals/${meal.id}/${meal.favorite ? "unfavorite" : "favorite"}"><button class="button button--quiet" type="submit">${meal.favorite ? "Remove Favorite" : "Save Favorite"}</button></form></div>
   </article>`;
 }
 
-export function renderEntry(entry: EntryRecord): string {
-  const nutrition = entry.snapshot;
+export function renderFoodEntry(entry: FoodEntryRecord): string {
+  const nutrition = entry.snapshot.nutrients;
   return `<article class="entry-card">
-    <div class="entry-main"><div class="entry-title"><h3>${escapeHtml(entry.title)}</h3>${entry.mealTag ? `<span class="tag">${escapeHtml(entry.mealTag)}</span>` : ""}</div><p class="muted">${escapeHtml(entry.localTime || "")} / ${escapeHtml(entry.quantity.display)} ${escapeHtml(entry.quantity.unit)}</p></div>
+    <div class="entry-main"><div class="entry-title"><h3>${escapeHtml(entry.title)}</h3>${entry.mealTag ? `<span class="tag">${escapeHtml(entry.mealTag)}</span>` : ""}</div><p class="muted">${escapeHtml(entry.localTime || "")} / ${escapeHtml(entry.snapshot.quantity.display)} ${escapeHtml(entry.snapshot.quantity.unit)}</p></div>
     <dl class="entry-nutrients"><div><dt>Calories</dt><dd>${escapeHtml(formatNutritionValue("calories", nutrition.calories))}</dd></div><div><dt>Protein</dt><dd>${escapeHtml(formatNutritionValue("protein", nutrition.protein))} g</dd></div><div><dt>Carbs</dt><dd>${escapeHtml(formatNutritionValue("carbohydrates", nutrition.carbohydrates))} g</dd></div><div><dt>Fat</dt><dd>${escapeHtml(formatNutritionValue("fat", nutrition.fat))} g</dd></div></dl>
-    <details class="entry-actions"><summary aria-label="Actions for ${escapeHtml(entry.title)}">More</summary><div class="entry-menu"><a href="/entries/${entry.id}/edit">Edit Entry</a><form method="post" action="/entries/${entry.id}/delete" onsubmit="return confirm('Delete this entry?')"><button type="submit" class="link-button">Delete Entry</button></form><form method="post" action="/entries/${entry.id}/favorite"><button type="submit" class="link-button">Save as Favorite</button></form></div></details>
+     <details class="entry-actions"><summary aria-label="Actions for ${escapeHtml(entry.title)}">More</summary><div class="entry-menu"><a href="/entries/${entry.id}/edit">Edit Food entry</a><form method="post" action="/entries/${entry.id}/delete" onsubmit="return confirm('Delete this Food entry?')"><button type="submit" class="link-button">Delete Food entry</button></form><form method="post" action="/entries/${entry.id}/favorite"><button type="submit" class="link-button">Save as Favorite</button></form></div></details>
   </article>`;
 }
 
@@ -92,13 +104,14 @@ export function renderReviewSurface(input: { title: string; profile: ReviewProfi
   return `<section class="review-panel" aria-labelledby="review-heading">
     <p class="eyebrow">${escapeHtml(input.source)}</p><h1 id="review-heading">${escapeHtml(input.title)}</h1>
     ${input.profile.brand ? `<p class="lead">${escapeHtml(input.profile.brand)}</p>` : ""}
+    ${input.profile.description ? `<p class="muted">${escapeHtml(input.profile.description)}</p>` : ""}
     <p class="muted">Declared basis: ${escapeHtml(basis)}</p>
     ${input.error ? `<p class="notice notice--error" role="alert">${escapeHtml(input.error)}</p>` : ""}
     ${(input.warnings ?? []).map((warning) => `<p class="notice notice--warning" role="status">${escapeHtml(warning)}</p>`).join("")}
     <details class="form-panel" style="margin-top:20px"><summary>Edit candidate values</summary><div class="stack-form"><label>Name <input form="review-add" name="name" value="${escapeHtml(input.profile.name)}" required></label><label>Declared quantity basis <input form="review-add" name="quantityBasis" value="${escapeHtml(input.profile.quantityBasis)}" required></label><div class="form-grid">${nutrientFields.replaceAll("<input ", "<input form=\"review-add\" ")}</div></div></details>
-    ${renderNutritionList(input.profile.nutrients)}
+    ${renderReviewNutritionList(input.profile.nutrients, input.profile.basisQuantity)}
     <form id="review-add" method="post" action="${escapeHtml(actionTarget)}" class="stack-form">
-      <label>Quantity <input name="quantity" value="1" inputmode="decimal" required></label>
+      <label>Quantity <input name="quantity" value="1" inputmode="decimal" data-review-quantity required></label>
       <label>Local date <input name="date" type="date" value="${escapeHtml(reviewDate)}" required></label>
       <label>Local time <input name="time" type="time" value="${escapeHtml(reviewTime)}" required></label>
       <label>Meal tag <select name="mealTag"><option value="">No tag</option><option>Breakfast</option><option>Lunch</option><option>Dinner</option><option>Snack</option></select></label>
@@ -120,9 +133,9 @@ function localTime(timezone = "UTC"): string {
   return `${values.hour}:${values.minute}`;
 }
 
-export function renderPage(input: { title: string; content: string; active?: "log" | "database" | "saved" | "targets" | "scan"; notice?: string }): string {
+export function renderPage(input: { title: string; content: string; active?: "log" | "database" | "saved" | "targets" | "scan"; notice?: string; seedTimezone?: boolean }): string {
   const active = input.active || "log";
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${escapeHtml(input.title)} / Calories</title><link rel="stylesheet" href="/styles.css"><script src="https://unpkg.com/htmx.org@2.0.4"></script></head><body>
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${escapeHtml(input.title)} / Calories</title><link rel="stylesheet" href="/styles.css"><script src="https://unpkg.com/htmx.org@2.0.4"></script><script src="/review.js" defer></script>${input.seedTimezone ? `<script src="/timezone-seed.js" defer></script>` : ""}</head><body>
     <div class="app-shell"><header class="topbar"><a class="brand" href="/log"><span class="brand-mark" aria-hidden="true">C</span><span>Calories</span></a><span class="instance-status">Local instance</span></header>
     <nav class="primary-nav" aria-label="Primary navigation"><a class="${active === "log" ? "is-active" : ""}" href="/log">Log</a><a class="${active === "database" ? "is-active" : ""}" href="/database">Food Database</a><a class="${active === "saved" ? "is-active" : ""}" href="/saved-foods">Saved Foods</a></nav>
     <main class="content">${input.notice ? `<p class="notice notice--success" role="status">${escapeHtml(input.notice)}</p>` : ""}${input.content}</main>

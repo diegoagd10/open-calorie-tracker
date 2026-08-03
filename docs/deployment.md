@@ -15,11 +15,13 @@ Provider credentials and configuration belong in the deployment environment, not
 ## Start
 
 ```bash
-docker compose up -d --build
+docker compose build
+docker compose run --rm calories node dist/src/cli.js migrate
+docker compose up -d
 curl http://localhost:3000/health
 ```
 
-The image applies committed migrations explicitly before starting the server. Runtime startup does not silently mutate the schema. Provider outages are handled as application errors and do not restart the container.
+Migrations are an explicit operator step before the server starts. Runtime startup never mutates the schema. Provider outages are handled as application errors and do not restart the container.
 
 ## Backup and restore
 

@@ -39,17 +39,18 @@ test("manual Foods and Food entries retain nullable nutrients and immutable snap
     mealTag: "Snack",
   });
 
-  assert.equal(entry.quantity.display, "1/2");
-  assert.equal(entry.snapshot.calories, 92);
-  assert.equal(entry.snapshot.sodium, null);
-  assert.equal(store.listEntriesByDate("2026-01-01", "America/New_York").length, 1);
+  assert.equal(entry.snapshot.quantity.display, "1/2");
+  assert.equal(entry.snapshot.nutrients.calories, 92);
+  assert.equal(entry.snapshot.nutrients.sodium, null);
+  assert.equal(store.listFoodEntriesByDate("2026-01-01", "America/New_York").length, 1);
 
   store.updateFood(food.id, { ...food, name: "Changed recipe", quantityBasis: "serving", nutrients: { ...food.nutrients, calories: 900 } });
-  assert.equal(store.getEntry(entry.id)?.snapshot.calories, 92);
+  assert.equal(store.getFoodEntry(entry.id)?.snapshot.nutrients.calories, 92);
 
-  const edited = store.updateEntry(entry.id, { quantity: "1 1/2", mealTag: "Dinner", loggedAtUtc: "2026-01-02T01:00:00.000Z" }, "America/New_York");
-  assert.equal(edited.snapshot.calories, 276);
+  const edited = store.updateFoodEntry(entry.id, { quantity: "1 1/2", mealTag: "Dinner", loggedAtUtc: "2026-01-02T01:00:00.000Z" }, "America/New_York");
+  assert.equal(edited.snapshot.nutrients.calories, 276);
   assert.equal(edited.mealTag, "Dinner");
+  assert.equal(store.updateFoodEntry(entry.id, { mealTag: null }, "America/New_York").mealTag, null);
   assert.equal(store.getFood(food.id)?.name, "Changed recipe");
 });
 
@@ -57,18 +58,18 @@ test("deleting and restoring a Food entry preserves its snapshot", async () => {
   const store = await createStore();
   const food = store.createFood({ name: "Apple", quantityBasis: "item", nutrients: { calories: 80 } });
   const entry = store.addFoodEntry({ foodId: food.id, quantity: 1, loggedAtUtc: "2026-01-01T12:00:00.000Z" });
-  const deleted = store.deleteEntry(entry.id);
-  assert.equal(deleted?.snapshot.calories, 80);
-  assert.equal(store.getEntry(entry.id), null);
-  store.restoreEntry(deleted!);
-  assert.equal(store.getEntry(entry.id)?.snapshot.calories, 80);
+  const deleted = store.deleteFoodEntry(entry.id);
+  assert.equal(deleted?.snapshot.nutrients.calories, 80);
+  assert.equal(store.getFoodEntry(entry.id), null);
+  store.restoreFoodEntry(deleted!);
+  assert.equal(store.getFoodEntry(entry.id)?.snapshot.nutrients.calories, 80);
 });
 
 test("saving a logged Food entry as a Favorite copies its exact historical snapshot", async () => {
   const store = await createStore();
   const food = store.createFood({ name: "Granola", quantityBasis: "serving", nutrients: { calories: 200, protein: 5 } });
   const entry = store.addFoodEntry({ foodId: food.id, quantity: "1/2", loggedAtUtc: "2026-01-01T12:00:00.000Z" });
-  const favorite = store.saveEntryAsFavorite(entry.id);
+  const favorite = store.saveFoodEntryAsFavorite(entry.id);
   assert.equal(favorite.nutrients.calories, 100);
   assert.equal(favorite.quantityBasis, "1/2 serving");
   assert.equal(favorite.favorite, true);
@@ -86,7 +87,7 @@ test("Meals sum confirmed Food ingredients and log a scaled unit snapshot", asyn
   assert.equal(assembled.ingredients[0].quantity.display, "1/2");
 
   const entry = store.addMealEntry({ mealId: meal.id, quantity: "1 1/2", loggedAtUtc: "2026-01-01T12:00:00.000Z" });
-  assert.equal(entry.snapshot.calories, 240);
+  assert.equal(entry.snapshot.nutrients.calories, 240);
 
   store.replaceMealIngredient(assembled.ingredients[0].id, beans.id, "1/2", "cup");
   assert.equal(store.getMeal(meal.id)?.nutrients.calories, 180);
@@ -96,9 +97,9 @@ test("declared basis quantities scale raw-unit Foods correctly", async () => {
   const store = await createStore();
   const flour = store.createFood({ name: "Flour", quantityBasis: "g", basisQuantity: 100, nutrients: { calories: 364 } });
   const entry = store.addFoodEntry({ foodId: flour.id, quantity: 50, loggedAtUtc: "2026-01-01T12:00:00.000Z" });
-  assert.equal(entry.snapshot.calories, 182);
-  const edited = store.updateEntry(entry.id, { quantity: 25 }, "UTC");
-  assert.equal(edited.snapshot.calories, 91);
+  assert.equal(entry.snapshot.nutrients.calories, 182);
+  const edited = store.updateFoodEntry(entry.id, { quantity: 25 }, "UTC");
+  assert.equal(edited.snapshot.nutrients.calories, 91);
 });
 
 test("local date conversion uses the configured timezone", () => {

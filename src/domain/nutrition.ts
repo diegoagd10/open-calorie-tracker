@@ -35,6 +35,14 @@ export interface NutritionProfile {
   sodium?: number | null;
 }
 
+export interface NutritionalSnapshot {
+  nutrients: NutrientValues;
+  baseNutrients: NutrientValues;
+  quantity: Quantity;
+  quantityBasis: string;
+  basisQuantity: number;
+}
+
 export interface FoodProfile {
   name: string;
   brand?: string | null;
@@ -329,6 +337,8 @@ export function estimateNutrition(input: NutritionEstimateInput): NutritionEstim
 
   if (input.plan !== "Maintain") {
     if (!input.targetWeightKg || !input.targetDate) throw new Error("Lose and Gain plans require a target weight and target date.");
+    if (input.plan === "Lose" && input.targetWeightKg >= input.weightKg) throw new Error("Lose plan target weight must be below the current weight.");
+    if (input.plan === "Gain" && input.targetWeightKg <= input.weightKg) throw new Error("Gain plan target weight must be above the current weight.");
     const days = differenceInDays(today, input.targetDate);
     targetCalories = dynamicWeightChangeCalories({
       maintenanceCalories,

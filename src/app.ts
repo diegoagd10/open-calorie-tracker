@@ -12,9 +12,9 @@ import { OpenAiLabelAdapter, validateImageInput } from "./adapters/label.js";
 import { OpenAiFoodAdapter } from "./adapters/ai.js";
 import type { AiFoodAdapter, BarcodeAdapter, FoodCandidate, FoodImageAnalysis, FoodSearchAdapter, IngredientProposal, LabelCandidateAdapter } from "./adapters/types.js";
 import { ImageStorage } from "./storage/images.js";
-import { Store, deleteAllOwnedData, utcFromLocal, writeExport, type EntryRecord, type FoodRecord, type MealRecord } from "./persistence/store.js";
+import { Store, deleteAllOwnedData, utcFromLocal, writeExport, type FoodEntryRecord, type FoodRecord, type MealRecord } from "./persistence/store.js";
 import { logger as defaultLogger, type TechnicalLogger } from "./infra/logger.js";
-import { escapeHtml, renderEmptyState, renderEntry, renderFoodCard, renderMealCard, renderNutritionList, renderPage, renderReferenceTable, renderReviewSurface, renderSummary } from "./http/render.js";
+import { escapeHtml, renderEmptyState, renderFoodEntry, renderFoodCard, renderMealCard, renderNutritionList, renderPage, renderReferenceTable, renderReviewSurface, renderSummary } from "./http/render.js";
 
 const sourceDirectory = path.dirname(fileURLToPath(import.meta.url));
 const publicDirectory = path.resolve(sourceDirectory, "../public");
@@ -152,22 +152,23 @@ function profileFromMeal(meal: MealRecord): FoodProfile {
   return { name: meal.name, description: meal.description, quantityBasis: "meal unit", basisQuantity: 1, nutrients: { ...meal.nutrients, calories: meal.nutrients.calories }, source: "Saved Meal" };
 }
 
-function profileFromEntry(entry: EntryRecord): FoodProfile {
-  if (entry.baseNutrition.calories === null) throw new Error("Entry nutrition is missing required calories.");
+function profileFromEntry(entry: FoodEntryRecord): FoodProfile {
+  if (entry.snapshot.baseNutrients.calories === null) throw new Error("Food entry nutrition is missing required calories.");
   return {
     name: entry.title,
-    quantityBasis: entry.quantityBasis,
-    basisQuantity: entry.baseQuantity,
-    nutrients: { ...entry.baseNutrition, calories: entry.baseNutrition.calories },
+    quantityBasis: entry.snapshot.quantityBasis,
+    basisQuantity: entry.snapshot.basisQuantity,
+    nutrients: { ...entry.snapshot.baseNutrients, calories: entry.snapshot.baseNutrients.calories },
     source: "Historical snapshot",
   };
 }
 
-function renderErrorPage(title: string, message: string, active: "scan" | "database" | "log" | "saved" = "scan", retry?: string): string {
+function renderErrorPage(title: string, message: string, active: "scan" | "database" | "log" | "saved" = "scan", retry?: string, retryFields: Record<string, string> = {}, retryMethod: "get" | "post" = "post"): string {
+  const hiddenRetryFields = Object.entries(retryFields).map(([key, value]) => `<input type="hidden" name="${escapeHtml(key)}" value="${escapeHtml(value)}">`).join("");
   return renderPage({
     title,
     active,
-    content: `<section class="empty-state"><p class="eyebrow">Needs attention</p><h1>${escapeHtml(title)}</h1><p>${escapeHtml(message)}</p>${retry ? `<form method="post" action="${escapeHtml(retry)}"><button class="button" type="submit">Retry</button></form>` : ""}<p><a class="button button--secondary" href="/saved-foods">Create a manual Food</a></p></section>`,
+    content: `<section class="empty-state"><p class="eyebrow">Needs attention</p><h1>${escapeHtml(title)}</h1><p>${escapeHtml(message)}</p>${retry ? `<form method="${retryMethod}" action="${escapeHtml(retry)}">${hiddenRetryFields}<button class="button" type="submit">Retry</button></form>` : ""}<p><a class="button button--secondary" href="/saved-foods">Create a manual Food</a></p></section>`,
   });
 }
 
@@ -206,19 +207,19 @@ function createManualFoodForm(food?: FoodRecord): string {
 
 function renderLogPage(store: Store, config: AppConfig, date: string, notice = "", undoId?: string): string {
   const timezone = store.getTimezone(config.timezone);
-  const entries = store.listEntriesByDate(date, timezone);
+  const entries = store.listFoodEntriesByDate(date, timezone);
   const target = store.getActiveTarget();
   const references: NutrientReferences = { ...(target?.references ?? {}) };
   if (target?.calories !== null && target?.calories !== undefined) references.calories = { type: "target", value: target.calories, label: "confirmed calorie target" };
-  const summary = summarizeNutrition(entries.map((entry) => entry.snapshot), references);
+  const summary = summarizeNutrition(entries.map((entry) => entry.snapshot.nutrients), references);
   const noticeMarkup = notice ? `<p class="notice notice--success" role="status">${escapeHtml(notice)}${undoId ? ` <form style="display:inline" method="post" action="/entries/${encodeURIComponent(undoId)}/undo"><button class="link-button" type="submit">Undo</button></form>` : ""}</p>` : "";
   const content = `${noticeMarkup}<section class="page-heading"><div><p class="eyebrow">Daily log</p><h1>${date === currentLocalDate(timezone) ? "Today" : escapeHtml(date)}</h1><p>Stored timestamps are converted through your configured timezone: <strong>${escapeHtml(timezone)}</strong>.</p></div><a class="button button--secondary" href="/targets">Daily Targets</a></section>
     <div class="date-controls"><a class="button button--quiet" href="/log?date=${escapeHtml(shiftDate(date, -1))}">Previous day</a><h2>${escapeHtml(date)}</h2><form method="get" action="/log"><input type="date" name="date" value="${escapeHtml(date)}" aria-label="Choose date"><button class="button button--quiet" type="submit">Jump</button>${date !== currentLocalDate(timezone) ? `<a class="button button--quiet" href="/log">Today</a>` : ""}</form><a class="button button--quiet" href="/log?date=${escapeHtml(shiftDate(date, 1))}">Next day</a></div>
     <details class="source-menu"><summary>Add Food</summary><div class="source-options"><a href="/database">Food Database</a><a href="/scan">Scan Food</a><a href="/saved-foods">Saved Foods</a></div></details>
     ${renderSummary(summary, target)}
-    <section class="log-feed" aria-labelledby="feed-heading"><div class="feed-heading"><h2 id="feed-heading">Food entries</h2><span class="muted">${entries.length} entr${entries.length === 1 ? "y" : "ies"} / newest first</span></div>${entries.length ? entries.map(renderEntry).join("") : renderEmptyState("Start with a food entry", "Your daily log is empty. Choose a capture path above; nothing is saved until you confirm it.", "/saved-foods", "Open Saved Foods")}</section>
+    <section class="log-feed" aria-labelledby="feed-heading"><div class="feed-heading"><h2 id="feed-heading">Food entries</h2><span class="muted">${entries.length} entr${entries.length === 1 ? "y" : "ies"} / newest first</span></div>${entries.length ? entries.map(renderFoodEntry).join("") : renderEmptyState("Start with a food entry", "Your daily log is empty. Choose a capture path above; nothing is saved until you confirm it.", "/saved-foods", "Open Saved Foods")}</section>
     <p class="muted" style="margin-top:24px;font-size:.8rem"><a href="/settings/data">Your data and images</a> / <a href="/settings">Timezone settings</a></p>`;
-  return renderPage({ title: `${date} Daily log`, active: "log", content });
+  return renderPage({ title: `${date} Daily log`, active: "log", content, seedTimezone: store.getUser()?.timezoneSource === "bootstrap" });
 }
 
 function renderDatabasePage(store: Store, config: AppConfig, options: { query?: string; filter?: string; candidates?: FoodCandidate[]; error?: string } = {}): string {
@@ -268,12 +269,12 @@ function renderMealEditor(store: Store, meal: MealRecord, error = ""): string {
   return renderPage({ title: meal.name, active: "saved", content });
 }
 
-function renderEntryEditor(entry: EntryRecord, timezone: string): string {
+function renderFoodEntryEditor(entry: FoodEntryRecord, timezone: string): string {
   const date = localDateFor(entry.loggedAtUtc, timezone);
   const time = new Intl.DateTimeFormat("en-GB", { timeZone: timezone, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date(entry.loggedAtUtc));
   const profile = profileFromEntry(entry);
   const nutrientFields = ["calories", "protein", "carbohydrates", "fat", "fiber", "addedSugar", "sugar", "saturatedFat", "sodium"].map((key) => `<label>${escapeHtml(key)} <input name="${key}" value="${escapeHtml((profile.nutrients as unknown as Record<string, unknown>)[key])}" inputmode="decimal"></label>`).join("");
-  return renderPage({ title: `Edit ${entry.title}`, active: "log", content: `<section class="form-panel"><p class="eyebrow">Historical snapshot</p><h1>Edit Entry</h1><p class="muted">Change this entry only. The reusable Food and other entries remain unchanged.</p>${renderNutritionList(entry.snapshot)}<form method="post" action="/entries/${entry.id}" class="stack-form"><label>Date <input name="date" type="date" value="${date}" required></label><label>Time <input name="time" type="time" value="${time}" required></label><label>Quantity <input name="quantity" value="${escapeHtml(entry.quantity.display)}" required></label><label>Meal tag <select name="mealTag"><option value="">No tag</option>${["Breakfast", "Lunch", "Dinner", "Snack"].map((tag) => `<option ${entry.mealTag === tag ? "selected" : ""}>${tag}</option>`).join("")}</select><details class="form-panel"><summary>Edit Food details for this entry</summary><div class="stack-form"><label>Food name <input name="name" value="${escapeHtml(profile.name)}"></label><label>Declared quantity basis <input name="quantityBasis" value="${escapeHtml(profile.quantityBasis)}"></label><div class="form-grid">${nutrientFields}</div></div></details><button class="button" type="submit">Save entry</button></form></section>` });
+  return renderPage({ title: `Edit ${entry.title}`, active: "log", content: `<section class="form-panel"><p class="eyebrow">Historical snapshot</p><h1>Edit Food entry</h1><p class="muted">Change this entry only. The reusable Food and other entries remain unchanged.</p>${renderNutritionList(entry.snapshot.nutrients)}<form method="post" action="/entries/${entry.id}" class="stack-form"><label>Date <input name="date" type="date" value="${date}" required></label><label>Time <input name="time" type="time" value="${time}" required></label><label>Quantity <input name="quantity" value="${escapeHtml(entry.snapshot.quantity.display)}" required></label><label>Meal tag <select name="mealTag"><option value="">No tag</option>${["Breakfast", "Lunch", "Dinner", "Snack"].map((tag) => `<option ${entry.mealTag === tag ? "selected" : ""}>${tag}</option>`).join("")}</select><details class="form-panel"><summary>Edit Food details for this entry</summary><div class="stack-form"><label>Food name <input name="name" value="${escapeHtml(profile.name)}"></label><label>Declared quantity basis <input name="quantityBasis" value="${escapeHtml(profile.quantityBasis)}"></label><div class="form-grid">${nutrientFields}</div></div></details><button class="button" type="submit">Save Food entry</button></form></section>` });
 }
 
 function renderDataPage(store: Store, notice = ""): string {
@@ -313,7 +314,7 @@ export function createApplication(options: ApplicationOptions = {}): Application
   const analyses = new Map<string, { analysis: FoodImageAnalysis; buffer?: Buffer; mimeType?: string; originalName?: string }>();
   const aiProposals = new Map<string, { analysisToken: string; index?: number; ingredients: IngredientProposal[]; message: string }>();
   const proposals = new Map<string, ReturnType<typeof estimateNutrition>>();
-  const undoEntries = new Map<number, EntryRecord>();
+  const undoFoodEntries = new Map<number, FoodEntryRecord>();
   const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: config.maxImageBytes } });
   const app = express();
   app.use(express.urlencoded({ extended: true }));
@@ -440,16 +441,20 @@ export function createApplication(options: ApplicationOptions = {}): Application
   app.post("/review/food/:id/add", (request, response) => addEntryResponse(request, response, { foodId: Number(request.params.id) }));
   app.post("/review/meal/:id/add", (request, response) => addEntryResponse(request, response, { mealId: Number(request.params.id) }));
   app.post("/review/candidate/:token/save", async (request, response) => {
+    let stored: Awaited<ReturnType<ImageStorage["save"]>> | undefined;
     try {
       const candidate = candidates.get(request.params.token);
       if (!candidate) return send(response, renderErrorPage("Candidate expired", "Run the lookup again.", "scan"), 404);
-      const food = store.createFood({ ...candidateProfileFromRequest(candidate, request.body as Record<string, unknown>), source: candidate.source });
       if (candidate.buffer && candidate.mimeType) {
-        const stored = await imageStorage.save({ buffer: candidate.buffer, mimeType: candidate.mimeType, originalName: candidate.originalName || "food-image" }, config.maxImageBytes);
-        store.addImageRecord({ ...stored, foodId: food.id, mealId: null });
+        stored = await imageStorage.save({ buffer: candidate.buffer, mimeType: candidate.mimeType, originalName: candidate.originalName || "food-image" }, config.maxImageBytes);
       }
+      const profile = { ...candidateProfileFromRequest(candidate, request.body as Record<string, unknown>), source: candidate.source };
+      const food = stored ? store.createFoodWithImage(profile, stored) : store.createFood(profile);
       return redirect(response, `/saved-foods?notice=${encodeURIComponent(`${food.name} saved to Saved Foods`)}`);
-    } catch (error) { return send(response, renderErrorPage("Candidate needs correction", error instanceof Error ? error.message : "Calories are required.", "database"), 400); }
+    } catch (error) {
+      if (stored) await imageStorage.delete(stored.managedName).catch(() => undefined);
+      return send(response, renderErrorPage("Candidate needs correction", error instanceof Error ? error.message : "Calories are required.", "database"), 400);
+    }
   });
   app.post("/review/food/:id/favorite", (request, response) => { store.favoriteFood(Number(request.params.id)); return redirect(response, "/saved-foods?notice=Food%20saved%20as%20a%20Favorite"); });
   app.post("/review/meal/:id/favorite", (request, response) => { store.favoriteMeal(Number(request.params.id)); return redirect(response, "/saved-foods?notice=Meal%20favorited"); });
@@ -463,22 +468,9 @@ export function createApplication(options: ApplicationOptions = {}): Application
     } catch (error) {
       const failure = error instanceof ProviderFailure ? error : new ProviderFailure("unexpected", "Barcode lookup failed.");
       logger.warn("barcode_lookup_failed", { operation: "barcode_lookup", provider: "configured", failure: failure.kind, retryable: failure.retryable });
-      return send(response, renderErrorPage(failure.kind === "not_found" ? "No product found" : "Barcode lookup failed", `${failure.message} ${failure.kind === "not_found" || failure.kind === "invalid" ? "Use manual Food entry or try another barcode." : "Your capture is safe; retry when the service is available."}`, "scan", failure.retryable ? "/scan/barcode" : undefined), failure.kind === "invalid" ? 400 : 200);
+      return send(response, renderErrorPage(failure.kind === "not_found" ? "No product found" : "Barcode lookup failed", `${failure.message} ${failure.kind === "not_found" || failure.kind === "invalid" ? "Use manual Food entry or try another barcode." : "Your capture is safe; retry when the service is available."}`, "scan", failure.retryable ? "/scan/barcode" : undefined, { barcode: text(request.body.barcode) }), failure.kind === "invalid" ? 400 : 200);
     }
   });
-  app.post("/lookup", async (request, response) => {
-    try {
-      const candidate = await barcodeAdapter.lookup(text(request.body.barcode));
-      return send(response, `<section class="result"><p class="eyebrow">${escapeHtml(candidate.source)}</p><h2>${escapeHtml(candidate.name)}</h2><p class="muted">per ${escapeHtml(candidate.quantityBasis)}</p>${renderNutritionList(candidate.nutrients)}<p class="notice notice--warning">Review this candidate before saving or logging.</p></section>`);
-    } catch (error) {
-      const failure = error instanceof ProviderFailure ? error : new ProviderFailure("unexpected", "Barcode lookup failed.");
-      return send(response, `<section class="notice notice--error" role="alert"><strong>${escapeHtml(failure.kind.replaceAll("_", " "))}</strong><p>${escapeHtml(failure.message)}</p></section>`, failure.kind === "invalid" ? 400 : 200);
-    }
-  });
-  app.get("/api/products/:barcode", async (request, response) => {
-    try { return response.json({ candidate: await barcodeAdapter.lookup(request.params.barcode) }); } catch (error) { const failure = error instanceof ProviderFailure ? error : new ProviderFailure("unexpected", "Barcode lookup failed."); return response.status(failure.kind === "not_found" ? 404 : failure.kind === "invalid" ? 400 : 503).json({ error: failure.message, kind: failure.kind, retryable: failure.retryable }); }
-  });
-
   app.post("/scan/label", upload.single("image"), async (request, response) => {
     try {
       if (!request.file) throw new ProviderFailure("invalid", "Choose a label image.", { retryable: false, manualFallback: true });
@@ -487,7 +479,7 @@ export function createApplication(options: ApplicationOptions = {}): Application
       const candidate = await labelAdapter.extract({ buffer: request.file.buffer, mimeType: request.file.mimetype, fileName: request.file.originalname });
       const token = candidateToken({ ...candidate, buffer: request.file.buffer, mimeType: request.file.mimetype, originalName: request.file.originalname });
       return send(response, renderPage({ title: "Food Label review", active: "scan", content: renderReviewSurface({ title: "Food Label review", profile: candidateReviewProfile(candidate), source: "Food Label candidate", warnings: candidate.warnings, timezone: store.getTimezone(config.timezone), token }) }));
-    } catch (error) { const failure = error instanceof ProviderFailure ? error : new ProviderFailure("unexpected", "Food Label extraction failed."); return send(response, renderErrorPage("Food Label needs review", `${failure.message} Manual Food entry remains available.`, "scan", failure.retryable ? "/scan" : undefined), failure.kind === "invalid" ? 400 : 200); }
+    } catch (error) { const failure = error instanceof ProviderFailure ? error : new ProviderFailure("unexpected", "Food Label extraction failed."); return send(response, renderErrorPage("Food Label needs review", `${failure.message} Manual Food entry remains available.`, "scan", failure.retryable ? "/scan" : undefined, {}, "get"), failure.kind === "invalid" ? 400 : 200); }
   });
 
   app.post("/scan/food", upload.single("image"), async (request, response) => {
@@ -503,7 +495,7 @@ export function createApplication(options: ApplicationOptions = {}): Application
       const token = cryptoToken();
       analyses.set(token, { analysis: { ...analysis, ingredients }, buffer: request.file.buffer, mimeType: request.file.mimetype, originalName: request.file.originalname });
       return send(response, renderAnalysis(token, { ...analysis, ingredients }));
-    } catch (error) { const failure = error instanceof ProviderFailure ? error : new ProviderFailure("unexpected", "Food image analysis failed."); return send(response, renderErrorPage("Food image needs attention", `${failure.message} No data was persisted.`, "scan", failure.retryable ? "/scan" : undefined), failure.kind === "invalid" ? 400 : 200); }
+    } catch (error) { const failure = error instanceof ProviderFailure ? error : new ProviderFailure("unexpected", "Food image analysis failed."); return send(response, renderErrorPage("Food image needs attention", `${failure.message} No data was persisted.`, "scan", failure.retryable ? "/scan" : undefined, {}, "get"), failure.kind === "invalid" ? 400 : 200); }
   });
   app.post("/scan/food/:token/ingredient/:index/delete", (request, response) => { const proposal = analyses.get(request.params.token); if (!proposal) return send(response, renderErrorPage("Proposal expired", "Run the image analysis again.", "scan"), 404); proposal.analysis.ingredients.splice(Number(request.params.index), 1); return send(response, renderAnalysis(request.params.token, proposal.analysis)); });
   app.post("/scan/food/:token/ingredient/:index/match", (request, response) => { const proposal = analyses.get(request.params.token); const index = Number(request.params.index); const ingredient = proposal?.analysis.ingredients[index]; const matchIndex = Number(request.body.matchIndex); if (!proposal || !ingredient || !ingredient.matches?.[matchIndex]) return send(response, renderErrorPage("Match not found", "Choose one of the available matches.", "scan"), 400); ingredient.matches = [ingredient.matches[matchIndex]]; return send(response, renderAnalysis(request.params.token, proposal.analysis)); });
@@ -514,21 +506,23 @@ export function createApplication(options: ApplicationOptions = {}): Application
   app.post("/scan/food/:token/confirm", async (request, response) => {
     const proposal = analyses.get(request.params.token);
     if (!proposal) return send(response, renderErrorPage("Proposal expired", "Run the image analysis again.", "scan"), 404);
+    let stored: Awaited<ReturnType<ImageStorage["save"]>> | undefined;
     try {
       if (!proposal.analysis.ingredients.length) throw new Error("Add at least one ingredient before confirmation.");
       const confirmed = proposal.analysis.ingredients.map((ingredient) => {
         if (!ingredient.matches || ingredient.matches.length !== 1) throw new Error(`${ingredient.name} needs one confirmed match or a manual Food with calories.`);
-        return { ingredient, food: store.createFood({ ...candidateProfile(ingredient.matches[0] as StoredCandidate), source: "image-reviewed" }) };
+        return { ingredient, food: { ...candidateProfile(ingredient.matches[0] as StoredCandidate), source: "image-reviewed" } };
       });
-      const meal = store.createMeal("Food image meal");
-      for (const item of confirmed) store.addMealIngredient(meal.id, item.food.id, item.ingredient.quantity, item.ingredient.unit);
       if (proposal.buffer && proposal.mimeType) {
-        const stored = await imageStorage.save({ buffer: proposal.buffer, mimeType: proposal.mimeType, originalName: proposal.originalName || "food-image" }, config.maxImageBytes);
-        store.addImageRecord({ ...stored, foodId: null, mealId: meal.id });
+        stored = await imageStorage.save({ buffer: proposal.buffer, mimeType: proposal.mimeType, originalName: proposal.originalName || "food-image" }, config.maxImageBytes);
       }
+      const meal = store.createMealFromConfirmedFoods(confirmed.map((item) => ({ food: item.food, quantity: item.ingredient.quantity, unit: item.ingredient.unit })), stored);
       analyses.delete(request.params.token);
       return redirect(response, `/meals/${meal.id}/edit`);
-    } catch (error) { return send(response, renderErrorPage("Ingredient confirmation required", error instanceof Error ? error.message : "Review each ingredient before confirmation.", "scan"), 400); }
+    } catch (error) {
+      if (stored) await imageStorage.delete(stored.managedName).catch(() => undefined);
+      return send(response, renderErrorPage("Ingredient confirmation required", error instanceof Error ? error.message : "Review each ingredient before confirmation.", "scan"), 400);
+    }
   });
   app.post("/scan/food/:token/ingredient/:index/edit-ai", async (request, response) => { const proposal = analyses.get(request.params.token); const index = Number(request.params.index); if (!proposal || !proposal.analysis.ingredients[index] || !aiAdapter) return send(response, renderErrorPage("Proposal unavailable", "The AI edit provider is not configured.", "scan"), 400); try { const edit = await aiAdapter.proposeEdit({ instruction: text(request.body.instruction), ingredients: [proposal.analysis.ingredients[index]] }); const token = cryptoToken(); aiProposals.set(token, { analysisToken: request.params.token, index, ingredients: edit.ingredients, message: edit.message }); return send(response, renderAiProposalPage(token, edit.message, edit.ingredients)); } catch (error) { return send(response, renderErrorPage("AI edit unavailable", error instanceof Error ? error.message : "Try again later.", "scan"), 503); } });
   app.post("/scan/food/:token/edit-ai", async (request, response) => { const proposal = analyses.get(request.params.token); if (!proposal || !aiAdapter) return send(response, renderErrorPage("Proposal unavailable", "The AI edit provider is not configured.", "scan"), 400); try { const edit = await aiAdapter.proposeEdit({ instruction: text(request.body.instruction), ingredients: proposal.analysis.ingredients }); const token = cryptoToken(); aiProposals.set(token, { analysisToken: request.params.token, ingredients: edit.ingredients, message: edit.message }); return send(response, renderAiProposalPage(token, edit.message, edit.ingredients)); } catch (error) { return send(response, renderErrorPage("AI edit unavailable", error instanceof Error ? error.message : "Try again later.", "scan"), 503); } });
@@ -544,6 +538,7 @@ export function createApplication(options: ApplicationOptions = {}): Application
   app.post("/meal-ingredients/:id/replace", (request, response) => { try { const meal = store.replaceMealIngredient(Number(request.params.id), numberRequired(request.body.foodId, "Food"), text(request.body.quantity, "1"), text(request.body.unit) || undefined); return redirect(response, `/meals/${meal.id}/edit`); } catch (error) { return send(response, renderErrorPage("Ingredient could not be replaced", error instanceof Error ? error.message : "Choose a confirmed Food and valid quantity.", "saved"), 400); } });
   app.post("/meal-ingredients/:id/delete", (request, response) => { store.removeMealIngredient(Number(request.params.id)); return redirect(response, "/saved-foods?notice=Ingredient%20removed"); });
   app.post("/meals/:id/favorite", (request, response) => { store.favoriteMeal(Number(request.params.id)); return redirect(response, `/meals/${request.params.id}/edit`); });
+  app.post("/meals/:id/unfavorite", (request, response) => { store.unfavoriteMeal(Number(request.params.id)); return redirect(response, "/saved-foods?notice=Favorite%20removed"); });
   app.post("/meals/:id/delete", (request, response) => { store.deleteMeal(Number(request.params.id)); return redirect(response, "/saved-foods?notice=Meal%20deleted"); });
   app.post("/meals/:id/image", upload.single("image"), async (request, response) => {
     const meal = store.getMeal(Number(request.params.id));
@@ -557,14 +552,22 @@ export function createApplication(options: ApplicationOptions = {}): Application
   app.post("/images/:id/delete", async (request, response) => {
     const image = store.getImage(Number(request.params.id));
     if (!image) return redirect(response, "/settings/data?notice=Image%20not%20found");
-    try { await imageStorage.delete(image.managedName); store.deleteImageRecord(image.id); return redirect(response, "/settings/data?notice=Image%20deleted"); } catch (error) { return redirect(response, `/settings/data?notice=${encodeURIComponent(error instanceof Error ? error.message : "Image deletion failed")}`); }
+    let deleted: ReturnType<Store["deleteImageRecord"]> = null;
+    try {
+      deleted = store.deleteImageRecord(image.id);
+      await imageStorage.delete(image.managedName);
+      return redirect(response, "/settings/data?notice=Image%20deleted");
+    } catch (error) {
+      if (deleted && !store.getImage(image.id)) store.restoreImageRecord(deleted);
+      return redirect(response, `/settings/data?notice=${encodeURIComponent(error instanceof Error ? error.message : "Image deletion failed")}`);
+    }
   });
 
-  app.get("/entries/:id/edit", (request, response) => { const entry = store.getEntry(Number(request.params.id)); if (!entry) return send(response, renderErrorPage("Entry not found", "That historical entry no longer exists.", "log"), 404); return send(response, renderEntryEditor(entry, store.getTimezone(config.timezone))); });
-  app.post("/entries/:id", (request, response) => { try { const timezone = store.getTimezone(config.timezone); const existing = store.getEntry(Number(request.params.id)); if (!existing) throw new Error("Food entry not found."); const loggedAtUtc = utcFromLocal(text(request.body.date), text(request.body.time), timezone); const profile = text(request.body.name).trim() ? parseProfileForm(request.body as Record<string, unknown>, profileFromEntry(existing)) : undefined; const updated = store.updateEntry(Number(request.params.id), { quantity: text(request.body.quantity), loggedAtUtc, mealTag: (text(request.body.mealTag) || null) as MealTag | null, profile }, timezone); return redirect(response, `/log?date=${encodeURIComponent(localDateFor(updated.loggedAtUtc, timezone))}&notice=Entry%20updated`); } catch (error) { return send(response, renderErrorPage("Entry could not be updated", error instanceof Error ? error.message : "Check the date, time, and quantity.", "log"), 400); } });
-  app.post("/entries/:id/delete", (request, response) => { const entry = store.deleteEntry(Number(request.params.id)); if (!entry) return redirect(response, "/log"); undoEntries.set(entry.id, entry); const timeout = setTimeout(() => undoEntries.delete(entry.id), 5 * 60 * 1000); timeout.unref(); const date = localDateFor(entry.loggedAtUtc, store.getTimezone(config.timezone)); return redirect(response, `/log?date=${encodeURIComponent(date)}&undo=${entry.id}&notice=${encodeURIComponent("Entry deleted. Undo is available briefly.")}`); });
-  app.post("/entries/:id/undo", (request, response) => { const entry = undoEntries.get(Number(request.params.id)); if (entry) { store.restoreEntry(entry); undoEntries.delete(entry.id); } return redirect(response, "/log?notice=Entry%20restored"); });
-  app.post("/entries/:id/favorite", (request, response) => { store.saveEntryAsFavorite(Number(request.params.id)); return redirect(response, "/saved-foods?notice=Snapshot%20saved%20as%20an%20independent%20Food"); });
+  app.get("/entries/:id/edit", (request, response) => { const foodEntry = store.getFoodEntry(Number(request.params.id)); if (!foodEntry) return send(response, renderErrorPage("Food entry not found", "That historical Food entry no longer exists.", "log"), 404); return send(response, renderFoodEntryEditor(foodEntry, store.getTimezone(config.timezone))); });
+  app.post("/entries/:id", (request, response) => { try { const timezone = store.getTimezone(config.timezone); const existing = store.getFoodEntry(Number(request.params.id)); if (!existing) throw new Error("Food entry not found."); const loggedAtUtc = utcFromLocal(text(request.body.date), text(request.body.time), timezone); const profile = text(request.body.name).trim() ? parseProfileForm(request.body as Record<string, unknown>, profileFromEntry(existing)) : undefined; const updated = store.updateFoodEntry(Number(request.params.id), { quantity: text(request.body.quantity), loggedAtUtc, mealTag: (text(request.body.mealTag) || null) as MealTag | null, profile }, timezone); return redirect(response, `/log?date=${encodeURIComponent(localDateFor(updated.loggedAtUtc, timezone))}&notice=Food%20entry%20updated`); } catch (error) { return send(response, renderErrorPage("Food entry could not be updated", error instanceof Error ? error.message : "Check the date, time, and quantity.", "log"), 400); } });
+  app.post("/entries/:id/delete", (request, response) => { const foodEntry = store.deleteFoodEntry(Number(request.params.id)); if (!foodEntry) return redirect(response, "/log"); undoFoodEntries.set(foodEntry.id, foodEntry); const timeout = setTimeout(() => undoFoodEntries.delete(foodEntry.id), 5 * 60 * 1000); timeout.unref(); const date = localDateFor(foodEntry.loggedAtUtc, store.getTimezone(config.timezone)); return redirect(response, `/log?date=${encodeURIComponent(date)}&undo=${foodEntry.id}&notice=${encodeURIComponent("Food entry deleted. Undo is available briefly.")}`); });
+  app.post("/entries/:id/undo", (request, response) => { const foodEntry = undoFoodEntries.get(Number(request.params.id)); if (foodEntry) { store.restoreFoodEntry(foodEntry); undoFoodEntries.delete(foodEntry.id); } return redirect(response, "/log?notice=Food%20entry%20restored"); });
+  app.post("/entries/:id/favorite", (request, response) => { store.saveFoodEntryAsFavorite(Number(request.params.id)); return redirect(response, "/saved-foods?notice=Snapshot%20saved%20as%20an%20independent%20Food"); });
 
   app.get("/targets", (request, response) => { const proposalToken = text(request.query.proposal); const proposal = proposalToken ? proposals.get(proposalToken) : undefined; return send(response, renderTargetPage(store, config, proposal ? { token: proposalToken, estimate: proposal } : undefined, text(request.query.error))); });
   app.post("/targets/manual", (request, response) => { try { const references: NutrientReferences = {}; const proteinMin = numberOrNull(request.body.proteinMin); const proteinMax = numberOrNull(request.body.proteinMax); if (proteinMin !== null || proteinMax !== null) references.protein = { type: "range", min: proteinMin ?? undefined, max: proteinMax ?? undefined, label: "manual protein range" }; const carbohydratesMin = numberOrNull(request.body.carbohydratesMin); const carbohydratesMax = numberOrNull(request.body.carbohydratesMax); if (carbohydratesMin !== null || carbohydratesMax !== null) references.carbohydrates = { type: "range", min: carbohydratesMin ?? undefined, max: carbohydratesMax ?? undefined, label: "manual carbohydrate range" }; const fatMin = numberOrNull(request.body.fatMin); const fatMax = numberOrNull(request.body.fatMax); if (fatMin !== null || fatMax !== null) references.fat = { type: "range", min: fatMin ?? undefined, max: fatMax ?? undefined, label: "manual fat range" }; const fiberMin = numberOrNull(request.body.fiberMin); if (fiberMin !== null) references.fiber = { type: "minimum", min: fiberMin, label: "manual minimum" }; const saturatedFatMax = numberOrNull(request.body.saturatedFatMax); if (saturatedFatMax !== null) references.saturatedFat = { type: "upper", max: saturatedFatMax, label: "manual upper reference" }; const sodiumMax = numberOrNull(request.body.sodiumMax); if (sodiumMax !== null) references.sodium = { type: "upper", max: sodiumMax, label: "manual upper reference" }; const addedSugarMax = numberOrNull(request.body.addedSugarMax); if (addedSugarMax !== null) references.addedSugar = { type: "label", value: addedSugarMax, label: "manual label context" }; store.createTarget({ kind: "manual", calories: numberOrNull(request.body.calories), references, active: true }); return redirect(response, "/targets"); } catch (error) { return redirect(response, `/targets?error=${encodeURIComponent(error instanceof Error ? error.message : "Target could not be saved.")}`); } });
@@ -573,6 +576,7 @@ export function createApplication(options: ApplicationOptions = {}): Application
   app.post("/targets/:id/disable", (request, response) => { store.updateTarget(Number(request.params.id), { active: false }); return redirect(response, "/targets"); });
   app.post("/targets/:id/reference", (request, response) => { try { const target = store.getTarget(Number(request.params.id)); const nutrient = text(request.body.nutrient) as NutrientKey | "proteinAdequacy"; if (!target || !(nutrient in target.references)) throw new Error("Reference not found."); const existing = target.references[nutrient]; if (!existing) throw new Error("Reference not found."); const references = { ...target.references, [nutrient]: request.body.action === "disable" ? { ...existing, enabled: false } : { ...existing, enabled: true, min: numberOrNull(request.body.min) ?? existing.min, max: numberOrNull(request.body.max) ?? existing.max, value: numberOrNull(request.body.value) ?? existing.value } }; store.updateTarget(target.id, { references }); return redirect(response, "/targets"); } catch (error) { return redirect(response, `/targets?error=${encodeURIComponent(error instanceof Error ? error.message : "Reference could not be updated.")}`); } });
   app.get("/settings", (request, response) => redirect(response, "/targets"));
+  app.post("/settings/timezone/seed", (request, response) => { try { store.seedBrowserTimezone(text(request.body.timezone)); return response.status(204).end(); } catch { return response.status(400).end(); } });
   app.post("/settings/timezone", (request, response) => { try { store.updateTimezone(text(request.body.timezone)); return redirect(response, "/targets"); } catch (error) { return redirect(response, `/targets?error=${encodeURIComponent(error instanceof Error ? error.message : "Invalid timezone")}`); } });
 
   app.get("/settings/data", (request, response) => send(response, renderDataPage(store, text(request.query.notice))));

@@ -8,6 +8,7 @@ const timestamps = {
 export const users = sqliteTable("users", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   timezone: text("timezone").notNull(),
+  timezoneSource: text("timezone_source").notNull().default("bootstrap"),
   ...timestamps,
 });
 
