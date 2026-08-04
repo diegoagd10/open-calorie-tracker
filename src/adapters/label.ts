@@ -14,18 +14,20 @@ export function normalizeLabelCandidate(value: Partial<FoodCandidate> & { name?:
   const nutrients = value.nutrients ?? {};
   const warnings = [...(value.warnings ?? [])];
   if (nutrients.calories === null || nutrients.calories === undefined) warnings.push("Calories are missing and must be entered before confirmation.");
+  const quantityBasis = value.quantityBasis?.trim() || "";
+  if (!quantityBasis) warnings.push("A declared quantity basis is missing and must be entered before confirmation.");
   const name = value.name?.trim() || "Food Label candidate";
   return {
     name,
     brand: value.brand ?? null,
     description: value.description ?? null,
-    quantityBasis: value.quantityBasis?.trim() || "serving",
+    quantityBasis,
     basisQuantity: value.basisQuantity ?? 1,
     nutrients,
     source: value.source || "Food Label",
     sourceId: value.sourceId,
     warnings: [...new Set(warnings)],
-    complete: Boolean(nutrients.calories !== null && nutrients.calories !== undefined),
+    complete: Boolean(quantityBasis && nutrients.calories !== null && nutrients.calories !== undefined),
     requiresReview: true,
   };
 }

@@ -99,6 +99,28 @@ test("barcode results remain transient candidates until Add to Log", async () =>
   assert.equal(application.store.listFoods()[0]?.name, "Edited oats");
 });
 
+test("candidate confirmation requires an explicit declared basis", async () => {
+  const adapter: BarcodeAdapter = { lookup: async () => ({ name: "Unbased candidate", brand: null, description: null, quantityBasis: "", basisQuantity: 1, nutrients: { calories: 200 }, source: "fake provider", warnings: [], complete: false, requiresReview: true }) };
+  const { baseUrl, application } = await testServer(adapter);
+  const review = await fetch(`${baseUrl}/scan/barcode`, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ barcode: "12345678" }) });
+  const html = await review.text();
+  const token = html.match(/action="\/review\/candidate\/([^/]+)\/add"/)?.[1];
+  assert.ok(token);
+  const response = await fetch(`${baseUrl}/review/candidate/${token}/add`, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ quantity: "1", date: "2026-01-01", time: "12:00" }) });
+  assert.equal(response.status, 400);
+  assert.equal(application.store.listFoodEntriesByDate("2026-01-01", "America/New_York").length, 0);
+});
+
+test("editing only quantity and date keeps the reusable Food source linked", async () => {
+  const { baseUrl, application } = await testServer();
+  const food = application.store.createFood({ name: "Linked toast", quantityBasis: "slice", nutrients: { calories: 100, protein: 4 } });
+  const entry = application.store.addFoodEntry({ foodId: food.id, quantity: 1, loggedAtUtc: "2026-01-01T17:00:00.000Z" });
+  const response = await fetch(`${baseUrl}/entries/${entry.id}`, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ date: "2026-01-02", time: "13:00", quantity: "2", mealTag: "Lunch", name: food.name, quantityBasis: food.quantityBasis, basisQuantity: String(food.basisQuantity), calories: "100", protein: "4" }), redirect: "manual" });
+  assert.equal(response.status, 303);
+  assert.equal(application.store.getFoodEntry(entry.id)?.foodId, food.id);
+  assert.equal(application.store.getFoodEntry(entry.id)?.snapshot.nutrients.calories, 200);
+});
+
 test("retryable barcode failures preserve the submitted barcode in the retry form", async () => {
   const adapter: BarcodeAdapter = { lookup: async () => { throw new ProviderFailure("temporarily_unavailable", "Provider unavailable."); } };
   const { baseUrl } = await testServer(adapter);
@@ -120,6 +142,21 @@ test("health checks the local database and does not depend on providers", async 
   const { baseUrl } = await testServer();
   const response = await fetch(`${baseUrl}/health`);
   assert.deepEqual(await response.json(), { status: "ok", database: "ok" });
+});
+
+test("scan mode pages render their dedicated capture forms", async () => {
+  const { baseUrl } = await testServer();
+  let html = await (await fetch(`${baseUrl}/scan?mode=barcode`)).text();
+  assert.match(html, /<form[^>]*method="post" action="\/scan\/barcode"/);
+  assert.match(html, /name="barcode"/);
+  assert.match(html, /capture="environment"/);
+  assert.match(html, /data-barcode-camera/);
+  assert.doesNotMatch(html, /action="\/scan\/food" enctype/);
+
+  html = await (await fetch(`${baseUrl}/scan?mode=label`)).text();
+  assert.match(html, /<form method="post" action="\/scan\/label"/);
+  assert.match(html, /name="image"/);
+  assert.doesNotMatch(html, /action="\/scan\/food" enctype/);
 });
 
 test("partial Food Label extraction stays editable until required calories are supplied", async () => {

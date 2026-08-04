@@ -17,6 +17,18 @@ export interface StoredImage {
   byteSize: number;
 }
 
+export function assertSafeManagedImageName(managedName: string): void {
+  if (!/^[0-9a-f-]+\.(?:jpg|png|webp|gif)$/.test(managedName)) throw new Error("Invalid managed image name.");
+}
+
+export function safeManagedImagePath(directory: string, managedName: string): string {
+  assertSafeManagedImageName(managedName);
+  const resolvedDirectory = path.resolve(directory);
+  const resolved = path.resolve(resolvedDirectory, managedName);
+  if (!resolved.startsWith(`${resolvedDirectory}${path.sep}`)) throw new Error("Invalid image path.");
+  return resolved;
+}
+
 export class ImageStorage {
   readonly directory: string;
 
@@ -49,9 +61,6 @@ export class ImageStorage {
   }
 
   safePath(managedName: string): string {
-    if (!/^[0-9a-f-]+\.(?:jpg|png|webp|gif)$/.test(managedName)) throw new Error("Invalid managed image name.");
-    const resolved = path.resolve(this.directory, managedName);
-    if (!resolved.startsWith(`${path.resolve(this.directory)}${path.sep}`)) throw new Error("Invalid image path.");
-    return resolved;
+    return safeManagedImagePath(this.directory, managedName);
   }
 }

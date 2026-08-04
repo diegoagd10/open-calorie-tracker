@@ -34,6 +34,13 @@ test("Lose and Gain plans reject trajectories that contradict the selected inten
   assert.throws(() => estimateNutrition({ age: 30, sex: "female", heightCm: 165, weightKg: 65, activity: "Inactive", plan: "Gain", targetWeightKg: 60, targetDate: "2026-07-01", today: "2026-01-01" }), /Gain plan target weight/);
 });
 
+test("estimates reject malformed profile enums and dates", () => {
+  assert.throws(() => estimateNutrition({ age: 30, sex: "other" as "female", heightCm: 165, weightKg: 65, activity: "Inactive", plan: "Maintain", today: "2026-01-01" }), /sex/i);
+  assert.throws(() => estimateNutrition({ age: 30, sex: "female", heightCm: 165, weightKg: 65, activity: "Sometimes" as "Inactive", plan: "Maintain", today: "2026-01-01" }), /activity/i);
+  assert.throws(() => estimateNutrition({ age: 30, sex: "female", heightCm: 165, weightKg: 65, activity: "Inactive", plan: "Lose", targetWeightKg: 60, targetDate: "2026-02-30", today: "2026-01-01" }), /date/i);
+  assert.throws(() => estimateNutrition({ age: 30, sex: "female", heightCm: 165, weightKg: 65, activity: "Inactive", plan: "Maintain", today: "not-a-date" }), /date/i);
+});
+
 test("Lose and Gain proposals use a dynamic model and stay inactive until confirmed", async () => {
   const maintain = estimateNutrition({ age: 30, sex: "male", heightCm: 180, weightKg: 90, activity: "Active", plan: "Maintain", today: "2026-01-01" });
   const lose = estimateNutrition({ age: 30, sex: "male", heightCm: 180, weightKg: 90, activity: "Active", plan: "Lose", targetWeightKg: 80, targetDate: "2026-07-01", today: "2026-01-01" });
@@ -61,4 +68,32 @@ test("Lose and Gain proposals use a dynamic model and stay inactive until confir
   const confirmation = await fetch(`${baseUrl}/targets/proposals/${token}/confirm`, { method: "POST", redirect: "manual" });
   assert.equal(confirmation.status, 303);
   assert.equal(application.store.getActiveTarget()?.kind, "estimate");
+});
+
+test("manual targets cannot be confirmed without at least one value", async () => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "calories-targets-empty-"));
+  directories.push(directory);
+  const connection = openDatabase(directory);
+  connections.push(connection);
+  applyMigrations(connection.sqlite);
+  const application = createApplication({ connection, dataDir: directory, config: { dataDir: directory, timezone: "UTC" }, migrate: false });
+  const server = application.app.listen(0);
+  servers.push(server);
+  const address = server.address();
+  if (!address || typeof address === "string") throw new Error("Test server did not bind.");
+  const response = await fetch(`http://127.0.0.1:${address.port}/targets/manual`, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({}), redirect: "manual" });
+  assert.equal(response.status, 303);
+  assert.equal(application.store.getActiveTarget(), null);
+});
+
+test("a calorie-only manual target is valid", async () => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "calories-targets-calories-"));
+  directories.push(directory);
+  const connection = openDatabase(directory);
+  connections.push(connection);
+  applyMigrations(connection.sqlite);
+  const application = createApplication({ connection, dataDir: directory, config: { dataDir: directory, timezone: "UTC" }, migrate: false });
+  const target = application.store.createTarget({ kind: "manual", calories: 1800, references: {}, active: true });
+  assert.equal(target.calories, 1800);
+  assert.equal(application.store.getActiveTarget()?.id, target.id);
 });

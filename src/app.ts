@@ -52,12 +52,19 @@ function numberOrNull(value: unknown): number | null {
   const raw = text(value).trim();
   if (!raw) return null;
   const parsed = Number(raw);
-  return Number.isFinite(parsed) ? parsed : null;
+  if (!Number.isFinite(parsed)) throw new Error("Enter a finite number or leave the field blank.");
+  return parsed;
 }
 
 function numberRequired(value: unknown, label: string): number {
   const parsed = numberOrNull(value);
   if (parsed === null) throw new Error(`${label} is required and must be a number.`);
+  return parsed;
+}
+
+function positiveNumber(value: unknown, label: string): number {
+  const parsed = numberRequired(value, label);
+  if (parsed <= 0) throw new Error(`${label} must be greater than zero.`);
   return parsed;
 }
 
@@ -92,12 +99,18 @@ function localDateFor(utc: string, timezone: string): string {
 function candidateProfile(candidate: StoredCandidate): FoodProfile {
   const nutrients = normalizeNutrition(candidate.nutrients);
   if (nutrients.calories === null) throw new Error("Calories are required before confirmation.");
+  const name = candidate.name.trim();
+  const quantityBasis = candidate.quantityBasis.trim();
+  if (!name) throw new Error("Food name is required before confirmation.");
+  if (!quantityBasis) throw new Error("A declared quantity basis is required before confirmation.");
+  const basisQuantity = candidate.basisQuantity ?? 1;
+  if (!Number.isFinite(basisQuantity) || basisQuantity <= 0) throw new Error("Declared basis quantity must be greater than zero.");
   return {
-    name: candidate.name,
+    name,
     brand: candidate.brand ?? null,
     description: candidate.description ?? null,
-    quantityBasis: candidate.quantityBasis,
-    basisQuantity: candidate.basisQuantity ?? 1,
+    quantityBasis,
+    basisQuantity,
     nutrients: { ...nutrients, calories: nutrients.calories },
     source: candidate.source,
   };
@@ -118,12 +131,17 @@ function candidateReviewProfile(candidate: StoredCandidate): Omit<FoodProfile, "
 function candidateProfileFromRequest(candidate: StoredCandidate, body: Record<string, unknown>): FoodProfile {
   const profile = candidateReviewProfile(candidate);
   const calories = numberRequired(body.calories ?? profile.nutrients.calories, "Calories");
+  const name = text(body.name, profile.name).trim();
+  const quantityBasis = text(body.quantityBasis, profile.quantityBasis).trim();
+  const basisQuantity = positiveNumber(body.basisQuantity ?? profile.basisQuantity ?? 1, "Basis quantity");
+  if (!name) throw new Error("Food name is required before confirmation.");
+  if (!quantityBasis) throw new Error("A declared quantity basis is required before confirmation.");
   return {
-    name: text(body.name, profile.name).trim(),
+    name,
     brand: profile.brand,
     description: profile.description,
-    quantityBasis: text(body.quantityBasis, profile.quantityBasis).trim(),
-    basisQuantity: numberOrNull(body.basisQuantity) ?? profile.basisQuantity ?? 1,
+    quantityBasis,
+    basisQuantity,
     nutrients: {
       calories,
       protein: numberOrNull(body.protein ?? profile.nutrients.protein),
@@ -176,6 +194,24 @@ function renderErrorPage(title: string, message: string, active: "scan" | "datab
   });
 }
 
+function providerFailureTitle(kind: ProviderFailure["kind"], subject: string): string {
+  return {
+    invalid: `${subject} input is invalid`,
+    not_found: `${subject} not found`,
+    incomplete: `${subject} is incomplete`,
+    conflicting: `${subject} has conflicting data`,
+    temporarily_unavailable: `${subject} is temporarily unavailable`,
+    refused: `${subject} was refused`,
+    unexpected: `${subject} failed unexpectedly`,
+  }[kind];
+}
+
+function providerFailureGuidance(failure: ProviderFailure): string {
+  if (failure.retryable) return "Retry when the provider is available.";
+  if (failure.manualFallback) return "Use manual Food entry to continue; no unreviewed data was saved.";
+  return "No data was saved.";
+}
+
 function parseProfileForm(body: Record<string, unknown>, fallback?: FoodProfile): FoodProfile {
   const name = text(body.name, fallback?.name).trim();
   const quantityBasis = text(body.quantityBasis, fallback?.quantityBasis).trim();
@@ -186,7 +222,7 @@ function parseProfileForm(body: Record<string, unknown>, fallback?: FoodProfile)
     brand: text(body.brand, fallback?.brand ?? "").trim() || null,
     description: text(body.description, fallback?.description ?? "").trim() || null,
     quantityBasis,
-    basisQuantity: numberOrNull(body.basisQuantity) ?? fallback?.basisQuantity ?? 1,
+    basisQuantity: positiveNumber(body.basisQuantity ?? fallback?.basisQuantity ?? 1, "Basis quantity"),
     nutrients: {
       calories,
       protein: numberOrNull(body.protein ?? fallback?.nutrients.protein),
@@ -265,6 +301,26 @@ function renderSavedPage(store: Store, options: { search?: string; filter?: stri
   return renderPage({ title: "Saved Foods", active: "saved", content, notice: options.notice });
 }
 
+type ScanMode = "food" | "barcode" | "label";
+
+function scanMode(value: unknown): ScanMode {
+  return value === "barcode" || value === "label" ? value : "food";
+}
+
+function renderScanModePage(mode: ScanMode): string {
+  const tab = (value: ScanMode, label: string, iconName: string) => `<a class="scan-mode ${mode === value ? "is-active" : ""}" href="/scan${value === "food" ? "" : `?mode=${value}`}"${mode === value ? ` aria-current="page"` : ""}>${renderNavIcon(iconName)}${label}</a>`;
+  if (mode === "food") return renderScanPage();
+  const form = mode === "barcode"
+    ? `<div class="scan-frame scan-frame--barcode" aria-label="Barcode input"><div class="capture-placeholder"><strong>Barcode lookup</strong><span>Use your camera scanner where available, or enter it below.</span></div><span class="scan-caption">External records remain candidates until review</span></div><div class="scan-controls"><p>Camera scanners can fill the accessible field automatically. Manual entry is always available.</p><form id="barcode-form" method="post" action="/scan/barcode" class="capture-form"><label class="button button--secondary">Use camera<input type="file" accept="image/*" capture="environment" data-barcode-camera></label><label>Barcode<input name="barcode" inputmode="numeric" autocomplete="off" pattern="[0-9 -]{8,20}" placeholder="UPC, EAN, or GTIN" aria-label="Barcode" data-barcode-input required></label><p class="muted" data-barcode-camera-status>Camera detection uses your browser when supported; manual entry remains available.</p><button class="button button--primary" type="submit">Look up barcode</button></form></div>`
+    : `<div class="scan-frame scan-frame--label" aria-label="Food Label image upload"><div class="capture-placeholder"><strong>Nutrition label</strong><span>Frame the serving and nutrient values clearly.</span></div><span class="scan-caption">Missing values remain unknown until you edit them</span></div><div class="scan-controls"><p>Extraction is a candidate only. Review the product name, declared basis, calories, and every visible nutrient.</p><form method="post" action="/scan/label" enctype="multipart/form-data" class="capture-form"><label class="button button--primary">Choose label image<input type="file" name="image" accept="image/jpeg,image/png,image/webp,image/gif" capture="environment" required></label><button class="button button--secondary" type="submit">Read label</button></form></div>`;
+  const titles = { food: "Food image", barcode: "Barcode", label: "Food Label" };
+  return renderPage({
+    title: "Scan Food",
+    active: "scan",
+    content: `<section class="view-toolbar view-toolbar--stacked"><div><p class="section-kicker">Capture hub</p><h2>Scan Food</h2><p class="view-lede">Capture first. Review every proposal before it becomes part of your log.</p></div><span class="capture-status"><span class="status-dot"></span> ${titles[mode]} mode</span></section><div class="scan-layout"><section class="scan-console"><nav class="scan-mode-tabs" aria-label="Scan mode">${tab("food", "Food", "log")}${tab("barcode", "Barcode", "search")}${tab("label", "Food Label", "log")}</nav><div class="scan-stage"><div class="scan-stage-top"><span>Capture and review</span><span>Server upload</span></div>${form}</div></section><aside class="scan-side-panel"><div class="aside-rule"></div><h3>Evidence first, estimates second.</h3><p>Visible values can be proposed. Unknown values are never invented. Every result stays editable until you confirm it.</p></aside></div>`,
+  });
+}
+
 function renderScanPage(message = "", retry?: string): string {
   const content = `<section class="view-toolbar view-toolbar--stacked"><div><p class="section-kicker">Capture hub</p><h2>Scan Food</h2><p class="view-lede">Capture first. Review every proposal before it becomes part of your log.</p></div><span class="capture-status"><span class="status-dot"></span> Camera-ready workflow</span></section><div class="scan-layout"><section class="scan-console"><nav class="scan-mode-tabs" aria-label="Scan mode"><a class="scan-mode is-active" href="/scan">${renderNavIcon("log")}Food</a><a class="scan-mode" href="/scan?mode=barcode">${renderNavIcon("search")}Barcode</a><a class="scan-mode" href="/scan?mode=label">${renderNavIcon("log")}Food Label</a></nav><div class="scan-stage"><div class="scan-stage-top"><span>Capture and review</span><span>Server upload</span></div><div class="scan-frame scan-frame--food" aria-label="Food image upload preview"><span class="frame-corner frame-corner--tl"></span><span class="frame-corner frame-corner--tr"></span><span class="frame-corner frame-corner--bl"></span><span class="frame-corner frame-corner--br"></span><div class="capture-placeholder"><div class="capture-crosshair"></div><strong>Food image</strong><span>Choose a well-lit plate or meal photo</span></div><span class="scan-caption">Nothing is persisted until review</span></div><div class="scan-controls"><p>AI output remains a candidate. Every identified ingredient can be corrected or removed before confirmation.</p><form method="post" action="/scan/food" enctype="multipart/form-data" class="capture-form"><label class="button button--primary">Choose image<input type="file" name="image" accept="image/jpeg,image/png,image/webp,image/gif" required></label><button class="button button--secondary" type="submit">Analyze Food</button></form></div></div>${message ? `<p class="notice notice--error scan-message" role="alert">${escapeHtml(message)}</p>` : ""}${retry ? `<form method="post" action="${escapeHtml(retry)}" class="retry-form"><button class="button button--secondary" type="submit">Retry capture</button></form>` : ""}<div class="scan-alt-paths"><div><h3>Barcode lookup</h3><p>Use a package barcode when a label is easier to identify than a photo.</p><form method="post" action="/scan/barcode" class="form-row"><input name="barcode" inputmode="numeric" placeholder="UPC, EAN, or GTIN" aria-label="Barcode"><button class="button button--secondary" type="submit">Look up</button></form></div><div><h3>Nutrition label</h3><p>Upload a label and review every extracted field before saving.</p><form method="post" action="/scan/label" enctype="multipart/form-data" class="form-row"><label class="button button--secondary">Choose label<input type="file" name="image" accept="image/jpeg,image/png,image/webp,image/gif" required></label><button class="button button--secondary" type="submit">Read label</button></form></div></div></section><aside class="scan-side-panel"><div class="aside-rule"></div><h3>Evidence first, estimates second.</h3><p>Visible ingredients can be proposed. Hidden ingredients are never invented. Every estimate stays editable until you confirm it.</p><div class="scan-side-list"><div><span class="side-index">01</span><span>Capture the real food</span></div><div><span class="side-index">02</span><span>Review every proposal</span></div><div><span class="side-index">03</span><span>Confirm what you trust</span></div></div></aside></div>`;
   return renderPage({ title: "Scan Food", active: "scan", content });
@@ -293,7 +349,7 @@ function renderFoodEntryEditor(entry: FoodEntryRecord, timezone: string): string
   const time = new Intl.DateTimeFormat("en-GB", { timeZone: timezone, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date(entry.loggedAtUtc));
   const profile = profileFromEntry(entry);
   const nutrientFields = ["calories", "protein", "carbohydrates", "fat", "fiber", "addedSugar", "sugar", "saturatedFat", "sodium"].map((key) => `<label>${escapeHtml(key)} <input name="${key}" value="${escapeHtml((profile.nutrients as unknown as Record<string, unknown>)[key])}" inputmode="decimal"></label>`).join("");
-  return renderPage({ title: `Edit ${entry.title}`, active: "log", content: `<section class="form-panel"><p class="eyebrow">Historical snapshot</p><h1>Edit Food entry</h1><p class="muted">Change this entry only. The reusable Food and other entries remain unchanged.</p>${renderNutritionList(entry.snapshot.nutrients)}<form method="post" action="/entries/${entry.id}" class="stack-form"><label>Date <input name="date" type="date" value="${date}" required></label><label>Time <input name="time" type="time" value="${time}" required></label><label>Quantity <input name="quantity" value="${escapeHtml(entry.snapshot.quantity.display)}" required></label><label>Meal tag <select name="mealTag"><option value="">No tag</option>${["Breakfast", "Lunch", "Dinner", "Snack"].map((tag) => `<option ${entry.mealTag === tag ? "selected" : ""}>${tag}</option>`).join("")}</select><details class="form-panel"><summary>Edit Food details for this entry</summary><div class="stack-form"><label>Food name <input name="name" value="${escapeHtml(profile.name)}"></label><label>Declared quantity basis <input name="quantityBasis" value="${escapeHtml(profile.quantityBasis)}"></label><div class="form-grid">${nutrientFields}</div></div></details><button class="button" type="submit">Save Food entry</button></form></section>` });
+  return renderPage({ title: `Edit ${entry.title}`, active: "log", content: `<section class="form-panel"><p class="eyebrow">Historical snapshot</p><h1>Edit Food entry</h1><p class="muted">Change this entry only. The reusable Food and other entries remain unchanged.</p>${renderNutritionList(entry.snapshot.nutrients)}<form method="post" action="/entries/${entry.id}" class="stack-form"><label>Date <input name="date" type="date" value="${date}" required></label><label>Time <input name="time" type="time" value="${time}" required></label><label>Quantity <input name="quantity" value="${escapeHtml(entry.snapshot.quantity.display)}" required></label><label>Meal tag <select name="mealTag"><option value="">No tag</option>${["Breakfast", "Lunch", "Dinner", "Snack"].map((tag) => `<option ${entry.mealTag === tag ? "selected" : ""}>${tag}</option>`).join("")}</select><details class="form-panel"><summary>Edit Food details for this entry</summary><div class="stack-form"><label>Food name <input name="name" value="${escapeHtml(profile.name)}"></label><label>Declared quantity basis <input name="quantityBasis" value="${escapeHtml(profile.quantityBasis)}"></label><div class="form-grid">${nutrientFields}</div><label><input type="checkbox" name="editDetails" value="1"> Apply Food detail changes to this entry</label></div></details><button class="button" type="submit">Save Food entry</button></form></section>` });
 }
 
 function renderDataPage(store: Store, notice = ""): string {
@@ -374,8 +430,8 @@ export function createApplication(options: ApplicationOptions = {}): Application
       return send(response, renderDatabasePage(store, config, { query, filter, candidates: candidatesWithTokens }));
     } catch (error) {
       const failure = error instanceof ProviderFailure ? error : new ProviderFailure("unexpected", "Food search failed.");
-      logger.warn("food_search_failed", { operation: "food_search", provider: "configured" });
-      return send(response, renderDatabasePage(store, config, { query, filter, error: `${failure.message}${failure.retryable ? " You can retry when the provider is available." : ""}` }));
+      logger.warn("food_search_failed", { operation: "food_search", provider: "configured", failure: failure.kind, retryable: failure.retryable });
+      return send(response, renderDatabasePage(store, config, { query, filter, error: `${providerFailureTitle(failure.kind, "Food search")}: ${failure.message} ${providerFailureGuidance(failure)}` }));
     }
   });
 
@@ -478,7 +534,7 @@ export function createApplication(options: ApplicationOptions = {}): Application
   app.post("/review/food/:id/favorite", (request, response) => { store.favoriteFood(Number(request.params.id)); return redirect(response, "/saved-foods?notice=Food%20saved%20as%20a%20Favorite"); });
   app.post("/review/meal/:id/favorite", (request, response) => { store.favoriteMeal(Number(request.params.id)); return redirect(response, "/saved-foods?notice=Meal%20favorited"); });
 
-  app.get("/scan", (request, response) => send(response, renderScanPage()));
+  app.get("/scan", (request, response) => send(response, renderScanModePage(scanMode(request.query.mode))));
   app.post("/scan/barcode", async (request, response) => {
     try {
       const candidate = await barcodeAdapter.lookup(text(request.body.barcode));
@@ -487,7 +543,7 @@ export function createApplication(options: ApplicationOptions = {}): Application
     } catch (error) {
       const failure = error instanceof ProviderFailure ? error : new ProviderFailure("unexpected", "Barcode lookup failed.");
       logger.warn("barcode_lookup_failed", { operation: "barcode_lookup", provider: "configured", failure: failure.kind, retryable: failure.retryable });
-      return send(response, renderErrorPage(failure.kind === "not_found" ? "No product found" : "Barcode lookup failed", `${failure.message} ${failure.kind === "not_found" || failure.kind === "invalid" ? "Use manual Food entry or try another barcode." : "Your capture is safe; retry when the service is available."}`, "scan", failure.retryable ? "/scan/barcode" : undefined, { barcode: text(request.body.barcode) }), failure.kind === "invalid" ? 400 : 200);
+      return send(response, renderErrorPage(providerFailureTitle(failure.kind, "Barcode lookup"), `${failure.message} ${providerFailureGuidance(failure)}`, "scan", failure.retryable ? "/scan/barcode" : undefined, { barcode: text(request.body.barcode) }), failure.kind === "invalid" ? 400 : 200);
     }
   });
   app.post("/scan/label", upload.single("image"), async (request, response) => {
@@ -498,7 +554,7 @@ export function createApplication(options: ApplicationOptions = {}): Application
       const candidate = await labelAdapter.extract({ buffer: request.file.buffer, mimeType: request.file.mimetype, fileName: request.file.originalname });
       const token = candidateToken({ ...candidate, buffer: request.file.buffer, mimeType: request.file.mimetype, originalName: request.file.originalname });
       return send(response, renderPage({ title: "Food Label review", active: "scan", content: renderReviewSurface({ title: "Food Label review", profile: candidateReviewProfile(candidate), source: "Food Label candidate", warnings: candidate.warnings, timezone: store.getTimezone(config.timezone), token }) }));
-    } catch (error) { const failure = error instanceof ProviderFailure ? error : new ProviderFailure("unexpected", "Food Label extraction failed."); return send(response, renderErrorPage("Food Label needs review", `${failure.message} Manual Food entry remains available.`, "scan", failure.retryable ? "/scan" : undefined, {}, "get"), failure.kind === "invalid" ? 400 : 200); }
+    } catch (error) { const failure = error instanceof ProviderFailure ? error : new ProviderFailure("unexpected", "Food Label extraction failed."); return send(response, renderErrorPage(providerFailureTitle(failure.kind, "Food Label extraction"), `${failure.message} ${providerFailureGuidance(failure)}`, "scan", failure.retryable ? "/scan" : undefined, { mode: "label" }, "get"), failure.kind === "invalid" ? 400 : 200); }
   });
 
   app.post("/scan/food", upload.single("image"), async (request, response) => {
@@ -514,7 +570,7 @@ export function createApplication(options: ApplicationOptions = {}): Application
       const token = cryptoToken();
       analyses.set(token, { analysis: { ...analysis, ingredients }, buffer: request.file.buffer, mimeType: request.file.mimetype, originalName: request.file.originalname });
       return send(response, renderAnalysis(token, { ...analysis, ingredients }));
-    } catch (error) { const failure = error instanceof ProviderFailure ? error : new ProviderFailure("unexpected", "Food image analysis failed."); return send(response, renderErrorPage("Food image needs attention", `${failure.message} No data was persisted.`, "scan", failure.retryable ? "/scan" : undefined, {}, "get"), failure.kind === "invalid" ? 400 : 200); }
+    } catch (error) { const failure = error instanceof ProviderFailure ? error : new ProviderFailure("unexpected", "Food image analysis failed."); return send(response, renderErrorPage(providerFailureTitle(failure.kind, "Food image analysis"), `${failure.message} ${providerFailureGuidance(failure)}`, "scan", failure.retryable ? "/scan" : undefined, { mode: "food" }, "get"), failure.kind === "invalid" ? 400 : 200); }
   });
   app.post("/scan/food/:token/ingredient/:index/delete", (request, response) => { const proposal = analyses.get(request.params.token); if (!proposal) return send(response, renderErrorPage("Proposal expired", "Run the image analysis again.", "scan"), 404); proposal.analysis.ingredients.splice(Number(request.params.index), 1); return send(response, renderAnalysis(request.params.token, proposal.analysis)); });
   app.post("/scan/food/:token/ingredient/:index/match", (request, response) => { const proposal = analyses.get(request.params.token); const index = Number(request.params.index); const ingredient = proposal?.analysis.ingredients[index]; const matchIndex = Number(request.body.matchIndex); if (!proposal || !ingredient || !ingredient.matches?.[matchIndex]) return send(response, renderErrorPage("Match not found", "Choose one of the available matches.", "scan"), 400); ingredient.matches = [ingredient.matches[matchIndex]]; return send(response, renderAnalysis(request.params.token, proposal.analysis)); });
@@ -583,7 +639,7 @@ export function createApplication(options: ApplicationOptions = {}): Application
   });
 
   app.get("/entries/:id/edit", (request, response) => { const foodEntry = store.getFoodEntry(Number(request.params.id)); if (!foodEntry) return send(response, renderErrorPage("Food entry not found", "That historical Food entry no longer exists.", "log"), 404); return send(response, renderFoodEntryEditor(foodEntry, store.getTimezone(config.timezone))); });
-  app.post("/entries/:id", (request, response) => { try { const timezone = store.getTimezone(config.timezone); const existing = store.getFoodEntry(Number(request.params.id)); if (!existing) throw new Error("Food entry not found."); const loggedAtUtc = utcFromLocal(text(request.body.date), text(request.body.time), timezone); const profile = text(request.body.name).trim() ? parseProfileForm(request.body as Record<string, unknown>, profileFromEntry(existing)) : undefined; const updated = store.updateFoodEntry(Number(request.params.id), { quantity: text(request.body.quantity), loggedAtUtc, mealTag: (text(request.body.mealTag) || null) as MealTag | null, profile }, timezone); return redirect(response, `/log?date=${encodeURIComponent(localDateFor(updated.loggedAtUtc, timezone))}&notice=Food%20entry%20updated`); } catch (error) { return send(response, renderErrorPage("Food entry could not be updated", error instanceof Error ? error.message : "Check the date, time, and quantity.", "log"), 400); } });
+  app.post("/entries/:id", (request, response) => { try { const timezone = store.getTimezone(config.timezone); const existing = store.getFoodEntry(Number(request.params.id)); if (!existing) throw new Error("Food entry not found."); const loggedAtUtc = utcFromLocal(text(request.body.date), text(request.body.time), timezone); const profile = request.body.editDetails === "1" ? parseProfileForm(request.body as Record<string, unknown>, profileFromEntry(existing)) : undefined; const updated = store.updateFoodEntry(Number(request.params.id), { quantity: text(request.body.quantity), loggedAtUtc, mealTag: (text(request.body.mealTag) || null) as MealTag | null, profile }, timezone); return redirect(response, `/log?date=${encodeURIComponent(localDateFor(updated.loggedAtUtc, timezone))}&notice=Food%20entry%20updated`); } catch (error) { return send(response, renderErrorPage("Food entry could not be updated", error instanceof Error ? error.message : "Check the date, time, and quantity.", "log"), 400); } });
   app.post("/entries/:id/delete", (request, response) => { const foodEntry = store.deleteFoodEntry(Number(request.params.id)); if (!foodEntry) return redirect(response, "/log"); undoFoodEntries.set(foodEntry.id, foodEntry); const timeout = setTimeout(() => undoFoodEntries.delete(foodEntry.id), 5 * 60 * 1000); timeout.unref(); const date = localDateFor(foodEntry.loggedAtUtc, store.getTimezone(config.timezone)); return redirect(response, `/log?date=${encodeURIComponent(date)}&undo=${foodEntry.id}&notice=${encodeURIComponent("Food entry deleted. Undo is available briefly.")}`); });
   app.post("/entries/:id/undo", (request, response) => { const foodEntry = undoFoodEntries.get(Number(request.params.id)); if (foodEntry) { store.restoreFoodEntry(foodEntry); undoFoodEntries.delete(foodEntry.id); } return redirect(response, "/log?notice=Food%20entry%20restored"); });
   app.post("/entries/:id/favorite", (request, response) => { store.saveFoodEntryAsFavorite(Number(request.params.id)); return redirect(response, "/saved-foods?notice=Snapshot%20saved%20as%20an%20independent%20Food"); });

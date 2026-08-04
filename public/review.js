@@ -23,6 +23,30 @@
     if (event.target instanceof HTMLInputElement && event.target.matches("[data-review-quantity]")) updateReview(event.target);
   });
 
+  const cameraInput = document.querySelector("[data-barcode-camera]");
+  const barcodeInput = document.querySelector("[data-barcode-input]");
+  const cameraStatus = document.querySelector("[data-barcode-camera-status]");
+  if (cameraInput instanceof HTMLInputElement && barcodeInput instanceof HTMLInputElement && cameraStatus instanceof HTMLElement) {
+    cameraInput.addEventListener("change", async () => {
+      const file = cameraInput.files?.[0];
+      const Detector = window.BarcodeDetector;
+      if (!file) return;
+      if (!Detector) {
+        cameraStatus.textContent = "Camera image captured. Enter the barcode manually in this browser.";
+        return;
+      }
+      try {
+        const detections = await new Detector().detect(file);
+        const detected = detections[0]?.rawValue;
+        if (!detected) throw new Error("No barcode found");
+        barcodeInput.value = detected;
+        cameraStatus.textContent = "Barcode detected. Review it, then look it up.";
+      } catch {
+        cameraStatus.textContent = "No barcode was detected. Enter it manually instead.";
+      }
+    });
+  }
+
   document.addEventListener("click", (event) => {
     const target = event.target instanceof Element ? event.target.closest("[data-entry-menu]") : null;
     if (!target) return;

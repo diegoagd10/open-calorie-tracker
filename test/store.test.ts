@@ -49,6 +49,7 @@ test("manual Foods and Food entries retain nullable nutrients and immutable snap
 
   const edited = store.updateFoodEntry(entry.id, { quantity: "1 1/2", mealTag: "Dinner", loggedAtUtc: "2026-01-02T01:00:00.000Z" }, "America/New_York");
   assert.equal(edited.snapshot.nutrients.calories, 276);
+  assert.equal(edited.foodId, food.id);
   assert.equal(edited.mealTag, "Dinner");
   assert.equal(store.updateFoodEntry(entry.id, { mealTag: null }, "America/New_York").mealTag, null);
   assert.equal(store.getFood(food.id)?.name, "Changed recipe");
@@ -63,6 +64,17 @@ test("deleting and restoring a Food entry preserves its snapshot", async () => {
   assert.equal(store.getFoodEntry(entry.id), null);
   store.restoreFoodEntry(deleted!);
   assert.equal(store.getFoodEntry(entry.id)?.snapshot.nutrients.calories, 80);
+});
+
+test("restoring an entry after its reusable Food was deleted keeps the snapshot without a dangling source", async () => {
+  const store = await createStore();
+  const food = store.createFood({ name: "Apple", quantityBasis: "item", nutrients: { calories: 80 } });
+  const entry = store.addFoodEntry({ foodId: food.id, quantity: 1, loggedAtUtc: "2026-01-01T12:00:00.000Z" });
+  store.deleteFood(food.id);
+  assert.doesNotThrow(() => store.restoreFoodEntry(entry));
+  const restored = store.getFoodEntry(entry.id);
+  assert.equal(restored?.foodId, null);
+  assert.equal(restored?.snapshot.nutrients.calories, 80);
 });
 
 test("saving a logged Food entry as a Favorite copies its exact historical snapshot", async () => {
@@ -104,4 +116,6 @@ test("declared basis quantities scale raw-unit Foods correctly", async () => {
 
 test("local date conversion uses the configured timezone", () => {
   assert.equal(utcFromLocal("2026-01-01", "19:30", "America/New_York"), "2026-01-02T00:30:00.000Z");
+  assert.throws(() => utcFromLocal("2026-02-30", "19:30", "America/New_York"), /valid local date/i);
+  assert.throws(() => utcFromLocal("2026-01-01", "25:00", "America/New_York"), /valid local date/i);
 });

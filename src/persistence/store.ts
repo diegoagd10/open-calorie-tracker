@@ -20,6 +20,7 @@ import {
   type Quantity,
 } from "../domain/nutrition.js";
 import { isValidTimezone } from "../config.js";
+import { assertSafeManagedImageName, safeManagedImagePath } from "../storage/images.js";
 
 const nutrientColumns = [
   "calories",
@@ -197,6 +198,26 @@ function validateTag(tag: MealTag | null | undefined): MealTag | null {
   return tag;
 }
 
+function validateReferences(references: NutrientReferences, calories?: number | null): void {
+  let hasNumericReference = calories !== null && calories !== undefined;
+  for (const [key, reference] of Object.entries(references)) {
+    if (!reference) continue;
+    if (!["target", "minimum", "range", "upper", "label"].includes(reference.type)) throw new Error(`Invalid nutrient reference for ${key}.`);
+    for (const value of [reference.min, reference.max, reference.value]) {
+      if (value !== undefined) {
+        if (!Number.isFinite(value) || value < 0) throw new Error(`Nutrient reference values cannot be negative or non-finite (${key}).`);
+        hasNumericReference = true;
+      }
+    }
+    if (reference.type === "target" && reference.value === undefined) throw new Error(`Target reference for ${key} requires a value.`);
+    if (reference.type === "minimum" && reference.min === undefined) throw new Error(`Minimum reference for ${key} requires a minimum.`);
+    if (reference.type === "upper" && reference.max === undefined) throw new Error(`Upper reference for ${key} requires a maximum.`);
+    if (reference.type === "range" && reference.min === undefined && reference.max === undefined) throw new Error(`Range reference for ${key} requires a bound.`);
+    if (reference.min !== undefined && reference.max !== undefined && reference.min > reference.max) throw new Error(`Nutrient reference minimum cannot exceed its maximum (${key}).`);
+  }
+  if (!hasNumericReference) throw new Error("A Nutrition target requires at least one numeric target or reference.");
+}
+
 function localDateTime(utc: string, timezone: string): { date: string; time: string } {
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone: timezone,
@@ -213,6 +234,8 @@ function localDateTime(utc: string, timezone: string): { date: string; time: str
 
 export function utcFromLocal(date: string, time: string, timezone: string): string {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !/^\d{2}:\d{2}$/.test(time)) throw new Error("Enter a valid local date and time.");
+  const localShape = new Date(`${date}T${time}:00Z`);
+  if (!Number.isFinite(localShape.getTime()) || localShape.toISOString().slice(0, 16) !== `${date}T${time}`) throw new Error("Enter a valid local date and time.");
   const desired = Date.UTC(Number(date.slice(0, 4)), Number(date.slice(5, 7)) - 1, Number(date.slice(8, 10)), Number(time.slice(0, 2)), Number(time.slice(3, 5)));
   let guess = desired;
   for (let iteration = 0; iteration < 3; iteration += 1) {
@@ -220,6 +243,8 @@ export function utcFromLocal(date: string, time: string, timezone: string): stri
     const actualUtc = Date.UTC(Number(actual.date.slice(0, 4)), Number(actual.date.slice(5, 7)) - 1, Number(actual.date.slice(8, 10)), Number(actual.time.slice(0, 2)), Number(actual.time.slice(3, 5)));
     guess += desired - actualUtc;
   }
+  const resolved = localDateTime(new Date(guess).toISOString(), timezone);
+  if (resolved.date !== date || resolved.time !== time) throw new Error("That local date and time does not exist in the configured timezone.");
   return new Date(guess).toISOString();
 }
 
@@ -601,15 +626,20 @@ export class Store {
   }
 
   restoreFoodEntry(entry: FoodEntryRecord): FoodEntryRecord {
+    const foodId = entry.foodId !== null && this.getFood(entry.foodId) ? entry.foodId : null;
+    const mealId = entry.mealId !== null && this.getMeal(entry.mealId) ? entry.mealId : null;
     const values = nutritionParams(entry.snapshot.nutrients);
     this.sqlite.prepare(`
       INSERT OR REPLACE INTO food_entries (id, food_id, meal_id, title, logged_at_utc, meal_tag, quantity_value, quantity_display, quantity_unit, quantity_basis, snapshot_json, ${nutrientColumns.join(", ")}, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ${nutrientColumns.map(() => "?").join(", ")}, ?, ?)
-    `).run(entry.id, entry.foodId, entry.mealId, entry.title, entry.loggedAtUtc, entry.mealTag, entry.snapshot.quantity.value, entry.snapshot.quantity.display, entry.snapshot.quantity.unit, entry.snapshot.quantityBasis, JSON.stringify({ base: entry.snapshot.baseNutrients, baseQuantity: entry.snapshot.basisQuantity, snapshot: entry.snapshot.nutrients }), ...nutrientColumns.map((column) => values[column]), entry.createdAt, now());
+    `).run(entry.id, foodId, mealId, entry.title, entry.loggedAtUtc, entry.mealTag, entry.snapshot.quantity.value, entry.snapshot.quantity.display, entry.snapshot.quantity.unit, entry.snapshot.quantityBasis, JSON.stringify({ base: entry.snapshot.baseNutrients, baseQuantity: entry.snapshot.basisQuantity, snapshot: entry.snapshot.nutrients }), ...nutrientColumns.map((column) => values[column]), entry.createdAt, now());
     return this.getFoodEntry(entry.id) as FoodEntryRecord;
   }
 
   createTarget(input: { kind: string; plan?: string | null; calories?: number | null; references: NutrientReferences; metadata?: Record<string, unknown> | null; active?: boolean }): TargetRecord {
+    if (!input.kind.trim()) throw new Error("Target kind is required.");
+    if (input.calories !== null && input.calories !== undefined && (!Number.isFinite(input.calories) || input.calories <= 0)) throw new Error("Target calories must be greater than zero.");
+    validateReferences(input.references, input.calories);
     const timestamp = now();
     const transaction = this.sqlite.transaction(() => {
       if (input.active) this.sqlite.prepare("UPDATE nutrition_targets SET active = 0, updated_at = ?").run(timestamp);
@@ -641,6 +671,7 @@ export class Store {
   updateTarget(id: number, changes: { references?: NutrientReferences; active?: boolean }): TargetRecord {
     const target = this.getTarget(id);
     if (!target) throw new Error("Target not found.");
+    if (changes.references) validateReferences(changes.references, target.calories);
     const timestamp = now();
     const transaction = this.sqlite.transaction(() => {
       if (changes.active) this.sqlite.prepare("UPDATE nutrition_targets SET active = 0, updated_at = ?").run(timestamp);
@@ -651,6 +682,7 @@ export class Store {
   }
 
   addImageRecord(input: Omit<ImageRecord, "id" | "createdAt">): ImageRecord {
+    assertSafeManagedImageName(input.managedName);
     const createdAt = now();
     const result = this.sqlite.prepare("INSERT INTO images (managed_name, original_name, mime_type, byte_size, food_id, meal_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)").run(input.managedName, input.originalName, input.mimeType, input.byteSize, input.foodId ?? null, input.mealId ?? null, createdAt);
     return { ...input, id: Number(result.lastInsertRowid), createdAt };
@@ -723,13 +755,15 @@ export class Store {
 }
 
 export async function writeExport(dataDir: string, store: Store): Promise<string> {
+  const images = store.listImages();
+  for (const image of images) safeManagedImagePath(path.join(dataDir, "images"), image.managedName);
   const exportsDirectory = path.join(dataDir, "exports");
   await fsp.mkdir(exportsDirectory, { recursive: true });
   const exportDirectory = path.join(exportsDirectory, `calories-${new Date().toISOString().replaceAll(/[:.]/g, "-")}-${randomUUID().slice(0, 8)}`);
   await fsp.mkdir(path.join(exportDirectory, "images"), { recursive: true });
   await fsp.writeFile(path.join(exportDirectory, "records.json"), JSON.stringify(store.exportRecords(), null, 2));
-  for (const image of store.listImages()) {
-    const source = path.join(dataDir, "images", image.managedName);
+  for (const image of images) {
+    const source = safeManagedImagePath(path.join(dataDir, "images"), image.managedName);
     if (fs.existsSync(source)) await fsp.copyFile(source, path.join(exportDirectory, "images", image.managedName));
   }
   return exportDirectory;
@@ -744,10 +778,10 @@ export async function clearOwnedFiles(dataDir: string): Promise<void> {
   await fsp.mkdir(path.join(dataDir, "exports"), { recursive: true });
 }
 
-async function removeDeleteBackups(dataDir: string, directories: string[]): Promise<void> {
+async function listDeleteBackups(dataDir: string, directories: string[]): Promise<string[]> {
   const names = await fsp.readdir(dataDir);
   const prefixes = directories.map((directory) => `${path.basename(directory)}.delete-`);
-  await Promise.all(names.filter((name) => prefixes.some((prefix) => name.startsWith(prefix))).map((name) => fsp.rm(path.join(dataDir, name), { recursive: true, force: true })));
+  return names.filter((name) => prefixes.some((prefix) => name.startsWith(prefix))).map((name) => path.join(dataDir, name));
 }
 
 export async function deleteAllOwnedData(dataDir: string, store: Store): Promise<void> {
@@ -756,7 +790,6 @@ export async function deleteAllOwnedData(dataDir: string, store: Store): Promise
   const staged: Array<{ original: string; backup: string }> = [];
   let recordsDeleted = false;
   await fsp.mkdir(dataDir, { recursive: true });
-  await removeDeleteBackups(dataDir, directories);
   try {
     for (const original of directories) {
       const backup = `${original}.delete-${token}`;
@@ -769,9 +802,10 @@ export async function deleteAllOwnedData(dataDir: string, store: Store): Promise
     store.deleteAllRecords();
     recordsDeleted = true;
     try {
-      await Promise.all(staged.map(({ backup }) => fsp.rm(backup, { recursive: true, force: true })));
+      const backups = await listDeleteBackups(dataDir, directories);
+      await Promise.all(backups.map((backup) => fsp.rm(backup, { recursive: true, force: true })));
     } catch {
-      throw new Error("Records were deleted, but filesystem cleanup failed. Retry delete-all.");
+      throw new Error("Records were deleted, but filesystem cleanup failed. Retry delete-all; recovery data was retained.");
     }
   } catch (error) {
     if (!recordsDeleted) {

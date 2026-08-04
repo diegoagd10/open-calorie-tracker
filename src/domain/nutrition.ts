@@ -268,9 +268,20 @@ const EER_COEFFICIENTS = {
   },
 } as const;
 
+const ACTIVITY_LEVELS = ["Inactive", "Low active", "Active", "Very active"] as const;
+const PLANS = ["Lose", "Maintain", "Gain"] as const;
+
+function assertIsoDate(value: string, label: string): void {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) throw new Error(`${label} must be a valid date.`);
+  const parsed = new Date(`${value}T00:00:00Z`);
+  if (!Number.isFinite(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== value) throw new Error(`${label} must be a valid date.`);
+}
+
 export function estimateMaintenanceCalories(input: Pick<NutritionEstimateInput, "age" | "sex" | "heightCm" | "weightKg" | "activity">): number {
-  if (input.age < 19) throw new Error("Nutrition estimates are supported for adults age 19 and older.");
-  if (input.heightCm <= 0 || input.weightKg <= 0) throw new Error("Height and weight must be greater than zero.");
+  if (!Number.isFinite(input.age) || input.age < 19) throw new Error("Nutrition estimates are supported for adults age 19 and older.");
+  if (input.sex !== "female" && input.sex !== "male") throw new Error("Equation sex category must be female or male.");
+  if (!ACTIVITY_LEVELS.includes(input.activity)) throw new Error("Activity must be Inactive, Low active, Active, or Very active.");
+  if (!Number.isFinite(input.heightCm) || !Number.isFinite(input.weightKg) || input.heightCm <= 0 || input.weightKg <= 0) throw new Error("Height and weight must be greater than zero.");
   const [constant, age, height, weight] = EER_COEFFICIENTS[input.sex][input.activity];
   return constant + age * input.age + height * input.heightCm + weight * input.weightKg;
 }
@@ -281,8 +292,9 @@ export function dynamicWeightChangeCalories(input: {
   targetWeightKg: number;
   days: number;
 }): number {
-  if (input.days <= 0) throw new Error("Target date must be in the future.");
-  if (input.startingWeightKg <= 0 || input.targetWeightKg <= 0) throw new Error("Weights must be greater than zero.");
+  if (!Number.isFinite(input.maintenanceCalories) || input.maintenanceCalories <= 0) throw new Error("Maintenance calories must be greater than zero.");
+  if (!Number.isFinite(input.days) || input.days <= 0) throw new Error("Target date must be in the future.");
+  if (!Number.isFinite(input.startingWeightKg) || !Number.isFinite(input.targetWeightKg) || input.startingWeightKg <= 0 || input.targetWeightKg <= 0) throw new Error("Weights must be greater than zero.");
   if (input.startingWeightKg === input.targetWeightKg) return Math.round(input.maintenanceCalories);
 
   const energyPerKg = 7700;
@@ -309,6 +321,8 @@ export function dynamicWeightChangeCalories(input: {
 }
 
 function differenceInDays(today: string, targetDate: string): number {
+  assertIsoDate(today, "Today");
+  assertIsoDate(targetDate, "Target date");
   const start = new Date(`${today}T00:00:00Z`).getTime();
   const end = new Date(`${targetDate}T00:00:00Z`).getTime();
   return Math.round((end - start) / 86_400_000);
@@ -331,12 +345,16 @@ export function buildNutritionReferences(targetCalories: number, weightKg: numbe
 export function estimateNutrition(input: NutritionEstimateInput): NutritionEstimate {
   const maintenanceCalories = estimateMaintenanceCalories(input);
   const today = input.today ?? new Date().toISOString().slice(0, 10);
+  assertIsoDate(today, "Today");
+  if (!PLANS.includes(input.plan)) throw new Error("Plan must be Lose, Maintain, or Gain.");
   const warnings: string[] = ["This is a general starting estimate, not medical advice."];
   let targetCalories = maintenanceCalories;
   let modelVersion = "nase-m-eer-2023-v1";
 
   if (input.plan !== "Maintain") {
-    if (!input.targetWeightKg || !input.targetDate) throw new Error("Lose and Gain plans require a target weight and target date.");
+    if (input.targetWeightKg === undefined || input.targetDate === undefined) throw new Error("Lose and Gain plans require a target weight and target date.");
+    if (!Number.isFinite(input.targetWeightKg) || input.targetWeightKg <= 0) throw new Error("Target weight must be greater than zero.");
+    assertIsoDate(input.targetDate, "Target date");
     if (input.plan === "Lose" && input.targetWeightKg >= input.weightKg) throw new Error("Lose plan target weight must be below the current weight.");
     if (input.plan === "Gain" && input.targetWeightKg <= input.weightKg) throw new Error("Gain plan target weight must be above the current weight.");
     const days = differenceInDays(today, input.targetDate);

@@ -54,6 +54,13 @@ test("temporary upstream failures are retryable but invalid images are not", asy
   assert.equal(candidate.nutrients.protein, null);
 });
 
+test("partial label candidates keep a missing declared basis unresolved", () => {
+  const candidate = normalizeLabelCandidate({ nutrients: { calories: 130 } });
+  assert.equal(candidate.quantityBasis, "");
+  assert.equal(candidate.complete, false);
+  assert.match(candidate.warnings.join(" "), /quantity basis/i);
+});
+
 test("technical logging removes private payload fields", () => {
   const safe = sanitizeLogFields({ operation: "lookup", apiKey: "secret", prompt: "private", image: Buffer.from("x"), provider: "fake" });
   assert.deepEqual(safe, { operation: "lookup", provider: "fake" });
