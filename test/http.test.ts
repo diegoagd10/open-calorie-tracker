@@ -149,13 +149,22 @@ test("scan mode pages render their dedicated capture forms", async () => {
   let html = await (await fetch(`${baseUrl}/scan?mode=barcode`)).text();
   assert.match(html, /<form[^>]*method="post" action="\/scan\/barcode"/);
   assert.match(html, /name="barcode"/);
-  assert.match(html, /capture="environment"/);
-  assert.match(html, /data-barcode-camera/);
+  assert.match(html, /data-barcode-video/);
+  assert.match(html, /data-barcode-scan/);
+  assert.doesNotMatch(html, /data-barcode-start|Use camera image/);
+  assert.match(html, /@zxing\/browser@0\.1\.5/);
+  const reviewScript = await (await fetch(`${baseUrl}/review.js`)).text();
+  assert.match(reviewScript, /getUserMedia/);
+  assert.match(reviewScript, /BrowserMultiFormatReader/);
+  assert.match(reviewScript, /decodeFromVideoElement/);
   assert.doesNotMatch(html, /action="\/scan\/food" enctype/);
 
   html = await (await fetch(`${baseUrl}/scan?mode=label`)).text();
   assert.match(html, /<form method="post" action="\/scan\/label"/);
   assert.match(html, /name="image"/);
+  assert.match(html, /data-label-video/);
+  assert.match(html, /data-label-capture/);
+  assert.doesNotMatch(html, /data-label-start|Use camera image/);
   assert.doesNotMatch(html, /action="\/scan\/food" enctype/);
 });
 
