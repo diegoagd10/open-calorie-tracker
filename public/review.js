@@ -22,4 +22,25 @@
   document.addEventListener("input", (event) => {
     if (event.target instanceof HTMLInputElement && event.target.matches("[data-review-quantity]")) updateReview(event.target);
   });
+
+  document.addEventListener("click", (event) => {
+    const target = event.target instanceof Element ? event.target.closest("[data-entry-menu]") : null;
+    if (!target) return;
+    const menu = target.parentElement?.querySelector(".entry-menu");
+    if (!menu) return;
+    const isHidden = menu.hasAttribute("hidden");
+    document.querySelectorAll(".entry-menu").forEach((entryMenu) => entryMenu.setAttribute("hidden", ""));
+    document.querySelectorAll("[data-entry-menu]").forEach((button) => button.setAttribute("aria-expanded", "false"));
+    if (isHidden) {
+      menu.removeAttribute("hidden");
+      target.setAttribute("aria-expanded", "true");
+    }
+  });
+
+  document.addEventListener("click", (event) => {
+    if (event.target instanceof Element && !event.target.closest(".entry-actions")) {
+      document.querySelectorAll(".entry-menu").forEach((menu) => menu.setAttribute("hidden", ""));
+      document.querySelectorAll("[data-entry-menu]").forEach((button) => button.setAttribute("aria-expanded", "false"));
+    }
+  });
 })();
