@@ -40,6 +40,7 @@ test("exports include structured records and retained images without rewriting s
   await fs.mkdir(path.join(directory, "images.delete-stale"), { recursive: true });
   await deleteAllOwnedData(directory, store);
   assert.equal(store.getFoodEntry(entry.id), null);
+  assert.equal(store.getUser(), null);
   assert.deepEqual(await fs.readdir(path.join(directory, "exports")), []);
   await assert.rejects(fs.access(path.join(directory, "images.delete-stale")));
 });

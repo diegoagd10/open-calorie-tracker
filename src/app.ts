@@ -207,6 +207,7 @@ function createManualFoodForm(food?: FoodRecord): string {
 
 function renderLogPage(store: Store, config: AppConfig, date: string, notice = "", undoId?: string): string {
   const timezone = store.getTimezone(config.timezone);
+  const user = store.getUser();
   const entries = store.listFoodEntriesByDate(date, timezone);
   const target = store.getActiveTarget();
   const references: NutrientReferences = { ...(target?.references ?? {}) };
@@ -219,7 +220,7 @@ function renderLogPage(store: Store, config: AppConfig, date: string, notice = "
     ${renderSummary(summary, target)}
     <section class="log-feed" aria-labelledby="feed-heading"><div class="feed-heading"><h2 id="feed-heading">Food entries</h2><span class="muted">${entries.length} entr${entries.length === 1 ? "y" : "ies"} / newest first</span></div>${entries.length ? entries.map(renderFoodEntry).join("") : renderEmptyState("Start with a food entry", "Your daily log is empty. Choose a capture path above; nothing is saved until you confirm it.", "/saved-foods", "Open Saved Foods")}</section>
     <p class="muted" style="margin-top:24px;font-size:.8rem"><a href="/settings/data">Your data and images</a> / <a href="/settings">Timezone settings</a></p>`;
-  return renderPage({ title: `${date} Daily log`, active: "log", content, seedTimezone: store.getUser()?.timezoneSource === "bootstrap" });
+  return renderPage({ title: `${date} Daily log`, active: "log", content, seedTimezone: !user || user.timezoneSource === "bootstrap" });
 }
 
 function renderDatabasePage(store: Store, config: AppConfig, options: { query?: string; filter?: string; candidates?: FoodCandidate[]; error?: string } = {}): string {
@@ -581,7 +582,7 @@ export function createApplication(options: ApplicationOptions = {}): Application
 
   app.get("/settings/data", (request, response) => send(response, renderDataPage(store, text(request.query.notice))));
   app.post("/settings/data/export", async (request, response) => { try { const exportDirectory = await writeExport(config.dataDir, store); return redirect(response, `/settings/data?notice=${encodeURIComponent(`Export created under ${path.basename(exportDirectory)}`)}`); } catch (error) { return redirect(response, `/settings/data?notice=${encodeURIComponent(error instanceof Error ? error.message : "Export failed")}`); } });
-  app.post("/settings/data/delete-all", async (request, response) => { if (text(request.body.confirmation) !== "DELETE") return redirect(response, "/settings/data?notice=Type%20DELETE%20to%20confirm"); try { await deleteAllOwnedData(config.dataDir, store); store.ensureUser(config.timezone); return redirect(response, "/log?notice=All%20owned%20data%20was%20deleted"); } catch (error) { return redirect(response, `/settings/data?notice=${encodeURIComponent(error instanceof Error ? error.message : "Delete failed; restore from backup")}`); } });
+  app.post("/settings/data/delete-all", async (request, response) => { if (text(request.body.confirmation) !== "DELETE") return redirect(response, "/settings/data?notice=Type%20DELETE%20to%20confirm"); try { await deleteAllOwnedData(config.dataDir, store); return redirect(response, "/log?notice=All%20owned%20data%20was%20deleted"); } catch (error) { return redirect(response, `/settings/data?notice=${encodeURIComponent(error instanceof Error ? error.message : "Delete failed; restore from backup")}`); } });
 
   app.use(express.static(publicDirectory));
   app.use((error: unknown, _request: Request, response: Response, _next: unknown) => { logger.error("http_request_failed", { operation: "request", error: error instanceof Error ? error.name : "unknown" }); if (!response.headersSent) response.status(500).send(renderErrorPage("Unexpected error", "The request failed without exposing private provider or nutrition details.", "log")); });

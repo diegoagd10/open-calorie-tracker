@@ -85,12 +85,18 @@ test("shared review exposes descriptions and client-side quantity recalculation 
 test("barcode results remain transient candidates until Add to Log", async () => {
   const adapter: BarcodeAdapter = { lookup: async () => ({ name: "Candidate oats", brand: null, description: null, quantityBasis: "serving", basisQuantity: 1, nutrients: { calories: 200, protein: 8 }, source: "fake provider", warnings: [], complete: true, requiresReview: true }) };
   const { baseUrl, application } = await testServer(adapter);
-  const response = await fetch(`${baseUrl}/scan/barcode`, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ barcode: "12345678" }) });
+  let response = await fetch(`${baseUrl}/scan/barcode`, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ barcode: "12345678" }) });
   const html = await response.text();
   assert.equal(response.status, 200);
   assert.match(html, /Candidate oats/);
   assert.equal(application.store.listFoods().length, 0);
   assert.equal(application.store.listFoodEntriesByDate("2026-01-01", "America/New_York").length, 0);
+  const token = html.match(/action="\/review\/candidate\/([^/]+)\/add"/)?.[1];
+  assert.ok(token);
+  assert.match(html, new RegExp(`formaction="/review/candidate/${token}/save"`));
+  response = await fetch(`${baseUrl}/review/candidate/${token}/save`, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ name: "Edited oats", quantityBasis: "serving", calories: "250" }), redirect: "manual" });
+  assert.equal(response.status, 303);
+  assert.equal(application.store.listFoods()[0]?.name, "Edited oats");
 });
 
 test("retryable barcode failures preserve the submitted barcode in the retry form", async () => {

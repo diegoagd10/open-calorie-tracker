@@ -273,7 +273,11 @@ export class Store {
   seedBrowserTimezone(timezone: string): boolean {
     if (!isValidTimezone(timezone)) throw new Error("Invalid timezone.");
     const user = this.getUser();
-    if (!user) return false;
+    if (!user) {
+      const timestamp = now();
+      const result = this.sqlite.prepare("INSERT INTO users (timezone, timezone_source, created_at, updated_at) SELECT ?, 'browser', ?, ? WHERE NOT EXISTS (SELECT 1 FROM users)").run(timezone, timestamp, timestamp);
+      return result.changes > 0;
+    }
     const result = this.sqlite.prepare("UPDATE users SET timezone = ?, timezone_source = 'browser', updated_at = ? WHERE id = ? AND timezone_source = 'bootstrap'").run(timezone, now(), user.id);
     return result.changes > 0;
   }

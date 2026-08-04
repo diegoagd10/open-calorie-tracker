@@ -115,9 +115,8 @@ export function renderReviewSurface(input: { title: string; profile: ReviewProfi
       <label>Local date <input name="date" type="date" value="${escapeHtml(reviewDate)}" required></label>
       <label>Local time <input name="time" type="time" value="${escapeHtml(reviewTime)}" required></label>
       <label>Meal tag <select name="mealTag"><option value="">No tag</option><option>Breakfast</option><option>Lunch</option><option>Dinner</option><option>Snack</option></select></label>
-      <button class="button" type="submit">Add to Log</button>
+      <div class="inline-form"><button class="button" type="submit">Add to Log</button><button class="button button--secondary" type="submit" formaction="${escapeHtml(saveTarget)}">${input.mealId ? "Favorite Meal" : "Save to Saved Foods"}</button></div>
     </form>
-    <form method="post" action="${escapeHtml(saveTarget)}" class="inline-form"><button class="button button--secondary" type="submit">${input.mealId ? "Favorite Meal" : "Save to Saved Foods"}</button></form>
   </section>`;
 }
 
