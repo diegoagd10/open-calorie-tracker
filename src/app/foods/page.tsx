@@ -1,17 +1,16 @@
+import FoodDatabaseClient from "@/app/foods/FoodDatabaseClient";
 import AppShell from "@/app/AppShell";
-import DailyLog from "@/app/DailyLog";
 
-export default async function Page({
+export default async function FoodsPage({
   searchParams,
 }: {
   searchParams: Promise<{ date?: string | string[] }>;
 }) {
   const params = await searchParams;
   const date = typeof params.date === "string" ? params.date : undefined;
-
   return (
     <AppShell>
-      <DailyLog initialDate={date} />
+      <FoodDatabaseClient initialDate={date} />
     </AppShell>
   );
 }

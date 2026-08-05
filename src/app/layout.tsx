@@ -8,8 +8,9 @@ const geistSans = Geist({
 });
 
 export const metadata: Metadata = {
-  title: "Daily Intake | Calorie tracker",
-  description: "A simple daily food and calorie ledger.",
+  title: "Daily Intake | Personal nutrition ledger",
+  description:
+    "A local daily ledger for food snapshots, hydration, targets, and weight.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

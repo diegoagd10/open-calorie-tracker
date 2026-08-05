@@ -1,0 +1,156 @@
+.app {
+  min-height: 100vh;
+  color: #1f2721;
+  background: #edf0e8;
+}
+
+.frame {
+  display: grid;
+  grid-template-columns: 224px minmax(0, 1fr);
+  width: min(1440px, 100%);
+  min-height: 100vh;
+  margin: 0 auto;
+}
+
+.sidebar {
+  position: sticky;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  padding: 28px 22px 24px;
+  border-right: 1px solid #1f2721;
+  background: #1f2721;
+  color: #eff2ea;
+}
+
+.wordmark {
+  display: inline-flex;
+  align-items: center;
+  gap: 11px;
+  width: fit-content;
+  color: inherit;
+  font-size: 0.88rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+.mark {
+  display: grid;
+  grid-template-columns: repeat(3, 5px);
+  align-items: end;
+  gap: 3px;
+  width: 21px;
+  height: 22px;
+}
+
+.mark span {
+  display: block;
+  height: 50%;
+  background: #f1684d;
+}
+
+.mark span:nth-child(2) {
+  height: 100%;
+}
+
+.mark span:nth-child(3) {
+  height: 72%;
+}
+
+.sidebarCaption {
+  max-width: 18ch;
+  margin-top: 46px;
+  color: #aab4aa;
+  font-size: 0.76rem;
+  line-height: 1.55;
+}
+
+.nav {
+  display: grid;
+  gap: 5px;
+  margin-top: 38px;
+}
+
+.nav a,
+.navGroup > span {
+  display: block;
+  padding: 10px 0;
+  color: #c7d0c6;
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.nav a:hover,
+.nav a:focus-visible {
+  color: #fff;
+}
+
+.nav a:first-child {
+  color: #fff;
+}
+
+.navGroup {
+  display: grid;
+  gap: 2px;
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid #626d63;
+}
+
+.navGroup > span {
+  padding-top: 0;
+  color: #8f9a90;
+  font-size: 0.64rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.navGroup a {
+  padding-left: 13px;
+  font-weight: 600;
+}
+
+.sidebarFoot {
+  margin-top: auto;
+  color: #839084;
+  font-size: 0.65rem;
+  line-height: 1.45;
+}
+
+.content {
+  min-width: 0;
+}
+
+.mobileHeader {
+  display: none;
+}
+
+@media (max-width: 760px) {
+  .frame {
+    display: block;
+    min-height: 0;
+  }
+
+  .sidebar {
+    display: none;
+  }
+
+  .mobileHeader {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    min-height: 54px;
+    padding: 15px 16px;
+    border-bottom: 1px solid #1f2721;
+    color: #fffef9;
+    background: #1f2721;
+  }
+
+  .mobileTag {
+    color: #aab4aa;
+    font-size: 0.67rem;
+  }
+}

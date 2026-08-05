@@ -1,0 +1,690 @@
+.page {
+  min-height: 100vh;
+  padding: 50px clamp(18px, 5vw, 68px) 76px;
+}
+
+.header,
+.summaryBoard,
+.targetStrip,
+.waterBoard,
+.logBoard,
+.targetForm,
+.statusMessage,
+.errorMessage,
+.notice {
+  width: min(1120px, 100%);
+  margin-right: auto;
+  margin-left: auto;
+}
+
+.header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 36px;
+  padding-bottom: 34px;
+}
+
+.header h1 {
+  max-width: 12ch;
+  font-size: clamp(2.8rem, 6vw, 5.3rem);
+  line-height: 0.9;
+  letter-spacing: -0.05em;
+}
+
+.lede {
+  max-width: 53ch;
+  margin-top: 19px;
+  color: #647067;
+  line-height: 1.55;
+}
+
+.dayPicker {
+  display: grid;
+  flex: 0 0 190px;
+  gap: 8px;
+  padding: 15px 17px;
+  border: 1px solid #1f2721;
+  background: #fffef9;
+}
+
+.dayPicker label,
+.dayPicker span {
+  color: #647067;
+  font-size: 0.67rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.dayPicker span {
+  color: #a92e1b;
+  font-size: 0.63rem;
+}
+
+.dayPicker input {
+  width: 100%;
+  padding: 8px 0;
+  border: 0;
+  border-bottom: 1px solid #9ca89e;
+  border-radius: 0;
+  outline: none;
+  color: #1f2721;
+  background: transparent;
+  font: inherit;
+  font-size: 0.9rem;
+}
+
+.dayPicker input:focus {
+  border-color: #e84b2c;
+  box-shadow: 0 2px 0 #e84b2c;
+}
+
+.summaryBoard {
+  display: grid;
+  grid-template-columns: minmax(230px, 0.78fr) minmax(0, 1.22fr);
+  border: 1px solid #1f2721;
+  background: #fffef9;
+}
+
+.totalLead {
+  display: flex;
+  flex-direction: column;
+  min-height: 244px;
+  padding: 27px;
+  color: #eff2ea;
+  background: #1f2721;
+}
+
+.leadLabel,
+.sectionHeading p,
+.waterBoard p,
+.entryMain span,
+.entryTotal span,
+.nutrientGrid span,
+.waterReadout span,
+.waterReadout small,
+.editorHeading span,
+.editorGrid label,
+.targetStrip span {
+  color: #647067;
+  font-size: 0.69rem;
+}
+
+.totalLead .leadLabel {
+  color: #aab4aa;
+  font-weight: 750;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.totalLead strong {
+  margin-top: auto;
+  color: #fff;
+  font-size: clamp(3.6rem, 7vw, 5.6rem);
+  font-weight: 650;
+  letter-spacing: -0.06em;
+  line-height: 0.85;
+}
+
+.totalLead > span:not(.leadLabel) {
+  margin-top: 8px;
+  color: #ff765d;
+  font-size: 0.88rem;
+  font-weight: 800;
+}
+
+.totalLead small {
+  margin-top: 17px;
+  color: #aab4aa;
+  font-size: 0.73rem;
+}
+
+.nutrientGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.nutrientGrid > div {
+  display: grid;
+  align-content: center;
+  gap: 7px;
+  min-width: 0;
+  padding: 17px 19px;
+  border-bottom: 1px solid #d8ded6;
+  border-left: 1px solid #d8ded6;
+}
+
+.nutrientGrid > div:nth-last-child(-n + 3) {
+  border-bottom: 0;
+}
+
+.nutrientGrid span,
+.targetStrip span,
+.entryTotal span,
+.entryMain span,
+.waterBoard p,
+.waterReadout span,
+.waterReadout small,
+.sectionHeading p,
+.editorHeading span {
+  color: #647067;
+}
+
+.nutrientGrid strong {
+  font-size: 0.93rem;
+}
+
+.status {
+  width: fit-content;
+  color: #647067;
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.status-within-limit,
+.status-met {
+  color: #2d7145;
+}
+
+.status-exceeded {
+  color: #a22412;
+}
+
+.status-below-target {
+  color: #8a5a11;
+}
+
+.targetStrip {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  border-right: 1px solid #1f2721;
+  border-bottom: 1px solid #1f2721;
+  border-left: 1px solid #1f2721;
+  background: #f5f7ef;
+}
+
+.targetStrip > div {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  padding: 16px 13px;
+  border-right: 1px solid #d8ded6;
+}
+
+.targetStrip > div:last-child {
+  border-right: 0;
+}
+
+.targetStrip strong {
+  font-size: 0.76rem;
+}
+
+.waterBoard {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(190px, 0.7fr) minmax(360px, 1.2fr);
+  align-items: center;
+  gap: 25px;
+  margin-top: 18px;
+  padding: 24px 27px;
+  border: 1px solid #1f2721;
+  background: #f5f7ef;
+}
+
+.waterBoard h2,
+.sectionHeading h2 {
+  font-size: 1.45rem;
+  letter-spacing: -0.035em;
+}
+
+.waterBoard p {
+  max-width: 32ch;
+  margin-top: 8px;
+  line-height: 1.5;
+}
+
+.waterReadout {
+  display: grid;
+  gap: 5px;
+  padding-left: 22px;
+  border-left: 1px solid #9ca89e;
+}
+
+.waterReadout strong {
+  color: #1f2721;
+  font-size: 2.5rem;
+  letter-spacing: -0.06em;
+}
+
+.waterReadout span {
+  color: #1f2721;
+  font-weight: 750;
+}
+
+.waterActions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.waterActions > button,
+.waterActions form {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid #1f2721;
+  color: #1f2721;
+  background: #fffef9;
+  font: inherit;
+  font-size: 0.73rem;
+  font-weight: 800;
+  text-align: left;
+}
+
+.waterActions > button:hover:not(:disabled) {
+  border-color: #e84b2c;
+  color: #a92e1b;
+}
+
+.waterActions > button:disabled {
+  cursor: wait;
+  opacity: 0.5;
+}
+
+.waterActions button span {
+  display: block;
+  margin-top: 4px;
+  color: #647067;
+  font-size: 0.64rem;
+  font-weight: 600;
+}
+
+.waterActions form {
+  grid-column: 1 / -1;
+  padding: 10px;
+}
+
+.waterActions form label {
+  display: block;
+  margin-bottom: 6px;
+  color: #647067;
+  font-size: 0.64rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.waterActions form div {
+  display: flex;
+  gap: 8px;
+}
+
+.waterActions input {
+  min-width: 0;
+  flex: 1;
+  padding: 8px 0;
+  border: 0;
+  border-bottom: 1px solid #9ca89e;
+  border-radius: 0;
+  outline: none;
+  color: #1f2721;
+  background: transparent;
+  font: inherit;
+}
+
+.waterActions form button {
+  padding: 0 10px;
+  border: 0;
+  color: #a92e1b;
+  background: transparent;
+  font: inherit;
+  font-size: 0.7rem;
+  font-weight: 800;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.logBoard {
+  margin-top: 18px;
+  padding: 27px;
+  border: 1px solid #1f2721;
+  background: #fffef9;
+}
+
+.sectionHeading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 19px;
+}
+
+.sectionHeading p {
+  margin-top: 7px;
+}
+
+.primaryButton,
+.textButton {
+  border: 0;
+  border-radius: 0;
+  font: inherit;
+  cursor: pointer;
+}
+
+.primaryButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 43px;
+  padding: 0 15px;
+  border: 1px solid #e84b2c;
+  color: #fff;
+  background: #e84b2c;
+  font-size: 0.74rem;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.primaryButton:hover {
+  border-color: #a92e1b;
+  background: #a92e1b;
+}
+
+.entryList {
+  list-style: none;
+}
+
+.entry {
+  padding: 18px 0;
+  border-top: 1px solid #d8ded6;
+}
+
+.entryRow {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.entryMain {
+  display: grid;
+  flex: 1;
+  gap: 6px;
+  min-width: 0;
+}
+
+.entryMain strong {
+  overflow: hidden;
+  color: #1f2721;
+  font-size: 0.92rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.entryMain span,
+.entryTotal span {
+  overflow: hidden;
+  font-size: 0.72rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.entryTotal {
+  display: grid;
+  flex: 0 0 135px;
+  gap: 5px;
+}
+
+.entryTotal strong {
+  font-size: 0.85rem;
+}
+
+.entryActions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 12px;
+}
+
+.textButton {
+  padding: 4px 0;
+  color: #647067;
+  background: transparent;
+  font-size: 0.7rem;
+  font-weight: 800;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.textButton:hover {
+  color: #a92e1b;
+}
+
+.empty,
+.statusMessage,
+.errorMessage,
+.notice {
+  padding: 18px 0 4px;
+  font-size: 0.82rem;
+  line-height: 1.55;
+}
+
+.empty {
+  display: grid;
+  gap: 5px;
+  border-top: 1px solid #d8ded6;
+  color: #647067;
+}
+
+.empty strong {
+  color: #1f2721;
+}
+
+.statusMessage {
+  color: #647067;
+}
+
+.errorMessage,
+.error {
+  color: #a22412;
+  font-weight: 700;
+}
+
+.notice {
+  color: #2d7145;
+  font-weight: 700;
+}
+
+.targetForm {
+  padding: 30px;
+  border: 1px solid #1f2721;
+  background: #fffef9;
+}
+
+.editor {
+  display: grid;
+  gap: 18px;
+}
+
+.editorHeading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.editorHeading > div {
+  display: grid;
+  gap: 5px;
+}
+
+.editorHeading span {
+  font-size: 0.64rem;
+  font-weight: 800;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.editorHeading strong {
+  font-size: 1rem;
+}
+
+.editorGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 15px;
+}
+
+.editorGrid label {
+  display: grid;
+  gap: 6px;
+  color: #3d4a40;
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.editorGrid input {
+  width: 100%;
+  padding: 9px 0;
+  border: 0;
+  border-bottom: 1px solid #9ca89e;
+  border-radius: 0;
+  outline: none;
+  color: #1f2721;
+  background: transparent;
+  font: inherit;
+  font-size: 0.88rem;
+  font-weight: 500;
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+.editorGrid input:focus {
+  border-color: #e84b2c;
+  box-shadow: 0 2px 0 #e84b2c;
+}
+
+.editorActions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+@media (max-width: 950px) {
+  .waterBoard {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .waterActions {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 760px) {
+  .page {
+    padding: 32px 16px 58px;
+  }
+
+  .header {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 22px;
+  }
+
+  .dayPicker {
+    flex-basis: auto;
+  }
+
+  .summaryBoard {
+    grid-template-columns: 1fr;
+  }
+
+  .totalLead {
+    min-height: 215px;
+  }
+
+  .nutrientGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .nutrientGrid > div:nth-last-child(-n + 3) {
+    border-bottom: 1px solid #d8ded6;
+  }
+
+  .nutrientGrid > div:nth-last-child(-n + 2) {
+    border-bottom: 0;
+  }
+
+  .targetStrip {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .targetStrip > div:nth-child(2n) {
+    border-right: 0;
+  }
+
+  .targetStrip > div:nth-child(-n + 4) {
+    border-bottom: 1px solid #d8ded6;
+  }
+
+  .waterBoard {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+    padding: 22px;
+  }
+
+  .waterReadout {
+    padding-top: 16px;
+    padding-left: 0;
+    border-top: 1px solid #9ca89e;
+    border-left: 0;
+  }
+
+  .waterActions {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .logBoard {
+    padding: 22px;
+  }
+
+  .sectionHeading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .sectionHeading .primaryButton {
+    width: 100%;
+  }
+
+  .entryRow {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .entryMain {
+    flex-basis: calc(100% - 18px);
+  }
+
+  .entryTotal {
+    flex-basis: auto;
+  }
+
+  .entryActions {
+    margin-left: auto;
+  }
+
+  .targetForm {
+    padding: 22px;
+  }
+
+  .editorGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page * {
+    scroll-behavior: auto !important;
+  }
+}
