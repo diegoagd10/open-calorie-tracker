@@ -1,6 +1,0 @@
-{
-  "files": ["public/mockup.html"],
-  "insertBefore": "</body>",
-  "commentSyntax": "html",
-  "cspChecked": true
-}
