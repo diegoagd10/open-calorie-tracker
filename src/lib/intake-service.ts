@@ -147,11 +147,8 @@ export class IntakeService {
     entries: FoodLogEntry[];
     totals: DailyNutritionTotals;
   } {
-    const normalizedDate = normalizeFoodLogCreateInput({
-      date,
-      productId: "day-summary",
-      quantity: 1,
-    }).date;
+    const normalizedDate = validateDate(date, "Date");
+    assertNotFutureDate(normalizedDate);
     const entries = this.foodLogs.listByDate(normalizedDate);
     return {
       date: normalizedDate,

@@ -2,7 +2,6 @@ import { mkdirSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { dirname, join } from "node:path";
 import Database from "better-sqlite3";
-import { CalorieRepository } from "./calorie-repository";
 import { FoodLogRepository } from "./food-log-repository";
 import { IntakeService } from "./intake-service";
 import { ProductRepository } from "./product-repository";
@@ -255,6 +254,3 @@ export const intakeService = new IntakeService(
   weightRepository,
   settingsRepository,
 );
-
-// Preserve the original repository seam for existing calorie-only consumers.
-export const calorieRepository = new CalorieRepository(databasePath);
