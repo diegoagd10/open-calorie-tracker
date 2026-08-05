@@ -1,0 +1,8 @@
+{
+  "/_global-error/page": "/_global-error",
+  "/_not-found/page": "/_not-found",
+  "/api/entries/route": "/api/entries",
+  "/favicon.ico/route": "/favicon.ico",
+  "/page": "/",
+  "/prototype/food-entry/page": "/prototype/food-entry"
+}

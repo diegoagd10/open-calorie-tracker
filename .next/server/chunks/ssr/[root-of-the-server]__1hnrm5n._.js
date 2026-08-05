@@ -1,0 +1,3 @@
+module.exports=[89578,a=>{a.v({className:"geist_a71539c9-module__T19VSG__className",variable:"geist_a71539c9-module__T19VSG__variable"})},27572,a=>{"use strict";var b=a.i(71840),c=a.i(89578);let d={className:c.default.className,style:{fontFamily:"'Geist', 'Geist Fallback'",fontStyle:"normal"}};null!=c.default.variable&&(d.variable=c.default.variable),a.s(["default",0,function({children:a}){return(0,b.jsx)("html",{lang:"en",className:d.variable,children:(0,b.jsx)("body",{children:a})})},"metadata",0,{title:"Daily Intake | Calorie tracker",description:"A simple daily food and calorie ledger."}],27572)},50645,function(a){a.n(a.i(27572))}];
+
+//# sourceMappingURL=%5Broot-of-the-server%5D__1hnrm5n._.js.map
