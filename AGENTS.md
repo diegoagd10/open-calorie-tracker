@@ -49,6 +49,35 @@ pnpm build     # production build
 pnpm start     # production server
 ```
 
+## Docker And Portainer Deployment
+
+- Production deployments use Portainer's Docker Compose stack from the Git
+  repository. Portainer pulls `refs/heads/main`, reads `docker-compose.yml`,
+  and builds `Dockerfile` on the target Docker host.
+- The repository URL must be the clone URL
+  `https://github.com/diegoagd10/open-calory-tracker.git`; never use a GitHub
+  browser URL containing `/tree/main`.
+- The repository is private. Portainer Git authentication uses Basic
+  authentication with the GitHub username and a personal access token. A
+  fine-grained token should be limited to `open-calory-tracker` with
+  `Contents: Read-only`; clone access does not need write permission. Never put
+  credentials in URLs or source files.
+- After pushing to `main`, update the stack with Portainer's Update or Pull and
+  redeploy action. GitOps polling or a webhook is required for automatic
+  updates.
+- `pull_policy: build` makes a stack update rebuild the image from the checked
+  out source. Keep the Node 22 Docker build and native `better-sqlite3` build
+  dependencies intact.
+- The `daily-intake-data` Compose service volume, backed by the Docker named
+  volume `open-calory-tracker-data` by default (override with
+  `DAILY_INTAKE_VOLUME`), stores SQLite at `/app/data/calories.db`; preserve it
+  across redeployments and back it up before removing the volume.
+  `DAILY_INTAKE_PORT` defaults to host port 3001 and changes only the host port;
+  the container listens on 3000.
+- The app has no account or application authentication. Keep the Portainer
+  endpoint and published app port on a trusted network or protect public
+  access with an external access layer.
+
 ## Quality Check Gates
 
 Do not treat a feature or fix as complete until the applicable gates pass:

@@ -11,7 +11,7 @@ services:
       PORT: 3000
       DAILY_INTAKE_DB_PATH: /app/data/calories.db
     ports:
-      - "${DAILY_INTAKE_PORT:-3000}:3000"
+      - "${DAILY_INTAKE_PORT:-3001}:3000"
     volumes:
       - daily-intake-data:/app/data
     restart: unless-stopped
