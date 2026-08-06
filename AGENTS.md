@@ -72,8 +72,8 @@ pnpm start     # production server
   volume `open-calory-tracker-data` by default (override with
   `DAILY_INTAKE_VOLUME`), stores SQLite at `/app/data/calories.db`; preserve it
   across redeployments and back it up before removing the volume.
-  `DAILY_INTAKE_PORT` changes only the host port; the container listens on
-  3000.
+  `DAILY_INTAKE_PORT` defaults to host port 3001 and changes only the host port;
+  the container listens on 3000.
 - The app has no account or application authentication. Keep the Portainer
   endpoint and published app port on a trusted network or protect public
   access with an external access layer.

@@ -54,8 +54,9 @@ docker build -t ghcr.io/diegoagd10/open-calory-tracker:1.0.0 .
 docker push ghcr.io/diegoagd10/open-calory-tracker:1.0.0
 ```
 
-The image uses Next.js standalone output and runs as a non-root user on port 3000.
-Set `DAILY_INTAKE_IMAGE` to that published tag when using the image-only fallback.
-Set `DAILY_INTAKE_PORT` only if the host should expose a port other than 3000.
+The image uses Next.js standalone output and runs as a non-root user on container
+port 3000. The default host port is 3001; set `DAILY_INTAKE_IMAGE` to that
+published tag when using the image-only fallback, or set `DAILY_INTAKE_PORT` to
+another free host port. The container port remains 3000.
 The `open-calory-tracker-data` named volume keeps the SQLite database when the
 container is replaced; back up that volume before removing it.
