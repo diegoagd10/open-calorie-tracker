@@ -46,25 +46,25 @@ function Chart({ entries, targetWeight }: { entries: WeightEntry[]; targetWeight
             : "Weight trend is empty"
         }
       >
-        <line x1={padding.left} x2={width - padding.right} y1={height - padding.bottom} y2={height - padding.bottom} stroke="#9ca89e" />
-        <line x1={padding.left} x2={padding.left} y1={padding.top} y2={height - padding.bottom} stroke="#9ca89e" />
+        <line x1={padding.left} x2={width - padding.right} y1={height - padding.bottom} y2={height - padding.bottom} stroke="var(--line-strong)" />
+        <line x1={padding.left} x2={padding.left} y1={padding.top} y2={height - padding.bottom} stroke="var(--line-strong)" />
         {targetWeight !== null && (
           <line
             x1={padding.left}
             x2={width - padding.right}
             y1={y(targetWeight)}
             y2={y(targetWeight)}
-            stroke="#e84b2c"
+            stroke="var(--accent)"
             strokeDasharray="5 5"
           />
         )}
         {entries.length > 1 && (
-          <polyline points={points} fill="none" stroke="#1f2721" strokeWidth="2.5" />
+          <polyline points={points} fill="none" stroke="var(--foreground)" strokeWidth="2.5" />
         )}
         {entries.map((entry, index) => (
           <g key={entry.date}>
-            <circle cx={x(index)} cy={y(entry.weightLb)} r="4.5" fill="#e84b2c" />
-            <text x={x(index)} y={height - 13} textAnchor="middle" fill="#647067" fontSize="10">
+            <circle cx={x(index)} cy={y(entry.weightLb)} r="4.5" fill="var(--accent)" />
+            <text x={x(index)} y={height - 13} textAnchor="middle" fill="var(--quiet)" fontSize="10">
               {entry.date.slice(5)}
             </text>
           </g>
