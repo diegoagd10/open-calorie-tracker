@@ -1,11 +1,23 @@
 :root {
-  --background: #edf0e8;
-  --foreground: #1f2721;
-  --accent: #e84b2c;
+  --background: #0b0d0f;
+  --foreground: #eff1ed;
+  --surface: #121619;
+  --surface-raised: #181d21;
+  --surface-soft: #1c2227;
+  --line: #2b333a;
+  --line-strong: #3a444c;
+  --muted: #a1aab1;
+  --quiet: #78838b;
+  --accent: #e2a36a;
+  --water: #79b7bd;
+  --success: #93bda0;
+  --warning: #d8b177;
+  --danger: #e18b86;
 }
 
 html {
   height: 100%;
+  color-scheme: dark;
 }
 
 html,
@@ -41,9 +53,20 @@ input {
   font: inherit;
 }
 
+button,
+a,
+input {
+  -webkit-tap-highlight-color: transparent;
+}
+
 button:focus-visible,
 a:focus-visible,
 input:focus-visible {
-  outline: 3px solid #f3a18f;
+  outline: 2px solid var(--accent);
   outline-offset: 3px;
+}
+
+::selection {
+  color: #13100d;
+  background: var(--accent);
 }

@@ -1,13 +1,13 @@
 .app {
   min-height: 100vh;
-  color: #1f2721;
-  background: #edf0e8;
+  color: var(--foreground);
+  background: var(--background);
 }
 
 .frame {
   display: grid;
-  grid-template-columns: 224px minmax(0, 1fr);
-  width: min(1440px, 100%);
+  grid-template-columns: 248px minmax(0, 1fr);
+  width: min(1560px, 100%);
   min-height: 100vh;
   margin: 0 auto;
 }
@@ -18,10 +18,9 @@
   display: flex;
   flex-direction: column;
   min-height: 100vh;
-  padding: 28px 22px 24px;
-  border-right: 1px solid #1f2721;
-  background: #1f2721;
-  color: #eff2ea;
+  padding: 30px 20px 24px;
+  border-right: 1px solid var(--line);
+  background: #0e1113;
 }
 
 .wordmark {
@@ -29,10 +28,10 @@
   align-items: center;
   gap: 11px;
   width: fit-content;
-  color: inherit;
-  font-size: 0.88rem;
-  font-weight: 800;
-  letter-spacing: 0.02em;
+  color: var(--foreground);
+  font-size: 0.9rem;
+  font-weight: 760;
+  letter-spacing: -0.015em;
 }
 
 .mark {
@@ -47,76 +46,83 @@
 .mark span {
   display: block;
   height: 50%;
-  background: #f1684d;
+  background: var(--accent);
 }
 
 .mark span:nth-child(2) {
   height: 100%;
+  background: var(--foreground);
 }
 
 .mark span:nth-child(3) {
   height: 72%;
+  background: var(--water);
 }
 
 .sidebarCaption {
-  max-width: 18ch;
-  margin-top: 46px;
-  color: #aab4aa;
+  max-width: 19ch;
+  margin-top: 54px;
+  color: var(--quiet);
   font-size: 0.76rem;
   line-height: 1.55;
 }
 
 .nav {
   display: grid;
-  gap: 5px;
-  margin-top: 38px;
+  gap: 4px;
+  margin-top: 36px;
 }
 
 .nav a,
 .navGroup > span {
   display: block;
-  padding: 10px 0;
-  color: #c7d0c6;
+  padding: 11px 12px;
+  border-radius: 9px;
+  color: var(--muted);
   font-size: 0.78rem;
-  font-weight: 700;
+  font-weight: 650;
   text-decoration: none;
+  transition: color 160ms ease, background 160ms ease;
 }
 
 .nav a:hover,
 .nav a:focus-visible {
-  color: #fff;
+  color: var(--foreground);
+  background: var(--surface-soft);
 }
 
-.nav a:first-child {
-  color: #fff;
+.nav a.active {
+  color: var(--accent);
+  background: #1b1f21;
 }
 
 .navGroup {
   display: grid;
-  gap: 2px;
+  gap: 3px;
   margin-top: 18px;
-  padding-top: 16px;
-  border-top: 1px solid #626d63;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
 }
 
 .navGroup > span {
-  padding-top: 0;
-  color: #8f9a90;
-  font-size: 0.64rem;
-  letter-spacing: 0.08em;
+  padding: 0 12px 6px;
+  color: var(--quiet);
+  font-size: 0.63rem;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
 }
 
 .navGroup a {
-  padding-left: 13px;
+  padding-left: 24px;
   font-weight: 600;
 }
 
 .sidebarFoot {
   margin-top: auto;
-  color: #839084;
-  font-size: 0.65rem;
-  line-height: 1.45;
+  padding: 0 12px;
+  color: #667178;
+  font-size: 0.67rem;
+  line-height: 1.5;
 }
 
 .content {
@@ -124,6 +130,17 @@
 }
 
 .mobileHeader {
+  display: none;
+}
+
+.mobileHeaderTop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.mobileNav {
   display: none;
 }
 
@@ -138,19 +155,49 @@
   }
 
   .mobileHeader {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 16px;
-    min-height: 54px;
-    padding: 15px 16px;
-    border-bottom: 1px solid #1f2721;
-    color: #fffef9;
-    background: #1f2721;
+    display: grid;
+    gap: 14px;
+    min-height: 62px;
+    padding: 15px 18px 12px;
+    border-bottom: 1px solid var(--line);
+    background: #0e1113;
   }
 
   .mobileTag {
-    color: #aab4aa;
-    font-size: 0.67rem;
+    color: var(--quiet);
+    font-size: 0.68rem;
+    letter-spacing: 0.04em;
+  }
+
+  .mobileNav {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 4px;
+  }
+
+  .mobileNav a {
+    padding: 8px 4px;
+    border-radius: 7px;
+    color: var(--quiet);
+    font-size: 0.64rem;
+    font-weight: 700;
+    text-align: center;
+  }
+
+  .mobileNav a:hover,
+  .mobileNav a:focus-visible {
+    color: var(--foreground);
+    background: var(--surface-soft);
+  }
+
+  .mobileNav a.active {
+    color: var(--accent);
+    background: #1b1f21;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nav a {
+    transition: none;
   }
 }

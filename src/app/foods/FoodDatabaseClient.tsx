@@ -267,11 +267,7 @@ export default function FoodDatabaseClient({ initialDate }: { initialDate?: stri
   }
 
   return (
-    <div className={styles.page}>
-      <header className={styles.header}>
-        <Link className={styles.wordmark} href="/"><span className={styles.mark} aria-hidden="true"><span /><span /><span /></span><span>Daily Intake</span></Link>
-        <nav className={styles.nav}><Link href="/">Daily Log</Link><span>Food Database</span><Link href="/settings/targets">Settings</Link></nav>
-      </header>
+      <div className={styles.page}>
       <div className={styles.intro}>
         <div><h1>Food Database</h1><p>Keep serving-based products reusable. Select one, enter the quantity, and review the math before it becomes a dated snapshot.</p></div>
         <label className={styles.dateControl}><span>Log to date</span><input type="date" value={date} max={currentLocalDate()} onChange={(event) => setDate(event.target.value)} /></label>
