@@ -68,10 +68,12 @@ pnpm start     # production server
 - `pull_policy: build` makes a stack update rebuild the image from the checked
   out source. Keep the Node 22 Docker build and native `better-sqlite3` build
   dependencies intact.
-- The `daily-intake-data` named volume stores SQLite at
-  `/app/data/calories.db`; preserve it across redeployments and back it up
-  before removing the volume. `DAILY_INTAKE_PORT` changes only the host port;
-  the container listens on 3000.
+- The `daily-intake-data` Compose service volume, backed by the Docker named
+  volume `open-calory-tracker-data` by default (override with
+  `DAILY_INTAKE_VOLUME`), stores SQLite at `/app/data/calories.db`; preserve it
+  across redeployments and back it up before removing the volume.
+  `DAILY_INTAKE_PORT` changes only the host port; the container listens on
+  3000.
 - The app has no account or application authentication. Keep the Portainer
   endpoint and published app port on a trusted network or protect public
   access with an external access layer.
