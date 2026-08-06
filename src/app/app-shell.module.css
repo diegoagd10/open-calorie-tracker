@@ -120,7 +120,7 @@
 .sidebarFoot {
   margin-top: auto;
   padding: 0 12px;
-  color: #667178;
+  color: var(--quiet);
   font-size: 0.67rem;
   line-height: 1.5;
 }
