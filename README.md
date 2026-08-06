@@ -1,6 +1,7 @@
 # Daily Intake
 
-A small Next.js application for recording foods and tracking total calories by day. Entries persist locally in SQLite.
+A local, single-user nutrition ledger for reusable serving-based foods, dated
+food snapshots, hydration, daily comparison targets, and weight history.
 
 ## Requirements
 
@@ -18,7 +19,10 @@ pnpm dev
 
 Open [http://localhost:3000](http://localhost:3000).
 
-The SQLite database is created automatically at `data/calories.db`. Override its location with `CALORIE_DB_PATH`.
+The SQLite database is created automatically at `data/calories.db`. Override its
+location with `DAILY_INTAKE_DB_PATH` (or the legacy `CALORIE_DB_PATH` variable).
+Existing `calorie_entries` rows are migrated into editable legacy food snapshots
+with unavailable nutrients represented as zero.
 
 ## Verification
 
