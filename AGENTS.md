@@ -37,7 +37,7 @@ food-log snapshot model.
 - CSS Modules plus global CSS; Geist is loaded through `next/font`.
 - Vitest `4.1.10` for unit, repository, and API tests.
 - ESLint 9 with `eslint-config-next`.
-- Node.js 20.9+, pnpm 11 (`pnpm@11.10.0`).
+- Node.js 22 or newer, pnpm 11 (`pnpm@11.10.0`).
 
 Useful commands:
 

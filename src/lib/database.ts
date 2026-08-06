@@ -159,12 +159,13 @@ export class IntakeDatabase {
 
   private migrateLegacyCalorieEntries(): void {
     const migrationVersion = 1;
-    const applied = this.connection
-      .prepare("SELECT 1 FROM schema_migrations WHERE version = ?")
-      .get(migrationVersion);
-    if (applied) return;
-
     const migrate = this.connection.transaction(() => {
+      // Serialize startup across Next.js build workers and server processes.
+      const applied = this.connection
+        .prepare("SELECT 1 FROM schema_migrations WHERE version = ?")
+        .get(migrationVersion);
+      if (applied) return;
+
       const legacyTable = this.connection
         .prepare(
           "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'calorie_entries'",
@@ -215,8 +216,7 @@ export class IntakeDatabase {
         )
         .run(migrationVersion, new Date().toISOString());
     });
-
-    migrate();
+    migrate.immediate();
   }
 }
 
