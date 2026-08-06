@@ -38,7 +38,7 @@ Tests follow the repository, business-logic, and HTTP API seams. They use in-mem
 
 For the Portainer **Repository** deployment method, use these values:
 
-- Repository URL: `https://github.com/diegoagd10/open-calory-tracker`
+- Repository URL: `https://github.com/diegoagd10/open-calory-tracker.git`
 - Repository reference: `refs/heads/main`
 - Compose path: `docker-compose.yml`
 
