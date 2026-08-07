@@ -22,7 +22,7 @@ food-log snapshot model.
 - `PRODUCT.md` is the product brief, vocabulary, constraints, principles, and
   accessibility requirements. Treat it as the product source of truth.
 - `DESIGN.md` is the visual and interaction source of truth used by the
-  `/impeccable` skill. Preserve its Night Field Ledger direction, tokens,
+  `/impeccable` skill. Preserve its Color-Field Ledger direction, tokens,
   navigation topology, responsive rules, and accessibility grammar.
 - `README.md` documents local setup, database location, migration behavior, and
   verification commands.
