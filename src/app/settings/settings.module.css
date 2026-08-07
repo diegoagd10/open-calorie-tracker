@@ -1,10 +1,10 @@
 .page {
   min-height: 100vh;
-  padding: 48px clamp(18px, 4.5vw, 72px) 80px;
+  padding: 52px clamp(18px, 4.5vw, 72px) 84px;
 }
 
 .pageInner {
-  width: min(1040px, 100%);
+  width: min(1080px, 100%);
   margin: 0 auto;
 }
 
@@ -13,22 +13,22 @@
   align-items: flex-end;
   justify-content: space-between;
   gap: 30px;
-  padding-bottom: 34px;
+  padding-bottom: 36px;
   border-bottom: 1px solid var(--line);
 }
 
 .pageHeader h1 {
   max-width: 12ch;
   color: var(--foreground);
-  font-size: clamp(2.7rem, 5.5vw, 5rem);
-  font-weight: 680;
-  line-height: 0.94;
-  letter-spacing: -0.065em;
+  font-size: clamp(3rem, 6vw, 5.8rem);
+  font-weight: 720;
+  line-height: 0.91;
+  letter-spacing: -0.07em;
 }
 
 .pageHeader p {
-  max-width: 44ch;
-  margin-top: 18px;
+  max-width: 48ch;
+  margin-top: 19px;
   color: var(--muted);
   font-size: 0.91rem;
   line-height: 1.65;
@@ -38,7 +38,7 @@
   flex: 0 0 auto;
   color: var(--accent);
   font-size: 0.74rem;
-  font-weight: 760;
+  font-weight: 780;
   text-decoration: underline;
   text-underline-offset: 4px;
 }
@@ -48,9 +48,10 @@
   margin-top: 22px;
   padding: clamp(22px, 4vw, 34px);
   border: 1px solid var(--line);
-  border-radius: 14px;
+  border-top: 2px solid var(--accent);
+  border-radius: 16px;
   background: var(--surface);
-  box-shadow: 0 22px 48px rgba(0, 0, 0, 0.14);
+  box-shadow: var(--shadow-panel);
 }
 
 .formIntro,
@@ -76,7 +77,7 @@
 .chartHeading h2 {
   color: var(--foreground);
   font-size: 1.45rem;
-  font-weight: 650;
+  font-weight: 680;
   letter-spacing: -0.045em;
 }
 
@@ -93,9 +94,9 @@
 
 .versionNote {
   flex: 0 0 auto;
-  color: var(--quiet);
+  color: var(--accent);
   font-size: 0.66rem;
-  font-weight: 760;
+  font-weight: 780;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
@@ -103,7 +104,7 @@
 .targetGrid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 24px 20px;
+  gap: 18px;
   padding: 28px 0;
 }
 
@@ -111,11 +112,19 @@
   display: grid;
   gap: 8px;
   min-width: 0;
+  padding: 16px 16px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
   color: var(--muted);
+  background: var(--tone-surface, var(--surface-raised));
   font-size: 0.66rem;
-  font-weight: 760;
+  font-weight: 780;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+}
+
+.field > span {
+  color: var(--tone, var(--muted));
 }
 
 .field small {
@@ -141,33 +150,32 @@
   outline: none;
   color: var(--foreground);
   background: transparent;
-  font-size: 1rem;
-  font-weight: 500;
+  font-size: 1.05rem;
+  font-weight: 560;
   font-variant-numeric: tabular-nums;
 }
 
 .inputWithUnit input:focus,
 .weightForm input:focus {
-  border-color: var(--accent);
-  box-shadow: 0 2px 0 var(--accent);
+  border-color: var(--tone, var(--accent));
+  box-shadow: 0 2px 0 var(--tone, var(--accent));
 }
 
 .inputWithUnit b {
   position: absolute;
   right: 0;
   bottom: 12px;
-  color: var(--quiet);
+  color: var(--tone, var(--quiet));
   font-size: 0.72rem;
 }
 
 .readOnlyField {
-  padding: 11px 0;
-  border-bottom: 1px solid var(--line-strong);
+  padding: 16px;
 }
 
 .readOnlyField strong {
-  color: var(--accent);
-  font-size: 1rem;
+  color: var(--tone, var(--accent));
+  font-size: 1.05rem;
   letter-spacing: normal;
   text-transform: none;
 }
@@ -182,21 +190,21 @@
 .secondaryButton {
   min-height: 44px;
   padding: 0 17px;
-  border-radius: 9px;
+  border-radius: 10px;
   font-size: 0.75rem;
-  font-weight: 800;
+  font-weight: 820;
   cursor: pointer;
 }
 
 .primaryButton {
   border: 1px solid var(--accent);
-  color: #19130d;
+  color: var(--accent-ink);
   background: var(--accent);
   transition: background 160ms ease, transform 160ms ease;
 }
 
 .primaryButton:hover:not(:disabled) {
-  background: #efb77f;
+  background: var(--accent-hover);
   transform: translateY(-1px);
 }
 
@@ -213,26 +221,27 @@
 }
 
 .secondaryButton:hover:not(:disabled) {
-  border-color: var(--accent);
-  background: #211d19;
+  border-color: var(--target);
+  background: var(--surface-soft);
 }
 
 .error {
   margin-top: 14px;
   color: var(--danger);
   font-size: 0.82rem;
-  font-weight: 700;
+  font-weight: 720;
 }
 
 .notice {
   color: var(--success);
   font-size: 0.82rem;
-  font-weight: 700;
+  font-weight: 720;
 }
 
 .settingsPanel {
   display: grid;
   gap: 22px;
+  border-top-color: var(--line-strong);
 }
 
 .settingsLinks {
@@ -241,7 +250,7 @@
   gap: 1px;
   overflow: hidden;
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: 12px;
   background: var(--line);
 }
 
@@ -255,6 +264,14 @@
   transition: background 160ms ease, color 160ms ease;
 }
 
+.settingsLinks a:first-child {
+  border-top: 2px solid var(--accent);
+}
+
+.settingsLinks a:last-child {
+  border-top: 2px solid var(--weight);
+}
+
 .settingsLinks a:hover {
   color: var(--accent);
   background: var(--surface-soft);
@@ -262,13 +279,36 @@
 
 .settingsLinks strong {
   font-size: 1rem;
-  font-weight: 680;
+  font-weight: 700;
 }
 
 .settingsLinks span {
   color: var(--muted);
   font-size: 0.78rem;
   line-height: 1.45;
+}
+
+.weightControlGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.weightControlGrid > .settingsPanel {
+  margin-top: 0;
+}
+
+.weightPanel {
+  border-top-color: var(--weight);
+}
+
+.targetWeightPanel {
+  border-top-color: var(--target);
+}
+
+.chartPanel {
+  margin-top: 18px;
+  border-top-color: var(--water);
 }
 
 .settingsHeading {
@@ -282,17 +322,28 @@
 
 .weightForm label {
   display: grid;
+  flex: 1 1 130px;
   gap: 8px;
-  min-width: 190px;
+  min-width: 0;
   color: var(--muted);
   font-size: 0.66rem;
-  font-weight: 760;
+  font-weight: 780;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
 .weightForm input {
   padding-right: 0;
+}
+
+.weightPanel .weightForm input:focus {
+  border-color: var(--weight);
+  box-shadow: 0 2px 0 var(--weight);
+}
+
+.targetWeightPanel .weightForm input:focus {
+  border-color: var(--target);
+  box-shadow: 0 2px 0 var(--target);
 }
 
 .weightForm button {
@@ -303,18 +354,18 @@
   overflow: hidden;
   border-top: 1px solid var(--line-strong);
   border-bottom: 1px solid var(--line-strong);
-  background: #0f1316;
+  background: var(--surface-strip);
 }
 
 .chartHeading {
   align-items: flex-start;
-  padding: 20px 0;
+  padding: 2px 0 20px;
 }
 
-.chartHeading span {
-  color: var(--quiet);
+.chartHeading > span {
+  color: var(--target);
   font-size: 0.67rem;
-  font-weight: 760;
+  font-weight: 780;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
@@ -325,10 +376,13 @@
   min-width: 480px;
   height: 230px;
   border-top: 1px solid var(--line);
+  background: var(--surface-strip);
 }
 
 .chartScroll {
   overflow-x: auto;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
 }
 
 .distanceLine {
@@ -339,9 +393,9 @@
 }
 
 .distanceLine strong {
-  color: var(--accent);
+  color: var(--target);
   font-size: 1.05rem;
-  font-weight: 680;
+  font-weight: 700;
 }
 
 .empty {
@@ -350,6 +404,56 @@
   color: var(--muted);
   font-size: 0.82rem;
   line-height: 1.55;
+}
+
+.tone-calories {
+  --tone: var(--calories);
+  --tone-surface: #211e2c;
+}
+
+.tone-protein {
+  --tone: var(--protein);
+  --tone-surface: #24192f;
+}
+
+.tone-carbs {
+  --tone: var(--carbs);
+  --tone-surface: #281c2c;
+}
+
+.tone-fat {
+  --tone: var(--fat);
+  --tone-surface: #29231b;
+}
+
+.tone-fiber {
+  --tone: var(--fiber);
+  --tone-surface: #1e1b35;
+}
+
+.tone-sugar {
+  --tone: var(--sugar);
+  --tone-surface: #281b2e;
+}
+
+.tone-sodium {
+  --tone: var(--sodium);
+  --tone-surface: #172b2b;
+}
+
+.tone-water {
+  --tone: var(--water);
+  --tone-surface: #152a36;
+}
+
+@media (max-width: 900px) {
+  .weightControlGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .weightControlGrid > .settingsPanel {
+    margin-top: 0;
+  }
 }
 
 @media (max-width: 760px) {
@@ -382,6 +486,10 @@
   .weightForm label,
   .weightForm button {
     width: 100%;
+  }
+
+  .weightForm label {
+    flex: 0 0 auto;
   }
 
   .settingsLinks {

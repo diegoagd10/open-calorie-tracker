@@ -15,53 +15,63 @@ type TargetDraft = {
   waterMinimumFlOz: string;
 };
 
+type TargetTone = "calories" | "protein" | "carbs" | "fiber" | "sugar" | "sodium" | "water";
+
 const FIELDS: Array<{
   key: keyof TargetDraft;
   label: string;
   unit: string;
   hint: string;
+  tone: TargetTone;
 }> = [
   {
     key: "calorieMaximumCal",
     label: "Calorie maximum",
     unit: "cal",
     hint: "A daily ceiling",
+    tone: "calories",
   },
   {
     key: "proteinMinimumG",
     label: "Protein minimum",
     unit: "g",
     hint: "A daily floor",
+    tone: "protein",
   },
   {
     key: "carbsMaximumG",
     label: "Carbohydrate maximum",
     unit: "g",
     hint: "A daily ceiling",
+    tone: "carbs",
   },
   {
     key: "fiberMaximumG",
     label: "Fiber maximum",
     unit: "g",
     hint: "A daily ceiling",
+    tone: "fiber",
   },
   {
     key: "sugarMaximumG",
     label: "Sugar maximum",
     unit: "g",
     hint: "A daily ceiling",
+    tone: "sugar",
   },
   {
     key: "sodiumMaximumMg",
     label: "Sodium maximum",
     unit: "mg",
     hint: "A daily ceiling",
+    tone: "sodium",
   },
   {
     key: "waterMinimumFlOz",
     label: "Water minimum",
     unit: "fl oz",
     hint: "A daily floor",
+    tone: "water",
   },
 ];
 
@@ -150,7 +160,7 @@ export default function TargetForm({
 
       <div className={styles.targetGrid}>
         {FIELDS.map((field) => (
-          <label className={styles.field} key={field.key}>
+          <label className={`${styles.field} ${styles[`tone-${field.tone}`]}`} key={field.key}>
             <span>{field.label}</span>
             <div className={styles.inputWithUnit}>
               <input
@@ -169,7 +179,7 @@ export default function TargetForm({
             <small id={`${field.key}-hint`}>{field.hint}</small>
           </label>
         ))}
-        <div className={`${styles.field} ${styles.readOnlyField}`}>
+        <div className={`${styles.field} ${styles.readOnlyField} ${styles["tone-fat"]}`}>
           <span>Fat limit</span>
           <strong>{fatLimit === null ? "—" : `${formatNumber(fatLimit)} g`}</strong>
           <small>Read-only · 30% of calorie maximum ÷ 9</small>

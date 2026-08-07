@@ -1,6 +1,6 @@
 .page {
   min-height: 100vh;
-  padding: 48px clamp(18px, 4.5vw, 72px) 80px;
+  padding: 52px clamp(18px, 4.5vw, 72px) 84px;
 }
 
 .header,
@@ -21,21 +21,22 @@
   align-items: flex-end;
   justify-content: space-between;
   gap: 40px;
-  padding-bottom: 34px;
+  padding-bottom: 36px;
+  border-bottom: 1px solid var(--line);
 }
 
 .header h1 {
-  max-width: 13ch;
+  max-width: 11ch;
   color: var(--foreground);
-  font-size: clamp(2.7rem, 5.5vw, 5rem);
-  font-weight: 680;
-  line-height: 0.94;
-  letter-spacing: -0.065em;
+  font-size: clamp(3rem, 6vw, 5.8rem);
+  font-weight: 720;
+  line-height: 0.91;
+  letter-spacing: -0.07em;
 }
 
 .lede {
   max-width: 59ch;
-  margin-top: 18px;
+  margin-top: 19px;
   color: var(--muted);
   font-size: 0.91rem;
   line-height: 1.65;
@@ -43,13 +44,14 @@
 
 .dayPicker {
   display: grid;
-  flex: 0 0 214px;
+  flex: 0 0 224px;
   gap: 8px;
-  padding: 16px 17px 15px;
+  padding: 17px 18px 16px;
   border: 1px solid var(--line-strong);
-  border-radius: 12px;
-  background: var(--surface);
-  box-shadow: 0 16px 34px rgba(0, 0, 0, 0.18);
+  border-top: 2px solid var(--accent);
+  border-radius: 16px;
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-date);
 }
 
 .dayPicker label,
@@ -85,26 +87,29 @@
 }
 
 .summaryBoard,
+.targetStrip,
 .waterBoard,
 .logBoard {
   border: 1px solid var(--line);
-  border-radius: 14px;
   background: var(--surface);
-  box-shadow: 0 22px 48px rgba(0, 0, 0, 0.14);
+  box-shadow: var(--shadow-panel);
 }
 
 .summaryBoard {
   display: grid;
   grid-template-columns: minmax(245px, 0.72fr) minmax(0, 1.28fr);
   overflow: hidden;
+  margin-top: 22px;
+  border-radius: 16px 16px 0 0;
 }
 
 .totalLead {
   display: flex;
   flex-direction: column;
-  min-height: 256px;
-  padding: 28px;
-  background: #171c20;
+  min-height: 278px;
+  padding: 30px;
+  border-top: 3px solid var(--calories);
+  background: var(--surface-lead);
 }
 
 .leadLabel,
@@ -123,32 +128,32 @@
 }
 
 .totalLead .leadLabel {
-  color: var(--muted);
-  font-weight: 700;
+  color: var(--calories);
+  font-weight: 760;
   letter-spacing: 0.09em;
   text-transform: uppercase;
 }
 
 .totalLead strong {
   margin-top: auto;
-  color: var(--foreground);
-  font-size: clamp(3.6rem, 7vw, 5.9rem);
-  font-weight: 650;
-  letter-spacing: -0.075em;
-  line-height: 0.86;
+  color: var(--calories);
+  font-size: clamp(3.9rem, 7vw, 6.2rem);
+  font-weight: 680;
+  letter-spacing: -0.08em;
+  line-height: 0.84;
   font-variant-numeric: tabular-nums;
 }
 
 .totalLead > span:not(.leadLabel) {
-  margin-top: 10px;
-  color: var(--accent);
+  margin-top: 12px;
+  color: var(--foreground);
   font-size: 0.86rem;
   font-weight: 760;
 }
 
 .totalLead small {
-  margin-top: 18px;
-  color: var(--quiet);
+  margin-top: 17px;
+  color: var(--muted);
   font-size: 0.73rem;
 }
 
@@ -157,25 +162,73 @@
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
-.nutrientGrid > div {
+.nutrientCell {
   display: grid;
   align-content: center;
-  gap: 8px;
+  gap: 9px;
   min-width: 0;
-  padding: 18px 20px;
+  padding: 19px 20px;
   border-bottom: 1px solid var(--line);
   border-left: 1px solid var(--line);
+  border-top: 2px solid var(--tone);
+  background: var(--tone-surface);
 }
 
-.nutrientGrid > div:nth-last-child(-n + 3) {
+.nutrientCell:nth-last-child(-n + 3) {
   border-bottom: 0;
 }
 
-.nutrientGrid strong {
+.nutrientCell > span,
+.targetCell > span {
+  color: var(--tone);
+  font-weight: 760;
+}
+
+.nutrientCell strong {
   color: var(--foreground);
-  font-size: 0.95rem;
-  font-weight: 650;
+  font-size: 0.98rem;
+  font-weight: 680;
   font-variant-numeric: tabular-nums;
+}
+
+.tone-calories {
+  --tone: var(--calories);
+  --tone-surface: #211e2c;
+}
+
+.tone-protein {
+  --tone: var(--protein);
+  --tone-surface: #24192f;
+}
+
+.tone-carbs {
+  --tone: var(--carbs);
+  --tone-surface: #281c2c;
+}
+
+.tone-fat {
+  --tone: var(--fat);
+  --tone-surface: #29231b;
+}
+
+.tone-fiber {
+  --tone: var(--fiber);
+  --tone-surface: #1e1b35;
+}
+
+.tone-sugar {
+  --tone: var(--sugar);
+  --tone-surface: #281b2e;
+}
+
+.tone-sodium {
+  --tone: var(--sodium);
+  --tone-surface: #172b2b;
+}
+
+.tone-water {
+  --tone: var(--water);
+  --tone-surface: #152a36;
 }
 
 .status {
@@ -185,7 +238,7 @@
   border-radius: 999px;
   color: var(--quiet);
   font-size: 0.58rem;
-  font-weight: 760;
+  font-weight: 780;
   letter-spacing: 0.04em;
   line-height: 1.1;
   text-transform: uppercase;
@@ -209,25 +262,29 @@
   grid-template-columns: repeat(6, minmax(0, 1fr));
   overflow: hidden;
   border-top: 0;
-  background: #0f1316;
+  border-radius: 0 0 16px 16px;
+  background: var(--surface-strip);
+  box-shadow: var(--shadow-panel);
 }
 
-.targetStrip > div {
+.targetCell {
   display: grid;
   gap: 7px;
   min-width: 0;
-  padding: 15px 14px;
+  padding: 16px 14px 15px;
   border-right: 1px solid var(--line);
+  border-top: 2px solid var(--tone);
+  background: var(--tone-surface);
 }
 
-.targetStrip > div:last-child {
+.targetCell:last-child {
   border-right: 0;
 }
 
-.targetStrip strong {
+.targetCell strong {
   color: var(--foreground);
   font-size: 0.75rem;
-  font-weight: 650;
+  font-weight: 680;
   font-variant-numeric: tabular-nums;
 }
 
@@ -236,16 +293,22 @@
   grid-template-columns: minmax(230px, 1fr) minmax(200px, 0.7fr) minmax(350px, 1.2fr);
   align-items: center;
   gap: 28px;
-  margin-top: 18px;
-  padding: 24px 28px;
+  margin-top: 20px;
+  padding: 25px 28px;
+  border-top: 2px solid var(--water);
+  border-radius: 16px;
 }
 
 .waterBoard h2,
 .sectionHeading h2 {
   color: var(--foreground);
   font-size: 1.42rem;
-  font-weight: 650;
+  font-weight: 680;
   letter-spacing: -0.045em;
+}
+
+.waterBoard h2 {
+  color: var(--water);
 }
 
 .waterBoard p {
@@ -263,15 +326,15 @@
 
 .waterReadout strong {
   color: var(--water);
-  font-size: 2.8rem;
-  font-weight: 620;
-  letter-spacing: -0.07em;
+  font-size: 2.95rem;
+  font-weight: 680;
+  letter-spacing: -0.08em;
   font-variant-numeric: tabular-nums;
 }
 
 .waterReadout span {
   color: var(--foreground);
-  font-weight: 680;
+  font-weight: 700;
 }
 
 .waterReadout small {
@@ -281,7 +344,7 @@
 .waterActions {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 8px;
+  gap: 9px;
 }
 
 .waterActions > button,
@@ -289,22 +352,25 @@
   min-width: 0;
   padding: 12px;
   border: 1px solid var(--line-strong);
-  border-radius: 10px;
+  border-radius: 12px;
   color: var(--foreground);
-  background: var(--surface-raised);
+  background: var(--tone-surface, var(--surface-raised));
   font-size: 0.73rem;
-  font-weight: 740;
+  font-weight: 760;
   text-align: left;
-  transition: border-color 160ms ease, background 160ms ease;
+  transition: border-color 160ms ease, background 160ms ease, transform 160ms ease;
 }
 
 .waterActions > button {
+  --tone: var(--water);
+  --tone-surface: #152a36;
   cursor: pointer;
 }
 
 .waterActions > button:hover:not(:disabled) {
   border-color: var(--water);
-  background: #1a272b;
+  background: var(--surface-soft);
+  transform: translateY(-1px);
 }
 
 .waterActions > button:disabled {
@@ -317,12 +383,13 @@
   margin-top: 5px;
   color: var(--water);
   font-size: 0.64rem;
-  font-weight: 600;
+  font-weight: 650;
 }
 
 .waterActions form {
   grid-column: 1 / -1;
   padding: 10px 12px;
+  background: var(--surface-raised);
 }
 
 .waterActions form label {
@@ -377,8 +444,10 @@
 }
 
 .logBoard {
-  margin-top: 18px;
-  padding: 28px;
+  margin-top: 20px;
+  padding: 29px;
+  border-top: 2px solid var(--accent);
+  border-radius: 16px;
 }
 
 .sectionHeading {
@@ -396,7 +465,7 @@
 .primaryButton,
 .textButton {
   border: 0;
-  border-radius: 9px;
+  border-radius: 10px;
   font: inherit;
   cursor: pointer;
 }
@@ -405,19 +474,19 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 43px;
-  padding: 0 16px;
+  min-height: 44px;
+  padding: 0 17px;
   border: 1px solid var(--accent);
-  color: #19130d;
+  color: var(--accent-ink);
   background: var(--accent);
   font-size: 0.73rem;
-  font-weight: 800;
+  font-weight: 820;
   text-decoration: none;
   transition: background 160ms ease, transform 160ms ease;
 }
 
 .primaryButton:hover {
-  background: #efb77f;
+  background: var(--accent-hover);
   transform: translateY(-1px);
 }
 
@@ -444,20 +513,16 @@
 }
 
 .entryMain strong {
-  overflow: hidden;
+  overflow-wrap: anywhere;
   color: var(--foreground);
-  font-size: 0.92rem;
-  font-weight: 650;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  font-size: 0.94rem;
+  font-weight: 680;
 }
 
 .entryMain span,
 .entryTotal span {
-  overflow: hidden;
+  overflow-wrap: anywhere;
   font-size: 0.72rem;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .entryTotal {
@@ -467,9 +532,9 @@
 }
 
 .entryTotal strong {
-  color: var(--foreground);
-  font-size: 0.86rem;
-  font-weight: 680;
+  color: var(--calories);
+  font-size: 0.87rem;
+  font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
 
@@ -497,7 +562,7 @@
 .statusMessage,
 .errorMessage,
 .notice {
-  padding: 18px 0 4px;
+  padding: 19px 0 4px;
   font-size: 0.82rem;
   line-height: 1.55;
 }
@@ -520,12 +585,12 @@
 .errorMessage,
 .error {
   color: var(--danger);
-  font-weight: 700;
+  font-weight: 720;
 }
 
 .notice {
   color: var(--success);
-  font-weight: 700;
+  font-weight: 720;
 }
 
 .editor {
@@ -615,18 +680,18 @@
   }
 
   .totalLead {
-    min-height: 222px;
+    min-height: 232px;
   }
 
   .nutrientGrid {
     grid-template-columns: repeat(2, 1fr);
   }
 
-  .nutrientGrid > div:nth-last-child(-n + 3) {
+  .nutrientCell:nth-last-child(-n + 3) {
     border-bottom: 1px solid var(--line);
   }
 
-  .nutrientGrid > div:nth-last-child(-n + 2) {
+  .nutrientCell:nth-last-child(-n + 2) {
     border-bottom: 0;
   }
 
@@ -634,11 +699,11 @@
     grid-template-columns: repeat(2, 1fr);
   }
 
-  .targetStrip > div:nth-child(2n) {
+  .targetCell:nth-child(2n) {
     border-right: 0;
   }
 
-  .targetStrip > div:nth-child(-n + 4) {
+  .targetCell:nth-child(-n + 4) {
     border-bottom: 1px solid var(--line);
   }
 
@@ -691,7 +756,7 @@
 }
 
 @media (max-width: 480px) {
-  .nutrientGrid strong {
+  .nutrientCell strong {
     font-size: 0.87rem;
   }
 

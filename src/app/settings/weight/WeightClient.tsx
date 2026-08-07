@@ -54,16 +54,16 @@ function Chart({ entries, targetWeight }: { entries: WeightEntry[]; targetWeight
             x2={width - padding.right}
             y1={y(targetWeight)}
             y2={y(targetWeight)}
-            stroke="var(--accent)"
+            stroke="var(--target)"
             strokeDasharray="5 5"
           />
         )}
         {entries.length > 1 && (
-          <polyline points={points} fill="none" stroke="var(--foreground)" strokeWidth="2.5" />
+          <polyline points={points} fill="none" stroke="var(--weight)" strokeWidth="2.5" />
         )}
         {entries.map((entry, index) => (
           <g key={entry.date}>
-            <circle cx={x(index)} cy={y(entry.weightLb)} r="4.5" fill="var(--accent)" />
+            <circle cx={x(index)} cy={y(entry.weightLb)} r="4.5" fill="var(--weight)" />
             <text x={x(index)} y={height - 13} textAnchor="middle" fill="var(--quiet)" fontSize="10">
               {entry.date.slice(5)}
             </text>
@@ -184,47 +184,49 @@ export default function WeightClient() {
           <p className={styles.empty} role="status">Loading your weight history…</p>
         ) : (
           <>
-            <section className={styles.settingsPanel} aria-labelledby="record-weight-heading">
-              <div className={styles.settingsHeading}>
-                <div>
-                  <h2 id="record-weight-heading">Record a reading</h2>
-                  <p>Weights are stored in pounds and dated locally.</p>
+            <div className={styles.weightControlGrid}>
+              <section className={`${styles.settingsPanel} ${styles.weightPanel}`} aria-labelledby="record-weight-heading">
+                <div className={styles.settingsHeading}>
+                  <div>
+                    <h2 id="record-weight-heading">Record a reading</h2>
+                    <p>Weights are stored in pounds and dated locally.</p>
+                  </div>
                 </div>
-              </div>
-              <form className={styles.weightForm} onSubmit={saveWeight}>
-                <label>
-                  Date
-                  <input type="date" value={date} max={today} onChange={(event) => setDate(event.target.value)} required />
-                </label>
-                <label>
-                  Weight
-                  <input type="number" min="0.1" step="0.1" inputMode="decimal" value={weight} onChange={(event) => setWeight(event.target.value)} placeholder="182.4" required />
-                </label>
-                <button className={styles.primaryButton} type="submit" disabled={isSaving}>
-                  {isSaving ? "Saving…" : "Save reading"}
-                </button>
-              </form>
-            </section>
+                <form className={styles.weightForm} onSubmit={saveWeight}>
+                  <label>
+                    Date
+                    <input type="date" value={date} max={today} onChange={(event) => setDate(event.target.value)} required />
+                  </label>
+                  <label>
+                    Weight
+                    <input type="number" min="0.1" step="0.1" inputMode="decimal" value={weight} onChange={(event) => setWeight(event.target.value)} placeholder="182.4" required />
+                  </label>
+                  <button className={styles.primaryButton} type="submit" disabled={isSaving}>
+                    {isSaving ? "Saving…" : "Save reading"}
+                  </button>
+                </form>
+              </section>
 
-            <section className={styles.settingsPanel} aria-labelledby="target-weight-heading">
-              <div className={styles.settingsHeading}>
-                <div>
-                  <h2 id="target-weight-heading">Optional target weight</h2>
-                  <p>Set or clear one current target. It appears as a horizontal line on the chart.</p>
+              <section className={`${styles.settingsPanel} ${styles.targetWeightPanel}`} aria-labelledby="target-weight-heading">
+                <div className={styles.settingsHeading}>
+                  <div>
+                    <h2 id="target-weight-heading">Optional target weight</h2>
+                    <p>Set or clear one current target. It appears as a horizontal line on the chart.</p>
+                  </div>
                 </div>
-              </div>
-              <form className={styles.weightForm} onSubmit={saveTarget}>
-                <label>
-                  Target in pounds
-                  <input type="number" min="0.1" step="0.1" inputMode="decimal" value={targetWeight} onChange={(event) => setTargetWeight(event.target.value)} placeholder="Optional" />
-                </label>
-                <button className={styles.secondaryButton} type="submit" disabled={isSaving}>
-                  {isSaving ? "Saving…" : targetWeight === "" ? "Clear target" : "Save target"}
-                </button>
-              </form>
-            </section>
+                <form className={styles.weightForm} onSubmit={saveTarget}>
+                  <label>
+                    Target in pounds
+                    <input type="number" min="0.1" step="0.1" inputMode="decimal" value={targetWeight} onChange={(event) => setTargetWeight(event.target.value)} placeholder="Optional" />
+                  </label>
+                  <button className={styles.secondaryButton} type="submit" disabled={isSaving}>
+                    {isSaving ? "Saving…" : targetWeight === "" ? "Clear target" : "Save target"}
+                  </button>
+                </form>
+              </section>
+            </div>
 
-            <section className={styles.settingsPanel} aria-labelledby="trend-heading">
+            <section className={`${styles.settingsPanel} ${styles.chartPanel}`} aria-labelledby="trend-heading">
               <div className={styles.chartHeading}>
                 <div>
                   <h2 id="trend-heading">Progress over time</h2>
