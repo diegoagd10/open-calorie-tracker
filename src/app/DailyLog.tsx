@@ -36,14 +36,15 @@ const FOOD_NUTRIENTS: Array<{
   totalKey: keyof ReturnType<typeof aggregateFoodLogs>;
   label: string;
   unit: string;
+  tone: string;
 }> = [
-  { key: "caloriesPerServingCal", totalKey: "caloriesCal", label: "Calories", unit: "cal" },
-  { key: "proteinPerServingG", totalKey: "proteinG", label: "Protein", unit: "g" },
-  { key: "carbsPerServingG", totalKey: "carbsG", label: "Carbs", unit: "g" },
-  { key: "fatPerServingG", totalKey: "fatG", label: "Fat", unit: "g" },
-  { key: "fiberPerServingG", totalKey: "fiberG", label: "Fiber", unit: "g" },
-  { key: "sugarPerServingG", totalKey: "sugarG", label: "Sugar", unit: "g" },
-  { key: "sodiumPerServingMg", totalKey: "sodiumMg", label: "Sodium", unit: "mg" },
+  { key: "caloriesPerServingCal", totalKey: "caloriesCal", label: "Calories", unit: "cal", tone: "calories" },
+  { key: "proteinPerServingG", totalKey: "proteinG", label: "Protein", unit: "g", tone: "protein" },
+  { key: "carbsPerServingG", totalKey: "carbsG", label: "Carbs", unit: "g", tone: "carbs" },
+  { key: "fatPerServingG", totalKey: "fatG", label: "Fat", unit: "g", tone: "fat" },
+  { key: "fiberPerServingG", totalKey: "fiberG", label: "Fiber", unit: "g", tone: "fiber" },
+  { key: "sugarPerServingG", totalKey: "sugarG", label: "Sugar", unit: "g", tone: "sugar" },
+  { key: "sodiumPerServingMg", totalKey: "sodiumMg", label: "Sodium", unit: "mg", tone: "sodium" },
 ];
 
 function formatNumber(value: number, maximumFractionDigits = 1): string {
@@ -248,7 +249,7 @@ export default function DailyLog({ initialDate }: { initialDate?: string }) {
     <div className={styles.page}>
       <header className={styles.header}>
         <div>
-          <h1>{target ? "Build the day you can see" : "Start with your daily boundaries"}</h1>
+          <h1>{target ? "Make today visible" : "Set your daily baseline"}</h1>
           <p className={styles.lede}>
             {target
               ? "Food entries become independent snapshots. Water stays on its own line. Past dates remain editable without changing the catalog."
@@ -288,7 +289,7 @@ export default function DailyLog({ initialDate }: { initialDate?: string }) {
               {FOOD_NUTRIENTS.slice(1).map((nutrient) => {
                 const metric = statuses?.[nutrient.label.toLowerCase() as keyof typeof statuses];
                 return (
-                  <div key={nutrient.key}>
+                  <div className={`${styles.nutrientCell} ${styles[`tone-${nutrient.tone}`]}`} key={nutrient.key}>
                     <span>{nutrient.label}</span>
                     <strong>{formatNumber(summary.totals[nutrient.totalKey])} {nutrient.unit}</strong>
                     {metric && <MetricStatus status={metric.status} />}
@@ -299,12 +300,12 @@ export default function DailyLog({ initialDate }: { initialDate?: string }) {
           </section>
 
           <section className={styles.targetStrip} aria-label="Target status">
-            <div><span>Calories</span><strong>{formatNumber(summary.totals.caloriesCal, 0)} / {formatNumber(target.calorieMaximumCal, 0)} cal</strong><MetricStatus status={statuses?.calories.status ?? "within-limit"} /></div>
-            <div><span>Protein</span><strong>{formatNumber(summary.totals.proteinG)} / {formatNumber(target.proteinMinimumG)} g</strong><MetricStatus status={statuses?.protein.status ?? "below-target"} /></div>
-            <div><span>Carbs</span><strong>{formatNumber(summary.totals.carbsG)} / {formatNumber(target.carbsMaximumG)} g</strong><MetricStatus status={statuses?.carbs.status ?? "within-limit"} /></div>
-            <div><span>Fiber</span><strong>{formatNumber(summary.totals.fiberG)} / {formatNumber(target.fiberMaximumG)} g</strong><MetricStatus status={statuses?.fiber.status ?? "within-limit"} /></div>
-            <div><span>Sugar</span><strong>{formatNumber(summary.totals.sugarG)} / {formatNumber(target.sugarMaximumG)} g</strong><MetricStatus status={statuses?.sugar.status ?? "within-limit"} /></div>
-            <div><span>Sodium</span><strong>{formatNumber(summary.totals.sodiumMg)} / {formatNumber(target.sodiumMaximumMg)} mg</strong><MetricStatus status={statuses?.sodium.status ?? "within-limit"} /></div>
+            <div className={`${styles.targetCell} ${styles["tone-calories"]}`}><span>Calories</span><strong>{formatNumber(summary.totals.caloriesCal, 0)} / {formatNumber(target.calorieMaximumCal, 0)} cal</strong><MetricStatus status={statuses?.calories.status ?? "within-limit"} /></div>
+            <div className={`${styles.targetCell} ${styles["tone-protein"]}`}><span>Protein</span><strong>{formatNumber(summary.totals.proteinG)} / {formatNumber(target.proteinMinimumG)} g</strong><MetricStatus status={statuses?.protein.status ?? "below-target"} /></div>
+            <div className={`${styles.targetCell} ${styles["tone-carbs"]}`}><span>Carbs</span><strong>{formatNumber(summary.totals.carbsG)} / {formatNumber(target.carbsMaximumG)} g</strong><MetricStatus status={statuses?.carbs.status ?? "within-limit"} /></div>
+            <div className={`${styles.targetCell} ${styles["tone-fiber"]}`}><span>Fiber</span><strong>{formatNumber(summary.totals.fiberG)} / {formatNumber(target.fiberMaximumG)} g</strong><MetricStatus status={statuses?.fiber.status ?? "within-limit"} /></div>
+            <div className={`${styles.targetCell} ${styles["tone-sugar"]}`}><span>Sugar</span><strong>{formatNumber(summary.totals.sugarG)} / {formatNumber(target.sugarMaximumG)} g</strong><MetricStatus status={statuses?.sugar.status ?? "within-limit"} /></div>
+            <div className={`${styles.targetCell} ${styles["tone-sodium"]}`}><span>Sodium</span><strong>{formatNumber(summary.totals.sodiumMg)} / {formatNumber(target.sodiumMaximumMg)} mg</strong><MetricStatus status={statuses?.sodium.status ?? "within-limit"} /></div>
           </section>
 
           <section className={styles.waterBoard} aria-labelledby="water-heading">

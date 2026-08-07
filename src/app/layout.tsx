@@ -18,11 +18,11 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     <html lang="en" className={geistSans.variable}>
       <body>
         {/*
-          THESIS: A personal nutrition ledger should feel like a calm field instrument, not a gamified dashboard.
-          OWN-WORLD: Graphite surfaces, paper-white type, hairline rules, amber actions, and a cool water signal form a night field ledger.
-          STORY: Read the day, understand its thresholds, then make one precise entry without losing historical context.
-          FIRST VIEWPORT: The Daily Log opens with the date and calorie readout, a compact metric matrix, water actions, and the food log's primary action.
-          FORM: A night field ledger, seventh grounded direction, seed 9ae1c146.
+          THESIS: A personal nutrition ledger should make a busy day easy to scan, not turn tracking into a game.
+          OWN-WORLD: Deep ink-blue surfaces, hairline grid rules, and flat citrus, coral, lilac, mint, and cyan signals create a Color-Field Ledger.
+          STORY: Read the day, recognize each threshold by color, then make one precise entry without losing historical context.
+          FIRST VIEWPORT: The Daily Log opens with a date control, a color-led calorie readout, nutrient field, target strip, and water actions before the food log.
+          FORM: A Color-Field Ledger, third grounded direction, seed 47c14263.
           FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, and DESIGN.md
         */}
         {children}

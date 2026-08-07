@@ -1,18 +1,34 @@
 :root {
-  --background: #0b0d0f;
-  --foreground: #eff1ed;
-  --surface: #121619;
-  --surface-raised: #181d21;
-  --surface-soft: #1c2227;
-  --line: #2b333a;
-  --line-strong: #3a444c;
-  --muted: #a1aab1;
-  --quiet: #78838b;
-  --accent: #e2a36a;
-  --water: #79b7bd;
-  --success: #93bda0;
-  --warning: #d8b177;
-  --danger: #e18b86;
+  --background: #0d1120;
+  --sidebar: #0f1426;
+  --foreground: #f5f3ff;
+  --surface: #151b32;
+  --surface-raised: #1b2240;
+  --surface-soft: #252e4f;
+  --surface-lead: #1c1831;
+  --surface-strip: #121a31;
+  --line: #334266;
+  --line-strong: #4d5d88;
+  --muted: #b7bed6;
+  --quiet: #8b94b8;
+  --accent: #d4f65c;
+  --accent-hover: #e1ff77;
+  --accent-ink: #11150b;
+  --calories: #ffcf66;
+  --protein: #f38ad2;
+  --carbs: #ff9b6e;
+  --fat: #ffd36e;
+  --fiber: #a78bfa;
+  --sugar: #ff8eaa;
+  --sodium: #72e0b0;
+  --water: #5fe0ed;
+  --weight: #ff9f7a;
+  --target: #c79bff;
+  --success: #71e0a4;
+  --warning: #ffd36e;
+  --danger: #ff7f9d;
+  --shadow-panel: 0 24px 58px rgba(0, 0, 0, 0.24);
+  --shadow-date: 0 18px 42px rgba(0, 0, 0, 0.28);
 }
 
 html {
@@ -67,6 +83,6 @@ input:focus-visible {
 }
 
 ::selection {
-  color: #13100d;
+  color: var(--accent-ink);
   background: var(--accent);
 }
