@@ -2,7 +2,7 @@
 
 ## 1. Status and Purpose
 
-This technical design document is derived from the confirmed product requirements. It identifies required system behavior, domain invariants, and unresolved technical decisions. The authentication API and SQLite persistence model are approved; the remaining implementation architecture is not yet selected.
+This technical design document is derived from the confirmed product requirements. It identifies required system behavior, domain invariants, and unresolved technical decisions. The authentication API, immediate account-onboarding API, and their SQLite persistence models are approved; the remaining implementation architecture is not yet selected.
 
 The product direction mentioned during discovery is a mobile-first Progressive Web App, primarily used on iPhone and accessible from any phone. Ionic was mentioned as a possible client framework, but it is not yet a confirmed technical choice.
 
@@ -23,7 +23,7 @@ The system will eventually require these major capabilities:
 - Multi-device synchronization and conflict preservation
 - US and metric display conversion
 
-No backend framework, hosting platform, transactional-email provider, food database, image-processing provider, or storage provider is selected yet. SQLite is the approved persistence model for authentication in section 6; whether it is also the primary database for the remaining domain is still pending.
+No backend framework, hosting platform, transactional-email provider, food database, image-processing provider, or storage provider is selected yet. SQLite is the approved persistence model for authentication and immediate account onboarding in section 6; whether it is also the primary database for the remaining logging domain is still pending.
 
 ## 3. Conceptual Domain Model
 
@@ -244,6 +244,221 @@ erDiagram
 - Sessions have no server-side inactivity or absolute expiration. Active rows are never deleted by cleanup; revoked rows may be removed after the selected retention period.
 - Suggested initial throttles are 5 sends per email per 15 minutes, 20 sends per IP per 15 minutes, 10 exchanges per IP per 15 minutes, a 60-second resend cooldown, and 5 successful deliveries per login request.
 
+### 6.6 Immediate post-authentication account onboarding
+
+This approved boundary covers exactly one business transition after authentication: a verified account
+with incomplete setup saves its display-unit preference and first daily goal version, then becomes
+eligible to enter the daily log. It does not define ongoing preference changes, goal maintenance, food
+logging, scans, plates, images, water events, or offline synchronization.
+
+The existing authentication response is the entry point. While
+`accounts.onboarding_completed_at` is null, `POST /v1/auth/sessions` and
+`GET /v1/auth/session` return `setupComplete: false` and `next: "/setup"`. No additional initial-data
+endpoint is required.
+
+#### 6.6.1 Business command
+
+The onboarding screen submits one authenticated command:
+
+| Method | Route | Authentication | Purpose | Success |
+| --- | --- | --- | --- | --- |
+| `PUT` | `/v1/account/onboarding` | Approved `__Host-session` cookie | Save `us` or `metric` display preference, create the first complete daily goal version, and mark onboarding complete atomically | `200` with `account`, `setupComplete: true`, `next: "/log/today"`, the saved preference, and active goals |
+
+`PUT` is used because onboarding is singleton state for the authenticated account and an identical
+request must be safe to replay. It does not require an `Idempotency-Key` header. An identical replay
+returns the persisted `200` result without creating more rows. A later request with different normalized
+values returns `409 ONBOARDING_ALREADY_COMPLETED`; ongoing edits belong to a future maintenance API.
+
+The client sends no account ID or email. Ownership is derived exclusively from the authenticated
+session.
+
+```http
+PUT /v1/account/onboarding
+Cookie: __Host-session=<opaque-token>
+Content-Type: application/json
+
+{
+  "unitSystem": "metric",
+  "effectiveDate": "2026-08-17",
+  "dailyGoals": {
+    "caloriesKcal": 2200,
+    "waterMl": 2400,
+    "proteinG": 140,
+    "carbohydratesG": 250,
+    "fatG": 70,
+    "fiberG": 30,
+    "sugarG": 50,
+    "sodiumMg": 2300
+  }
+}
+```
+
+`effectiveDate` is the client's current local calendar date when onboarding occurs. Calendar-date and
+timezone behavior for the remaining logging domain is still governed by sections 12 and 16. API field
+names make their units explicit. Protein, carbohydrate, fat, fiber, and sugar inputs may contain up to
+three decimal places and are converted exactly to integer milligrams before
+persistence. The application validates a real ISO calendar date, finite positive values, body size, and
+documented technical upper bounds without recommending health targets.
+
+Calories, water, protein, carbohydrates, fat, and fiber are daily targets. Sugar and sodium are daily
+maximums. All eight values are manually supplied; the system does not derive them from demographic,
+health, or activity data.
+
+```http
+HTTP/1.1 200 OK
+Content-Type: application/json
+
+{
+  "account": {
+    "id": "0198b7bc-a758-7b68-8cc8-c571783f6b55",
+    "email": "user@example.com"
+  },
+  "setupComplete": true,
+  "next": "/log/today",
+  "preferences": {
+    "unitSystem": "metric"
+  },
+  "activeGoals": {
+    "effectiveDate": "2026-08-17",
+    "caloriesKcal": 2200,
+    "waterMl": 2400,
+    "proteinG": 140,
+    "carbohydratesG": 250,
+    "fatG": 70,
+    "fiberG": 30,
+    "sugarG": 50,
+    "sodiumMg": 2300
+  }
+}
+```
+
+The endpoint uses the approved error envelope from section 6.1.
+
+| Status | Code | Meaning | Retryable |
+| --- | --- | --- | --- |
+| `401` | `UNAUTHENTICATED` | The session cookie is missing, unknown, or revoked. | After signing in |
+| `403` | `INVALID_ORIGIN` | A cookie-bearing mutation did not originate from the application. | No |
+| `409` | `ONBOARDING_ALREADY_COMPLETED` | The account is already configured with different values. | No |
+| `422` | `VALIDATION_ERROR` | A required field, unit, date, or numeric value is invalid. | After correction |
+| `503` | `DATABASE_BUSY` | The bounded SQLite wait expired before the transaction began. | Yes |
+
+#### 6.6.2 Session protection and account isolation
+
+The `__Host-session` cookie contains an opaque bearer token, but the authorization model is a
+server-side session rather than a JWT. Before the onboarding handler runs, middleware:
+
+1. Reads and hashes the cookie token.
+2. Finds an unrevoked `auth_sessions` row whose current token hash matches, or whose previous token
+   hash matches within the approved rotation grace period.
+3. Copies only `auth_sessions.account_id` into trusted request context.
+4. Validates the request `Origin` and requires same-origin JSON for the cookie-bearing mutation.
+
+The request schema rejects `accountId` and email fields. Both inserts and the `accounts` update use only
+the account ID from trusted session context. Foreign keys provide a second persistence-level ownership
+check. Another account's existing ID, email, or session cannot select or alter the authenticated
+account's onboarding rows.
+
+#### 6.6.3 Transaction and replay semantics
+
+The endpoint uses one short `BEGIN IMMEDIATE` transaction:
+
+1. Read the authenticated `accounts` row and any existing preference and goal rows.
+2. If onboarding is already complete, compare normalized values. Roll back and return the persisted
+   `200` result for an exact replay, or roll back and return `409` when values differ.
+3. Insert exactly one `account_preferences` row.
+4. Insert the first `daily_goal_versions` row with an application-generated UUIDv7 ID.
+5. Set `accounts.onboarding_completed_at` and `accounts.updated_at`, requiring exactly one changed
+   account row whose onboarding timestamp was null.
+6. Commit and return the authenticated account with the new setup state.
+
+Validation occurs before the write transaction. Any insert or account-update failure rolls back all
+three effects, so the authentication setup gate can never disagree with the persisted preference or
+first goal.
+
+#### 6.6.4 SQLite tables and relationships
+
+The migration runs after the approved authentication migration. `accounts` remains the ownership root.
+Before onboarding, one account has zero preference rows and zero goal versions. Successful onboarding
+creates exactly one preference row and one first goal version. Future goal maintenance may create
+additional effective-dated versions, but that API is outside this boundary.
+
+```mermaid
+erDiagram
+  accounts ||--o| account_preferences : "owns via account_id FK"
+  accounts ||--o{ daily_goal_versions : "owns via account_id FK"
+```
+
+- `account_preferences.account_id` is both its primary key and a foreign key to `accounts.id`, enforcing
+  at most one preference row per account.
+- `daily_goal_versions.account_id` is a foreign key to `accounts.id`. The composite uniqueness of
+  `(account_id, effective_date)` prevents two goal definitions from starting on the same date.
+- The child tables do not reference each other. Each joins independently to the authenticated account
+  with `child.account_id = accounts.id`.
+
+```sql
+PRAGMA foreign_keys = ON;
+
+CREATE TABLE account_preferences (
+  account_id   TEXT PRIMARY KEY NOT NULL
+                 REFERENCES accounts(id) ON DELETE CASCADE,
+  unit_system  TEXT NOT NULL
+                 CHECK (unit_system IN ('us', 'metric')),
+  created_at   INTEGER NOT NULL,
+  updated_at   INTEGER NOT NULL,
+  CHECK (updated_at >= created_at)
+) STRICT;
+
+CREATE TABLE daily_goal_versions (
+  id                TEXT PRIMARY KEY NOT NULL,
+  account_id        TEXT NOT NULL
+                      REFERENCES accounts(id) ON DELETE CASCADE,
+  effective_date    TEXT NOT NULL,
+  calories_kcal     INTEGER NOT NULL CHECK (calories_kcal > 0),
+  water_ml          INTEGER NOT NULL CHECK (water_ml > 0),
+  protein_mg        INTEGER NOT NULL CHECK (protein_mg > 0),
+  carbohydrates_mg  INTEGER NOT NULL CHECK (carbohydrates_mg > 0),
+  fat_mg            INTEGER NOT NULL CHECK (fat_mg > 0),
+  fiber_mg          INTEGER NOT NULL CHECK (fiber_mg > 0),
+  sugar_mg          INTEGER NOT NULL CHECK (sugar_mg > 0),
+  sodium_mg         INTEGER NOT NULL CHECK (sodium_mg > 0),
+  created_at        INTEGER NOT NULL,
+  updated_at        INTEGER NOT NULL,
+  UNIQUE (account_id, effective_date),
+  CHECK (effective_date GLOB
+    '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
+  CHECK (updated_at >= created_at)
+) STRICT;
+
+CREATE INDEX daily_goal_versions_account_date_idx
+  ON daily_goal_versions (account_id, effective_date DESC);
+```
+
+Foreign-key enforcement must be enabled on every database connection, not only during migration. Goal
+reads join through the account and resolve the version with the latest `effective_date` less than or
+equal to the selected calendar date.
+
+#### 6.6.5 First testable vertical slice
+
+The first implementation deliverable is an HTTP-to-SQLite vertical slice rather than isolated handler
+or repository units. It begins after the approved authentication flow and proves the setup gate through
+the existing session endpoint:
+
+1. Create separate verified accounts A and B, establish an active approved session for account A, and
+   retain its `__Host-session` cookie.
+2. Confirm `GET /v1/auth/session` returns `setupComplete: false` for account A.
+3. Send a valid `PUT /v1/account/onboarding` through the real HTTP middleware and SQLite connection.
+4. Assert the `200` response contains `setupComplete: true` and `next: "/log/today"`.
+5. Assert exactly one preference and one goal row belong to account A, only account A's onboarding
+   timestamp changed, and account B has no onboarding effects.
+6. Call `GET /v1/auth/session` with the same cookie and assert it now returns `setupComplete: true` and
+   `next: "/log/today"`.
+7. Replay the identical onboarding request and assert `200` with no additional rows.
+8. Submit different values and assert `409` with no database changes.
+
+Supporting integration cases cover transaction rollback, malformed and partial bodies, non-positive and
+out-of-range values, invalid dates, revoked and cross-account sessions, invalid origin, foreign-key
+enforcement, and bounded database contention.
+
 ## 7. Food Ingestion Pipelines
 
 ### 7.1 Catalog search
@@ -402,8 +617,8 @@ The concrete test framework and quality gates are not selected.
 
 ### Backend and data
 
-- Select backend language, framework, hosting, and deployment model. The authentication API style is defined in section 6.
-- Confirm whether the approved SQLite authentication store is also the primary database for the remaining domain, and define the migration strategy.
+- Select backend language, framework, hosting, and deployment model. The authentication and immediate onboarding API style is defined in section 6.
+- Confirm whether the approved SQLite authentication and onboarding store is also the primary database for the remaining logging domain, and define its later migration strategy.
 - Define domain identifiers, ownership enforcement, and transaction boundaries.
 - Define aggregate calculation strategy and cache invalidation.
 - Define backup, restore, retention, and disaster-recovery requirements.
