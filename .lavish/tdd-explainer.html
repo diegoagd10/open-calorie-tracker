@@ -1,0 +1,1572 @@
+<!doctype html>
+<html lang="en" data-theme="business">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="A visual explanation of the Calorie Tracker technical design document."
+    />
+    <title>Calorie Tracker TDD Explained</title>
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/daisyui@5.5.19/daisyui.css"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/daisyui@5.5.19/themes.css"
+    />
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.2.4/dist/index.global.js"></script>
+    <style>
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+      }
+
+      html {
+        scroll-behavior: smooth;
+      }
+
+      body {
+        min-height: 100vh;
+        background:
+          radial-gradient(
+            circle at 4% 1%,
+            color-mix(in oklab, var(--color-primary) 12%, transparent) 0,
+            transparent 26rem
+          ),
+          radial-gradient(
+            circle at 98% 14%,
+            color-mix(in oklab, var(--color-info) 8%, transparent) 0,
+            transparent 28rem
+          ),
+          var(--color-base-300);
+      }
+
+      :where(.grid, .flex, .layout-grid, .layout-flex) > *,
+      :where(
+          [style*="display: grid"],
+          [style*="display:grid"],
+          [style*="display: flex"],
+          [style*="display:flex"]
+        )
+        > * {
+        min-width: 0;
+      }
+
+      :where(
+        p,
+        h1,
+        h2,
+        h3,
+        h4,
+        h5,
+        h6,
+        li,
+        dd,
+        blockquote,
+        figcaption,
+        td,
+        th,
+        .badge,
+        .label
+      ) {
+        overflow-wrap: anywhere;
+      }
+
+      :where(img, svg, video, canvas, iframe) {
+        max-width: 100%;
+        height: auto;
+      }
+
+      .mono {
+        font-family:
+          ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      }
+
+      .eyebrow {
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+      }
+
+      .section-anchor {
+        scroll-margin-top: 1rem;
+      }
+
+      .section-number {
+        display: inline-grid;
+        width: 2.2rem;
+        height: 2.2rem;
+        flex: 0 0 auto;
+        place-items: center;
+        border: 1px solid
+          color-mix(in oklab, var(--color-primary) 48%, transparent);
+        border-radius: 0.7rem;
+        color: var(--color-primary);
+        font-family:
+          ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        font-size: 0.75rem;
+        font-weight: 800;
+      }
+
+      .status-stripe-approved {
+        border-left: 3px solid var(--color-success);
+      }
+
+      .status-stripe-required {
+        border-left: 3px solid var(--color-info);
+      }
+
+      .status-stripe-open {
+        border-left: 3px solid var(--color-warning);
+      }
+
+      .mermaid-frame {
+        overflow-x: auto;
+        border: 1px solid
+          color-mix(in oklab, var(--color-base-content) 11%, transparent);
+        border-radius: 1rem;
+        background: color-mix(in oklab, var(--color-base-100) 96%, transparent);
+        padding: 1rem;
+      }
+
+      .mermaid {
+        min-width: 42rem;
+      }
+
+      .source-ref {
+        white-space: nowrap;
+      }
+
+      .nav-link {
+        border-radius: 0.6rem;
+      }
+
+      .nav-link:hover,
+      .nav-link:focus-visible {
+        background: var(--color-base-200);
+        color: var(--color-primary);
+      }
+
+      .metric-arrow {
+        display: grid;
+        min-width: 2.25rem;
+        place-items: center;
+        color: var(--color-primary);
+        font-family:
+          ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        font-weight: 900;
+      }
+
+      .decision-item[hidden] {
+        display: none !important;
+      }
+
+      .phone-log {
+        background:
+          linear-gradient(
+            180deg,
+            color-mix(in oklab, var(--color-primary) 8%, transparent),
+            transparent 10rem
+          ),
+          var(--color-base-100);
+      }
+
+      .nutrition-bar {
+        height: 0.4rem;
+        overflow: hidden;
+        border-radius: 999px;
+        background: var(--color-base-300);
+      }
+
+      .nutrition-bar > span {
+        display: block;
+        height: 100%;
+        border-radius: inherit;
+        background: var(--color-primary);
+      }
+
+      @media (max-width: 640px) {
+        .mermaid {
+          min-width: 48rem;
+        }
+      }
+
+      @media print {
+        body {
+          background: var(--color-base-100);
+        }
+
+        .no-print,
+        aside[aria-label="Document index"] {
+          display: none !important;
+        }
+
+        .section-anchor {
+          break-inside: avoid;
+        }
+      }
+    </style>
+  </head>
+  <body class="text-base-content antialiased">
+    <header class="border-b border-base-content/10 bg-base-300/80 backdrop-blur">
+      <div class="mx-auto max-w-7xl px-5 py-10 sm:px-8 lg:px-10 lg:py-16">
+        <div class="flex flex-wrap items-center gap-3">
+          <span class="badge badge-primary badge-outline mono">TDD / EXPLAINED</span>
+          <span class="badge badge-success badge-soft">Auth approved</span>
+          <span class="badge badge-warning badge-soft">Architecture incomplete</span>
+          <span class="text-xs text-base-content/55">Source: TDD.md</span>
+        </div>
+
+        <div
+          class="mt-7 grid gap-8 lg:grid-cols-[minmax(0,1.45fr)_minmax(18rem,.55fr)] lg:items-end"
+        >
+          <div>
+            <p class="eyebrow text-xs font-semibold text-primary">
+              Calorie Tracker · Design map
+            </p>
+            <h1
+              class="mt-3 max-w-4xl text-4xl font-black tracking-tight sm:text-5xl lg:text-7xl"
+            >
+              A behavioral contract,<br /><span class="text-primary"
+                >not yet a build recipe.</span
+              >
+            </h1>
+            <p
+              class="mt-6 max-w-3xl text-base leading-7 text-base-content/72 sm:text-lg"
+            >
+              The TDD defines what the calorie tracker must preserve: verified
+              identity, private account data, stable daily logs, correct nutrition
+              math, offline capture, and conflict-safe synchronization. It fully
+              specifies version-one authentication, but intentionally leaves most
+              implementation technology open.
+            </p>
+          </div>
+
+          <aside class="card card-border bg-base-100/75 shadow-xl">
+            <div class="card-body gap-4">
+              <h2 class="card-title text-base">Document in numbers</h2>
+              <dl class="grid grid-cols-2 gap-3 text-sm">
+                <div class="rounded-box bg-base-200 p-3">
+                  <dt class="text-base-content/55">Capabilities</dt>
+                  <dd class="mt-1 text-3xl font-black">12</dd>
+                  <dd>eventual system scope</dd>
+                </div>
+                <div class="rounded-box bg-base-200 p-3">
+                  <dt class="text-base-content/55">Core rules</dt>
+                  <dd class="mt-1 text-3xl font-black">16</dd>
+                  <dd>domain invariants</dd>
+                </div>
+                <div class="rounded-box bg-base-200 p-3">
+                  <dt class="text-base-content/55">Auth API</dt>
+                  <dd class="mt-1 text-3xl font-black">5</dd>
+                  <dd>approved endpoints</dd>
+                </div>
+                <div class="rounded-box bg-base-200 p-3">
+                  <dt class="text-base-content/55">Open list</dt>
+                  <dd class="mt-1 text-3xl font-black">29</dd>
+                  <dd>technical + product choices</dd>
+                </div>
+              </dl>
+            </div>
+          </aside>
+        </div>
+      </div>
+    </header>
+
+    <div
+      class="mx-auto grid max-w-7xl gap-8 px-5 py-8 sm:px-8 lg:grid-cols-[15rem_minmax(0,1fr)] lg:px-10 lg:py-12"
+    >
+      <aside
+        aria-label="Document index"
+        class="no-print lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:self-start lg:overflow-y-auto"
+      >
+        <nav class="card card-border bg-base-100/70 p-3 text-sm shadow-lg">
+          <p class="eyebrow px-3 pb-2 pt-1 text-[0.65rem] font-bold text-base-content/45">
+            Guided reading
+          </p>
+          <ul class="menu menu-sm gap-0.5 p-0">
+            <li><a class="nav-link" href="#read">1. How to read it</a></li>
+            <li><a class="nav-link" href="#system">2. System shape</a></li>
+            <li><a class="nav-link" href="#domain">3. Domain model</a></li>
+            <li><a class="nav-link" href="#rules">4. Non-negotiables</a></li>
+            <li><a class="nav-link" href="#auth">5. Authentication</a></li>
+            <li><a class="nav-link" href="#food">6. Food lifecycle</a></li>
+            <li><a class="nav-link" href="#math">7. Daily math</a></li>
+            <li><a class="nav-link" href="#plates">8. Plates</a></li>
+            <li><a class="nav-link" href="#offline">9. Offline + time</a></li>
+            <li><a class="nav-link" href="#quality">10. Quality boundary</a></li>
+            <li><a class="nav-link" href="#decisions">11. Decision frontier</a></li>
+            <li><a class="nav-link" href="#takeaway">12. Bottom line</a></li>
+          </ul>
+          <div class="divider my-2"></div>
+          <div class="px-3 pb-2 text-xs leading-5 text-base-content/55">
+            <span class="mono">§</span> references point back to the original
+            TDD sections.
+          </div>
+        </nav>
+      </aside>
+
+      <main class="min-w-0 space-y-16">
+        <section id="read" class="section-anchor">
+          <div class="flex items-start gap-3">
+            <span class="section-number">01</span>
+            <div>
+              <p class="eyebrow text-xs font-semibold text-primary">Reading lens</p>
+              <h2 class="mt-1 text-3xl font-black tracking-tight sm:text-4xl">
+                Three kinds of statement live together
+              </h2>
+            </div>
+          </div>
+
+          <p class="mt-5 max-w-3xl leading-7 text-base-content/70">
+            The document is easiest to understand when every statement is sorted
+            into one of three buckets. Requirements constrain all future designs;
+            approved design is ready to implement; open decisions still need an
+            owner and a choice.
+          </p>
+
+          <div class="mt-7 grid gap-4 md:grid-cols-3">
+            <article
+              class="card card-border status-stripe-required bg-base-100/75 shadow-lg"
+            >
+              <div class="card-body">
+                <div class="flex items-center justify-between gap-3">
+                  <h3 class="card-title text-lg">Required behavior</h3>
+                  <span class="badge badge-info badge-soft">MUST</span>
+                </div>
+                <p class="text-sm leading-6 text-base-content/65">
+                  Product truths such as account isolation, immutable calendar-date
+                  ownership, no plate double counting, and unknown nutrients not
+                  becoming zero.
+                </p>
+                <p class="mono mt-auto text-xs text-info">§4 · §7–§15</p>
+              </div>
+            </article>
+
+            <article
+              class="card card-border status-stripe-approved bg-base-100/75 shadow-lg"
+            >
+              <div class="card-body">
+                <div class="flex items-center justify-between gap-3">
+                  <h3 class="card-title text-lg">Approved design</h3>
+                  <span class="badge badge-success badge-soft">READY</span>
+                </div>
+                <p class="text-sm leading-6 text-base-content/65">
+                  The version-one authentication boundary: same-origin JSON API,
+                  five routes, magic-link semantics, secure cookies, five SQLite
+                  tables, hashing, rate limits, and rotation behavior.
+                </p>
+                <p class="mono mt-auto text-xs text-success">§6</p>
+              </div>
+            </article>
+
+            <article
+              class="card card-border status-stripe-open bg-base-100/75 shadow-lg"
+            >
+              <div class="card-body">
+                <div class="flex items-center justify-between gap-3">
+                  <h3 class="card-title text-lg">Open design</h3>
+                  <span class="badge badge-warning badge-soft">DECIDE</span>
+                </div>
+                <p class="text-sm leading-6 text-base-content/65">
+                  Frameworks, providers, domain storage, synchronization protocol,
+                  time and unit precision, image handling, observability, and
+                  quality gates are deliberately unselected.
+                </p>
+                <p class="mono mt-auto text-xs text-warning">§16 · §17</p>
+              </div>
+            </article>
+          </div>
+
+          <div role="alert" class="alert alert-info alert-soft mt-6">
+            <div>
+              <strong>The main interpretation:</strong> this TDD is strong on
+              behavioral boundaries and authentication, but it is not sufficient by
+              itself to begin the whole application. The unresolved choices in
+              sections 16 and 17 are part of the design, not omissions to ignore.
+            </div>
+          </div>
+        </section>
+
+        <section id="system" class="section-anchor">
+          <div class="flex items-start gap-3">
+            <span class="section-number">02</span>
+            <div>
+              <p class="eyebrow text-xs font-semibold text-primary">System shape</p>
+              <h2 class="mt-1 text-3xl font-black tracking-tight sm:text-4xl">
+                One approved island inside a larger pending system
+              </h2>
+            </div>
+          </div>
+
+          <p class="mt-5 max-w-3xl leading-7 text-base-content/70">
+            The intended product is a mobile-first PWA, primarily for iPhone. Only
+            the authentication boundary and its SQLite model are approved. The
+            dotted branches below describe required capabilities whose technologies
+            are still undecided.
+          </p>
+
+          <figure class="mermaid-frame mt-7">
+            <div class="mermaid">
+flowchart TB
+  U["User on one or more phones"] --> PWA["Mobile-first PWA<br/>Client framework pending"]
+  PWA --> API["Same-origin JSON API<br/>/v1 boundary"]
+
+  API --> AUTH["APPROVED<br/>Authentication service"]
+  AUTH --> SQL["APPROVED<br/>SQLite 3.37+ auth store"]
+  AUTH -. "provider choice pending" .-> EMAIL["Transactional email"]
+
+  API -. "architecture pending" .-> DOMAIN["Food · plates · goals · water"]
+  DOMAIN -. "provider pending" .-> CATALOG["Food + barcode data"]
+  DOMAIN -. "provider pending" .-> VISION["Nutrition-label extraction"]
+  DOMAIN -. "storage pending" .-> IMAGES["Private image assets"]
+  PWA -. "sync protocol pending" .-> DOMAIN
+            </div>
+            <figcaption class="mt-3 text-xs leading-5 text-base-content/55">
+              Solid links are concretely described by the TDD. Dotted links mark
+              required integrations whose provider or implementation is open.
+              <span class="source-ref mono">§2 · §6 · §16</span>
+            </figcaption>
+          </figure>
+
+          <div class="mt-6 grid gap-4 sm:grid-cols-2">
+            <div class="card card-border bg-base-100/70">
+              <div class="card-body">
+                <span class="badge badge-success badge-soft w-fit">Known now</span>
+                <ul class="mt-1 space-y-2 text-sm leading-6 text-base-content/70">
+                  <li>Same-origin PWA and API assumption for authentication</li>
+                  <li>JSON bodies and <span class="mono">/v1</span> routes</li>
+                  <li>SQLite 3.37+ and UUIDv7 auth identifiers</li>
+                  <li>Opaque, hashed magic-link and session secrets</li>
+                </ul>
+              </div>
+            </div>
+            <div class="card card-border bg-base-100/70">
+              <div class="card-body">
+                <span class="badge badge-warning badge-soft w-fit">Not known yet</span>
+                <ul class="mt-1 space-y-2 text-sm leading-6 text-base-content/70">
+                  <li>Ionic versus another client framework</li>
+                  <li>Backend language, hosting, and deployment model</li>
+                  <li>Domain database and synchronization design</li>
+                  <li>Email, catalog, OCR, and image-storage providers</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="domain" class="section-anchor">
+          <div class="flex items-start gap-3">
+            <span class="section-number">03</span>
+            <div>
+              <p class="eyebrow text-xs font-semibold text-primary">Domain model</p>
+              <h2 class="mt-1 text-3xl font-black tracking-tight sm:text-4xl">
+                The account is the privacy and ownership root
+              </h2>
+            </div>
+          </div>
+
+          <div class="mt-7 grid gap-6 xl:grid-cols-[minmax(0,1.25fr)_minmax(18rem,.75fr)]">
+            <figure class="mermaid-frame">
+              <div class="mermaid">
+flowchart TB
+  ACCOUNT["Account<br/>verified email + unit preference"]
+  ACCOUNT --> GOALS["Goal versions<br/>effective-dated history"]
+  ACCOUNT --> FOOD["Food entries<br/>snapshot of consumed food"]
+  ACCOUNT --> PLATE["Plate entries<br/>named same-day group"]
+  ACCOUNT --> WATER["Water entries<br/>normalized volume"]
+  ACCOUNT --> SAVED["Saved items<br/>reusable snapshots"]
+  ACCOUNT --> SESSION["Device sessions<br/>one row per phone/browser"]
+  ACCOUNT --> IMAGE["Private images<br/>scan lifecycle"]
+  PLATE -->|"owns current components"| FOOD
+  SAVED -. "creates independent occurrence" .-> FOOD
+  SAVED -. "can snapshot complete plate" .-> PLATE
+  FOOD -. "may result from" .-> SCAN["Scan attempt<br/>separate row or embedded: open"]
+              </div>
+              <figcaption class="mt-3 text-xs leading-5 text-base-content/55">
+                These are conceptual entities, not prescribed API resources or
+                database tables. <span class="source-ref mono">§3</span>
+              </figcaption>
+            </figure>
+
+            <div class="space-y-4">
+              <article class="card card-border bg-base-100/75">
+                <div class="card-body">
+                  <h3 class="card-title text-lg">Snapshot semantics</h3>
+                  <p class="text-sm leading-6 text-base-content/65">
+                    Logged food is copied data, not a live reference to a catalog or
+                    favorite. Editing one occurrence cannot mutate the source or a
+                    different day.
+                  </p>
+                </div>
+              </article>
+              <article class="card card-border bg-base-100/75">
+                <div class="card-body">
+                  <h3 class="card-title text-lg">Derived semantics</h3>
+                  <p class="text-sm leading-6 text-base-content/65">
+                    Plate nutrition is calculated from its current food components.
+                    The plate has no second independent nutrition total to drift out
+                    of sync.
+                  </p>
+                </div>
+              </article>
+              <article class="card card-border bg-base-100/75">
+                <div class="card-body">
+                  <h3 class="card-title text-lg">Historical semantics</h3>
+                  <p class="text-sm leading-6 text-base-content/65">
+                    Goals are versioned by effective date, so viewing an old day
+                    compares it with the goal that was active then, not today's goal.
+                  </p>
+                </div>
+              </article>
+            </div>
+          </div>
+        </section>
+
+        <section id="rules" class="section-anchor">
+          <div class="flex items-start gap-3">
+            <span class="section-number">04</span>
+            <div>
+              <p class="eyebrow text-xs font-semibold text-primary">Non-negotiables</p>
+              <h2 class="mt-1 text-3xl font-black tracking-tight sm:text-4xl">
+                Sixteen invariants protect meaning over time
+              </h2>
+            </div>
+          </div>
+
+          <p class="mt-5 max-w-3xl leading-7 text-base-content/70">
+            These rules should become database constraints, transactional checks,
+            authorization policies, and tests. A framework choice is valid only if
+            it can enforce them.
+          </p>
+
+          <div class="mt-7 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            <article class="card card-border bg-base-100/75">
+              <div class="card-body">
+                <div class="flex items-center gap-3">
+                  <span class="badge badge-error badge-outline mono">01–02</span>
+                  <h3 class="card-title text-lg">Ownership</h3>
+                </div>
+                <p class="text-sm leading-6 text-base-content/65">
+                  Every private record has exactly one account owner. Cross-account
+                  reads and writes must be impossible, including images.
+                </p>
+              </div>
+            </article>
+
+            <article class="card card-border bg-base-100/75">
+              <div class="card-body">
+                <div class="flex items-center gap-3">
+                  <span class="badge badge-info badge-outline mono">03–06</span>
+                  <h3 class="card-title text-lg">Calendar time</h3>
+                </div>
+                <p class="text-sm leading-6 text-base-content/65">
+                  A food or water event owns one immutable calendar date. Today uses
+                  local time; retroactive items append by time; later timezone changes
+                  cannot move history.
+                </p>
+              </div>
+            </article>
+
+            <article class="card card-border bg-base-100/75">
+              <div class="card-body">
+                <div class="flex items-center gap-3">
+                  <span class="badge badge-primary badge-outline mono">07–12</span>
+                  <h3 class="card-title text-lg">Plate integrity</h3>
+                </div>
+                <p class="text-sm leading-6 text-base-content/65">
+                  Components are successful, same-day foods; one food cannot be both
+                  standalone and grouped. Plate time freezes at creation, totals are
+                  derived, and zero components deletes the plate.
+                </p>
+              </div>
+            </article>
+
+            <article class="card card-border bg-base-100/75">
+              <div class="card-body">
+                <div class="flex items-center gap-3">
+                  <span class="badge badge-warning badge-outline mono">13–14</span>
+                  <h3 class="card-title text-lg">Nutrition truth</h3>
+                </div>
+                <p class="text-sm leading-6 text-base-content/65">
+                  Failed records add nothing. A missing nutrient remains unknown,
+                  never zero, and can make a daily aggregate explicitly incomplete.
+                </p>
+              </div>
+            </article>
+
+            <article class="card card-border bg-base-100/75">
+              <div class="card-body">
+                <div class="flex items-center gap-3">
+                  <span class="badge badge-success badge-outline mono">15</span>
+                  <h3 class="card-title text-lg">Edit isolation</h3>
+                </div>
+                <p class="text-sm leading-6 text-base-content/65">
+                  Editing a logged item changes only that occurrence, not provider
+                  catalog data, favorites, templates, or another logged occurrence.
+                </p>
+              </div>
+            </article>
+
+            <article class="card card-border bg-base-100/75">
+              <div class="card-body">
+                <div class="flex items-center gap-3">
+                  <span class="badge badge-secondary badge-outline mono">16</span>
+                  <h3 class="card-title text-lg">Image attachment</h3>
+                </div>
+                <p class="text-sm leading-6 text-base-content/65">
+                  A successful scan's image cannot be removed independently. Deleting
+                  its owning record controls the asset lifecycle.
+                </p>
+              </div>
+            </article>
+          </div>
+          <p class="mono mt-4 text-xs text-base-content/45">Source: §4</p>
+        </section>
+
+        <section id="auth" class="section-anchor">
+          <div class="flex items-start gap-3">
+            <span class="section-number">05</span>
+            <div>
+              <p class="eyebrow text-xs font-semibold text-primary">Approved boundary</p>
+              <h2 class="mt-1 text-3xl font-black tracking-tight sm:text-4xl">
+                Authentication is the implementation-ready section
+              </h2>
+            </div>
+          </div>
+
+          <div class="mt-7 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <div class="stat rounded-box border border-base-content/10 bg-base-100/75">
+              <div class="stat-title">Magic link</div>
+              <div class="stat-value text-primary">15 min</div>
+              <div class="stat-desc">single-use, newest successful send wins</div>
+            </div>
+            <div class="stat rounded-box border border-base-content/10 bg-base-100/75">
+              <div class="stat-title">Session cookie</div>
+              <div class="stat-value text-2xl mono">__Host-session</div>
+              <div class="stat-desc">HttpOnly · Secure · SameSite=Lax</div>
+            </div>
+            <div class="stat rounded-box border border-base-content/10 bg-base-100/75">
+              <div class="stat-title">Server expiry</div>
+              <div class="stat-value">None</div>
+              <div class="stat-desc">valid until explicit revocation</div>
+            </div>
+            <div class="stat rounded-box border border-base-content/10 bg-base-100/75">
+              <div class="stat-title">Secret storage</div>
+              <div class="stat-value text-2xl">SHA-256</div>
+              <div class="stat-desc">only token digests enter SQLite</div>
+            </div>
+          </div>
+
+          <figure class="mermaid-frame mt-6">
+            <div class="mermaid">
+sequenceDiagram
+  autonumber
+  actor U as User
+  participant C as PWA
+  participant A as Auth API
+  participant D as SQLite
+  participant E as Email provider
+  U->>C: Enter email
+  C->>A: POST /v1/auth/magic-links + Idempotency-Key
+  A->>D: Store request + pending token
+  A->>E: Send fragment-based magic link
+  alt Delivery accepted
+    E-->>A: Accepted
+    A->>D: Activate new token and supersede old active token
+    A-->>C: 202 + requestId + expiry
+  else Delivery fails
+    E-->>A: Failure
+    A->>D: Mark delivery_failed
+    A-->>C: 503 retryable + requestId
+  end
+  U->>C: Open /auth/verify#token=...
+  C->>C: Remove fragment immediately
+  C->>A: POST /v1/auth/sessions with raw token
+  A->>D: BEGIN IMMEDIATE
+  A->>D: Consume once + find/create account + create session
+  A->>D: COMMIT
+  A-->>C: 201 + secure cookie + next route
+            </div>
+            <figcaption class="mt-3 text-xs leading-5 text-base-content/55">
+              The account is created only after verified token exchange. Consumption,
+              account lookup or creation, and session creation are atomic.
+              <span class="source-ref mono">§6.3</span>
+            </figcaption>
+          </figure>
+
+          <div class="mt-7 grid gap-6 xl:grid-cols-2">
+            <div>
+              <div class="mb-3 flex items-center justify-between gap-4">
+                <h3 class="text-xl font-bold">Five API operations</h3>
+                <span class="badge badge-success badge-soft">Approved</span>
+              </div>
+              <div class="overflow-x-auto rounded-box border border-base-content/10 bg-base-100/75">
+                <table class="table table-sm">
+                  <thead>
+                    <tr>
+                      <th>Method</th>
+                      <th>Route</th>
+                      <th>Responsibility</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td><span class="badge badge-info badge-outline mono">POST</span></td>
+                      <td class="mono text-xs">/v1/auth/magic-links</td>
+                      <td>Request initial email</td>
+                    </tr>
+                    <tr>
+                      <td><span class="badge badge-info badge-outline mono">POST</span></td>
+                      <td class="mono text-xs">…/{requestId}/resend</td>
+                      <td>Retry delivery safely</td>
+                    </tr>
+                    <tr>
+                      <td><span class="badge badge-info badge-outline mono">POST</span></td>
+                      <td class="mono text-xs">/v1/auth/sessions</td>
+                      <td>Exchange link for session</td>
+                    </tr>
+                    <tr>
+                      <td><span class="badge badge-success badge-outline mono">GET</span></td>
+                      <td class="mono text-xs">/v1/auth/session</td>
+                      <td>Restore and refresh session</td>
+                    </tr>
+                    <tr>
+                      <td><span class="badge badge-error badge-outline mono">DELETE</span></td>
+                      <td class="mono text-xs">/v1/auth/session</td>
+                      <td>Sign out this phone only</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div>
+              <div class="mb-3 flex items-center justify-between gap-4">
+                <h3 class="text-xl font-bold">Five SQLite tables</h3>
+                <span class="badge badge-success badge-soft">Approved</span>
+              </div>
+              <div class="overflow-x-auto rounded-box border border-base-content/10 bg-base-100/75">
+                <table class="table table-sm">
+                  <thead>
+                    <tr>
+                      <th>Table</th>
+                      <th>One row means</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td class="mono text-xs">accounts</td>
+                      <td>One verified identity and ownership root</td>
+                    </tr>
+                    <tr>
+                      <td class="mono text-xs">auth_login_requests</td>
+                      <td>One “email me a link” UI attempt</td>
+                    </tr>
+                    <tr>
+                      <td class="mono text-xs">auth_magic_link_tokens</td>
+                      <td>One initial or resend secret and delivery outcome</td>
+                    </tr>
+                    <tr>
+                      <td class="mono text-xs">auth_sessions</td>
+                      <td>One signed-in phone or browser</td>
+                    </tr>
+                    <tr>
+                      <td class="mono text-xs">auth_rate_limit_buckets</td>
+                      <td>One privacy-preserving action/key/time window</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <div class="mt-6 grid gap-4 md:grid-cols-3">
+            <article class="card card-border bg-base-100/70">
+              <div class="card-body">
+                <h3 class="card-title text-base">Why URL fragments?</h3>
+                <p class="text-sm leading-6 text-base-content/65">
+                  <span class="mono">#token=…</span> is not sent in the normal HTTP
+                  request, reducing exposure to server logs and ordinary HTTP-only
+                  link scanners.
+                </p>
+              </div>
+            </article>
+            <article class="card card-border bg-base-100/70">
+              <div class="card-body">
+                <h3 class="card-title text-base">Why request rows?</h3>
+                <p class="text-sm leading-6 text-base-content/65">
+                  They group initial delivery and resends before an account exists.
+                  A failed resend can be recorded without invalidating the prior
+                  working token.
+                </p>
+              </div>
+            </article>
+            <article class="card card-border bg-base-100/70">
+              <div class="card-body">
+                <h3 class="card-title text-base">Why prior token grace?</h3>
+                <p class="text-sm leading-6 text-base-content/65">
+                  Session secrets rotate every 30 active days, but the previous hash
+                  remains valid for two minutes so concurrent mobile requests do not
+                  fail mid-rotation.
+                </p>
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <section id="food" class="section-anchor">
+          <div class="flex items-start gap-3">
+            <span class="section-number">06</span>
+            <div>
+              <p class="eyebrow text-xs font-semibold text-primary">Food lifecycle</p>
+              <h2 class="mt-1 text-3xl font-black tracking-tight sm:text-4xl">
+                Four inputs converge on one durable entry model
+              </h2>
+            </div>
+          </div>
+
+          <div class="mt-7 overflow-x-auto rounded-box border border-base-content/10 bg-base-100/75">
+            <table class="table table-zebra">
+              <thead>
+                <tr>
+                  <th>Input path</th>
+                  <th>Immediate local result</th>
+                  <th>Successful result</th>
+                  <th>Failure behavior</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>Catalog search</strong></td>
+                  <td>No record until selection</td>
+                  <td>One-serving successful food</td>
+                  <td>Empty result creates nothing</td>
+                </tr>
+                <tr>
+                  <td><strong>Saved food / plate</strong></td>
+                  <td>Independent snapshot</td>
+                  <td>New occurrence for this day</td>
+                  <td>Original saved item remains unchanged</td>
+                </tr>
+                <tr>
+                  <td><strong>Barcode</strong></td>
+                  <td>Pending entry + retained image</td>
+                  <td>Resolved one-serving food</td>
+                  <td>Persist retryable or terminal error</td>
+                </tr>
+                <tr>
+                  <td><strong>Nutrition label</strong></td>
+                  <td>Pending entry + retained image</td>
+                  <td>Extracted values; name may be “Unnamed food”</td>
+                  <td>Partial nutrients remain unknown; processing may retry</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <figure class="mermaid-frame mt-6">
+            <div class="mermaid">
+stateDiagram-v2
+  [*] --> Pending: Capture scan locally
+  Pending --> Successful: Provider resolves usable food
+  Pending --> RetryableError: Temporary provider / network failure
+  Pending --> TerminalError: Non-recoverable failure
+  RetryableError --> Pending: Quick Retry
+  RetryableError --> TerminalError: Retry becomes non-recoverable
+  Successful --> [*]: Contributes known values
+  TerminalError --> [*]: Details + Delete
+            </div>
+            <figcaption class="mt-3 text-xs leading-5 text-base-content/55">
+              The original scan image survives app restart and connectivity loss.
+              Pending and failed entries contribute nothing to nutrition totals.
+              <span class="source-ref mono">§7</span>
+            </figcaption>
+          </figure>
+
+          <div role="alert" class="alert alert-warning alert-soft mt-6">
+            <div>
+              <strong>Open modeling choice:</strong> a scan attempt may become its own
+              persisted entity or remain embedded in the food entry. The lifecycle
+              behavior is required either way.
+            </div>
+          </div>
+        </section>
+
+        <section id="math" class="section-anchor">
+          <div class="flex items-start gap-3">
+            <span class="section-number">07</span>
+            <div>
+              <p class="eyebrow text-xs font-semibold text-primary">Daily math</p>
+              <h2 class="mt-1 text-3xl font-black tracking-tight sm:text-4xl">
+                Count foods once; carry uncertainty forward
+              </h2>
+            </div>
+          </div>
+
+          <div class="mt-7 grid gap-6 xl:grid-cols-[minmax(18rem,.72fr)_minmax(0,1.28fr)]">
+            <div class="mockup-phone mx-auto w-full max-w-sm border-base-content/15">
+              <div class="mockup-phone-camera"></div>
+              <div class="mockup-phone-display phone-log min-h-[38rem] px-5 py-7">
+                <p class="eyebrow text-[0.65rem] font-bold text-base-content/45">
+                  Tuesday · Food Log
+                </p>
+                <div class="mt-3 rounded-box bg-primary p-5 text-primary-content shadow-lg">
+                  <div class="flex items-end justify-between gap-3">
+                    <div>
+                      <p class="text-xs opacity-70">Calories</p>
+                      <p class="mt-1 text-4xl font-black">790</p>
+                    </div>
+                    <p class="text-sm">of 2,000</p>
+                  </div>
+                  <div class="nutrition-bar mt-4 bg-primary-content/25">
+                    <span class="bg-primary-content" style="width: 39.5%"></span>
+                  </div>
+                </div>
+
+                <div class="mt-5 space-y-3">
+                  <article class="rounded-box border border-base-content/10 bg-base-100 p-4">
+                    <div class="flex items-start justify-between gap-4">
+                      <div>
+                        <span class="badge badge-primary badge-outline badge-xs">PLATE</span>
+                        <h3 class="mt-2 font-bold">Lunch plate</h3>
+                        <p class="mt-1 text-xs text-base-content/55">Chicken + rice</p>
+                      </div>
+                      <strong class="text-lg">670</strong>
+                    </div>
+                  </article>
+                  <article class="rounded-box border border-base-content/10 bg-base-100 p-4">
+                    <div class="flex items-start justify-between gap-4">
+                      <div>
+                        <span class="badge badge-neutral badge-outline badge-xs">FOOD</span>
+                        <h3 class="mt-2 font-bold">Apple</h3>
+                        <p class="mt-1 text-xs text-base-content/55">Standalone</p>
+                      </div>
+                      <strong class="text-lg">120</strong>
+                    </div>
+                  </article>
+                  <article class="rounded-box border border-warning/35 bg-warning/8 p-4">
+                    <div class="flex items-start justify-between gap-4">
+                      <div>
+                        <span class="badge badge-warning badge-outline badge-xs">INCOMPLETE</span>
+                        <h3 class="mt-2 font-bold">Protein</h3>
+                        <p class="mt-1 text-xs text-base-content/55">One value unknown</p>
+                      </div>
+                      <strong class="text-lg">≥ 52g</strong>
+                    </div>
+                  </article>
+                </div>
+              </div>
+            </div>
+
+            <div class="space-y-5">
+              <article class="card card-border bg-base-100/75 shadow-lg">
+                <div class="card-body">
+                  <div class="flex items-center justify-between gap-4">
+                    <h3 class="card-title">Worked calorie example</h3>
+                    <span class="badge badge-success badge-soft">Complete</span>
+                  </div>
+                  <div class="mt-2 flex flex-col gap-3 sm:flex-row sm:items-stretch">
+                    <div class="flex-1 rounded-box bg-base-200 p-4">
+                      <p class="text-xs text-base-content/50">Plate component</p>
+                      <p class="mt-1 text-xl font-black">Chicken · 450</p>
+                    </div>
+                    <div class="metric-arrow hidden sm:grid">+</div>
+                    <div class="flex-1 rounded-box bg-base-200 p-4">
+                      <p class="text-xs text-base-content/50">Plate component</p>
+                      <p class="mt-1 text-xl font-black">Rice · 220</p>
+                    </div>
+                    <div class="metric-arrow hidden sm:grid">+</div>
+                    <div class="flex-1 rounded-box bg-base-200 p-4">
+                      <p class="text-xs text-base-content/50">Standalone</p>
+                      <p class="mt-1 text-xl font-black">Apple · 120</p>
+                    </div>
+                  </div>
+                  <div class="mt-1 rounded-box border border-primary/25 bg-primary/8 p-4">
+                    <p class="text-sm leading-6">
+                      Daily total = <strong>450 + 220 + 120 = 790</strong>. The plate
+                      card may display <strong>670</strong>, but 670 is not added again;
+                      it is a view over its two components.
+                    </p>
+                  </div>
+                </div>
+              </article>
+
+              <article class="card card-border bg-base-100/75 shadow-lg">
+                <div class="card-body">
+                  <div class="flex items-center justify-between gap-4">
+                    <h3 class="card-title">Worked uncertainty example</h3>
+                    <span class="badge badge-warning badge-soft">Incomplete</span>
+                  </div>
+                  <p class="text-sm leading-6 text-base-content/70">
+                    Suppose chicken has 40g protein, rice has 12g, and the apple's
+                    protein is missing. The system may display a known subtotal of
+                    <strong>52g</strong>, but must mark the day incomplete. It cannot
+                    silently treat the apple as 0g.
+                  </p>
+                  <div class="rounded-box bg-base-200 p-4 mono text-sm">
+                    dailyProtein = knownSubtotal(52g) + unknown
+                  </div>
+                </div>
+              </article>
+
+              <div class="grid gap-3 sm:grid-cols-2">
+                <div class="rounded-box border border-base-content/10 bg-base-100/70 p-4">
+                  <p class="text-xs text-base-content/50">Water</p>
+                  <p class="mt-1 font-bold">Sum normalized volumes</p>
+                  <p class="mt-1 text-sm text-base-content/60">8 fl oz defines one equivalent glass.</p>
+                </div>
+                <div class="rounded-box border border-base-content/10 bg-base-100/70 p-4">
+                  <p class="text-xs text-base-content/50">Goals</p>
+                  <p class="mt-1 font-bold">Resolve by selected date</p>
+                  <p class="mt-1 text-sm text-base-content/60">Sugar and sodium are maximums; others are targets.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+          <p class="mono mt-4 text-xs text-base-content/45">Source: §8</p>
+        </section>
+
+        <section id="plates" class="section-anchor">
+          <div class="flex items-start gap-3">
+            <span class="section-number">08</span>
+            <div>
+              <p class="eyebrow text-xs font-semibold text-primary">Plate semantics</p>
+              <h2 class="mt-1 text-3xl font-black tracking-tight sm:text-4xl">
+                A plate is ownership, not a visual folder
+              </h2>
+            </div>
+          </div>
+
+          <p class="mt-5 max-w-3xl leading-7 text-base-content/70">
+            Grouping changes where food records live. The selected entries stop being
+            standalone cards and become owned components, which is why creation and
+            deletion need transactional boundaries.
+          </p>
+
+          <div class="mt-7 overflow-x-auto rounded-box border border-base-content/10 bg-base-100/75">
+            <table class="table table-zebra">
+              <thead>
+                <tr>
+                  <th>Operation</th>
+                  <th>Allowed input</th>
+                  <th>Time behavior</th>
+                  <th>Ownership / deletion result</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>Create plate</strong></td>
+                  <td>Named, same-day, successful standalone foods</td>
+                  <td>Copies latest selected component time</td>
+                  <td>Plate now owns selected food rows</td>
+                </tr>
+                <tr>
+                  <td><strong>Add new food</strong></td>
+                  <td>Create through any ingestion path inside plate</td>
+                  <td>Plate time does not change</td>
+                  <td>New entry is born as a component</td>
+                </tr>
+                <tr>
+                  <td><strong>Move existing food</strong></td>
+                  <td><span class="badge badge-error badge-soft">Not allowed</span></td>
+                  <td>Not applicable</td>
+                  <td>Existing standalone cannot move into existing plate</td>
+                </tr>
+                <tr>
+                  <td><strong>Remove component</strong></td>
+                  <td>Any current component</td>
+                  <td>Plate time remains fixed</td>
+                  <td>One component is valid; zero deletes plate</td>
+                </tr>
+                <tr>
+                  <td><strong>Delete plate</strong></td>
+                  <td>Logged plate</td>
+                  <td>Not applicable</td>
+                  <td>Cascades to component foods and attached images</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div role="alert" class="alert alert-warning alert-soft mt-6">
+            <div>
+              <strong>Still unresolved:</strong> creation currently says two or more
+              foods, but the document explicitly asks product to confirm that initial
+              minimum. An existing plate with one component is definitely valid.
+            </div>
+          </div>
+        </section>
+
+        <section id="offline" class="section-anchor">
+          <div class="flex items-start gap-3">
+            <span class="section-number">09</span>
+            <div>
+              <p class="eyebrow text-xs font-semibold text-primary">Offline + time</p>
+              <h2 class="mt-1 text-3xl font-black tracking-tight sm:text-4xl">
+                Preserve user intent before trying to reconcile it
+              </h2>
+            </div>
+          </div>
+
+          <div class="mt-7 grid gap-6 xl:grid-cols-2">
+            <article class="card card-border bg-base-100/75 shadow-lg">
+              <div class="card-body">
+                <div class="flex items-center justify-between gap-4">
+                  <h3 class="card-title">Offline conflict policy</h3>
+                  <span class="badge badge-info badge-soft">Behavior fixed</span>
+                </div>
+                <p class="text-sm leading-6 text-base-content/70">
+                  If two device versions cannot merge safely, preserve both as
+                  separate records and let the user delete the unwanted duplicate.
+                  Silent loss is worse than a visible duplicate.
+                </p>
+                <div class="mt-2 grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3">
+                  <div class="rounded-box bg-base-200 p-4">
+                    <p class="text-xs text-base-content/50">Phone A · offline</p>
+                    <p class="mt-1 font-bold">Entry edited</p>
+                  </div>
+                  <span class="mono text-primary">+</span>
+                  <div class="rounded-box bg-base-200 p-4">
+                    <p class="text-xs text-base-content/50">Phone B · offline</p>
+                    <p class="mt-1 font-bold">Same entry edited</p>
+                  </div>
+                </div>
+                <div class="mt-3 rounded-box border border-info/30 bg-info/8 p-4 text-sm">
+                  Sync result: preserve two distinguishable records, not “last write
+                  wins.”
+                </div>
+              </div>
+            </article>
+
+            <article class="card card-border bg-base-100/75 shadow-lg">
+              <div class="card-body">
+                <div class="flex items-center justify-between gap-4">
+                  <h3 class="card-title">Three cases sync must distinguish</h3>
+                  <span class="badge badge-warning badge-soft">Protocol open</span>
+                </div>
+                <ol class="space-y-3 text-sm leading-6">
+                  <li class="rounded-box bg-base-200 p-3">
+                    <span class="mono mr-2 text-primary">01</span>
+                    Intentional duplicate consumption
+                  </li>
+                  <li class="rounded-box bg-base-200 p-3">
+                    <span class="mono mr-2 text-primary">02</span>
+                    Conflict-preserving duplicate
+                  </li>
+                  <li class="rounded-box bg-base-200 p-3">
+                    <span class="mono mr-2 text-primary">03</span>
+                    Retry of the same pending scan
+                  </li>
+                </ol>
+                <p class="text-sm leading-6 text-base-content/60">
+                  Local IDs, server IDs, operation logs, idempotency, merge detection,
+                  ordering, and retries still need concrete definitions.
+                </p>
+              </div>
+            </article>
+          </div>
+
+          <div class="mt-6 grid gap-4 md:grid-cols-3">
+            <article class="card card-border bg-base-100/70">
+              <div class="card-body">
+                <span class="badge badge-info badge-outline w-fit">Today</span>
+                <h3 class="card-title text-base">Use current local time</h3>
+                <p class="text-sm leading-6 text-base-content/65">
+                  The display time reflects when the user logs the item today.
+                </p>
+              </div>
+            </article>
+            <article class="card card-border bg-base-100/70">
+              <div class="card-body">
+                <span class="badge badge-info badge-outline w-fit">Past date</span>
+                <h3 class="card-title text-base">Append predictably</h3>
+                <p class="text-sm leading-6 text-base-content/65">
+                  Use one minute after the newest time, or 12:00 PM if no entries exist.
+                </p>
+              </div>
+            </article>
+            <article class="card card-border bg-base-100/70">
+              <div class="card-body">
+                <span class="badge badge-info badge-outline w-fit">Timezone change</span>
+                <h3 class="card-title text-base">Keep date stable</h3>
+                <p class="text-sm leading-6 text-base-content/65">
+                  Calendar ownership is separate from mutable device timezone behavior.
+                </p>
+              </div>
+            </article>
+          </div>
+
+          <div class="mt-6 rounded-box border border-warning/25 bg-warning/8 p-5">
+            <p class="text-sm leading-6">
+              <strong>Important gap:</strong> the behavior is clear, but canonical
+              date/time storage, daylight-saving handling, same-minute ordering,
+              normalized units, precision, and rounding are not yet defined.
+            </p>
+          </div>
+          <p class="mono mt-4 text-xs text-base-content/45">Source: §10 · §12</p>
+        </section>
+
+        <section id="quality" class="section-anchor">
+          <div class="flex items-start gap-3">
+            <span class="section-number">10</span>
+            <div>
+              <p class="eyebrow text-xs font-semibold text-primary">Quality boundary</p>
+              <h2 class="mt-1 text-3xl font-black tracking-tight sm:text-4xl">
+                The tests are a behavioral acceptance suite
+              </h2>
+            </div>
+          </div>
+
+          <p class="mt-5 max-w-3xl leading-7 text-base-content/70">
+            The TDD names sixteen minimum testing boundaries without choosing a test
+            framework. Together they define the failure modes implementation cannot
+            regress.
+          </p>
+
+          <div class="mt-7 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <article class="card card-border bg-base-100/75">
+              <div class="card-body">
+                <span class="badge badge-success badge-soft w-fit">Identity</span>
+                <h3 class="card-title text-base">Links and sessions</h3>
+                <p class="text-sm leading-6 text-base-content/65">
+                  Delivery, resend, expiry, replay, idempotency, multiple phones,
+                  local sign-out, persistence, and rotation grace.
+                </p>
+              </div>
+            </article>
+            <article class="card card-border bg-base-100/75">
+              <div class="card-body">
+                <span class="badge badge-error badge-soft w-fit">Isolation</span>
+                <h3 class="card-title text-base">Privacy boundaries</h3>
+                <p class="text-sm leading-6 text-base-content/65">
+                  Cross-account data isolation and private image access need direct
+                  negative tests, not just happy-path authorization.
+                </p>
+              </div>
+            </article>
+            <article class="card card-border bg-base-100/75">
+              <div class="card-body">
+                <span class="badge badge-info badge-soft w-fit">Domain</span>
+                <h3 class="card-title text-base">Food, plates, totals</h3>
+                <p class="text-sm leading-6 text-base-content/65">
+                  Every lifecycle state, plate operation, no double counting, unknown
+                  nutrient propagation, and historical goal selection.
+                </p>
+              </div>
+            </article>
+            <article class="card card-border bg-base-100/75">
+              <div class="card-body">
+                <span class="badge badge-warning badge-soft w-fit">Resilience</span>
+                <h3 class="card-title text-base">Offline and conversion</h3>
+                <p class="text-sm leading-6 text-base-content/65">
+                  Restart recovery, later sync, conflict duplication, date stability,
+                  unit conversion, water equivalence, and asset lifecycle.
+                </p>
+              </div>
+            </article>
+          </div>
+
+          <div role="alert" class="alert alert-warning alert-soft mt-6">
+            <div>
+              The required cases are listed, but test tooling, coverage expectations,
+              CI gates, performance targets, and reliability targets remain open.
+            </div>
+          </div>
+        </section>
+
+        <section id="decisions" class="section-anchor">
+          <div class="flex items-start gap-3">
+            <span class="section-number">11</span>
+            <div>
+              <p class="eyebrow text-xs font-semibold text-primary">Decision frontier</p>
+              <h2 class="mt-1 text-3xl font-black tracking-tight sm:text-4xl">
+                What can be built now, and what blocks the rest
+              </h2>
+            </div>
+          </div>
+
+          <p class="mt-5 max-w-3xl leading-7 text-base-content/70">
+            Authentication has a concrete contract. Every other stream has enough
+            behavioral guidance to evaluate options, but not enough selected
+            architecture to implement end-to-end without making new decisions.
+          </p>
+
+          <div class="no-print mt-6 flex flex-wrap gap-2" role="group" aria-label="Filter decisions">
+            <button class="btn btn-primary btn-sm decision-filter" data-filter="all" aria-pressed="true">
+              Show all
+            </button>
+            <button class="btn btn-ghost btn-sm decision-filter" data-filter="approved" aria-pressed="false">
+              Approved only
+            </button>
+            <button class="btn btn-ghost btn-sm decision-filter" data-filter="open" aria-pressed="false">
+              Open only
+            </button>
+          </div>
+
+          <div class="mt-4 overflow-x-auto rounded-box border border-base-content/10 bg-base-100/75">
+            <table class="table table-zebra">
+              <thead>
+                <tr>
+                  <th>Area</th>
+                  <th>Status</th>
+                  <th>What the TDD gives us</th>
+                  <th>Next design obligation</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr class="decision-item" data-status="approved">
+                  <td><strong>Authentication</strong></td>
+                  <td><span class="badge badge-success badge-soft">Approved</span></td>
+                  <td>Endpoints, schema, link policy, sessions, throttles</td>
+                  <td>Select backend runtime and email provider; implement contract</td>
+                </tr>
+                <tr class="decision-item" data-status="open">
+                  <td><strong>Client</strong></td>
+                  <td><span class="badge badge-warning badge-soft">Open</span></td>
+                  <td>Mobile-first PWA, iPhone priority, required screens/states</td>
+                  <td>Choose Ionic or alternative, browser targets, app-store scope</td>
+                </tr>
+                <tr class="decision-item" data-status="open">
+                  <td><strong>Domain persistence</strong></td>
+                  <td><span class="badge badge-warning badge-soft">Open</span></td>
+                  <td>Entities, ownership, invariants, transaction needs</td>
+                  <td>Choose primary DB, schema, migration and aggregate strategy</td>
+                </tr>
+                <tr class="decision-item" data-status="open">
+                  <td><strong>Food and scanning</strong></td>
+                  <td><span class="badge badge-warning badge-soft">Open</span></td>
+                  <td>Catalog, barcode, OCR lifecycle and partial-data rules</td>
+                  <td>Select providers, confidence thresholds, fallback behavior</td>
+                </tr>
+                <tr class="decision-item" data-status="open">
+                  <td><strong>Images</strong></td>
+                  <td><span class="badge badge-warning badge-soft">Open</span></td>
+                  <td>Private ownership, offline durability, linked deletion</td>
+                  <td>Select storage, upload, compression, limits, cleanup</td>
+                </tr>
+                <tr class="decision-item" data-status="open">
+                  <td><strong>Synchronization</strong></td>
+                  <td><span class="badge badge-warning badge-soft">Open</span></td>
+                  <td>Offline edits and preserve-both conflict outcome</td>
+                  <td>Define operation log, IDs, idempotency, merge and ordering</td>
+                </tr>
+                <tr class="decision-item" data-status="open">
+                  <td><strong>Time and units</strong></td>
+                  <td><span class="badge badge-warning badge-soft">Open</span></td>
+                  <td>Stable calendar dates, US/metric display, fixed water presets</td>
+                  <td>Define canonical storage, timezone/DST, precision, rounding</td>
+                </tr>
+                <tr class="decision-item" data-status="open">
+                  <td><strong>Operations and quality</strong></td>
+                  <td><span class="badge badge-warning badge-soft">Open</span></td>
+                  <td>Security requirements and minimum behavioral tests</td>
+                  <td>Choose observability, CI, test stack, SLOs, backup and recovery</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="mt-7 grid gap-4 md:grid-cols-3">
+            <article class="card card-border status-stripe-approved bg-base-100/75">
+              <div class="card-body">
+                <p class="eyebrow text-[0.65rem] font-bold text-success">Can start</p>
+                <h3 class="card-title">Auth implementation</h3>
+                <p class="text-sm leading-6 text-base-content/65">
+                  The API and storage behavior are detailed enough to build once the
+                  backend runtime and provider are chosen.
+                </p>
+              </div>
+            </article>
+            <article class="card card-border status-stripe-required bg-base-100/75">
+              <div class="card-body">
+                <p class="eyebrow text-[0.65rem] font-bold text-info">Can prototype</p>
+                <h3 class="card-title">Core product UX</h3>
+                <p class="text-sm leading-6 text-base-content/65">
+                  The home, food-log, ingestion, plate, water, pending, and error
+                  behavior can be prototyped against the invariant set.
+                </p>
+              </div>
+            </article>
+            <article class="card card-border status-stripe-open bg-base-100/75">
+              <div class="card-body">
+                <p class="eyebrow text-[0.65rem] font-bold text-warning">Must decide</p>
+                <h3 class="card-title">End-to-end architecture</h3>
+                <p class="text-sm leading-6 text-base-content/65">
+                  Domain data, sync, providers, images, units, time, and operations
+                  need explicit technical designs before production implementation.
+                </p>
+              </div>
+            </article>
+          </div>
+          <p class="mono mt-4 text-xs text-base-content/45">Source: §16 · §17</p>
+        </section>
+
+        <section id="takeaway" class="section-anchor pb-8">
+          <div class="rounded-box border border-primary/25 bg-primary/10 p-6 sm:p-8 lg:p-10">
+            <div class="grid gap-8 lg:grid-cols-[minmax(0,1.35fr)_minmax(18rem,.65fr)] lg:items-center">
+              <div>
+                <p class="eyebrow text-xs font-semibold text-primary">Bottom line</p>
+                <h2 class="mt-2 text-3xl font-black tracking-tight sm:text-4xl">
+                  The TDD protects correctness before selecting machinery.
+                </h2>
+                <p class="mt-5 max-w-3xl leading-7 text-base-content/72">
+                  Its strongest contribution is the invariant set: ownership,
+                  historical stability, snapshot isolation, plate integrity, unknown
+                  nutrient propagation, durable offline capture, and preservation of
+                  conflicting user intent. Authentication then demonstrates the level
+                  of specificity the remaining architecture sections still need.
+                </p>
+              </div>
+              <div class="card bg-base-100/80 shadow-xl">
+                <div class="card-body">
+                  <h3 class="card-title text-base">A useful implementation test</h3>
+                  <p class="text-sm leading-6 text-base-content/65">
+                    For every proposed technology, ask: can it enforce the invariants,
+                    survive offline use, preserve privacy across accounts and devices,
+                    and prove those properties through the §15 test boundary?
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <footer class="border-t border-base-content/10 bg-base-300/65">
+      <div class="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-5 py-7 text-xs text-base-content/50 sm:px-8 lg:px-10">
+        <p>Visual explanation derived from <span class="mono">TDD.md</span>.</p>
+        <p>Calorie Tracker · Technical Design Review · 17 Aug 2026</p>
+      </div>
+    </footer>
+
+    <script>
+      const filterButtons = [...document.querySelectorAll(".decision-filter")];
+      const decisionItems = [...document.querySelectorAll(".decision-item")];
+
+      for (const button of filterButtons) {
+        button.addEventListener("click", () => {
+          const filter = button.dataset.filter;
+
+          for (const candidate of filterButtons) {
+            const active = candidate === button;
+            candidate.setAttribute("aria-pressed", String(active));
+            candidate.classList.toggle("btn-primary", active);
+            candidate.classList.toggle("btn-ghost", !active);
+          }
+
+          for (const item of decisionItems) {
+            item.hidden = filter !== "all" && item.dataset.status !== filter;
+          }
+        });
+      }
+    </script>
+
+    <script type="module">
+      import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11.15.0/dist/mermaid.esm.min.mjs";
+
+      const darkQuery = window.matchMedia("(prefers-color-scheme: dark)");
+      const paint = document.createElement("canvas").getContext("2d");
+
+      function toRgba(color) {
+        paint.clearRect(0, 0, 1, 1);
+        paint.fillStyle = "#000";
+        paint.fillStyle = color;
+        paint.fillRect(0, 0, 1, 1);
+        return paint.getImageData(0, 0, 1, 1).data;
+      }
+
+      function compositeRgba(foreground, background) {
+        const foregroundAlpha = foreground[3] / 255;
+        const backgroundAlpha = background[3] / 255;
+        const alpha = foregroundAlpha + backgroundAlpha * (1 - foregroundAlpha);
+        if (alpha === 0) return [0, 0, 0, 0];
+        return [
+          (foreground[0] * foregroundAlpha + background[0] * backgroundAlpha * (1 - foregroundAlpha)) / alpha,
+          (foreground[1] * foregroundAlpha + background[1] * backgroundAlpha * (1 - foregroundAlpha)) / alpha,
+          (foreground[2] * foregroundAlpha + background[2] * backgroundAlpha * (1 - foregroundAlpha)) / alpha,
+          alpha * 255,
+        ];
+      }
+
+      function pageIsDark() {
+        const root = document.documentElement;
+        const rootBackground = toRgba(getComputedStyle(root).backgroundColor);
+        const bodyBackground = document.body
+          ? toRgba(getComputedStyle(document.body).backgroundColor)
+          : [0, 0, 0, 0];
+        const [r, g, b, a] = compositeRgba(bodyBackground, rootBackground);
+        if (a > 0) {
+          return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255 < 0.5;
+        }
+        const colorScheme = getComputedStyle(root).colorScheme;
+        if (colorScheme.includes("dark") && !colorScheme.includes("light")) return true;
+        if (colorScheme.includes("light") && !colorScheme.includes("dark")) return false;
+        return darkQuery.matches;
+      }
+
+      const diagrams = [...document.querySelectorAll(".mermaid")].map((element) => ({
+        element,
+        source: element.textContent,
+      }));
+      let appliedTheme;
+      let rendering = false;
+      let queued = false;
+
+      function queueRender() {
+        queued = true;
+        if (!rendering) void render();
+      }
+
+      async function render() {
+        rendering = true;
+        try {
+          while (queued) {
+            queued = false;
+            const theme = pageIsDark() ? "dark" : "default";
+            if (theme === appliedTheme) continue;
+            mermaid.initialize({ startOnLoad: false, theme, securityLevel: "strict" });
+            for (const { element, source } of diagrams) {
+              element.removeAttribute("data-processed");
+              element.textContent = source;
+            }
+            try {
+              await mermaid.run({ nodes: diagrams.map(({ element }) => element) });
+            } catch (error) {
+              console.error("Mermaid diagram render failed:", error);
+              return;
+            }
+            appliedTheme = theme;
+          }
+        } finally {
+          rendering = false;
+          if (queued) queueRender();
+        }
+      }
+
+      if (document.readyState === "complete") queueRender();
+      else window.addEventListener("load", queueRender, { once: true });
+
+      const themeObserver = new MutationObserver(queueRender);
+      for (const element of [document.documentElement, document.body]) {
+        if (!element) continue;
+        themeObserver.observe(element, {
+          attributes: true,
+          attributeFilter: ["data-theme", "class", "style"],
+        });
+      }
+      document.addEventListener("change", queueRender, true);
+      document.addEventListener(
+        "transitionend",
+        ({ propertyName }) => {
+          if (propertyName === "background-color") queueRender();
+        },
+        true,
+      );
+      darkQuery.addEventListener("change", queueRender);
+    </script>
+  </body>
+</html>
