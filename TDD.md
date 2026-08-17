@@ -2,9 +2,9 @@
 
 ## 1. Status and Purpose
 
-This technical design document is derived from the confirmed product requirements. It identifies required system behavior, domain invariants, and unresolved technical decisions. The authentication API, immediate account-onboarding API, and their SQLite persistence models are approved; the remaining implementation architecture is not yet selected.
+This technical design document is derived from the confirmed product requirements. It identifies required system behavior, domain invariants, and unresolved technical decisions. The authentication API, immediate account-onboarding API, their SQLite persistence models, client framework, Safari-installed PWA delivery, package manager, backend language, and backend framework are approved; the remaining logging-domain architecture is not yet selected.
 
-The product direction mentioned during discovery is a mobile-first Progressive Web App, primarily used on iPhone and accessible from any phone. Ionic was mentioned as a possible client framework, but it is not yet a confirmed technical choice.
+The client will be a Safari-installed Progressive Web App built with Ionic React and TypeScript. It is explicitly iOS-first, with iPhone as its primary use environment. The workspace will use pnpm. The API will use Node.js, Express 5, and TypeScript. Capacitor and App Store packaging are not part of version one.
 
 ## 2. Technical Scope
 
@@ -23,7 +23,18 @@ The system will eventually require these major capabilities:
 - Multi-device synchronization and conflict preservation
 - US and metric display conversion
 
-No backend framework, hosting platform, transactional-email provider, food database, image-processing provider, or storage provider is selected yet. SQLite is the approved persistence model for authentication and immediate account onboarding in section 6; whether it is also the primary database for the remaining logging domain is still pending.
+The current implementation phase is limited to authentication: email entry, delivery failure and resend, check-email guidance, magic-link exchange states, persistent device sessions, local sign-out, and the first-time setup gate. Section 6 also approves the immediate account-onboarding API and SQLite model, but this client mock does not implement setup submission. Food logging, scanning, water, images, and synchronization are not part of the current mock.
+
+### 2.1 Confirmed implementation stack
+
+- **Workspace and package manager:** pnpm workspace. Client and server commands run from the repository root.
+- **Client:** Ionic 8 with React and TypeScript, installed from Safari as a version-one PWA. Ionic is configured with iOS component behavior and a dark iPhone-first visual language. The production build emits a web app manifest, iPhone home-screen icon, standalone display metadata, and an automatically updated service worker.
+- **API:** Node.js with Express 5 and TypeScript. The API and PWA use the approved same-origin `/v1` boundary.
+- **Authentication and onboarding data:** SQLite 3.37 or newer using the approved section 6 models in production.
+- **Authentication mock:** the review server uses process-local memory and a development-only magic-link helper. It demonstrates the contract but is not production persistence or a transactional-email substitute.
+- **Test tooling for authentication:** Vitest and Supertest for TDD-derived API integration scenarios; TypeScript and production PWA builds are workspace quality gates.
+
+Hosting, deployment, the supported Node.js LTS baseline, supported iPhone/iOS versions, transactional email, and production observability are not selected. No food database, image-processing provider, or object-storage provider is selected. Whether SQLite is also the primary database for the remaining logging domain is still pending.
 
 ## 3. Conceptual Domain Model
 
@@ -98,11 +109,11 @@ Represents the lifecycle of a barcode or label capture, including its image, pro
 6. A verified session persists on the device until local sign-out.
 7. The same account may maintain simultaneous sessions on multiple phones.
 
-Account deletion and remote revocation of all sessions are not required in version one. Section 6 defines the approved link lifetime, replay protection, session persistence, and token-rotation policies. Email-address recovery remains pending.
+Account deletion, email-address changes or recovery, and remote revocation of all sessions are not required in version one. No self-service recovery API or UI will be included. Section 6 defines the approved link lifetime, replay protection, session persistence, and token-rotation policies.
 
 ## 6. Authentication API and SQLite Schema
 
-This section defines the approved version-one authentication boundary. It assumes a same-origin PWA and API, JSON request and response bodies, SQLite 3.37 or newer, and application-generated UUIDv7 identifiers.
+This section defines the approved version-one authentication boundary. It uses the confirmed Ionic React client and Node.js/Express API, JSON request and response bodies, SQLite 3.37 or newer, and application-generated UUIDv7 identifiers.
 
 ### 6.1 API conventions
 
@@ -561,7 +572,7 @@ Canonical storage units, timezone representation, daylight-saving behavior, conv
 
 ## 13. UX Requirements Relevant to Technical Design
 
-- The intended client is mobile-first and optimized for iPhone while remaining usable on other phones.
+- The Ionic React client is mobile-first and optimized for iPhone while remaining usable on other phones.
 - The home experience contains a fixed calorie card, a two-page nutrition carousel, a separate water section, and a newest-first Food Log.
 - Food cards support image and text-only variants.
 - Plate cards are always text-only.
@@ -570,7 +581,7 @@ Canonical storage units, timezone representation, daylight-saving behavior, conv
 - The Add Food surface offers Saved Foods, Food Database, Scan Barcode, and Scan Nutrition Label.
 - The date strip remains neutral and a calendar supports long-range navigation.
 - The application is English-only in version one.
-- Accessibility behavior, responsive breakpoints, exact copy, empty states, loading states, and visual tokens remain to be specified.
+- The authentication mock specifies a dark iOS-first visual language plus responsive, loading, success, delivery-error, expired-link, replayed-link, superseded-link, and setup-gate behavior. Version one must conform to WCAG 2.2 Level AA. Production copy approval, automated conformance checks, and the visual system for non-authentication surfaces remain to be specified.
 
 ## 14. Security and Privacy Requirements
 
@@ -604,20 +615,18 @@ The eventual implementation must verify at minimum:
 - Multi-phone session and synchronization behavior
 - Session persistence without server-side expiration, current-phone-only sign-out, and token-rotation grace
 
-The concrete test framework and quality gates are not selected.
+The authentication implementation uses TDD-derived API integration scenarios with Vitest and Supertest. They execute the Express application across request, link exchange, cookie session, resend recovery, replay rejection, and sign-out boundaries. Workspace TypeScript and production PWA builds are additional quality gates. Coverage thresholds, browser automation, accessibility automation, CI enforcement, and test tooling for the remaining product are not selected.
 
 ## 16. Pending Technical Decisions
 
 ### Client and delivery
 
-- Confirm whether Ionic is the client framework.
-- Decide whether version one is a browser-installed PWA only or also packaged for an app store.
-- Define browser and operating-system support targets.
-- Define the client state-management, offline-storage, and synchronization approach.
+- Define the supported iPhone and iOS/Safari version matrix and Add to Home Screen acceptance checks.
+- Define the client state-management, offline-storage, and synchronization approach beyond the local authentication mock.
 
 ### Backend and data
 
-- Select backend language, framework, hosting, and deployment model. The authentication and immediate onboarding API style is defined in section 6.
+- Select the supported Node.js LTS baseline, hosting platform, and deployment model. Node.js, Express 5, and TypeScript are confirmed; the authentication and immediate onboarding API style is defined in section 6.
 - Confirm whether the approved SQLite authentication and onboarding store is also the primary database for the remaining logging domain, and define its later migration strategy.
 - Define domain identifiers, ownership enforcement, and transaction boundaries.
 - Define aggregate calculation strategy and cache invalidation.
@@ -626,7 +635,6 @@ The concrete test framework and quality gates are not selected.
 ### Authentication and email
 
 - Select a transactional-email provider that supports delivery idempotency and the failure reporting required by section 6.
-- Define handling for email-address changes and inaccessible email accounts.
 
 ### Food and scanning
 
@@ -651,7 +659,7 @@ The concrete test framework and quality gates are not selected.
 ### UX and quality
 
 - Define the visual system and component behavior beyond the accepted references.
-- Specify accessibility, responsive behavior, loading, empty, and degraded-network states.
+- Specify responsive, loading, empty, and degraded-network states beyond authentication, plus automated checks that enforce WCAG 2.2 Level AA.
 - Select observability, analytics, error-reporting, test, and CI strategies.
 - Establish performance and reliability targets.
 
