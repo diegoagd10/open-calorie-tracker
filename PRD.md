@@ -13,6 +13,7 @@ This document defines product behavior only. It intentionally excludes architect
 - Every user's records must remain private and separate from every other user's records.
 - The daily log is the primary experience; long-term analytics are not part of version one.
 - Failed or incomplete records must never silently distort daily totals.
+- Version one must conform to WCAG 2.2 Level AA.
 
 ## 3. Users and Access
 
@@ -26,6 +27,7 @@ This document defines product behavior only. It intentionally excludes architect
 - The user may sign out of the current phone.
 - Remote session management and “sign out all devices” are out of scope.
 - Self-service account deletion is out of scope for version one.
+- Self-service email-address changes and recovery after losing email access are out of scope for version one.
 
 ## 4. First-Time Setup
 
@@ -228,6 +230,7 @@ Exercise logging and meal-photo calorie estimation are not offered.
 - Subscriptions, payments, advertisements, or paid feature limits
 - Data export
 - Self-service account deletion
+- Self-service email-address changes and recovery
 - Remote session management
 - Name, age, sex, height, weight, and health-profile data
 

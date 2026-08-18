@@ -1,0 +1,285 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-08-17T19:13:23-04:00",
+  "title": "Design System: Calorie Tracker Authentication",
+  "extensions": {
+    "colorMeta": {
+      "system-background": {
+        "role": "neutral",
+        "displayName": "System Black",
+        "canonical": "#000000",
+        "tonalRamp": ["#000000", "#111113", "#1c1c1e", "#2c2c2e", "#48484a", "#636366", "#8e8e93", "#f2f2f7"]
+      },
+      "grouped-surface": {
+        "role": "neutral",
+        "displayName": "Grouped Charcoal",
+        "canonical": "#1c1c1e",
+        "tonalRamp": ["#000000", "#111113", "#1c1c1e", "#2c2c2e", "#48484a", "#636366", "#8e8e93", "#f2f2f7"]
+      },
+      "inset-surface": {
+        "role": "neutral",
+        "displayName": "Inset Charcoal",
+        "canonical": "#2c2c2e",
+        "tonalRamp": ["#000000", "#111113", "#1c1c1e", "#2c2c2e", "#48484a", "#636366", "#8e8e93", "#f2f2f7"]
+      },
+      "label": {
+        "role": "neutral",
+        "displayName": "Primary Label",
+        "canonical": "#ffffff",
+        "tonalRamp": ["#000000", "#1c1c1e", "#2c2c2e", "#48484a", "#636366", "#8e8e93", "#c7c7cc", "#ffffff"]
+      },
+      "secondary-label": {
+        "role": "neutral",
+        "displayName": "Secondary Label",
+        "canonical": "#a1a1a6",
+        "tonalRamp": ["#111113", "#1c1c1e", "#2c2c2e", "#48484a", "#636366", "#8e8e93", "#a1a1a6", "#d1d1d6"]
+      },
+      "tertiary-label": {
+        "role": "neutral",
+        "displayName": "Tertiary Label",
+        "canonical": "#8e8e93",
+        "tonalRamp": ["#111113", "#1c1c1e", "#2c2c2e", "#48484a", "#636366", "#8e8e93", "#aeaeb2", "#d1d1d6"]
+      },
+      "separator": {
+        "role": "neutral",
+        "displayName": "Grouped Separator",
+        "canonical": "rgba(84, 84, 88, 0.62)",
+        "tonalRamp": ["rgba(84, 84, 88, 0.12)", "rgba(84, 84, 88, 0.24)", "rgba(84, 84, 88, 0.36)", "rgba(84, 84, 88, 0.48)", "rgba(84, 84, 88, 0.62)", "rgba(112, 112, 118, 0.72)", "rgba(142, 142, 147, 0.82)", "rgba(174, 174, 178, 0.92)"]
+      },
+      "interaction-blue": {
+        "role": "primary",
+        "displayName": "Interaction Blue",
+        "canonical": "#0a84ff",
+        "tonalRamp": ["#002b5c", "#004e9f", "#006dd6", "#0a84ff", "#409cff", "#72b7ff", "#a8d3ff", "#d9ecff"]
+      },
+      "interaction-blue-pressed": {
+        "role": "primary",
+        "displayName": "Pressed Interaction Blue",
+        "canonical": "#409cff",
+        "tonalRamp": ["#002b5c", "#004e9f", "#006dd6", "#0a84ff", "#409cff", "#72b7ff", "#a8d3ff", "#d9ecff"]
+      },
+      "success": {
+        "role": "semantic",
+        "displayName": "Success Green",
+        "canonical": "#30d158",
+        "tonalRamp": ["#0a3d18", "#116329", "#1b8a3a", "#30d158", "#57dc76", "#83e89b", "#b4f3c1", "#e2fae7"]
+      },
+      "success-text": {
+        "role": "semantic",
+        "displayName": "Success Text",
+        "canonical": "#63df81",
+        "tonalRamp": ["#0a3d18", "#116329", "#1b8a3a", "#30d158", "#63df81", "#8ceaa3", "#baf3c7", "#e2fae7"]
+      },
+      "success-fill": {
+        "role": "semantic",
+        "displayName": "Success Fill",
+        "canonical": "rgba(48, 209, 88, 0.14)",
+        "tonalRamp": ["rgba(48, 209, 88, 0.05)", "rgba(48, 209, 88, 0.08)", "rgba(48, 209, 88, 0.11)", "rgba(48, 209, 88, 0.14)", "rgba(48, 209, 88, 0.2)", "rgba(48, 209, 88, 0.28)", "rgba(48, 209, 88, 0.38)", "rgba(48, 209, 88, 0.5)"]
+      },
+      "error": {
+        "role": "semantic",
+        "displayName": "Error Red",
+        "canonical": "#ff453a",
+        "tonalRamp": ["#5c0b07", "#901812", "#c62a21", "#ff453a", "#ff6961", "#ff928c", "#ffc0bc", "#ffe3e1"]
+      },
+      "error-text": {
+        "role": "semantic",
+        "displayName": "Error Text",
+        "canonical": "#ff8a83",
+        "tonalRamp": ["#5c0b07", "#901812", "#c62a21", "#ff453a", "#ff6961", "#ff8a83", "#ffc0bc", "#ffe3e1"]
+      },
+      "error-fill": {
+        "role": "semantic",
+        "displayName": "Error Fill",
+        "canonical": "rgba(255, 69, 58, 0.14)",
+        "tonalRamp": ["rgba(255, 69, 58, 0.05)", "rgba(255, 69, 58, 0.08)", "rgba(255, 69, 58, 0.11)", "rgba(255, 69, 58, 0.14)", "rgba(255, 69, 58, 0.2)", "rgba(255, 69, 58, 0.28)", "rgba(255, 69, 58, 0.38)", "rgba(255, 69, 58, 0.5)"]
+      },
+      "disabled-fill": {
+        "role": "neutral",
+        "displayName": "Disabled Fill",
+        "canonical": "#3a3a3c",
+        "tonalRamp": ["#111113", "#1c1c1e", "#2c2c2e", "#3a3a3c", "#48484a", "#636366", "#8e8e93", "#d1d1d6"]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Context Display",
+        "purpose": "Short privacy and authentication-state statements."
+      },
+      "headline": {
+        "displayName": "Action Headline",
+        "purpose": "The immediate task inside a grouped action container."
+      },
+      "title": {
+        "displayName": "Chrome Title",
+        "purpose": "Application chrome and high-priority interface labels."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Instructions, controls, and supporting copy."
+      },
+      "label": {
+        "displayName": "Interface Label",
+        "purpose": "Field labels, metadata, privacy markers, and progress captions."
+      }
+    },
+    "shadows": [
+      {
+        "name": "grouped-container",
+        "value": "0 1.4rem 4rem -2rem rgba(0, 0, 0, 0.78)",
+        "purpose": "Grounds the main grouped action container against system black."
+      },
+      {
+        "name": "app-icon-glow",
+        "value": "0 1rem 2.5rem -1.2rem rgba(10, 132, 255, 0.74)",
+        "purpose": "A restrained blue ambient glow reserved for the authentication app icon."
+      }
+    ],
+    "motion": [
+      {
+        "name": "verification-pulse",
+        "value": "seal-pulse 1.8s ease-in-out infinite",
+        "purpose": "Signals active link verification without moving layout."
+      },
+      {
+        "name": "reduced-motion-verification",
+        "value": "none",
+        "purpose": "Removes the working-seal pulse when reduced motion is requested."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "compact-phone",
+        "value": "430px"
+      },
+      {
+        "name": "wide-viewport-breathing-room",
+        "value": "760px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Authentication Header",
+      "kind": "nav",
+      "description": "Translucent iOS chrome with product title and a quiet privacy marker.",
+      "html": "<nav class=\"ds-auth-header\" aria-label=\"Calorie Tracker\"><strong>Calorie Tracker</strong><span><svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M7 10V7a5 5 0 0 1 10 0v3m-9 0h8a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2Z\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.7\"/></svg>Private</span></nav>",
+      "css": ".ds-auth-header { min-height: 3.25rem; padding: 0 max(.8rem, env(safe-area-inset-right)) 0 max(1rem, env(safe-area-inset-left)); display: flex; align-items: center; justify-content: space-between; gap: 1rem; border-bottom: 1px solid var(--separator); background: rgba(0, 0, 0, .78); color: var(--label); backdrop-filter: saturate(180%) blur(22px); font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif; } .ds-auth-header strong { font-size: 1.06rem; font-weight: 650; letter-spacing: -.02em; } .ds-auth-header span { min-height: 2.75rem; display: inline-flex; align-items: center; gap: .32rem; color: var(--secondary-label); font-size: .8rem; font-weight: 550; } .ds-auth-header svg { width: .9rem; height: .9rem; }"
+    },
+    {
+      "name": "Authentication Progress",
+      "kind": "custom",
+      "refersTo": "progress-current",
+      "description": "Persistent Email, Verify, Setup progress with text-supported complete, current, and upcoming states.",
+      "html": "<ol class=\"ds-auth-progress\" aria-label=\"Sign-in progress\"><li data-state=\"complete\"><i></i><span>Email</span></li><li data-state=\"current\" aria-current=\"step\"><i></i><span>Verify</span></li><li data-state=\"upcoming\"><i></i><span>Setup</span></li></ol>",
+      "css": ".ds-auth-progress { margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .45rem; list-style: none; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif; } .ds-auth-progress li { display: grid; gap: .42rem; color: var(--tertiary-label); font-size: .75rem; text-align: center; } .ds-auth-progress i { width: 100%; height: .24rem; border-radius: 999px; background: var(--tertiary-background, #2c2c2e); } .ds-auth-progress li[data-state=complete] { color: var(--secondary-label); } .ds-auth-progress li[data-state=complete] i { background: var(--secondary-label); } .ds-auth-progress li[data-state=current] { color: var(--label); font-weight: 650; } .ds-auth-progress li[data-state=current] i { background: var(--tint); }"
+    },
+    {
+      "name": "Grouped Action Container",
+      "kind": "card",
+      "refersTo": "action-container",
+      "description": "The single grouped surface that contains one authentication task.",
+      "html": "<section class=\"ds-action-card\"><h2>Sign in with your email.</h2><p>We will send a one-time link. It expires in 15 minutes.</p></section>",
+      "css": ".ds-action-card { padding: 1.25rem; border: 1px solid rgba(255, 255, 255, .055); border-radius: 1.45rem; background: var(--secondary-background); color: var(--label); box-shadow: 0 1.4rem 4rem -2rem rgba(0, 0, 0, .78); font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif; } .ds-action-card h2 { max-width: 16ch; margin: 0; font-size: clamp(1.75rem, 7.5vw, 2.2rem); font-weight: 720; letter-spacing: -.035em; line-height: 1.08; } .ds-action-card p { max-width: 31rem; margin: .65rem 0 0; color: var(--secondary-label); font-size: .98rem; line-height: 1.48; }"
+    },
+    {
+      "name": "Email Field",
+      "kind": "input",
+      "refersTo": "input-email",
+      "description": "Large stacked-label email field with an inset blue focus treatment.",
+      "html": "<label class=\"ds-email-field\"><span>Email address</span><input type=\"email\" inputmode=\"email\" autocomplete=\"email\" placeholder=\"you@example.com\"></label>",
+      "css": ".ds-email-field { min-height: 3.75rem; padding: .72rem .9rem; display: grid; align-content: center; border-radius: .8rem; background: var(--tertiary-background); color: var(--label); font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif; } .ds-email-field:focus-within { box-shadow: inset 0 0 0 2px var(--tint), 0 0 0 3px #000, 0 0 0 6px var(--tint); } .ds-email-field span { margin-bottom: .15rem; color: var(--secondary-label); font-size: .78rem; font-weight: 500; } .ds-email-field input { width: 100%; padding: 0; border: 0; outline: 0; background: transparent; color: var(--label); font: inherit; font-size: 1.05rem; } .ds-email-field input::placeholder { color: var(--tertiary-label); }"
+    },
+    {
+      "name": "Primary Action",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Full-width blue action for the next decisive authentication step.",
+      "html": "<button class=\"ds-primary-action\">Email me a sign-in link<svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"m9 18 6-6-6-6m6 6H4\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></svg></button>",
+      "css": ".ds-primary-action { width: 100%; min-height: 3.15rem; padding: 0 1rem; display: inline-flex; align-items: center; justify-content: center; gap: .55rem; border: 0; border-radius: .85rem; background: var(--tint); color: #fff; box-shadow: none; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif; font-size: 1rem; font-weight: 650; letter-spacing: -.015em; } .ds-primary-action:hover, .ds-primary-action:active { background: var(--tint-pressed, #409cff); } .ds-primary-action:focus-visible { outline: 3px solid var(--tint); outline-offset: 3px; } .ds-primary-action:disabled { background: #3a3a3c; color: var(--tertiary-label); opacity: 1; } .ds-primary-action svg { width: 1.1rem; height: 1.1rem; }"
+    },
+    {
+      "name": "Secondary Action",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Clear blue action for resend, sign-out, or low-emphasis recovery.",
+      "html": "<button class=\"ds-secondary-action\">Resend sign-in link</button>",
+      "css": ".ds-secondary-action { min-height: 2.75rem; padding: 0 .75rem; border: 0; border-radius: .75rem; background: transparent; color: var(--tint); font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif; font-size: 1rem; font-weight: 650; letter-spacing: -.015em; } .ds-secondary-action:hover, .ds-secondary-action:active { background: rgba(10, 132, 255, .1); color: var(--tint-pressed, #409cff); } .ds-secondary-action:focus-visible { outline: 3px solid var(--tint); outline-offset: 3px; } .ds-secondary-action:disabled { color: var(--tertiary-label); opacity: 1; }"
+    },
+    {
+      "name": "Grouped Detail List",
+      "kind": "card",
+      "description": "Inset iOS-style facts with indented separators inside one group.",
+      "html": "<dl class=\"ds-detail-list\"><div><dt>Delivery</dt><dd>Accepted</dd></div><div><dt>Link lifetime</dt><dd>15 minutes</dd></div></dl>",
+      "css": ".ds-detail-list { margin: 0; overflow: hidden; border-radius: .8rem; background: var(--tertiary-background); color: var(--label); font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif; } .ds-detail-list div { min-height: 3.15rem; margin-left: .9rem; padding-right: .9rem; display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 1rem; border-bottom: 1px solid var(--separator); } .ds-detail-list div:last-child { border-bottom: 0; } .ds-detail-list dt { font-size: .94rem; } .ds-detail-list dd { margin: 0; color: var(--secondary-label); font-size: .92rem; font-weight: 500; text-align: right; }"
+    },
+    {
+      "name": "Error Status",
+      "kind": "custom",
+      "refersTo": "status-error",
+      "description": "Text-first failure feedback with an alert icon and recovery context.",
+      "html": "<div class=\"ds-status-error\" role=\"alert\"><svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><circle cx=\"12\" cy=\"12\" r=\"9\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\"/><path d=\"M12 7v6m0 4h.01\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\"/></svg><div><strong>Verification stopped</strong><p>This sign-in link has expired. Request a new one.</p></div></div>",
+      "css": ".ds-status-error { padding: .9rem; display: grid; grid-template-columns: auto 1fr; gap: .7rem; border-radius: .8rem; background: rgba(255, 69, 58, .14); color: #ff8a83; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif; } .ds-status-error svg { width: 1.15rem; height: 1.15rem; margin-top: .1rem; } .ds-status-error strong { display: block; font-size: .92rem; } .ds-status-error p { margin: .15rem 0 0; font-size: .86rem; line-height: 1.4; }"
+    },
+    {
+      "name": "Success Status",
+      "kind": "custom",
+      "refersTo": "status-success",
+      "description": "Persistent session confirmation with explicit text and a check icon.",
+      "html": "<div class=\"ds-status-success\" role=\"status\"><svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><circle cx=\"12\" cy=\"12\" r=\"9\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\"/><path d=\"m8 12 2.7 2.7L16.5 9\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></svg><div><strong>Session saved</strong><p>You will stay signed in here until you sign out on this phone.</p></div></div>",
+      "css": ".ds-status-success { padding: .9rem; display: grid; grid-template-columns: auto 1fr; gap: .7rem; border-radius: .8rem; background: rgba(48, 209, 88, .14); color: #63df81; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif; } .ds-status-success svg { width: 1.15rem; height: 1.15rem; margin-top: .1rem; } .ds-status-success strong { display: block; font-size: .92rem; } .ds-status-success p { margin: .15rem 0 0; font-size: .86rem; line-height: 1.4; }"
+    },
+    {
+      "name": "Verification Seal States",
+      "kind": "custom",
+      "description": "Circular working, success, and failure indicators with a reduced-motion-safe pulse.",
+      "html": "<div class=\"ds-seal-states\" aria-label=\"Verification states\"><span class=\"ds-seal ds-seal-working\" aria-label=\"Verifying\"><i></i></span><span class=\"ds-seal ds-seal-success\" aria-label=\"Verified\">✓</span><span class=\"ds-seal ds-seal-error\" aria-label=\"Verification failed\">!</span></div>",
+      "css": ".ds-seal-states { display: flex; align-items: center; gap: 1rem; } .ds-seal { width: 5.5rem; height: 5.5rem; display: grid; place-items: center; position: relative; border-radius: 50%; background: rgba(10, 132, 255, .14); color: var(--tint); font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif; font-size: 2rem; font-weight: 700; } .ds-seal::after { position: absolute; inset: .45rem; border: 1px solid currentColor; border-radius: inherit; content: ''; opacity: .32; } .ds-seal-working i { width: 1.8rem; height: 1.8rem; border: 3px solid currentColor; border-right-color: transparent; border-radius: 50%; } .ds-seal-working::after { animation: ds-seal-pulse 1.8s ease-in-out infinite; } .ds-seal-success { background: rgba(48, 209, 88, .14); color: #30d158; } .ds-seal-error { background: rgba(255, 69, 58, .14); color: #ff453a; } @keyframes ds-seal-pulse { 50% { transform: scale(.9); opacity: .12; } } @media (prefers-reduced-motion: reduce) { .ds-seal-working::after { animation: none; } }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Private iPhone Record",
+    "overview": "Authentication feels native to the device: a true-black environment, dark grouped surfaces, compact system chrome, one blue interaction tint, and direct touch-first controls. The tone is private, factual, and calm rather than promotional.\n\nEmail, verification, and setup form one visible sequence. State changes are explicit, semantic colors always carry text and icon support, and the composition remains phone-shaped at larger widths.",
+    "keyCharacteristics": [
+      "True-black canvas with charcoal grouped and inset surfaces.",
+      "System typography with compact, high-contrast hierarchy.",
+      "One interaction blue, reserved semantic green and red, and no decorative color.",
+      "Safe-area-aware, single-column layouts with 44pt-or-larger targets.",
+      "Persistent three-step authentication progress and reduced-motion support."
+    ],
+    "rules": [
+      {
+        "name": "The One Tint Rule",
+        "body": "Interaction blue is the only non-semantic accent. Pressed blue is a state of that tint, not a second accent.",
+        "section": "colors"
+      },
+      {
+        "name": "The Semantic Exception Rule",
+        "body": "Green and red appear only for successful or failed outcomes, always beside text and an icon.",
+        "section": "colors"
+      },
+      {
+        "name": "The Device Type Rule",
+        "body": "Use the system stack only; no imported typeface, decorative display face, or all-caps interface copy.",
+        "section": "typography"
+      },
+      {
+        "name": "The Tonal Depth Rule",
+        "body": "Grouping comes from black-to-charcoal layers; shadows support only the app icon and grouped action container.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do keep authentication on true black with grouped charcoal containment.",
+      "Do preserve the Email, Verify, Setup sequence and expose its current step to assistive technology.",
+      "Do pair progress, success, error, loading, and disabled states with visible text rather than color alone.",
+      "Do honor safe areas, text scaling, keyboard focus, reduced motion, and 44pt-or-larger targets."
+    ],
+    "donts": [
+      "Don't introduce any accent beyond interaction blue and semantic success or error.",
+      "Don't expand authentication into a desktop split layout; preserve the centered one-column mobile boundary.",
+      "Don't use shadows as the default separator between grouped content.",
+      "Don't hide recovery actions or collapse state feedback into an icon alone."
+    ]
+  }
+}
