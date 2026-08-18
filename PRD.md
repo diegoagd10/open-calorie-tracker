@@ -243,3 +243,29 @@ Exercise logging and meal-photo calorie estimation are not offered.
 ## 16. Acceptance Summary
 
 Version one is successful when a verified user can set personal goals, log food through the approved sources, optionally organize foods into plates, record water, use the product across phones and during temporary connectivity loss, and accurately review today's or any past day's intake without health scoring, exercise tracking, reminders, or social features.
+
+## 17. Vertical Slice Stories
+
+The owner labels below are roles because no individual owners are assigned in this document.
+Delivery progress is tracked separately in [STORY_TRACKER.md](STORY_TRACKER.md).
+
+| Code | Title | Status | Depends on | External owner | Blocker or sequencing reason |
+| --- | --- | --- | --- | --- | --- |
+| **OCT-001** | Complete Production Passwordless Sign-In with SQLite, Email Delivery, Abuse Limits, and Persistent Sessions | External decision | None | Auth / delivery owner | Select the transactional-email provider. SQLite auth is approved, but the current API still uses in-memory Maps, a development-only link helper, and a non-persistent browser-session cookie. |
+| **OCT-002** | Complete Onboarding, Daily Date Navigation, and Historical Goal Maintenance End to End | Blocked | None | Logging architecture owner | Onboarding is approved, but the combined delivery also requires the logging database, date model, ongoing goal API, and historical goal-resolution rules. |
+| **OCT-003** | Log and Manage Water with Daily Progress in the Selected Unit System | Blocked | OCT-002 | Backend / units owner | Confirm the logging store plus canonical water volume, event time, preset conversion, display precision, and ordering rules. |
+| **OCT-004** | Open the Add Food Menu, Search the Food Provider, and Log a Catalog Result in Selected Units | Blocked | OCT-002 | Food provider owner | Select the food database provider and initial catalog coverage, then finalize catalog-to-entry snapshot persistence and food-unit conversion rules. |
+| **OCT-005** | Order Duplicate, Current-Day, and Retroactive Food Entries Correctly Across Time Zones | Blocked | OCT-004 | Time-model owner | Define canonical local date/time storage, daylight-saving behavior, retroactive time assignment, and deterministic ordering when times match. |
+| **OCT-006** | View Complete Daily Calorie and Nutrition Progress with Missing-Data States | Blocked | OCT-002, OCT-004 | Aggregation owner | Define aggregate calculation, cache invalidation, normalization, precision, rounding, and incomplete-total propagation. |
+| **OCT-007** | Inspect, Edit, Recalculate, and Delete a Logged Food Snapshot | Sequenced | OCT-004, OCT-006 | Nobody | Food snapshots and their derived daily totals must exist before the full edit, recalculation, and delete journey. |
+| **OCT-008** | Save, Reuse, and Remove Favorite Foods Without Changing Logged Entries | Sequenced | OCT-007 | Nobody | Favorites reuse the completed logged-food snapshot and edit-isolation behavior. |
+| **OCT-009** | Complete Barcode Scan Logging with Images, Retry, and Terminal Failure Handling | Blocked | OCT-004, OCT-006 | Barcode provider + image owners | Select how a scanned barcode resolves to product nutrition, plus capture, object storage, upload limits, formats, and private image access. |
+| **OCT-010** | Complete Nutrition-Label Logging with Photos, Corrections, Missing Data, and Failure Handling | Blocked | OCT-004, OCT-006, OCT-007 | Label extraction + image owners | Select how nutrition facts are extracted from label images, then define confidence, partial success, retry classification, storage, and private image access. |
+| **OCT-011** | Create and Inspect Named Plates with Derived Nutrition | Blocked | OCT-004, OCT-006 | Product + backend owners | Confirm the minimum component count for plate creation and define the atomic grouping transaction. |
+| **OCT-012** | Manage, Save, Reuse, and Delete Plates with Correct Components, Time, and Totals | Blocked | OCT-007-OCT-011 | Backend owner | Define transactions for components, direct food ingestion, fixed time, reusable snapshots, empty-plate deletion, and cascading image deletion. |
+| **OCT-013** | View Recent Logs and Record Saved Food, Plates, or Water Offline | Blocked | OCT-003, OCT-008, OCT-012 | Client storage / sync owner | Select local persistence and define which recent and saved records are guaranteed available after an offline restart. |
+| **OCT-014** | Edit or Delete Locally Available Food and Water and Synchronize Later | Blocked | OCT-003, OCT-007, OCT-013 | Client storage / sync owner | Define local operation identifiers, mutation queues, idempotent retries, deletion semantics, and server acknowledgement. |
+| **OCT-015** | Capture Barcode and Label Scans Offline and Process Their Pending Entries | Blocked | OCT-009, OCT-010, OCT-013 | Client sync + image owners | Define offline image persistence, upload queueing, retry, replacement, cleanup, and orphan handling. |
+| **OCT-016** | Synchronize Food, Plates, Saved Items, and Private Images Across Phones | Blocked | OCT-007-OCT-015 | Sync architecture owner | Define server and local identifiers, change detection, merge rules, deterministic ordering, private image synchronization, and retry semantics. |
+| **OCT-017** | Synchronize Water Events and Goal Changes Across Phones | Blocked | OCT-002, OCT-003, OCT-013, OCT-014 | Sync architecture owner | Apply the selected synchronization model to water events and effective-dated goals, including multi-phone ordering and idempotency. |
+| **OCT-018** | Preserve Irreconcilable Offline Conflicts as Separate Deletable Records | Blocked | OCT-016, OCT-017 | Sync architecture owner | Define conflict detection that distinguishes intentional duplicates, preserved competing edits, and retries of the same pending scan. |

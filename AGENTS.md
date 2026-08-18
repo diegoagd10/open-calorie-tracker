@@ -1,5 +1,11 @@
 # Project Agent Instructions
 
+## Documentation-Only Changes
+
+Do not invoke or run the `no-mistakes` workflow for documentation-only requests or diffs. Use targeted documentation validation and the normal commit, push, and pull-request workflow instead.
+
+Documentation-only changes include Markdown files, `.lavish/` review artifacts, and repository skill documents such as `.opencode/skills/*/SKILL.md`, provided the change does not also modify executable application code, build configuration, or CI behavior.
+
 ## Lavish Diff Explanations
 
 When a user asks to explain, review, summarize, or present a non-trivial change set, create a Lavish diff walkthrough under `.lavish/` and open it for review.
