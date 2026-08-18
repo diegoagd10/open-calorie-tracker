@@ -1,0 +1,774 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Review and confirm proposed Calorie Tracker vertical-slice story codes and titles."
+    />
+    <title>Calorie Tracker Story Review</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family:
+          -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue",
+          sans-serif;
+        background: #000;
+        color: #fff;
+        font-synthesis: none;
+      }
+
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+      }
+
+      body {
+        min-width: 0;
+        min-height: 100vh;
+        margin: 0;
+        background:
+          radial-gradient(circle at 50% -12rem, rgb(10 132 255 / 18%), transparent 34rem),
+          #000;
+      }
+
+      button,
+      textarea,
+      input {
+        font: inherit;
+      }
+
+      button,
+      label,
+      input {
+        -webkit-tap-highlight-color: transparent;
+      }
+
+      .shell {
+        width: min(100%, 92rem);
+        margin: 0 auto;
+        padding:
+          max(1.5rem, env(safe-area-inset-top))
+          max(1rem, env(safe-area-inset-right))
+          max(2rem, env(safe-area-inset-bottom))
+          max(1rem, env(safe-area-inset-left));
+      }
+
+      .toolbar {
+        display: flex;
+        min-width: 0;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        padding-bottom: 1.25rem;
+        border-bottom: 1px solid rgb(84 84 88 / 62%);
+      }
+
+      .product {
+        margin: 0;
+        font-size: 1.06rem;
+        font-weight: 650;
+        letter-spacing: -0.02em;
+      }
+
+      .state {
+        flex: 0 0 auto;
+        padding: 0.35rem 0.65rem;
+        border: 1px solid rgb(10 132 255 / 48%);
+        border-radius: 999px;
+        color: #64adff;
+        font-size: 0.75rem;
+        font-weight: 650;
+      }
+
+      .state.is-applied {
+        border-color: rgb(48 209 88 / 48%);
+        color: #63df81;
+      }
+
+      .hero {
+        display: grid;
+        min-width: 0;
+        gap: 1rem;
+        padding: clamp(2.5rem, 8vw, 5.5rem) 0 2rem;
+      }
+
+      .eyebrow {
+        margin: 0;
+        color: #a1a1a6;
+        font-size: 0.8rem;
+        font-weight: 550;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      h1 {
+        max-width: 15ch;
+        margin: 0;
+        font-size: clamp(2.15rem, 8vw, 4.4rem);
+        font-weight: 720;
+        line-height: 1.01;
+        letter-spacing: -0.045em;
+        text-wrap: balance;
+      }
+
+      .hero-copy {
+        max-width: 43rem;
+        margin: 0;
+        color: #a1a1a6;
+        font-size: 1rem;
+        line-height: 1.48;
+      }
+
+      .metrics {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 0.75rem;
+        margin: 0 0 1rem;
+      }
+
+      .metric {
+        min-width: 0;
+        padding: 1rem;
+        border: 1px solid rgb(84 84 88 / 62%);
+        border-radius: 1.25rem;
+        background: #1c1c1e;
+      }
+
+      .metric strong,
+      .metric span {
+        display: block;
+        overflow-wrap: anywhere;
+      }
+
+      .metric strong {
+        font-size: clamp(1.3rem, 4vw, 2rem);
+        line-height: 1;
+        letter-spacing: -0.035em;
+      }
+
+      .metric span {
+        margin-top: 0.4rem;
+        color: #8e8e93;
+        font-size: 0.78rem;
+        line-height: 1.35;
+      }
+
+      .panel {
+        min-width: 0;
+        margin-top: 1rem;
+        overflow: hidden;
+        border: 1px solid rgb(84 84 88 / 62%);
+        border-radius: 1.45rem;
+        background: #1c1c1e;
+        box-shadow: 0 2rem 5rem rgb(0 0 0 / 38%);
+      }
+
+      .panel-heading {
+        padding: 1.25rem;
+        border-bottom: 1px solid rgb(84 84 88 / 62%);
+      }
+
+      h2 {
+        margin: 0;
+        font-size: 1.06rem;
+        font-weight: 650;
+        letter-spacing: -0.02em;
+      }
+
+      .panel-heading p {
+        margin: 0.4rem 0 0;
+        color: #8e8e93;
+        font-size: 0.85rem;
+        line-height: 1.4;
+      }
+
+      .table-wrap {
+        min-width: 0;
+        overflow-x: auto;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+
+      .table-wrap table {
+        min-width: 86rem;
+      }
+
+      th,
+      td {
+        padding: 0.9rem 1.25rem;
+        border-bottom: 1px solid rgb(84 84 88 / 42%);
+        text-align: left;
+        vertical-align: top;
+      }
+
+      th {
+        color: #8e8e93;
+        font-size: 0.72rem;
+        font-weight: 650;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      tbody tr:last-child td {
+        border-bottom: 0;
+      }
+
+      tbody tr:hover {
+        background: #232326;
+      }
+
+      .story-code {
+        width: 7.25rem;
+        color: #64adff;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        font-size: 0.82rem;
+        font-weight: 700;
+        white-space: nowrap;
+      }
+
+      .story-title {
+        min-width: 0;
+        color: #fff;
+        font-size: 0.94rem;
+        line-height: 1.42;
+        overflow-wrap: anywhere;
+      }
+
+      .status-chip {
+        display: inline-block;
+        border-radius: 999px;
+        padding: 0.25rem 0.5rem;
+        font-size: 0.72rem;
+        font-weight: 700;
+        line-height: 1.2;
+        white-space: nowrap;
+      }
+
+      .status-ready {
+        background: rgb(48 209 88 / 14%);
+        color: #63df81;
+      }
+
+      .status-blocked {
+        background: rgb(255 159 10 / 14%);
+        color: #ffb340;
+      }
+
+      .status-sequenced {
+        background: rgb(10 132 255 / 14%);
+        color: #64adff;
+      }
+
+      .blocker-code,
+      .blocker-owner {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        font-size: 0.8rem;
+      }
+
+      .blocker-code {
+        color: #64adff;
+        white-space: nowrap;
+      }
+
+      .blocker-owner {
+        color: #fff;
+      }
+
+      .blocker-reason {
+        color: #a1a1a6;
+        font-size: 0.86rem;
+        line-height: 1.45;
+      }
+
+      .diff-wrap {
+        min-width: 0;
+        padding: 1rem;
+        overflow: hidden;
+      }
+
+      #diff {
+        min-width: 0;
+        overflow: hidden;
+        border-radius: 0.8rem;
+      }
+
+      .confirm {
+        padding: 1.25rem;
+      }
+
+      .choice-group {
+        display: grid;
+        gap: 0.75rem;
+        margin-top: 1rem;
+      }
+
+      .choice {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr);
+        gap: 0.75rem;
+        align-items: start;
+        min-width: 0;
+        padding: 0.9rem;
+        border: 1px solid rgb(84 84 88 / 62%);
+        border-radius: 0.8rem;
+        background: #2c2c2e;
+        cursor: pointer;
+      }
+
+      .choice:has(input:checked) {
+        border-color: #0a84ff;
+        box-shadow: inset 0 0 0 1px #0a84ff;
+      }
+
+      .choice input {
+        width: 1.15rem;
+        height: 1.15rem;
+        margin: 0.15rem 0 0;
+        accent-color: #0a84ff;
+      }
+
+      .choice span {
+        min-width: 0;
+        line-height: 1.4;
+        overflow-wrap: anywhere;
+      }
+
+      textarea {
+        width: 100%;
+        min-height: 7rem;
+        margin-top: 0.75rem;
+        resize: vertical;
+        border: 1px solid rgb(84 84 88 / 62%);
+        border-radius: 0.8rem;
+        outline: none;
+        background: #2c2c2e;
+        padding: 0.8rem 0.9rem;
+        color: #fff;
+        line-height: 1.45;
+      }
+
+      textarea:focus-visible {
+        border-color: #0a84ff;
+        box-shadow: inset 0 0 0 1px #0a84ff;
+      }
+
+      textarea::placeholder {
+        color: #8e8e93;
+      }
+
+      .actions {
+        display: flex;
+        min-width: 0;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        margin-top: 1rem;
+      }
+
+      .status-copy {
+        min-width: 0;
+        margin: 0;
+        color: #8e8e93;
+        font-size: 0.8rem;
+        line-height: 1.35;
+      }
+
+      button {
+        min-height: 3.15rem;
+        flex: 0 0 auto;
+        border: 0;
+        border-radius: 0.85rem;
+        background: #0a84ff;
+        padding: 0 1rem;
+        color: #fff;
+        font-weight: 650;
+        cursor: pointer;
+      }
+
+      button:hover,
+      button:active {
+        background: #409cff;
+      }
+
+      button:focus-visible,
+      input:focus-visible {
+        outline: 2px solid #fff;
+        outline-offset: 3px;
+      }
+
+      footer {
+        padding: 1.5rem 0 0;
+        color: #8e8e93;
+        font-size: 0.78rem;
+        text-align: center;
+      }
+
+      @media (max-width: 640px) {
+        .metrics {
+          grid-template-columns: 1fr;
+        }
+
+        .panel {
+          border-radius: 1.25rem;
+        }
+
+        th,
+        td {
+          padding: 0.85rem 1rem;
+        }
+
+        .story-code {
+          width: 6.5rem;
+        }
+
+        .actions {
+          align-items: stretch;
+          flex-direction: column;
+        }
+
+        button {
+          width: 100%;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+          scroll-behavior: auto !important;
+          transition: none !important;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="shell">
+      <header class="toolbar">
+        <p class="product">Calorie Tracker</p>
+        <span class="state is-applied">Approved and applied</span>
+      </header>
+
+      <section class="hero" aria-labelledby="page-title">
+        <p class="eyebrow">PRD appendix review</p>
+        <h1 id="page-title">Small slices, stable codes.</h1>
+        <p class="hero-copy">
+          The approved story backlog is appended to <code>PRD.md</code>, and the
+          review workflow is captured as a repository-local OpenCode skill.
+        </p>
+      </section>
+
+      <section class="metrics" aria-label="Proposal summary">
+        <article class="metric">
+          <strong id="story-count">18</strong>
+          <span>vertical-slice stories</span>
+        </article>
+        <article class="metric">
+          <strong>2</strong>
+          <span>source documents reviewed</span>
+        </article>
+        <article class="metric">
+          <strong>1</strong>
+          <span>approved PRD appendix applied</span>
+        </article>
+      </section>
+
+      <section class="panel" aria-labelledby="stories-title">
+        <div class="panel-heading">
+          <h2 id="stories-title">Proposed Stories, Dependencies, and Blockers</h2>
+          <p>Every column shown will be appended after approval.</p>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">Code</th>
+                <th scope="col">Title</th>
+                <th scope="col">Status</th>
+                <th scope="col">Depends on</th>
+                <th scope="col">External owner</th>
+                <th scope="col">Blocker or sequencing reason</th>
+              </tr>
+            </thead>
+            <tbody id="stories"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel" aria-labelledby="diff-title">
+        <div class="panel-heading">
+          <h2 id="diff-title">Applied PRD Appendix</h2>
+          <p>Unified view of the exact addition now present in PRD.md.</p>
+        </div>
+        <div class="diff-wrap">
+          <div id="diff" aria-label="Proposed PRD.md diff"></div>
+        </div>
+      </section>
+
+      <section class="panel" aria-labelledby="skill-title">
+        <div class="panel-heading">
+          <h2 id="skill-title">Reusable Vertical-Slice Skill</h2>
+          <p><code>.opencode/skills/vertical-slice-stories/SKILL.md</code></p>
+        </div>
+        <div class="diff-wrap">
+          <div id="skill-file" aria-label="Vertical-slice story skill source"></div>
+        </div>
+      </section>
+
+      <section class="panel" aria-labelledby="confirm-title">
+        <form
+          class="confirm"
+          data-lavish-question="story-confirmation"
+          id="confirmation-form"
+        >
+          <h2 id="confirm-title">Continue Review</h2>
+          <div class="choice-group">
+            <label class="choice">
+              <input type="radio" name="decision" value="complete" required />
+              <span>No further changes; end this review.</span>
+            </label>
+            <label class="choice">
+              <input type="radio" name="decision" value="revise" required />
+              <span>Request revisions before changing PRD.md.</span>
+            </label>
+          </div>
+          <textarea
+            name="notes"
+            aria-label="Revision notes"
+            placeholder="Optional when ending. Required when requesting revisions."
+          ></textarea>
+          <div class="actions">
+            <p class="status-copy" data-status>
+              Your selection will be sent to the agent for action.
+            </p>
+            <button type="submit">Send Decision</button>
+          </div>
+        </form>
+      </section>
+
+      <footer>
+        Design source: the dark iOS-first visual system in <code>DESIGN.md</code>.
+      </footer>
+    </main>
+
+    <script type="module">
+      import { File, FileDiff } from "https://esm.sh/@pierre/diffs@1.2.10?bundle";
+
+      const stories = [
+        ["OCT-001", "Complete Production Passwordless Sign-In with SQLite, Email Delivery, Abuse Limits, and Persistent Sessions"],
+        ["OCT-002", "Complete Onboarding, Daily Date Navigation, and Historical Goal Maintenance End to End"],
+        ["OCT-003", "Log and Manage Water with Daily Progress in the Selected Unit System"],
+        ["OCT-004", "Open the Add Food Menu, Search the Food Provider, and Log a Catalog Result in Selected Units"],
+        ["OCT-005", "Order Duplicate, Current-Day, and Retroactive Food Entries Correctly Across Time Zones"],
+        ["OCT-006", "View Complete Daily Calorie and Nutrition Progress with Missing-Data States"],
+        ["OCT-007", "Inspect, Edit, Recalculate, and Delete a Logged Food Snapshot"],
+        ["OCT-008", "Save, Reuse, and Remove Favorite Foods Without Changing Logged Entries"],
+        ["OCT-009", "Complete Barcode Scan Logging with Images, Retry, and Terminal Failure Handling"],
+        ["OCT-010", "Complete Nutrition-Label Logging with Photos, Corrections, Missing Data, and Failure Handling"],
+        ["OCT-011", "Create and Inspect Named Plates with Derived Nutrition"],
+        ["OCT-012", "Manage, Save, Reuse, and Delete Plates with Correct Components, Time, and Totals"],
+        ["OCT-013", "View Recent Logs and Record Saved Food, Plates, or Water Offline"],
+        ["OCT-014", "Edit or Delete Locally Available Food and Water and Synchronize Later"],
+        ["OCT-015", "Capture Barcode and Label Scans Offline and Process Their Pending Entries"],
+        ["OCT-016", "Synchronize Food, Plates, Saved Items, and Private Images Across Phones"],
+        ["OCT-017", "Synchronize Water Events and Goal Changes Across Phones"],
+        ["OCT-018", "Preserve Irreconcilable Offline Conflicts as Separate Deletable Records"],
+      ];
+
+      const dependencies = [
+        ["OCT-001", "External decision", "status-blocked", "None", "Auth / delivery owner", "Select the transactional-email provider. SQLite auth is approved, but the current API still uses in-memory Maps, a development-only link helper, and a non-persistent browser-session cookie."],
+        ["OCT-002", "Blocked", "status-blocked", "None", "Logging architecture owner", "Onboarding is approved, but the combined delivery also requires the logging database, date model, ongoing goal API, and historical goal-resolution rules."],
+        ["OCT-003", "Blocked", "status-blocked", "OCT-002", "Backend / units owner", "Confirm the logging store plus canonical water volume, event time, preset conversion, display precision, and ordering rules."],
+        ["OCT-004", "Blocked", "status-blocked", "OCT-002", "Food provider owner", "Select the food database provider and initial catalog coverage, then finalize catalog-to-entry snapshot persistence and food-unit conversion rules."],
+        ["OCT-005", "Blocked", "status-blocked", "OCT-004", "Time-model owner", "Define canonical local date/time storage, daylight-saving behavior, retroactive time assignment, and deterministic ordering when times match."],
+        ["OCT-006", "Blocked", "status-blocked", "OCT-002, OCT-004", "Aggregation owner", "Define aggregate calculation, cache invalidation, normalization, precision, rounding, and incomplete-total propagation."],
+        ["OCT-007", "Sequenced", "status-sequenced", "OCT-004, OCT-006", "Nobody", "Food snapshots and their derived daily totals must exist before the full edit, recalculation, and delete journey."],
+        ["OCT-008", "Sequenced", "status-sequenced", "OCT-007", "Nobody", "Favorites reuse the completed logged-food snapshot and edit-isolation behavior."],
+        ["OCT-009", "Blocked", "status-blocked", "OCT-004, OCT-006", "Barcode provider + image owners", "Select how a scanned barcode resolves to product nutrition, plus capture, object storage, upload limits, formats, and private image access."],
+        ["OCT-010", "Blocked", "status-blocked", "OCT-004, OCT-006, OCT-007", "Label extraction + image owners", "Select how nutrition facts are extracted from label images, then define confidence, partial success, retry classification, storage, and private image access."],
+        ["OCT-011", "Blocked", "status-blocked", "OCT-004, OCT-006", "Product + backend owners", "Confirm the minimum component count for plate creation and define the atomic grouping transaction."],
+        ["OCT-012", "Blocked", "status-blocked", "OCT-007-OCT-011", "Backend owner", "Define transactions for components, direct food ingestion, fixed time, reusable snapshots, empty-plate deletion, and cascading image deletion."],
+        ["OCT-013", "Blocked", "status-blocked", "OCT-003, OCT-008, OCT-012", "Client storage / sync owner", "Select local persistence and define which recent and saved records are guaranteed available after an offline restart."],
+        ["OCT-014", "Blocked", "status-blocked", "OCT-003, OCT-007, OCT-013", "Client storage / sync owner", "Define local operation identifiers, mutation queues, idempotent retries, deletion semantics, and server acknowledgement."],
+        ["OCT-015", "Blocked", "status-blocked", "OCT-009, OCT-010, OCT-013", "Client sync + image owners", "Define offline image persistence, upload queueing, retry, replacement, cleanup, and orphan handling."],
+        ["OCT-016", "Blocked", "status-blocked", "OCT-007-OCT-015", "Sync architecture owner", "Define server and local identifiers, change detection, merge rules, deterministic ordering, private image synchronization, and retry semantics."],
+        ["OCT-017", "Blocked", "status-blocked", "OCT-002, OCT-003, OCT-013, OCT-014", "Sync architecture owner", "Apply the selected synchronization model to water events and effective-dated goals, including multi-phone ordering and idempotency."],
+        ["OCT-018", "Blocked", "status-blocked", "OCT-016, OCT-017", "Sync architecture owner", "Define conflict detection that distinguishes intentional duplicates, preserved competing edits, and retries of the same pending scan."],
+      ];
+
+      const tableBody = document.querySelector("#stories");
+      stories.forEach(([code, title], index) => {
+        const [, status, statusClass, dependsOn, owner, reason] = dependencies[index];
+        const row = document.createElement("tr");
+        const codeCell = document.createElement("td");
+        const titleCell = document.createElement("td");
+        const statusCell = document.createElement("td");
+        const dependencyCell = document.createElement("td");
+        const ownerCell = document.createElement("td");
+        const reasonCell = document.createElement("td");
+        const statusBadge = document.createElement("span");
+        codeCell.className = "story-code";
+        titleCell.className = "story-title";
+        dependencyCell.className = "blocker-code";
+        ownerCell.className = "blocker-owner";
+        reasonCell.className = "blocker-reason";
+        statusBadge.className = `status-chip ${statusClass}`;
+        codeCell.textContent = code;
+        titleCell.textContent = title;
+        statusBadge.textContent = status;
+        dependencyCell.textContent = dependsOn;
+        ownerCell.textContent = owner;
+        reasonCell.textContent = reason;
+        statusCell.append(statusBadge);
+        row.append(
+          codeCell,
+          titleCell,
+          statusCell,
+          dependencyCell,
+          ownerCell,
+          reasonCell,
+        );
+        tableBody.append(row);
+      });
+
+      document.querySelector("#story-count").textContent = String(stories.length);
+
+      const acceptanceSummary = `## 16. Acceptance Summary
+
+Version one is successful when a verified user can set personal goals, log food through the approved sources, optionally organize foods into plates, record water, use the product across phones and during temporary connectivity loss, and accurately review today's or any past day's intake without health scoring, exercise tracking, reminders, or social features.
+`;
+      const markdownCell = (value) => String(value).replaceAll("|", "\\|");
+      const storyRows = stories.map(([code, title], index) => {
+        const [, status, , dependsOn, owner, reason] = dependencies[index];
+        return `| **${code}** | ${markdownCell(title)} | ${markdownCell(status)} | ${markdownCell(dependsOn)} | ${markdownCell(owner)} | ${markdownCell(reason)} |`;
+      });
+      const appendix = `
+## 17. Vertical Slice Stories
+
+The owner labels below are roles because no individual owners are assigned in this document.
+
+| Code | Title | Status | Depends on | External owner | Blocker or sequencing reason |
+| --- | --- | --- | --- | --- | --- |
+${storyRows.join("\n")}
+`;
+
+      new FileDiff({
+        theme: { light: "github-light", dark: "github-dark" },
+        themeType: "dark",
+        diffStyle: "unified",
+        overflow: "wrap",
+      }).render({
+        containerWrapper: document.querySelector("#diff"),
+        oldFile: { name: "PRD.md", contents: acceptanceSummary },
+        newFile: { name: "PRD.md", contents: acceptanceSummary + appendix },
+      });
+
+      const skillContents = [
+        "---",
+        "name: vertical-slice-stories",
+        "description: Use when the user asks to review product or technical requirements, create AI-agent-sized vertical-slice story codes and titles, or append a confirmed backlog with dependencies and blockers to a requirements document.",
+        "---",
+        "",
+        "# Vertical Slice Stories",
+        "",
+        "Turn requirements into a reviewed delivery graph, not a list of acceptance-test fragments.",
+        "",
+        "## Workflow",
+        "",
+        "1. Read the product requirements, technical design, project instructions, and current implementation.",
+        "   Inspect application code, persistence, integrations, routes, and tests. Record which user outcomes are complete, mocked, partially implemented, or absent. This step is complete when every candidate capability has implementation evidence or is confirmed absent.",
+        "",
+        "2. Remove completed outcomes from the candidate backlog.",
+        "   Judge completion against the requirement's delivery level. A development mock does not satisfy a production requirement unless the user explicitly accepts it as complete. When the user's completion assumption conflicts with the code, show the evidence and ask whether to exclude the gap from scope.",
+        "",
+        "3. Cut coherent vertical deliveries sized for one capable AI agent.",
+        "   A story should carry one user journey through every relevant layer, including UI, API, persistence, integration behavior, and tests. Combine CRUD operations, validation, retries, units, and summary updates when they share one domain and implementation seam. Keep stories separate when they depend on different providers, unresolved decisions, security boundaries, or offline lifecycles.",
+        "",
+        "4. Avoid micro-stories.",
+        "   Do not create one story per error case, validation branch, button, endpoint, or database table. Prefer a complete water journey over separate log, view, edit, delete, and conversion stories. Prefer separate catalog, barcode, and nutrition-label stories when each has a different provider or extraction blocker.",
+        "",
+        "5. Build the delivery graph.",
+        "   For every story, assign:",
+        "   - A sequential code using the project's existing prefix, or a concise product prefix plus three digits.",
+        "   - A title that names the complete observable outcome.",
+        "   - A status from the definitions below.",
+        "   - Prerequisite story codes, distinct from external blockers.",
+        "   - An external owner role and the exact unresolved decision, when blocked.",
+        "",
+        "6. Present one review table.",
+        "   Use these columns in this order: `Code`, `Title`, `Status`, `Depends on`, `External owner`, `Blocker or sequencing reason`. Do not split titles and blockers into separate tables. Use role names when the documents do not assign individuals.",
+        "",
+        "7. Open a confirmation review before editing requirements.",
+        "   When Lavish is available or project instructions require it, load the `lavish` skill and its `table`, `comparison`, `code`, and `input` playbooks. Match the project's design system, render the exact proposed document change with `@pierre/diffs`, and keep all dependency data in the same story table. Poll and apply feedback until the user explicitly approves or ends the session.",
+        "",
+        "8. Apply feedback by reshaping stories, not layering exceptions.",
+        "   Merge adjacent stories when the user judges that one agent can deliver more. Fold unit behavior into the domain journey it affects. Recalculate codes and every dependency after a merge or removal. This step is complete when codes are contiguous, every dependency points to an existing story, and the review artifact matches the proposed append exactly.",
+        "",
+        "9. Append only after explicit confirmation.",
+        "   Add the exact approved table to the requested requirements document. Include dependency and blocker columns by default; use fewer columns only when the user explicitly approves that narrower draft. Do not create full story descriptions or acceptance criteria unless requested.",
+        "",
+        "10. Verify the result.",
+        "    Confirm that the document contains the approved rows exactly once, codes are unique and contiguous, dependencies are valid, implementation-complete outcomes are absent, and no unrelated files changed. Keep the Lavish review open for final comments until the user ends it.",
+        "",
+        "## Status Definitions",
+        "",
+        "- `Ready`: no prerequisite story or unresolved external decision prevents implementation.",
+        "- `Sequenced`: implementation waits only for listed prerequisite stories.",
+        "- `Blocked`: one or more listed prerequisite stories and an unresolved external decision prevent implementation.",
+        "- `External decision`: no story prerequisite exists, but an unresolved provider, product, or architecture choice prevents completion.",
+        "",
+        "## Sizing Test",
+        "",
+        "A story is the right size when one agent can implement and verify the complete named journey without waiting for another agent, once its listed dependencies and external decisions are resolved. Merge stories that share the same journey and blocker. Split stories that require independently selected providers or materially different persistence, security, or synchronization designs.",
+        "",
+      ].join("\n");
+
+      new File({
+        theme: { light: "github-light", dark: "github-dark" },
+        themeType: "dark",
+        overflow: "wrap",
+      }).render({
+        containerWrapper: document.querySelector("#skill-file"),
+        file: {
+          name: ".opencode/skills/vertical-slice-stories/SKILL.md",
+          contents: skillContents,
+        },
+      });
+
+      const form = document.querySelector("#confirmation-form");
+      form.addEventListener("submit", (event) => {
+        event.preventDefault();
+        const data = new FormData(form);
+        const decision = data.get("decision");
+        const notes = String(data.get("notes") || "").trim();
+        const status = form.querySelector("[data-status]");
+
+        if (decision === "revise" && !notes) {
+          status.textContent = "Add revision notes before sending.";
+          form.querySelector("textarea").focus();
+          return;
+        }
+
+        const prompt =
+          decision === "complete"
+            ? `The applied ${stories.length}-story PRD appendix and repository-local skill look correct. End the review without further changes.${notes ? ` Additional note: ${notes}` : ""}`
+            : `Revise the applied stories, dependencies, owners, blockers, or skill as follows: ${notes}`;
+
+        window.lavish.queuePrompt(prompt, {
+          tag: "story-confirmation",
+          text: decision === "complete" ? "End completed review" : "Revise applied changes",
+          element: form,
+          queueKey: "story-confirmation",
+          data: { decision, storyCount: stories.length, notes },
+        });
+        status.textContent = "Decision sent to the agent.";
+        window.lavish.sendQueuedPrompts();
+      });
+    </script>
+  </body>
+</html>
