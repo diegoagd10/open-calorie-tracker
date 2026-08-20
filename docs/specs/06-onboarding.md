@@ -6,7 +6,7 @@ Obligar a todo usuario recién verificado a elegir sistema de unidades y definir
 
 ## Contexto y dependencias
 
-- Fuente de verdad de producto: `PRD.md`, secciones 4, 6, 11 y 12.
+- Fuente de verdad de producto: [docs/PRD.md](../PRD.md), secciones 4, 6, 11 y 12.
 - Requiere specs 01–05: sesión verificada, middleware de auth y tablas `user_preferences`/`goal_versions`.
 - Los sistemas de presentación son `us` y `metric`. La persistencia usa unidades canónicas: calorías kcal, agua ml, macronutrientes/fibra/azúcar en gramos y sodio en mg.
 - Metas requeridas: calorías, agua, proteína, carbohidratos, grasa, fibra, azúcar y sodio. Azúcar y sodio son máximos; las otras seis son objetivos.

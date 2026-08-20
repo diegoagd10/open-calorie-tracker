@@ -6,7 +6,7 @@ Seleccionar y probar la arquitectura local-first que permitirá ver/loggear offl
 
 ## Contexto y dependencias
 
-- Fuente de verdad: PRD.md, sección 13 e historias OCT-013–OCT-018.
+- Fuente de verdad: [docs/PRD.md](../PRD.md), sección 13 e historias OCT-013–OCT-018.
 - Requiere specs 01–19: modelos reales de food, water, goals, favorites, plates e imágenes.
 - El PRD exige preservar ambos cambios irreconciliables como registros separados.
 - El spike debe decidir persistencia Ionic/web, protocolo sync, IDs, cursors, tombstones e idempotencia antes de escribir features offline.

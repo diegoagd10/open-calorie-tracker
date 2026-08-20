@@ -6,7 +6,7 @@ Crear la base ejecutable del producto como un monorepo PNPM con cuatro unidades 
 
 ## Contexto y dependencias
 
-- Fuente de verdad de producto: `PRD.md` en la raíz.
+- Fuente de verdad de producto: [docs/PRD.md](../PRD.md).
 - Esta es la primera entrega y no depende de ninguna spec anterior.
 - Stack obligatorio: PNPM workspaces, Ionic, React, TypeScript, Tailwind CSS y Vitest en frontend; Hono para la API; Drizzle para acceso a datos.
 - El PRD exige una experiencia centrada en teléfono y WCAG 2.2 AA. Esta spec solo prepara esa base; todavía no implementa flujos de producto.

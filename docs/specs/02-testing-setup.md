@@ -6,7 +6,7 @@ Establecer una estrategia de pruebas rápida, determinista y compartida basada e
 
 ## Contexto y dependencias
 
-- Fuente de verdad de producto: `PRD.md`.
+- Fuente de verdad de producto: [docs/PRD.md](../PRD.md).
 - Requiere que la spec 01 haya creado el monorepo PNPM con `apps/web`, `apps/api`, `packages/db` y `packages/domain`.
 - El frontend usa Ionic, React, TypeScript, Tailwind CSS y Vite; la API usa Hono; la persistencia usa Drizzle con SQLite.
 - Las pruebas de esta spec cubren la infraestructura mínima existente. Las specs posteriores deben añadir sus casos de producto a esta misma arquitectura.

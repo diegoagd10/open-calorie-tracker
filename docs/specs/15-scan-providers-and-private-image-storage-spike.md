@@ -6,7 +6,7 @@ Resolver antes de implementar scans qué tecnología se usará para captura, loo
 
 ## Contexto y dependencias
 
-- Fuente de verdad: PRD.md, secciones 7.2, 7.3, 8.1 y 13; historias OCT-009, OCT-010 y OCT-015.
+- Fuente de verdad: [docs/PRD.md](../PRD.md), secciones 7.2, 7.3, 8.1 y 13; historias OCT-009, OCT-010 y OCT-015.
 - Requiere la decisión de catálogo 09 y las entries editables de spec 13.
 - Barcode necesita resolver UPC/EAN y retener la imagen capturada. Label necesita extraer nutrition facts parciales y nombre opcional.
 - Ninguna foto puede quedar pública o enviarse a un tercero no aprobado.

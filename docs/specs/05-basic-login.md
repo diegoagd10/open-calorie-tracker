@@ -6,7 +6,7 @@ Entregar creación de cuenta e inicio de sesión passwordless por email, con ver
 
 ## Contexto y dependencias
 
-- Fuente de verdad de producto: `PRD.md`, secciones 2 y 3.
+- Fuente de verdad de producto: [docs/PRD.md](../PRD.md), secciones 2 y 3.
 - Requiere specs 01–04: monorepo, pruebas, tablas `users`, `magic_links`, `email_delivery_attempts` y `sessions`, más la decisión de proveedor producida por el spike 04.
 - La UI vive en `apps/web`; los endpoints Hono y adapters en `apps/api`; reglas y contratos puros en `packages/domain`; persistencia Drizzle en `packages/db`.
 - La spec 04 selecciona y documenta el proveedor transaccional. Esta entrega implementa el adapter elegido detrás de `EmailSender`, además de un fake determinista y un transport de desarrollo que muestre el enlace solo fuera de producción. Producción debe rechazar el arranque si el adapter real no está configurado.

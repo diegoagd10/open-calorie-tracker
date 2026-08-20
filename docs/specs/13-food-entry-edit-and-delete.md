@@ -6,7 +6,7 @@ Permitir abrir cualquier food entry exitoso, corregir sus datos, recalcular prop
 
 ## Contexto y dependencias
 
-- Fuente de verdad: PRD.md, sección 8, historia OCT-007.
+- Fuente de verdad: [docs/PRD.md](../PRD.md), sección 8, historia OCT-007.
 - Requiere specs 01–12: snapshots, summaries y reglas temporales.
 - Campos editables: name, measurement, quantity, calories, nutrientes primarios y otros facts disponibles.
 - La fecha es inmutable; duplicate entries son válidos.

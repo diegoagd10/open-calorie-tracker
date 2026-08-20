@@ -6,7 +6,7 @@ Permitir escanear un barcode online y registrar inmediatamente una porción cuan
 
 ## Contexto y dependencias
 
-- Fuente de verdad: PRD.md, secciones 7.2, 8.1 y 13, historia OCT-009.
+- Fuente de verdad: [docs/PRD.md](../PRD.md), secciones 7.2, 8.1 y 13, historia OCT-009.
 - Requiere specs 01–15, especialmente proveedor/catalog 09, Food Log/summaries y decisiones de scan/storage 15.
 - La imagen no puede borrarse separadamente. Failed/pending no afectan totals.
 - Offline pending se implementa en spec 23.

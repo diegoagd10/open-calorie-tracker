@@ -6,7 +6,7 @@ Permitir editar o borrar food y water disponibles localmente mientras no hay con
 
 ## Contexto y dependencias
 
-- Fuente de verdad: PRD.md, sección 13, historia OCT-014.
+- Fuente de verdad: [docs/PRD.md](../PRD.md), sección 13, historia OCT-014.
 - Requiere specs 01–21: local store, queue y CRUD online.
 - Esta spec implementa operaciones sobre entidades ya disponibles; conflictos multi-device se resuelven/preservan en specs 24–26.
 

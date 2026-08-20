@@ -6,7 +6,7 @@ Mostrar calorías y seis nutrientes contra las metas activas del día, con progr
 
 ## Contexto y dependencias
 
-- Fuente de verdad: PRD.md, sección 6, historia OCT-006.
+- Fuente de verdad: [docs/PRD.md](../PRD.md), sección 6, historia OCT-006.
 - Requiere specs 01–11: metas históricas y food entries ordenadas.
 - Calorías son consumed-only; nunca restan ejercicio. Sugar y sodium son maximums; los demás son targets.
 - Un valor desconocido es unavailable y vuelve incompleto solo el total afectado.

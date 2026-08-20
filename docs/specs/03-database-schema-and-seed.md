@@ -6,7 +6,7 @@ Implementar en `packages/db` el esquema SQLite/Drizzle base para autenticación 
 
 ## Contexto y dependencias
 
-- Fuente de verdad de producto: `PRD.md`.
+- Fuente de verdad de producto: [docs/PRD.md](../PRD.md).
 - Requiere las specs 01 y 02 completas: workspaces compilables, Vitest y base SQLite temporal.
 - El PRD exige datos privados por usuario, verificación de email, sesiones simultáneas, metas históricas, fechas locales estables, nutrientes faltantes distintos de cero e imágenes asociadas a entradas escaneadas.
 - Esta spec crea persistencia, constraints y repositorios básicos para specs 04–17. Agua, favoritos, plates y sincronización añaden sus propias migraciones en las specs que los implementan.

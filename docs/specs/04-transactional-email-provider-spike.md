@@ -6,7 +6,7 @@ Eliminar el bloqueo externo de autenticación seleccionando, con evidencia repro
 
 ## Contexto y dependencias
 
-- Fuente de verdad: PRD.md, sección 3 y la historia OCT-001.
+- Fuente de verdad: [docs/PRD.md](../PRD.md), sección 3 y la historia OCT-001.
 - Requiere specs 01–03: API Hono ejecutable, Vitest y persistencia SQLite para links e intentos.
 - El PRD exige email verification, passwordless sign-in, error claro, resend y sesiones persistentes. No designa proveedor.
 - Un spike produce evidencia, ADR y contratos; no habilita login al usuario.

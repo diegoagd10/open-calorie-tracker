@@ -6,7 +6,7 @@ Permitir que un usuario con onboarding completo abra hoy o cualquier fecha pasad
 
 ## Contexto y dependencias
 
-- Fuente de verdad: PRD.md, secciones 5 y 12, historia OCT-002.
+- Fuente de verdad: [docs/PRD.md](../PRD.md), secciones 5 y 12, historia OCT-002.
 - Requiere specs 01–06: sesión, onboarding y goal_versions.
 - La fecha del registro es YYYY-MM-DD local; no se deriva nuevamente de UTC.
 - No hay límite artificial de historia y las fechas futuras no aceptan food/water.

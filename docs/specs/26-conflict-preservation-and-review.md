@@ -6,7 +6,7 @@ Cerrar el comportamiento offline garantizando que cambios irreconciliables se pr
 
 ## Contexto y dependencias
 
-- Fuente de verdad: PRD.md, sección 13, historia OCT-018.
+- Fuente de verdad: [docs/PRD.md](../PRD.md), sección 13, historia OCT-018.
 - Requiere specs 20–25 y sus operation IDs, base versions y change log.
 - El producto no debe perder datos silenciosamente. Si no puede reconciliar, conserva ambos y el usuario puede borrar el no deseado.
 - El tono sigue factual, sin blame ni scoring.

@@ -6,7 +6,7 @@ Permitir registrar agua pura con cantidad exacta o presets, ver progreso diario 
 
 ## Contexto y dependencias
 
-- Fuente de verdad: PRD.md, sección 11, historia OCT-003.
+- Fuente de verdad: [docs/PRD.md](../PRD.md), sección 11, historia OCT-003.
 - Requiere specs 01–07: usuario completo, día seleccionado, metas históricas y SQLite.
 - El valor canónico es mililitros enteros; Glass=8 fl oz, Bottle=16 fl oz y Large bottle=24 fl oz permanecen como cantidades US aunque se muestren convertidas.
 

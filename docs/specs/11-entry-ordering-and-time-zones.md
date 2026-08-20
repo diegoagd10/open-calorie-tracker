@@ -6,7 +6,7 @@ Completar las reglas temporales del Food Log para altas actuales y retroactivas,
 
 ## Contexto y dependencias
 
-- Fuente de verdad: PRD.md, secciones 5.1 y 8, historia OCT-005.
+- Fuente de verdad: [docs/PRD.md](../PRD.md), secciones 5.1 y 8, historia OCT-005.
 - Requiere specs 01–10: navegación por fecha y alta de catálogo para hoy.
 - food_entries persiste local_date, time_minutes, timezone, created_at e ID.
 - Los duplicados intencionales están permitidos; reintentos técnicos se deduplican por idempotency key.

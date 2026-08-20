@@ -247,7 +247,7 @@ Version one is successful when a verified user can set personal goals, log food 
 ## 17. Vertical Slice Stories
 
 The owner labels below are roles because no individual owners are assigned in this document.
-Delivery progress is tracked separately in [STORY_TRACKER.md](STORY_TRACKER.md).
+Delivery progress is tracked separately in [STORY_TRACKER.md](../STORY_TRACKER.md).
 
 | Code | Title | Status | Depends on | External owner | Blocker or sequencing reason |
 | --- | --- | --- | --- | --- | --- |

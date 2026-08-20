@@ -6,7 +6,7 @@ Permitir agrupar foods exitosos del mismo día en un plate con nombre obligatori
 
 ## Contexto y dependencias
 
-- Fuente de verdad: PRD.md, sección 9, historia OCT-011.
+- Fuente de verdad: [docs/PRD.md](../PRD.md), sección 9, historia OCT-011.
 - Requiere specs 01–17: food entries exitosas/editables, summaries y scans.
 - Solo successful foods de un mismo local_date pueden agruparse; pending/failed quedan fuera.
 - Un plate es opcional y no equivale a meal category.

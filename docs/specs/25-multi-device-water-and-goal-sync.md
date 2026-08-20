@@ -6,7 +6,7 @@ Aplicar el protocolo multi-device a water events y goal versions, preservando ca
 
 ## Contexto y dependencias
 
-- Fuente de verdad: PRD.md, secciones 11–13, historia OCT-017.
+- Fuente de verdad: [docs/PRD.md](../PRD.md), secciones 11–13, historia OCT-017.
 - Requiere specs 07, 08, 20–22 y 24.
 - Goals son effective-dated y no se sobrescriben como un único registro.
 - Water usa eventos independientes; duplicate intencional es válido.

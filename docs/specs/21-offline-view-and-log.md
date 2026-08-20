@@ -6,7 +6,7 @@ Permitir reiniciar la app sin conexión, ver registros recientes y registrar wat
 
 ## Contexto y dependencias
 
-- Fuente de verdad: PRD.md, sección 13, historia OCT-013.
+- Fuente de verdad: [docs/PRD.md](../PRD.md), sección 13, historia OCT-013.
 - Requiere specs 01–20 y la arquitectura decidida por el spike 20.
 - Nuevas búsquedas de Food Database pueden estar no disponibles offline.
 - La ventana reciente y límites se toman del ADR 20 y se comunican honestamente.

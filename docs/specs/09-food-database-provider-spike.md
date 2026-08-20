@@ -6,7 +6,7 @@ Seleccionar la API/catálogo que alimentará búsqueda, medidas, nutrición y, s
 
 ## Contexto y dependencias
 
-- Fuente de verdad: PRD.md, secciones 7.1, 7.2, 8 y decisión pendiente de mercado; historias OCT-004 y OCT-009.
+- Fuente de verdad: [docs/PRD.md](../PRD.md), secciones 7.1, 7.2, 8 y decisión pendiente de mercado; historias OCT-004 y OCT-009.
 - Requiere specs 01–03 y contratos de dominio existentes; no requiere UI.
 - El producto solo permite seleccionar items existentes y debe soportar nutrientes faltantes, medidas y snapshots.
 - La prioridad geográfica sigue abierta; el spike debe hacer visible cómo cambia la elección según mercado.

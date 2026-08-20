@@ -6,7 +6,7 @@ Permitir que un usuario fotografíe una etiqueta nutricional y obtenga inmediata
 
 ## Contexto y dependencias
 
-- Fuente de verdad de producto: `PRD.md`, secciones 6.3, 7.3, 8, 8.1, 13 y 14.
+- Fuente de verdad de producto: [docs/PRD.md](../PRD.md), secciones 6.3, 7.3, 8, 8.1, 13 y 14.
 - Requiere specs 01–16: auth/onboarding, navegación diaria, totales, edición, tablas de entradas/imágenes, API/UI del Food Log y las decisiones de scanning/storage de la spec 15.
 - Una etiqueta legible sin producto reconocible se registra como **Unnamed food** sin warning. Ingredientes no se extraen, solicitan, almacenan ni muestran.
 - La foto capturada se conserva y aparece en la tarjeta. No puede borrarse separadamente; al borrar la entrada también se elimina la imagen.

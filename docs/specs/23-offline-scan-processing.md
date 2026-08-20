@@ -6,7 +6,7 @@ Permitir capturar barcode o nutrition label offline, crear inmediatamente una en
 
 ## Contexto y dependencias
 
-- Fuente de verdad: PRD.md, sección 13, historia OCT-015.
+- Fuente de verdad: [docs/PRD.md](../PRD.md), sección 13, historia OCT-015.
 - Requiere specs 15–17 y 20–22: scans online, storage privado, local image queue y sync.
 - Pending no tiene nutrición utilizable ni afecta totals.
 - Si procesamiento posterior falla, cambia a retryable o terminal estándar.

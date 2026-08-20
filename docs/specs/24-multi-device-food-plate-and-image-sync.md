@@ -6,7 +6,7 @@ Sincronizar entre teléfonos food entries, favorites, plates, reusable plates e 
 
 ## Contexto y dependencias
 
-- Fuente de verdad: PRD.md, secciones 3 y 13, historia OCT-016.
+- Fuente de verdad: [docs/PRD.md](../PRD.md), secciones 3 y 13, historia OCT-016.
 - Requiere specs 01–23: sesiones simultáneas, CRUD, scans y protocolo del ADR 20.
 - Una cuenta puede permanecer conectada en varios teléfonos.
 - Conflictos irreconciliables se preservan en spec 26; esta spec detecta y transporta evidencia.

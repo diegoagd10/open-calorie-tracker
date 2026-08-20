@@ -6,7 +6,7 @@ Completar el ciclo de vida de plates: añadir foods directamente, editar hora/no
 
 ## Contexto y dependencias
 
-- Fuente de verdad: PRD.md, secciones 9.1, 9.2 y 10, historia OCT-012.
+- Fuente de verdad: [docs/PRD.md](../PRD.md), secciones 9.1, 9.2 y 10, historia OCT-012.
 - Requiere specs 01–18: plate creado/inspeccionable y flujos normales Add Food.
 - Una entry standalone existente no puede moverse a un plate existente; un food nuevo sí puede registrarse directamente dentro.
 - Un plate de una food permanece; al quitar la última se elimina automáticamente.

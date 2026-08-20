@@ -6,7 +6,7 @@ Entregar el primer recorrido vertical del Food Log: un usuario autenticado y con
 
 ## Contexto y dependencias
 
-- Fuente de verdad de producto: `PRD.md`, secciones 5, 6, 7.1, 8 y 14.
+- Fuente de verdad de producto: [docs/PRD.md](../PRD.md), secciones 5, 6, 7.1, 8 y 14.
 - Requiere specs 01–09: auth, onboarding, navegación diaria, esquema de catálogo/entradas, pruebas y la selección de proveedor producida por el spike 09.
 - La web consulta `apps/api`; la API accede a un puerto `FoodCatalogProvider`. Esta spec implementa el adapter del proveedor elegido en 09, conserva un adapter SQLite para desarrollo/tests y no presenta cobertura geográfica distinta de la realmente contratada.
 - Solo se puede elegir un resultado existente. La selección registra una porción de inmediato. Un resultado del proveedor se copia a `food_entries`; cambios futuros del catálogo no alteran historia.

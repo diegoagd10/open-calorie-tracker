@@ -6,7 +6,7 @@ Permitir guardar una configuración de food entry exitosa como favorito, reutili
 
 ## Contexto y dependencias
 
-- Fuente de verdad: PRD.md, sección 10, historia OCT-008.
+- Fuente de verdad: [docs/PRD.md](../PRD.md), sección 10, historia OCT-008.
 - Requiere specs 01–13: snapshot food estable y aislamiento de edición.
 - Un favorito es un template privado, no una referencia viva al catálogo o entry original.
 
