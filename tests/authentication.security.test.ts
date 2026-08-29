@@ -114,7 +114,7 @@ test("sessions persist only a token hash and enforce idle and absolute expiry", 
   fixture.applicationDatabase.close();
 });
 
-test("successful login rehashes a credential whose format version is obsolete", async () => {
+test("successful login rehashes obsolete Argon2 parameters", async () => {
   const fixture = await createFixture();
   const registration = await fixture.service.register(
     "rehash.user",
@@ -128,27 +128,38 @@ test("successful login rehashes a credential whose format version is obsolete", 
     .from(passwordCredentials)
     .get();
   if (!current) throw new Error("missing credential");
-  const obsolete = current.passwordHash.replace("$v=1$", "$v=0$");
-  fixture.database
-    .update(passwordCredentials)
-    .set({ passwordHash: obsolete })
-    .run();
+  expect(current.passwordHash).toContain("$m=64,t=1,p=1,l=32$");
 
-  const login = await fixture.service.login(
-    "rehash.user",
-    password,
-    "203.0.113.32",
-  );
-  expect(login.ok).toBe(true);
+  const originalNodeEnvironment = process.env.NODE_ENV;
+  const originalMemory = process.env.AUTH_ARGON2_MEMORY_KIB;
+  const originalPasses = process.env.AUTH_ARGON2_PASSES;
+  process.env.NODE_ENV = "development";
+  delete process.env.AUTH_ARGON2_MEMORY_KIB;
+  delete process.env.AUTH_ARGON2_PASSES;
 
-  const updated = fixture.database
-    .select({ passwordHash: passwordCredentials.passwordHash })
-    .from(passwordCredentials)
-    .get();
-  expect(updated?.passwordHash).not.toBe(obsolete);
-  expect(updated?.passwordHash).toContain("$v=1$");
+  try {
+    const login = await fixture.service.login(
+      "rehash.user",
+      password,
+      "203.0.113.32",
+    );
+    expect(login.ok).toBe(true);
 
-  fixture.applicationDatabase.close();
+    const updated = fixture.database
+      .select({ passwordHash: passwordCredentials.passwordHash })
+      .from(passwordCredentials)
+      .get();
+    expect(updated?.passwordHash).not.toBe(current.passwordHash);
+    expect(updated?.passwordHash).toContain("$m=19456,t=2,p=1,l=32$");
+  } finally {
+    if (originalNodeEnvironment === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = originalNodeEnvironment;
+    if (originalMemory === undefined) delete process.env.AUTH_ARGON2_MEMORY_KIB;
+    else process.env.AUTH_ARGON2_MEMORY_KIB = originalMemory;
+    if (originalPasses === undefined) delete process.env.AUTH_ARGON2_PASSES;
+    else process.env.AUTH_ARGON2_PASSES = originalPasses;
+    fixture.applicationDatabase.close();
+  }
 });
 
 test("password change replaces the credential and every previously issued session", async () => {
