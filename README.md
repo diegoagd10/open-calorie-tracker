@@ -20,15 +20,32 @@ it with `DATABASE_PATH`. The internal HTTP port defaults to `3000` and can be
 changed with `PORT`. Set `APPLICATION_URL` to the exact external application
 origin so state-changing requests can enforce strict Origin checks.
 
+Food search uses USDA FoodData Central from the server. Set `FDC_API_KEY` to a
+registered data.gov key; the application remains usable without it, but catalog
+search reports that it is not configured. `FDC_TIMEOUT_MS` defaults to 5000.
+Never place the key in browser configuration or client-side environment files.
+
 ## Verification
 
 ```sh
 pnpm typecheck
+pnpm typecheck:usda
 pnpm test
 pnpm exec playwright install chromium
 pnpm test:browser
 pnpm build
 ```
+
+The offline suite uses deterministic catalog fixtures. With a registered key,
+run the opt-in provider spike separately:
+
+```sh
+FDC_API_KEY=... pnpm test:usda-live
+```
+
+The spike rejects `DEMO_KEY`, exercises representative branded and generic
+search/detail paths, checks provider-backed portions and nutrients, and reports
+aggregate observed latency without logging the key.
 
 The TypeScript 7.0.2 compile spike exposed invalid declarations in stable
 Drizzle 0.45.2, so the project uses the newest prior stable TypeScript line,

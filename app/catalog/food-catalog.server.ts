@@ -1,0 +1,98 @@
+export const SUPPORTED_CATALOG_DATA_TYPES = [
+  "Branded",
+  "Survey (FNDDS)",
+  "Foundation",
+] as const;
+
+export type CatalogDataType = (typeof SUPPORTED_CATALOG_DATA_TYPES)[number];
+
+export type CatalogSearchResult = {
+  barcode: string | null;
+  brand: string | null;
+  dataType: CatalogDataType;
+  measurementSummary: string;
+  name: string;
+  provider: "usda-fdc";
+  providerFoodId: string;
+  providerPublishedDate: string | null;
+};
+
+export type CatalogMeasurement = {
+  baseQuantityMicrounits: number;
+  id: string;
+  label: string;
+  unit: "g" | "ml";
+};
+
+export type CatalogNutrition = {
+  carbohydrateMilligrams: number | null;
+  energyMilliKcal: number | null;
+  fatMilligrams: number | null;
+  fiberMilligrams: number | null;
+  proteinMilligrams: number | null;
+  sodiumMilligrams: number | null;
+  sugarMilligrams: number | null;
+};
+
+export type CatalogFood = CatalogSearchResult & {
+  authoritativeBaseQuantityMicrounits: number;
+  authoritativeBaseUnit: "g" | "ml";
+  marketCountry: string | null;
+  measurements: CatalogMeasurement[];
+  nutritionPerAuthoritativeBase: CatalogNutrition;
+  providerModifiedDate: string | null;
+};
+
+export interface FoodCatalogProvider {
+  getFood(providerFoodId: string): Promise<CatalogFood>;
+  search(query: string): Promise<CatalogSearchResult[]>;
+}
+
+export class CatalogConfigurationError extends Error {
+  constructor() {
+    super("The food catalog is not configured");
+    this.name = "CatalogConfigurationError";
+  }
+}
+
+export class CatalogCredentialsError extends Error {
+  constructor() {
+    super("The food catalog credentials were rejected");
+    this.name = "CatalogCredentialsError";
+  }
+}
+
+export class CatalogRateLimitError extends Error {
+  constructor() {
+    super("The food catalog rate limit was reached");
+    this.name = "CatalogRateLimitError";
+  }
+}
+
+export class CatalogUnavailableError extends Error {
+  constructor() {
+    super("The food catalog is unavailable");
+    this.name = "CatalogUnavailableError";
+  }
+}
+
+export class CatalogInvalidResponseError extends Error {
+  constructor() {
+    super("The food catalog returned an invalid response");
+    this.name = "CatalogInvalidResponseError";
+  }
+}
+
+export class CatalogFoodNotFoundError extends Error {
+  constructor() {
+    super("The selected catalog food is no longer available");
+    this.name = "CatalogFoodNotFoundError";
+  }
+}
+
+export class CatalogUnsafeMeasurementError extends Error {
+  constructor() {
+    super("The selected catalog measurement is unavailable");
+    this.name = "CatalogUnsafeMeasurementError";
+  }
+}

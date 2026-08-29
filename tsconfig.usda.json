@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.json",
+  "include": [
+    "app/catalog/food-catalog.server.ts",
+    "app/catalog/usda.server.ts"
+  ],
+  "compilerOptions": {
+    "skipLibCheck": false
+  }
+}

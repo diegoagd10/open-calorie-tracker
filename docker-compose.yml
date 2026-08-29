@@ -6,6 +6,8 @@ services:
     restart: unless-stopped
     environment:
       APPLICATION_URL: "${APPLICATION_URL:-http://localhost:3001}"
+      FDC_API_KEY: "${FDC_API_KEY:-}"
+      FDC_TIMEOUT_MS: "${FDC_TIMEOUT_MS:-5000}"
       PORT: "3000"
       TRUST_PROXY: "${TRUST_PROXY:-}"
     ports:

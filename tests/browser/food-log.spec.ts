@@ -99,10 +99,9 @@ test("today, historical navigation, calendar access, travel, and future rejectio
     page.getByRole("heading", { exact: true, name: "History" }),
   ).toBeVisible();
   await expect(page.getByText("August 2026", { exact: true })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Previous month" })).toHaveAttribute(
-    "href",
-    /calendar=2026-07/,
-  );
+  await expect(
+    page.getByRole("link", { name: "Previous month" }),
+  ).toHaveAttribute("href", /calendar=2026-07/);
   await expect(
     page.getByRole("button", { name: "Sunday, August 30" }),
   ).toBeDisabled();
@@ -177,30 +176,12 @@ test("the full stack resolves UTC boundaries and both DST transitions", async ({
     ).toBeVisible();
   }
 
-  await expectToday(
-    "2026-03-08T04:59:59.999Z",
-    "Saturday, March 7, 2026",
-  );
-  await expectToday(
-    "2026-03-08T05:00:00.000Z",
-    "Sunday, March 8, 2026",
-  );
-  await expectToday(
-    "2026-03-08T06:59:59.999Z",
-    "Sunday, March 8, 2026",
-  );
-  await expectToday(
-    "2026-03-08T07:00:00.000Z",
-    "Sunday, March 8, 2026",
-  );
-  await expectToday(
-    "2026-11-01T05:30:00.000Z",
-    "Sunday, November 1, 2026",
-  );
-  await expectToday(
-    "2026-11-01T06:30:00.000Z",
-    "Sunday, November 1, 2026",
-  );
+  await expectToday("2026-03-08T04:59:59.999Z", "Saturday, March 7, 2026");
+  await expectToday("2026-03-08T05:00:00.000Z", "Sunday, March 8, 2026");
+  await expectToday("2026-03-08T06:59:59.999Z", "Sunday, March 8, 2026");
+  await expectToday("2026-03-08T07:00:00.000Z", "Sunday, March 8, 2026");
+  await expectToday("2026-11-01T05:30:00.000Z", "Sunday, November 1, 2026");
+  await expectToday("2026-11-01T06:30:00.000Z", "Sunday, November 1, 2026");
 
   const database = openBrowserTestDatabase();
   const updateTimeZone = database.prepare(
@@ -211,14 +192,120 @@ test("the full stack resolves UTC boundaries and both DST transitions", async ({
      )`,
   );
   updateTimeZone.run("Pacific/Honolulu", "food.log.boundaries");
-  await expectToday(
-    "2026-01-01T09:30:00.000Z",
-    "Wednesday, December 31, 2025",
-  );
+  await expectToday("2026-01-01T09:30:00.000Z", "Wednesday, December 31, 2025");
   updateTimeZone.run("Pacific/Kiritimati", "food.log.boundaries");
   database.close();
-  await expectToday(
-    "2026-01-01T09:30:00.000Z",
-    "Thursday, January 1, 2026",
+  await expectToday("2026-01-01T09:30:00.000Z", "Thursday, January 1, 2026");
+});
+
+test("authenticated USDA search and idempotent logging preserve a local Nutrition Snapshot", async ({
+  browser,
+  context,
+  page,
+}) => {
+  await context.setExtraHTTPHeaders({ "X-Test-Client-IP": "203.0.113.82" });
+  await registerAndSetup(page, "catalog.search");
+
+  await page.getByRole("button", { name: "Add Food" }).click();
+  await expect(page).toHaveURL(/food=search/);
+  await expect(page.getByRole("dialog", { name: "Add Food" })).toBeVisible();
+  await expect(page.getByText("Search is deliberate.")).toBeVisible();
+
+  await page.goto("/?date=2026-08-29&food=search&query=x");
+  await expect(page.getByRole("alert")).toContainText(
+    "Enter a food search from 2 to 100 characters.",
   );
+
+  await page
+    .getByRole("searchbox", { name: "Search United States foods" })
+    .fill("none");
+  await page.getByRole("button", { name: "Search" }).click();
+  await expect(page.getByText("No foods found")).toBeVisible();
+  await expect(page.getByText("Plain nonfat Greek yogurt")).toHaveCount(0);
+
+  for (const [query, message] of [
+    ["rate", "USDA rate limit reached"],
+    ["unavailable", "USDA is unavailable right now"],
+    ["malformed", "USDA returned food data that could not be used safely"],
+  ]) {
+    await page
+      .getByRole("searchbox", { name: "Search United States foods" })
+      .fill(query);
+    await page.getByRole("button", { name: "Search" }).click();
+    await expect(page.getByRole("alert")).toContainText(message);
+  }
+
+  await page
+    .getByRole("searchbox", { name: "Search United States foods" })
+    .fill("yogurt");
+  await page.getByRole("button", { name: "Search" }).click();
+  await expect(page.getByText("Plain nonfat Greek yogurt")).toBeVisible();
+  await expect(
+    page.getByText("Example Dairy Co. · 1 container · 170 g"),
+  ).toBeVisible();
+  await expect(page.getByText("Branded", { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "USDA FoodData Central" }),
+  ).toBeVisible();
+
+  await page
+    .getByRole("searchbox", { name: "Search United States foods" })
+    .fill("unsafe");
+  await page.getByRole("button", { name: "Search" }).click();
+  await page.getByRole("link", { name: /Unsafe provider measurement/ }).click();
+  await expect(page.getByRole("alert")).toContainText(
+    "no safe provider-backed measurement",
+  );
+
+  await page
+    .getByRole("searchbox", { name: "Search United States foods" })
+    .fill("yogurt");
+  await page.getByRole("button", { name: "Search" }).click();
+
+  await page.getByRole("link", { name: /Plain nonfat Greek yogurt/ }).click();
+  await expect(page.getByText("Saved as a Nutrition Snapshot")).toBeVisible();
+  await expect(page.getByLabel("Measurement")).toHaveValue(
+    "serving:g:170000000",
+  );
+  await page.getByLabel("Quantity").fill("1.5");
+  await expect(page.getByText("150.5 kcal")).toBeVisible();
+
+  const foodForm = page.locator("form").filter({
+    has: page.getByRole("button", { name: "Add to Food Log" }),
+  });
+  const submission = await foodForm.evaluate((form) =>
+    Object.fromEntries(new FormData(form as HTMLFormElement).entries()),
+  );
+  const statuses = await page.evaluate(async (fields) => {
+    const body = new URLSearchParams(fields as Record<string, string>);
+    const first = await fetch("/?index", {
+      body,
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      method: "POST",
+    });
+    const second = await fetch("/?index", {
+      body,
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      method: "POST",
+    });
+    return [first.status, second.status];
+  }, submission);
+  expect(statuses).toEqual([200, 200]);
+
+  await page.goto("/?date=2026-08-29");
+  await expect(
+    page.getByText("Plain nonfat Greek yogurt", { exact: true }),
+  ).toHaveCount(1);
+  await expect(page.getByText("USDA FoodData Central · Branded")).toBeVisible();
+  await expect(page.getByRole("article").getByText("150.5 kcal")).toBeVisible();
+  await expect(page.locator("img")).toHaveCount(0);
+
+  const anonymous = await browser.newContext();
+  const anonymousPage = await anonymous.newPage();
+  await anonymousPage.goto("/?food=search&query=yogurt");
+  await expect(anonymousPage).toHaveURL(/\/login$/);
+  await anonymous.close();
+
+  const accessibilityScan = await new AxeBuilder({ page }).analyze();
+  expect(accessibilityScan.violations).toEqual([]);
 });
