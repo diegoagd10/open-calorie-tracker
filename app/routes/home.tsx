@@ -1,9 +1,21 @@
 import { randomUUID } from "node:crypto";
 
-import { useState } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+} from "react";
 import { z } from "zod";
 import type { Route } from "./+types/home";
-import { data, Form, Link, redirect, useNavigation } from "react-router";
+import {
+  data,
+  Form,
+  Link,
+  redirect,
+  useNavigate,
+  useNavigation,
+} from "react-router";
 
 import {
   getAuthenticatedSession,
@@ -626,7 +638,13 @@ function EmptyActionForm({
     <Form method="post">
       <input name="csrfToken" type="hidden" value={csrfToken} />
       <input name="date" type="hidden" value={date} />
-      <button className={className} name="intent" type="submit" value={intent}>
+      <button
+        className={className}
+        data-food-dialog-trigger={intent === "add-food" ? true : undefined}
+        name="intent"
+        type="submit"
+        value={intent}
+      >
         {label}
       </button>
     </Form>
@@ -831,16 +849,81 @@ function CatalogDialog({
   csrfToken: string;
   date: string;
 }) {
+  const dialogRef = useRef<HTMLElement>(null);
   const navigation = useNavigation();
+  const navigate = useNavigate();
+  const previousFocusRef = useRef<HTMLElement | null>(null);
   const [clientSearchMessage, setClientSearchMessage] = useState<string>();
   const searchPending = navigation.state !== "idle";
+  const closeHref = foodLogHref(date);
+
+  useEffect(() => {
+    if (
+      !previousFocusRef.current &&
+      document.activeElement instanceof HTMLElement
+    ) {
+      previousFocusRef.current = document.activeElement;
+    }
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const focusFrame = requestAnimationFrame(() => {
+      const target = dialogRef.current?.querySelector<HTMLElement>(
+        'input:not([type="hidden"]):not([disabled]), button:not([disabled]), select:not([disabled]), a[href]',
+      );
+      target?.focus();
+    });
+
+    return () => {
+      cancelAnimationFrame(focusFrame);
+      document.body.style.overflow = previousOverflow;
+      const previousFocus = previousFocusRef.current;
+      requestAnimationFrame(() => {
+        const restoreTarget =
+          previousFocus?.isConnected && previousFocus !== document.body
+            ? previousFocus
+            : document.querySelector<HTMLElement>("[data-food-dialog-trigger]");
+        restoreTarget?.focus();
+      });
+    };
+  }, []);
+
+  function handleDialogKeyDown(event: ReactKeyboardEvent<HTMLElement>) {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      void navigate(closeHref);
+      return;
+    }
+    if (event.key !== "Tab") return;
+    const focusable = [
+      ...(dialogRef.current?.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), input:not([type="hidden"]):not([disabled]), select:not([disabled]), a[href]',
+      ) ?? []),
+    ].filter((element) => element.offsetParent !== null);
+    const first = focusable[0];
+    const last = focusable.at(-1);
+    if (!first || !last) return;
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
 
   return (
-    <div className={styles.dialogBackdrop}>
+    <div
+      className={styles.dialogBackdrop}
+      onClick={(event) => {
+        if (event.target === event.currentTarget) void navigate(closeHref);
+      }}
+    >
       <section
         aria-labelledby="food-dialog-title"
         aria-modal="true"
         className={styles.foodDialog}
+        onKeyDown={handleDialogKeyDown}
+        ref={dialogRef}
         role="dialog"
       >
         <div className={styles.dialogHead}>
@@ -855,7 +938,7 @@ function CatalogDialog({
           <Link
             aria-label="Close food search"
             className={styles.dialogClose}
-            to={foodLogHref(date)}
+            to={closeHref}
           >
             ×
           </Link>

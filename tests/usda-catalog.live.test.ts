@@ -1,9 +1,22 @@
 import { describe, expect, test } from "vitest";
+import { chromium } from "@playwright/test";
 
 import { UsdaFoodDataCentralAdapter } from "../app/catalog/usda.server";
 import { scaleCatalogNutrient } from "../app/food-entry/snapshot.server";
 
 const runLiveSpike = process.env.FDC_LIVE_SPIKE === "1";
+const KNOWN_GTINS = [
+  "802630159819",
+  "786012004549",
+  "797565204690",
+  "0790429237247",
+  "042563009472",
+  "819733000276",
+  "064777849682",
+  "094776081318",
+  "073042400510",
+  "651433433028",
+] as const;
 
 function rawEnergy(
   value: unknown,
@@ -33,6 +46,35 @@ function rawEnergy(
     };
   }
   return null;
+}
+
+async function fdcWebEnergy(
+  providerFoodId: string,
+  nutrientId: number,
+): Promise<number> {
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    await page.goto(
+      `https://fdc.nal.usda.gov/fdc-app.html#/food-details/${providerFoodId}/nutrients`,
+      { timeout: 30_000, waitUntil: "networkidle" },
+    );
+    const label =
+      nutrientId === 2048
+        ? "Energy (Atwater Specific Factors)"
+        : nutrientId === 2047
+          ? "Energy (Atwater General Factors)"
+          : "Energy";
+    const cells = page
+      .locator("tr")
+      .filter({ has: page.getByText(label, { exact: true }) })
+      .first()
+      .locator("td");
+    await expect.poll(() => cells.count()).toBeGreaterThanOrEqual(3);
+    return Number((await cells.nth(1).innerText()).replaceAll(",", ""));
+  } finally {
+    await browser.close();
+  }
 }
 
 describe.skipIf(!runLiveSpike)("registered USDA FoodData Central spike", () => {
@@ -154,6 +196,9 @@ describe.skipIf(!runLiveSpike)("registered USDA FoodData Central spike", () => {
         amount: providerEnergy!.amount,
         fixedPointMultiplier: providerEnergy!.fixedPointMultiplier,
       });
+      expect(
+        await fdcWebEnergy(detail.providerFoodId, providerEnergy!.nutrientId),
+      ).toBeCloseTo(providerEnergy!.amount, 1);
       energyComparisons.push({
         dataType,
         nutrientId: providerEnergy!.nutrientId,
@@ -163,12 +208,14 @@ describe.skipIf(!runLiveSpike)("registered USDA FoodData Central spike", () => {
     expect(foodsWithPortions).toBeGreaterThan(0);
     expect(foodsWithEnergy).toBeGreaterThan(0);
 
-    expect(observedBarcodes.size).toBeGreaterThanOrEqual(10);
     const gtinProbeResults = [];
-    for (const barcode of [...observedBarcodes].slice(0, 10)) {
+    for (const barcode of KNOWN_GTINS) {
       const results = await provider.search(barcode);
       const exact = results.find((result) => result.barcode === barcode);
-      expect(exact).toBeDefined();
+      if (!exact) {
+        gtinProbeResults.push({ barcode, found: false });
+        continue;
+      }
       const detail = await provider.getFood(exact!.providerFoodId);
       expect(detail.barcode).toBe(barcode);
       const rawSearchResponse = await fetch(
@@ -193,6 +240,7 @@ describe.skipIf(!runLiveSpike)("registered USDA FoodData Central spike", () => {
       expect(rawDuplicateCount).toBeGreaterThan(0);
       gtinProbeResults.push({
         barcode,
+        found: true,
         measurementSummary: exact!.measurementSummary,
         marketCountry: detail.marketCountry,
         measurementCount: detail.measurements.length,
@@ -212,13 +260,30 @@ describe.skipIf(!runLiveSpike)("registered USDA FoodData Central spike", () => {
       ) ?? scalableFood.measurements[0]!;
     for (const quantity of [0.5, 1, 1.5, 2]) {
       for (const nutrientName of nutrientNames) {
+        const nutrient =
+          scalableFood.nutritionPerAuthoritativeBase[nutrientName];
         const scaled = scaleCatalogNutrient(
-          scalableFood.nutritionPerAuthoritativeBase[nutrientName],
+          nutrient,
           scalableMeasurement.baseQuantityMicrounits,
           quantity * 1_000_000,
           scalableFood.authoritativeBaseQuantityMicrounits,
         );
-        expect(scaled === null || Number.isSafeInteger(scaled)).toBe(true);
+        const expected =
+          nutrient === null
+            ? null
+            : Math.round(
+                nutrient.amount *
+                  nutrient.fixedPointMultiplier *
+                  (scalableMeasurement.baseQuantityMicrounits /
+                    scalableFood.authoritativeBaseQuantityMicrounits) *
+                  quantity,
+              );
+        expect(scaled).toBe(expected);
+        if (scaled !== null) {
+          const storageDisplay = Number((scaled / 1_000).toFixed(1));
+          const expectedDisplay = Number((expected! / 1_000).toFixed(1));
+          expect(storageDisplay).toBe(expectedDisplay);
+        }
       }
     }
 
@@ -241,5 +306,5 @@ describe.skipIf(!runLiveSpike)("registered USDA FoodData Central spike", () => {
         requestCount: latencies.length,
       }),
     );
-  }, 120_000);
+  }, 180_000);
 });

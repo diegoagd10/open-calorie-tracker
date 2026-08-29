@@ -227,6 +227,33 @@ test("authenticated USDA search and idempotent logging preserve a local Nutritio
   await expect(page).toHaveURL(/food=search/);
   await expect(page.getByRole("dialog", { name: "Add Food" })).toBeVisible();
   await expect(page.getByText("Search is deliberate.")).toBeVisible();
+  await expect(page.locator("body")).toHaveCSS("overflow", "hidden");
+  const closeFoodSearch = page.getByRole("link", {
+    name: "Close food search",
+  });
+  await expect(closeFoodSearch).toBeFocused();
+  const providerLink = page.getByRole("link", {
+    name: "USDA FoodData Central",
+  });
+  await providerLink.focus();
+  await page.keyboard.press("Tab");
+  await expect(closeFoodSearch).toBeFocused();
+  await page.keyboard.press("Shift+Tab");
+  await expect(providerLink).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog", { name: "Add Food" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Add Food" })).toBeFocused();
+  await expect(page.locator("body")).not.toHaveCSS("overflow", "hidden");
+
+  await page.getByRole("button", { name: "Add Food" }).click();
+  await page
+    .getByRole("dialog", { name: "Add Food" })
+    .locator("..")
+    .click({ position: { x: 2, y: 2 } });
+  await expect(page.getByRole("dialog", { name: "Add Food" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Add Food" })).toBeFocused();
+
+  await page.getByRole("button", { name: "Add Food" }).click();
   await expectCatalogResponsive(page);
 
   const invalidSearch = await page.goto(
@@ -244,6 +271,7 @@ test("authenticated USDA search and idempotent logging preserve a local Nutritio
   await page.getByRole("button", { name: "Search" }).click();
   await expect(page.getByRole("alert")).toContainText("Search not sent");
   await expect(page.getByRole("alert")).toContainText("trimmed food search");
+  await expectCatalogResponsive(page);
 
   let releaseSearch!: () => void;
   const searchGate = new Promise<void>((resolve) => {
@@ -264,6 +292,7 @@ test("authenticated USDA search and idempotent logging preserve a local Nutritio
   await expect(
     page.getByRole("status").getByText("Searching USDA FoodData Central"),
   ).toBeVisible();
+  await expectCatalogResponsive(page);
   releaseSearch();
   await searchClick;
   await expect(page.getByText("Plain nonfat Greek yogurt")).toBeVisible();
@@ -300,6 +329,7 @@ test("authenticated USDA search and idempotent logging preserve a local Nutritio
   await expect(
     page.getByRole("heading", { name: "Food no longer available" }),
   ).toBeVisible();
+  await expectCatalogResponsive(page);
 
   await page
     .getByRole("searchbox", { name: "Search United States foods" })
@@ -323,6 +353,7 @@ test("authenticated USDA search and idempotent logging preserve a local Nutritio
   await expect(page.getByRole("alert")).toContainText(
     "no safe provider-backed measurement",
   );
+  await expectCatalogResponsive(page);
 
   await page
     .getByRole("searchbox", { name: "Search United States foods" })

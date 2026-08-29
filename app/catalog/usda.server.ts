@@ -31,6 +31,7 @@ const searchFoodSchema = z.object({
   fdcId: z.number().int().positive(),
   gtinUpc: z.string().nullish(),
   householdServingFullText: z.string().max(300).nullish(),
+  marketCountry: z.string().max(200).nullish(),
   publicationDate: optionalProviderDateSchema,
   publishedDate: optionalProviderDateSchema,
   servingSize: z.number().nullish(),
@@ -62,7 +63,6 @@ const foodPortionSchema = z.object({
 const detailFoodSchema = searchFoodSchema.extend({
   foodNutrients: z.array(foodNutrientSchema).max(5_000),
   foodPortions: z.array(z.unknown()).max(500).nullish(),
-  marketCountry: z.string().max(200).nullish(),
   modifiedDate: optionalProviderDateSchema,
 });
 const querySchema = z.string().trim().min(2).max(100);
@@ -140,6 +140,12 @@ function measurementSummary(food: SearchFood): string {
 
 function normalizeSearchFood(food: SearchFood): CatalogSearchResult | null {
   if (!isSupportedDataType(food.dataType)) return null;
+  if (
+    food.dataType === "Branded" &&
+    optionalText(food.marketCountry) !== "United States"
+  ) {
+    return null;
+  }
   const name = food.description.trim();
   if (!name) throw new CatalogInvalidResponseError();
 
@@ -240,11 +246,14 @@ function portionLabel(portion: z.infer<typeof foodPortionSchema>): string {
   return `${amount} ${unit} (${portion.gramWeight} g)`;
 }
 
-function normalizeMeasurements(food: DetailFood): CatalogMeasurement[] {
+function normalizeMeasurements(
+  food: DetailFood,
+  baseUnit: "g" | "ml",
+): CatalogMeasurement[] {
   const measurements = new Map<string, CatalogMeasurement>();
   const servingUnit = supportedUnit(food.servingSizeUnit);
   if (
-    servingUnit === "g" &&
+    servingUnit === baseUnit &&
     food.servingSize !== null &&
     food.servingSize !== undefined &&
     Number.isFinite(food.servingSize) &&
@@ -256,42 +265,44 @@ function normalizeMeasurements(food: DetailFood): CatalogMeasurement[] {
       baseQuantityMicrounits > 0
     ) {
       const household = optionalText(food.householdServingFullText);
-      const label = `${household ? `${household} (` : ""}${food.servingSize} g${household ? ")" : ""}`;
-      measurements.set(`serving:g:${baseQuantityMicrounits}`, {
+      const label = `${household ? `${household} (` : ""}${food.servingSize} ${baseUnit}${household ? ")" : ""}`;
+      measurements.set(`serving:${baseUnit}:${baseQuantityMicrounits}`, {
         baseQuantityMicrounits,
-        id: `serving:g:${baseQuantityMicrounits}`,
+        id: `serving:${baseUnit}:${baseQuantityMicrounits}`,
         label,
+        unit: baseUnit,
+      });
+    }
+  }
+
+  if (baseUnit === "g") {
+    for (const [index, candidate] of (food.foodPortions ?? []).entries()) {
+      const parsed = foodPortionSchema.safeParse(candidate);
+      if (!parsed.success) continue;
+      const portion = parsed.data;
+      if (!(portion.gramWeight > 0)) continue;
+      const baseQuantityMicrounits = Math.round(portion.gramWeight * 1_000_000);
+      if (
+        !Number.isSafeInteger(baseQuantityMicrounits) ||
+        baseQuantityMicrounits <= 0
+      )
+        continue;
+      const id = `portion:${portion.id ?? index}`;
+      measurements.set(id, {
+        baseQuantityMicrounits,
+        id,
+        label: portionLabel(portion),
         unit: "g",
       });
     }
   }
 
-  for (const [index, candidate] of (food.foodPortions ?? []).entries()) {
-    const parsed = foodPortionSchema.safeParse(candidate);
-    if (!parsed.success) continue;
-    const portion = parsed.data;
-    if (!(portion.gramWeight > 0)) continue;
-    const baseQuantityMicrounits = Math.round(portion.gramWeight * 1_000_000);
-    if (
-      !Number.isSafeInteger(baseQuantityMicrounits) ||
-      baseQuantityMicrounits <= 0
-    )
-      continue;
-    const id = `portion:${portion.id ?? index}`;
-    measurements.set(id, {
-      baseQuantityMicrounits,
-      id,
-      label: portionLabel(portion),
-      unit: "g",
-    });
-  }
-
-  const baseId = "base:g:100000000";
+  const baseId = `base:${baseUnit}:100000000`;
   measurements.set(baseId, {
     baseQuantityMicrounits: 100_000_000,
     id: baseId,
-    label: "100 g",
-    unit: "g",
+    label: `100 ${baseUnit}`,
+    unit: baseUnit,
   });
   return [...measurements.values()];
 }
@@ -302,13 +313,18 @@ function normalizeDetailFood(
 ): CatalogFood {
   const searchResult = normalizeSearchFood(food);
   if (!searchResult) throw new CatalogInvalidResponseError();
+  const baseUnit =
+    food.dataType === "Branded" && supportedUnit(food.servingSizeUnit) === "ml"
+      ? "ml"
+      : "g";
   return {
     ...searchResult,
     authoritativeBaseQuantityMicrounits: 100_000_000,
-    authoritativeBaseUnit: "g",
+    authoritativeBaseUnit: baseUnit,
     marketCountry: optionalText(food.marketCountry),
-    measurements: normalizeMeasurements(food),
+    measurements: normalizeMeasurements(food, baseUnit),
     nutritionPerAuthoritativeBase: normalizeNutrition(food, onDiagnostic),
+    originalName: food.description,
     providerModifiedDate: providerDate(food.modifiedDate),
   };
 }

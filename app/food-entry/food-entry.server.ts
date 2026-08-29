@@ -13,7 +13,11 @@ import {
   FutureFoodLogDateError,
   InvalidFoodLogDateError,
 } from "../food-log/food-log.server";
-import { foodEntrySnapshot, scaleCatalogNutrient } from "./snapshot.server";
+import {
+  foodEntrySnapshot,
+  scaleCatalogNutrient,
+  serializeCatalogNutrition,
+} from "./snapshot.server";
 
 const logFoodInputSchema = z.object({
   foodLogDate: z.string(),
@@ -177,6 +181,9 @@ export class FoodEntryService {
           authoritativeBaseQuantityMicrounits:
             food.authoritativeBaseQuantityMicrounits,
           authoritativeBaseUnit: food.authoritativeBaseUnit,
+          authoritativeNutrition: serializeCatalogNutrition(
+            food.nutritionPerAuthoritativeBase,
+          ),
           carbohydrateMilligrams: scale(
             food.nutritionPerAuthoritativeBase.carbohydrateMilligrams,
           ),
@@ -205,7 +212,7 @@ export class FoodEntryService {
           idempotencyKey: parsed.data.idempotencyKey,
           localEventTime,
           marketCountry: food.marketCountry,
-          originalName: food.name,
+          originalName: food.originalName,
           provider: food.provider,
           providerFoodId: food.providerFoodId,
           providerModifiedDate: food.providerModifiedDate,

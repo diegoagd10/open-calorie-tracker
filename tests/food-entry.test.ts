@@ -29,6 +29,7 @@ import {
   users,
 } from "../app/database/schema.server";
 import { FoodEntryService } from "../app/food-entry/food-entry.server";
+import { scaleCatalogNutrient } from "../app/food-entry/snapshot.server";
 import { FoodLogService } from "../app/food-log/food-log.server";
 import { FutureFoodLogDateError } from "../app/food-log/food-log.server";
 
@@ -123,6 +124,7 @@ function foundationBread(): CatalogFood {
       sodiumMilligrams: { amount: 120, fixedPointMultiplier: 1 },
       sugarMilligrams: { amount: 0, fixedPointMultiplier: 1_000 },
     },
+    originalName: "Bread, whole-wheat",
     provider: "usda-fdc",
     providerFoodId: "200",
     providerModifiedDate: "2026-04-02",
@@ -161,6 +163,9 @@ test("a provider-backed fractional portion becomes an immutable Food Entry snaps
   });
 
   expect(created).toMatchObject({
+    authoritativeBaseQuantityMicrounits: 100_000_000,
+    authoritativeBaseUnit: "g",
+    authoritativeNutrition: provider.food.nutritionPerAuthoritativeBase,
     barcode: "0012345678905",
     carbohydrateMilligrams: null,
     energyMilliKcal: 120_000,
@@ -181,6 +186,9 @@ test("a provider-backed fractional portion becomes an immutable Food Entry snaps
   const foodLog = new FoodLogService(client, now).read(userId, "2026-08-28");
   expect(foodLog?.entries).toHaveLength(1);
   expect(foodLog?.entries[0]).toMatchObject({
+    authoritativeNutrition: {
+      energyMilliKcal: { amount: 250, fixedPointMultiplier: 1_000 },
+    },
     energyMilliKcal: 120_000,
     name: "Bread, whole-wheat",
     provider: "usda-fdc",
@@ -220,6 +228,24 @@ test("nutrients scale from the unrounded provider amount and round once at snaps
   expect(created.energyMilliKcal).toBe(1);
   expect(client.select().from(foodEntries).get()?.energyMilliKcal).toBe(1);
   database.close();
+});
+
+test("fixed-point scaling and display rounding are exact across supported serving quantities", () => {
+  for (const [quantity, expected] of [
+    [0.5, 40_000],
+    [1, 80_000],
+    [1.5, 120_000],
+    [2, 160_000],
+  ] as const) {
+    const scaled = scaleCatalogNutrient(
+      { amount: 250, fixedPointMultiplier: 1_000 },
+      32_000_000,
+      quantity * 1_000_000,
+      100_000_000,
+    );
+    expect(scaled).toBe(expected);
+    expect((scaled! / 1_000).toFixed(1)).toBe((expected / 1_000).toFixed(1));
+  }
 });
 
 test("an idempotency key returns one entry while distinct submissions remain valid duplicates", async () => {
@@ -278,6 +304,9 @@ test("today uses current local time and past entries retain deterministic ties a
     .values({
       authoritativeBaseQuantityMicrounits: 100_000_000,
       authoritativeBaseUnit: "g",
+      authoritativeNutrition: JSON.stringify(
+        provider.food.nutritionPerAuthoritativeBase,
+      ),
       energyMilliKcal: 1_000,
       barcode: null,
       brand: null,

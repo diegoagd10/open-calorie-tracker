@@ -37,6 +37,7 @@ test("USDA search normalizes supported foods and keeps the newest duplicate revi
           fdcId: 100,
           gtinUpc: "0012345678905",
           householdServingFullText: "1 container",
+          marketCountry: "United States",
           publicationDate: "2025-01-01",
           servingSize: 170,
           servingSizeUnit: "g",
@@ -48,6 +49,7 @@ test("USDA search normalizes supported foods and keeps the newest duplicate revi
           fdcId: 101,
           gtinUpc: "0012345678905",
           householdServingFullText: "1 container",
+          marketCountry: "United States",
           publishedDate: "2026-01-01",
           servingSize: 170,
           servingSizeUnit: "g",
@@ -193,6 +195,7 @@ test("USDA detail applies Foundation energy precedence and keeps only safe measu
       sodiumMilligrams: { amount: 120, fixedPointMultiplier: 1 },
       sugarMilligrams: { amount: 0, fixedPointMultiplier: 1_000 },
     },
+    originalName: "Bread, whole-wheat",
     provider: "usda-fdc",
     providerFoodId: "200",
     providerModifiedDate: "2026-04-02",
@@ -209,7 +212,7 @@ test("USDA detail applies Foundation energy precedence and keeps only safe measu
   });
 });
 
-test("USDA detail preserves branded provenance without treating milliliters as a gram conversion", async () => {
+test("USDA detail preserves branded provenance and a provider-backed milliliter basis", async () => {
   const provider = new UsdaFoodDataCentralAdapter({
     apiKey: "registered-test-key",
     baseUrl: "https://example.test/fdc/v1",
@@ -217,7 +220,7 @@ test("USDA detail preserves branded provenance without treating milliliters as a
       jsonResponse({
         brandOwner: "Example Drinks",
         dataType: "Branded",
-        description: "Sparkling water",
+        description: "  Sparkling water  ",
         fdcId: 301,
         foodNutrients: [
           { amount: 0, nutrient: { id: 1008, unitName: "KCAL" } },
@@ -236,24 +239,67 @@ test("USDA detail preserves branded provenance without treating milliliters as a
 
   const food = await provider.getFood("301");
   expect(food).toMatchObject({
-    authoritativeBaseUnit: "g",
+    authoritativeBaseUnit: "ml",
     barcode: "00012345678905",
     brand: "Example Drinks",
+    name: "Sparkling water",
     measurements: [
       {
+        baseQuantityMicrounits: 355_000_000,
+        id: "serving:ml:355000000",
+        label: "1 can (355 ml)",
+        unit: "ml",
+      },
+      {
         baseQuantityMicrounits: 100_000_000,
-        id: "base:g:100000000",
-        label: "100 g",
-        unit: "g",
+        id: "base:ml:100000000",
+        label: "100 ml",
+        unit: "ml",
       },
     ],
     nutritionPerAuthoritativeBase: {
       energyMilliKcal: { amount: 0, fixedPointMultiplier: 1_000 },
       sodiumMilligrams: { amount: 0.01, fixedPointMultiplier: 1_000 },
     },
+    originalName: "  Sparkling water  ",
     providerModifiedDate: "2023-06-23",
     providerPublishedDate: "2023-07-13",
   });
+});
+
+test("USDA search excludes branded foods outside the confirmed United States market", async () => {
+  const provider = new UsdaFoodDataCentralAdapter({
+    apiKey: "registered-test-key",
+    baseUrl: "https://example.test/fdc/v1",
+    fetchImplementation: vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse({
+        foods: [
+          {
+            dataType: "Branded",
+            description: "United States product",
+            fdcId: 401,
+            marketCountry: "United States",
+          },
+          {
+            dataType: "Branded",
+            description: "New Zealand product",
+            fdcId: 402,
+            marketCountry: "New Zealand",
+          },
+          {
+            dataType: "Foundation",
+            description: "Generic food",
+            fdcId: 403,
+          },
+        ],
+      }),
+    ),
+  });
+
+  await expect(provider.search("food")).resolves.toMatchObject([
+    { name: "United States product", providerFoodId: "401" },
+    { name: "Generic food", providerFoodId: "403" },
+  ]);
 });
 
 test("USDA failures are typed without including credentials", async () => {

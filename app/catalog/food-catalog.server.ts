@@ -51,6 +51,7 @@ export type CatalogFood = CatalogSearchResult & {
   marketCountry: string | null;
   measurements: CatalogMeasurement[];
   nutritionPerAuthoritativeBase: CatalogNutrition;
+  originalName: string;
   providerModifiedDate: string | null;
 };
 

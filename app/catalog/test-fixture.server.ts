@@ -44,6 +44,7 @@ function yogurt(): CatalogFood {
       sodiumMilligrams: { amount: 36, fixedPointMultiplier: 1 },
       sugarMilligrams: { amount: 3.53, fixedPointMultiplier: 1_000 },
     },
+    originalName: "Plain nonfat Greek yogurt",
     provider: "usda-fdc",
     providerFoodId: "1001",
     providerModifiedDate: "2026-04-02",

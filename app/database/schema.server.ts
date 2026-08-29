@@ -157,6 +157,11 @@ export const foodEntries = sqliteTable(
     authoritativeBaseQuantityMicrounits: integer(
       "authoritative_base_quantity_microunits",
     ).notNull(),
+    authoritativeNutrition: text("authoritative_nutrition")
+      .notNull()
+      .default(
+        '{"carbohydrateMilligrams":null,"energyMilliKcal":null,"fatMilligrams":null,"fiberMilligrams":null,"proteinMilligrams":null,"sodiumMilligrams":null,"sugarMilligrams":null}',
+      ),
     selectedMeasurementId: text("selected_measurement_id").notNull(),
     selectedMeasurementLabel: text("selected_measurement_label").notNull(),
     selectedMeasurementUnit: text("selected_measurement_unit").notNull(),

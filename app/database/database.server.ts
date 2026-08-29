@@ -37,7 +37,7 @@ export function isDatabaseReady(status: DatabaseStatus): boolean {
     status.busyTimeoutMs === 5_000 &&
     status.foreignKeysEnabled &&
     status.journalMode === "wal" &&
-    status.schemaVersion === "5" &&
+    status.schemaVersion === "6" &&
     status.writable
   );
 }
