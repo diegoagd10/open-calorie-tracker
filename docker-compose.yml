@@ -5,7 +5,9 @@ services:
       dockerfile: Dockerfile
     restart: unless-stopped
     environment:
+      APPLICATION_URL: "${APPLICATION_URL:-http://localhost:3001}"
       PORT: "3000"
+      TRUST_PROXY: "${TRUST_PROXY:-}"
     ports:
       - "${APP_PORT:-3001}:3000"
     volumes:

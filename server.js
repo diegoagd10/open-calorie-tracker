@@ -11,6 +11,24 @@ if (!Number.isInteger(port) || port < 1 || port > 65_535) {
   throw new Error("PORT must be an integer from 1 through 65535");
 }
 
+if (!DEVELOPMENT) {
+  const applicationUrl = process.env.APPLICATION_URL;
+  if (!applicationUrl) {
+    throw new Error("APPLICATION_URL is required outside development");
+  }
+
+  const canonicalUrl = new URL(applicationUrl);
+  if (
+    canonicalUrl.username ||
+    canonicalUrl.password ||
+    canonicalUrl.pathname !== "/" ||
+    canonicalUrl.search ||
+    canonicalUrl.hash
+  ) {
+    throw new Error("APPLICATION_URL must be an origin without credentials, path, query, or hash");
+  }
+}
+
 const app = express();
 let shutdownApplication = () => {};
 

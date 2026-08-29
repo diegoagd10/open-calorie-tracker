@@ -1,15 +1,17 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 
-test("a visitor can see that the application is ready", async ({ page }) => {
+test("a visitor is directed to accessible private account access", async ({
+  page,
+}) => {
   await page.goto("/");
 
-  await expect(page).toHaveTitle("Open Calory Tracker · Ready");
+  await expect(page).toHaveURL("/login");
+  await expect(page).toHaveTitle("Sign in · Open Calory Tracker");
   await expect(
-    page.getByRole("heading", { level: 1, name: "Open Calory Tracker is ready" }),
+    page.getByRole("heading", { level: 1, name: "Private account access" }),
   ).toBeVisible();
-  await expect(page.getByText("All core systems are operational."))
-    .toBeVisible();
+  await expect(page.getByText("No email required")).toBeVisible();
 
   const accessibilityScan = await new AxeBuilder({ page }).analyze();
   expect(accessibilityScan.violations).toEqual([]);

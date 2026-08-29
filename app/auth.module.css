@@ -1,0 +1,131 @@
+.shell {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  padding: 1rem;
+  background:
+    linear-gradient(rgb(16 42 67 / 58%), rgb(16 42 67 / 58%)),
+    var(--color-background);
+}
+
+.panel {
+  width: min(100%, 38rem);
+  padding: clamp(1rem, 4vw, 2rem);
+  border: 1px solid var(--color-border);
+  border-radius: 1.25rem;
+  background: var(--color-surface);
+  box-shadow: var(--shadow-panel);
+}
+
+.header {
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--color-border-muted);
+}
+
+.heading {
+  margin: 0;
+  font-size: clamp(1.5rem, 6vw, 2rem);
+}
+
+.privacyCue {
+  display: block;
+  margin-top: 0.4rem;
+  color: var(--color-text-muted);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.tabs {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.35rem;
+  margin: 1rem 0;
+  padding: 0.25rem;
+  border-radius: 0.75rem;
+  background: var(--color-background);
+}
+
+.tab {
+  display: grid;
+  min-height: 2.75rem;
+  place-items: center;
+  border-radius: 0.6rem;
+  color: var(--color-text-muted);
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.activeTab {
+  color: var(--color-text);
+  background: var(--color-surface);
+  box-shadow: 0 2px 8px rgb(15 29 45 / 8%);
+}
+
+.form,
+.field {
+  display: grid;
+}
+
+.form {
+  gap: 0.9rem;
+}
+
+.field {
+  gap: 0.4rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.field input {
+  min-height: 2.75rem;
+  padding: 0.7rem;
+  border: 1px solid var(--color-border);
+  border-radius: 0.6rem;
+  font: inherit;
+  font-weight: 400;
+}
+
+.field small {
+  color: var(--color-text-muted);
+  font-size: 0.7rem;
+  font-weight: 400;
+}
+
+.error {
+  margin: 0;
+  padding: 0.75rem;
+  border-radius: 0.6rem;
+  color: #8a1c14;
+  background: #fff1f0;
+  font-size: 0.8rem;
+}
+
+.submit {
+  min-height: 2.75rem;
+  border: 0;
+  border-radius: 0.65rem;
+  color: white;
+  background: #126c24;
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.submit:hover {
+  background: #105f1e;
+}
+
+@media (max-width: 420px) {
+  .shell {
+    align-items: start;
+    padding: 1rem 0.75rem;
+  }
+
+  .panel {
+    margin-top: 3rem;
+  }
+}

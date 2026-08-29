@@ -23,16 +23,17 @@ export type DatabaseStatus = {
 
 export type ApplicationDatabase = {
   close(): void;
+  getConnection(): BetterSqlite3.Database;
   getStatus(): DatabaseStatus;
 };
 
 export function isDatabaseReady(status: DatabaseStatus): boolean {
   return (
-    status.appliedMigrations >= 1 &&
+    status.appliedMigrations >= 2 &&
     status.busyTimeoutMs === 5_000 &&
     status.foreignKeysEnabled &&
     status.journalMode === "wal" &&
-    status.schemaVersion === "1" &&
+    status.schemaVersion === "2" &&
     status.writable
   );
 }
@@ -90,6 +91,9 @@ export function openApplicationDatabase({
     return {
       close() {
         sqlite.close();
+      },
+      getConnection() {
+        return sqlite;
       },
       getStatus() {
         const migration = sqlite
