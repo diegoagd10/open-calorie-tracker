@@ -1,0 +1,268 @@
+.accountAccessRow,
+.settingsGroup {
+  max-width: 44rem;
+}
+
+.accountAccessRow {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 0.75rem;
+  min-height: 4rem;
+  margin-bottom: 0.75rem;
+  padding: 0.8rem 1rem;
+  border: 1px solid var(--rule);
+  border-radius: 1rem;
+  color: var(--ink);
+  background: var(--surface);
+  box-shadow: 0 8px 24px rgb(15 29 45 / 5%);
+  text-decoration: none;
+}
+
+.accountAccessRow:hover {
+  border-color: var(--rule-strong);
+}
+
+.accountAccessRow strong,
+.accountAccessRow small {
+  display: block;
+}
+
+.accountAccessRow strong {
+  font-size: 0.82rem;
+}
+
+.accountAccessRow small {
+  margin-top: 0.15rem;
+  color: var(--muted);
+  font-size: 0.68rem;
+}
+
+.accountAccessIcon {
+  display: grid;
+  width: 2.25rem;
+  height: 2.25rem;
+  place-items: center;
+  border-radius: 0.7rem;
+  color: var(--green-dark);
+  background: #edf7ee;
+}
+
+.settingsGroup {
+  padding: clamp(1rem, 3vw, 1.5rem);
+  border: 1px solid var(--rule);
+  border-radius: 1rem;
+  background: var(--surface);
+  box-shadow: 0 8px 24px rgb(15 29 45 / 5%);
+}
+
+.groupHeading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding-bottom: 0.85rem;
+  border-bottom: 1px solid var(--rule);
+}
+
+.groupHeading h2,
+.groupHeading p {
+  margin: 0;
+}
+
+.groupHeading h2 {
+  font-size: 1rem;
+}
+
+.groupHeading p {
+  margin-top: 0.2rem;
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.segmentedField {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.35rem;
+  margin: 1rem 0;
+  padding: 0;
+  border: 0;
+}
+
+.segmentedField legend {
+  grid-column: 1 / -1;
+  margin-bottom: 0.4rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.segmentedField label {
+  position: relative;
+}
+
+.segmentedField input {
+  position: absolute;
+  opacity: 0;
+}
+
+.segmentedField span {
+  display: grid;
+  min-height: 2.75rem;
+  place-items: center;
+  border: 1px solid var(--rule);
+  border-radius: 0.6rem;
+  color: var(--ink-2);
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.segmentedField input:checked + span {
+  border-color: var(--green);
+  color: var(--green-dark);
+  background: #edf7ee;
+}
+
+.segmentedField input:focus-visible + span {
+  outline: 3px solid rgb(40 118 220 / 32%);
+  outline-offset: 2px;
+}
+
+.fieldRow {
+  display: flex;
+  min-height: 4rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding-block: 0.7rem;
+}
+
+.fieldRow > span,
+.fieldRow small {
+  display: block;
+}
+
+.fieldRow > span {
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.fieldRow small {
+  margin-top: 0.15rem;
+  color: var(--muted);
+  font-size: 0.65rem;
+  font-weight: 500;
+}
+
+.fieldRow input {
+  width: 10rem;
+}
+
+.fieldRow input,
+.goalGrid input {
+  min-height: 2.75rem;
+  padding: 0.65rem 0.7rem;
+  border: 1px solid var(--rule-strong);
+  border-radius: 0.6rem;
+  color: var(--ink);
+  background: var(--surface);
+  font: inherit;
+}
+
+.goalGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.65rem;
+  margin: 0.5rem 0 1rem;
+}
+
+.goalGrid label {
+  display: grid;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.goalGrid label > span:first-child {
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.goalGrid label small {
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.numberInput {
+  position: relative;
+}
+
+.numberInput input {
+  width: 100%;
+  padding-right: 3.3rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.numberInput em {
+  position: absolute;
+  right: 0.7rem;
+  bottom: 0.85rem;
+  color: var(--muted);
+  font-size: 0.65rem;
+  font-style: normal;
+  pointer-events: none;
+}
+
+.error,
+.success {
+  margin: 0 0 0.85rem;
+  padding: 0.75rem;
+  border-radius: 0.6rem;
+  font-size: 0.78rem;
+}
+
+.error {
+  color: #8a1c14;
+  background: #fff1f0;
+}
+
+.success {
+  color: var(--green-dark);
+  background: #edf7ee;
+}
+
+.submit {
+  min-height: 2.75rem;
+  padding: 0.65rem 1rem;
+  border: 1px solid var(--green);
+  border-radius: 0.65rem;
+  color: white;
+  background: var(--green);
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.submit:hover {
+  background: var(--green-dark);
+}
+
+@media (max-width: 420px) {
+  .settingsGroup {
+    padding: 0.9rem;
+  }
+
+  .fieldRow {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 0.4rem;
+  }
+
+  .fieldRow input {
+    width: 100%;
+  }
+
+  .goalGrid {
+    gap: 0.55rem;
+  }
+}
