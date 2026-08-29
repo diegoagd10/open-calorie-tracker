@@ -601,13 +601,13 @@
   }
 }
 
-@media (min-width: 1080px) {
+@media (min-width: 1120px) {
   .shell {
     display: grid;
-    grid-template-columns: 15.5rem minmax(34rem, 47.5rem) 15.5rem;
+    grid-template-columns: 13.75rem minmax(0, 47.5rem) 13.75rem;
     justify-content: center;
-    gap: 2rem;
-    padding: 0 2rem;
+    gap: 1.25rem;
+    padding: 0 1.5rem;
   }
 
   .desktopRail,

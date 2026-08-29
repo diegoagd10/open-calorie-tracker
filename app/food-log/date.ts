@@ -7,8 +7,21 @@ export type FoodLogEventOrderKey = {
 const ISO_LOCAL_DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
 const ISO_LOCAL_MONTH_PATTERN = /^(\d{4})-(\d{2})$/;
 
+function utcCalendarDate(year: number, monthIndex: number, day = 1): Date {
+  const instant = new Date(0);
+  instant.setUTCHours(0, 0, 0, 0);
+  instant.setUTCFullYear(year, monthIndex, day);
+  return instant;
+}
+
 function utcDateFromLocalDate(localDate: string): Date {
-  return new Date(`${localDate}T00:00:00.000Z`);
+  const match = ISO_LOCAL_DATE_PATTERN.exec(localDate);
+  if (!match) throw new Error("Invalid local date");
+  return utcCalendarDate(
+    Number(match[1]),
+    Number(match[2]) - 1,
+    Number(match[3]),
+  );
 }
 
 function formatUtcLocalDate(instant: Date): string {
@@ -26,7 +39,7 @@ export function parseIsoLocalDate(value: string): string | undefined {
   const year = Number(match[1]);
   const month = Number(match[2]);
   const day = Number(match[3]);
-  const instant = new Date(Date.UTC(year, month - 1, day));
+  const instant = utcCalendarDate(year, month - 1, day);
 
   if (
     instant.getUTCFullYear() !== year ||
@@ -62,22 +75,19 @@ export function addLocalDays(localDate: string, amount: number): string {
 }
 
 export function getNearbyLocalDates(selectedDate: string, today: string) {
-  return Array.from({ length: 7 }, (_, index) => {
-    const date = addLocalDays(selectedDate, index - 5);
-    return {
-      date,
-      isFuture: date > today,
-      isSelected: date === selectedDate,
-      isToday: date === today,
-    };
-  });
+  return Array.from({ length: 7 }, (_, index) =>
+    localDayState(addLocalDays(selectedDate, index - 5), today, selectedDate),
+  );
 }
 
 function shiftLocalMonth(localMonth: string, amount: number): string {
   const match = ISO_LOCAL_MONTH_PATTERN.exec(localMonth);
   if (!match || !Number.isInteger(amount)) throw new Error("Invalid local month");
 
-  const instant = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1));
+  const instant = utcCalendarDate(
+    Number(match[1]),
+    Number(match[2]) - 1,
+  );
   instant.setUTCMonth(instant.getUTCMonth() + amount);
   return `${String(instant.getUTCFullYear()).padStart(4, "0")}-${String(
     instant.getUTCMonth() + 1,
@@ -99,20 +109,14 @@ export function buildCalendarMonth(
       ? requestedMonth
       : todayMonth;
   const [year, monthNumber] = month.split("-").map(Number);
-  const first = new Date(Date.UTC(year, monthNumber - 1, 1));
-  const numberOfDays = new Date(Date.UTC(year, monthNumber, 0)).getUTCDate();
+  const first = utcCalendarDate(year, monthNumber - 1);
+  const numberOfDays = utcCalendarDate(year, monthNumber, 0).getUTCDate();
 
   return {
     days: Array.from({ length: numberOfDays }, (_, index) => {
       const day = index + 1;
       const date = `${month}-${String(day).padStart(2, "0")}`;
-      return {
-        date,
-        day,
-        isFuture: date > today,
-        isSelected: date === selectedDate,
-        isToday: date === today,
-      };
+      return { day, ...localDayState(date, today, selectedDate) };
     }),
     label: new Intl.DateTimeFormat("en-US", {
       month: "long",
@@ -123,6 +127,15 @@ export function buildCalendarMonth(
     month,
     nextMonth: month < todayMonth ? shiftLocalMonth(month, 1) : undefined,
     previousMonth: shiftLocalMonth(month, -1),
+  };
+}
+
+function localDayState(date: string, today: string, selectedDate: string) {
+  return {
+    date,
+    isFuture: date > today,
+    isSelected: date === selectedDate,
+    isToday: date === today,
   };
 }
 

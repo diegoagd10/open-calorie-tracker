@@ -6,6 +6,7 @@ import { eq } from "drizzle-orm";
 import { afterEach, expect, test } from "vitest";
 
 import {
+  addLocalDays,
   buildCalendarMonth,
   compareFoodLogEventsDescending,
   getNearbyLocalDates,
@@ -113,6 +114,7 @@ test("ISO local dates reject normalization and impossible calendar dates", () =>
   expect(parseIsoLocalDate("2026-02-28")).toBe("2026-02-28");
   expect(parseIsoLocalDate("2026-02-29")).toBeUndefined();
   expect(parseIsoLocalDate("2024-02-29")).toBe("2024-02-29");
+  expect(parseIsoLocalDate("0099-12-31")).toBe("0099-12-31");
   expect(parseIsoLocalDate("2026-2-03")).toBeUndefined();
   expect(parseIsoLocalDate(" 2026-02-03 ")).toBeUndefined();
 });
@@ -143,6 +145,15 @@ test("nearby dates and calendar months use civil-date arithmetic", () => {
     isSelected: false,
     isToday: true,
   });
+
+  expect(addLocalDays("0100-01-01", -1)).toBe("0099-12-31");
+  const ancientCalendar = buildCalendarMonth(
+    "0099-12",
+    "0100-01-01",
+    "0099-12-31",
+  );
+  expect(ancientCalendar.month).toBe("0099-12");
+  expect(ancientCalendar.days.at(-1)?.date).toBe("0099-12-31");
 });
 
 test("a selected historical Food Log survives travel between time zones", async () => {

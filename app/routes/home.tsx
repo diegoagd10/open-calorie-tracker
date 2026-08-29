@@ -29,6 +29,20 @@ const foodLogIntentSchema = z.object({
 
 type HomeActionData = { message: string };
 
+function foodLogServiceForRequest(request: Request) {
+  const requestedInstant =
+    process.env.NODE_ENV === "test"
+      ? request.headers.get("X-Test-Food-Log-Now")
+      : undefined;
+  if (!requestedInstant) return getFoodLogService();
+
+  const instant = new Date(requestedInstant);
+  if (Number.isNaN(instant.getTime())) {
+    throw new Response("Test Food Log instant is invalid.", { status: 400 });
+  }
+  return getFoodLogService(instant);
+}
+
 export function meta() {
   return [
     { title: "Open Calory Tracker · Private application" },
@@ -57,7 +71,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   const url = new URL(request.url);
   let foodLog;
   try {
-    foodLog = getFoodLogService().read(
+    foodLog = foodLogServiceForRequest(request).read(
       session.user.id,
       url.searchParams.get("date") ?? undefined,
     );
@@ -122,7 +136,10 @@ export async function action({ request }: Route.ActionArgs) {
   }
 
   try {
-    getFoodLogService().requireWritableDate(session.user.id, parsed.data.date);
+    foodLogServiceForRequest(request).requireWritableDate(
+      session.user.id,
+      parsed.data.date,
+    );
   } catch (error) {
     if (error instanceof FutureFoodLogDateError) {
       return data<HomeActionData>({ message: error.message }, { status: 422 });
@@ -366,6 +383,30 @@ function CalendarView({
   );
 }
 
+function EmptyActionForm({
+  className,
+  csrfToken,
+  date,
+  intent,
+  label,
+}: {
+  className: string;
+  csrfToken: string;
+  date: string;
+  intent: "add-food" | "add-water";
+  label: string;
+}) {
+  return (
+    <Form method="post">
+      <input name="csrfToken" type="hidden" value={csrfToken} />
+      <input name="date" type="hidden" value={date} />
+      <button className={className} name="intent" type="submit" value={intent}>
+        {label}
+      </button>
+    </Form>
+  );
+}
+
 export default function Home({ actionData, loaderData }: Route.ComponentProps) {
   const { calendar, csrfToken, foodLog, nearbyDates, username } = loaderData;
   const goals = goalValues(foodLog);
@@ -386,7 +427,15 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
       <main className={styles.appSurface} id="food-log-content">
         <header className={styles.mobileHeader}>
           <div className={styles.titleLine}>
-            <h1 aria-label={calendar ? "Food Log history" : "Today's Food Log"}>
+            <h1
+              aria-label={
+                calendar
+                  ? "Food Log history"
+                  : foodLog.selectedDate === foodLog.today
+                    ? "Today's Food Log"
+                    : `Food Log for ${selectedLabel}`
+              }
+            >
               {calendar
                 ? "History"
                 : foodLog.selectedDate === foodLog.today
@@ -508,30 +557,20 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
                       : "Past-day entries start at 12:00 PM. Add food or water when you’re ready."}
                   </p>
                   <div className={styles.emptyActions}>
-                    <Form method="post">
-                      <input name="csrfToken" type="hidden" value={csrfToken} />
-                      <input name="date" type="hidden" value={foodLog.selectedDate} />
-                      <button
-                        className={styles.primaryButton}
-                        name="intent"
-                        type="submit"
-                        value="add-food"
-                      >
-                        Add Food
-                      </button>
-                    </Form>
-                    <Form method="post">
-                      <input name="csrfToken" type="hidden" value={csrfToken} />
-                      <input name="date" type="hidden" value={foodLog.selectedDate} />
-                      <button
-                        className={styles.secondaryButton}
-                        name="intent"
-                        type="submit"
-                        value="add-water"
-                      >
-                        Add Water
-                      </button>
-                    </Form>
+                    <EmptyActionForm
+                      className={styles.primaryButton}
+                      csrfToken={csrfToken}
+                      date={foodLog.selectedDate}
+                      intent="add-food"
+                      label="Add Food"
+                    />
+                    <EmptyActionForm
+                      className={styles.secondaryButton}
+                      csrfToken={csrfToken}
+                      date={foodLog.selectedDate}
+                      intent="add-water"
+                      label="Add Water"
+                    />
                   </div>
                   {actionData?.message ? (
                     <p className={styles.actionMessage} role="status">

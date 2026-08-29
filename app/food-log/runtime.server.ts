@@ -15,7 +15,14 @@ function foodLogClock(): () => Date {
   return () => new Date(instant);
 }
 
-export function getFoodLogService(): FoodLogService {
+export function getFoodLogService(now?: Date): FoodLogService {
+  if (now) {
+    return new FoodLogService(
+      getApplicationDatabase().getClient(),
+      () => new Date(now),
+    );
+  }
+
   foodLogService ??= new FoodLogService(
     getApplicationDatabase().getClient(),
     foodLogClock(),
