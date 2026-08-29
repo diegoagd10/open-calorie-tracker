@@ -1,7 +1,13 @@
 import { randomBytes } from "node:crypto";
 
-import type BetterSqlite3 from "better-sqlite3";
+import { eq } from "drizzle-orm";
 
+import type { ApplicationDatabaseClient } from "../database/database.server";
+import {
+  passwordCredentials,
+  sessions,
+  users,
+} from "../database/schema.server";
 import {
   createDummyPasswordHash,
   hashPassword,
@@ -15,19 +21,11 @@ const ABSOLUTE_SESSION_MS = 90 * 24 * 60 * 60 * 1_000;
 const LOGIN_FAILURE_WINDOW_MS = 15 * 60 * 1_000;
 const REGISTRATION_WINDOW_MS = 60 * 60 * 1_000;
 
-type UserRow = {
-  id: number;
-  passwordHash: string;
-  usernameNormalized: string;
-};
-
-type SessionRow = {
-  absoluteExpiresAt: string;
-  idleExpiresAt: string;
-  tokenHash: string;
-  userId: number;
-  usernameNormalized: string;
-};
+type CredentialUser = Pick<
+  typeof users.$inferSelect,
+  "id" | "usernameNormalized"
+> &
+  Pick<typeof passwordCredentials.$inferSelect, "passwordHash">;
 
 export type AuthenticatedSession = {
   absoluteExpiresAt: Date;
@@ -64,12 +62,12 @@ function isUniqueConstraint(error: unknown): boolean {
 }
 
 export class AuthenticationService {
-  readonly #database: BetterSqlite3.Database;
+  readonly #database: ApplicationDatabaseClient;
   readonly #now: () => Date;
   readonly #rateLimiter: PersistentRateLimiter;
 
   constructor(
-    database: BetterSqlite3.Database,
+    database: ApplicationDatabaseClient,
     now: () => Date = () => new Date(),
   ) {
     this.#database = database;
@@ -97,24 +95,24 @@ export class AuthenticationService {
     const createdAt = this.#now().toISOString();
 
     try {
-      const userId = this.#database.transaction(() => {
-        const result = this.#database
-          .prepare(
-            `INSERT INTO users (username_normalized, created_at)
-             VALUES (?, ?)`,
-          )
-          .run(usernameNormalized, createdAt);
-        const nextUserId = Number(result.lastInsertRowid);
+      const userId = this.#database.transaction((transaction) => {
+        const user = transaction
+          .insert(users)
+          .values({ createdAt, usernameNormalized })
+          .returning({ id: users.id })
+          .get();
 
-        this.#database
-          .prepare(
-            `INSERT INTO password_credentials (user_id, password_hash, updated_at)
-             VALUES (?, ?, ?)`,
-          )
-          .run(nextUserId, passwordHash, createdAt);
+        transaction
+          .insert(passwordCredentials)
+          .values({
+            passwordHash,
+            updatedAt: createdAt,
+            userId: user.id,
+          })
+          .run();
 
-        return nextUserId;
-      })();
+        return user.id;
+      });
 
       return {
         ok: true,
@@ -129,25 +127,26 @@ export class AuthenticationService {
     }
   }
 
-  async authenticate(token: string | undefined): Promise<AuthenticatedSession | undefined> {
+  async authenticate(
+    token: string | undefined,
+  ): Promise<AuthenticatedSession | undefined> {
     if (!token) {
       return undefined;
     }
 
     const tokenHash = hashOpaqueToken(token);
     const session = this.#database
-      .prepare<[string], SessionRow>(
-        `SELECT
-           s.token_hash AS tokenHash,
-           s.user_id AS userId,
-           s.idle_expires_at AS idleExpiresAt,
-           s.absolute_expires_at AS absoluteExpiresAt,
-           u.username_normalized AS usernameNormalized
-         FROM sessions s
-         JOIN users u ON u.id = s.user_id
-         WHERE s.token_hash = ?`,
-      )
-      .get(tokenHash);
+      .select({
+        absoluteExpiresAt: sessions.absoluteExpiresAt,
+        idleExpiresAt: sessions.idleExpiresAt,
+        tokenHash: sessions.tokenHash,
+        userId: sessions.userId,
+        usernameNormalized: users.usernameNormalized,
+      })
+      .from(sessions)
+      .innerJoin(users, eq(users.id, sessions.userId))
+      .where(eq(sessions.tokenHash, tokenHash))
+      .get();
 
     if (!session) {
       return undefined;
@@ -158,7 +157,10 @@ export class AuthenticationService {
     const absoluteExpiresAt = new Date(session.absoluteExpiresAt);
 
     if (idleExpiresAt <= now || absoluteExpiresAt <= now) {
-      this.#database.prepare("DELETE FROM sessions WHERE token_hash = ?").run(tokenHash);
+      this.#database
+        .delete(sessions)
+        .where(eq(sessions.tokenHash, tokenHash))
+        .run();
       return undefined;
     }
 
@@ -166,12 +168,13 @@ export class AuthenticationService {
       Math.min(now.getTime() + IDLE_SESSION_MS, absoluteExpiresAt.getTime()),
     );
     this.#database
-      .prepare(
-        `UPDATE sessions
-         SET last_seen_at = ?, idle_expires_at = ?
-         WHERE token_hash = ?`,
-      )
-      .run(now.toISOString(), nextIdleExpiry.toISOString(), tokenHash);
+      .update(sessions)
+      .set({
+        idleExpiresAt: nextIdleExpiry.toISOString(),
+        lastSeenAt: now.toISOString(),
+      })
+      .where(eq(sessions.tokenHash, tokenHash))
+      .run();
 
     return {
       absoluteExpiresAt,
@@ -213,16 +216,13 @@ export class AuthenticationService {
     if (verification.needsRehash) {
       const replacement = await hashPassword(password);
       this.#database
-        .prepare(
-          `UPDATE password_credentials
-           SET password_hash = ?, updated_at = ?
-           WHERE user_id = ?`,
-        )
-        .run(
-          replacement,
-          this.#now().toISOString(),
-          verification.user.id,
-        );
+        .update(passwordCredentials)
+        .set({
+          passwordHash: replacement,
+          updatedAt: this.#now().toISOString(),
+        })
+        .where(eq(passwordCredentials.userId, verification.user.id))
+        .run();
     }
 
     this.#rateLimiter.clear("login-failure", rateLimitSubject);
@@ -238,8 +238,9 @@ export class AuthenticationService {
 
   revokeSession(token: string): void {
     this.#database
-      .prepare("DELETE FROM sessions WHERE token_hash = ?")
-      .run(hashOpaqueToken(token));
+      .delete(sessions)
+      .where(eq(sessions.tokenHash, hashOpaqueToken(token)))
+      .run();
   }
 
   verifyCsrfToken(sessionToken: string, candidate: string | undefined): boolean {
@@ -258,20 +259,16 @@ export class AuthenticationService {
     const absoluteExpiresAt = new Date(now.getTime() + ABSOLUTE_SESSION_MS);
 
     this.#database
-      .prepare(
-        `INSERT INTO sessions (
-           token_hash, user_id, created_at, last_seen_at,
-           idle_expires_at, absolute_expires_at
-         ) VALUES (?, ?, ?, ?, ?, ?)`,
-      )
-      .run(
+      .insert(sessions)
+      .values({
+        absoluteExpiresAt: absoluteExpiresAt.toISOString(),
+        createdAt: now.toISOString(),
+        idleExpiresAt: idleExpiresAt.toISOString(),
+        lastSeenAt: now.toISOString(),
         tokenHash,
         userId,
-        now.toISOString(),
-        now.toISOString(),
-        idleExpiresAt.toISOString(),
-        absoluteExpiresAt.toISOString(),
-      );
+      })
+      .run();
 
     return {
       absoluteExpiresAt,
@@ -284,18 +281,24 @@ export class AuthenticationService {
   async verifyCredentials(
     usernameNormalized: string,
     password: string,
-  ): Promise<{ matches: boolean; needsRehash: boolean; user?: UserRow }> {
+  ): Promise<{
+    matches: boolean;
+    needsRehash: boolean;
+    user?: CredentialUser;
+  }> {
     const user = this.#database
-      .prepare<[string], UserRow>(
-        `SELECT
-           u.id,
-           u.username_normalized AS usernameNormalized,
-           c.password_hash AS passwordHash
-         FROM users u
-         JOIN password_credentials c ON c.user_id = u.id
-         WHERE u.username_normalized = ? COLLATE NOCASE`,
+      .select({
+        id: users.id,
+        passwordHash: passwordCredentials.passwordHash,
+        usernameNormalized: users.usernameNormalized,
+      })
+      .from(users)
+      .innerJoin(
+        passwordCredentials,
+        eq(passwordCredentials.userId, users.id),
       )
-      .get(usernameNormalized);
+      .where(eq(users.usernameNormalized, usernameNormalized))
+      .get();
     const credential = user?.passwordHash ?? createDummyPasswordHash();
     const verification = await verifyPassword(password, credential);
 

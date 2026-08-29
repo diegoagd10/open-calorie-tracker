@@ -2,12 +2,18 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
+import { eq } from "drizzle-orm";
 import { afterEach, expect, test } from "vitest";
 
 import { AuthenticationService } from "../app/auth/authentication.server";
 import { hashPassword } from "../app/auth/password.server";
 import { PreAuthenticationCsrfService } from "../app/auth/pre-authentication-csrf.server";
 import { openApplicationDatabase } from "../app/database/database.server";
+import {
+  passwordCredentials,
+  preAuthenticationCsrfSessions,
+  sessions,
+} from "../app/database/schema.server";
 
 const temporaryDirectories: string[] = [];
 const password = "correct horse 🔐 battery";
@@ -29,13 +35,13 @@ async function createFixture() {
   });
   let now = new Date("2026-08-29T12:00:00.000Z");
   const service = new AuthenticationService(
-    applicationDatabase.getConnection(),
+    applicationDatabase.getClient(),
     () => now,
   );
 
   return {
     applicationDatabase,
-    database: applicationDatabase.getConnection(),
+    database: applicationDatabase.getClient(),
     service,
     setNow(next: string) {
       now = new Date(next);
@@ -55,24 +61,26 @@ test("sessions persist only a token hash and enforce idle and absolute expiry", 
   expect(Buffer.from(registration.session.token, "base64url")).toHaveLength(32);
 
   const storedSession = fixture.database
-    .prepare<[], { tokenHash: string }>(
-      "SELECT token_hash AS tokenHash FROM sessions",
-    )
+    .select({ tokenHash: sessions.tokenHash })
+    .from(sessions)
     .get();
   expect(storedSession?.tokenHash).toMatch(/^[a-f0-9]{64}$/);
   expect(storedSession?.tokenHash).not.toContain(registration.session.token);
   const storedCredential = fixture.database
-    .prepare<[number], { passwordHash: string }>(
-      "SELECT password_hash AS passwordHash FROM password_credentials WHERE user_id = ?",
+    .select({ passwordHash: passwordCredentials.passwordHash })
+    .from(passwordCredentials)
+    .where(
+      eq(passwordCredentials.userId, registration.session.user.id),
     )
-    .get(registration.session.user.id);
+    .get();
   expect(storedCredential?.passwordHash).toMatch(/^argon2id\$v=1\$/);
   expect(storedCredential?.passwordHash).not.toContain(password);
   expect(
-    fixture.database
-      .prepare<[], { name: string }>("PRAGMA table_info(sessions)")
-      .all()
-      .map((column) => column.name),
+    (
+      fixture.database.$client.pragma("table_info(sessions)") as Array<{
+        name: string;
+      }>
+    ).map((column) => column.name),
   ).not.toContain("token");
 
   fixture.setNow("2026-09-03T12:00:00.000Z");
@@ -116,15 +124,15 @@ test("successful login rehashes a credential whose format version is obsolete", 
   expect(registration.ok).toBe(true);
 
   const current = fixture.database
-    .prepare<[], { passwordHash: string }>(
-      "SELECT password_hash AS passwordHash FROM password_credentials",
-    )
+    .select({ passwordHash: passwordCredentials.passwordHash })
+    .from(passwordCredentials)
     .get();
   if (!current) throw new Error("missing credential");
   const obsolete = current.passwordHash.replace("$v=1$", "$v=0$");
   fixture.database
-    .prepare("UPDATE password_credentials SET password_hash = ?")
-    .run(obsolete);
+    .update(passwordCredentials)
+    .set({ passwordHash: obsolete })
+    .run();
 
   const login = await fixture.service.login(
     "rehash.user",
@@ -134,9 +142,8 @@ test("successful login rehashes a credential whose format version is obsolete", 
   expect(login.ok).toBe(true);
 
   const updated = fixture.database
-    .prepare<[], { passwordHash: string }>(
-      "SELECT password_hash AS passwordHash FROM password_credentials",
-    )
+    .select({ passwordHash: passwordCredentials.passwordHash })
+    .from(passwordCredentials)
     .get();
   expect(updated?.passwordHash).not.toBe(obsolete);
   expect(updated?.passwordHash).toContain("$v=1$");
@@ -152,10 +159,8 @@ test("pre-authentication CSRF values are session-bound and expire", async () => 
   );
   const issued = csrf.issue();
   const stored = fixture.database
-    .prepare<[], { tokenHash: string }>(
-      `SELECT token_hash AS tokenHash
-       FROM pre_authentication_csrf_sessions`,
-    )
+    .select({ tokenHash: preAuthenticationCsrfSessions.tokenHash })
+    .from(preAuthenticationCsrfSessions)
     .get();
 
   expect(stored?.tokenHash).toMatch(/^[a-f0-9]{64}$/);

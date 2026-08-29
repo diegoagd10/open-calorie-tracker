@@ -1,14 +1,12 @@
 import { randomBytes } from "node:crypto";
 
-import type BetterSqlite3 from "better-sqlite3";
+import { eq, lte } from "drizzle-orm";
 
+import type { ApplicationDatabaseClient } from "../database/database.server";
+import { preAuthenticationCsrfSessions } from "../database/schema.server";
 import { deriveCsrfToken, hashOpaqueToken, safelyEqual } from "./token.server";
 
 const PRE_AUTHENTICATION_CSRF_SESSION_MS = 30 * 60 * 1_000;
-
-type CsrfSessionRow = {
-  expiresAt: string;
-};
 
 export type PreAuthenticationCsrfSession = {
   csrfToken: string;
@@ -17,11 +15,11 @@ export type PreAuthenticationCsrfSession = {
 };
 
 export class PreAuthenticationCsrfService {
-  readonly #database: BetterSqlite3.Database;
+  readonly #database: ApplicationDatabaseClient;
   readonly #now: () => Date;
 
   constructor(
-    database: BetterSqlite3.Database,
+    database: ApplicationDatabaseClient,
     now: () => Date = () => new Date(),
   ) {
     this.#database = database;
@@ -36,17 +34,17 @@ export class PreAuthenticationCsrfService {
     const token = randomBytes(32).toString("base64url");
 
     this.#database
-      .prepare(
-        "DELETE FROM pre_authentication_csrf_sessions WHERE expires_at <= ?",
-      )
-      .run(now.toISOString());
+      .delete(preAuthenticationCsrfSessions)
+      .where(lte(preAuthenticationCsrfSessions.expiresAt, now.toISOString()))
+      .run();
     this.#database
-      .prepare(
-        `INSERT INTO pre_authentication_csrf_sessions (
-           token_hash, created_at, expires_at
-         ) VALUES (?, ?, ?)`,
-      )
-      .run(hashOpaqueToken(token), now.toISOString(), expiresAt.toISOString());
+      .insert(preAuthenticationCsrfSessions)
+      .values({
+        createdAt: now.toISOString(),
+        expiresAt: expiresAt.toISOString(),
+        tokenHash: hashOpaqueToken(token),
+      })
+      .run();
 
     return {
       csrfToken: deriveCsrfToken(token, "pre-authentication"),
@@ -60,22 +58,19 @@ export class PreAuthenticationCsrfService {
 
     const tokenHash = hashOpaqueToken(token);
     const stored = this.#database
-      .prepare<[string], CsrfSessionRow>(
-        `SELECT expires_at AS expiresAt
-         FROM pre_authentication_csrf_sessions
-         WHERE token_hash = ?`,
-      )
-      .get(tokenHash);
+      .select({ expiresAt: preAuthenticationCsrfSessions.expiresAt })
+      .from(preAuthenticationCsrfSessions)
+      .where(eq(preAuthenticationCsrfSessions.tokenHash, tokenHash))
+      .get();
 
     if (!stored) return undefined;
 
     const expiresAt = new Date(stored.expiresAt);
     if (expiresAt <= this.#now()) {
       this.#database
-        .prepare(
-          "DELETE FROM pre_authentication_csrf_sessions WHERE token_hash = ?",
-        )
-        .run(tokenHash);
+        .delete(preAuthenticationCsrfSessions)
+        .where(eq(preAuthenticationCsrfSessions.tokenHash, tokenHash))
+        .run();
       return undefined;
     }
 
@@ -90,10 +85,11 @@ export class PreAuthenticationCsrfService {
     if (!token) return;
 
     this.#database
-      .prepare(
-        "DELETE FROM pre_authentication_csrf_sessions WHERE token_hash = ?",
+      .delete(preAuthenticationCsrfSessions)
+      .where(
+        eq(preAuthenticationCsrfSessions.tokenHash, hashOpaqueToken(token)),
       )
-      .run(hashOpaqueToken(token));
+      .run();
   }
 
   verify(token: string | undefined, candidate: string | undefined): boolean {

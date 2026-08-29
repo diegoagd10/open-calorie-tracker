@@ -1,13 +1,16 @@
 import { createHash } from "node:crypto";
 
-import type BetterSqlite3 from "better-sqlite3";
+import { and, eq, lte } from "drizzle-orm";
+
+import type { ApplicationDatabaseClient } from "../database/database.server";
+import { rateLimitCounters } from "../database/schema.server";
 
 export class PersistentRateLimiter {
-  readonly #database: BetterSqlite3.Database;
+  readonly #database: ApplicationDatabaseClient;
   readonly #now: () => Date;
 
   constructor(
-    database: BetterSqlite3.Database,
+    database: ApplicationDatabaseClient,
     now: () => Date = () => new Date(),
   ) {
     this.#database = database;
@@ -16,10 +19,14 @@ export class PersistentRateLimiter {
 
   clear(scope: string, subject: string): void {
     this.#database
-      .prepare(
-        "DELETE FROM rate_limit_counters WHERE scope = ? AND subject_hash = ?",
+      .delete(rateLimitCounters)
+      .where(
+        and(
+          eq(rateLimitCounters.scope, scope),
+          eq(rateLimitCounters.subjectHash, this.#hashSubject(scope, subject)),
+        ),
       )
-      .run(scope, this.#hashSubject(scope, subject));
+      .run();
   }
 
   consume(
@@ -28,50 +35,55 @@ export class PersistentRateLimiter {
     limit: number,
     windowMs: number,
   ): boolean {
-    return this.#database.transaction(() => {
+    return this.#database.transaction((transaction) => {
       const now = this.#now();
       const nowIso = now.toISOString();
       const subjectHash = this.#hashSubject(scope, subject);
 
-      this.#database
-        .prepare("DELETE FROM rate_limit_counters WHERE expires_at <= ?")
-        .run(nowIso);
+      transaction
+        .delete(rateLimitCounters)
+        .where(lte(rateLimitCounters.expiresAt, nowIso))
+        .run();
 
-      const current = this.#database
-        .prepare<[string, string], { attempts: number }>(
-          `SELECT attempts
-           FROM rate_limit_counters
-           WHERE scope = ? AND subject_hash = ?`,
+      const current = transaction
+        .select({ attempts: rateLimitCounters.attempts })
+        .from(rateLimitCounters)
+        .where(
+          and(
+            eq(rateLimitCounters.scope, scope),
+            eq(rateLimitCounters.subjectHash, subjectHash),
+          ),
         )
-        .get(scope, subjectHash);
+        .get();
 
       if (current && current.attempts >= limit) return false;
 
       if (current) {
-        this.#database
-          .prepare(
-            `UPDATE rate_limit_counters
-             SET attempts = attempts + 1
-             WHERE scope = ? AND subject_hash = ?`,
+        transaction
+          .update(rateLimitCounters)
+          .set({ attempts: current.attempts + 1 })
+          .where(
+            and(
+              eq(rateLimitCounters.scope, scope),
+              eq(rateLimitCounters.subjectHash, subjectHash),
+            ),
           )
-          .run(scope, subjectHash);
+          .run();
       } else {
-        this.#database
-          .prepare(
-            `INSERT INTO rate_limit_counters (
-               scope, subject_hash, window_started_at, attempts, expires_at
-             ) VALUES (?, ?, ?, 1, ?)`,
-          )
-          .run(
+        transaction
+          .insert(rateLimitCounters)
+          .values({
+            attempts: 1,
+            expiresAt: new Date(now.getTime() + windowMs).toISOString(),
             scope,
             subjectHash,
-            nowIso,
-            new Date(now.getTime() + windowMs).toISOString(),
-          );
+            windowStartedAt: nowIso,
+          })
+          .run();
       }
 
       return true;
-    })();
+    });
   }
 
   #hashSubject(scope: string, subject: string): string {

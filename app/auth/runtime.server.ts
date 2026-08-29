@@ -7,7 +7,7 @@ let preAuthenticationCsrfService: PreAuthenticationCsrfService | undefined;
 
 export function getAuthenticationService(): AuthenticationService {
   authenticationService ??= new AuthenticationService(
-    getApplicationDatabase().getConnection(),
+    getApplicationDatabase().getClient(),
   );
 
   return authenticationService;
@@ -15,7 +15,7 @@ export function getAuthenticationService(): AuthenticationService {
 
 export function getPreAuthenticationCsrfService(): PreAuthenticationCsrfService {
   preAuthenticationCsrfService ??= new PreAuthenticationCsrfService(
-    getApplicationDatabase().getConnection(),
+    getApplicationDatabase().getClient(),
   );
 
   return preAuthenticationCsrfService;

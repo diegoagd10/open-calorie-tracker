@@ -31,10 +31,11 @@ pnpm build
 ```
 
 The TypeScript 7.0.2 compile spike exposed invalid declarations in stable
-Drizzle 0.45.2 while dependency declaration checking was enabled. The project
-therefore uses the newest prior stable TypeScript line, 6.0.3, and keeps the
-Drizzle runtime call behind a small typed compatibility boundary. Application
-compilation remains strict with `skipLibCheck` disabled.
+Drizzle 0.45.2, so the project uses the newest prior stable TypeScript line,
+6.0.3. Drizzle's declarations still fail declaration checking on that line (as
+they do on 5.9), so `skipLibCheck` omits declaration-file implementation
+checking. The application schema, typed Drizzle connection, queries, services,
+routes, and tests are TypeScript sources and remain included in strict checking.
 
 ## Container
 
