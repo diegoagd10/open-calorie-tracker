@@ -134,3 +134,79 @@ export const goalVersions = sqliteTable(
     ),
   ],
 );
+
+export const foodEntries = sqliteTable(
+  "food_entries",
+  {
+    id: integer().primaryKey({ autoIncrement: true }),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    foodLogDate: text("food_log_date").notNull(),
+    localEventTime: text("local_event_time").notNull(),
+    provider: text().notNull(),
+    providerFoodId: text("provider_food_id").notNull(),
+    providerPublishedDate: text("provider_published_date"),
+    providerModifiedDate: text("provider_modified_date"),
+    sourceDataType: text("source_data_type").notNull(),
+    originalName: text("original_name").notNull(),
+    brand: text(),
+    barcode: text(),
+    marketCountry: text("market_country"),
+    authoritativeBaseUnit: text("authoritative_base_unit").notNull(),
+    authoritativeBaseQuantityMicrounits: integer(
+      "authoritative_base_quantity_microunits",
+    ).notNull(),
+    authoritativeNutrition: text("authoritative_nutrition")
+      .notNull()
+      .default(
+        '{"carbohydrateMilligrams":null,"energyMilliKcal":null,"fatMilligrams":null,"fiberMilligrams":null,"proteinMilligrams":null,"sodiumMilligrams":null,"sugarMilligrams":null}',
+      ),
+    selectedMeasurementId: text("selected_measurement_id").notNull(),
+    selectedMeasurementLabel: text("selected_measurement_label").notNull(),
+    selectedMeasurementUnit: text("selected_measurement_unit").notNull(),
+    selectedMeasurementBaseQuantityMicrounits: integer(
+      "selected_measurement_base_quantity_microunits",
+    ).notNull(),
+    quantityMicrounits: integer("quantity_microunits").notNull(),
+    energyMilliKcal: integer("authoritative_energy_milli_kcal"),
+    proteinMilligrams: integer("authoritative_protein_milligrams"),
+    carbohydrateMilligrams: integer("authoritative_carbohydrate_milligrams"),
+    fatMilligrams: integer("authoritative_fat_milligrams"),
+    fiberMilligrams: integer("authoritative_fiber_milligrams"),
+    sugarMilligrams: integer("authoritative_sugar_milligrams"),
+    sodiumMilligrams: integer("authoritative_sodium_milligrams"),
+    idempotencyKey: text("idempotency_key").notNull(),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("food_entries_user_idempotency_unique").on(
+      table.userId,
+      table.idempotencyKey,
+    ),
+    index("food_entries_user_date_order_index").on(
+      table.userId,
+      table.foodLogDate,
+      table.localEventTime,
+      table.createdAt,
+      table.id,
+    ),
+    check("food_entries_provider_check", sql`${table.provider} = 'usda-fdc'`),
+    check(
+      "food_entries_data_type_check",
+      sql`${table.sourceDataType} IN ('Branded', 'Survey (FNDDS)', 'Foundation')`,
+    ),
+    check(
+      "food_entries_units_check",
+      sql`${table.authoritativeBaseUnit} IN ('g', 'ml')
+        AND ${table.selectedMeasurementUnit} IN ('g', 'ml')`,
+    ),
+    check(
+      "food_entries_positive_quantities_check",
+      sql`${table.authoritativeBaseQuantityMicrounits} > 0
+        AND ${table.selectedMeasurementBaseQuantityMicrounits} > 0
+        AND ${table.quantityMicrounits} > 0`,
+    ),
+  ],
+);

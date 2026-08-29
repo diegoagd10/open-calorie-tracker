@@ -1,7 +1,12 @@
 import { and, desc, eq, lte } from "drizzle-orm";
 
 import type { ApplicationDatabaseClient } from "../database/database.server";
-import { goalVersions, userPreferences } from "../database/schema.server";
+import {
+  foodEntries,
+  goalVersions,
+  userPreferences,
+} from "../database/schema.server";
+import { foodEntrySnapshot } from "../food-entry/snapshot.server";
 import { localDateAt, parseIsoLocalDate } from "./date";
 
 export class InvalidFoodLogDateError extends Error {
@@ -50,8 +55,7 @@ export class FoodLogService {
     const goal = this.#database
       .select({
         calorieTargetMilliKcal: goalVersions.calorieTargetMilliKcal,
-        carbohydrateTargetMilligrams:
-          goalVersions.carbohydrateTargetMilligrams,
+        carbohydrateTargetMilligrams: goalVersions.carbohydrateTargetMilligrams,
         effectiveDate: goalVersions.effectiveDate,
         fatTargetMilligrams: goalVersions.fatTargetMilligrams,
         fiberTargetMilligrams: goalVersions.fiberTargetMilligrams,
@@ -71,8 +75,26 @@ export class FoodLogService {
       .limit(1)
       .get();
 
+    const entries = this.#database
+      .select()
+      .from(foodEntries)
+      .where(
+        and(
+          eq(foodEntries.userId, userId),
+          eq(foodEntries.foodLogDate, selectedDate),
+        ),
+      )
+      .orderBy(
+        desc(foodEntries.localEventTime),
+        desc(foodEntries.createdAt),
+        desc(foodEntries.id),
+      )
+      .all()
+      .map(foodEntrySnapshot);
+
     return {
       displayUnits: preference.displayUnits,
+      entries,
       goal,
       isFuture: selectedDate > today,
       selectedDate,

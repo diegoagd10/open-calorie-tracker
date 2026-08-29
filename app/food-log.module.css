@@ -1,5 +1,5 @@
 .shell {
-  --blue: #2876dc;
+  --blue: #1f65bd;
   --blue-soft: #eaf3ff;
   --ground: #fafbfd;
   --green: #287c30;
@@ -282,6 +282,9 @@
 
 .primaryButton,
 .secondaryButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   min-height: 2.75rem;
   padding: 0.7rem 1rem;
   border: 1px solid var(--green);
@@ -290,6 +293,7 @@
   font-size: 0.78rem;
   font-weight: 750;
   cursor: pointer;
+  text-decoration: none;
 }
 
 .primaryButton {
@@ -316,6 +320,404 @@
   color: var(--muted);
   font-size: 0.68rem;
   text-align: center;
+}
+
+.timeline {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.timeline form {
+  margin: 0;
+}
+
+.timelineAddFood,
+.timelineAddWater {
+  min-height: 2.75rem;
+  border: 0;
+  color: var(--green-dark);
+  background: transparent;
+  font: inherit;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.timelineAddWater {
+  color: var(--blue);
+}
+
+.foodEntryCard {
+  display: grid;
+  grid-template-columns: 4.2rem 2.6rem minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.6rem;
+  min-height: 5rem;
+  padding: 0.75rem;
+  border: 1px solid var(--rule);
+  border-radius: 0.9rem;
+  background: var(--surface);
+  box-shadow: 0 8px 24px rgb(15 29 45 / 4%);
+}
+
+.foodEntryCard time {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.foodEntryMarker {
+  display: grid;
+  width: 2.6rem;
+  height: 2.6rem;
+  place-items: center;
+  border: 1px solid #79c982;
+  border-radius: 50%;
+  color: var(--green-dark);
+  background: #edf8ee;
+}
+
+.foodEntryContent,
+.foodEntryContent strong,
+.foodEntryContent small {
+  display: block;
+  min-width: 0;
+}
+
+.foodEntryContent strong {
+  overflow: hidden;
+  font-size: 0.86rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.foodEntryContent small {
+  overflow: hidden;
+  margin-top: 0.15rem;
+  color: var(--muted);
+  font-size: 0.66rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.foodEntryEnergy {
+  font-size: 0.82rem;
+  font-weight: 750;
+  white-space: nowrap;
+}
+
+.foodEntryEnergy small {
+  color: var(--muted);
+  font-size: 0.62rem;
+  font-weight: 500;
+}
+
+.dialogBackdrop {
+  --blue: #1f65bd;
+  --blue-soft: #eaf3ff;
+  --green: #287c30;
+  --green-dark: #206628;
+  --ink: #17212b;
+  --ink-2: #394652;
+  --muted: #5f6b77;
+  --rule: #e2e6ea;
+  --rule-strong: #cfd5db;
+  --surface: #ffffff;
+  --surface-soft: #f3f5f7;
+  position: fixed;
+  z-index: 80;
+  inset: 0;
+  display: grid;
+  align-items: end;
+  padding-top: 2rem;
+  background: rgb(14 24 35 / 48%);
+}
+
+.foodDialog {
+  width: min(100%, 42rem);
+  max-height: calc(100dvh - 2rem);
+  margin-inline: auto;
+  padding: 1rem;
+  overflow-y: auto;
+  border-radius: 1.4rem 1.4rem 0 0;
+  background: var(--surface);
+  box-shadow: 0 -1rem 3rem rgb(15 29 45 / 18%);
+}
+
+.dialogHead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding-bottom: 0.9rem;
+  border-bottom: 1px solid var(--rule);
+}
+
+.dialogHead h2 {
+  display: inline;
+  margin: 0;
+  font-size: 1.4rem;
+  letter-spacing: -0.025em;
+}
+
+.dialogHead p {
+  max-width: 48ch;
+  margin: 0.45rem 0 0;
+  color: var(--ink-2);
+  font-size: 0.76rem;
+}
+
+.dialogChip,
+.catalogType {
+  display: inline-flex;
+  margin-left: 0.45rem;
+  padding: 0.2rem 0.45rem;
+  border-radius: 999px;
+  color: #205a94;
+  background: var(--blue-soft);
+  font-size: 0.6rem;
+  font-weight: 750;
+  text-transform: uppercase;
+}
+
+.dialogClose {
+  display: grid;
+  flex: 0 0 auto;
+  width: 2.75rem;
+  height: 2.75rem;
+  place-items: center;
+  border: 1px solid var(--rule-strong);
+  border-radius: 50%;
+  color: var(--ink-2);
+  font-size: 1.7rem;
+  line-height: 1;
+  text-decoration: none;
+}
+
+.searchForm {
+  margin-top: 1rem;
+}
+
+.searchForm > label,
+.stackedField > span {
+  display: block;
+  margin-bottom: 0.4rem;
+  font-size: 0.76rem;
+  font-weight: 750;
+}
+
+.searchControl {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.45rem;
+}
+
+.searchControl input,
+.stackedField input,
+.stackedField select {
+  width: 100%;
+  min-height: 3rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--rule-strong);
+  border-radius: 0.7rem;
+  color: var(--ink);
+  background: white;
+  font: inherit;
+}
+
+.catalogState {
+  margin-top: 1rem;
+  padding: 2rem 1rem;
+  border: 1px dashed var(--rule-strong);
+  border-radius: 1rem;
+  text-align: center;
+}
+
+.catalogState h3,
+.catalogState p {
+  margin: 0;
+}
+
+.catalogState p {
+  margin-top: 0.35rem;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.catalogResults {
+  margin-top: 1rem;
+  overflow: hidden;
+  border: 1px solid var(--rule);
+  border-radius: 1rem;
+}
+
+.catalogResults > :is(a, div) {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  min-height: 5rem;
+  padding: 0.75rem;
+  border-bottom: 1px solid var(--rule);
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.catalogResults > :is(a, div):last-child {
+  border-bottom: 0;
+}
+
+.catalogResults > a:hover {
+  background: var(--surface-soft);
+}
+
+.catalogResults > div[aria-disabled="true"] {
+  background: var(--surface-soft);
+  opacity: 0.72;
+}
+
+.catalogResults .catalogType {
+  margin: 0 0 0.35rem;
+}
+
+.catalogResults strong,
+.catalogResults small {
+  display: block;
+}
+
+.catalogResults small {
+  margin-top: 0.2rem;
+  color: var(--muted);
+  font-size: 0.68rem;
+}
+
+.providerAttribution {
+  margin: 0.9rem 0 0;
+  color: var(--muted);
+  font-size: 0.68rem;
+  text-align: center;
+}
+
+.providerAttribution a,
+.backToResults {
+  color: var(--green-dark);
+  font-weight: 700;
+}
+
+.backToResults {
+  display: inline-flex;
+  margin: 0.9rem 0 0;
+  font-size: 0.75rem;
+}
+
+.foodIdentity {
+  padding: 1rem 0;
+}
+
+.foodIdentity .catalogType {
+  margin: 0;
+}
+
+.foodIdentity h3 {
+  margin: 0.45rem 0 0.2rem;
+  font-size: 1.2rem;
+}
+
+.foodIdentity p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.7rem;
+}
+
+.snapshotNote {
+  display: flex;
+  gap: 0.7rem;
+  padding: 0.75rem;
+  border-radius: 0.75rem;
+  color: var(--green-dark);
+  background: #f1f8f2;
+}
+
+.snapshotNote p,
+.snapshotNote strong {
+  display: block;
+  margin: 0;
+}
+
+.snapshotNote p {
+  color: var(--ink-2);
+  font-size: 0.7rem;
+}
+
+.snapshotNote strong {
+  margin-bottom: 0.15rem;
+  color: var(--ink);
+}
+
+.logFoodForm {
+  margin-top: 1rem;
+}
+
+.foodDetailGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(7rem, 0.5fr);
+  gap: 0.75rem;
+}
+
+.stackedField small {
+  display: block;
+  margin-top: 0.3rem;
+  color: var(--muted);
+  font-size: 0.65rem;
+}
+
+.nutritionPreview {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  margin: 1rem 0 0;
+  overflow: hidden;
+  border: 1px solid var(--rule);
+  border-radius: 0.75rem;
+}
+
+.nutritionPreview div {
+  padding: 0.65rem;
+  border-right: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule);
+}
+
+.nutritionPreview div:nth-child(2n) {
+  border-right: 0;
+}
+
+.nutritionPreview div:nth-last-child(-n + 2) {
+  border-bottom: 0;
+}
+
+.nutritionPreview dt {
+  color: var(--muted);
+  font-size: 0.62rem;
+}
+
+.nutritionPreview dd {
+  margin: 0.2rem 0 0;
+  font-size: 0.75rem;
+  font-weight: 750;
+}
+
+.dialogActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.6rem;
+  margin-top: 1rem;
+}
+
+.catalogError {
+  margin: 0.8rem 0 0;
+  padding: 0.7rem;
+  border-radius: 0.7rem;
+  color: #8c2b24;
+  background: #fff0ef;
+  font-size: 0.75rem;
 }
 
 .historyIntro {
@@ -584,6 +986,16 @@
   .summaryCard p strong {
     font-size: 1.3rem;
   }
+
+  .foodEntryCard {
+    grid-template-columns: 3.6rem 2.4rem minmax(0, 1fr) auto;
+    gap: 0.35rem;
+    padding-inline: 0.5rem;
+  }
+
+  .foodDetailGrid {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (min-width: 760px) {
@@ -598,6 +1010,15 @@
     width: 47.5rem;
     transform: translateX(-50%);
     border-inline: 1px solid var(--rule);
+  }
+
+  .dialogBackdrop {
+    align-items: center;
+    padding: 2rem;
+  }
+
+  .foodDialog {
+    border-radius: 1.4rem;
   }
 }
 

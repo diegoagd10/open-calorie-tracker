@@ -33,11 +33,11 @@ export type ApplicationDatabase = {
 
 export function isDatabaseReady(status: DatabaseStatus): boolean {
   return (
-    status.appliedMigrations >= 4 &&
+    status.appliedMigrations >= 5 &&
     status.busyTimeoutMs === 5_000 &&
     status.foreignKeysEnabled &&
     status.journalMode === "wal" &&
-    status.schemaVersion === "4" &&
+    status.schemaVersion === "6" &&
     status.writable
   );
 }
@@ -102,10 +102,9 @@ export function openApplicationDatabase({
         return client;
       },
       getStatus() {
-        const migration = client
-          .get<{ count: number }>(
-            sql`SELECT COUNT(*) AS count FROM __drizzle_migrations`,
-          );
+        const migration = client.get<{ count: number }>(
+          sql`SELECT COUNT(*) AS count FROM __drizzle_migrations`,
+        );
         const schemaVersion = client
           .select({ value: schema.applicationMetadata.value })
           .from(schema.applicationMetadata)
@@ -114,10 +113,14 @@ export function openApplicationDatabase({
 
         return {
           appliedMigrations: migration?.count ?? 0,
-          busyTimeoutMs: sqlite.pragma("busy_timeout", { simple: true }) as number,
+          busyTimeoutMs: sqlite.pragma("busy_timeout", {
+            simple: true,
+          }) as number,
           foreignKeysEnabled:
             sqlite.pragma("foreign_keys", { simple: true }) === 1,
-          journalMode: sqlite.pragma("journal_mode", { simple: true }) as string,
+          journalMode: sqlite.pragma("journal_mode", {
+            simple: true,
+          }) as string,
           schemaVersion: schemaVersion?.value ?? "unknown",
           writable: verifyWritableStorage(client, sqlite),
         };
