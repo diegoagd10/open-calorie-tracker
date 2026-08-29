@@ -25,7 +25,9 @@ if (!DEVELOPMENT) {
     canonicalUrl.search ||
     canonicalUrl.hash
   ) {
-    throw new Error("APPLICATION_URL must be an origin without credentials, path, query, or hash");
+    throw new Error(
+      "APPLICATION_URL must be an origin without credentials, path, query, or hash",
+    );
   }
 }
 

@@ -1,31 +1,9 @@
 import { argon2, randomBytes } from "node:crypto";
 import { performance } from "node:perf_hooks";
 
-function configuredInteger(name, fallback, minimum, maximum) {
-  const raw = process.env[name];
-  if (raw === undefined) return fallback;
+import { getArgon2Profile } from "./argon2-profile.mjs";
 
-  const value = Number(raw);
-  if (!Number.isInteger(value) || value < minimum || value > maximum) {
-    throw new Error(
-      `${name} must be an integer from ${minimum} through ${maximum}`,
-    );
-  }
-
-  return value;
-}
-
-const parameters = {
-  memory: configuredInteger(
-    "AUTH_ARGON2_MEMORY_KIB",
-    19_456,
-    19_456,
-    1_048_576,
-  ),
-  parallelism: 1,
-  passes: configuredInteger("AUTH_ARGON2_PASSES", 2, 2, 10),
-  tagLength: 32,
-};
+const parameters = getArgon2Profile({ useTestProfile: false });
 const durations = [];
 
 for (let sample = 0; sample < 3; sample += 1) {

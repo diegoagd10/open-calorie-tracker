@@ -5,6 +5,7 @@ import path from "node:path";
 import { afterEach, expect, test } from "vitest";
 
 import { AuthenticationService } from "../app/auth/authentication.server";
+import { hashPassword } from "../app/auth/password.server";
 import { PreAuthenticationCsrfService } from "../app/auth/pre-authentication-csrf.server";
 import { openApplicationDatabase } from "../app/database/database.server";
 
@@ -51,6 +52,7 @@ test("sessions persist only a token hash and enforce idle and absolute expiry", 
   );
   expect(registration.ok).toBe(true);
   if (!registration.ok) throw new Error("registration failed");
+  expect(Buffer.from(registration.session.token, "base64url")).toHaveLength(32);
 
   const storedSession = fixture.database
     .prepare<[], { tokenHash: string }>(
@@ -168,4 +170,33 @@ test("pre-authentication CSRF values are session-bound and expire", async () => 
   expect(expiredCsrf.verify(issued.token, issued.csrfToken)).toBe(false);
 
   fixture.applicationDatabase.close();
+});
+
+test("production password hashes encode the reviewed profile and random salt", async () => {
+  const originalNodeEnvironment = process.env.NODE_ENV;
+  const originalMemory = process.env.AUTH_ARGON2_MEMORY_KIB;
+  const originalPasses = process.env.AUTH_ARGON2_PASSES;
+  process.env.NODE_ENV = "production";
+  delete process.env.AUTH_ARGON2_MEMORY_KIB;
+  delete process.env.AUTH_ARGON2_PASSES;
+
+  try {
+    const first = await hashPassword(password);
+    const second = await hashPassword(password);
+    const [algorithm, version, parameters, firstSalt] = first.split("$");
+    const secondSalt = second.split("$")[3];
+
+    expect(algorithm).toBe("argon2id");
+    expect(version).toBe("v=1");
+    expect(parameters).toBe("m=19456,t=2,p=1,l=32");
+    expect(Buffer.from(firstSalt ?? "", "base64url")).toHaveLength(16);
+    expect(firstSalt).not.toBe(secondSalt);
+  } finally {
+    if (originalNodeEnvironment === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = originalNodeEnvironment;
+    if (originalMemory === undefined) delete process.env.AUTH_ARGON2_MEMORY_KIB;
+    else process.env.AUTH_ARGON2_MEMORY_KIB = originalMemory;
+    if (originalPasses === undefined) delete process.env.AUTH_ARGON2_PASSES;
+    else process.env.AUTH_ARGON2_PASSES = originalPasses;
+  }
 });

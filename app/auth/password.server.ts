@@ -5,71 +5,19 @@ import {
   type Argon2Parameters,
 } from "node:crypto";
 
+import {
+  getArgon2Profile,
+  type Argon2Profile,
+} from "../../scripts/argon2-profile.mjs";
+
 const ALGORITHM = "argon2id";
 const FORMAT_VERSION = 1;
 const SALT_LENGTH = 16;
 
-export type PasswordHashParameters = {
-  memory: number;
-  parallelism: number;
-  passes: number;
-  tagLength: number;
-};
-
-const productionParameters: PasswordHashParameters = {
-  memory: 19_456,
-  parallelism: 1,
-  passes: 2,
-  tagLength: 32,
-};
-
-const testParameters: PasswordHashParameters = {
-  memory: 64,
-  parallelism: 1,
-  passes: 1,
-  tagLength: 32,
-};
-
-function configuredInteger(
-  name: string,
-  fallback: number,
-  minimum: number,
-  maximum: number,
-): number {
-  const raw = process.env[name];
-  if (raw === undefined) return fallback;
-
-  const value = Number(raw);
-  if (!Number.isInteger(value) || value < minimum || value > maximum) {
-    throw new Error(
-      `${name} must be an integer from ${minimum} through ${maximum}`,
-    );
-  }
-
-  return value;
-}
+export type PasswordHashParameters = Argon2Profile;
 
 function currentParameters(): PasswordHashParameters {
-  if (process.env.NODE_ENV === "test") {
-    return testParameters;
-  }
-
-  return {
-    memory: configuredInteger(
-      "AUTH_ARGON2_MEMORY_KIB",
-      productionParameters.memory,
-      19_456,
-      1_048_576,
-    ),
-    parallelism: productionParameters.parallelism,
-    passes: configuredInteger(
-      "AUTH_ARGON2_PASSES",
-      productionParameters.passes,
-      2,
-      10,
-    ),
-    tagLength: productionParameters.tagLength,
-  };
+  return getArgon2Profile();
 }
 
 function derive(

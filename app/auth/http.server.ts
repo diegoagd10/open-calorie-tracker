@@ -56,28 +56,32 @@ export async function getAuthenticatedSession(
 }
 
 export function serializeSessionCookie(session: IssuedSession): string {
-  const maxAgeSeconds = Math.max(
-    0,
-    Math.floor((session.absoluteExpiresAt.getTime() - Date.now()) / 1_000),
+  return serializeHostCookie(
+    SESSION_COOKIE_NAME,
+    session.token,
+    session.absoluteExpiresAt,
   );
-
-  return [
-    `${SESSION_COOKIE_NAME}=${encodeURIComponent(session.token)}`,
-    "Path=/",
-    `Max-Age=${maxAgeSeconds}`,
-    `Expires=${session.absoluteExpiresAt.toUTCString()}`,
-    "HttpOnly",
-    "Secure",
-    "SameSite=Lax",
-  ].join("; ");
 }
 
 export function serializeClearedSessionCookie(): string {
+  return serializeHostCookie(SESSION_COOKIE_NAME, "", new Date(0));
+}
+
+function serializeHostCookie(
+  name: string,
+  value: string,
+  expiresAt: Date,
+): string {
+  const maxAgeSeconds = Math.max(
+    0,
+    Math.floor((expiresAt.getTime() - Date.now()) / 1_000),
+  );
+
   return [
-    `${SESSION_COOKIE_NAME}=`,
+    `${name}=${encodeURIComponent(value)}`,
     "Path=/",
-    "Max-Age=0",
-    "Expires=Thu, 01 Jan 1970 00:00:00 GMT",
+    `Max-Age=${maxAgeSeconds}`,
+    `Expires=${expiresAt.toUTCString()}`,
     "HttpOnly",
     "Secure",
     "SameSite=Lax",
@@ -87,32 +91,19 @@ export function serializeClearedSessionCookie(): string {
 function serializePreAuthenticationCsrfCookie(
   session: PreAuthenticationCsrfSession,
 ): string {
-  const maxAgeSeconds = Math.max(
-    0,
-    Math.floor((session.expiresAt.getTime() - Date.now()) / 1_000),
+  return serializeHostCookie(
+    PRE_AUTHENTICATION_CSRF_COOKIE_NAME,
+    session.token,
+    session.expiresAt,
   );
-
-  return [
-    `${PRE_AUTHENTICATION_CSRF_COOKIE_NAME}=${encodeURIComponent(session.token)}`,
-    "Path=/",
-    `Max-Age=${maxAgeSeconds}`,
-    `Expires=${session.expiresAt.toUTCString()}`,
-    "HttpOnly",
-    "Secure",
-    "SameSite=Lax",
-  ].join("; ");
 }
 
 function serializeClearedPreAuthenticationCsrfCookie(): string {
-  return [
-    `${PRE_AUTHENTICATION_CSRF_COOKIE_NAME}=`,
-    "Path=/",
-    "Max-Age=0",
-    "Expires=Thu, 01 Jan 1970 00:00:00 GMT",
-    "HttpOnly",
-    "Secure",
-    "SameSite=Lax",
-  ].join("; ");
+  return serializeHostCookie(
+    PRE_AUTHENTICATION_CSRF_COOKIE_NAME,
+    "",
+    new Date(0),
+  );
 }
 
 export function loadPreAuthenticationCsrf(request: Request): {

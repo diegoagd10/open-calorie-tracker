@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from "node:crypto";
+import { randomBytes } from "node:crypto";
 
 import type BetterSqlite3 from "better-sqlite3";
 
@@ -7,6 +7,7 @@ import {
   hashPassword,
   verifyPassword,
 } from "./password.server";
+import { PersistentRateLimiter } from "./rate-limiter.server";
 import { deriveCsrfToken, hashOpaqueToken, safelyEqual } from "./token.server";
 
 const IDLE_SESSION_MS = 5 * 24 * 60 * 60 * 1_000;
@@ -65,6 +66,7 @@ function isUniqueConstraint(error: unknown): boolean {
 export class AuthenticationService {
   readonly #database: BetterSqlite3.Database;
   readonly #now: () => Date;
+  readonly #rateLimiter: PersistentRateLimiter;
 
   constructor(
     database: BetterSqlite3.Database,
@@ -72,6 +74,7 @@ export class AuthenticationService {
   ) {
     this.#database = database;
     this.#now = now;
+    this.#rateLimiter = new PersistentRateLimiter(database, now);
   }
 
   async register(
@@ -80,7 +83,7 @@ export class AuthenticationService {
     clientIp: string,
   ): Promise<RegistrationResult> {
     if (
-      !this.#consumeAttempt(
+      !this.#rateLimiter.consume(
         "registration",
         clientIp,
         5,
@@ -188,7 +191,7 @@ export class AuthenticationService {
   ): Promise<LoginResult> {
     const rateLimitSubject = `${clientIp}\0${usernameNormalized}`;
     if (
-      !this.#consumeAttempt(
+      !this.#rateLimiter.consume(
         "login-failure",
         rateLimitSubject,
         10,
@@ -222,7 +225,7 @@ export class AuthenticationService {
         );
     }
 
-    this.#clearAttempts("login-failure", rateLimitSubject);
+    this.#rateLimiter.clear("login-failure", rateLimitSubject);
 
     return {
       ok: true,
@@ -237,74 +240,6 @@ export class AuthenticationService {
     this.#database
       .prepare("DELETE FROM sessions WHERE token_hash = ?")
       .run(hashOpaqueToken(token));
-  }
-
-  #clearAttempts(scope: string, subject: string): void {
-    this.#database
-      .prepare(
-        "DELETE FROM rate_limit_counters WHERE scope = ? AND subject_hash = ?",
-      )
-      .run(scope, this.#hashRateLimitSubject(scope, subject));
-  }
-
-  #consumeAttempt(
-    scope: string,
-    subject: string,
-    limit: number,
-    windowMs: number,
-  ): boolean {
-    return this.#database.transaction(() => {
-      const now = this.#now();
-      const nowIso = now.toISOString();
-      const subjectHash = this.#hashRateLimitSubject(scope, subject);
-
-      this.#database
-        .prepare("DELETE FROM rate_limit_counters WHERE expires_at <= ?")
-        .run(nowIso);
-
-      const current = this.#database
-        .prepare<[string, string], { attempts: number }>(
-          `SELECT attempts
-           FROM rate_limit_counters
-           WHERE scope = ? AND subject_hash = ?`,
-        )
-        .get(scope, subjectHash);
-
-      if (current && current.attempts >= limit) {
-        return false;
-      }
-
-      if (current) {
-        this.#database
-          .prepare(
-            `UPDATE rate_limit_counters
-             SET attempts = attempts + 1
-             WHERE scope = ? AND subject_hash = ?`,
-          )
-          .run(scope, subjectHash);
-      } else {
-        this.#database
-          .prepare(
-            `INSERT INTO rate_limit_counters (
-               scope, subject_hash, window_started_at, attempts, expires_at
-             ) VALUES (?, ?, ?, 1, ?)`,
-          )
-          .run(
-            scope,
-            subjectHash,
-            nowIso,
-            new Date(now.getTime() + windowMs).toISOString(),
-          );
-      }
-
-      return true;
-    })();
-  }
-
-  #hashRateLimitSubject(scope: string, subject: string): string {
-    return createHash("sha256")
-      .update(`${scope}\0${subject}`, "utf8")
-      .digest("hex");
   }
 
   verifyCsrfToken(sessionToken: string, candidate: string | undefined): boolean {
