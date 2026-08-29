@@ -16,7 +16,7 @@ export default defineConfig({
   ],
   webServer: {
     command:
-      "pnpm build && mkdir -p test-results/playwright && AUTH_TEST_DB_PATH=$(mktemp -p test-results/playwright application.XXXXXX.sqlite) && NODE_ENV=test DATABASE_PATH=$AUTH_TEST_DB_PATH APPLICATION_URL=http://127.0.0.1:4173 PORT=4173 node server.js",
+      "pnpm build && mkdir -p data/playwright-tests && AUTH_TEST_DB_PATH=$(mktemp -p data/playwright-tests application.XXXXXX.sqlite) && NODE_ENV=test SETUP_TEST_NOW=2026-01-01T09:30:00.000Z DATABASE_PATH=$AUTH_TEST_DB_PATH APPLICATION_URL=http://127.0.0.1:4173 PORT=4173 node server.js",
     reuseExistingServer: false,
     timeout: 120_000,
     url: "http://127.0.0.1:4173/health/live",

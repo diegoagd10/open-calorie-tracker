@@ -1,0 +1,204 @@
+.shell {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  padding: 1rem;
+  background:
+    linear-gradient(rgb(16 42 67 / 48%), rgb(16 42 67 / 48%)),
+    var(--color-background);
+}
+
+.panel {
+  width: min(100%, 39rem);
+  padding: clamp(1rem, 4vw, 1.5rem);
+  border: 1px solid var(--color-border);
+  border-radius: 1.25rem;
+  background: var(--color-surface);
+  box-shadow: var(--shadow-panel);
+}
+
+.progress {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.35rem;
+  margin-bottom: 1rem;
+}
+
+.progress span {
+  height: 0.25rem;
+  border-radius: 999px;
+  background: var(--color-border);
+}
+
+.progress span:first-child {
+  background: #16803a;
+}
+
+.header {
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--color-border-muted);
+}
+
+.header h1,
+.header p {
+  margin: 0;
+}
+
+.header h1 {
+  font-size: clamp(1.5rem, 6vw, 2rem);
+}
+
+.header p {
+  margin-top: 0.35rem;
+  color: var(--color-text-muted);
+  font-size: 0.8rem;
+}
+
+.privacyCue {
+  display: block;
+  margin-top: 0.35rem;
+  color: var(--color-text-muted);
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.form {
+  display: grid;
+  gap: 1rem;
+  padding-top: 1rem;
+}
+
+.segmented {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.segmented legend {
+  grid-column: 1 / -1;
+  margin-bottom: 0.35rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.segmented label {
+  position: relative;
+}
+
+.segmented input {
+  position: absolute;
+  opacity: 0;
+}
+
+.segmented span {
+  display: grid;
+  min-height: 2.75rem;
+  place-items: center;
+  border: 1px solid var(--color-border);
+  border-radius: 0.65rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.segmented input:checked + span {
+  border-color: #16803a;
+  color: #126c24;
+  background: #e8f5e9;
+}
+
+.segmented input:focus-visible + span {
+  outline: 3px solid #8ec5ff;
+  outline-offset: 2px;
+}
+
+.timeZoneField,
+.goalGrid label {
+  display: grid;
+  gap: 0.35rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.timeZoneField input,
+.numberInput input {
+  width: 100%;
+  min-height: 2.75rem;
+  padding: 0.7rem;
+  border: 1px solid var(--color-border);
+  border-radius: 0.65rem;
+  color: var(--color-text);
+  background: var(--color-surface);
+  font: inherit;
+  font-size: 1rem;
+  font-weight: 400;
+}
+
+.timeZoneField small {
+  color: var(--color-text-muted);
+  font-weight: 400;
+}
+
+.goalGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.numberInput {
+  position: relative;
+}
+
+.numberInput input {
+  padding-right: 4rem;
+}
+
+.numberInput em {
+  position: absolute;
+  right: 0.75rem;
+  bottom: 0.85rem;
+  color: var(--color-text-muted);
+  font-size: 0.7rem;
+  font-style: normal;
+  font-weight: 400;
+}
+
+.submit {
+  min-height: 2.75rem;
+  border: 0;
+  border-radius: 0.65rem;
+  color: white;
+  background: #126c24;
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.submit:hover {
+  background: #105f1e;
+}
+
+.error {
+  margin: 0;
+  padding: 0.75rem;
+  border-radius: 0.65rem;
+  color: #8a1c14;
+  background: #fff1f0;
+  font-size: 0.8rem;
+}
+
+@media (max-width: 420px) {
+  .shell {
+    align-items: start;
+    padding: 0.75rem;
+  }
+
+  .panel {
+    margin-top: 0.75rem;
+  }
+}

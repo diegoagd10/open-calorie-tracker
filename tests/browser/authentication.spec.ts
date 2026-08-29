@@ -1,8 +1,20 @@
 import AxeBuilder from "@axe-core/playwright";
-import { expect, test, type APIRequestContext } from "@playwright/test";
+import {
+  expect,
+  test,
+  type APIRequestContext,
+  type Page,
+} from "@playwright/test";
 
 const validPassword = "correct horse 🔐 battery";
 const applicationOrigin = "http://127.0.0.1:4173";
+
+async function finishInitialSetup(page: Page) {
+  await expect(page).toHaveURL("/setup");
+  await page.getByLabel("Time zone").fill("UTC");
+  await page.getByRole("button", { name: "Finish setup" }).click();
+  await expect(page).toHaveURL("/");
+}
 
 async function fetchCsrfToken(
   request: APIRequestContext,
@@ -32,10 +44,10 @@ test("a visitor can register with a normalized username", async ({
   await page.getByLabel("Password", { exact: true }).fill(validPassword);
   await page.getByLabel("Confirm password").fill(validPassword);
   await page.getByRole("button", { name: "Create private account" }).click();
+  await finishInitialSetup(page);
 
-  await expect(page).toHaveURL("/");
   await expect(
-    page.getByRole("heading", { name: "Your private application space" }),
+    page.getByRole("heading", { name: "Today's Food Log" }),
   ).toBeVisible();
   await expect(page.getByText("Signed in as alice.user")).toBeVisible();
   const accessibilityScan = await new AxeBuilder({ page }).analyze();
@@ -56,7 +68,7 @@ test("a returning user can sign in and revoke the current session", async ({
   await page.getByLabel("Password", { exact: true }).fill(validPassword);
   await page.getByLabel("Confirm password").fill(validPassword);
   await page.getByRole("button", { name: "Create private account" }).click();
-  await expect(page).toHaveURL("/");
+  await finishInitialSetup(page);
 
   const issuedCookie = (await context.cookies()).find(
     (cookie) => cookie.name === "__Host-calorie_session",
@@ -120,7 +132,7 @@ test("changing a password rotates this phone and revokes every other session", a
   await page.getByLabel("Password", { exact: true }).fill(validPassword);
   await page.getByLabel("Confirm password").fill(validPassword);
   await page.getByRole("button", { name: "Create private account" }).click();
-  await expect(page).toHaveURL("/");
+  await finishInitialSetup(page);
 
   const originalCookie = (await context.cookies()).find(
     (cookie) => cookie.name === "__Host-calorie_session",
@@ -217,7 +229,7 @@ test("registration validation and login failures are accessible and specific onl
 
   await page.getByLabel("Username").fill("Validation.User");
   await page.getByRole("button", { name: "Create private account" }).click();
-  await expect(page).toHaveURL("/");
+  await finishInitialSetup(page);
   await page.getByRole("button", { name: "Sign out" }).click();
   await expect(page).toHaveURL("/login");
 
@@ -269,7 +281,7 @@ test("logout rejects cross-origin requests and invalid session-bound CSRF values
   await page.getByLabel("Password", { exact: true }).fill(validPassword);
   await page.getByLabel("Confirm password").fill(validPassword);
   await page.getByRole("button", { name: "Create private account" }).click();
-  await expect(page).toHaveURL("/");
+  await finishInitialSetup(page);
 
   const wrongOrigin = await page.request.post("/logout", {
     form: { csrfToken: "invalid" },

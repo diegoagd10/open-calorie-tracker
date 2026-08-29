@@ -2,6 +2,7 @@ import type { Route } from "./+types/home";
 import { Form, Link, redirect } from "react-router";
 
 import { getAuthenticatedSession } from "../auth/http.server";
+import { getGoalSetupService } from "../setup/runtime.server";
 import styles from "../readiness.module.css";
 
 export function meta() {
@@ -25,6 +26,10 @@ export async function loader({ request }: Route.LoaderArgs) {
     return redirect("/login");
   }
 
+  if (!getGoalSetupService().isComplete(session.user.id)) {
+    return redirect("/setup");
+  }
+
   return { csrfToken: session.csrfToken, username: session.user.username };
 }
 
@@ -34,7 +39,7 @@ export default function Home({ loaderData }: Route.ComponentProps) {
       <section className={styles.panel} aria-labelledby="application-heading">
         <p className={styles.eyebrow}>Open Calory Tracker</p>
         <h1 className={styles.heading} id="application-heading">
-          Your private application space
+          Today&apos;s Food Log
         </h1>
         <p className={styles.summary}>Signed in as {loaderData.username}</p>
         <Link className={styles.accountLink} to="/account/password">

@@ -33,11 +33,11 @@ export type ApplicationDatabase = {
 
 export function isDatabaseReady(status: DatabaseStatus): boolean {
   return (
-    status.appliedMigrations >= 3 &&
+    status.appliedMigrations >= 4 &&
     status.busyTimeoutMs === 5_000 &&
     status.foreignKeysEnabled &&
     status.journalMode === "wal" &&
-    status.schemaVersion === "3" &&
+    status.schemaVersion === "4" &&
     status.writable
   );
 }
