@@ -155,6 +155,11 @@ test("today, historical navigation, calendar access, travel, and future rejectio
 
   const accessibilityScan = await new AxeBuilder({ page }).analyze();
   expect(accessibilityScan.violations).toEqual([]);
+
+  const accessibleNameScan = await new AxeBuilder({ page })
+    .withRules(["label-content-name-mismatch"])
+    .analyze();
+  expect(accessibleNameScan.violations).toEqual([]);
 });
 
 test("the full stack resolves UTC boundaries and both DST transitions", async ({

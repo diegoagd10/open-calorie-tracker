@@ -469,7 +469,6 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
                   });
                   return day.isFuture ? (
                     <button
-                      aria-label={`${weekday} ${dateNumber}`}
                       className={styles.futureDate}
                       disabled
                       key={day.date}
@@ -481,7 +480,6 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
                   ) : (
                     <Link
                       aria-current={day.isSelected ? "date" : undefined}
-                      aria-label={`${weekday} ${dateNumber}`}
                       className={`${styles.dateButton} ${day.isSelected ? styles.selectedDate : ""}`}
                       key={day.date}
                       to={foodLogHref(day.date)}
