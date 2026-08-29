@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 
 import type { ApplicationDatabaseClient } from "../database/database.server";
 import {
@@ -19,6 +19,7 @@ import { deriveCsrfToken, hashOpaqueToken, safelyEqual } from "./token.server";
 const IDLE_SESSION_MS = 5 * 24 * 60 * 60 * 1_000;
 const ABSOLUTE_SESSION_MS = 90 * 24 * 60 * 60 * 1_000;
 const LOGIN_FAILURE_WINDOW_MS = 15 * 60 * 1_000;
+const PASSWORD_CHANGE_FAILURE_WINDOW_MS = 15 * 60 * 1_000;
 const REGISTRATION_WINDOW_MS = 60 * 60 * 1_000;
 
 type CredentialUser = Pick<
@@ -46,6 +47,12 @@ export type RegistrationResult =
 
 export type LoginResult =
   | { error: "invalid-credentials"; ok: false }
+  | { error: "rate-limited"; ok: false }
+  | { ok: true; session: IssuedSession };
+
+export type PasswordChangeResult =
+  | { error: "invalid-current-password"; ok: false }
+  | { error: "invalid-session"; ok: false }
   | { error: "rate-limited"; ok: false }
   | { ok: true; session: IssuedSession };
 
@@ -183,6 +190,97 @@ export class AuthenticationService {
       user: {
         id: session.userId,
         username: session.usernameNormalized,
+      },
+    };
+  }
+
+  async changePassword(
+    currentSession: AuthenticatedSession,
+    currentPassword: string,
+    nextPassword: string,
+  ): Promise<PasswordChangeResult> {
+    const rateLimitSubject = String(currentSession.user.id);
+    if (
+      !this.#rateLimiter.consume(
+        "password-change-failure",
+        rateLimitSubject,
+        5,
+        PASSWORD_CHANGE_FAILURE_WINDOW_MS,
+      )
+    ) {
+      return { error: "rate-limited", ok: false };
+    }
+
+    const verification = await this.verifyCredentials(
+      currentSession.user.username,
+      currentPassword,
+    );
+    if (
+      !verification.matches ||
+      verification.user?.id !== currentSession.user.id
+    ) {
+      return { error: "invalid-current-password", ok: false };
+    }
+
+    const now = this.#now();
+    const nextPasswordHash = await hashPassword(nextPassword);
+    const nextToken = randomBytes(32).toString("base64url");
+    const nextTokenHash = hashOpaqueToken(nextToken);
+    const idleExpiresAt = new Date(now.getTime() + IDLE_SESSION_MS);
+    const absoluteExpiresAt = new Date(now.getTime() + ABSOLUTE_SESSION_MS);
+    const currentTokenHash = hashOpaqueToken(currentSession.token);
+
+    const rotated = this.#database.transaction((transaction) => {
+      const persistedCurrentSession = transaction
+        .select({ tokenHash: sessions.tokenHash })
+        .from(sessions)
+        .where(
+          and(
+            eq(sessions.tokenHash, currentTokenHash),
+            eq(sessions.userId, currentSession.user.id),
+          ),
+        )
+        .get();
+      if (!persistedCurrentSession) return false;
+
+      transaction
+        .update(passwordCredentials)
+        .set({
+          passwordHash: nextPasswordHash,
+          updatedAt: now.toISOString(),
+        })
+        .where(eq(passwordCredentials.userId, currentSession.user.id))
+        .run();
+      transaction
+        .delete(sessions)
+        .where(eq(sessions.userId, currentSession.user.id))
+        .run();
+      transaction
+        .insert(sessions)
+        .values({
+          absoluteExpiresAt: absoluteExpiresAt.toISOString(),
+          createdAt: now.toISOString(),
+          idleExpiresAt: idleExpiresAt.toISOString(),
+          lastSeenAt: now.toISOString(),
+          tokenHash: nextTokenHash,
+          userId: currentSession.user.id,
+        })
+        .run();
+      return true;
+    });
+
+    if (!rotated) {
+      return { error: "invalid-session", ok: false };
+    }
+
+    this.#rateLimiter.clear("password-change-failure", rateLimitSubject);
+    return {
+      ok: true,
+      session: {
+        absoluteExpiresAt,
+        csrfToken: csrfTokenFor(nextToken),
+        token: nextToken,
+        user: currentSession.user,
       },
     };
   }

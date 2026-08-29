@@ -151,6 +151,115 @@ test("successful login rehashes a credential whose format version is obsolete", 
   fixture.applicationDatabase.close();
 });
 
+test("password change replaces the credential and every previously issued session", async () => {
+  const fixture = await createFixture();
+  const registration = await fixture.service.register(
+    "password.user",
+    password,
+    "203.0.113.33",
+  );
+  expect(registration.ok).toBe(true);
+  if (!registration.ok) throw new Error("registration failed");
+
+  const otherPhone = await fixture.service.login(
+    "password.user",
+    password,
+    "203.0.113.34",
+  );
+  expect(otherPhone.ok).toBe(true);
+  if (!otherPhone.ok) throw new Error("login failed");
+  expect(
+    await fixture.service.authenticate(registration.session.token),
+  ).toBeDefined();
+  expect(
+    await fixture.service.authenticate(otherPhone.session.token),
+  ).toBeDefined();
+
+  const nextPassword = "replacement passphrase 🔐";
+  const changed = await fixture.service.changePassword(
+    registration.session,
+    password,
+    nextPassword,
+  );
+  expect(changed.ok).toBe(true);
+  if (!changed.ok) throw new Error("password change failed");
+  expect(changed.session.token).not.toBe(registration.session.token);
+
+  expect(
+    await fixture.service.authenticate(registration.session.token),
+  ).toBeUndefined();
+  expect(
+    await fixture.service.authenticate(otherPhone.session.token),
+  ).toBeUndefined();
+  expect(
+    await fixture.service.authenticate(changed.session.token),
+  ).toMatchObject({ user: { username: "password.user" } });
+
+  expect(
+    await fixture.service.login(
+      "password.user",
+      password,
+      "203.0.113.35",
+    ),
+  ).toMatchObject({ error: "invalid-credentials", ok: false });
+  expect(
+    await fixture.service.login(
+      "password.user",
+      nextPassword,
+      "203.0.113.35",
+    ),
+  ).toMatchObject({ ok: true });
+
+  fixture.applicationDatabase.close();
+});
+
+test("password-change failures are persisted and limited to five per 15 minutes", async () => {
+  const fixture = await createFixture();
+  const registration = await fixture.service.register(
+    "limited.password",
+    password,
+    "203.0.113.36",
+  );
+  expect(registration.ok).toBe(true);
+  if (!registration.ok) throw new Error("registration failed");
+
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    expect(
+      await fixture.service.changePassword(
+        registration.session,
+        "incorrect current password",
+        "unused replacement password",
+      ),
+    ).toEqual({ error: "invalid-current-password", ok: false });
+  }
+
+  const restartedService = new AuthenticationService(
+    fixture.database,
+    () => new Date("2026-08-29T12:10:00.000Z"),
+  );
+  expect(
+    await restartedService.changePassword(
+      registration.session,
+      password,
+      "replacement after limit",
+    ),
+  ).toEqual({ error: "rate-limited", ok: false });
+
+  const afterWindowService = new AuthenticationService(
+    fixture.database,
+    () => new Date("2026-08-29T12:16:00.000Z"),
+  );
+  expect(
+    await afterWindowService.changePassword(
+      registration.session,
+      password,
+      "replacement after limit",
+    ),
+  ).toMatchObject({ ok: true });
+
+  fixture.applicationDatabase.close();
+});
+
 test("pre-authentication CSRF values are session-bound and expire", async () => {
   const fixture = await createFixture();
   const csrf = new PreAuthenticationCsrfService(
