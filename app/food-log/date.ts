@@ -1,8 +1,11 @@
 export type FoodLogEventOrderKey = {
   createdAt: string;
   id: number;
+  kind: "food" | "water";
   localEventTime: string;
 };
+
+const EVENT_KIND_TIE_BREAKER = { food: 1, water: 0 } as const;
 
 const ISO_LOCAL_DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
 const ISO_LOCAL_MONTH_PATTERN = /^(\d{4})-(\d{2})$/;
@@ -158,6 +161,7 @@ export function compareFoodLogEventsDescending(
   return (
     right.localEventTime.localeCompare(left.localEventTime) ||
     right.createdAt.localeCompare(left.createdAt) ||
-    right.id - left.id
+    right.id - left.id ||
+    EVENT_KIND_TIE_BREAKER[right.kind] - EVENT_KIND_TIE_BREAKER[left.kind]
   );
 }

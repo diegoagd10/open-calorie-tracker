@@ -219,21 +219,25 @@ test("Food Log events sort by local time, creation instant, then id descending",
     {
       createdAt: "2026-08-29T17:00:00.000Z",
       id: 3,
+      kind: "food" as const,
       localEventTime: "12:00:00",
     },
     {
       createdAt: "2026-08-29T18:00:00.000Z",
       id: 1,
+      kind: "food" as const,
       localEventTime: "12:00:00",
     },
     {
       createdAt: "2026-08-29T18:00:00.000Z",
       id: 2,
+      kind: "food" as const,
       localEventTime: "12:00:00",
     },
     {
       createdAt: "2026-08-29T16:00:00.000Z",
       id: 4,
+      kind: "water" as const,
       localEventTime: "12:01:00",
     },
   ];
@@ -241,4 +245,24 @@ test("Food Log events sort by local time, creation instant, then id descending",
   expect(events.sort(compareFoodLogEventsDescending).map((event) => event.id)).toEqual([
     4, 2, 1, 3,
   ]);
+
+  const crossTypeCollision = [
+    {
+      createdAt: "2026-08-29T18:00:00.000Z",
+      id: 7,
+      kind: "water" as const,
+      localEventTime: "12:00:00",
+    },
+    {
+      createdAt: "2026-08-29T18:00:00.000Z",
+      id: 7,
+      kind: "food" as const,
+      localEventTime: "12:00:00",
+    },
+  ];
+  expect(
+    crossTypeCollision
+      .sort(compareFoodLogEventsDescending)
+      .map((event) => event.kind),
+  ).toEqual(["food", "water"]);
 });
