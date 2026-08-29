@@ -94,7 +94,15 @@ const foodLogIntentSchema = z.discriminatedUnion("intent", [
 ]);
 const catalogQuerySchema = z.string().trim().min(2).max(100);
 
-type HomeActionData = { message: string; tone?: "error" | "status" };
+type CurrentFoodEntry = ReturnType<
+  ReturnType<typeof getFoodEntryService>["read"]
+>;
+
+type HomeActionData = {
+  foodEntryEditor?: CurrentFoodEntry;
+  message: string;
+  tone?: "error" | "status";
+};
 
 function testRequestInstant(request: Request): Date | undefined {
   const requestedInstant =
@@ -436,9 +444,10 @@ export async function action({ request }: Route.ActionArgs) {
     parsed.data.intent === "delete-food"
   ) {
     const entryId = Number(parsed.data.entryId);
+    const foodEntryService = getFoodEntryService(testRequestInstant(request));
     try {
       if (parsed.data.intent === "delete-food") {
-        getFoodEntryService(testRequestInstant(request)).delete(
+        foodEntryService.delete(
           session.user.id,
           entryId,
           {
@@ -448,7 +457,7 @@ export async function action({ request }: Route.ActionArgs) {
         );
         return redirect(`${foodLogHref(parsed.data.date)}&notice=deleted`);
       }
-      getFoodEntryService(testRequestInstant(request)).update(
+      foodEntryService.update(
         session.user.id,
         entryId,
         {
@@ -476,7 +485,11 @@ export async function action({ request }: Route.ActionArgs) {
       }
       if (error instanceof StaleFoodEntryError) {
         return data<HomeActionData>(
-          { message: error.message, tone: "error" },
+          {
+            foodEntryEditor: foodEntryService.read(session.user.id, entryId),
+            message: error.message,
+            tone: "error",
+          },
           { status: 409 },
         );
       }
@@ -1108,6 +1121,9 @@ function FoodEntryEditorDialog({
   const pending =
     navigation.state !== "idle" &&
     navigation.formData?.get("entryId") === String(entry.id);
+  const pendingIntent = pending
+    ? navigation.formData?.get("intent")
+    : undefined;
 
   useEffect(() => {
     if (
@@ -1316,7 +1332,9 @@ function FoodEntryEditorDialog({
                   type="submit"
                   value="update-food"
                 >
-                  {pending ? "Saving…" : "Save changes"}
+                  {pendingIntent === "update-food"
+                    ? "Saving…"
+                    : "Save changes"}
                 </button>
               </div>
             </div>
@@ -1340,7 +1358,7 @@ function FoodEntryEditorDialog({
                   type="submit"
                   value="delete-food"
                 >
-                  {pending ? "Deleting…" : "Delete"}
+                  {pendingIntent === "delete-food" ? "Deleting…" : "Delete"}
                 </button>
               </div>
             ) : null}
@@ -1611,6 +1629,8 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
     notice,
     username,
   } = loaderData;
+  const activeFoodEntryEditor =
+    actionData?.foodEntryEditor ?? foodEntryEditor;
   const goals = goalValues(foodLog);
   const selectedLabel = fullDate(foodLog.selectedDate);
   const view = calendar ? "calendar" : "log";
@@ -1623,7 +1643,7 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
     <>
       <div
         className={styles.shell}
-        inert={catalog || foodEntryEditor ? true : undefined}
+        inert={catalog || activeFoodEntryEditor ? true : undefined}
       >
         <a className={styles.skipLink} href="#food-log-content">
           Skip to daily log
@@ -1892,12 +1912,12 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
           date={foodLog.selectedDate}
         />
       ) : null}
-      {foodEntryEditor ? (
+      {activeFoodEntryEditor ? (
         <FoodEntryEditorDialog
           actionData={actionData}
           csrfToken={csrfToken}
-          entry={foodEntryEditor}
-          key={foodEntryEditor.updatedAt}
+          entry={activeFoodEntryEditor}
+          key={activeFoodEntryEditor.updatedAt}
         />
       ) : null}
     </>

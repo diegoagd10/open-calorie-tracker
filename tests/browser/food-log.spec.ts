@@ -661,3 +661,98 @@ test("an authenticated user can correct and delete one Food Entry", async ({
   const accessibilityScan = await new AxeBuilder({ page }).analyze();
   expect(accessibilityScan.violations).toEqual([]);
 });
+
+test("a stale Food Entry editor refreshes to the current occurrence and can retry", async ({
+  context,
+  page,
+}) => {
+  await context.setExtraHTTPHeaders({ "X-Test-Client-IP": "203.0.113.85" });
+  await registerAndSetup(page, "food.entry.stale-recovery");
+  await page.getByRole("button", { name: "Add Food" }).click();
+  await page
+    .getByRole("searchbox", { name: "Search United States foods" })
+    .fill("yogurt");
+  await page.getByRole("button", { name: "Search" }).click();
+  await page.getByRole("link", { name: /Plain nonfat Greek yogurt/ }).click();
+  await page.getByRole("button", { name: "Add to Food Log" }).click();
+  await page
+    .getByRole("link", { name: /Plain nonfat Greek yogurt.*100\.3 kcal/ })
+    .click();
+
+  const editor = page.getByRole("dialog", { name: "Edit Food Entry" });
+  const concurrentStatus = await editor
+    .locator("form")
+    .evaluate(async (form) => {
+      const fields = Object.fromEntries(
+        new FormData(form as HTMLFormElement).entries(),
+      );
+      fields.intent = "update-food";
+      fields.name = "Updated elsewhere";
+      const response = await fetch("/?index", {
+        body: new URLSearchParams(fields as Record<string, string>),
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        method: "POST",
+      });
+      return response.status;
+    });
+  expect(concurrentStatus).toBe(200);
+
+  await page.getByLabel("Food name").fill("Stale local draft");
+  await page.getByRole("button", { name: "Save changes" }).click();
+  await expect(editor.getByRole("alert")).toContainText(
+    "changed after you opened it",
+  );
+  await expect(page.getByLabel("Food name")).toHaveValue("Updated elsewhere");
+
+  await page.getByRole("button", { name: "Save changes" }).click();
+  await expect(page).toHaveURL(/date=2026-08-29&notice=updated/);
+  await expect(
+    page.getByText("Updated elsewhere", { exact: true }),
+  ).toBeVisible();
+});
+
+test("delete pending state names only the destructive mutation", async ({
+  context,
+  page,
+}) => {
+  await context.setExtraHTTPHeaders({ "X-Test-Client-IP": "203.0.113.86" });
+  await registerAndSetup(page, "food.entry.delete-pending");
+  await page.getByRole("button", { name: "Add Food" }).click();
+  await page
+    .getByRole("searchbox", { name: "Search United States foods" })
+    .fill("yogurt");
+  await page.getByRole("button", { name: "Search" }).click();
+  await page.getByRole("link", { name: /Plain nonfat Greek yogurt/ }).click();
+  await page.getByRole("button", { name: "Add to Food Log" }).click();
+  await page
+    .getByRole("link", { name: /Plain nonfat Greek yogurt.*100\.3 kcal/ })
+    .click();
+  await page.getByRole("button", { name: "Delete entry" }).click();
+
+  let releaseDelete!: () => void;
+  const deleteGate = new Promise<void>((resolve) => {
+    releaseDelete = resolve;
+  });
+  const delayDelete = async (route: import("@playwright/test").Route) => {
+    if (route.request().method() === "POST") await deleteGate;
+    await route.continue();
+  };
+  await page.route("**/*", delayDelete);
+  const deleteClick = page
+    .getByRole("button", { name: "Delete", exact: true })
+    .click();
+  try {
+    await expect(
+      page.getByRole("button", { name: "Deleting…" }),
+    ).toBeDisabled();
+    await expect(
+      page.getByRole("button", { name: "Save changes" }),
+    ).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Saving…" })).toHaveCount(0);
+  } finally {
+    releaseDelete();
+  }
+  await deleteClick;
+  await page.unroute("**/*", delayDelete);
+  await expect(page).toHaveURL(/date=2026-08-29&notice=deleted/);
+});
