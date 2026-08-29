@@ -1,7 +1,25 @@
-import { expect, test } from "@playwright/test";
+import AxeBuilder from "@axe-core/playwright";
+import { expect, test, type APIRequestContext } from "@playwright/test";
 
 const validPassword = "correct horse 🔐 battery";
 const applicationOrigin = "http://127.0.0.1:4173";
+
+async function fetchCsrfToken(
+  request: APIRequestContext,
+  path: "/login" | "/register",
+  headers: Record<string, string>,
+): Promise<{ cookie: string; token: string }> {
+  const response = await request.get(path, { headers });
+  expect(response.status()).toBe(200);
+  const cookie = response.headers()["set-cookie"]?.split(";", 1)[0];
+  const match = (await response.text()).match(
+    /<input[^>]+name="csrfToken"[^>]+value="([^"]+)"/,
+  );
+  if (!cookie || !match?.[1]) {
+    throw new Error("authentication form omitted its CSRF session");
+  }
+  return { cookie, token: match[1] };
+}
 
 test("a visitor can register with a normalized username", async ({
   context,
@@ -20,6 +38,8 @@ test("a visitor can register with a normalized username", async ({
     page.getByRole("heading", { name: "Your private application space" }),
   ).toBeVisible();
   await expect(page.getByText("Signed in as alice.user")).toBeVisible();
+  const accessibilityScan = await new AxeBuilder({ page }).analyze();
+  expect(accessibilityScan.violations).toEqual([]);
 });
 
 test("a returning user can sign in and revoke the current session", async ({
@@ -96,7 +116,7 @@ test("registration validation and login failures are accessible and specific onl
   await context.setExtraHTTPHeaders({ "X-Test-Client-IP": "203.0.113.3" });
   await page.goto("/register");
 
-  await page.getByLabel("Username").fill("not valid");
+  await page.getByLabel("Username").fill(" validation.user ");
   await page.getByLabel("Password", { exact: true }).fill(validPassword);
   await page.getByLabel("Confirm password").fill(validPassword);
   await page.getByRole("button", { name: "Create private account" }).click();
@@ -134,7 +154,24 @@ test("registration validation and login failures are accessible and specific onl
 test("logout rejects cross-origin requests and invalid session-bound CSRF values", async ({
   context,
   page,
+  request,
 }) => {
+  const loginWithoutCsrf = await request.post("/login", {
+    form: { password: validPassword, username: "missing.user" },
+    headers: { Origin: applicationOrigin },
+  });
+  expect(loginWithoutCsrf.status()).toBe(403);
+
+  const registrationWithoutCsrf = await request.post("/register", {
+    form: {
+      confirmPassword: "short",
+      password: "short",
+      username: "csrf.rejected",
+    },
+    headers: { Origin: applicationOrigin },
+  });
+  expect(registrationWithoutCsrf.status()).toBe(403);
+
   await context.setExtraHTTPHeaders({ "X-Test-Client-IP": "203.0.113.4" });
   await page.goto("/register");
   await page.getByLabel("Username").fill("csrf.user");
@@ -170,11 +207,20 @@ test("authentication abuse limits survive across HTTP requests", async ({
     Origin: applicationOrigin,
     "X-Test-Client-IP": "203.0.113.10",
   };
+  const loginCsrf = await fetchCsrfToken(
+    request,
+    "/login",
+    loginHeaders,
+  );
 
   for (let attempt = 0; attempt < 10; attempt += 1) {
     const response = await request.post("/login", {
-      form: { password: validPassword, username: "missing.user" },
-      headers: loginHeaders,
+      form: {
+        csrfToken: loginCsrf.token,
+        password: validPassword,
+        username: "missing.user",
+      },
+      headers: { ...loginHeaders, Cookie: loginCsrf.cookie },
     });
     expect(response.status()).toBe(401);
     expect(await response.text()).toContain(
@@ -183,8 +229,12 @@ test("authentication abuse limits survive across HTTP requests", async ({
   }
 
   const blockedLogin = await request.post("/login", {
-    form: { password: validPassword, username: "missing.user" },
-    headers: loginHeaders,
+    form: {
+      csrfToken: loginCsrf.token,
+      password: validPassword,
+      username: "missing.user",
+    },
+    headers: { ...loginHeaders, Cookie: loginCsrf.cookie },
   });
   expect(blockedLogin.status()).toBe(429);
   expect(await blockedLogin.text()).toContain(
@@ -197,24 +247,42 @@ test("authentication abuse limits survive across HTTP requests", async ({
   };
 
   for (let attempt = 0; attempt < 5; attempt += 1) {
+    const registrationCsrf = await fetchCsrfToken(
+      request,
+      "/register",
+      registrationHeaders,
+    );
     const response = await request.post("/register", {
       form: {
         confirmPassword: validPassword,
+        csrfToken: registrationCsrf.token,
         password: validPassword,
         username: "limited.user",
       },
-      headers: registrationHeaders,
+      headers: {
+        ...registrationHeaders,
+        Cookie: registrationCsrf.cookie,
+      },
     });
     expect([200, 409]).toContain(response.status());
   }
 
+  const blockedRegistrationCsrf = await fetchCsrfToken(
+    request,
+    "/register",
+    registrationHeaders,
+  );
   const blockedRegistration = await request.post("/register", {
     form: {
       confirmPassword: validPassword,
+      csrfToken: blockedRegistrationCsrf.token,
       password: validPassword,
       username: "another.user",
     },
-    headers: registrationHeaders,
+    headers: {
+      ...registrationHeaders,
+      Cookie: blockedRegistrationCsrf.cookie,
+    },
   });
   expect(blockedRegistration.status()).toBe(429);
   expect(await blockedRegistration.text()).toContain(

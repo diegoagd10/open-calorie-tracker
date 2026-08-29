@@ -5,6 +5,7 @@ import path from "node:path";
 import { afterEach, expect, test } from "vitest";
 
 import { AuthenticationService } from "../app/auth/authentication.server";
+import { PreAuthenticationCsrfService } from "../app/auth/pre-authentication-csrf.server";
 import { openApplicationDatabase } from "../app/database/database.server";
 
 const temporaryDirectories: string[] = [];
@@ -137,6 +138,34 @@ test("successful login rehashes a credential whose format version is obsolete", 
     .get();
   expect(updated?.passwordHash).not.toBe(obsolete);
   expect(updated?.passwordHash).toContain("$v=1$");
+
+  fixture.applicationDatabase.close();
+});
+
+test("pre-authentication CSRF values are session-bound and expire", async () => {
+  const fixture = await createFixture();
+  const csrf = new PreAuthenticationCsrfService(
+    fixture.database,
+    () => new Date("2026-08-29T12:00:00.000Z"),
+  );
+  const issued = csrf.issue();
+  const stored = fixture.database
+    .prepare<[], { tokenHash: string }>(
+      `SELECT token_hash AS tokenHash
+       FROM pre_authentication_csrf_sessions`,
+    )
+    .get();
+
+  expect(stored?.tokenHash).toMatch(/^[a-f0-9]{64}$/);
+  expect(stored?.tokenHash).not.toContain(issued.token);
+  expect(csrf.verify(issued.token, issued.csrfToken)).toBe(true);
+  expect(csrf.verify(issued.token, "wrong-value")).toBe(false);
+
+  const expiredCsrf = new PreAuthenticationCsrfService(
+    fixture.database,
+    () => new Date("2026-08-29T12:31:00.000Z"),
+  );
+  expect(expiredCsrf.verify(issued.token, issued.csrfToken)).toBe(false);
 
   fixture.applicationDatabase.close();
 });

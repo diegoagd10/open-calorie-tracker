@@ -1,12 +1,15 @@
-import { data, Form, Link, redirect } from "react-router";
+import { data, Form, redirect } from "react-router";
 
 import type { Route } from "./+types/login";
 import styles from "../auth.module.css";
+import { AuthShell } from "../auth/auth-shell";
 import {
+  authenticatedSessionHeaders,
   getClientIp,
   getAuthenticatedSession,
+  loadPreAuthenticationCsrf,
+  requirePreAuthenticationCsrf,
   requireValidOrigin,
-  serializeSessionCookie,
 } from "../auth/http.server";
 import { getAuthenticationService } from "../auth/runtime.server";
 import { loginSchema } from "../auth/validation";
@@ -34,7 +37,11 @@ export async function loader({ request }: Route.LoaderArgs) {
     return redirect("/");
   }
 
-  return null;
+  const csrf = loadPreAuthenticationCsrf(request);
+  return data(
+    { csrfToken: csrf.csrfToken },
+    { headers: csrf.headers },
+  );
 }
 
 export async function action({ request }: Route.ActionArgs) {
@@ -44,6 +51,10 @@ export async function action({ request }: Route.ActionArgs) {
     password: String(formData.get("password") ?? ""),
     username: String(formData.get("username") ?? ""),
   };
+  requirePreAuthenticationCsrf(
+    request,
+    String(formData.get("csrfToken") ?? ""),
+  );
   const parsed = loginSchema.safeParse(fields);
 
   if (!parsed.success) {
@@ -77,71 +88,54 @@ export async function action({ request }: Route.ActionArgs) {
   }
 
   return redirect("/", {
-    headers: { "Set-Cookie": serializeSessionCookie(result.session) },
+    headers: authenticatedSessionHeaders(request, result.session),
   });
 }
 
-export default function Login({ actionData }: Route.ComponentProps) {
+export default function Login({ actionData, loaderData }: Route.ComponentProps) {
   return (
-    <main className={styles.shell}>
-      <section className={styles.panel} aria-labelledby="auth-title">
-        <header className={styles.header}>
-          <h1 className={styles.heading} id="auth-title">
-            Private account access
-          </h1>
-          <span className={styles.privacyCue}>No email required</span>
-        </header>
+    <AuthShell activePage="login">
+      <Form className={styles.form} method="post" noValidate>
+        <input
+          name="csrfToken"
+          type="hidden"
+          value={loaderData.csrfToken}
+        />
+        <div className={styles.field}>
+          <label htmlFor="login-username">Username</label>
+          <input
+            autoComplete="username"
+            defaultValue={actionData?.username}
+            id="login-username"
+            maxLength={30}
+            name="username"
+            required
+          />
+        </div>
 
-        <nav className={styles.tabs} aria-label="Account access">
-          <Link
-            aria-current="page"
-            className={`${styles.tab} ${styles.activeTab}`}
-            to="/login"
-          >
-            Sign in
-          </Link>
-          <Link className={styles.tab} to="/register">
-            Register
-          </Link>
-        </nav>
+        <div className={styles.field}>
+          <label htmlFor="login-password">Password</label>
+          <input
+            autoComplete="current-password"
+            id="login-password"
+            name="password"
+            required
+            type="password"
+          />
+        </div>
 
-        <Form className={styles.form} method="post" noValidate>
-          <div className={styles.field}>
-            <label htmlFor="login-username">Username</label>
-            <input
-              autoComplete="username"
-              defaultValue={actionData?.username}
-              id="login-username"
-              maxLength={30}
-              name="username"
-              required
-            />
+        {actionData?.error ? (
+          <div className={styles.error} role="alert">
+            <strong>Couldn’t sign in</strong>
+            <br />
+            {actionData.error}
           </div>
+        ) : null}
 
-          <div className={styles.field}>
-            <label htmlFor="login-password">Password</label>
-            <input
-              autoComplete="current-password"
-              id="login-password"
-              name="password"
-              required
-              type="password"
-            />
-          </div>
-
-          {actionData?.error ? (
-            <div className={styles.error} role="alert">
-              <strong>Couldn’t sign in</strong>
-              <br />
-              {actionData.error}
-            </div>
-          ) : null}
-
-          <button className={styles.submit} type="submit">
-            Sign in
-          </button>
-        </Form>
-      </section>
-    </main>
+        <button className={styles.submit} type="submit">
+          Sign in
+        </button>
+      </Form>
+    </AuthShell>
   );
 }

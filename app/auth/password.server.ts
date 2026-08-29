@@ -61,12 +61,7 @@ function currentParameters(): PasswordHashParameters {
       19_456,
       1_048_576,
     ),
-    parallelism: configuredInteger(
-      "AUTH_ARGON2_PARALLELISM",
-      productionParameters.parallelism,
-      1,
-      16,
-    ),
+    parallelism: productionParameters.parallelism,
     passes: configuredInteger(
       "AUTH_ARGON2_PASSES",
       productionParameters.passes,

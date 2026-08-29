@@ -51,6 +51,15 @@ export const sessions = sqliteTable(
   (table) => [index("sessions_user_id_index").on(table.userId)],
 );
 
+export const preAuthenticationCsrfSessions = sqliteTable(
+  "pre_authentication_csrf_sessions",
+  {
+    tokenHash: text("token_hash").primaryKey(),
+    createdAt: text("created_at").notNull(),
+    expiresAt: text("expires_at").notNull(),
+  },
+);
+
 export const rateLimitCounters = sqliteTable(
   "rate_limit_counters",
   {

@@ -1,9 +1,4 @@
-import {
-  createHash,
-  createHmac,
-  randomBytes,
-  timingSafeEqual,
-} from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 
 import type BetterSqlite3 from "better-sqlite3";
 
@@ -12,6 +7,7 @@ import {
   hashPassword,
   verifyPassword,
 } from "./password.server";
+import { deriveCsrfToken, hashOpaqueToken, safelyEqual } from "./token.server";
 
 const IDLE_SESSION_MS = 5 * 24 * 60 * 60 * 1_000;
 const ABSOLUTE_SESSION_MS = 90 * 24 * 60 * 60 * 1_000;
@@ -54,14 +50,8 @@ export type LoginResult =
   | { error: "rate-limited"; ok: false }
   | { ok: true; session: IssuedSession };
 
-function hashSessionToken(token: string): string {
-  return createHash("sha256").update(token, "utf8").digest("hex");
-}
-
 function csrfTokenFor(sessionToken: string): string {
-  return createHmac("sha256", sessionToken)
-    .update("open-calory-tracker:csrf:v1", "utf8")
-    .digest("base64url");
+  return deriveCsrfToken(sessionToken, "authenticated-session");
 }
 
 function isUniqueConstraint(error: unknown): boolean {
@@ -76,7 +66,10 @@ export class AuthenticationService {
   readonly #database: BetterSqlite3.Database;
   readonly #now: () => Date;
 
-  constructor(database: BetterSqlite3.Database, now: () => Date = () => new Date()) {
+  constructor(
+    database: BetterSqlite3.Database,
+    now: () => Date = () => new Date(),
+  ) {
     this.#database = database;
     this.#now = now;
   }
@@ -138,7 +131,7 @@ export class AuthenticationService {
       return undefined;
     }
 
-    const tokenHash = hashSessionToken(token);
+    const tokenHash = hashOpaqueToken(token);
     const session = this.#database
       .prepare<[string], SessionRow>(
         `SELECT
@@ -243,7 +236,7 @@ export class AuthenticationService {
   revokeSession(token: string): void {
     this.#database
       .prepare("DELETE FROM sessions WHERE token_hash = ?")
-      .run(hashSessionToken(token));
+      .run(hashOpaqueToken(token));
   }
 
   #clearAttempts(scope: string, subject: string): void {
@@ -319,18 +312,13 @@ export class AuthenticationService {
       return false;
     }
 
-    const expected = Buffer.from(csrfTokenFor(sessionToken), "utf8");
-    const provided = Buffer.from(candidate, "utf8");
-
-    return (
-      expected.length === provided.length && timingSafeEqual(expected, provided)
-    );
+    return safelyEqual(csrfTokenFor(sessionToken), candidate);
   }
 
   #issueSession(userId: number, usernameNormalized: string): IssuedSession {
     const now = this.#now();
     const token = randomBytes(32).toString("base64url");
-    const tokenHash = hashSessionToken(token);
+    const tokenHash = hashOpaqueToken(token);
     const idleExpiresAt = new Date(now.getTime() + IDLE_SESSION_MS);
     const absoluteExpiresAt = new Date(now.getTime() + ABSOLUTE_SESSION_MS);
 

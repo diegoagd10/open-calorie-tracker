@@ -71,11 +71,12 @@ publish a different host port. Set `APPLICATION_URL` to the externally visible
 HTTPS origin before putting the stack behind Traefik. If Traefik supplies
 forwarded client addresses, set `TRUST_PROXY` to only its Docker network CIDR;
 the persisted authentication abuse limits otherwise use the direct peer IP.
-Argon2id defaults to the reviewed 19 MiB, two-pass, single-lane profile. The
-deployment can raise `AUTH_ARGON2_MEMORY_KIB`, `AUTH_ARGON2_PASSES`, or
-`AUTH_ARGON2_PARALLELISM` after measuring the server; minimums cannot be lowered
-outside the isolated test environment, and a parameter change rehashes a
-credential after its next successful sign-in.
+Argon2id defaults to the reviewed 19 MiB, two-pass, single-lane profile. On the
+deployment server, run `pnpm auth:calibrate`; it measures three hashes and fails
+if any reaches one second. The deployment can raise `AUTH_ARGON2_MEMORY_KIB` or
+`AUTH_ARGON2_PASSES` and rerun that check; parallelism remains fixed at one,
+minimums cannot be lowered outside the isolated test environment, and a
+parameter change rehashes a credential after its next successful sign-in.
 
 After routing the service through a private Traefik network, remove the `ports`
 mapping and attach the `application` service to that network instead.

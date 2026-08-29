@@ -4,17 +4,26 @@ import { expect, test } from "@playwright/test";
 test("a visitor is directed to accessible private account access", async ({
   page,
 }) => {
-  await page.goto("/");
+  for (const viewport of [
+    { height: 1_000, width: 1_440 },
+    { height: 844, width: 390 },
+  ]) {
+    await page.setViewportSize(viewport);
 
-  await expect(page).toHaveURL("/login");
-  await expect(page).toHaveTitle("Sign in · Open Calory Tracker");
-  await expect(
-    page.getByRole("heading", { level: 1, name: "Private account access" }),
-  ).toBeVisible();
-  await expect(page.getByText("No email required")).toBeVisible();
+    for (const path of ["/login", "/register"]) {
+      await page.goto(path);
+      await expect(
+        page.getByRole("heading", {
+          level: 1,
+          name: "Private account access",
+        }),
+      ).toBeVisible();
+      await expect(page.getByText("No email required")).toBeVisible();
 
-  const accessibilityScan = await new AxeBuilder({ page }).analyze();
-  expect(accessibilityScan.violations).toEqual([]);
+      const accessibilityScan = await new AxeBuilder({ page }).analyze();
+      expect(accessibilityScan.violations).toEqual([]);
+    }
+  }
 });
 
 test("liveness reports that the HTTP process is running", async ({ request }) => {

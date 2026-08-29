@@ -8,6 +8,7 @@
     "node": ">=24.7 <25"
   },
   "scripts": {
+    "auth:calibrate": "node scripts/calibrate-argon2.mjs",
     "build": "react-router build",
     "db:generate": "drizzle-kit generate",
     "dev": "NODE_ENV=development node --conditions development server.js",

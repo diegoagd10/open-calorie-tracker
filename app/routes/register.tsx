@@ -1,12 +1,15 @@
-import { data, Form, Link, redirect } from "react-router";
+import { data, Form, redirect } from "react-router";
 
 import type { Route } from "./+types/register";
 import styles from "../auth.module.css";
+import { AuthShell } from "../auth/auth-shell";
 import {
+  authenticatedSessionHeaders,
   getClientIp,
   getAuthenticatedSession,
+  loadPreAuthenticationCsrf,
+  requirePreAuthenticationCsrf,
   requireValidOrigin,
-  serializeSessionCookie,
 } from "../auth/http.server";
 import { getAuthenticationService } from "../auth/runtime.server";
 import { registrationSchema } from "../auth/validation";
@@ -32,7 +35,11 @@ export async function loader({ request }: Route.LoaderArgs) {
     return redirect("/");
   }
 
-  return null;
+  const csrf = loadPreAuthenticationCsrf(request);
+  return data(
+    { csrfToken: csrf.csrfToken },
+    { headers: csrf.headers },
+  );
 }
 
 export async function action({ request }: Route.ActionArgs) {
@@ -43,6 +50,10 @@ export async function action({ request }: Route.ActionArgs) {
     password: String(formData.get("password") ?? ""),
     username: String(formData.get("username") ?? ""),
   };
+  requirePreAuthenticationCsrf(
+    request,
+    String(formData.get("csrfToken") ?? ""),
+  );
   const parsed = registrationSchema.safeParse(fields);
 
   if (!parsed.success) {
@@ -91,90 +102,76 @@ export async function action({ request }: Route.ActionArgs) {
   }
 
   return redirect("/", {
-    headers: { "Set-Cookie": serializeSessionCookie(result.session) },
+    headers: authenticatedSessionHeaders(request, result.session),
   });
 }
 
-export default function Register({ actionData }: Route.ComponentProps) {
+export default function Register({
+  actionData,
+  loaderData,
+}: Route.ComponentProps) {
   return (
-    <main className={styles.shell}>
-      <section className={styles.panel} aria-labelledby="auth-title">
-        <header className={styles.header}>
-          <h1 className={styles.heading} id="auth-title">
-            Private account access
-          </h1>
-          <span className={styles.privacyCue}>No email required</span>
-        </header>
+    <AuthShell activePage="register">
+      <Form className={styles.form} method="post" noValidate>
+        <input
+          name="csrfToken"
+          type="hidden"
+          value={loaderData.csrfToken}
+        />
+        <div className={styles.field}>
+          <label htmlFor="register-username">Username</label>
+          <input
+            aria-describedby="register-username-help"
+            autoComplete="username"
+            defaultValue={actionData?.username}
+            id="register-username"
+            maxLength={30}
+            name="username"
+            pattern="[A-Za-z0-9._-]+"
+            required
+          />
+          <small id="register-username-help">
+            3–30 letters, digits, dot, hyphen, or underscore.
+          </small>
+        </div>
 
-        <nav className={styles.tabs} aria-label="Account access">
-          <Link className={styles.tab} to="/login">
-            Sign in
-          </Link>
-          <Link
-            aria-current="page"
-            className={`${styles.tab} ${styles.activeTab}`}
-            to="/register"
-          >
-            Register
-          </Link>
-        </nav>
+        <div className={styles.field}>
+          <label htmlFor="register-password">Password</label>
+          <input
+            aria-describedby="register-password-help"
+            autoComplete="new-password"
+            id="register-password"
+            name="password"
+            required
+            type="password"
+          />
+          <small id="register-password-help">
+            12–128 characters; spaces, Unicode, paste, and password managers are
+            supported.
+          </small>
+        </div>
 
-        <Form className={styles.form} method="post" noValidate>
-          <div className={styles.field}>
-            <label htmlFor="register-username">Username</label>
-            <input
-              aria-describedby="register-username-help"
-              autoComplete="username"
-              defaultValue={actionData?.username}
-              id="register-username"
-              maxLength={30}
-              name="username"
-              pattern="[A-Za-z0-9._-]+"
-              required
-            />
-            <small id="register-username-help">
-              3–30 letters, digits, dot, hyphen, or underscore.
-            </small>
-          </div>
+        <div className={styles.field}>
+          <label htmlFor="register-confirm-password">Confirm password</label>
+          <input
+            autoComplete="new-password"
+            id="register-confirm-password"
+            name="confirmPassword"
+            required
+            type="password"
+          />
+        </div>
 
-          <div className={styles.field}>
-            <label htmlFor="register-password">Password</label>
-            <input
-              aria-describedby="register-password-help"
-              autoComplete="new-password"
-              id="register-password"
-              name="password"
-              required
-              type="password"
-            />
-            <small id="register-password-help">
-              12–128 characters; spaces, Unicode, paste, and password managers
-              are supported.
-            </small>
-          </div>
+        {actionData?.error ? (
+          <p className={styles.error} role="alert">
+            {actionData.error}
+          </p>
+        ) : null}
 
-          <div className={styles.field}>
-            <label htmlFor="register-confirm-password">Confirm password</label>
-            <input
-              autoComplete="new-password"
-              id="register-confirm-password"
-              name="confirmPassword"
-              required
-              type="password"
-            />
-          </div>
-
-          {actionData?.error ? (
-            <p className={styles.error} role="alert">
-              {actionData.error}
-            </p>
-          ) : null}
-
-          <button className={styles.submit} type="submit">
-            Create private account
-          </button>
-        </Form>
-      </section>
-    </main>
+        <button className={styles.submit} type="submit">
+          Create private account
+        </button>
+      </Form>
+    </AuthShell>
   );
 }
