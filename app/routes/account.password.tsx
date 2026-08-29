@@ -12,7 +12,8 @@ import { getAuthenticationService } from "../auth/runtime.server";
 import { passwordChangeSchema } from "../auth/validation";
 
 type PasswordChangeActionData = {
-  error: string;
+  changed?: true;
+  error?: string;
 };
 
 export function meta() {
@@ -31,7 +32,6 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (!session) return redirect("/login");
 
   return {
-    changed: new URL(request.url).searchParams.get("changed") === "1",
     csrfToken: session.csrfToken,
     username: session.user.username,
   };
@@ -53,7 +53,6 @@ export async function action({ request }: Route.ActionArgs) {
   }
 
   const parsed = passwordChangeSchema.safeParse({
-    confirmPassword: String(formData.get("confirmPassword") ?? ""),
     currentPassword: String(formData.get("currentPassword") ?? ""),
     newPassword: String(formData.get("newPassword") ?? ""),
   });
@@ -64,8 +63,6 @@ export async function action({ request }: Route.ActionArgs) {
       error = "Enter your current password.";
     } else if (issue?.path[0] === "newPassword") {
       error = "New password must contain 12–128 characters.";
-    } else if (issue?.path[0] === "confirmPassword") {
-      error = "New passwords do not match.";
     }
     return data<PasswordChangeActionData>({ error }, { status: 400 });
   }
@@ -93,9 +90,10 @@ export async function action({ request }: Route.ActionArgs) {
     );
   }
 
-  return redirect("/account/password?changed=1", {
-    headers: { "Set-Cookie": serializeSessionCookie(result.session) },
-  });
+  return data<PasswordChangeActionData>(
+    { changed: true },
+    { headers: { "Set-Cookie": serializeSessionCookie(result.session) } },
+  );
 }
 
 export default function ChangePassword({
@@ -119,7 +117,7 @@ export default function ChangePassword({
 
         <Form
           className={styles.form}
-          key={loaderData.changed ? "changed" : "ready"}
+          key={actionData?.changed ? "changed" : "ready"}
           method="post"
           noValidate
         >
@@ -154,23 +152,12 @@ export default function ChangePassword({
               12–128 characters; spaces and Unicode are welcome.
             </small>
           </div>
-          <div className={styles.field}>
-            <label htmlFor="confirm-password">Confirm new password</label>
-            <input
-              autoComplete="new-password"
-              id="confirm-password"
-              name="confirmPassword"
-              required
-              type="password"
-            />
-          </div>
-
           {actionData?.error ? (
             <p className={styles.error} role="alert">
               {actionData.error}
             </p>
           ) : null}
-          {loaderData.changed ? (
+          {actionData?.changed ? (
             <p className={styles.success} role="status">
               <strong>Password changed.</strong> Other sessions were revoked.
             </p>

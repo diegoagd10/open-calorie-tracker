@@ -140,13 +140,13 @@ test("changing a password rotates this phone and revokes every other session", a
   await otherPhone.getByRole("button", { name: "Sign in" }).click();
   await expect(otherPhone).toHaveURL("/");
 
+  await page.goto("/account/password?changed=1");
+  await expect(page.getByRole("status")).toHaveCount(0);
+  await page.goto("/");
   await page.getByRole("link", { name: "Change password" }).click();
   await page.getByLabel("Current password").fill("incorrect current password");
   await page
     .getByLabel("New password", { exact: true })
-    .fill("replacement passphrase 🔐");
-  await page
-    .getByLabel("Confirm new password")
     .fill("replacement passphrase 🔐");
   await page.getByRole("button", { name: "Change password" }).click();
   await expect(page.getByRole("alert")).toContainText(
@@ -157,9 +157,6 @@ test("changing a password rotates this phone and revokes every other session", a
   await page
     .getByLabel("New password", { exact: true })
     .fill("replacement passphrase 🔐");
-  await page
-    .getByLabel("Confirm new password")
-    .fill("replacement passphrase 🔐");
   await page.getByRole("button", { name: "Change password" }).click();
   await expect(
     page.getByRole("status").filter({ hasText: "Password changed" }),
@@ -168,7 +165,6 @@ test("changing a password rotates this phone and revokes every other session", a
   await expect(page.getByLabel("New password", { exact: true })).toHaveValue(
     "",
   );
-  await expect(page.getByLabel("Confirm new password")).toHaveValue("");
 
   const rotatedCookie = (await context.cookies()).find(
     (cookie) => cookie.name === "__Host-calorie_session",
@@ -298,9 +294,6 @@ test("logout rejects cross-origin requests and invalid session-bound CSRF values
   await page.getByLabel("Current password").fill(validPassword);
   await page
     .getByLabel("New password", { exact: true })
-    .fill("replacement passphrase 🔐");
-  await page
-    .getByLabel("Confirm new password")
     .fill("replacement passphrase 🔐");
   const rejectedPasswordChange = page.waitForResponse(
     (response) =>

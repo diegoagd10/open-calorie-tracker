@@ -260,6 +260,46 @@ test("password-change failures are persisted and limited to five per 15 minutes"
   fixture.applicationDatabase.close();
 });
 
+test("password rotation preserves the original absolute session expiry", async () => {
+  const fixture = await createFixture();
+  const registration = await fixture.service.register(
+    "absolute.rotation",
+    password,
+    "203.0.113.37",
+  );
+  expect(registration.ok).toBe(true);
+  if (!registration.ok) throw new Error("registration failed");
+
+  let currentSession = registration.session;
+  for (let day = 4; day <= 88; day += 4) {
+    fixture.setNow(
+      new Date(Date.UTC(2026, 7, 29 + day, 12)).toISOString(),
+    );
+    const active = await fixture.service.authenticate(currentSession.token);
+    expect(active).toBeDefined();
+    if (!active) throw new Error("session expired before absolute deadline");
+    currentSession = active;
+  }
+
+  const changed = await fixture.service.changePassword(
+    currentSession,
+    password,
+    "late replacement password",
+  );
+  expect(changed.ok).toBe(true);
+  if (!changed.ok) throw new Error("password change failed");
+  expect(changed.session.absoluteExpiresAt).toEqual(
+    registration.session.absoluteExpiresAt,
+  );
+
+  fixture.setNow("2026-11-27T12:00:00.000Z");
+  expect(
+    await fixture.service.authenticate(changed.session.token),
+  ).toBeUndefined();
+
+  fixture.applicationDatabase.close();
+});
+
 test("pre-authentication CSRF values are session-bound and expire", async () => {
   const fixture = await createFixture();
   const csrf = new PreAuthenticationCsrfService(

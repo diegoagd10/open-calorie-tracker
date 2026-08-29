@@ -60,6 +60,37 @@ function csrfTokenFor(sessionToken: string): string {
   return deriveCsrfToken(sessionToken, "authenticated-session");
 }
 
+function prepareIssuedSession(
+  now: Date,
+  user: AuthenticatedSession["user"],
+  absoluteExpiresAt = new Date(now.getTime() + ABSOLUTE_SESSION_MS),
+): {
+  persisted: typeof sessions.$inferInsert;
+  session: IssuedSession;
+} {
+  const token = randomBytes(32).toString("base64url");
+  const idleExpiresAt = new Date(
+    Math.min(now.getTime() + IDLE_SESSION_MS, absoluteExpiresAt.getTime()),
+  );
+
+  return {
+    persisted: {
+      absoluteExpiresAt: absoluteExpiresAt.toISOString(),
+      createdAt: now.toISOString(),
+      idleExpiresAt: idleExpiresAt.toISOString(),
+      lastSeenAt: now.toISOString(),
+      tokenHash: hashOpaqueToken(token),
+      userId: user.id,
+    },
+    session: {
+      absoluteExpiresAt,
+      csrfToken: csrfTokenFor(token),
+      token,
+      user,
+    },
+  };
+}
+
 function isUniqueConstraint(error: unknown): boolean {
   return (
     error instanceof Error &&
@@ -224,10 +255,11 @@ export class AuthenticationService {
 
     const now = this.#now();
     const nextPasswordHash = await hashPassword(nextPassword);
-    const nextToken = randomBytes(32).toString("base64url");
-    const nextTokenHash = hashOpaqueToken(nextToken);
-    const idleExpiresAt = new Date(now.getTime() + IDLE_SESSION_MS);
-    const absoluteExpiresAt = new Date(now.getTime() + ABSOLUTE_SESSION_MS);
+    const nextSession = prepareIssuedSession(
+      now,
+      currentSession.user,
+      currentSession.absoluteExpiresAt,
+    );
     const currentTokenHash = hashOpaqueToken(currentSession.token);
 
     const rotated = this.#database.transaction((transaction) => {
@@ -257,14 +289,7 @@ export class AuthenticationService {
         .run();
       transaction
         .insert(sessions)
-        .values({
-          absoluteExpiresAt: absoluteExpiresAt.toISOString(),
-          createdAt: now.toISOString(),
-          idleExpiresAt: idleExpiresAt.toISOString(),
-          lastSeenAt: now.toISOString(),
-          tokenHash: nextTokenHash,
-          userId: currentSession.user.id,
-        })
+        .values(nextSession.persisted)
         .run();
       return true;
     });
@@ -274,15 +299,7 @@ export class AuthenticationService {
     }
 
     this.#rateLimiter.clear("password-change-failure", rateLimitSubject);
-    return {
-      ok: true,
-      session: {
-        absoluteExpiresAt,
-        csrfToken: csrfTokenFor(nextToken),
-        token: nextToken,
-        user: currentSession.user,
-      },
-    };
+    return { ok: true, session: nextSession.session };
   }
 
   async login(
@@ -350,30 +367,15 @@ export class AuthenticationService {
   }
 
   #issueSession(userId: number, usernameNormalized: string): IssuedSession {
-    const now = this.#now();
-    const token = randomBytes(32).toString("base64url");
-    const tokenHash = hashOpaqueToken(token);
-    const idleExpiresAt = new Date(now.getTime() + IDLE_SESSION_MS);
-    const absoluteExpiresAt = new Date(now.getTime() + ABSOLUTE_SESSION_MS);
-
+    const issued = prepareIssuedSession(this.#now(), {
+      id: userId,
+      username: usernameNormalized,
+    });
     this.#database
       .insert(sessions)
-      .values({
-        absoluteExpiresAt: absoluteExpiresAt.toISOString(),
-        createdAt: now.toISOString(),
-        idleExpiresAt: idleExpiresAt.toISOString(),
-        lastSeenAt: now.toISOString(),
-        tokenHash,
-        userId,
-      })
+      .values(issued.persisted)
       .run();
-
-    return {
-      absoluteExpiresAt,
-      csrfToken: csrfTokenFor(token),
-      token,
-      user: { id: userId, username: usernameNormalized },
-    };
+    return issued.session;
   }
 
   async verifyCredentials(
