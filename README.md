@@ -58,6 +58,17 @@ Production deployments should expose the container only through the private
 Traefik network rather than publishing a host port. Persist `/app/data` across
 replacement containers.
 
+### Portainer
+
+Create the stack from this Git repository and set **Compose path** to
+`docker-compose.yml`. The stack builds the checked-in `Dockerfile`, stores the
+SQLite database in the `application-data` volume, and publishes port `3001` by
+default. The container listens on port `3000`; set `APP_PORT` in Portainer to
+publish a different host port.
+
+After routing the service through a private Traefik network, remove the `ports`
+mapping and attach the `application` service to that network instead.
+
 - `GET /health/live` reports whether the HTTP process is alive.
 - `GET /health/ready` verifies the reviewed migration, required SQLite pragmas,
   and a rollbacked write against application storage.
