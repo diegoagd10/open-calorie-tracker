@@ -1,12 +1,14 @@
 import { parseIsoLocalDate } from "../food-log/date";
 import {
   validateSetupFields,
-  WATER_UNIT_OPTIONS,
   waterTargetMicrolitersFromDisplay,
-  DISPLAY_UNITS,
-  type DisplayUnits,
   type SetupFields,
 } from "../setup/validation";
+import {
+  DISPLAY_UNITS,
+  waterTargetThousandthsFromMicroliters,
+  type DisplayUnits,
+} from "./water-conversion";
 import type {
   CanonicalGoalValues,
   GoalReplacement,
@@ -38,22 +40,14 @@ function formatThousandths(value: number | bigint): string {
   return fraction ? `${whole}.${fraction}` : String(whole);
 }
 
-function roundDivide(numerator: bigint, denominator: bigint): bigint {
-  return (numerator + denominator / 2n) / denominator;
-}
-
 function waterFieldFromCanonical(
   waterTargetMicroliters: number,
   displayUnits: DisplayUnits,
 ): string {
-  const waterThousandths =
-    displayUnits === "metric"
-      ? BigInt(waterTargetMicroliters)
-      : roundDivide(
-          BigInt(waterTargetMicroliters) *
-            WATER_UNIT_OPTIONS.us.canonicalDenominator,
-          WATER_UNIT_OPTIONS.us.canonicalNumerator,
-        );
+  const waterThousandths = waterTargetThousandthsFromMicroliters(
+    waterTargetMicroliters,
+    displayUnits,
+  );
   return formatThousandths(waterThousandths);
 }
 
