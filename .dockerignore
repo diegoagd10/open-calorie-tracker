@@ -1,0 +1,10 @@
+.git
+.gitignore
+.react-router
+build
+data
+docs
+node_modules
+playwright-report
+test-results
+*.tsbuildinfo

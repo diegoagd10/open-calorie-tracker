@@ -1,0 +1,47 @@
+{
+  "name": "open-calory-tracker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.19.0",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "scripts": {
+    "build": "react-router build",
+    "db:generate": "drizzle-kit generate",
+    "dev": "NODE_ENV=development node --conditions development server.js",
+    "start": "NODE_ENV=production node server.js",
+    "test": "vitest run",
+    "test:browser": "playwright test",
+    "typecheck": "react-router typegen && tsc -b"
+  },
+  "dependencies": {
+    "@react-router/express": "8.3.1",
+    "@react-router/node": "8.3.1",
+    "better-sqlite3": "13.0.3",
+    "compression": "1.8.1",
+    "drizzle-orm": "0.45.2",
+    "express": "5.2.1",
+    "isbot": "5.2.2",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "react-router": "8.3.1",
+    "zod": "4.5.2"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "4.13.0",
+    "@playwright/test": "1.62.1",
+    "@react-router/dev": "8.3.1",
+    "@types/better-sqlite3": "9.6.0",
+    "@types/compression": "1.8.1",
+    "@types/express": "5.0.6",
+    "@types/node": "24.13.3",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.5",
+    "drizzle-kit": "0.31.10",
+    "typescript": "6.0.3",
+    "vite": "8.2.2",
+    "vitest": "4.1.11"
+  }
+}

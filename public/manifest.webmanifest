@@ -1,0 +1,9 @@
+{
+  "name": "Open Calory Tracker",
+  "short_name": "Calory Tracker",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f0f4f8",
+  "theme_color": "#102a43",
+  "lang": "en"
+}

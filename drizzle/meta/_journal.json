@@ -1,0 +1,13 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1788020399173,
+      "tag": "0000_whole_gauntlet",
+      "breakpoints": true
+    }
+  ]
+}
