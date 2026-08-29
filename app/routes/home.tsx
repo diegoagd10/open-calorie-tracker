@@ -1,5 +1,5 @@
 import type { Route } from "./+types/home";
-import { Form, redirect } from "react-router";
+import { Form, Link, redirect } from "react-router";
 
 import { getAuthenticatedSession } from "../auth/http.server";
 import styles from "../readiness.module.css";
@@ -37,6 +37,13 @@ export default function Home({ loaderData }: Route.ComponentProps) {
           Your private application space
         </h1>
         <p className={styles.summary}>Signed in as {loaderData.username}</p>
+        <Link className={styles.accountLink} to="/account/password">
+          <span>
+            <strong>Change password</strong>
+            <small>Rotate this session and revoke every other phone.</small>
+          </span>
+          <span aria-hidden="true">›</span>
+        </Link>
         <Form action="/logout" method="post">
           <input
             name="csrfToken"

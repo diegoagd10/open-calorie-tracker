@@ -17,6 +17,11 @@ export const loginSchema = z.object({
   username: usernameSchema,
 });
 
+export const passwordChangeSchema = z.object({
+  currentPassword: z.string().min(1),
+  newPassword: passwordSchema,
+});
+
 export const registrationSchema = z
   .object({
     confirmPassword: z.string(),

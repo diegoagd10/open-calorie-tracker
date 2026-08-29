@@ -109,6 +109,97 @@ test("a returning user can sign in and revoke the current session", async ({
   await secondContext.close();
 });
 
+test("changing a password rotates this phone and revokes every other session", async ({
+  browser,
+  context,
+  page,
+}) => {
+  await context.setExtraHTTPHeaders({ "X-Test-Client-IP": "203.0.113.40" });
+  await page.goto("/register");
+  await page.getByLabel("Username").fill("Password.Owner");
+  await page.getByLabel("Password", { exact: true }).fill(validPassword);
+  await page.getByLabel("Confirm password").fill(validPassword);
+  await page.getByRole("button", { name: "Create private account" }).click();
+  await expect(page).toHaveURL("/");
+
+  const originalCookie = (await context.cookies()).find(
+    (cookie) => cookie.name === "__Host-calorie_session",
+  );
+  if (!originalCookie) throw new Error("registration omitted session cookie");
+
+  const otherPhoneContext = await browser.newContext({
+    baseURL: applicationOrigin,
+    extraHTTPHeaders: { "X-Test-Client-IP": "203.0.113.41" },
+  });
+  const otherPhone = await otherPhoneContext.newPage();
+  await otherPhone.goto("/login");
+  await otherPhone.getByLabel("Username").fill("password.owner");
+  await otherPhone
+    .getByLabel("Password", { exact: true })
+    .fill(validPassword);
+  await otherPhone.getByRole("button", { name: "Sign in" }).click();
+  await expect(otherPhone).toHaveURL("/");
+
+  await page.goto("/account/password?changed=1");
+  await expect(page.getByRole("status")).toHaveCount(0);
+  await page.goto("/");
+  await page.getByRole("link", { name: "Change password" }).click();
+  await page.getByLabel("Current password").fill("incorrect current password");
+  await page
+    .getByLabel("New password", { exact: true })
+    .fill("replacement passphrase 🔐");
+  await page.getByRole("button", { name: "Change password" }).click();
+  await expect(page.getByRole("alert")).toContainText(
+    "The current password is incorrect.",
+  );
+
+  await page.getByLabel("Current password").fill(validPassword);
+  await page
+    .getByLabel("New password", { exact: true })
+    .fill("replacement passphrase 🔐");
+  await page.getByRole("button", { name: "Change password" }).click();
+  await expect(
+    page.getByRole("status").filter({ hasText: "Password changed" }),
+  ).toBeVisible();
+  await expect(page.getByLabel("Current password")).toHaveValue("");
+  await expect(page.getByLabel("New password", { exact: true })).toHaveValue(
+    "",
+  );
+
+  const rotatedCookie = (await context.cookies()).find(
+    (cookie) => cookie.name === "__Host-calorie_session",
+  );
+  expect(rotatedCookie?.value).not.toBe(originalCookie.value);
+
+  await otherPhone.reload();
+  await expect(otherPhone).toHaveURL("/login");
+
+  const replayContext = await browser.newContext({
+    baseURL: applicationOrigin,
+    extraHTTPHeaders: { "X-Test-Client-IP": "203.0.113.42" },
+  });
+  await replayContext.addCookies([originalCookie]);
+  const replay = await replayContext.newPage();
+  await replay.goto("/");
+  await expect(replay).toHaveURL("/login");
+  await replay.getByLabel("Username").fill("password.owner");
+  await replay.getByLabel("Password", { exact: true }).fill(validPassword);
+  await replay.getByRole("button", { name: "Sign in" }).click();
+  await expect(replay.getByRole("alert")).toContainText(
+    "The username or password is incorrect.",
+  );
+  await replay
+    .getByLabel("Password", { exact: true })
+    .fill("replacement passphrase 🔐");
+  await replay.getByRole("button", { name: "Sign in" }).click();
+  await expect(replay).toHaveURL("/");
+
+  const accessibilityScan = await new AxeBuilder({ page }).analyze();
+  expect(accessibilityScan.violations).toEqual([]);
+  await replayContext.close();
+  await otherPhoneContext.close();
+});
+
 test("registration validation and login failures are accessible and specific only when safe", async ({
   context,
   page,
@@ -196,7 +287,23 @@ test("logout rejects cross-origin requests and invalid session-bound CSRF values
   });
   expect(wrongCsrfStatus).toBe(403);
 
-  await page.reload();
+  await page.goto("/account/password");
+  await page.locator('input[name="csrfToken"]').evaluate((input) => {
+    if (input instanceof HTMLInputElement) input.value = "invalid";
+  });
+  await page.getByLabel("Current password").fill(validPassword);
+  await page
+    .getByLabel("New password", { exact: true })
+    .fill("replacement passphrase 🔐");
+  const rejectedPasswordChange = page.waitForResponse(
+    (response) =>
+      response.request().method() === "POST" &&
+      response.url().includes("/account/password"),
+  );
+  await page.getByRole("button", { name: "Change password" }).click();
+  expect((await rejectedPasswordChange).status()).toBe(403);
+
+  await page.goto("/");
   await expect(page.getByText("Signed in as csrf.user")).toBeVisible();
 });
 
