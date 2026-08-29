@@ -62,8 +62,9 @@ replacement containers.
 
 Create the stack from this Git repository and set **Compose path** to
 `docker-compose.yml`. The stack builds the checked-in `Dockerfile`, stores the
-SQLite database in the `application-data` volume, and publishes port `3000` by
-default. Set `APP_PORT` in Portainer to publish a different host port.
+SQLite database in the `application-data` volume, and publishes port `3001` by
+default. The container listens on port `3000`; set `APP_PORT` in Portainer to
+publish a different host port.
 
 After routing the service through a private Traefik network, remove the `ports`
 mapping and attach the `application` service to that network instead.
