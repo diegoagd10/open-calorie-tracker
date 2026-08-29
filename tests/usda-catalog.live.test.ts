@@ -94,6 +94,9 @@ describe.skipIf(!runLiveSpike)("registered USDA FoodData Central spike", () => {
       "cheddar cheese",
       "restaurant taco",
       "yogur natural",
+      "apple, raw", // punctuation-bearing search
+      "Cheerios Original Breakfast Cereal", // exact brand/product search
+      "chicken", // deliberately broad search
     ];
     const latencies: number[] = [];
     const observedTypes = new Set<string>();
