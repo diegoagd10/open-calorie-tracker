@@ -48,6 +48,42 @@ async function expectCatalogResponsive(page: Page) {
   await page.setViewportSize({ height: 720, width: 1_280 });
 }
 
+async function expectFoodEntryEditorResponsive(page: Page) {
+  for (const viewport of [
+    { height: 844, width: 390 },
+    { height: 900, width: 800 },
+    { height: 900, width: 1_120 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await expect(
+      page.getByRole("dialog", { name: "Edit Food Entry" }),
+    ).toBeVisible();
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= window.innerWidth,
+      ),
+    ).toBe(true);
+  }
+  await page.setViewportSize({ height: 720, width: 1_280 });
+}
+
+async function expectFoodEntryStatusResponsive(page: Page, message: string) {
+  for (const viewport of [
+    { height: 844, width: 390 },
+    { height: 900, width: 800 },
+    { height: 900, width: 1_120 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await expect(page.getByRole("status")).toContainText(message);
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= window.innerWidth,
+      ),
+    ).toBe(true);
+  }
+  await page.setViewportSize({ height: 720, width: 1_280 });
+}
+
 test("today, historical navigation, calendar access, travel, and future rejection", async ({
   browser,
   context,
@@ -414,6 +450,213 @@ test("authenticated USDA search and idempotent logging preserve a local Nutritio
   await anonymousPage.goto("/?food=search&query=yogurt");
   await expect(anonymousPage).toHaveURL(/\/login$/);
   await anonymous.close();
+
+  const accessibilityScan = await new AxeBuilder({ page }).analyze();
+  expect(accessibilityScan.violations).toEqual([]);
+});
+
+test("an authenticated user can correct and delete one Food Entry", async ({
+  context,
+  page,
+}) => {
+  await context.setExtraHTTPHeaders({ "X-Test-Client-IP": "203.0.113.83" });
+  await registerAndSetup(page, "food.entry.edit");
+  await page.getByRole("button", { name: "Add Food" }).click();
+  await page
+    .getByRole("searchbox", { name: "Search United States foods" })
+    .fill("yogurt");
+  await page.getByRole("button", { name: "Search" }).click();
+  await page.getByRole("link", { name: /Plain nonfat Greek yogurt/ }).click();
+  await page.getByRole("button", { name: "Add to Food Log" }).click();
+
+  await page
+    .getByRole("link", { name: /Plain nonfat Greek yogurt.*100\.3 kcal/ })
+    .click();
+  const editor = page.getByRole("dialog", { name: "Edit Food Entry" });
+  await expect(editor).toBeVisible();
+  await expect(editor.getByText("Changes affect this occurrence only.")).toBeVisible();
+  await expect(page.locator("body")).toHaveCSS("overflow", "hidden");
+  await expect(page.getByLabel("Food name")).toHaveValue(
+    "Plain nonfat Greek yogurt",
+  );
+  await expect(page.getByLabel("Measurement")).toHaveValue(
+    "serving:g:170000000",
+  );
+  await expect(page.getByLabel("Fiber (g)")).toHaveValue("");
+  await expect(page.getByLabel("Fat (g)")).toHaveValue("0");
+  await expectFoodEntryEditorResponsive(page);
+  const openEditorAccessibility = await new AxeBuilder({ page }).analyze();
+  expect(openEditorAccessibility.violations).toEqual([]);
+
+  await page.getByLabel("Food name").fill(" ");
+  await page.getByRole("button", { name: "Save changes" }).click();
+  await expect(editor.getByRole("alert")).toContainText(
+    "Food Entry request is invalid",
+  );
+  await expectFoodEntryEditorResponsive(page);
+  await expect(editor.getByRole("alert")).toContainText(
+    "Food Entry request is invalid",
+  );
+
+  await page.getByLabel("Food name").fill("Breakfast yogurt");
+  await page.getByLabel("Measurement").selectOption("base:g:100000000");
+  await page.getByLabel("Quantity").fill("0.5");
+  await expect(page.getByLabel("Calories (kcal)")).toHaveValue("29.5");
+  await expect(page.getByLabel("Protein (g)")).toHaveValue("5.295");
+  await page.getByLabel("Carbohydrate (g)").fill("");
+  await page.getByLabel("Fat (g)").fill("0");
+
+  const editForm = editor.locator("form");
+  const editFields = await editForm.evaluate((form) => {
+    const fields = Object.fromEntries(
+      new FormData(form as HTMLFormElement).entries(),
+    );
+    fields.intent = "update-food";
+    return fields;
+  });
+  const malformedStatus = await page.evaluate(async (fields) => {
+    const body = new URLSearchParams(fields as Record<string, string>);
+    body.set("selectedMeasurementId", "invented-measurement");
+    const response = await fetch("/?index", {
+      body,
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      method: "POST",
+    });
+    return response.status;
+  }, editFields);
+  expect(malformedStatus).toBe(400);
+
+  let releaseUpdate!: () => void;
+  const updateGate = new Promise<void>((resolve) => {
+    releaseUpdate = resolve;
+  });
+  const delayUpdate = async (route: import("@playwright/test").Route) => {
+    if (route.request().method() === "POST") await updateGate;
+    await route.continue();
+  };
+  await page.route("**/*", delayUpdate);
+  const saveClick = page.getByRole("button", { name: "Save changes" }).click();
+  await expect(page.getByRole("button", { name: "Saving…" })).toBeDisabled();
+  await expectFoodEntryEditorResponsive(page);
+  await expect(page.getByRole("button", { name: "Saving…" })).toBeDisabled();
+  releaseUpdate();
+  await saveClick;
+  await page.unroute("**/*", delayUpdate);
+  await expect(page).toHaveURL(/date=2026-08-29&notice=updated/);
+  await expect(page.getByRole("status")).toContainText(
+    "Food Entry updated. Daily totals refreshed.",
+  );
+  await expectFoodEntryStatusResponsive(
+    page,
+    "Food Entry updated. Daily totals refreshed.",
+  );
+  await expect(page.getByText("Breakfast yogurt", { exact: true })).toBeVisible();
+  await expect(page.getByText("29.5 kcal", { exact: true })).toBeVisible();
+
+  const database = openBrowserTestDatabase();
+  const persisted = database
+    .prepare(
+      `SELECT
+       authoritative_nutrition AS authoritativeNutrition,
+        authoritative_carbohydrate_milligrams AS carbohydrateMilligrams,
+        authoritative_fat_milligrams AS fatMilligrams
+       FROM food_entries f
+       JOIN users u ON u.id = f.user_id
+       WHERE f.original_name = ? AND u.username_normalized = ?`,
+    )
+    .get("Plain nonfat Greek yogurt", "food.entry.edit") as {
+    authoritativeNutrition: string;
+    carbohydrateMilligrams: number | null;
+    fatMilligrams: number | null;
+  };
+  database.close();
+  expect(JSON.parse(persisted.authoritativeNutrition)).toMatchObject({
+    carbohydrateMilligrams: { amount: 3.53 },
+  });
+  expect(persisted).toMatchObject({
+    carbohydrateMilligrams: null,
+    fatMilligrams: 0,
+  });
+
+  const staleStatus = await page.evaluate(async (fields) => {
+    const response = await fetch("/?index", {
+      body: new URLSearchParams(fields as Record<string, string>),
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      method: "POST",
+    });
+    return response.status;
+  }, editFields);
+  expect(staleStatus).toBe(409);
+
+  const entryId = String(editFields.entryId);
+  const otherContext = await page.context().browser()!.newContext();
+  await otherContext.setExtraHTTPHeaders({
+    "X-Test-Client-IP": "203.0.113.84",
+  });
+  const otherPage = await otherContext.newPage();
+  await registerAndSetup(otherPage, "food.entry.other");
+  const unavailableRead = await otherPage.goto(
+    `/?date=2026-08-29&entry=${entryId}`,
+  );
+  expect(unavailableRead?.status()).toBe(404);
+  await otherPage.goto("/?date=2026-08-29");
+  const otherCsrfToken = await otherPage
+    .locator("form")
+    .filter({ has: otherPage.getByRole("button", { name: "Add Food" }) })
+    .locator('input[name="csrfToken"]')
+    .inputValue();
+  const unavailableMutations = await otherPage.evaluate(
+    async ({ csrfToken, entryId, expectedUpdatedAt }) => {
+      const submit = (intent: "delete-food" | "update-food") =>
+        fetch("/?index", {
+          body: new URLSearchParams({
+            carbohydrateGrams: "",
+            csrfToken,
+            date: "2026-08-29",
+            energyKcal: "",
+            entryId,
+            expectedUpdatedAt,
+            fatGrams: "",
+            fiberGrams: "",
+            intent,
+            name: "Unavailable",
+            proteinGrams: "",
+            quantity: "1",
+            selectedMeasurementId: "base:g:100000000",
+            sodiumMilligrams: "",
+            sugarGrams: "",
+          }),
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          method: "POST",
+        });
+      const update = await submit("update-food");
+      const deletion = await submit("delete-food");
+      return [update.status, deletion.status];
+    },
+    {
+      csrfToken: otherCsrfToken,
+      entryId,
+      expectedUpdatedAt: String(editFields.expectedUpdatedAt),
+    },
+  );
+  expect(unavailableMutations).toEqual([404, 404]);
+  await otherContext.close();
+
+  await page.getByRole("link", { name: /Breakfast yogurt.*29\.5 kcal/ }).click();
+  await page.getByRole("button", { name: "Delete entry" }).click();
+  await expect(editor.getByText("Delete this Food Entry?")).toBeVisible();
+  await expectFoodEntryEditorResponsive(page);
+  await expect(editor.getByText("Delete this Food Entry?")).toBeVisible();
+  await page.getByRole("button", { name: "Delete", exact: true }).click();
+  await expect(page).toHaveURL(/date=2026-08-29&notice=deleted/);
+  await expect(page.getByRole("status")).toContainText(
+    "Food Entry deleted. Daily totals updated.",
+  );
+  await expectFoodEntryStatusResponsive(
+    page,
+    "Food Entry deleted. Daily totals updated.",
+  );
+  await expect(page.getByText("No entries for this day")).toBeVisible();
 
   const accessibilityScan = await new AxeBuilder({ page }).analyze();
   expect(accessibilityScan.violations).toEqual([]);

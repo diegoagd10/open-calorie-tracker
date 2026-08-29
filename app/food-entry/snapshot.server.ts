@@ -1,10 +1,13 @@
 import { z } from "zod";
 
 import type {
-  CatalogNutrientValue,
+  CatalogMeasurement,
   CatalogNutrition,
 } from "../catalog/food-catalog.server";
 import { foodEntries } from "../database/schema.server";
+import { scaleCatalogNutrient } from "./nutrition";
+
+export { scaleCatalogNutrient } from "./nutrition";
 
 type FoodEntryRow = typeof foodEntries.$inferSelect;
 
@@ -21,60 +24,52 @@ const catalogNutritionSchema = z.object({
   sodiumMilligrams: catalogNutrientValueSchema.nullable(),
   sugarMilligrams: catalogNutrientValueSchema.nullable(),
 });
+const catalogMeasurementSchema = z.object({
+  baseQuantityMicrounits: z.number().int().positive(),
+  id: z.string().min(1).max(128),
+  label: z.string().min(1).max(200),
+  unit: z.enum(["g", "ml"]),
+});
+const catalogMeasurementsSchema = z.array(catalogMeasurementSchema).min(1);
 
 export function serializeCatalogNutrition(value: CatalogNutrition): string {
   return JSON.stringify(catalogNutritionSchema.parse(value));
 }
 
-function parseCatalogNutrition(value: string): CatalogNutrition {
+export function parseCatalogNutrition(value: string): CatalogNutrition {
   return catalogNutritionSchema.parse(JSON.parse(value));
 }
 
-function decimalFraction(value: number): {
-  denominator: bigint;
-  numerator: bigint;
-} {
-  const match = /^(\d+)(?:\.(\d+))?(?:e([+-]?\d+))?$/i.exec(String(value));
-  if (!match) throw new Error("Catalog nutrient is invalid");
-  const fractionLength = match[2]?.length ?? 0;
-  const exponent = Number(match[3] ?? "0") - fractionLength;
-  const digits = BigInt(`${match[1]}${match[2] ?? ""}`);
-  if (exponent >= 0) {
-    return { denominator: 1n, numerator: digits * 10n ** BigInt(exponent) };
-  }
-  return { denominator: 10n ** BigInt(-exponent), numerator: digits };
+export function serializeCatalogMeasurements(
+  value: CatalogMeasurement[],
+): string {
+  return JSON.stringify(catalogMeasurementsSchema.parse(value));
 }
 
-export function scaleCatalogNutrient(
-  value: CatalogNutrientValue | null,
-  measurementBaseQuantityMicrounits: number,
-  quantityMicrounits: number,
-  authoritativeBaseQuantityMicrounits: number,
-): number | null {
-  if (value === null) return null;
-  if (
-    !Number.isFinite(value.amount) ||
-    value.amount < 0 ||
-    !Number.isSafeInteger(value.fixedPointMultiplier) ||
-    value.fixedPointMultiplier <= 0
-  ) {
-    throw new Error("Catalog nutrient is invalid");
+function parseCatalogMeasurements(row: FoodEntryRow): CatalogMeasurement[] {
+  const parsed = z
+    .array(catalogMeasurementSchema)
+    .safeParse(JSON.parse(row.supportedMeasurements));
+  if (parsed.success && parsed.data.length) return parsed.data;
+
+  const measurements: CatalogMeasurement[] = [
+    {
+      baseQuantityMicrounits: row.selectedMeasurementBaseQuantityMicrounits,
+      id: row.selectedMeasurementId,
+      label: row.selectedMeasurementLabel,
+      unit: row.selectedMeasurementUnit as "g" | "ml",
+    },
+  ];
+  const baseId = `base:${row.authoritativeBaseUnit}:${row.authoritativeBaseQuantityMicrounits}`;
+  if (!measurements.some((measurement) => measurement.id === baseId)) {
+    measurements.push({
+      baseQuantityMicrounits: row.authoritativeBaseQuantityMicrounits,
+      id: baseId,
+      label: `${row.authoritativeBaseQuantityMicrounits / 1_000_000} ${row.authoritativeBaseUnit}`,
+      unit: row.authoritativeBaseUnit as "g" | "ml",
+    });
   }
-  const amount = decimalFraction(value.amount);
-  const denominator =
-    amount.denominator *
-    BigInt(authoritativeBaseQuantityMicrounits) *
-    1_000_000n;
-  const numerator =
-    amount.numerator *
-    BigInt(value.fixedPointMultiplier) *
-    BigInt(measurementBaseQuantityMicrounits) *
-    BigInt(quantityMicrounits);
-  const scaled = (numerator + denominator / 2n) / denominator;
-  const result = Number(scaled);
-  if (!Number.isSafeInteger(result))
-    throw new Error("Food Entry exceeds storage limits");
-  return result;
+  return measurements;
 }
 
 export function foodEntrySnapshot(row: FoodEntryRow) {
@@ -95,7 +90,8 @@ export function foodEntrySnapshot(row: FoodEntryRow) {
     id: row.id,
     localEventTime: row.localEventTime,
     marketCountry: row.marketCountry,
-    name: row.originalName,
+    name: row.editedName ?? row.originalName,
+    originalName: row.originalName,
     proteinMilligrams: row.proteinMilligrams,
     provider: row.provider,
     providerFoodId: row.providerFoodId,
@@ -105,6 +101,7 @@ export function foodEntrySnapshot(row: FoodEntryRow) {
     selectedMeasurementId: row.selectedMeasurementId,
     selectedMeasurementLabel: row.selectedMeasurementLabel,
     selectedMeasurementUnit: row.selectedMeasurementUnit,
+    supportedMeasurements: parseCatalogMeasurements(row),
     sodiumMilligrams: row.sodiumMilligrams,
     sugarMilligrams: row.sugarMilligrams,
     updatedAt: row.updatedAt,

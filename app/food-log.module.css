@@ -357,6 +357,18 @@
   border-radius: 0.9rem;
   background: var(--surface);
   box-shadow: 0 8px 24px rgb(15 29 45 / 4%);
+  color: var(--ink);
+  text-decoration: none;
+  transition:
+    border-color 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.foodEntryCard:hover,
+.foodEntryCard:focus-visible {
+  border-color: #79c982;
+  box-shadow: 0 10px 28px rgb(15 29 45 / 8%);
+  outline: none;
 }
 
 .foodEntryCard time {
@@ -711,6 +723,90 @@
   margin-top: 1rem;
 }
 
+.editFoodForm {
+  margin-top: 1rem;
+}
+
+.editFoodForm fieldset {
+  display: grid;
+  gap: 1rem;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.editNutritionGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.authoritativeNote {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.7rem;
+  line-height: 1.45;
+}
+
+.editActions,
+.editActions > div {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.editActions {
+  justify-content: space-between;
+}
+
+.dangerButton,
+.dangerSubmitButton {
+  min-height: 2.75rem;
+  padding: 0.7rem 1rem;
+  border: 1px solid #c63d34;
+  border-radius: 0.7rem;
+  color: #a92f28;
+  background: white;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.dangerSubmitButton {
+  color: white;
+  background: #b9342c;
+}
+
+.deleteConfirm {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.8rem;
+  border: 1px solid #efd1d1;
+  border-radius: 0.75rem;
+  background: #fff0ef;
+}
+
+.deleteConfirm strong,
+.deleteConfirm p {
+  display: block;
+  margin: 0;
+}
+
+.deleteConfirm p {
+  margin-top: 0.15rem;
+  color: #955b5b;
+  font-size: 0.66rem;
+}
+
+.editFoodForm :is(button, input, select):disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
 .catalogError {
   margin: 0.8rem 0 0;
   padding: 0.7rem;
@@ -995,6 +1091,28 @@
 
   .foodDetailGrid {
     grid-template-columns: 1fr;
+  }
+
+  .editNutritionGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .editActions {
+    align-items: stretch;
+    flex-direction: column-reverse;
+  }
+
+  .editActions > div {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .deleteConfirm {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .deleteConfirm > div {
+    grid-column: 1 / -1;
   }
 }
 

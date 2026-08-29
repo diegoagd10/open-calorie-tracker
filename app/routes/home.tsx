@@ -44,8 +44,17 @@ import {
   InvalidFoodLogDateError,
 } from "../food-log/food-log.server";
 import { getFoodLogService } from "../food-log/runtime.server";
-import { InvalidFoodEntryInputError } from "../food-entry/food-entry.server";
+import {
+  FoodEntryUnavailableError,
+  InvalidFoodEntryInputError,
+  StaleFoodEntryError,
+} from "../food-entry/food-entry.server";
 import { getFoodEntryService } from "../food-entry/runtime.server";
+import {
+  quantityMicrounitsFromDecimal,
+  scaleCatalogNutrient,
+  type NutrientStorageScale,
+} from "../food-entry/nutrition";
 import { getGoalSetupService } from "../setup/runtime.server";
 import styles from "../food-log.module.css";
 
@@ -59,6 +68,28 @@ const foodLogIntentSchema = z.discriminatedUnion("intent", [
     providerFoodId: z.string(),
     quantity: z.string(),
     selectedMeasurementId: z.string(),
+  }),
+  z.object({
+    carbohydrateGrams: z.string(),
+    date: z.string(),
+    energyKcal: z.string(),
+    entryId: z.string(),
+    expectedUpdatedAt: z.string(),
+    fatGrams: z.string(),
+    fiberGrams: z.string(),
+    intent: z.literal("update-food"),
+    name: z.string(),
+    proteinGrams: z.string(),
+    quantity: z.string(),
+    selectedMeasurementId: z.string(),
+    sodiumMilligrams: z.string(),
+    sugarGrams: z.string(),
+  }),
+  z.object({
+    date: z.string(),
+    entryId: z.string(),
+    expectedUpdatedAt: z.string(),
+    intent: z.literal("delete-food"),
   }),
 ]);
 const catalogQuerySchema = z.string().trim().min(2).max(100);
@@ -189,6 +220,28 @@ export async function loader({ request }: Route.LoaderArgs) {
     ? buildCalendarMonth(requestedCalendar, foodLog.today, foodLog.selectedDate)
     : undefined;
 
+  const requestedEntry = url.searchParams.get("entry");
+  let foodEntryEditor;
+  if (requestedEntry !== null && !foodLog.isFuture) {
+    if (!/^[1-9]\d*$/.test(requestedEntry)) {
+      throw new Response("Food Entry is unavailable.", { status: 404 });
+    }
+    try {
+      foodEntryEditor = getFoodEntryService(testRequestInstant(request)).read(
+        session.user.id,
+        Number(requestedEntry),
+      );
+      if (foodEntryEditor.foodLogDate !== foodLog.selectedDate) {
+        throw new FoodEntryUnavailableError();
+      }
+    } catch (error) {
+      if (error instanceof FoodEntryUnavailableError) {
+        throw new Response(error.message, { status: 404 });
+      }
+      throw error;
+    }
+  }
+
   const foodStage = catalogRouteState(url.searchParams.get("food"));
   const requestedQuery = url.searchParams.get("query") ?? "";
   let responseStatus = 200;
@@ -275,12 +328,24 @@ export async function loader({ request }: Route.LoaderArgs) {
       calendar,
       catalog,
       csrfToken: session.csrfToken,
+      foodEntryEditor,
       foodLog,
       nearbyDates,
+      notice: noticeMessage(url.searchParams.get("notice")),
       username: session.user.username,
     },
     { status: responseStatus },
   );
+}
+
+function noticeMessage(value: string | null): string | undefined {
+  if (value === "updated") {
+    return "Food Entry updated. Daily totals refreshed.";
+  }
+  if (value === "deleted") {
+    return "Food Entry deleted. Daily totals updated.";
+  }
+  return undefined;
 }
 
 type CatalogRouteState =
@@ -317,12 +382,22 @@ export async function action({ request }: Route.ActionArgs) {
   }
 
   const parsed = foodLogIntentSchema.safeParse({
+    carbohydrateGrams: String(formData.get("carbohydrateGrams") ?? ""),
     date: String(formData.get("date") ?? ""),
+    energyKcal: String(formData.get("energyKcal") ?? ""),
+    entryId: String(formData.get("entryId") ?? ""),
+    expectedUpdatedAt: String(formData.get("expectedUpdatedAt") ?? ""),
+    fatGrams: String(formData.get("fatGrams") ?? ""),
+    fiberGrams: String(formData.get("fiberGrams") ?? ""),
     idempotencyKey: String(formData.get("idempotencyKey") ?? ""),
     intent: String(formData.get("intent") ?? ""),
+    name: String(formData.get("name") ?? ""),
+    proteinGrams: String(formData.get("proteinGrams") ?? ""),
     providerFoodId: String(formData.get("providerFoodId") ?? ""),
     quantity: String(formData.get("quantity") ?? ""),
     selectedMeasurementId: String(formData.get("selectedMeasurementId") ?? ""),
+    sodiumMilligrams: String(formData.get("sodiumMilligrams") ?? ""),
+    sugarGrams: String(formData.get("sugarGrams") ?? ""),
   });
   if (!parsed.success) {
     return data<HomeActionData>(
@@ -354,6 +429,65 @@ export async function action({ request }: Route.ActionArgs) {
       message:
         "Water entry will open here when the Water Log flow is connected.",
     });
+  }
+
+  if (
+    parsed.data.intent === "update-food" ||
+    parsed.data.intent === "delete-food"
+  ) {
+    const entryId = Number(parsed.data.entryId);
+    try {
+      if (parsed.data.intent === "delete-food") {
+        getFoodEntryService(testRequestInstant(request)).delete(
+          session.user.id,
+          entryId,
+          {
+            expectedUpdatedAt: parsed.data.expectedUpdatedAt,
+            foodLogDate: parsed.data.date,
+          },
+        );
+        return redirect(`${foodLogHref(parsed.data.date)}&notice=deleted`);
+      }
+      getFoodEntryService(testRequestInstant(request)).update(
+        session.user.id,
+        entryId,
+        {
+          carbohydrateGrams: parsed.data.carbohydrateGrams,
+          energyKcal: parsed.data.energyKcal,
+          expectedUpdatedAt: parsed.data.expectedUpdatedAt,
+          fatGrams: parsed.data.fatGrams,
+          fiberGrams: parsed.data.fiberGrams,
+          foodLogDate: parsed.data.date,
+          name: parsed.data.name,
+          proteinGrams: parsed.data.proteinGrams,
+          quantity: parsed.data.quantity,
+          selectedMeasurementId: parsed.data.selectedMeasurementId,
+          sodiumMilligrams: parsed.data.sodiumMilligrams,
+          sugarGrams: parsed.data.sugarGrams,
+        },
+      );
+      return redirect(`${foodLogHref(parsed.data.date)}&notice=updated`);
+    } catch (error) {
+      if (error instanceof FoodEntryUnavailableError) {
+        return data<HomeActionData>(
+          { message: error.message, tone: "error" },
+          { status: 404 },
+        );
+      }
+      if (error instanceof StaleFoodEntryError) {
+        return data<HomeActionData>(
+          { message: error.message, tone: "error" },
+          { status: 409 },
+        );
+      }
+      if (error instanceof InvalidFoodEntryInputError) {
+        return data<HomeActionData>(
+          { message: error.message, tone: "error" },
+          { status: 400 },
+        );
+      }
+      throw error;
+    }
   }
 
   try {
@@ -838,6 +972,385 @@ function FoodDetailStage({
   );
 }
 
+type EditableFoodEntry = NonNullable<
+  Route.ComponentProps["loaderData"]["foodEntryEditor"]
+>;
+
+type FoodEntryFields = {
+  carbohydrateGrams: string;
+  energyKcal: string;
+  fatGrams: string;
+  fiberGrams: string;
+  name: string;
+  proteinGrams: string;
+  quantity: string;
+  selectedMeasurementId: string;
+  sodiumMilligrams: string;
+  sugarGrams: string;
+};
+
+function storedNutrientInput(
+  value: number | null,
+  storageScale: NutrientStorageScale,
+) {
+  if (value === null) return "";
+  if (storageScale === "integer-milligrams") return String(value);
+  const whole = Math.floor(value / 1_000);
+  const fraction = String(value % 1_000)
+    .padStart(3, "0")
+    .replace(/0+$/, "");
+  return fraction ? `${whole}.${fraction}` : String(whole);
+}
+
+function initialFoodEntryFields(entry: EditableFoodEntry): FoodEntryFields {
+  return {
+    carbohydrateGrams: storedNutrientInput(
+      entry.carbohydrateMilligrams,
+      "decimal-thousandths",
+    ),
+    energyKcal: storedNutrientInput(
+      entry.energyMilliKcal,
+      "decimal-thousandths",
+    ),
+    fatGrams: storedNutrientInput(
+      entry.fatMilligrams,
+      "decimal-thousandths",
+    ),
+    fiberGrams: storedNutrientInput(
+      entry.fiberMilligrams,
+      "decimal-thousandths",
+    ),
+    name: entry.name,
+    proteinGrams: storedNutrientInput(
+      entry.proteinMilligrams,
+      "decimal-thousandths",
+    ),
+    quantity: String(entry.quantityMicrounits / 1_000_000),
+    selectedMeasurementId: entry.selectedMeasurementId,
+    sodiumMilligrams: storedNutrientInput(
+      entry.sodiumMilligrams,
+      "integer-milligrams",
+    ),
+    sugarGrams: storedNutrientInput(
+      entry.sugarMilligrams,
+      "decimal-thousandths",
+    ),
+  };
+}
+
+function recalculatedFoodEntryFields(
+  entry: EditableFoodEntry,
+  selectedMeasurementId: string,
+  quantity: string,
+): Partial<FoodEntryFields> {
+  const measurement = entry.supportedMeasurements.find(
+    (candidate) => candidate.id === selectedMeasurementId,
+  );
+  const quantityMicrounits = quantityMicrounitsFromDecimal(quantity);
+  if (!measurement || quantityMicrounits === undefined) return {};
+  const scale = (
+    value: EditableFoodEntry["authoritativeNutrition"]["energyMilliKcal"],
+  ) =>
+    scaleCatalogNutrient(
+      value,
+      measurement.baseQuantityMicrounits,
+      quantityMicrounits,
+      entry.authoritativeBaseQuantityMicrounits,
+    );
+  return {
+    carbohydrateGrams: storedNutrientInput(
+      scale(entry.authoritativeNutrition.carbohydrateMilligrams),
+      "decimal-thousandths",
+    ),
+    energyKcal: storedNutrientInput(
+      scale(entry.authoritativeNutrition.energyMilliKcal),
+      "decimal-thousandths",
+    ),
+    fatGrams: storedNutrientInput(
+      scale(entry.authoritativeNutrition.fatMilligrams),
+      "decimal-thousandths",
+    ),
+    fiberGrams: storedNutrientInput(
+      scale(entry.authoritativeNutrition.fiberMilligrams),
+      "decimal-thousandths",
+    ),
+    proteinGrams: storedNutrientInput(
+      scale(entry.authoritativeNutrition.proteinMilligrams),
+      "decimal-thousandths",
+    ),
+    sodiumMilligrams: storedNutrientInput(
+      scale(entry.authoritativeNutrition.sodiumMilligrams),
+      "integer-milligrams",
+    ),
+    sugarGrams: storedNutrientInput(
+      scale(entry.authoritativeNutrition.sugarMilligrams),
+      "decimal-thousandths",
+    ),
+  };
+}
+
+function FoodEntryEditorDialog({
+  actionData,
+  csrfToken,
+  entry,
+}: {
+  actionData: HomeActionData | undefined;
+  csrfToken: string;
+  entry: EditableFoodEntry;
+}) {
+  const dialogRef = useRef<HTMLElement>(null);
+  const navigation = useNavigation();
+  const navigate = useNavigate();
+  const previousFocusRef = useRef<HTMLElement | null>(null);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [fields, setFields] = useState(() => initialFoodEntryFields(entry));
+  const closeHref = foodLogHref(entry.foodLogDate);
+  const pending =
+    navigation.state !== "idle" &&
+    navigation.formData?.get("entryId") === String(entry.id);
+
+  useEffect(() => {
+    if (
+      !previousFocusRef.current &&
+      document.activeElement instanceof HTMLElement
+    ) {
+      previousFocusRef.current = document.activeElement;
+    }
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const focusFrame = requestAnimationFrame(() => {
+      dialogRef.current?.querySelector<HTMLElement>("input:not([disabled])")?.focus();
+    });
+    return () => {
+      cancelAnimationFrame(focusFrame);
+      document.body.style.overflow = previousOverflow;
+      const previousFocus = previousFocusRef.current;
+      requestAnimationFrame(() => {
+        const restoreTarget =
+          previousFocus?.isConnected && previousFocus !== document.body
+            ? previousFocus
+            : document.querySelector<HTMLElement>("[data-entry-editor-trigger]");
+        restoreTarget?.focus();
+      });
+    };
+  }, []);
+
+  function handleDialogKeyDown(event: ReactKeyboardEvent<HTMLElement>) {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      void navigate(closeHref);
+      return;
+    }
+    if (event.key !== "Tab") return;
+    const focusable = [
+      ...(dialogRef.current?.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), input:not([type="hidden"]):not([disabled]), select:not([disabled]), a[href]',
+      ) ?? []),
+    ].filter((element) => element.offsetParent !== null);
+    const first = focusable[0];
+    const last = focusable.at(-1);
+    if (!first || !last) return;
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
+
+  function changeScale(selectedMeasurementId: string, quantity: string) {
+    setFields((current) => ({
+      ...current,
+      ...recalculatedFoodEntryFields(entry, selectedMeasurementId, quantity),
+      quantity,
+      selectedMeasurementId,
+    }));
+  }
+
+  const nutrientFields = [
+    ["energyKcal", "Calories (kcal)"],
+    ["proteinGrams", "Protein (g)"],
+    ["carbohydrateGrams", "Carbohydrate (g)"],
+    ["fatGrams", "Fat (g)"],
+    ["fiberGrams", "Fiber (g)"],
+    ["sugarGrams", "Sugar (g)"],
+    ["sodiumMilligrams", "Sodium (mg)"],
+  ] as const;
+
+  return (
+    <div
+      className={styles.dialogBackdrop}
+      onClick={(event) => {
+        if (event.target === event.currentTarget) void navigate(closeHref);
+      }}
+    >
+      <section
+        aria-labelledby="edit-food-entry-title"
+        aria-modal="true"
+        className={`${styles.foodDialog} ${styles.editFoodDialog}`}
+        onKeyDown={handleDialogKeyDown}
+        ref={dialogRef}
+        role="dialog"
+      >
+        <div className={styles.dialogHead}>
+          <div>
+            <h2 id="edit-food-entry-title">Edit Food Entry</h2>
+            <span className={styles.dialogChip}>Nutrition Snapshot</span>
+            <p>Changes affect this occurrence only.</p>
+          </div>
+          <Link
+            aria-label="Close edit form"
+            className={styles.dialogClose}
+            to={closeHref}
+          >
+            ×
+          </Link>
+        </div>
+        <Form className={styles.editFoodForm} method="post" noValidate>
+          <input name="csrfToken" type="hidden" value={csrfToken} />
+          <input name="date" type="hidden" value={entry.foodLogDate} />
+          <input name="entryId" type="hidden" value={entry.id} />
+          <input
+            name="expectedUpdatedAt"
+            type="hidden"
+            value={entry.updatedAt}
+          />
+          <fieldset disabled={pending}>
+            <label className={styles.stackedField}>
+              <span>Food name</span>
+              <input
+                maxLength={200}
+                name="name"
+                onChange={(event) =>
+                  setFields((current) => ({
+                    ...current,
+                    name: event.target.value,
+                  }))
+                }
+                required
+                value={fields.name}
+              />
+            </label>
+            <div className={styles.foodDetailGrid}>
+              <label className={styles.stackedField}>
+                <span>Measurement</span>
+                <select
+                  name="selectedMeasurementId"
+                  onChange={(event) =>
+                    changeScale(event.target.value, fields.quantity)
+                  }
+                  value={fields.selectedMeasurementId}
+                >
+                  {entry.supportedMeasurements.map((measurement) => (
+                    <option key={measurement.id} value={measurement.id}>
+                      {measurement.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className={styles.stackedField}>
+                <span>Quantity</span>
+                <input
+                  inputMode="decimal"
+                  max="99"
+                  min="0.000001"
+                  name="quantity"
+                  onChange={(event) =>
+                    changeScale(fields.selectedMeasurementId, event.target.value)
+                  }
+                  required
+                  step="0.000001"
+                  type="number"
+                  value={fields.quantity}
+                />
+              </label>
+            </div>
+            <div className={styles.editNutritionGrid}>
+              {nutrientFields.map(([name, label]) => (
+                <label className={styles.stackedField} key={name}>
+                  <span>{label}</span>
+                  <input
+                    inputMode="decimal"
+                    max={name === "sodiumMilligrams" ? "9999999" : "999999.999"}
+                    min="0"
+                    name={name}
+                    onChange={(event) =>
+                      setFields((current) => ({
+                        ...current,
+                        [name]: event.target.value,
+                      }))
+                    }
+                    step={name === "sodiumMilligrams" ? "1" : "0.001"}
+                    type="number"
+                    value={fields[name]}
+                  />
+                </label>
+              ))}
+            </div>
+            <p className={styles.authoritativeNote}>
+              Quantity and measurement recalculate from the saved authoritative
+              base, not from previously rounded values. Empty nutrients save as
+              unknown; zero remains a known zero.
+            </p>
+            {actionData?.message ? (
+              <p className={styles.catalogError} role="alert">
+                {actionData.message}
+              </p>
+            ) : null}
+            <div className={styles.editActions}>
+              <button
+                className={styles.dangerButton}
+                onClick={() => setConfirmingDelete(true)}
+                type="button"
+              >
+                Delete entry
+              </button>
+              <div>
+                <Link className={styles.secondaryButton} to={closeHref}>
+                  Cancel
+                </Link>
+                <button
+                  className={styles.primaryButton}
+                  name="intent"
+                  type="submit"
+                  value="update-food"
+                >
+                  {pending ? "Saving…" : "Save changes"}
+                </button>
+              </div>
+            </div>
+            {confirmingDelete ? (
+              <div className={styles.deleteConfirm} role="alert">
+                <div>
+                  <strong>Delete this Food Entry?</strong>
+                  <p>Its nutrition will no longer contribute to this day.</p>
+                </div>
+                <button
+                  className={styles.secondaryButton}
+                  onClick={() => setConfirmingDelete(false)}
+                  type="button"
+                >
+                  Keep it
+                </button>
+                <button
+                  className={styles.dangerSubmitButton}
+                  formNoValidate
+                  name="intent"
+                  type="submit"
+                  value="delete-food"
+                >
+                  {pending ? "Deleting…" : "Delete"}
+                </button>
+              </div>
+            ) : null}
+          </fieldset>
+        </Form>
+      </section>
+    </div>
+  );
+}
+
 function CatalogDialog({
   actionData,
   catalog,
@@ -1088,8 +1601,16 @@ function CatalogDialog({
 }
 
 export default function Home({ actionData, loaderData }: Route.ComponentProps) {
-  const { calendar, catalog, csrfToken, foodLog, nearbyDates, username } =
-    loaderData;
+  const {
+    calendar,
+    catalog,
+    csrfToken,
+    foodEntryEditor,
+    foodLog,
+    nearbyDates,
+    notice,
+    username,
+  } = loaderData;
   const goals = goalValues(foodLog);
   const selectedLabel = fullDate(foodLog.selectedDate);
   const view = calendar ? "calendar" : "log";
@@ -1100,7 +1621,10 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
 
   return (
     <>
-      <div className={styles.shell} inert={catalog ? true : undefined}>
+      <div
+        className={styles.shell}
+        inert={catalog || foodEntryEditor ? true : undefined}
+      >
         <a className={styles.skipLink} href="#food-log-content">
           Skip to daily log
         </a>
@@ -1232,6 +1756,11 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
                   <h2 id="daily-log-heading">Daily log</h2>
                   <span>{selectedLabel}</span>
                 </div>
+                {notice ? (
+                  <p className={styles.actionMessage} role="status">
+                    {notice}
+                  </p>
+                ) : null}
                 {foodLog.isFuture ? (
                   <div className={styles.futureDay}>
                     <span className={styles.emptyIcon} aria-hidden="true">
@@ -1253,32 +1782,38 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
                       label="＋ Add Food"
                     />
                     {foodLog.entries.map((entry) => (
-                      <article className={styles.foodEntryCard} key={entry.id}>
-                        <time
-                          dateTime={`${entry.foodLogDate}T${entry.localEventTime}`}
+                      <article key={entry.id}>
+                        <Link
+                          className={styles.foodEntryCard}
+                          data-entry-editor-trigger
+                          to={`${foodLogHref(entry.foodLogDate)}&entry=${entry.id}`}
                         >
-                          {formatEventTime(entry.localEventTime)}
-                        </time>
-                        <span
-                          className={styles.foodEntryMarker}
-                          aria-hidden="true"
-                        >
-                          ◇
-                        </span>
-                        <span className={styles.foodEntryContent}>
-                          <strong>{entry.name}</strong>
-                          <small>
-                            USDA FoodData Central · {entry.dataType}
-                          </small>
-                          <small>
-                            {entry.selectedMeasurementLabel} ×{" "}
-                            {entry.quantityMicrounits / 1_000_000}
-                          </small>
-                        </span>
-                        <span className={styles.foodEntryEnergy}>
-                          {formatEnergy(entry.energyMilliKcal)}{" "}
-                          <small>kcal</small>
-                        </span>
+                          <time
+                            dateTime={`${entry.foodLogDate}T${entry.localEventTime}`}
+                          >
+                            {formatEventTime(entry.localEventTime)}
+                          </time>
+                          <span
+                            className={styles.foodEntryMarker}
+                            aria-hidden="true"
+                          >
+                            ◇
+                          </span>
+                          <span className={styles.foodEntryContent}>
+                            <strong>{entry.name}</strong>
+                            <small>
+                              USDA FoodData Central · {entry.dataType}
+                            </small>
+                            <small>
+                              {entry.selectedMeasurementLabel} ×{" "}
+                              {entry.quantityMicrounits / 1_000_000}
+                            </small>
+                          </span>
+                          <span className={styles.foodEntryEnergy}>
+                            {formatEnergy(entry.energyMilliKcal)}{" "}
+                            <small>kcal</small>
+                          </span>
+                        </Link>
                       </article>
                     ))}
                     <EmptyActionForm
@@ -1355,6 +1890,14 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
           catalog={catalog}
           csrfToken={csrfToken}
           date={foodLog.selectedDate}
+        />
+      ) : null}
+      {foodEntryEditor ? (
+        <FoodEntryEditorDialog
+          actionData={actionData}
+          csrfToken={csrfToken}
+          entry={foodEntryEditor}
+          key={foodEntryEditor.updatedAt}
         />
       ) : null}
     </>
