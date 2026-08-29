@@ -1,0 +1,15 @@
+services:
+  application:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      PORT: "3000"
+    ports:
+      - "${APP_PORT:-3000}:3000"
+    volumes:
+      - application-data:/app/data
+
+volumes:
+  application-data:
