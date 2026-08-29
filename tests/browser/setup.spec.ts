@@ -40,6 +40,12 @@ test("a new account must complete the privacy-minimal Food Log setup", async ({
   await expect(page.getByLabel("US", { exact: true })).toBeChecked();
   await expect(page.getByLabel("Metric", { exact: true })).not.toBeChecked();
   await expect(page.getByLabel("Time zone")).toBeVisible();
+  await expect(page.getByLabel("Sodium maximum")).toHaveAttribute("min", "1");
+  expect(
+    await page
+      .getByLabel("Sodium maximum")
+      .evaluate((input: HTMLInputElement) => input.validity.valid),
+  ).toBe(true);
 
   for (const unnecessaryField of [
     "Name",

@@ -232,7 +232,7 @@ export default function Setup({ actionData, loaderData }: Route.ComponentProps) 
                         }
                       : { defaultValue: field.value, max: field.max })}
                     inputMode="decimal"
-                    min="0.001"
+                    min={field.name === "sodium" ? "1" : "0.001"}
                     name={field.name}
                     required
                     step={field.name === "sodium" ? "1" : "0.001"}
