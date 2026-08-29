@@ -1,0 +1,8 @@
+Use case: ui-mockup
+Asset type: mobile-first web app direction comp, portrait iPhone screen
+Primary request: a shippable Open Calory Tracker home screen in a Deployable Daily Sheet visual system, where the day opens from a compact totals packet into linked nutrition, food, and water cells.
+Structure: compact top utility strip; centered date packet; a large calorie cell; linked diagonal-seam nutrient cells; a stepped-open food log; a narrow water fold; thumb-reachable Add food and Add water actions.
+Subject/content: Saturday, August 29; Mock data label; 1,420 / 2,050 kcal; Greek yogurt with blueberries 320 kcal 8:12 AM; Turkey & avocado sandwich 540 kcal 12:36 PM; water 40 / 80 fl oz; protein 72 / 120 g; carbs 131 / 230 g; fat 44 / 70 g; fiber Incomplete; USDA FoodData Central attribution.
+Style/medium: realistic polished product UI, not concept art. Miura-fold deployable sheet: matte ivory ground, deep slate ink, pale blue valley seams, warm gray mountain seams, one gold foil packet face, aerospace-spec mono for measurements paired with a readable workhorse sans.
+Composition/framing: full portrait 9:16 app viewport, no device frame; compact packet at top visibly unfolds in stepped sections toward event detail below; preserve familiar form and edit affordances inside the fold grammar.
+Constraints: mobile web app; English; practical accessible hierarchy; no photos, no food illustrations, no generic wellness cards, no progress rings, no gamification, no streaks, no badges, no medical claims, no fake logos, no watermark; render provided labels accurately and do not invent claims.

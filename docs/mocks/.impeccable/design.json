@@ -1,0 +1,248 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-08-29T10:57:59-04:00",
+  "title": "Design System: Open Calory Tracker",
+  "extensions": {
+    "colorMeta": {
+      "ground": {
+        "role": "neutral",
+        "displayName": "Cool Ground",
+        "canonical": "#fafbfd",
+        "tonalRamp": ["oklch(15% 0.006 250)", "oklch(26% 0.006 250)", "oklch(38% 0.006 250)", "oklch(50% 0.006 250)", "oklch(62% 0.006 250)", "oklch(74% 0.006 250)", "oklch(86% 0.006 250)", "oklch(95% 0.006 250)"]
+      },
+      "surface": {
+        "role": "neutral",
+        "displayName": "Clean Surface",
+        "canonical": "#ffffff",
+        "tonalRamp": ["oklch(15% 0.002 250)", "oklch(26% 0.002 250)", "oklch(38% 0.002 250)", "oklch(50% 0.002 250)", "oklch(62% 0.002 250)", "oklch(74% 0.002 250)", "oklch(86% 0.002 250)", "oklch(95% 0.002 250)"]
+      },
+      "surface-soft": {
+        "role": "neutral",
+        "displayName": "Soft Surface",
+        "canonical": "#f3f6f8",
+        "tonalRamp": ["oklch(15% 0.009 240)", "oklch(26% 0.009 240)", "oklch(38% 0.009 240)", "oklch(50% 0.009 240)", "oklch(62% 0.009 240)", "oklch(74% 0.009 240)", "oklch(86% 0.009 240)", "oklch(95% 0.009 240)"]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Slate Ink",
+        "canonical": "#0a0e1a",
+        "tonalRamp": ["oklch(15% 0.030 265)", "oklch(26% 0.030 265)", "oklch(38% 0.030 265)", "oklch(50% 0.030 265)", "oklch(62% 0.030 265)", "oklch(74% 0.030 265)", "oklch(86% 0.030 265)", "oklch(95% 0.030 265)"]
+      },
+      "ink-secondary": {
+        "role": "neutral",
+        "displayName": "Secondary Slate",
+        "canonical": "#4f5461",
+        "tonalRamp": ["oklch(15% 0.022 265)", "oklch(26% 0.022 265)", "oklch(38% 0.022 265)", "oklch(50% 0.022 265)", "oklch(62% 0.022 265)", "oklch(74% 0.022 265)", "oklch(86% 0.022 265)", "oklch(95% 0.022 265)"]
+      },
+      "muted": {
+        "role": "neutral",
+        "displayName": "Muted Slate",
+        "canonical": "#626a78",
+        "tonalRamp": ["oklch(15% 0.020 250)", "oklch(26% 0.020 250)", "oklch(38% 0.020 250)", "oklch(50% 0.020 250)", "oklch(62% 0.020 250)", "oklch(74% 0.020 250)", "oklch(86% 0.020 250)", "oklch(95% 0.020 250)"]
+      },
+      "rule": {
+        "role": "neutral",
+        "displayName": "Cool Rule",
+        "canonical": "#d9dee6",
+        "tonalRamp": ["oklch(15% 0.012 250)", "oklch(26% 0.012 250)", "oklch(38% 0.012 250)", "oklch(50% 0.012 250)", "oklch(62% 0.012 250)", "oklch(74% 0.012 250)", "oklch(86% 0.012 250)", "oklch(95% 0.012 250)"]
+      },
+      "rule-strong": {
+        "role": "neutral",
+        "displayName": "Strong Cool Rule",
+        "canonical": "#c6ccd6",
+        "tonalRamp": ["oklch(15% 0.016 250)", "oklch(26% 0.016 250)", "oklch(38% 0.016 250)", "oklch(50% 0.016 250)", "oklch(62% 0.016 250)", "oklch(74% 0.016 250)", "oklch(86% 0.016 250)", "oklch(95% 0.016 250)"]
+      },
+      "action-green": {
+        "role": "primary",
+        "displayName": "Action Green",
+        "canonical": "#197727",
+        "tonalRamp": ["oklch(15% 0.110 145)", "oklch(26% 0.110 145)", "oklch(38% 0.110 145)", "oklch(50% 0.110 145)", "oklch(62% 0.110 145)", "oklch(74% 0.110 145)", "oklch(86% 0.110 145)", "oklch(95% 0.110 145)"]
+      },
+      "action-green-dark": {
+        "role": "primary",
+        "displayName": "Deep Action Green",
+        "canonical": "#125f1e",
+        "tonalRamp": ["oklch(15% 0.090 145)", "oklch(26% 0.090 145)", "oklch(38% 0.090 145)", "oklch(50% 0.090 145)", "oklch(62% 0.090 145)", "oklch(74% 0.090 145)", "oklch(86% 0.090 145)", "oklch(95% 0.090 145)"]
+      },
+      "action-green-soft": {
+        "role": "primary",
+        "displayName": "Soft Action Green",
+        "canonical": "#e8f5e9",
+        "tonalRamp": ["oklch(15% 0.035 145)", "oklch(26% 0.035 145)", "oklch(38% 0.035 145)", "oklch(50% 0.035 145)", "oklch(62% 0.035 145)", "oklch(74% 0.035 145)", "oklch(86% 0.035 145)", "oklch(95% 0.035 145)"]
+      },
+      "water-blue": {
+        "role": "secondary",
+        "displayName": "Water Blue",
+        "canonical": "#1558a7",
+        "tonalRamp": ["oklch(15% 0.120 255)", "oklch(26% 0.120 255)", "oklch(38% 0.120 255)", "oklch(50% 0.120 255)", "oklch(62% 0.120 255)", "oklch(74% 0.120 255)", "oklch(86% 0.120 255)", "oklch(95% 0.120 255)"]
+      },
+      "water-blue-dark": {
+        "role": "secondary",
+        "displayName": "Deep Water Blue",
+        "canonical": "#0d477f",
+        "tonalRamp": ["oklch(15% 0.100 250)", "oklch(26% 0.100 250)", "oklch(38% 0.100 250)", "oklch(50% 0.100 250)", "oklch(62% 0.100 250)", "oklch(74% 0.100 250)", "oklch(86% 0.100 250)", "oklch(95% 0.100 250)"]
+      },
+      "water-blue-soft": {
+        "role": "secondary",
+        "displayName": "Soft Water Blue",
+        "canonical": "#eaf3ff",
+        "tonalRamp": ["oklch(15% 0.035 250)", "oklch(26% 0.035 250)", "oklch(38% 0.035 250)", "oklch(50% 0.035 250)", "oklch(62% 0.035 250)", "oklch(74% 0.035 250)", "oklch(86% 0.035 250)", "oklch(95% 0.035 250)"]
+      },
+      "caution-amber": {
+        "role": "tertiary",
+        "displayName": "Caution Amber",
+        "canonical": "#c77a00",
+        "tonalRamp": ["oklch(15% 0.140 75)", "oklch(26% 0.140 75)", "oklch(38% 0.140 75)", "oklch(50% 0.140 75)", "oklch(62% 0.140 75)", "oklch(74% 0.140 75)", "oklch(86% 0.140 75)", "oklch(95% 0.140 75)"]
+      },
+      "caution-amber-soft": {
+        "role": "tertiary",
+        "displayName": "Soft Caution Amber",
+        "canonical": "#fff4dc",
+        "tonalRamp": ["oklch(15% 0.040 75)", "oklch(26% 0.040 75)", "oklch(38% 0.040 75)", "oklch(50% 0.040 75)", "oklch(62% 0.040 75)", "oklch(74% 0.040 75)", "oklch(86% 0.040 75)", "oklch(95% 0.040 75)"]
+      },
+      "destructive-red": {
+        "role": "tertiary",
+        "displayName": "Destructive Red",
+        "canonical": "#c43b3b",
+        "tonalRamp": ["oklch(15% 0.150 25)", "oklch(26% 0.150 25)", "oklch(38% 0.150 25)", "oklch(50% 0.150 25)", "oklch(62% 0.150 25)", "oklch(74% 0.150 25)", "oklch(86% 0.150 25)", "oklch(95% 0.150 25)"]
+      },
+      "destructive-red-soft": {
+        "role": "tertiary",
+        "displayName": "Soft Destructive Red",
+        "canonical": "#fff0f0",
+        "tonalRamp": ["oklch(15% 0.035 25)", "oklch(26% 0.035 25)", "oklch(38% 0.035 25)", "oklch(50% 0.035 25)", "oklch(62% 0.035 25)", "oklch(74% 0.035 25)", "oklch(86% 0.035 25)", "oklch(95% 0.035 25)"]
+      }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display", "purpose": "The selected-day title only." },
+      "headline": { "displayName": "Headline", "purpose": "Top-level History and Settings view titles." },
+      "title": { "displayName": "Title", "purpose": "Dialogs, sheets, and major grouped-section titles." },
+      "body": { "displayName": "Body", "purpose": "Reading copy and native-feeling form controls." },
+      "label": { "displayName": "Label", "purpose": "Compact controls, fields, and emphasized metadata." },
+      "action": { "displayName": "Action", "purpose": "Extra-bold text for decisive 44px buttons." },
+      "caption": { "displayName": "Caption", "purpose": "Units, provenance, provider state, and supporting detail." }
+    },
+    "shadows": [
+      { "name": "ambient-low", "value": "0 2px 5px rgb(15 29 45 / 0.04), 0 10px 30px rgb(15 29 45 / 0.05)", "purpose": "Restrained separation for the daily summary and calendar." },
+      { "name": "overlay-high", "value": "0 12px 28px rgb(15 29 45 / 0.14), 0 30px 70px rgb(15 29 45 / 0.14)", "purpose": "Clear separation for dialogs, bottom sheets, and toasts." },
+      { "name": "bottom-navigation", "value": "0 -8px 28px rgb(15 29 45 / 0.06)", "purpose": "A faint upward lift for the fixed mobile navigation." }
+    ],
+    "motion": [
+      { "name": "ease-out", "value": "cubic-bezier(.16, 1, .3, 1)", "purpose": "Native-feeling view, dialog, sheet, and toast entrances." },
+      { "name": "state-fast", "value": "160ms–180ms ease", "purpose": "Hover, press, fill, border, and color state transitions." },
+      { "name": "overlay-in", "value": "220ms ease", "purpose": "Backdrop fade that preserves awareness of the selected day." },
+      { "name": "sheet-in", "value": "380ms cubic-bezier(.16, 1, .3, 1)", "purpose": "Thumb-edge water sheet entrance." }
+    ],
+    "breakpoints": [
+      { "name": "compact-phone", "value": "420px" },
+      { "name": "contained-canvas", "value": "760px" },
+      { "name": "three-column-shell", "value": "1120px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Affirmative food, account, and settings actions.",
+      "html": "<button class=\"ds-btn-primary\" type=\"button\">Save goal version</button>",
+      "css": ".ds-btn-primary { min-height: 44px; display: inline-flex; align-items: center; justify-content: center; padding: .62rem 1rem; border: 1px solid transparent; border-radius: var(--radius-sm, 10px); color: var(--surface, #fff); background: var(--green-dark, #125f1e); font: 750 .78rem/1.2 -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; cursor: pointer; transition: transform .16s, background .16s; } .ds-btn-primary:hover { background: #105f1e; } .ds-btn-primary:focus-visible { outline: 3px solid rgb(40 118 220 / .32); outline-offset: 2px; } .ds-btn-primary:active { transform: scale(.97); }"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Neutral cancel and alternative actions.",
+      "html": "<button class=\"ds-btn-secondary\" type=\"button\">Cancel</button>",
+      "css": ".ds-btn-secondary { min-height: 44px; display: inline-flex; align-items: center; justify-content: center; padding: .62rem 1rem; border: 1px solid var(--rule-strong, #c6ccd6); border-radius: var(--radius-sm, 10px); color: var(--ink-2, #4f5461); background: var(--surface, #fff); font: 750 .78rem/1.2 -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; cursor: pointer; transition: transform .16s, color .16s, background .16s; } .ds-btn-secondary:hover { color: var(--ink, #0a0e1a); background: var(--surface-soft, #f3f6f8); } .ds-btn-secondary:focus-visible { outline: 3px solid rgb(40 118 220 / .32); outline-offset: 2px; } .ds-btn-secondary:active { transform: scale(.97); }"
+    },
+    {
+      "name": "Water Button",
+      "kind": "button",
+      "refersTo": "button-water",
+      "description": "Water-specific save and logging action.",
+      "html": "<button class=\"ds-btn-water\" type=\"button\">Add water</button>",
+      "css": ".ds-btn-water { min-height: 44px; display: inline-flex; align-items: center; justify-content: center; padding: .62rem 1rem; border: 1px solid transparent; border-radius: var(--radius-sm, 10px); color: var(--surface, #fff); background: var(--blue, #1558a7); font: 750 .78rem/1.2 -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; cursor: pointer; transition: transform .16s, background .16s; } .ds-btn-water:hover { background: var(--blue-dark, #0d477f); } .ds-btn-water:focus-visible { outline: 3px solid rgb(40 118 220 / .32); outline-offset: 2px; } .ds-btn-water:active { transform: scale(.97); }"
+    },
+    {
+      "name": "Text Field",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Exact values, account credentials, dates, and search queries.",
+      "html": "<label class=\"ds-field\"><span>Custom amount</span><input type=\"number\" value=\"20\" aria-label=\"Custom amount in fluid ounces\"><small>fl oz</small></label>",
+      "css": ".ds-field { display: grid; gap: .38rem; color: var(--ink, #0a0e1a); font: 700 .75rem/1.2 -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; } .ds-field input { min-height: 44px; padding: .65rem .7rem; border: 1px solid var(--rule-strong, #c6ccd6); border-radius: 9px; color: var(--ink, #0a0e1a); background: var(--surface, #fff); font: 400 1rem/1.45 -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; } .ds-field input:hover { border-color: #a8b0bc; } .ds-field input:focus-visible { outline: 3px solid rgb(40 118 220 / .32); outline-offset: 2px; border-color: var(--blue, #1558a7); } .ds-field small { color: var(--muted, #626a78); font-size: .65rem; font-weight: 500; }"
+    },
+    {
+      "name": "Information Chip",
+      "kind": "chip",
+      "refersTo": "chip-info",
+      "description": "Compact metadata such as mock-data and provider-type labels.",
+      "html": "<span class=\"ds-chip-info\">Mock data</span>",
+      "css": ".ds-chip-info { min-height: 28px; display: inline-flex; align-items: center; padding: .3rem .55rem; border-radius: 999px; color: var(--blue-dark, #0d477f); background: var(--blue-soft, #eaf3ff); font: 700 .68rem/1.2 -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; white-space: nowrap; }"
+    },
+    {
+      "name": "Summary Card",
+      "kind": "card",
+      "refersTo": "card-summary",
+      "description": "The compact grouped surface for daily calorie and nutrient status.",
+      "html": "<section class=\"ds-summary-card\"><span>Calories</span><strong>1,420 <small>/ 2,050 kcal</small></strong><i><b></b></i><small>630 kcal remaining</small></section>",
+      "css": ".ds-summary-card { width: min(320px, 100%); display: grid; gap: .55rem; padding: 1.15rem 1rem 1rem; border: 1px solid var(--rule, #d9dee6); border-radius: var(--radius, 16px); color: var(--ink, #0a0e1a); background: var(--surface, #fff); box-shadow: 0 2px 5px rgb(15 29 45 / .04), 0 10px 30px rgb(15 29 45 / .05); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; } .ds-summary-card > span { font-size: .92rem; font-weight: 600; } .ds-summary-card strong { font-size: 1.55rem; font-variant-numeric: tabular-nums; } .ds-summary-card strong small, .ds-summary-card > small { color: var(--muted, #626a78); font-size: .72rem; font-weight: 500; } .ds-summary-card i { display: block; height: 7px; overflow: hidden; border-radius: 999px; background: #e9edf1; } .ds-summary-card i b { display: block; width: 69%; height: 100%; border-radius: inherit; background: var(--green, #197727); } .ds-summary-card:focus-within { outline: 3px solid rgb(40 118 220 / .32); outline-offset: 2px; }"
+    },
+    {
+      "name": "Active Navigation Item",
+      "kind": "nav",
+      "description": "Current mobile destination with icon above label.",
+      "html": "<button class=\"ds-nav-active\" type=\"button\" aria-current=\"page\"><svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><rect x=\"4\" y=\"3\" width=\"16\" height=\"18\" rx=\"2\"/><path d=\"M8 8h8M8 12h8M8 16h5\"/></svg><span>Log</span></button>",
+      "css": ".ds-nav-active { min-width: 72px; min-height: 56px; display: grid; place-items: center; align-content: center; gap: .15rem; border: 0; color: var(--green-dark, #125f1e); background: transparent; font: 600 .7rem/1.2 -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; cursor: pointer; } .ds-nav-active svg { width: 1.35rem; height: 1.35rem; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; } .ds-nav-active:hover { background: var(--surface-soft, #f3f6f8); } .ds-nav-active:focus-visible { outline: 3px solid rgb(40 118 220 / .32); outline-offset: 2px; border-radius: var(--radius-sm, 10px); } .ds-nav-active:active { transform: scale(.97); }"
+    },
+    {
+      "name": "Chronological Food Event",
+      "kind": "custom",
+      "description": "A source-aware food record aligned to its exact time and semantic marker.",
+      "html": "<button class=\"ds-event-food\" type=\"button\"><time>8:12 AM</time><span class=\"ds-event-marker\"><svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M7 3v8M4 3v5a3 3 0 0 0 6 0V3M7 11v10M16 3v18M16 3c3 2 4 6 0 9\"/></svg></span><span class=\"ds-event-copy\"><strong>Greek yogurt with blueberries</strong><small>USDA FoodData Central · Branded</small></span><span class=\"ds-event-value\">320 <small>kcal</small></span></button>",
+      "css": ".ds-event-food { width: 100%; min-height: 88px; display: grid; grid-template-columns: 64px 42px minmax(0, 1fr) auto; align-items: center; gap: .45rem; padding: .45rem 0; border: 0; color: var(--ink, #0a0e1a); background: transparent; text-align: left; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; cursor: pointer; } .ds-event-food time { color: var(--ink-2, #4f5461); font-size: .72rem; font-weight: 600; font-variant-numeric: tabular-nums; } .ds-event-marker { width: 42px; height: 42px; display: grid; place-items: center; border: 1px solid #79c982; border-radius: 50%; color: var(--green-dark, #125f1e); background: var(--green-soft, #e8f5e9); } .ds-event-marker svg { width: 1.15rem; height: 1.15rem; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; } .ds-event-copy { min-width: 0; display: grid; align-content: center; align-self: stretch; padding: .65rem .5rem .65rem .85rem; border: 1px solid var(--rule, #d9dee6); border-right: 0; border-radius: var(--radius-sm, 10px) 0 0 var(--radius-sm, 10px); background: var(--surface, #fff); } .ds-event-copy strong, .ds-event-copy small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .ds-event-copy strong { font-size: .84rem; } .ds-event-copy small { margin-top: .18rem; color: var(--muted, #626a78); font-size: .65rem; } .ds-event-value { align-self: stretch; display: grid; align-content: center; padding: .65rem .65rem; border: 1px solid var(--rule, #d9dee6); border-left: 0; border-radius: 0 var(--radius-sm, 10px) var(--radius-sm, 10px) 0; background: var(--surface, #fff); font-size: .82rem; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; } .ds-event-value small { color: var(--muted, #626a78); font-size: .62rem; font-weight: 500; } .ds-event-food:hover .ds-event-copy, .ds-event-food:hover .ds-event-value { border-color: var(--rule-strong, #c6ccd6); background: #fbfcfd; } .ds-event-food:focus-visible { outline: 3px solid rgb(40 118 220 / .32); outline-offset: 2px; border-radius: var(--radius-sm, 10px); } .ds-event-food:active { transform: scale(.995); }"
+    },
+    {
+      "name": "Selected Water Preset",
+      "kind": "custom",
+      "description": "A selected exact water amount inside the thumb-reachable sheet.",
+      "html": "<button class=\"ds-water-preset\" type=\"button\" aria-pressed=\"true\"><svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M12 2S5.5 9.4 5.5 14.5a6.5 6.5 0 0 0 13 0C18.5 9.4 12 2 12 2Z\"/></svg><strong>16</strong><span>fl oz</span><small>2 glasses</small></button>",
+      "css": ".ds-water-preset { min-width: 88px; min-height: 96px; display: grid; place-items: center; align-content: center; padding: .55rem .2rem; border: 1px solid var(--blue, #1558a7); border-radius: var(--radius-sm, 10px); color: var(--blue-dark, #0d477f); background: var(--blue-soft, #eaf3ff); box-shadow: 0 0 0 1px var(--blue, #1558a7); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; cursor: pointer; } .ds-water-preset svg { width: 1.15rem; height: 1.15rem; margin-bottom: .25rem; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; } .ds-water-preset strong { font-size: .95rem; font-variant-numeric: tabular-nums; } .ds-water-preset span { font-size: .66rem; } .ds-water-preset small { margin-top: .15rem; color: var(--muted, #626a78); font-size: .56rem; } .ds-water-preset:hover { background: #deecff; } .ds-water-preset:focus-visible { outline: 3px solid rgb(40 118 220 / .32); outline-offset: 2px; } .ds-water-preset:active { transform: scale(.97); }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Private Day Ledger",
+    "overview": "Open Calory Tracker should feel like a precise personal record that happens to be effortless to use on an iPhone. Its visual world borrows Apple Health's restraint and information craft—cool grouped surfaces, strong native typography, explicit privacy cues, and controls that feel immediately familiar—while keeping the chronological day, not an abstract wellness dashboard, at the center.\n\nThe system is calm, cool, and factual. Dark slate type carries the information hierarchy; green is reserved for food and primary logging actions; blue identifies water and informational navigation. Progress is descriptive rather than celebratory, incomplete data remains visibly incomplete, and destructive or caution colors communicate state without moralizing.",
+    "keyCharacteristics": [
+      "Chronological daily records are the dominant visual material.",
+      "Cool near-white grounds support crisp white grouped surfaces.",
+      "System typography and tabular numerals create native clarity.",
+      "Green and blue are semantic action colors, not decoration.",
+      "Rounded, touch-sized controls remain restrained and utility-led."
+    ],
+    "rules": [
+      { "name": "The Two Voices Rule", "body": "Green belongs to food and affirmative logging; blue belongs to water, information, and focus. Never swap them for variety.", "section": "colors" },
+      { "name": "The Neutral Progress Rule", "body": "Progress communicates amount and completeness; exceeding a goal does not trigger alarm, praise, or gamified color.", "section": "colors" },
+      { "name": "The Exact Number Rule", "body": "Use tabular numerals anywhere values need to be compared vertically or revisited over time.", "section": "typography" },
+      { "name": "The Native Voice Rule", "body": "Use the platform system stack throughout; do not introduce a display face that makes the tracker feel editorial or promotional.", "section": "typography" },
+      { "name": "The Day-First Rule", "body": "Supporting navigation and context may flank the day on larger screens, but must never displace the selected day's summary and timeline as the primary canvas.", "section": "layout" },
+      { "name": "The Thumb-Reach Rule", "body": "Primary logging entry points remain available near the timeline and lower edge; dialogs and sheets preserve the selected day in the background.", "section": "layout" },
+      { "name": "The Group Before Lift Rule", "body": "Establish hierarchy with tone, rule, and spacing first. Add shadow only when a surface truly floats or temporarily overlays the day.", "section": "elevation" },
+      { "name": "The Grouped Surface Rule", "body": "Radius belongs to the outer boundary of a logical group; internal rows are separated by rules, not individual card silhouettes.", "section": "shapes" }
+    ],
+    "dos": [
+      "Do keep the selected day, exact totals, and chronological events visually dominant.",
+      "Do use green for food and affirmative logging, blue for water and information, and neutrals for ordinary progress.",
+      "Do preserve tabular numerals, 44px touch targets, visible focus, and reduced-motion behavior.",
+      "Do label provenance, incomplete nutrients, future-day restrictions, and mock data directly.",
+      "Do group related rows inside shared surfaces with crisp dividers."
+    ],
+    "donts": [
+      "Don't turn the experience into a generalized wellness dashboard or gamified scorecard.",
+      "Don't use photography, food imagery, decorative gradients, or ornamental illustration in the MVP interface.",
+      "Don't disguise unavailable provider data as zero or use judgmental success/failure color for goal progress.",
+      "Don't literalize native device chrome such as an iOS status bar or home indicator.",
+      "Don't make every control a pill or every record an independently floating card."
+    ]
+  }
+}
