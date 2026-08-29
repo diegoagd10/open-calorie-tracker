@@ -1,0 +1,358 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#fafbfd">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <title>Open Calory Tracker — Interface Mock</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <!--
+  THESIS: Make the chronological day the primary canvas and refuse a dashboard that buries logging below generalized wellness content.
+  OWN-WORLD: Cool near-white grouped surfaces, dark slate type, action-only green, water blue, exact rules, and system-grade iPhone controls.
+  STORY: The user understands today, sees every food and water event in time, then logs or corrects one without losing context.
+  FIRST VIEWPORT: Identity and date rail lead into a compact calorie/nutrient summary; the timeline owns the center; thumb actions sit at the lower edge.
+  FORM: Category-standard tracker with Apple Health craft; chronological composition, option 3; seed 9631e5a2.
+  -->
+
+  <svg class="svg-sprite" aria-hidden="true">
+    <symbol id="icon-lock" viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></symbol>
+    <symbol id="icon-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4.5 21a7.5 7.5 0 0 1 15 0"/></symbol>
+    <symbol id="icon-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06-2.83 2.83-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V21H9.6v-.1A1.7 1.7 0 0 0 8.6 19.4a1.7 1.7 0 0 0-1.87.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1.1-.4H3V9.6h.1A1.7 1.7 0 0 0 4.6 8.6a1.7 1.7 0 0 0-.34-1.87l-.06-.06 2.83-2.83.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-.6 1.7 1.7 0 0 0 .4-1.1V3h4v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.87-.34l.06-.06 2.83 2.83-.06.06A1.7 1.7 0 0 0 19.4 9c.35.3.57.65.6 1.1v3.5a1.7 1.7 0 0 0-.6 1.4Z"/></symbol>
+    <symbol id="icon-chevron" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
+    <symbol id="icon-calendar" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18"/></symbol>
+    <symbol id="icon-utensils" viewBox="0 0 24 24"><path d="M7 3v8M4 3v5a3 3 0 0 0 6 0V3M7 11v10M16 3v18M16 3c3 2 4 6 0 9"/></symbol>
+    <symbol id="icon-water" viewBox="0 0 24 24"><path d="M12 2S5.5 9.4 5.5 14.5a6.5 6.5 0 0 0 13 0C18.5 9.4 12 2 12 2Z"/></symbol>
+    <symbol id="icon-log" viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></symbol>
+    <symbol id="icon-chart" viewBox="0 0 24 24"><path d="M5 20V10M12 20V4M19 20v-7"/></symbol>
+    <symbol id="icon-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></symbol>
+    <symbol id="icon-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="icon-close" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></symbol>
+    <symbol id="icon-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+    <symbol id="icon-trash" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M7 7l1 14h8l1-14"/></symbol>
+    <symbol id="icon-edit" viewBox="0 0 24 24"><path d="m4 20 4.5-1L19 8.5 15.5 5 5 15.5 4 20ZM13.5 7l3.5 3.5"/></symbol>
+    <symbol id="icon-external" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9M18 13v6a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h6"/></symbol>
+    <symbol id="icon-alert" viewBox="0 0 24 24"><path d="M12 3 2.5 20h19L12 3Z"/><path d="M12 9v5M12 17h.01"/></symbol>
+    <symbol id="icon-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7h.01"/></symbol>
+  </svg>
+
+  <a class="skip-link" href="#main-content">Skip to daily log</a>
+
+  <div class="prototype-shell" id="app">
+    <aside class="desktop-rail" aria-label="Primary navigation">
+      <div class="brand-lockup">
+        <div class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></div>
+        <div><strong>Open Calory</strong><small>Private tracker</small></div>
+      </div>
+      <p class="mock-label"><span></span> Mock data</p>
+      <nav class="rail-nav">
+        <button class="rail-link is-active" data-nav="log"><svg><use href="#icon-log"/></svg><span>Today</span></button>
+        <button class="rail-link" data-nav="history"><svg><use href="#icon-calendar"/></svg><span>History</span></button>
+        <button class="rail-link" data-nav="settings"><svg><use href="#icon-settings"/></svg><span>Settings</span></button>
+      </nav>
+      <div class="rail-privacy">
+        <svg><use href="#icon-lock"/></svg>
+        <div><strong>Private by default</strong><p>This mock keeps all demonstration data in your browser session.</p></div>
+      </div>
+      <button class="text-button rail-account" data-action="open-auth">View account flows</button>
+    </aside>
+
+    <main class="app-surface" id="main-content" tabindex="-1">
+      <header class="mobile-header">
+        <div class="identity-row">
+          <div>
+            <div class="title-line">
+              <h1 id="view-title">Today</h1>
+              <span class="privacy-cue"><svg><use href="#icon-lock"/></svg>Private</span>
+            </div>
+            <p class="mobile-mock-label">Mock data · Saturday, August 29</p>
+          </div>
+        </div>
+      </header>
+
+      <section class="view is-active" data-view="log" aria-labelledby="view-title">
+        <div class="date-rail-wrap">
+          <button class="date-arrow icon-prev" aria-label="Browse past dates" data-action="previous-week"><svg><use href="#icon-chevron"/></svg></button>
+          <div class="date-rail" aria-label="Nearby dates">
+            <button class="date-button" data-date="24"><small>Mon</small><strong>24</strong></button>
+            <button class="date-button" data-date="25"><small>Tue</small><strong>25</strong></button>
+            <button class="date-button" data-date="26"><small>Wed</small><strong>26</strong></button>
+            <button class="date-button" data-date="27"><small>Thu</small><strong>27</strong></button>
+            <button class="date-button" data-date="28"><small>Fri</small><strong>28</strong></button>
+            <button class="date-button is-selected" aria-current="date" data-date="29"><small>Sat</small><strong>29</strong></button>
+            <button class="date-button is-future" data-date="30"><small>Sun</small><strong>30</strong></button>
+          </div>
+          <button class="date-arrow" aria-label="Open calendar" data-nav="history"><svg><use href="#icon-chevron"/></svg></button>
+        </div>
+
+        <section class="summary-surface" aria-labelledby="calorie-heading">
+          <div class="calorie-row">
+            <div class="calorie-copy">
+              <h2 id="calorie-heading">Calories</h2>
+              <p><strong id="calorie-value">1,420</strong> <span>/ 2,050 kcal</span></p>
+              <div class="linear-progress" role="progressbar" aria-valuenow="1420" aria-valuemin="0" aria-valuemax="2050" aria-label="Calorie progress"><span style="--progress:69.3%"></span></div>
+              <small id="calorie-remaining">630 kcal remaining</small>
+            </div>
+          </div>
+
+          <div class="nutrient-carousel" aria-label="Daily nutrient progress">
+            <div class="nutrient-page is-active" data-nutrient-page="0">
+              <button class="nutrient-cell" data-action="nutrient-detail" data-nutrient="Protein"><span>Protein</span><strong>72 <small>/ 120 g</small></strong><i style="--progress:60%"></i></button>
+              <button class="nutrient-cell" data-action="nutrient-detail" data-nutrient="Carbohydrate"><span>Carbohydrate</span><strong>131 <small>/ 230 g</small></strong><i style="--progress:57%"></i></button>
+              <button class="nutrient-cell" data-action="nutrient-detail" data-nutrient="Fat"><span>Fat</span><strong>44 <small>/ 70 g</small></strong><i style="--progress:63%"></i></button>
+            </div>
+            <div class="nutrient-page" data-nutrient-page="1" hidden>
+              <button class="nutrient-cell is-incomplete" data-action="nutrient-detail" data-nutrient="Fiber"><span>Fiber</span><strong>— <small>/ 25 g</small></strong><i style="--progress:0%"></i><em>Incomplete</em></button>
+              <button class="nutrient-cell" data-action="nutrient-detail" data-nutrient="Sugar"><span>Sugar max</span><strong>38 <small>/ 50 g</small></strong><i style="--progress:76%"></i></button>
+              <button class="nutrient-cell" data-action="nutrient-detail" data-nutrient="Sodium"><span>Sodium max</span><strong>1,480 <small>/ 2,300 mg</small></strong><i style="--progress:64%"></i></button>
+            </div>
+            <div class="carousel-controls" aria-label="Nutrition pages">
+              <button class="carousel-dot is-active" aria-label="Show protein, carbohydrate, and fat" aria-pressed="true" data-page="0"></button>
+              <button class="carousel-dot" aria-label="Show fiber, sugar, and sodium" aria-pressed="false" data-page="1"></button>
+            </div>
+          </div>
+        </section>
+
+        <section class="water-overview" aria-labelledby="water-overview-title">
+          <button class="water-overview-row" data-action="open-water">
+            <span>
+              <strong id="water-overview-title">Water</strong>
+              <small id="water-equivalent">5 equivalent glasses · 8 fl oz / 237 ml</small>
+            </span>
+            <strong id="water-total">40 <small>/ 80 fl oz</small></strong>
+            <svg aria-hidden="true"><use href="#icon-chevron"/></svg>
+          </button>
+          <div class="water-overview-progress" role="progressbar" aria-label="Water progress" aria-valuenow="40" aria-valuemin="0" aria-valuemax="80" aria-valuetext="40 of 80 fl oz">
+            <span style="--progress: 50%"></span>
+          </div>
+        </section>
+
+        <section class="timeline-section" aria-labelledby="timeline-heading">
+          <div class="section-heading-row"><h2 id="timeline-heading">Daily log</h2><span id="selected-day-label">Saturday, August 29</span></div>
+          <div class="timeline" id="timeline">
+            <button class="timeline-add timeline-add-food" data-action="open-food-search">
+              <span class="timeline-marker action-green"><svg><use href="#icon-plus"/></svg></span><span>Add Food</span>
+            </button>
+            <button class="timeline-event" data-action="edit-food" data-entry="yogurt" data-calories="320" data-base-calories="320" data-base-protein="24" data-base-carbs="38" data-base-fat="8" data-base-measurement="170" data-measurement="170" data-quantity="1">
+              <time datetime="2026-08-29T08:12">8:12 AM</time>
+              <span class="timeline-marker food-marker"><svg><use href="#icon-utensils"/></svg></span>
+              <span class="event-content"><strong>Greek yogurt with blueberries</strong><small>USDA FoodData Central · Branded</small></span>
+              <span class="event-value">320 <small>kcal</small></span><svg class="chevron"><use href="#icon-chevron"/></svg>
+            </button>
+            <button class="timeline-event" data-action="edit-food" data-entry="sandwich" data-calories="540" data-base-calories="540" data-base-protein="32" data-base-carbs="42" data-base-fat="22" data-base-measurement="170" data-measurement="170" data-quantity="1">
+              <time datetime="2026-08-29T12:36">12:36 PM</time>
+              <span class="timeline-marker food-marker"><svg><use href="#icon-utensils"/></svg></span>
+              <span class="event-content"><strong>Turkey &amp; avocado sandwich</strong><small>USDA FoodData Central · Foundation</small></span>
+              <span class="event-value">540 <small>kcal</small></span><svg class="chevron"><use href="#icon-chevron"/></svg>
+            </button>
+            <button class="timeline-event water-event" data-action="edit-water" data-amount="16">
+              <time datetime="2026-08-29T14:45">2:45 PM</time>
+              <span class="timeline-marker water-marker"><svg><use href="#icon-water"/></svg></span>
+              <span class="event-content"><strong>Water</strong><small>Plain water</small></span>
+              <span class="event-value">16 <small>fl oz</small></span><svg class="chevron"><use href="#icon-chevron"/></svg>
+            </button>
+            <button class="timeline-add timeline-add-water" data-action="open-water">
+              <span class="timeline-marker action-blue"><svg><use href="#icon-plus"/></svg></span><span>Add Water</span>
+            </button>
+          </div>
+
+          <div class="empty-day" id="empty-day" hidden>
+            <span class="empty-icon"><svg><use href="#icon-calendar"/></svg></span>
+            <h3>No entries for this day</h3>
+            <p>Past-day entries start at 12:00 PM. Add food or water when you’re ready.</p>
+            <div><button class="button button-primary" data-action="open-food-search">Add Food</button><button class="button button-secondary" data-action="open-water">Add Water</button></div>
+          </div>
+
+          <div class="future-day" id="future-day" hidden>
+            <span class="empty-icon"><svg><use href="#icon-calendar"/></svg></span>
+            <h3>Future day</h3>
+            <p>You can review goals, but food and water can only be recorded today or in the past.</p>
+          </div>
+        </section>
+
+        <p class="provider-attribution">Food data from <a href="https://fdc.nal.usda.gov/" target="_blank" rel="noreferrer">USDA FoodData Central <svg><use href="#icon-external"/></svg></a></p>
+      </section>
+
+      <section class="view history-view" data-view="history" hidden aria-labelledby="history-title">
+        <div class="view-intro"><div><h2 id="history-title">History</h2><p>Choose any past day. Goal versions remain tied to their effective date.</p></div><span class="mock-chip">Mock data</span></div>
+        <div class="calendar-card">
+          <div class="calendar-head"><button class="icon-button icon-prev" aria-label="Previous month" data-action="previous-month"><svg><use href="#icon-chevron"/></svg></button><strong>August 2026</strong><button class="icon-button" aria-label="Next month" disabled><svg><use href="#icon-chevron"/></svg></button></div>
+          <div class="calendar-grid" aria-label="August 2026 calendar">
+            <span>Sun</span><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span>
+            <button class="calendar-day is-outside">26</button><button class="calendar-day is-outside">27</button><button class="calendar-day is-outside">28</button><button class="calendar-day is-outside">29</button><button class="calendar-day is-outside">30</button><button class="calendar-day is-outside">31</button><button class="calendar-day">1</button>
+            <button class="calendar-day">2</button><button class="calendar-day">3</button><button class="calendar-day">4</button><button class="calendar-day">5</button><button class="calendar-day">6</button><button class="calendar-day">7</button><button class="calendar-day">8</button>
+            <button class="calendar-day">9</button><button class="calendar-day">10</button><button class="calendar-day">11</button><button class="calendar-day">12</button><button class="calendar-day">13</button><button class="calendar-day">14</button><button class="calendar-day">15</button>
+            <button class="calendar-day">16</button><button class="calendar-day">17</button><button class="calendar-day">18</button><button class="calendar-day">19</button><button class="calendar-day">20</button><button class="calendar-day">21</button><button class="calendar-day">22</button>
+            <button class="calendar-day">23</button><button class="calendar-day" data-open-date="24">24</button><button class="calendar-day" data-open-date="25">25</button><button class="calendar-day" data-open-date="26">26</button><button class="calendar-day" data-open-date="27">27</button><button class="calendar-day has-entry" data-open-date="28">28</button><button class="calendar-day has-entry is-today" data-open-date="29">29</button>
+            <button class="calendar-day is-future" disabled>30</button><button class="calendar-day is-future" disabled>31</button>
+          </div>
+        </div>
+        <div class="history-list" aria-label="Recent logged days">
+          <button data-open-date="29"><span><strong>Saturday, August 29</strong><small>2 foods · 1 water event</small></span><span><b>1,420</b> kcal<svg><use href="#icon-chevron"/></svg></span></button>
+          <button data-open-date="28"><span><strong>Friday, August 28</strong><small>3 foods · 3 water events</small></span><span><b>1,860</b> kcal<svg><use href="#icon-chevron"/></svg></span></button>
+          <button data-open-date="27"><span><strong>Thursday, August 27</strong><small>No entries</small></span><span><b>0</b> kcal<svg><use href="#icon-chevron"/></svg></span></button>
+        </div>
+      </section>
+
+      <section class="view settings-view" data-view="settings" hidden aria-labelledby="settings-title">
+        <div class="view-intro"><div><h2 id="settings-title">Settings</h2><p>Goals are effective-dated. Past Food Logs keep the values active on that day.</p></div><span class="privacy-cue"><svg><use href="#icon-lock"/></svg>Private</span></div>
+
+        <button class="account-access-row" data-action="open-auth"><span class="account-access-icon"><svg><use href="#icon-user"/></svg></span><span><strong>Account access</strong><small>Sign in or register without email.</small></span><svg><use href="#icon-chevron"/></svg></button>
+
+        <form class="settings-group" id="goal-form">
+          <div class="group-heading"><div><h3>Display and goals</h3><p>Changes apply from the effective date.</p></div><button class="text-button" type="button" data-action="reset-goals">Reset mock</button></div>
+          <fieldset class="segmented-field"><legend>Display units</legend><label><input type="radio" name="units" value="us" checked><span>US</span></label><label><input type="radio" name="units" value="metric"><span>Metric</span></label></fieldset>
+          <label class="field-row"><span>Effective date<small>Today or a future date</small></span><input type="date" name="effectiveDate" value="2026-08-30" min="2026-08-29"></label>
+          <div class="goal-grid">
+            <label><span>Calories <small>target</small></span><input name="calorieGoal" type="number" value="2050" min="1"><em>kcal</em></label>
+            <label><span>Water <small>target</small></span><input name="waterGoal" type="number" value="80" min="1"><em>fl oz</em></label>
+            <label><span>Protein <small>target</small></span><input name="proteinGoal" type="number" value="120" min="1"><em>g</em></label>
+            <label><span>Carbohydrate <small>target</small></span><input name="carbohydrateGoal" type="number" value="230" min="1"><em>g</em></label>
+            <label><span>Fat <small>target</small></span><input name="fatGoal" type="number" value="70" min="1"><em>g</em></label>
+            <label><span>Fiber <small>target</small></span><input name="fiberGoal" type="number" value="25" min="1"><em>g</em></label>
+            <label><span>Sugar <small>maximum</small></span><input name="sugarMaximum" type="number" value="50" min="1"><em>g</em></label>
+            <label><span>Sodium <small>maximum</small></span><input name="sodiumMaximum" type="number" value="2300" min="1"><em>mg</em></label>
+          </div>
+          <button class="button button-primary" type="submit">Save goal version</button>
+        </form>
+
+        <form class="settings-group" id="password-form">
+          <div class="group-heading"><div><h3>Account security</h3><p>Changing the password revokes other sessions and rotates this one.</p></div></div>
+          <input type="hidden" name="username" autocomplete="username" value="demo.user">
+          <label class="stacked-field"><span>Current password</span><input type="password" name="currentPassword" autocomplete="current-password" required></label>
+          <label class="stacked-field"><span>New password</span><input type="password" name="newPassword" autocomplete="new-password" minlength="12" maxlength="128" required><small>12–128 characters; spaces and Unicode are welcome.</small></label>
+          <button class="button button-secondary" type="submit">Change password</button>
+        </form>
+
+        <section class="settings-group prototype-controls" aria-labelledby="prototype-heading">
+          <div class="group-heading"><div><h3 id="prototype-heading">Prototype states</h3><p>Jump to visible outcomes specified for the MVP.</p></div><span class="mock-chip">Mock only</span></div>
+          <div class="state-grid">
+            <button class="state-button" data-demo-state="empty">Past day · empty</button>
+            <button class="state-button" data-demo-state="future">Future day · disabled</button>
+            <button class="state-button" data-demo-state="search-no-results">Search · no results</button>
+            <button class="state-button" data-demo-state="search-rate">Search · rate limited</button>
+            <button class="state-button" data-demo-state="search-unavailable">Search · unavailable</button>
+            <button class="state-button" data-demo-state="first-run">First-run setup</button>
+          </div>
+        </section>
+
+        <button class="logout-row" data-action="logout"><span><strong>Log out this session</strong><small>Other phones remain signed in.</small></span><svg><use href="#icon-chevron"/></svg></button>
+      </section>
+
+      <nav class="bottom-nav" aria-label="Primary navigation">
+        <button class="is-active" data-nav="log"><svg><use href="#icon-log"/></svg><span>Log</span></button>
+        <button data-nav="history"><svg><use href="#icon-chart"/></svg><span>History</span></button>
+        <button data-nav="settings"><svg><use href="#icon-settings"/></svg><span>Settings</span></button>
+      </nav>
+    </main>
+
+    <aside class="desktop-context" aria-label="Selected day context">
+      <div class="context-head"><span>Selected day</span><strong>Sat · Aug 29</strong></div>
+      <div class="context-metric"><span>Calories</span><strong>1,420 <small>/ 2,050 kcal</small></strong><i><span style="--progress:69.3%"></span></i></div>
+      <div class="context-metric water-context"><span>Water</span><strong>40 <small>/ 80 fl oz</small></strong><i><span style="--progress:50%"></span></i></div>
+      <div class="context-note"><svg><use href="#icon-info"/></svg><p><strong>Nutrition Snapshot</strong>Existing Food Entries keep their saved provider values even when USDA changes later.</p></div>
+      <a class="context-source" href="https://fdc.nal.usda.gov/" target="_blank" rel="noreferrer">USDA FoodData Central<svg><use href="#icon-external"/></svg></a>
+    </aside>
+  </div>
+
+  <div class="overlay" id="overlay" hidden></div>
+
+  <section class="bottom-sheet water-sheet" id="water-sheet" role="dialog" aria-modal="true" aria-labelledby="water-sheet-title" hidden>
+    <div class="sheet-handle" aria-hidden="true"></div>
+    <div class="sheet-head"><div><h2 id="water-sheet-title">Add Water</h2><p>Exact plain-water amount</p></div><button class="icon-button" data-action="close-layer" aria-label="Close water sheet"><svg><use href="#icon-close"/></svg></button></div>
+    <div class="preset-grid" aria-label="Water presets">
+      <button class="preset-button is-selected" data-water="8" aria-pressed="true"><svg><use href="#icon-water"/></svg><strong>8</strong><span>fl oz</span><small>Glass</small></button>
+      <button class="preset-button" data-water="16" aria-pressed="false"><svg><use href="#icon-water"/></svg><strong>16</strong><span>fl oz</span><small>Bottle</small></button>
+      <button class="preset-button" data-water="24" aria-pressed="false"><svg><use href="#icon-water"/></svg><strong>24</strong><span>fl oz</span><small>Large</small></button>
+      <button class="preset-button" data-water="custom" aria-pressed="false"><svg><use href="#icon-edit"/></svg><strong>Exact</strong><span>amount</span><small>Custom</small></button>
+    </div>
+    <label class="custom-water" id="custom-water" hidden><span>Amount</span><span><input type="number" id="custom-water-value" min="0.1" step="0.1" inputmode="decimal" value="12" aria-describedby="custom-water-error"><em id="custom-water-unit">fl oz</em></span><small id="custom-water-error" role="alert" aria-live="assertive"></small></label>
+    <div class="water-delete" id="water-delete" hidden><button class="danger-button" data-action="confirm-delete-water"><svg><use href="#icon-trash"/></svg>Delete Water Event</button><div class="delete-confirm" id="delete-water-confirm" hidden><div><strong>Delete this Water Event?</strong><p>The daily water total will decrease by this amount.</p></div><button class="button button-secondary" data-action="cancel-delete-water">Keep it</button><button class="button button-danger" data-action="delete-water">Delete</button></div></div>
+    <div class="sheet-actions"><button class="button button-secondary" data-action="close-layer">Cancel</button><button class="button button-blue" data-action="save-water">Add 8 fl oz</button></div>
+  </section>
+
+  <section class="dialog-panel food-dialog" id="food-dialog" role="dialog" aria-modal="true" aria-labelledby="food-dialog-title" hidden>
+    <div class="dialog-head"><div><h2 id="food-dialog-title">Add Food</h2><span class="mock-chip">Mock USDA catalog</span><p>Search is deliberate. Nothing is logged until you confirm a measurement and quantity.</p></div><button class="icon-button" data-action="close-layer" aria-label="Close food search"><svg><use href="#icon-close"/></svg></button></div>
+    <div class="food-search-stage" id="food-search-stage">
+      <form class="search-form" id="food-search-form" novalidate>
+        <label for="food-query">Search United States foods</label>
+        <div class="search-control"><svg><use href="#icon-search"/></svg><input id="food-query" name="query" type="search" placeholder="Try Greek yogurt" minlength="2" maxlength="100" autocomplete="off" aria-describedby="search-error"><button class="button button-primary" type="submit">Search</button></div>
+        <small class="field-error" id="search-error" role="alert" aria-live="assertive"></small>
+        <p class="search-hint">Try <button type="button" data-query="yogurt">yogurt</button>, <button type="button" data-query="bread">bread</button>, <button type="button" data-query="none">none</button>, or <button type="button" data-query="rate">rate</button>.</p>
+      </form>
+      <div class="search-state" id="search-state">
+        <svg><use href="#icon-search"/></svg><h3>Find a food</h3><p>Results can include Branded, Survey/FNDDS, and Foundation foods.</p>
+      </div>
+      <div class="search-results" id="search-results" hidden></div>
+    </div>
+    <div class="food-detail-stage" id="food-detail-stage" hidden>
+      <button class="back-button" data-action="back-to-results"><svg class="icon-prev"><use href="#icon-chevron"/></svg>Back to results</button>
+      <div class="food-identity"><span class="catalog-type" id="selected-food-type">Branded</span><h3 id="selected-food-name">Plain nonfat Greek yogurt</h3><p>USDA FoodData Central · Mock provider result</p></div>
+      <div class="snapshot-note"><svg><use href="#icon-lock"/></svg><p><strong>Saved as a Nutrition Snapshot</strong>This entry will keep these values and source details if USDA later changes or is unavailable.</p></div>
+      <div class="food-detail-grid">
+        <label class="stacked-field"><span>Measurement</span><select id="food-measurement"><option value="170">1 container (170 g)</option><option value="100">100 g</option><option value="28.35">1 oz (28.35 g)</option></select><small>Only provider-backed conversions are shown.</small></label>
+        <label class="stacked-field"><span>Quantity</span><input id="food-quantity" type="number" value="1" min="0.01" max="99" step="0.01" inputmode="decimal"></label>
+      </div>
+      <div class="nutrition-preview" aria-live="polite"><div><span>Calories</span><strong id="preview-calories">100 kcal</strong></div><div><span>Protein</span><strong id="preview-protein">18 g</strong></div><div><span>Carbohydrate</span><strong id="preview-carbs">6 g</strong></div><div><span>Fat</span><strong id="preview-fat">0 g</strong></div></div>
+      <div class="sheet-actions"><button class="button button-secondary" data-action="close-layer">Cancel</button><button class="button button-primary" data-action="log-food">Add to Food Log</button></div>
+    </div>
+  </section>
+
+  <section class="dialog-panel edit-dialog" id="edit-food-dialog" role="dialog" aria-modal="true" aria-labelledby="edit-food-title" hidden>
+    <div class="dialog-head"><div><h2 id="edit-food-title">Edit Food Entry</h2><span class="mock-chip">Nutrition Snapshot</span><p>Changes affect this occurrence only.</p></div><button class="icon-button" data-action="close-layer" aria-label="Close edit form"><svg><use href="#icon-close"/></svg></button></div>
+    <form id="edit-food-form">
+      <div class="food-identity edit-food-identity"><strong id="edit-food-name">Greek yogurt with blueberries</strong><p>USDA FoodData Central · Saved provider result</p></div>
+      <div class="food-detail-grid"><label class="stacked-field"><span>Measurement</span><select name="editMeasurement"><option value="170">1 container (170 g)</option><option value="100">100 g</option><option value="28.35">1 oz (28.35 g)</option></select></label><label class="stacked-field"><span>Quantity</span><input id="edit-food-quantity" type="number" value="1" min="0.01" step="0.01"></label></div>
+      <div class="nutrition-preview" aria-live="polite"><div><span>Calories</span><strong id="edit-calories">320 kcal</strong></div><div><span>Protein</span><strong id="edit-protein">24 g</strong></div><div><span>Carbohydrate</span><strong id="edit-carbs">38 g</strong></div><div><span>Fat</span><strong id="edit-fat">8 g</strong></div></div>
+      <p class="form-note">Quantity recalculates from the saved authoritative base, not from the previously rounded display value.</p>
+      <div class="edit-footer"><button class="danger-button" type="button" data-action="confirm-delete-food"><svg><use href="#icon-trash"/></svg>Delete entry</button><div><button class="button button-secondary" type="button" data-action="close-layer">Cancel</button><button class="button button-primary" type="submit">Save changes</button></div></div>
+      <div class="delete-confirm" id="delete-food-confirm" hidden><div><strong>Delete this Food Entry?</strong><p>Its nutrition will no longer contribute to Saturday’s totals.</p></div><button class="button button-secondary" type="button" data-action="cancel-delete-food">Keep it</button><button class="button button-danger" type="button" data-action="delete-food">Delete</button></div>
+    </form>
+  </section>
+
+  <section class="dialog-panel auth-dialog" id="auth-dialog" role="dialog" aria-modal="true" aria-labelledby="auth-title" hidden>
+    <div class="dialog-head"><div><h2 id="auth-title">Private account access</h2><span class="privacy-cue"><svg><use href="#icon-lock"/></svg>No email required</span><p>These forms demonstrate account states only; nothing is sent or stored.</p></div><button class="icon-button" data-action="close-layer" aria-label="Close account flows"><svg><use href="#icon-close"/></svg></button></div>
+    <div class="auth-tabs" role="tablist"><button role="tab" aria-selected="true" data-auth-tab="signin">Sign in</button><button role="tab" aria-selected="false" data-auth-tab="register">Register</button></div>
+    <form class="auth-form is-active" id="signin-form" data-auth-panel="signin">
+      <label class="stacked-field"><span>Username</span><input name="username" autocomplete="username" required></label>
+      <label class="stacked-field"><span>Password</span><input name="password" type="password" autocomplete="current-password" required></label>
+      <div class="inline-alert is-error" id="signin-error" role="alert" hidden><svg><use href="#icon-alert"/></svg><p><strong>Couldn’t sign in</strong>The username or password is incorrect.</p></div>
+      <button class="button button-primary button-full" type="submit">Sign in</button>
+      <p class="auth-footnote">Use username <strong>wrong</strong> to see the generic credential error. Any other filled values succeed in this mock.</p>
+    </form>
+    <form class="auth-form" id="register-form" data-auth-panel="register" hidden novalidate aria-describedby="register-error">
+      <label class="stacked-field"><span>Username</span><input name="username" autocomplete="username" minlength="3" maxlength="30" pattern="[A-Za-z0-9._-]+" required><small>3–30 letters, digits, dot, hyphen, or underscore.</small></label>
+      <label class="stacked-field"><span>Password</span><input name="password" type="password" autocomplete="new-password" minlength="12" maxlength="128" required><small>12–128 characters; spaces, Unicode, and password-manager paste are supported.</small></label>
+      <label class="stacked-field"><span>Confirm password</span><input name="confirmPassword" type="password" autocomplete="new-password" required></label>
+      <small class="field-error" id="register-error" role="alert" aria-live="assertive"></small>
+      <button class="button button-primary button-full" type="submit">Create private account</button>
+    </form>
+  </section>
+
+  <section class="dialog-panel setup-dialog" id="setup-dialog" role="dialog" aria-modal="true" aria-labelledby="setup-title" hidden>
+    <div class="setup-progress"><span class="is-active"></span><span></span></div>
+    <div class="dialog-head"><div><h2 id="setup-title">Set up your Food Log</h2><span class="privacy-cue"><svg><use href="#icon-lock"/></svg>Only what the log needs</span><p>No age, sex, height, weight, or health profile.</p></div><button class="icon-button" data-action="close-layer" aria-label="Close setup"><svg><use href="#icon-close"/></svg></button></div>
+    <form id="setup-form">
+      <fieldset class="segmented-field"><legend>Display units</legend><label><input type="radio" name="setupUnits" value="us" checked><span>US</span></label><label><input type="radio" name="setupUnits" value="metric"><span>Metric</span></label></fieldset>
+      <div class="goal-grid compact-goals">
+        <label><span>Calories</span><input name="setupCalories" type="number" value="2050" min="1"><em>kcal</em></label><label><span>Water</span><input name="setupWater" type="number" value="80" min="1"><em>fl oz</em></label><label><span>Protein</span><input name="setupProtein" type="number" value="120" min="1"><em>g</em></label><label><span>Carbohydrate</span><input name="setupCarbohydrate" type="number" value="230" min="1"><em>g</em></label><label><span>Fat</span><input name="setupFat" type="number" value="70" min="1"><em>g</em></label><label><span>Fiber</span><input name="setupFiber" type="number" value="25" min="1"><em>g</em></label><label><span>Sugar max</span><input name="setupSugar" type="number" value="50" min="1"><em>g</em></label><label><span>Sodium max</span><input name="setupSodium" type="number" value="2300" min="1"><em>mg</em></label>
+      </div>
+      <button class="button button-primary button-full" type="submit">Finish setup</button>
+    </form>
+  </section>
+
+  <section class="dialog-panel info-dialog" id="info-dialog" role="dialog" aria-modal="true" aria-labelledby="info-title" hidden>
+    <div class="dialog-head"><div><h2 id="info-title">Fiber is incomplete</h2><span class="mock-chip">Daily total</span><p>Known values are included, but one Food Entry did not report fiber.</p></div><button class="icon-button" data-action="close-layer" aria-label="Close detail"><svg><use href="#icon-close"/></svg></button></div>
+    <div class="known-unknown"><div><span>Known fiber</span><strong>6 g</strong></div><div><span>Entries missing fiber</span><strong>1</strong></div></div>
+    <div class="snapshot-note"><svg><use href="#icon-info"/></svg><p><strong>Missing is not zero</strong>A provider-reported zero remains “0 g.” A missing value stays unavailable so the total is not mistaken for complete.</p></div>
+    <button class="button button-primary button-full" data-action="close-layer">Done</button>
+  </section>
+
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden><svg><use href="#icon-check"/></svg><span>Saved</span></div>
+  <script src="script.js"></script>
+</body>
+</html>
