@@ -2,13 +2,20 @@ import { parseIsoLocalDate } from "../food-log/date";
 import {
   validateSetupFields,
   WATER_UNIT_OPTIONS,
+  waterTargetMicrolitersFromDisplay,
+  DISPLAY_UNITS,
   type DisplayUnits,
   type SetupFields,
 } from "../setup/validation";
-import type { GoalReplacement } from "./goal-version.server";
+import type {
+  CanonicalGoalValues,
+  GoalReplacement,
+} from "./goal-version.server";
 
 export type GoalVersionFields = Omit<SetupFields, "timeZone"> & {
   effectiveDate: string;
+  waterSourceUnits?: string;
+  waterSourceValue?: string;
 };
 
 export type GoalVersionValidationResult =
@@ -18,16 +25,8 @@ export type GoalVersionValidationResult =
     }
   | { error: string; field: keyof GoalVersionFields; success: false };
 
-type CanonicalGoal = {
-  calorieTargetMilliKcal: number;
-  carbohydrateTargetMilligrams: number;
+type CanonicalGoal = CanonicalGoalValues & {
   effectiveDate: string;
-  fatTargetMilligrams: number;
-  fiberTargetMilligrams: number;
-  proteinTargetMilligrams: number;
-  sodiumMaximumMilligrams: number;
-  sugarMaximumMilligrams: number;
-  waterTargetMicroliters: number;
 };
 
 function formatThousandths(value: number | bigint): string {
@@ -43,19 +42,36 @@ function roundDivide(numerator: bigint, denominator: bigint): bigint {
   return (numerator + denominator / 2n) / denominator;
 }
 
+function waterFieldFromCanonical(
+  waterTargetMicroliters: number,
+  displayUnits: DisplayUnits,
+): string {
+  const waterThousandths =
+    displayUnits === "metric"
+      ? BigInt(waterTargetMicroliters)
+      : roundDivide(
+          BigInt(waterTargetMicroliters) *
+            WATER_UNIT_OPTIONS.us.canonicalDenominator,
+          WATER_UNIT_OPTIONS.us.canonicalNumerator,
+        );
+  return formatThousandths(waterThousandths);
+}
+
+export function convertWaterDisplay(
+  value: string,
+  fromUnits: DisplayUnits,
+  toUnits: DisplayUnits,
+): string | undefined {
+  const canonical = waterTargetMicrolitersFromDisplay(value, fromUnits);
+  return canonical === undefined
+    ? undefined
+    : waterFieldFromCanonical(canonical, toUnits);
+}
+
 export function goalFieldsFromCanonical(
   goal: CanonicalGoal,
   displayUnits: DisplayUnits,
 ): Omit<GoalVersionFields, "displayUnits"> {
-  const waterThousandths =
-    displayUnits === "metric"
-      ? BigInt(goal.waterTargetMicroliters)
-      : roundDivide(
-          BigInt(goal.waterTargetMicroliters) *
-            WATER_UNIT_OPTIONS.us.canonicalDenominator,
-          WATER_UNIT_OPTIONS.us.canonicalNumerator,
-        );
-
   return {
     calories: formatThousandths(goal.calorieTargetMilliKcal),
     carbohydrate: formatThousandths(goal.carbohydrateTargetMilligrams),
@@ -65,13 +81,17 @@ export function goalFieldsFromCanonical(
     protein: formatThousandths(goal.proteinTargetMilligrams),
     sodium: String(goal.sodiumMaximumMilligrams),
     sugar: formatThousandths(goal.sugarMaximumMilligrams),
-    water: formatThousandths(waterThousandths),
+    water: waterFieldFromCanonical(
+      goal.waterTargetMicroliters,
+      displayUnits,
+    ),
   };
 }
 
 export function validateGoalVersionFields(
   fields: GoalVersionFields,
   timeZone: string,
+  sourceGoal?: CanonicalGoal,
 ): GoalVersionValidationResult {
   const effectiveDate = parseIsoLocalDate(fields.effectiveDate);
   if (!effectiveDate) {
@@ -92,6 +112,30 @@ export function validateGoalVersionFields(
   }
 
   const { timeZone: _timeZone, ...replacement } = setup.data;
+  if (
+    sourceGoal &&
+    fields.water.trim() ===
+      goalFieldsFromCanonical(sourceGoal, setup.data.displayUnits).water
+  ) {
+    replacement.waterTargetMicroliters = sourceGoal.waterTargetMicroliters;
+  } else {
+    const sourceUnits = DISPLAY_UNITS.find(
+      (candidate) => candidate === fields.waterSourceUnits,
+    );
+    const sourceCanonical = sourceUnits
+      ? waterTargetMicrolitersFromDisplay(
+          fields.waterSourceValue ?? "",
+          sourceUnits,
+        )
+      : undefined;
+    if (
+      sourceCanonical !== undefined &&
+      fields.water.trim() ===
+        waterFieldFromCanonical(sourceCanonical, setup.data.displayUnits)
+    ) {
+      replacement.waterTargetMicroliters = sourceCanonical;
+    }
+  }
   return {
     data: { ...replacement, effectiveDate },
     success: true,

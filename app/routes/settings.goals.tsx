@@ -17,6 +17,7 @@ import {
 } from "../goals/goal-version.server";
 import { getGoalVersionService } from "../goals/runtime.server";
 import {
+  convertWaterDisplay,
   goalFieldsFromCanonical,
   validateGoalVersionFields,
   type GoalVersionFields,
@@ -134,7 +135,13 @@ export async function action({ request }: Route.ActionArgs) {
   }
 
   const service = getGoalVersionService();
-  const current = service.read(session.user.id);
+  const requestedEffectiveDate = new URL(request.url).searchParams.get(
+    "effectiveDate",
+  );
+  const current = service.read(
+    session.user.id,
+    requestedEffectiveDate ?? undefined,
+  );
   if (!current?.goal) return redirect("/setup");
 
   const fields = Object.fromEntries(
@@ -149,9 +156,15 @@ export async function action({ request }: Route.ActionArgs) {
       "sodium",
       "sugar",
       "water",
+      "waterSourceUnits",
+      "waterSourceValue",
     ].map((name) => [name, String(formData.get(name) ?? "")]),
   ) as GoalVersionFields;
-  const parsed = validateGoalVersionFields(fields, current.timeZone);
+  const parsed = validateGoalVersionFields(
+    fields,
+    current.timeZone,
+    current.goal,
+  );
   if (!parsed.success) {
     return data<GoalsActionData>(
       { error: parsed.error, field: parsed.field },
@@ -189,13 +202,22 @@ export async function action({ request }: Route.ActionArgs) {
 export default function Goals({ actionData, loaderData }: Route.ComponentProps) {
   const [displayUnits, setDisplayUnits] = useState(loaderData.displayUnits);
   const [fields, setFields] = useState(loaderData.fields);
+  const [waterSource, setWaterSource] = useState({
+    units: loaderData.displayUnits,
+    value: loaderData.fields.water,
+  });
 
   function changeDisplayUnits(nextUnits: "metric" | "us") {
-    setDisplayUnits(nextUnits);
     setFields((currentFields) => ({
       ...currentFields,
-      water: goalFieldsFromCanonical(loaderData.goal, nextUnits).water,
+      water:
+        convertWaterDisplay(
+          waterSource.value,
+          waterSource.units,
+          nextUnits,
+        ) ?? currentFields.water,
     }));
+    setDisplayUnits(nextUnits);
   }
 
   return (
@@ -238,6 +260,16 @@ export default function Goals({ actionData, loaderData }: Route.ComponentProps) 
             name="csrfToken"
             type="hidden"
             value={loaderData.csrfToken}
+          />
+          <input
+            name="waterSourceUnits"
+            type="hidden"
+            value={waterSource.units}
+          />
+          <input
+            name="waterSourceValue"
+            type="hidden"
+            value={waterSource.value}
           />
           <div className={styles.groupHeading}>
             <div>
@@ -339,12 +371,18 @@ export default function Goals({ actionData, loaderData }: Route.ComponentProps) 
                     }
                     min={field.name === "sodium" ? "1" : "0.001"}
                     name={field.name}
-                    onChange={(event) =>
+                    onChange={(event) => {
+                      if (field.name === "water") {
+                        setWaterSource({
+                          units: displayUnits,
+                          value: event.target.value,
+                        });
+                      }
                       setFields((current) => ({
                         ...current,
                         [field.name]: event.target.value,
-                      }))
-                    }
+                      }));
+                    }}
                     required
                     step={field.name === "sodium" ? "1" : "0.001"}
                     type="number"

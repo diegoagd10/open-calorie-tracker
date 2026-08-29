@@ -8,16 +8,19 @@ import {
 import { localDateAt, parseIsoLocalDate } from "../food-log/date";
 import type { DisplayUnits } from "../setup/validation";
 
-export type GoalReplacement = {
+export type CanonicalGoalValues = {
   calorieTargetMilliKcal: number;
   carbohydrateTargetMilligrams: number;
-  displayUnits: DisplayUnits;
   fatTargetMilligrams: number;
   fiberTargetMilligrams: number;
   proteinTargetMilligrams: number;
   sodiumMaximumMilligrams: number;
   sugarMaximumMilligrams: number;
   waterTargetMicroliters: number;
+};
+
+export type GoalReplacement = CanonicalGoalValues & {
+  displayUnits: DisplayUnits;
 };
 
 export class InvalidGoalVersionDateError extends Error {
@@ -99,7 +102,8 @@ export class GoalVersionService {
     effectiveDate: string,
     replacement: GoalReplacement,
   ): "created" | "replaced" {
-    const createdAt = this.#now().toISOString();
+    const now = this.#now();
+    const createdAt = now.toISOString();
 
     return this.#database.transaction((transaction) => {
       const preference = transaction
@@ -110,7 +114,7 @@ export class GoalVersionService {
       if (!preference) throw new GoalVersionUnavailableError();
 
       const parsedEffectiveDate = parseIsoLocalDate(effectiveDate);
-      const today = localDateAt(this.#now(), preference.timeZone);
+      const today = localDateAt(now, preference.timeZone);
       if (!parsedEffectiveDate || parsedEffectiveDate < today) {
         throw new InvalidGoalVersionDateError();
       }
@@ -126,34 +130,30 @@ export class GoalVersionService {
         )
         .get();
 
+      const canonicalGoalValues: CanonicalGoalValues = {
+        calorieTargetMilliKcal: replacement.calorieTargetMilliKcal,
+        carbohydrateTargetMilligrams:
+          replacement.carbohydrateTargetMilligrams,
+        fatTargetMilligrams: replacement.fatTargetMilligrams,
+        fiberTargetMilligrams: replacement.fiberTargetMilligrams,
+        proteinTargetMilligrams: replacement.proteinTargetMilligrams,
+        sodiumMaximumMilligrams: replacement.sodiumMaximumMilligrams,
+        sugarMaximumMilligrams: replacement.sugarMaximumMilligrams,
+        waterTargetMicroliters: replacement.waterTargetMicroliters,
+      };
+
       transaction
         .insert(goalVersions)
         .values({
-          calorieTargetMilliKcal: replacement.calorieTargetMilliKcal,
-          carbohydrateTargetMilligrams:
-            replacement.carbohydrateTargetMilligrams,
+          ...canonicalGoalValues,
           createdAt,
           effectiveDate: parsedEffectiveDate,
-          fatTargetMilligrams: replacement.fatTargetMilligrams,
-          fiberTargetMilligrams: replacement.fiberTargetMilligrams,
-          proteinTargetMilligrams: replacement.proteinTargetMilligrams,
-          sodiumMaximumMilligrams: replacement.sodiumMaximumMilligrams,
-          sugarMaximumMilligrams: replacement.sugarMaximumMilligrams,
           userId,
-          waterTargetMicroliters: replacement.waterTargetMicroliters,
         })
         .onConflictDoUpdate({
           set: {
-            calorieTargetMilliKcal: replacement.calorieTargetMilliKcal,
-            carbohydrateTargetMilligrams:
-              replacement.carbohydrateTargetMilligrams,
+            ...canonicalGoalValues,
             createdAt,
-            fatTargetMilligrams: replacement.fatTargetMilligrams,
-            fiberTargetMilligrams: replacement.fiberTargetMilligrams,
-            proteinTargetMilligrams: replacement.proteinTargetMilligrams,
-            sodiumMaximumMilligrams: replacement.sodiumMaximumMilligrams,
-            sugarMaximumMilligrams: replacement.sugarMaximumMilligrams,
-            waterTargetMicroliters: replacement.waterTargetMicroliters,
           },
           target: [goalVersions.userId, goalVersions.effectiveDate],
         })

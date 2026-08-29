@@ -126,6 +126,25 @@ function roundDivide(numerator: bigint, denominator: bigint): bigint {
   return (numerator + denominator / 2n) / denominator;
 }
 
+export function waterTargetMicrolitersFromDisplay(
+  value: string,
+  displayUnits: DisplayUnits,
+): number | undefined {
+  const waterInput = parseThousandths(value);
+  const waterOption = WATER_UNIT_OPTIONS[displayUnits];
+  if (
+    boundedNumber(waterInput, waterOption.maximumThousandths) === undefined
+  ) {
+    return undefined;
+  }
+  return Number(
+    roundDivide(
+      waterInput! * waterOption.canonicalNumerator,
+      waterOption.canonicalDenominator,
+    ),
+  );
+}
+
 function canonicalTimeZone(value: string): string | undefined {
   const candidate = value.trim();
   if (!candidate || candidate.length > 100) return undefined;
@@ -172,19 +191,14 @@ export function validateSetupFields(
     return failure("calories", "Calories must be from 0.001 to 20,000 kcal.");
   }
 
-  const waterInput = parseThousandths(fields.water);
   const waterOption = WATER_UNIT_OPTIONS[displayUnits];
-  if (
-    boundedNumber(waterInput, waterOption.maximumThousandths) === undefined
-  ) {
+  const waterTargetMicroliters = waterTargetMicrolitersFromDisplay(
+    fields.water,
+    displayUnits,
+  );
+  if (waterTargetMicroliters === undefined) {
     return failure("water", waterOption.error);
   }
-  const waterTargetMicroliters = Number(
-    roundDivide(
-      waterInput! * waterOption.canonicalNumerator,
-      waterOption.canonicalDenominator,
-    ),
-  );
 
   const nutrients = new Map<
     (typeof SETUP_NUTRIENT_FIELDS)[number]["name"],

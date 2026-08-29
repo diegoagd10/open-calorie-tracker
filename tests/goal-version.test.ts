@@ -16,6 +16,7 @@ import {
 } from "../app/database/schema.server";
 import { GoalVersionService } from "../app/goals/goal-version.server";
 import {
+  convertWaterDisplay,
   goalFieldsFromCanonical,
   validateGoalVersionFields,
 } from "../app/goals/validation";
@@ -160,6 +161,70 @@ test("US and metric presentation round-trips canonical fixed-point goals", () =>
     protein: "90.25",
     sodium: "1900",
     water: "2365.882",
+  });
+});
+
+test("unit changes convert the draft water amount instead of resetting it", () => {
+  expect(convertWaterDisplay("100", "us", "metric")).toBe("2957.353");
+  expect(convertWaterDisplay("2957.353", "metric", "us")).toBe("100");
+});
+
+test("saving a converted draft preserves the canonical amount entered before conversion", () => {
+  const sourceGoal = {
+    calorieTargetMilliKcal: 2_000_000,
+    carbohydrateTargetMilligrams: 200_000,
+    effectiveDate: "2026-08-29",
+    fatTargetMilligrams: 70_000,
+    fiberTargetMilligrams: 30_000,
+    proteinTargetMilligrams: 100_000,
+    sodiumMaximumMilligrams: 2_000,
+    sugarMaximumMilligrams: 50_000,
+    waterTargetMicroliters: 2_400_000,
+  };
+  const convertedWater = convertWaterDisplay("2500", "metric", "us")!;
+
+  expect(
+    validateGoalVersionFields(
+      {
+        ...goalFieldsFromCanonical(sourceGoal, "us"),
+        displayUnits: "us",
+        water: convertedWater,
+        waterSourceUnits: "metric",
+        waterSourceValue: "2500",
+      },
+      "America/New_York",
+      sourceGoal,
+    ),
+  ).toMatchObject({
+    data: { waterTargetMicroliters: 2_500_000 },
+    success: true,
+  });
+});
+
+test("an unchanged rounded water display preserves its exact canonical value", () => {
+  const sourceGoal = {
+    calorieTargetMilliKcal: 2_000_000,
+    carbohydrateTargetMilligrams: 200_000,
+    effectiveDate: "2026-08-29",
+    fatTargetMilligrams: 70_000,
+    fiberTargetMilligrams: 30_000,
+    proteinTargetMilligrams: 100_000,
+    sodiumMaximumMilligrams: 2_000,
+    sugarMaximumMilligrams: 50_000,
+    waterTargetMicroliters: 2_400_000,
+  };
+  const usFields = goalFieldsFromCanonical(sourceGoal, "us");
+  expect(usFields.water).toBe("81.154");
+
+  expect(
+    validateGoalVersionFields(
+      { ...usFields, displayUnits: "us" },
+      "America/New_York",
+      sourceGoal,
+    ),
+  ).toMatchObject({
+    data: { waterTargetMicroliters: 2_400_000 },
+    success: true,
   });
 });
 
