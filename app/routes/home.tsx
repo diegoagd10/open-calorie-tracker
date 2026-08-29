@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { useState } from "react";
 import { z } from "zod";
 import type { Route } from "./+types/home";
-import { data, Form, Link, redirect } from "react-router";
+import { data, Form, Link, redirect, useNavigation } from "react-router";
 
 import {
   getAuthenticatedSession,
@@ -53,26 +53,13 @@ const catalogQuerySchema = z.string().trim().min(2).max(100);
 
 type HomeActionData = { message: string; tone?: "error" | "status" };
 
-function foodLogServiceForRequest(request: Request) {
-  const requestedInstant =
-    process.env.NODE_ENV === "test"
-      ? request.headers.get("X-Test-Food-Log-Now")
-      : undefined;
-  if (!requestedInstant) return getFoodLogService();
-
-  const instant = new Date(requestedInstant);
-  if (Number.isNaN(instant.getTime())) {
-    throw new Response("Test Food Log instant is invalid.", { status: 400 });
-  }
-  return getFoodLogService(instant);
-}
-
-function requestInstant(request: Request): Date | undefined {
+function testRequestInstant(request: Request): Date | undefined {
   const requestedInstant =
     process.env.NODE_ENV === "test"
       ? request.headers.get("X-Test-Food-Log-Now")
       : undefined;
   if (!requestedInstant) return undefined;
+
   const instant = new Date(requestedInstant);
   if (Number.isNaN(instant.getTime())) {
     throw new Response("Test Food Log instant is invalid.", { status: 400 });
@@ -80,14 +67,20 @@ function requestInstant(request: Request): Date | undefined {
   return instant;
 }
 
+function foodLogServiceForRequest(request: Request) {
+  const instant = testRequestInstant(request);
+  return instant ? getFoodLogService(instant) : getFoodLogService();
+}
+
 function catalogFailure(
   error: unknown,
-): { message: string; status: number } | undefined {
+): { message: string; status: number; title: string } | undefined {
   if (error instanceof CatalogConfigurationError) {
     return {
       message:
         "USDA search is not configured. Your saved Food Entries remain available.",
       status: 503,
+      title: "USDA search is not configured",
     };
   }
   if (error instanceof CatalogCredentialsError) {
@@ -95,12 +88,14 @@ function catalogFailure(
       message:
         "USDA search credentials are unavailable. Your saved Food Entries remain available.",
       status: 503,
+      title: "USDA credentials unavailable",
     };
   }
   if (error instanceof CatalogRateLimitError) {
     return {
       message: "USDA rate limit reached. Wait a moment and search again.",
       status: 429,
+      title: "USDA rate limit reached",
     };
   }
   if (error instanceof CatalogFoodNotFoundError) {
@@ -108,18 +103,21 @@ function catalogFailure(
       message:
         "That USDA food is no longer available. Search again for a current result.",
       status: 409,
+      title: "Food no longer available",
     };
   }
   if (error instanceof CatalogUnsafeMeasurementError) {
     return {
       message: "That food has no safe provider-backed measurement to log.",
       status: 422,
+      title: "Measurement unavailable",
     };
   }
   if (error instanceof CatalogInvalidResponseError) {
     return {
       message: "USDA returned food data that could not be used safely.",
       status: 502,
+      title: "USDA response could not be used",
     };
   }
   if (error instanceof CatalogUnavailableError) {
@@ -127,6 +125,7 @@ function catalogFailure(
       message:
         "USDA is unavailable right now. Your saved Food Entries are unaffected.",
       status: 503,
+      title: "USDA is unavailable",
     };
   }
   return undefined;
@@ -178,8 +177,9 @@ export async function loader({ request }: Route.LoaderArgs) {
     ? buildCalendarMonth(requestedCalendar, foodLog.today, foodLog.selectedDate)
     : undefined;
 
-  const foodStage = url.searchParams.get("food");
+  const foodStage = catalogRouteState(url.searchParams.get("food"));
   const requestedQuery = url.searchParams.get("query") ?? "";
+  let responseStatus = 200;
   let catalog:
     | {
         mode: "search";
@@ -188,6 +188,7 @@ export async function loader({ request }: Route.LoaderArgs) {
           ReturnType<ReturnType<typeof getFoodCatalogProvider>["search"]>
         >;
         message?: string;
+        title?: string;
       }
     | {
         mode: "detail";
@@ -199,16 +200,18 @@ export async function loader({ request }: Route.LoaderArgs) {
       }
     | undefined;
   if (foodStage && !foodLog.isFuture) {
-    if (foodStage === "search") {
+    if (foodStage.mode === "search") {
       const parsedQuery = catalogQuerySchema.safeParse(requestedQuery);
       if (!requestedQuery) {
         catalog = { mode: "search", query: "", results: [] };
       } else if (!parsedQuery.success) {
+        responseStatus = 400;
         catalog = {
           message: "Enter a food search from 2 to 100 characters.",
           mode: "search",
           query: requestedQuery,
           results: [],
+          title: "Search not sent",
         };
       } else {
         try {
@@ -220,18 +223,22 @@ export async function loader({ request }: Route.LoaderArgs) {
         } catch (error) {
           const failure = catalogFailure(error);
           if (!failure) throw error;
+          responseStatus = failure.status;
           catalog = {
             message: failure.message,
             mode: "search",
             query: parsedQuery.data,
             results: [],
+            title: failure.title,
           };
         }
       }
-    } else if (/^[1-9]\d*$/.test(foodStage)) {
+    } else {
       try {
         catalog = {
-          food: await getFoodCatalogProvider().getFood(foodStage),
+          food: await getFoodCatalogProvider().getFood(
+            foodStage.providerFoodId,
+          ),
           idempotencyKey: randomUUID(),
           mode: "detail",
           query: requestedQuery,
@@ -239,24 +246,43 @@ export async function loader({ request }: Route.LoaderArgs) {
       } catch (error) {
         const failure = catalogFailure(error);
         if (!failure) throw error;
+        responseStatus = failure.status;
         catalog = {
           message: failure.message,
           mode: "search",
           query: requestedQuery,
           results: [],
+          title: failure.title,
         };
       }
     }
   }
 
-  return {
-    calendar,
-    catalog,
-    csrfToken: session.csrfToken,
-    foodLog,
-    nearbyDates,
-    username: session.user.username,
-  };
+  return data(
+    {
+      calendar,
+      catalog,
+      csrfToken: session.csrfToken,
+      foodLog,
+      nearbyDates,
+      username: session.user.username,
+    },
+    { status: responseStatus },
+  );
+}
+
+type CatalogRouteState =
+  | { mode: "detail"; providerFoodId: string }
+  | { mode: "search" };
+
+function catalogRouteState(
+  value: string | null,
+): CatalogRouteState | undefined {
+  if (value === "search") return { mode: "search" };
+  if (value && /^[1-9]\d*$/.test(value)) {
+    return { mode: "detail", providerFoodId: value };
+  }
+  return undefined;
 }
 
 export async function action({ request }: Route.ActionArgs) {
@@ -319,13 +345,16 @@ export async function action({ request }: Route.ActionArgs) {
   }
 
   try {
-    await getFoodEntryService(requestInstant(request)).log(session.user.id, {
-      foodLogDate: parsed.data.date,
-      idempotencyKey: parsed.data.idempotencyKey,
-      providerFoodId: parsed.data.providerFoodId,
-      quantity: parsed.data.quantity,
-      selectedMeasurementId: parsed.data.selectedMeasurementId,
-    });
+    await getFoodEntryService(testRequestInstant(request)).log(
+      session.user.id,
+      {
+        foodLogDate: parsed.data.date,
+        idempotencyKey: parsed.data.idempotencyKey,
+        providerFoodId: parsed.data.providerFoodId,
+        quantity: parsed.data.quantity,
+        selectedMeasurementId: parsed.data.selectedMeasurementId,
+      },
+    );
     return redirect(foodLogHref(parsed.data.date));
   } catch (error) {
     if (error instanceof FutureFoodLogDateError) {
@@ -653,10 +682,14 @@ function FoodDetailStage({
           food.authoritativeBaseQuantityMicrounits) *
         numericQuantity
       : 0;
-  const preview = (value: number | null, divisor: number, unit: string) =>
+  const preview = (
+    value: (typeof food.nutritionPerAuthoritativeBase)["energyMilliKcal"],
+    divisor: number,
+    unit: string,
+  ) =>
     value === null
       ? "Not reported"
-      : `${new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 }).format((value * multiplier) / divisor)} ${unit}`;
+      : `${new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 }).format((value.amount * value.fixedPointMultiplier * multiplier) / divisor)} ${unit}`;
 
   return (
     <>
@@ -717,11 +750,11 @@ function FoodDetailStage({
             <input
               inputMode="decimal"
               max="99"
-              min="0.000001"
+              min="0.01"
               name="quantity"
               onChange={(event) => setQuantity(event.currentTarget.value)}
               required
-              step="0.000001"
+              step="0.01"
               type="number"
               value={quantity}
             />
@@ -798,6 +831,10 @@ function CatalogDialog({
   csrfToken: string;
   date: string;
 }) {
+  const navigation = useNavigation();
+  const [clientSearchMessage, setClientSearchMessage] = useState<string>();
+  const searchPending = navigation.state !== "idle";
+
   return (
     <div className={styles.dialogBackdrop}>
       <section
@@ -832,7 +869,24 @@ function CatalogDialog({
           />
         ) : (
           <>
-            <Form className={styles.searchForm} method="get">
+            <Form
+              className={styles.searchForm}
+              method="get"
+              noValidate
+              onSubmit={(event) => {
+                const query = String(
+                  new FormData(event.currentTarget).get("query") ?? "",
+                );
+                if (!catalogQuerySchema.safeParse(query).success) {
+                  event.preventDefault();
+                  setClientSearchMessage(
+                    "Enter a trimmed food search from 2 to 100 characters.",
+                  );
+                  return;
+                }
+                setClientSearchMessage(undefined);
+              }}
+            >
               <input name="date" type="hidden" value={date} />
               <input name="food" type="hidden" value="search" />
               <label htmlFor="food-query">Search United States foods</label>
@@ -840,6 +894,10 @@ function CatalogDialog({
                 <input
                   autoComplete="off"
                   autoFocus
+                  aria-describedby={
+                    clientSearchMessage ? "food-search-error" : undefined
+                  }
+                  aria-invalid={clientSearchMessage ? true : undefined}
                   defaultValue={catalog.query}
                   id="food-query"
                   maxLength={100}
@@ -854,9 +912,23 @@ function CatalogDialog({
                 </button>
               </div>
             </Form>
-            {catalog.message ? (
+            {searchPending ? (
+              <div className={styles.catalogState} role="status">
+                <h3>Searching USDA FoodData Central</h3>
+                <p>Your deliberate catalog request is in progress.</p>
+              </div>
+            ) : clientSearchMessage ? (
+              <div
+                className={styles.catalogState}
+                id="food-search-error"
+                role="alert"
+              >
+                <h3>Search not sent</h3>
+                <p>{clientSearchMessage}</p>
+              </div>
+            ) : catalog.message ? (
               <div className={styles.catalogState} role="alert">
-                <h3>Search unavailable</h3>
+                <h3>{catalog.title ?? "Search unavailable"}</h3>
                 <p>{catalog.message}</p>
               </div>
             ) : catalog.results.length ? (

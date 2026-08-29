@@ -107,6 +107,7 @@ test("USDA search normalizes supported foods and keeps the newest duplicate revi
 });
 
 test("USDA detail applies Foundation energy precedence and keeps only safe measurements", async () => {
+  const onDiagnostic = vi.fn();
   const fetchImplementation = vi.fn<typeof fetch>().mockResolvedValue(
     jsonResponse({
       dataType: "Foundation",
@@ -121,6 +122,7 @@ test("USDA detail applies Foundation energy precedence and keeps only safe measu
         { amount: 2.3, nutrient: { id: 1079, unitName: "g" } },
         { amount: 0, nutrient: { id: 2000, unitName: "g" } },
         { amount: 120, nutrient: { id: 1093, unitName: "mg" } },
+        { amount: -0.2, nutrient: { id: 1005, unitName: "g" } },
       ],
       foodPortions: [
         {
@@ -134,6 +136,11 @@ test("USDA detail applies Foundation energy precedence and keeps only safe measu
           gramWeight: -4,
           id: 8,
           measureUnit: { name: "piece" },
+        },
+        {
+          amount: 1,
+          id: 9,
+          measureUnit: { name: "malformed missing weight" },
         },
         {
           amount: 1,
@@ -151,6 +158,7 @@ test("USDA detail applies Foundation energy precedence and keeps only safe measu
     apiKey: "registered-test-key",
     baseUrl: "https://example.test/fdc/v1",
     fetchImplementation,
+    onDiagnostic,
   });
 
   await expect(provider.getFood("200")).resolves.toEqual({
@@ -178,12 +186,12 @@ test("USDA detail applies Foundation energy precedence and keeps only safe measu
     name: "Bread, whole-wheat",
     nutritionPerAuthoritativeBase: {
       carbohydrateMilligrams: null,
-      energyMilliKcal: 250_000,
-      fatMilligrams: 1_500,
-      fiberMilligrams: 2_300,
-      proteinMilligrams: 0,
-      sodiumMilligrams: 120,
-      sugarMilligrams: 0,
+      energyMilliKcal: { amount: 250, fixedPointMultiplier: 1_000 },
+      fatMilligrams: { amount: 1.5, fixedPointMultiplier: 1_000 },
+      fiberMilligrams: { amount: 2.3, fixedPointMultiplier: 1_000 },
+      proteinMilligrams: { amount: 0, fixedPointMultiplier: 1_000 },
+      sodiumMilligrams: { amount: 120, fixedPointMultiplier: 1 },
+      sugarMilligrams: { amount: 0, fixedPointMultiplier: 1_000 },
     },
     provider: "usda-fdc",
     providerFoodId: "200",
@@ -194,9 +202,14 @@ test("USDA detail applies Foundation energy precedence and keeps only safe measu
   const [url, request] = fetchImplementation.mock.calls[0]!;
   expect(String(url)).toContain("/food/200?");
   expect(request?.method).toBe("GET");
+  expect(onDiagnostic).toHaveBeenCalledWith({
+    code: "negative_nutrient_amount",
+    nutrientId: 1005,
+    providerFoodId: "200",
+  });
 });
 
-test("USDA detail preserves branded provenance and provider-backed milliliter servings", async () => {
+test("USDA detail preserves branded provenance without treating milliliters as a gram conversion", async () => {
   const provider = new UsdaFoodDataCentralAdapter({
     apiKey: "registered-test-key",
     baseUrl: "https://example.test/fdc/v1",
@@ -223,26 +236,20 @@ test("USDA detail preserves branded provenance and provider-backed milliliter se
 
   const food = await provider.getFood("301");
   expect(food).toMatchObject({
-    authoritativeBaseUnit: "ml",
+    authoritativeBaseUnit: "g",
     barcode: "00012345678905",
     brand: "Example Drinks",
     measurements: [
       {
-        baseQuantityMicrounits: 355_000_000,
-        id: "serving:ml:355000000",
-        label: "1 can (355 ml)",
-        unit: "ml",
-      },
-      {
         baseQuantityMicrounits: 100_000_000,
-        id: "base:ml:100000000",
-        label: "100 ml",
-        unit: "ml",
+        id: "base:g:100000000",
+        label: "100 g",
+        unit: "g",
       },
     ],
     nutritionPerAuthoritativeBase: {
-      energyMilliKcal: 0,
-      sodiumMilligrams: 10,
+      energyMilliKcal: { amount: 0, fixedPointMultiplier: 1_000 },
+      sodiumMilligrams: { amount: 0.01, fixedPointMultiplier: 1_000 },
     },
     providerModifiedDate: "2023-06-23",
     providerPublishedDate: "2023-07-13",
@@ -288,7 +295,6 @@ test("an empty deployment credential is a user-safe missing configuration", asyn
   await expect(getFoodCatalogProvider().search("bread")).rejects.toBeInstanceOf(
     CatalogConfigurationError,
   );
-
 });
 
 test("USDA malformed JSON, schema drift, and contradictory nutrient units are invalid responses", async () => {
@@ -306,13 +312,11 @@ test("USDA malformed JSON, schema drift, and contradictory nutrient units are in
   const drifted = new UsdaFoodDataCentralAdapter({
     apiKey: "registered-test-key",
     baseUrl: "https://example.test/fdc/v1",
-    fetchImplementation: vi
-      .fn<typeof fetch>()
-      .mockResolvedValue(
-        jsonResponse({
-          foods: [{ dataType: "Branded", description: "Bread" }],
-        }),
-      ),
+    fetchImplementation: vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse({
+        foods: [{ dataType: "Branded", description: "Bread" }],
+      }),
+    ),
   });
   await expect(drifted.search("bread")).rejects.toBeInstanceOf(
     CatalogInvalidResponseError,
@@ -342,6 +346,34 @@ test("USDA malformed JSON, schema drift, and contradictory nutrient units are in
       .mockRejectedValue(new Error("network details")),
   });
   await expect(networkFailure.search("bread")).rejects.toBeInstanceOf(
+    CatalogUnavailableError,
+  );
+
+  const timedOut = new UsdaFoodDataCentralAdapter({
+    apiKey: "registered-test-key",
+    baseUrl: "https://example.test/fdc/v1",
+    fetchImplementation: vi.fn<typeof fetch>().mockImplementation(
+      (_input, init) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () => {
+            reject(new DOMException("provider request aborted", "AbortError"));
+          });
+        }),
+    ),
+    timeoutMs: 1,
+  });
+  await expect(timedOut.search("bread")).rejects.toBeInstanceOf(
+    CatalogUnavailableError,
+  );
+
+  const aborted = new UsdaFoodDataCentralAdapter({
+    apiKey: "registered-test-key",
+    baseUrl: "https://example.test/fdc/v1",
+    fetchImplementation: vi
+      .fn<typeof fetch>()
+      .mockRejectedValue(new DOMException("aborted", "AbortError")),
+  });
+  await expect(aborted.search("bread")).rejects.toBeInstanceOf(
     CatalogUnavailableError,
   );
 });

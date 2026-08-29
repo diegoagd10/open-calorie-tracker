@@ -43,9 +43,10 @@ run the opt-in provider spike separately:
 FDC_API_KEY=... pnpm test:usda-live
 ```
 
-The spike rejects `DEMO_KEY`, exercises representative branded and generic
-search/detail paths, checks provider-backed portions and nutrients, and reports
-aggregate observed latency without logging the key.
+The spike rejects `DEMO_KEY`; exercises representative, no-result, and GTIN
+search/detail paths; records duplicate revisions, market and serving metadata,
+and all seven nutrient null rates; checks energy precedence and fixed-point
+scaling; and reports aggregate observed latency without logging the key.
 
 The TypeScript 7.0.2 compile spike exposed invalid declarations in stable
 Drizzle 0.45.2, so the project uses the newest prior stable TypeScript line,

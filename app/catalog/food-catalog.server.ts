@@ -24,14 +24,25 @@ export type CatalogMeasurement = {
   unit: "g" | "ml";
 };
 
+export type CatalogNutrientValue = {
+  amount: number;
+  fixedPointMultiplier: number;
+};
+
 export type CatalogNutrition = {
-  carbohydrateMilligrams: number | null;
-  energyMilliKcal: number | null;
-  fatMilligrams: number | null;
-  fiberMilligrams: number | null;
-  proteinMilligrams: number | null;
-  sodiumMilligrams: number | null;
-  sugarMilligrams: number | null;
+  carbohydrateMilligrams: CatalogNutrientValue | null;
+  energyMilliKcal: CatalogNutrientValue | null;
+  fatMilligrams: CatalogNutrientValue | null;
+  fiberMilligrams: CatalogNutrientValue | null;
+  proteinMilligrams: CatalogNutrientValue | null;
+  sodiumMilligrams: CatalogNutrientValue | null;
+  sugarMilligrams: CatalogNutrientValue | null;
+};
+
+export type FoodCatalogDiagnostic = {
+  code: "negative_nutrient_amount";
+  nutrientId: number;
+  providerFoodId: string;
 };
 
 export type CatalogFood = CatalogSearchResult & {

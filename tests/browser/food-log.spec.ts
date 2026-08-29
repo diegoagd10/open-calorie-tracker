@@ -31,6 +31,23 @@ function openBrowserTestDatabase() {
   return new BetterSqlite3(databasePath);
 }
 
+async function expectCatalogResponsive(page: Page) {
+  for (const viewport of [
+    { height: 844, width: 390 },
+    { height: 900, width: 800 },
+    { height: 900, width: 1_120 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await expect(page.getByRole("dialog", { name: "Add Food" })).toBeVisible();
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= window.innerWidth,
+      ),
+    ).toBe(true);
+  }
+  await page.setViewportSize({ height: 720, width: 1_280 });
+}
+
 test("today, historical navigation, calendar access, travel, and future rejection", async ({
   browser,
   context,
@@ -210,11 +227,47 @@ test("authenticated USDA search and idempotent logging preserve a local Nutritio
   await expect(page).toHaveURL(/food=search/);
   await expect(page.getByRole("dialog", { name: "Add Food" })).toBeVisible();
   await expect(page.getByText("Search is deliberate.")).toBeVisible();
+  await expectCatalogResponsive(page);
 
-  await page.goto("/?date=2026-08-29&food=search&query=x");
+  const invalidSearch = await page.goto(
+    "/?date=2026-08-29&food=search&query=x",
+  );
+  expect(invalidSearch?.status()).toBe(400);
   await expect(page.getByRole("alert")).toContainText(
     "Enter a food search from 2 to 100 characters.",
   );
+  await expectCatalogResponsive(page);
+
+  await page
+    .getByRole("searchbox", { name: "Search United States foods" })
+    .fill(" ");
+  await page.getByRole("button", { name: "Search" }).click();
+  await expect(page.getByRole("alert")).toContainText("Search not sent");
+  await expect(page.getByRole("alert")).toContainText("trimmed food search");
+
+  let releaseSearch!: () => void;
+  const searchGate = new Promise<void>((resolve) => {
+    releaseSearch = resolve;
+  });
+  await page.route(
+    /query=yogurt/,
+    async (route) => {
+      await searchGate;
+      await route.continue();
+    },
+    { times: 1 },
+  );
+  await page
+    .getByRole("searchbox", { name: "Search United States foods" })
+    .fill("yogurt");
+  const searchClick = page.getByRole("button", { name: "Search" }).click();
+  await expect(
+    page.getByRole("status").getByText("Searching USDA FoodData Central"),
+  ).toBeVisible();
+  releaseSearch();
+  await searchClick;
+  await expect(page.getByText("Plain nonfat Greek yogurt")).toBeVisible();
+  await expectCatalogResponsive(page);
 
   await page
     .getByRole("searchbox", { name: "Search United States foods" })
@@ -222,18 +275,31 @@ test("authenticated USDA search and idempotent logging preserve a local Nutritio
   await page.getByRole("button", { name: "Search" }).click();
   await expect(page.getByText("No foods found")).toBeVisible();
   await expect(page.getByText("Plain nonfat Greek yogurt")).toHaveCount(0);
+  await expectCatalogResponsive(page);
 
-  for (const [query, message] of [
-    ["rate", "USDA rate limit reached"],
-    ["unavailable", "USDA is unavailable right now"],
-    ["malformed", "USDA returned food data that could not be used safely"],
-  ]) {
-    await page
-      .getByRole("searchbox", { name: "Search United States foods" })
-      .fill(query);
-    await page.getByRole("button", { name: "Search" }).click();
+  for (const [query, status, title, message] of [
+    ["configuration", 503, "USDA search is not configured", "not configured"],
+    ["credentials", 503, "USDA credentials unavailable", "credentials"],
+    ["rate", 429, "USDA rate limit reached", "rate limit reached"],
+    ["timeout", 503, "USDA is unavailable", "unavailable right now"],
+    ["malformed", 502, "USDA response could not be used", "could not be used"],
+  ] as const) {
+    const response = await page.goto(
+      `/?date=2026-08-29&food=search&query=${query}`,
+    );
+    expect(response?.status()).toBe(status);
+    await expect(page.getByRole("heading", { name: title })).toBeVisible();
     await expect(page.getByRole("alert")).toContainText(message);
   }
+  await expectCatalogResponsive(page);
+
+  const vanished = await page.goto(
+    "/?date=2026-08-29&food=4040&query=vanished",
+  );
+  expect(vanished?.status()).toBe(409);
+  await expect(
+    page.getByRole("heading", { name: "Food no longer available" }),
+  ).toBeVisible();
 
   await page
     .getByRole("searchbox", { name: "Search United States foods" })
@@ -247,6 +313,7 @@ test("authenticated USDA search and idempotent logging preserve a local Nutritio
   await expect(
     page.getByRole("link", { name: "USDA FoodData Central" }),
   ).toBeVisible();
+  await expectCatalogResponsive(page);
 
   await page
     .getByRole("searchbox", { name: "Search United States foods" })
@@ -267,6 +334,7 @@ test("authenticated USDA search and idempotent logging preserve a local Nutritio
   await expect(page.getByLabel("Measurement")).toHaveValue(
     "serving:g:170000000",
   );
+  await expectCatalogResponsive(page);
   await page.getByLabel("Quantity").fill("1.5");
   await expect(page.getByText("150.5 kcal")).toBeVisible();
 

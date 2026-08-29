@@ -13,7 +13,7 @@ import {
   FutureFoodLogDateError,
   InvalidFoodLogDateError,
 } from "../food-log/food-log.server";
-import { foodEntrySnapshot } from "./snapshot.server";
+import { foodEntrySnapshot, scaleCatalogNutrient } from "./snapshot.server";
 
 const logFoodInputSchema = z.object({
   foodLogDate: z.string(),
@@ -118,6 +118,13 @@ export class FoodEntryService {
 
     const instant = this.#now();
     const createdAt = instant.toISOString();
+    const scale = (value: Parameters<typeof scaleCatalogNutrient>[0]) =>
+      scaleCatalogNutrient(
+        value,
+        measurement.baseQuantityMicrounits,
+        quantity,
+        food.authoritativeBaseQuantityMicrounits,
+      );
     return this.#database.transaction((transaction) => {
       const repeated = transaction
         .select()
@@ -170,20 +177,27 @@ export class FoodEntryService {
           authoritativeBaseQuantityMicrounits:
             food.authoritativeBaseQuantityMicrounits,
           authoritativeBaseUnit: food.authoritativeBaseUnit,
-          authoritativeCarbohydrateMilligrams:
+          carbohydrateMilligrams: scale(
             food.nutritionPerAuthoritativeBase.carbohydrateMilligrams,
-          authoritativeEnergyMilliKcal:
+          ),
+          energyMilliKcal: scale(
             food.nutritionPerAuthoritativeBase.energyMilliKcal,
-          authoritativeFatMilligrams:
+          ),
+          fatMilligrams: scale(
             food.nutritionPerAuthoritativeBase.fatMilligrams,
-          authoritativeFiberMilligrams:
+          ),
+          fiberMilligrams: scale(
             food.nutritionPerAuthoritativeBase.fiberMilligrams,
-          authoritativeProteinMilligrams:
+          ),
+          proteinMilligrams: scale(
             food.nutritionPerAuthoritativeBase.proteinMilligrams,
-          authoritativeSodiumMilligrams:
+          ),
+          sodiumMilligrams: scale(
             food.nutritionPerAuthoritativeBase.sodiumMilligrams,
-          authoritativeSugarMilligrams:
+          ),
+          sugarMilligrams: scale(
             food.nutritionPerAuthoritativeBase.sugarMilligrams,
+          ),
           barcode: food.barcode,
           brand: food.brand,
           createdAt,

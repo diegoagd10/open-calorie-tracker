@@ -1,17 +1,46 @@
 import { foodEntries } from "../database/schema.server";
+import type { CatalogNutrientValue } from "../catalog/food-catalog.server";
 
 type FoodEntryRow = typeof foodEntries.$inferSelect;
 
-function scaleNutrient(
-  value: number | null,
+function decimalFraction(value: number): {
+  denominator: bigint;
+  numerator: bigint;
+} {
+  const match = /^(\d+)(?:\.(\d+))?(?:e([+-]?\d+))?$/i.exec(String(value));
+  if (!match) throw new Error("Catalog nutrient is invalid");
+  const fractionLength = match[2]?.length ?? 0;
+  const exponent = Number(match[3] ?? "0") - fractionLength;
+  const digits = BigInt(`${match[1]}${match[2] ?? ""}`);
+  if (exponent >= 0) {
+    return { denominator: 1n, numerator: digits * 10n ** BigInt(exponent) };
+  }
+  return { denominator: 10n ** BigInt(-exponent), numerator: digits };
+}
+
+export function scaleCatalogNutrient(
+  value: CatalogNutrientValue | null,
   measurementBaseQuantityMicrounits: number,
   quantityMicrounits: number,
   authoritativeBaseQuantityMicrounits: number,
 ): number | null {
   if (value === null) return null;
-  const denominator = BigInt(authoritativeBaseQuantityMicrounits) * 1_000_000n;
+  if (
+    !Number.isFinite(value.amount) ||
+    value.amount < 0 ||
+    !Number.isSafeInteger(value.fixedPointMultiplier) ||
+    value.fixedPointMultiplier <= 0
+  ) {
+    throw new Error("Catalog nutrient is invalid");
+  }
+  const amount = decimalFraction(value.amount);
+  const denominator =
+    amount.denominator *
+    BigInt(authoritativeBaseQuantityMicrounits) *
+    1_000_000n;
   const numerator =
-    BigInt(value) *
+    amount.numerator *
+    BigInt(value.fixedPointMultiplier) *
     BigInt(measurementBaseQuantityMicrounits) *
     BigInt(quantityMicrounits);
   const scaled = (numerator + denominator / 2n) / denominator;
@@ -22,29 +51,21 @@ function scaleNutrient(
 }
 
 export function foodEntrySnapshot(row: FoodEntryRow) {
-  const scale = (value: number | null) =>
-    scaleNutrient(
-      value,
-      row.selectedMeasurementBaseQuantityMicrounits,
-      row.quantityMicrounits,
-      row.authoritativeBaseQuantityMicrounits,
-    );
-
   return {
     barcode: row.barcode,
     brand: row.brand,
-    carbohydrateMilligrams: scale(row.authoritativeCarbohydrateMilligrams),
+    carbohydrateMilligrams: row.carbohydrateMilligrams,
     createdAt: row.createdAt,
     dataType: row.sourceDataType,
-    energyMilliKcal: scale(row.authoritativeEnergyMilliKcal),
-    fatMilligrams: scale(row.authoritativeFatMilligrams),
-    fiberMilligrams: scale(row.authoritativeFiberMilligrams),
+    energyMilliKcal: row.energyMilliKcal,
+    fatMilligrams: row.fatMilligrams,
+    fiberMilligrams: row.fiberMilligrams,
     foodLogDate: row.foodLogDate,
     id: row.id,
     localEventTime: row.localEventTime,
     marketCountry: row.marketCountry,
     name: row.originalName,
-    proteinMilligrams: scale(row.authoritativeProteinMilligrams),
+    proteinMilligrams: row.proteinMilligrams,
     provider: row.provider,
     providerFoodId: row.providerFoodId,
     providerModifiedDate: row.providerModifiedDate,
@@ -53,8 +74,8 @@ export function foodEntrySnapshot(row: FoodEntryRow) {
     selectedMeasurementId: row.selectedMeasurementId,
     selectedMeasurementLabel: row.selectedMeasurementLabel,
     selectedMeasurementUnit: row.selectedMeasurementUnit,
-    sodiumMilligrams: scale(row.authoritativeSodiumMilligrams),
-    sugarMilligrams: scale(row.authoritativeSugarMilligrams),
+    sodiumMilligrams: row.sodiumMilligrams,
+    sugarMilligrams: row.sugarMilligrams,
     updatedAt: row.updatedAt,
   };
 }

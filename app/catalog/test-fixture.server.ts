@@ -1,4 +1,7 @@
 import {
+  CatalogConfigurationError,
+  CatalogCredentialsError,
+  CatalogFoodNotFoundError,
   CatalogInvalidResponseError,
   CatalogRateLimitError,
   CatalogUnavailableError,
@@ -33,13 +36,13 @@ function yogurt(): CatalogFood {
     ],
     name: "Plain nonfat Greek yogurt",
     nutritionPerAuthoritativeBase: {
-      carbohydrateMilligrams: 3_530,
-      energyMilliKcal: 59_000,
-      fatMilligrams: 0,
+      carbohydrateMilligrams: { amount: 3.53, fixedPointMultiplier: 1_000 },
+      energyMilliKcal: { amount: 59, fixedPointMultiplier: 1_000 },
+      fatMilligrams: { amount: 0, fixedPointMultiplier: 1_000 },
       fiberMilligrams: null,
-      proteinMilligrams: 10_590,
-      sodiumMilligrams: 36,
-      sugarMilligrams: 3_530,
+      proteinMilligrams: { amount: 10.59, fixedPointMultiplier: 1_000 },
+      sodiumMilligrams: { amount: 36, fixedPointMultiplier: 1 },
+      sugarMilligrams: { amount: 3.53, fixedPointMultiplier: 1_000 },
     },
     provider: "usda-fdc",
     providerFoodId: "1001",
@@ -64,11 +67,16 @@ function searchResult(food: CatalogFood): CatalogSearchResult {
 export class TestFoodCatalogProvider implements FoodCatalogProvider {
   async search(query: string): Promise<CatalogSearchResult[]> {
     switch (query.trim().toLowerCase()) {
+      case "configuration":
+        throw new CatalogConfigurationError();
+      case "credentials":
+        throw new CatalogCredentialsError();
       case "none":
         return [];
       case "rate":
         throw new CatalogRateLimitError();
       case "unavailable":
+      case "timeout":
         throw new CatalogUnavailableError();
       case "malformed":
         throw new CatalogInvalidResponseError();
@@ -81,12 +89,21 @@ export class TestFoodCatalogProvider implements FoodCatalogProvider {
             providerFoodId: "9999",
           },
         ];
+      case "vanished":
+        return [
+          {
+            ...searchResult(yogurt()),
+            name: "Vanished catalog food",
+            providerFoodId: "4040",
+          },
+        ];
       default:
         return [searchResult(yogurt())];
     }
   }
 
   async getFood(providerFoodId: string): Promise<CatalogFood> {
+    if (providerFoodId === "4040") throw new CatalogFoodNotFoundError();
     if (providerFoodId === "9999") throw new CatalogUnsafeMeasurementError();
     if (providerFoodId !== "1001") throw new CatalogUnavailableError();
     return yogurt();

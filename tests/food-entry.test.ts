@@ -10,6 +10,11 @@ import type {
   FoodCatalogProvider,
 } from "../app/catalog/food-catalog.server";
 import {
+  CatalogConfigurationError,
+  CatalogCredentialsError,
+  CatalogFoodNotFoundError,
+  CatalogInvalidResponseError,
+  CatalogRateLimitError,
   CatalogUnavailableError,
   CatalogUnsafeMeasurementError,
 } from "../app/catalog/food-catalog.server";
@@ -111,12 +116,12 @@ function foundationBread(): CatalogFood {
     name: "Bread, whole-wheat",
     nutritionPerAuthoritativeBase: {
       carbohydrateMilligrams: null,
-      energyMilliKcal: 250_000,
-      fatMilligrams: 1_500,
-      fiberMilligrams: 2_300,
-      proteinMilligrams: 0,
-      sodiumMilligrams: 120,
-      sugarMilligrams: 0,
+      energyMilliKcal: { amount: 250, fixedPointMultiplier: 1_000 },
+      fatMilligrams: { amount: 1.5, fixedPointMultiplier: 1_000 },
+      fiberMilligrams: { amount: 2.3, fixedPointMultiplier: 1_000 },
+      proteinMilligrams: { amount: 0, fixedPointMultiplier: 1_000 },
+      sodiumMilligrams: { amount: 120, fixedPointMultiplier: 1 },
+      sugarMilligrams: { amount: 0, fixedPointMultiplier: 1_000 },
     },
     provider: "usda-fdc",
     providerFoodId: "200",
@@ -169,7 +174,10 @@ test("a provider-backed fractional portion becomes an immutable Food Entry snaps
   });
 
   provider.food.name = "Provider changed this later";
-  provider.food.nutritionPerAuthoritativeBase.energyMilliKcal = 999_000;
+  provider.food.nutritionPerAuthoritativeBase.energyMilliKcal = {
+    amount: 999,
+    fixedPointMultiplier: 1_000,
+  };
   const foodLog = new FoodLogService(client, now).read(userId, "2026-08-28");
   expect(foodLog?.entries).toHaveLength(1);
   expect(foodLog?.entries[0]).toMatchObject({
@@ -177,6 +185,40 @@ test("a provider-backed fractional portion becomes an immutable Food Entry snaps
     name: "Bread, whole-wheat",
     provider: "usda-fdc",
   });
+  database.close();
+});
+
+test("nutrients scale from the unrounded provider amount and round once at snapshot creation", async () => {
+  const database = await setupDatabase();
+  const client = database.getClient();
+  const userId = insertConfiguredUser(client, "rounding.user");
+  const provider = new FakeCatalogProvider();
+  provider.food.measurements = [
+    {
+      baseQuantityMicrounits: 200_000_000,
+      id: "portion:double",
+      label: "1 double portion (200 g)",
+      unit: "g",
+    },
+  ];
+  provider.food.nutritionPerAuthoritativeBase.energyMilliKcal = {
+    amount: 0.0006,
+    fixedPointMultiplier: 1_000,
+  };
+  const created = await new FoodEntryService(
+    client,
+    provider,
+    () => new Date("2026-08-29T18:00:00.000Z"),
+  ).log(userId, {
+    foodLogDate: "2026-08-29",
+    idempotencyKey: "0198f7e2-5aab-7000-8000-000000000002",
+    providerFoodId: "200",
+    quantity: "1",
+    selectedMeasurementId: "portion:double",
+  });
+
+  expect(created.energyMilliKcal).toBe(1);
+  expect(client.select().from(foodEntries).get()?.energyMilliKcal).toBe(1);
   database.close();
 });
 
@@ -236,7 +278,7 @@ test("today uses current local time and past entries retain deterministic ties a
     .values({
       authoritativeBaseQuantityMicrounits: 100_000_000,
       authoritativeBaseUnit: "g",
-      authoritativeEnergyMilliKcal: 1_000,
+      energyMilliKcal: 1_000,
       barcode: null,
       brand: null,
       createdAt: "2026-08-29T17:00:00.000Z",
@@ -306,20 +348,30 @@ test("authorization, future dates, unsafe measurements, provider failures, and t
     }),
   ).rejects.toBeInstanceOf(CatalogUnsafeMeasurementError);
 
-  const unavailableProvider: FoodCatalogProvider = {
-    async getFood() {
-      throw new CatalogUnavailableError();
-    },
-    async search() {
-      return [];
-    },
-  };
-  await expect(
-    new FoodEntryService(client, unavailableProvider, now).log(userId, {
-      ...input,
-      idempotencyKey: "0198f7e2-5aab-7000-8000-000000000033",
-    }),
-  ).rejects.toBeInstanceOf(CatalogUnavailableError);
+  const providerFailures = [
+    new CatalogConfigurationError(),
+    new CatalogCredentialsError(),
+    new CatalogFoodNotFoundError(),
+    new CatalogInvalidResponseError(),
+    new CatalogRateLimitError(),
+    new CatalogUnavailableError(),
+  ];
+  for (const [index, providerFailure] of providerFailures.entries()) {
+    const failingProvider: FoodCatalogProvider = {
+      async getFood() {
+        throw providerFailure;
+      },
+      async search() {
+        return [];
+      },
+    };
+    await expect(
+      new FoodEntryService(client, failingProvider, now).log(userId, {
+        ...input,
+        idempotencyKey: `catalog-failure-${index}`,
+      }),
+    ).rejects.toBeInstanceOf(providerFailure.constructor);
+  }
 
   provider.food.authoritativeBaseQuantityMicrounits = -1;
   await expect(

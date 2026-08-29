@@ -10,9 +10,11 @@ import {
   SUPPORTED_CATALOG_DATA_TYPES,
   type CatalogFood,
   type CatalogMeasurement,
+  type CatalogNutrientValue,
   type CatalogNutrition,
   type CatalogDataType,
   type CatalogSearchResult,
+  type FoodCatalogDiagnostic,
   type FoodCatalogProvider,
 } from "./food-catalog.server";
 
@@ -59,7 +61,7 @@ const foodPortionSchema = z.object({
 });
 const detailFoodSchema = searchFoodSchema.extend({
   foodNutrients: z.array(foodNutrientSchema).max(5_000),
-  foodPortions: z.array(foodPortionSchema).max(500).nullish(),
+  foodPortions: z.array(z.unknown()).max(500).nullish(),
   marketCountry: z.string().max(200).nullish(),
   modifiedDate: optionalProviderDateSchema,
 });
@@ -158,18 +160,24 @@ function normalizeSearchFood(food: SearchFood): CatalogSearchResult | null {
 type FoodNutrient = z.infer<typeof foodNutrientSchema>;
 type DetailFood = z.infer<typeof detailFoodSchema>;
 
-function fixedPointValue(value: number, multiplier: number): number | null {
+function fixedPointValue(
+  value: number,
+  multiplier: number,
+): CatalogNutrientValue | null {
   if (value < 0) return null;
-  const result = Math.round(value * multiplier);
-  if (!Number.isSafeInteger(result)) throw new CatalogInvalidResponseError();
-  return result;
+  if (!Number.isSafeInteger(multiplier) || multiplier <= 0) {
+    throw new CatalogInvalidResponseError();
+  }
+  return { amount: value, fixedPointMultiplier: multiplier };
 }
 
 function nutrientValue(
   nutrients: FoodNutrient[],
   ids: readonly number[],
   conversions: Readonly<Record<string, number>>,
-): number | null {
+  onDiagnostic: (diagnostic: FoodCatalogDiagnostic) => void,
+  providerFoodId: string,
+): CatalogNutrientValue | null {
   for (const id of ids) {
     const nutrient = nutrients.find(
       (candidate) => candidate.nutrient.id === id,
@@ -178,29 +186,46 @@ function nutrientValue(
     const multiplier =
       conversions[nutrient.nutrient.unitName.trim().toUpperCase()];
     if (multiplier === undefined) throw new CatalogInvalidResponseError();
+    if (nutrient.amount < 0) {
+      onDiagnostic({
+        code: "negative_nutrient_amount",
+        nutrientId: id,
+        providerFoodId,
+      });
+    }
     return fixedPointValue(nutrient.amount, multiplier);
   }
   return null;
 }
 
-function normalizeNutrition(food: DetailFood): CatalogNutrition {
+function normalizeNutrition(
+  food: DetailFood,
+  onDiagnostic: (diagnostic: FoodCatalogDiagnostic) => void,
+): CatalogNutrition {
   const energyIds =
     food.dataType === "Foundation" ? [2048, 2047, 1008] : [1008];
+  const nutrient = (
+    ids: readonly number[],
+    conversions: Readonly<Record<string, number>>,
+  ) =>
+    nutrientValue(
+      food.foodNutrients,
+      ids,
+      conversions,
+      onDiagnostic,
+      String(food.fdcId),
+    );
   return {
-    carbohydrateMilligrams: nutrientValue(food.foodNutrients, [1005], {
-      G: 1_000,
-    }),
-    energyMilliKcal: nutrientValue(food.foodNutrients, energyIds, {
-      KCAL: 1_000,
-    }),
-    fatMilligrams: nutrientValue(food.foodNutrients, [1004], { G: 1_000 }),
-    fiberMilligrams: nutrientValue(food.foodNutrients, [1079], { G: 1_000 }),
-    proteinMilligrams: nutrientValue(food.foodNutrients, [1003], { G: 1_000 }),
-    sodiumMilligrams: nutrientValue(food.foodNutrients, [1093], {
+    carbohydrateMilligrams: nutrient([1005], { G: 1_000 }),
+    energyMilliKcal: nutrient(energyIds, { KCAL: 1_000 }),
+    fatMilligrams: nutrient([1004], { G: 1_000 }),
+    fiberMilligrams: nutrient([1079], { G: 1_000 }),
+    proteinMilligrams: nutrient([1003], { G: 1_000 }),
+    sodiumMilligrams: nutrient([1093], {
       G: 1_000,
       MG: 1,
     }),
-    sugarMilligrams: nutrientValue(food.foodNutrients, [2000], { G: 1_000 }),
+    sugarMilligrams: nutrient([2000], { G: 1_000 }),
   };
 }
 
@@ -215,14 +240,11 @@ function portionLabel(portion: z.infer<typeof foodPortionSchema>): string {
   return `${amount} ${unit} (${portion.gramWeight} g)`;
 }
 
-function normalizeMeasurements(
-  food: DetailFood,
-  baseUnit: "g" | "ml",
-): CatalogMeasurement[] {
+function normalizeMeasurements(food: DetailFood): CatalogMeasurement[] {
   const measurements = new Map<string, CatalogMeasurement>();
   const servingUnit = supportedUnit(food.servingSizeUnit);
   if (
-    servingUnit === baseUnit &&
+    servingUnit === "g" &&
     food.servingSize !== null &&
     food.servingSize !== undefined &&
     Number.isFinite(food.servingSize) &&
@@ -234,59 +256,59 @@ function normalizeMeasurements(
       baseQuantityMicrounits > 0
     ) {
       const household = optionalText(food.householdServingFullText);
-      const label = `${household ? `${household} (` : ""}${food.servingSize} ${baseUnit}${household ? ")" : ""}`;
-      measurements.set(`serving:${baseUnit}:${baseQuantityMicrounits}`, {
+      const label = `${household ? `${household} (` : ""}${food.servingSize} g${household ? ")" : ""}`;
+      measurements.set(`serving:g:${baseQuantityMicrounits}`, {
         baseQuantityMicrounits,
-        id: `serving:${baseUnit}:${baseQuantityMicrounits}`,
+        id: `serving:g:${baseQuantityMicrounits}`,
         label,
-        unit: baseUnit,
-      });
-    }
-  }
-
-  if (baseUnit === "g") {
-    for (const [index, portion] of (food.foodPortions ?? []).entries()) {
-      if (!(portion.gramWeight > 0)) continue;
-      const baseQuantityMicrounits = Math.round(portion.gramWeight * 1_000_000);
-      if (
-        !Number.isSafeInteger(baseQuantityMicrounits) ||
-        baseQuantityMicrounits <= 0
-      )
-        continue;
-      const id = `portion:${portion.id ?? index}`;
-      measurements.set(id, {
-        baseQuantityMicrounits,
-        id,
-        label: portionLabel(portion),
         unit: "g",
       });
     }
   }
 
-  const baseId = `base:${baseUnit}:100000000`;
+  for (const [index, candidate] of (food.foodPortions ?? []).entries()) {
+    const parsed = foodPortionSchema.safeParse(candidate);
+    if (!parsed.success) continue;
+    const portion = parsed.data;
+    if (!(portion.gramWeight > 0)) continue;
+    const baseQuantityMicrounits = Math.round(portion.gramWeight * 1_000_000);
+    if (
+      !Number.isSafeInteger(baseQuantityMicrounits) ||
+      baseQuantityMicrounits <= 0
+    )
+      continue;
+    const id = `portion:${portion.id ?? index}`;
+    measurements.set(id, {
+      baseQuantityMicrounits,
+      id,
+      label: portionLabel(portion),
+      unit: "g",
+    });
+  }
+
+  const baseId = "base:g:100000000";
   measurements.set(baseId, {
     baseQuantityMicrounits: 100_000_000,
     id: baseId,
-    label: `100 ${baseUnit}`,
-    unit: baseUnit,
+    label: "100 g",
+    unit: "g",
   });
   return [...measurements.values()];
 }
 
-function normalizeDetailFood(food: DetailFood): CatalogFood {
+function normalizeDetailFood(
+  food: DetailFood,
+  onDiagnostic: (diagnostic: FoodCatalogDiagnostic) => void,
+): CatalogFood {
   const searchResult = normalizeSearchFood(food);
   if (!searchResult) throw new CatalogInvalidResponseError();
-  const baseUnit =
-    food.dataType === "Branded" && supportedUnit(food.servingSizeUnit) === "ml"
-      ? "ml"
-      : "g";
   return {
     ...searchResult,
     authoritativeBaseQuantityMicrounits: 100_000_000,
-    authoritativeBaseUnit: baseUnit,
+    authoritativeBaseUnit: "g",
     marketCountry: optionalText(food.marketCountry),
-    measurements: normalizeMeasurements(food, baseUnit),
-    nutritionPerAuthoritativeBase: normalizeNutrition(food),
+    measurements: normalizeMeasurements(food),
+    nutritionPerAuthoritativeBase: normalizeNutrition(food, onDiagnostic),
     providerModifiedDate: providerDate(food.modifiedDate),
   };
 }
@@ -318,6 +340,7 @@ type UsdaAdapterOptions = {
   apiKey?: string;
   baseUrl?: string;
   fetchImplementation?: typeof fetch;
+  onDiagnostic?: (diagnostic: FoodCatalogDiagnostic) => void;
   timeoutMs?: number;
 };
 
@@ -325,12 +348,16 @@ export class UsdaFoodDataCentralAdapter implements FoodCatalogProvider {
   readonly #apiKey: string | undefined;
   readonly #baseUrl: string;
   readonly #fetch: typeof fetch;
+  readonly #onDiagnostic: (diagnostic: FoodCatalogDiagnostic) => void;
   readonly #timeoutMs: number;
 
   constructor(options: UsdaAdapterOptions = {}) {
     this.#apiKey = options.apiKey?.trim() || undefined;
     this.#baseUrl = (options.baseUrl ?? DEFAULT_BASE_URL).replace(/\/$/, "");
     this.#fetch = options.fetchImplementation ?? fetch;
+    this.#onDiagnostic =
+      options.onDiagnostic ??
+      ((diagnostic) => console.warn("food_catalog_diagnostic", diagnostic));
     this.#timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 
     const url = new URL(this.#baseUrl);
@@ -374,7 +401,7 @@ export class UsdaFoodDataCentralAdapter implements FoodCatalogProvider {
     if (!parsed.success || String(parsed.data.fdcId) !== parsedId.data) {
       throw new CatalogInvalidResponseError();
     }
-    return normalizeDetailFood(parsed.data);
+    return normalizeDetailFood(parsed.data, this.#onDiagnostic);
   }
 
   async #request(path: string, init: RequestInit): Promise<unknown> {
