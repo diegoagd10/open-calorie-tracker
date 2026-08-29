@@ -79,6 +79,7 @@ test("USDA search normalizes supported foods and keeps the newest duplicate revi
       barcode: "0012345678905",
       brand: "Example Dairy",
       dataType: "Branded",
+      isSelectable: true,
       measurementSummary: "1 container · 170 g",
       name: "Plain nonfat Greek yogurt",
       provider: "usda-fdc",
@@ -89,6 +90,7 @@ test("USDA search normalizes supported foods and keeps the newest duplicate revi
       barcode: null,
       brand: null,
       dataType: "Foundation",
+      isSelectable: true,
       measurementSummary: "100 g",
       name: "Bread, whole-wheat",
       provider: "usda-fdc",
@@ -169,6 +171,7 @@ test("USDA detail applies Foundation energy precedence and keeps only safe measu
     barcode: null,
     brand: null,
     dataType: "Foundation",
+    isSelectable: true,
     marketCountry: "United States",
     measurementSummary: "100 g",
     measurements: [

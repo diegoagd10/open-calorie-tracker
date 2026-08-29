@@ -1019,11 +1019,8 @@ function CatalogDialog({
                 className={styles.catalogResults}
                 aria-label="USDA search results"
               >
-                {catalog.results.map((result) => (
-                  <Link
-                    key={result.providerFoodId}
-                    to={catalogHref(date, result.providerFoodId, catalog.query)}
-                  >
+                {catalog.results.map((result) => {
+                  const identity = (
                     <span>
                       <span className={styles.catalogType}>
                         {result.dataType}
@@ -1035,9 +1032,26 @@ function CatalogDialog({
                           .join(" · ")}
                       </small>
                     </span>
-                    <small>Select ›</small>
-                  </Link>
-                ))}
+                  );
+                  return result.isSelectable ? (
+                    <Link
+                      key={result.providerFoodId}
+                      to={catalogHref(
+                        date,
+                        result.providerFoodId,
+                        catalog.query,
+                      )}
+                    >
+                      {identity}
+                      <small>Select ›</small>
+                    </Link>
+                  ) : (
+                    <div aria-disabled="true" key={result.providerFoodId}>
+                      {identity}
+                      <small>Hidden in production</small>
+                    </div>
+                  );
+                })}
               </div>
             ) : catalog.query ? (
               <div className={styles.catalogState} role="status">

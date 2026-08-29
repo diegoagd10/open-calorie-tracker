@@ -153,6 +153,7 @@ function normalizeSearchFood(food: SearchFood): CatalogSearchResult | null {
     barcode: barcode(food.gtinUpc),
     brand: optionalText(food.brandName) ?? optionalText(food.brandOwner),
     dataType: food.dataType,
+    isSelectable: true,
     measurementSummary: measurementSummary(food),
     name: name.normalize("NFC"),
     provider: "usda-fdc",

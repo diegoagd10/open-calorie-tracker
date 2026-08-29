@@ -550,7 +550,7 @@
   border-radius: 1rem;
 }
 
-.catalogResults > a {
+.catalogResults > :is(a, div) {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -562,12 +562,17 @@
   text-decoration: none;
 }
 
-.catalogResults > a:last-child {
+.catalogResults > :is(a, div):last-child {
   border-bottom: 0;
 }
 
 .catalogResults > a:hover {
   background: var(--surface-soft);
+}
+
+.catalogResults > div[aria-disabled="true"] {
+  background: var(--surface-soft);
+  opacity: 0.72;
 }
 
 .catalogResults .catalogType {

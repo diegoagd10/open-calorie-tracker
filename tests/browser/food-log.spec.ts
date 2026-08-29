@@ -349,7 +349,17 @@ test("authenticated USDA search and idempotent logging preserve a local Nutritio
     .getByRole("searchbox", { name: "Search United States foods" })
     .fill("unsafe");
   await page.getByRole("button", { name: "Search" }).click();
-  await page.getByRole("link", { name: /Unsafe provider measurement/ }).click();
+  await expect(page.getByText("Unsafe provider measurement")).toBeVisible();
+  await expect(page.getByText("Hidden in production")).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: /Unsafe provider measurement/ }),
+  ).toHaveCount(0);
+  await expectCatalogResponsive(page);
+
+  const unsafeDetail = await page.goto(
+    "/?date=2026-08-29&food=9999&query=unsafe",
+  );
+  expect(unsafeDetail?.status()).toBe(422);
   await expect(page.getByRole("alert")).toContainText(
     "no safe provider-backed measurement",
   );

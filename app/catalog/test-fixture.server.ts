@@ -18,6 +18,7 @@ function yogurt(): CatalogFood {
     barcode: "0012345678905",
     brand: "Example Dairy Co.",
     dataType: "Branded",
+    isSelectable: true,
     marketCountry: "United States",
     measurementSummary: "1 container · 170 g",
     measurements: [
@@ -57,6 +58,7 @@ function searchResult(food: CatalogFood): CatalogSearchResult {
     barcode: food.barcode,
     brand: food.brand,
     dataType: food.dataType,
+    isSelectable: food.isSelectable,
     measurementSummary: food.measurementSummary,
     name: food.name,
     provider: food.provider,
@@ -85,6 +87,7 @@ export class TestFoodCatalogProvider implements FoodCatalogProvider {
         return [
           {
             ...searchResult(yogurt()),
+            isSelectable: false,
             measurementSummary: "Measurement unavailable",
             name: "Unsafe provider measurement",
             providerFoodId: "9999",

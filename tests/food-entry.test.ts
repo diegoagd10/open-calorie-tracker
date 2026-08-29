@@ -98,6 +98,7 @@ function foundationBread(): CatalogFood {
     barcode: "0012345678905",
     brand: null,
     dataType: "Foundation",
+    isSelectable: true,
     marketCountry: "United States",
     measurementSummary: "1 slice (32 g)",
     measurements: [

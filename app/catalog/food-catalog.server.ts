@@ -10,6 +10,7 @@ export type CatalogSearchResult = {
   barcode: string | null;
   brand: string | null;
   dataType: CatalogDataType;
+  isSelectable: boolean;
   measurementSummary: string;
   name: string;
   provider: "usda-fdc";
