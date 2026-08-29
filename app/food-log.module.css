@@ -1,0 +1,644 @@
+.shell {
+  --blue: #2876dc;
+  --blue-soft: #eaf3ff;
+  --ground: #fafbfd;
+  --green: #287c30;
+  --green-dark: #206628;
+  --ink: #17212b;
+  --ink-2: #394652;
+  --muted: #5f6b77;
+  --rule: #e2e6ea;
+  --rule-strong: #cfd5db;
+  --surface: #ffffff;
+  --surface-soft: #f3f5f7;
+  min-height: 100dvh;
+  color: var(--ink);
+  background: var(--ground);
+}
+
+.skipLink {
+  position: fixed;
+  z-index: 100;
+  top: 0.75rem;
+  left: 0.75rem;
+  padding: 0.7rem 1rem;
+  border-radius: 0.7rem;
+  color: white;
+  background: var(--ink);
+  transform: translateY(-180%);
+}
+
+.skipLink:focus {
+  transform: translateY(0);
+}
+
+.desktopRail,
+.desktopContext {
+  display: none;
+}
+
+.appSurface {
+  min-height: 100dvh;
+  padding: 1.15rem 1rem 6rem;
+}
+
+.mobileHeader {
+  padding: 0.4rem 0 1rem;
+}
+
+.titleLine,
+.railBrand,
+.privacyCue,
+.sectionHeading,
+.emptyActions,
+.railFooter {
+  display: flex;
+  align-items: center;
+}
+
+.titleLine {
+  gap: 0.8rem;
+}
+
+.titleLine h1 {
+  margin: 0;
+  font-size: clamp(2rem, 7vw, 3rem);
+  letter-spacing: -0.04em;
+  line-height: 1;
+}
+
+.selectedDateLabel {
+  margin: 0.45rem 0 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.privacyCue {
+  gap: 0.3rem;
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 750;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.dateRailWrap {
+  display: grid;
+  grid-template-columns: 2rem minmax(0, 1fr) 2rem;
+  align-items: center;
+  gap: 0.1rem;
+  margin: 0 -0.35rem 1rem;
+}
+
+.dateRail {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(2.65rem, 1fr));
+  gap: 0.2rem;
+  overflow: hidden;
+}
+
+.dateArrow {
+  display: grid;
+  min-width: 2rem;
+  min-height: 2.75rem;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--ink-2);
+  font-size: 1.55rem;
+  text-decoration: none;
+}
+
+.dateArrow:hover,
+.dateButton:hover,
+.calendarDay:hover {
+  background: var(--surface-soft);
+}
+
+.dateButton,
+.futureDate {
+  display: block;
+  min-height: 3.65rem;
+  padding: 0.35rem 0.15rem;
+  border: 0;
+  border-radius: 0.7rem;
+  color: var(--ink-2);
+  background: transparent;
+  font: inherit;
+  text-align: center;
+  text-decoration: none;
+}
+
+.dateButton small,
+.dateButton strong,
+.futureDate small,
+.futureDate strong {
+  display: block;
+  font-variant-numeric: tabular-nums;
+}
+
+.dateButton small,
+.futureDate small {
+  margin-bottom: 0.15rem;
+  font-size: 0.64rem;
+  font-weight: 750;
+  text-transform: uppercase;
+}
+
+.dateButton strong,
+.futureDate strong {
+  font-size: 1.1rem;
+  font-weight: 650;
+}
+
+.selectedDate {
+  color: white;
+  background: var(--green);
+  box-shadow: 0 7px 16px rgb(49 152 58 / 20%);
+}
+
+.selectedDate:hover {
+  background: var(--green-dark);
+}
+
+.futureDate {
+  color: #a1a7b0;
+  cursor: not-allowed;
+}
+
+.summaryGrid {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.summaryCard,
+.calendarCard {
+  overflow: hidden;
+  border: 1px solid var(--rule);
+  border-radius: 1rem;
+  background: var(--surface);
+  box-shadow: 0 8px 24px rgb(15 29 45 / 5%);
+}
+
+.summaryCard {
+  padding: 1rem;
+}
+
+.summaryCard h2 {
+  margin: 0 0 0.35rem;
+  font-size: 0.9rem;
+  font-weight: 650;
+  letter-spacing: 0;
+}
+
+.summaryCard p {
+  margin: 0;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.summaryCard p strong {
+  font-size: 1.5rem;
+}
+
+.summaryCard p span,
+.summaryCard > small {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.progress {
+  overflow: hidden;
+  height: 0.44rem;
+  margin: 0.7rem 0 0.4rem;
+  border-radius: 999px;
+  background: #e9edf1;
+}
+
+.timelineSection {
+  margin-top: 1.25rem;
+}
+
+.sectionHeading {
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.7rem;
+}
+
+.sectionHeading h2 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.sectionHeading span {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.emptyDay,
+.futureDay {
+  padding: 2.5rem 1rem;
+  border: 1px dashed var(--rule-strong);
+  border-radius: 1rem;
+  background: var(--surface);
+  text-align: center;
+}
+
+.emptyIcon {
+  display: grid;
+  width: 3rem;
+  height: 3rem;
+  margin: 0 auto 0.85rem;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--muted);
+  background: var(--surface-soft);
+  font-size: 1.3rem;
+}
+
+.emptyDay h3,
+.futureDay h2 {
+  margin: 0 0 0.3rem;
+  font-size: 1.05rem;
+}
+
+.emptyDay p,
+.futureDay p {
+  max-width: 38ch;
+  margin: 0.4rem auto 1.25rem;
+  color: var(--ink-2);
+  font-size: 0.88rem;
+}
+
+.emptyActions {
+  justify-content: center;
+  gap: 0.6rem;
+}
+
+.emptyActions form {
+  margin: 0;
+}
+
+.primaryButton,
+.secondaryButton {
+  min-height: 2.75rem;
+  padding: 0.7rem 1rem;
+  border: 1px solid var(--green);
+  border-radius: 0.7rem;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.primaryButton {
+  color: white;
+  background: var(--green);
+}
+
+.secondaryButton {
+  color: var(--green-dark);
+  background: white;
+}
+
+.actionMessage {
+  margin: 1rem 0 0;
+  padding: 0.75rem;
+  border-radius: 0.7rem;
+  color: var(--ink-2);
+  background: var(--surface-soft);
+  font-size: 0.78rem;
+}
+
+.dateNote {
+  margin: 1rem 0 0;
+  color: var(--muted);
+  font-size: 0.68rem;
+  text-align: center;
+}
+
+.historyIntro {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin: 0.35rem 0 1.35rem;
+}
+
+.historyIntro h2 {
+  margin: 0 0 0.25rem;
+  font-size: 1.8rem;
+}
+
+.historyIntro p {
+  max-width: 50ch;
+  margin: 0;
+  color: var(--ink-2);
+  font-size: 0.85rem;
+}
+
+.backLink {
+  color: var(--green-dark);
+  font-size: 0.75rem;
+  font-weight: 750;
+  white-space: nowrap;
+}
+
+.calendarHead {
+  display: grid;
+  grid-template-columns: 2.75rem 1fr 2.75rem;
+  align-items: center;
+  padding: 0.7rem;
+  border-bottom: 1px solid var(--rule);
+  text-align: center;
+}
+
+.calendarHead strong {
+  font-size: 0.92rem;
+}
+
+.calendarNav,
+.calendarNavDisabled {
+  display: grid;
+  width: 2.75rem;
+  height: 2.75rem;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  color: var(--ink-2);
+  background: transparent;
+  font: inherit;
+  font-size: 1.4rem;
+  text-decoration: none;
+}
+
+.calendarNavDisabled {
+  color: #b4b9c1;
+}
+
+.calendarGrid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 0.12rem;
+  padding: 0.65rem;
+}
+
+.weekday {
+  padding: 0.35rem 0;
+  color: var(--muted);
+  font-size: 0.58rem;
+  font-weight: 750;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.calendarDay,
+.calendarFuture {
+  display: grid;
+  min-height: 2.65rem;
+  place-items: center;
+  border: 0;
+  border-radius: 0.55rem;
+  color: var(--ink-2);
+  background: transparent;
+  font: inherit;
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+  text-decoration: none;
+}
+
+.calendarToday {
+  color: white;
+  background: var(--green);
+}
+
+.calendarSelected {
+  box-shadow: inset 0 0 0 2px var(--green);
+}
+
+.calendarFuture {
+  color: #b4b9c1;
+  cursor: not-allowed;
+}
+
+.mobileNav {
+  position: fixed;
+  z-index: 20;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  min-height: 4.25rem;
+  border-top: 1px solid var(--rule);
+  background: rgb(255 255 255 / 96%);
+  box-shadow: 0 -8px 28px rgb(15 29 45 / 6%);
+}
+
+.mobileNav a {
+  display: grid;
+  min-width: 4.5rem;
+  place-items: center;
+  align-content: center;
+  gap: 0.12rem;
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 650;
+  text-decoration: none;
+}
+
+.mobileNav a[aria-current="page"] {
+  color: var(--green-dark);
+}
+
+.railBrand {
+  gap: 0.7rem;
+}
+
+.brandMark {
+  display: grid;
+  width: 2rem;
+  height: 2rem;
+  place-items: center;
+  border-radius: 0.65rem;
+  color: white;
+  background: var(--green);
+  font-weight: 800;
+}
+
+.railBrand strong,
+.railBrand small {
+  display: block;
+}
+
+.railBrand small,
+.railAccount small {
+  margin-top: 0.1rem;
+  color: var(--muted);
+  font-size: 0.65rem;
+}
+
+.railNav {
+  display: grid;
+  gap: 0.3rem;
+  margin-top: 2rem;
+}
+
+.railNav a {
+  min-height: 2.75rem;
+  padding: 0.75rem;
+  border-radius: 0.7rem;
+  color: var(--ink-2);
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.railNav a[aria-current="page"] {
+  color: var(--green-dark);
+  background: #edf7ee;
+}
+
+.railFooter {
+  align-items: stretch;
+  flex-direction: column;
+  gap: 0.7rem;
+  margin-top: auto;
+}
+
+.railAccount {
+  padding: 0.75rem;
+  border: 1px solid var(--rule);
+  border-radius: 0.7rem;
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.railAccount strong,
+.railAccount small {
+  display: block;
+}
+
+.logout {
+  min-height: 2.5rem;
+  border: 0;
+  color: var(--muted);
+  background: transparent;
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.contextCard {
+  padding: 1rem;
+  border: 1px solid var(--rule);
+  border-radius: 1rem;
+  background: var(--surface);
+}
+
+.contextCard span,
+.contextCard strong,
+.contextCard small {
+  display: block;
+}
+
+.contextCard span,
+.contextCard small {
+  color: var(--muted);
+  font-size: 0.68rem;
+}
+
+.contextCard strong {
+  margin: 0.2rem 0 0.8rem;
+  font-size: 0.9rem;
+}
+
+@media (max-width: 420px) {
+  .appSurface {
+    padding-inline: 0.75rem;
+  }
+
+  .dateRailWrap {
+    margin-inline: -0.45rem;
+  }
+
+  .dateRail {
+    grid-template-columns: repeat(6, minmax(2.65rem, 1fr));
+    gap: 0;
+  }
+
+  .dateRail > :first-child {
+    display: none;
+  }
+
+  .summaryGrid {
+    gap: 0.55rem;
+  }
+
+  .summaryCard {
+    padding-inline: 0.75rem;
+  }
+
+  .summaryCard p strong {
+    font-size: 1.3rem;
+  }
+}
+
+@media (min-width: 760px) {
+  .appSurface {
+    width: min(100%, 47.5rem);
+    margin-inline: auto;
+    padding: 1.5rem 1.5rem 6rem;
+  }
+
+  .mobileNav {
+    left: 50%;
+    width: 47.5rem;
+    transform: translateX(-50%);
+    border-inline: 1px solid var(--rule);
+  }
+}
+
+@media (min-width: 1080px) {
+  .shell {
+    display: grid;
+    grid-template-columns: 15.5rem minmax(34rem, 47.5rem) 15.5rem;
+    justify-content: center;
+    gap: 2rem;
+    padding: 0 2rem;
+  }
+
+  .desktopRail,
+  .desktopContext {
+    position: sticky;
+    top: 0;
+    display: flex;
+    height: 100dvh;
+    padding: 2rem 0;
+  }
+
+  .desktopRail {
+    flex-direction: column;
+  }
+
+  .desktopContext {
+    align-items: flex-start;
+    padding-top: 6.5rem;
+  }
+
+  .appSurface {
+    width: auto;
+    margin-inline: 0;
+    padding: 2rem 0 3rem;
+  }
+
+  .mobileHeader {
+    padding-top: 0;
+  }
+
+  .mobileNav {
+    display: none;
+  }
+}

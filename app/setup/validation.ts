@@ -102,6 +102,8 @@ export type SetupValidationResult =
   | { data: SetupSubmission; success: true }
   | { error: string; field: keyof SetupFields; success: false };
 
+export { localDateAt } from "../food-log/date";
+
 const DECIMAL_PATTERN = /^(?:0|[1-9]\d*)(?:\.\d{1,3})?$/;
 const INTEGER_PATTERN = /^(?:0|[1-9]\d*)$/;
 
@@ -228,16 +230,4 @@ export function validateSetupFields(
     },
     success: true,
   };
-}
-
-export function localDateAt(instant: Date, timeZone: string): string {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    day: "2-digit",
-    month: "2-digit",
-    timeZone,
-    year: "numeric",
-  }).formatToParts(instant);
-  const value = (type: Intl.DateTimeFormatPartTypes) =>
-    parts.find((part) => part.type === type)?.value;
-  return `${value("year")}-${value("month")}-${value("day")}`;
 }
