@@ -66,3 +66,15 @@
 .unavailable {
   color: var(--color-unavailable);
 }
+
+.logout {
+  min-height: 2.75rem;
+  padding: 0.65rem 1rem;
+  border: 1px solid #efd1d1;
+  border-radius: 0.65rem;
+  color: #a12622;
+  background: #fff1f0;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}

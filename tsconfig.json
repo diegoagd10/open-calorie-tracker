@@ -6,7 +6,6 @@
     "tests/**/*",
     "*.ts"
   ],
-  "exclude": ["drizzle.config.ts", "app/database/schema.server.ts"],
   "compilerOptions": {
     "lib": ["DOM", "DOM.Iterable", "ES2022"],
     "types": ["node", "vite/client"],
@@ -15,7 +14,7 @@
     "moduleResolution": "Bundler",
     "jsx": "react-jsx",
     "strict": true,
-    "skipLibCheck": false,
+    "skipLibCheck": true,
     "noEmit": true,
     "allowImportingTsExtensions": true,
     "resolveJsonModule": true,

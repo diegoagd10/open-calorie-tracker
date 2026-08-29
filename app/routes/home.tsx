@@ -1,74 +1,52 @@
 import type { Route } from "./+types/home";
-import { isDatabaseReady } from "../database/database.server";
-import { getApplicationDatabase } from "../database/runtime.server";
+import { Form, redirect } from "react-router";
+
+import { getAuthenticatedSession } from "../auth/http.server";
 import styles from "../readiness.module.css";
 
-export function meta({ loaderData }: Route.MetaArgs) {
-  const readiness = loaderData?.ready ? "Ready" : "Not ready";
-
+export function meta() {
   return [
-    { title: `Open Calory Tracker · ${readiness}` },
+    { title: "Open Calory Tracker · Private application" },
     {
       name: "description",
-      content: "Open Calory Tracker deployment readiness",
+      content: "Your private Open Calory Tracker application space",
     },
   ];
 }
 
-export function loader() {
-  const status = getApplicationDatabase().getStatus();
+export function headers() {
+  return { "Cache-Control": "no-store" };
+}
 
-  return {
-    migrationsReady:
-      status.appliedMigrations >= 1 && status.schemaVersion === "1",
-    ready: isDatabaseReady(status),
-    storageWritable: status.writable,
-  };
+export async function loader({ request }: Route.LoaderArgs) {
+  const session = await getAuthenticatedSession(request);
+
+  if (!session) {
+    return redirect("/login");
+  }
+
+  return { csrfToken: session.csrfToken, username: session.user.username };
 }
 
 export default function Home({ loaderData }: Route.ComponentProps) {
-  const heading = loaderData.ready
-    ? "Open Calory Tracker is ready"
-    : "Open Calory Tracker is not ready";
-  const summary = loaderData.ready
-    ? "All core systems are operational."
-    : "One or more core systems are unavailable.";
-
   return (
     <main className={styles.shell}>
-      <section className={styles.panel} aria-labelledby="readiness-heading">
+      <section className={styles.panel} aria-labelledby="application-heading">
         <p className={styles.eyebrow}>Open Calory Tracker</p>
-        <h1 className={styles.heading} id="readiness-heading">
-          {heading}
+        <h1 className={styles.heading} id="application-heading">
+          Your private application space
         </h1>
-        <p className={styles.summary}>{summary}</p>
-
-        <dl className={styles.checks} aria-label="System readiness">
-          <div className={styles.check}>
-            <dt>Server rendering</dt>
-            <dd className={styles.ready}>Ready</dd>
-          </div>
-          <div className={styles.check}>
-            <dt>Database migrations</dt>
-            <dd
-              className={
-                loaderData.migrationsReady ? styles.ready : styles.unavailable
-              }
-            >
-              {loaderData.migrationsReady ? "Ready" : "Unavailable"}
-            </dd>
-          </div>
-          <div className={styles.check}>
-            <dt>SQLite storage</dt>
-            <dd
-              className={
-                loaderData.storageWritable ? styles.ready : styles.unavailable
-              }
-            >
-              {loaderData.storageWritable ? "Writable" : "Unavailable"}
-            </dd>
-          </div>
-        </dl>
+        <p className={styles.summary}>Signed in as {loaderData.username}</p>
+        <Form action="/logout" method="post">
+          <input
+            name="csrfToken"
+            type="hidden"
+            value={loaderData.csrfToken}
+          />
+          <button className={styles.logout} type="submit">
+            Sign out
+          </button>
+        </Form>
       </section>
     </main>
   );

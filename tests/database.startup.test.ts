@@ -29,11 +29,11 @@ test("startup applies the initial migration and configures writable SQLite stora
   });
 
   expect(database.getStatus()).toEqual({
-    appliedMigrations: 1,
+    appliedMigrations: 3,
     busyTimeoutMs: 5_000,
     foreignKeysEnabled: true,
     journalMode: "wal",
-    schemaVersion: "1",
+    schemaVersion: "3",
     writable: true,
   });
 
@@ -49,13 +49,13 @@ test("starting twice preserves the applied migration state", async () => {
   };
 
   const firstStartup = openApplicationDatabase(options);
-  expect(firstStartup.getStatus().appliedMigrations).toBe(1);
+  expect(firstStartup.getStatus().appliedMigrations).toBe(3);
   firstStartup.close();
 
   const replacementStartup = openApplicationDatabase(options);
   expect(replacementStartup.getStatus()).toMatchObject({
-    appliedMigrations: 1,
-    schemaVersion: "1",
+    appliedMigrations: 3,
+    schemaVersion: "3",
     writable: true,
   });
   replacementStartup.close();
@@ -63,11 +63,11 @@ test("starting twice preserves the applied migration state", async () => {
 
 test("readiness requires every database invariant", () => {
   const readyStatus: DatabaseStatus = {
-    appliedMigrations: 1,
+    appliedMigrations: 3,
     busyTimeoutMs: 5_000,
     foreignKeysEnabled: true,
     journalMode: "wal",
-    schemaVersion: "1",
+    schemaVersion: "3",
     writable: true,
   };
 

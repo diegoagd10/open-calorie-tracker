@@ -1,16 +1,20 @@
 import { mkdirSync } from "node:fs";
-import { createRequire } from "node:module";
 import path from "node:path";
 
 import BetterSqlite3 from "better-sqlite3";
+import { eq, sql } from "drizzle-orm";
+import { drizzle } from "drizzle-orm/better-sqlite3";
+import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 
-const require = createRequire(import.meta.url);
-const { drizzle } = require("drizzle-orm/better-sqlite3") as {
-  drizzle(database: BetterSqlite3.Database): unknown;
-};
-const { migrate } = require("drizzle-orm/better-sqlite3/migrator") as {
-  migrate(database: unknown, config: { migrationsFolder: string }): void;
-};
+import * as schema from "./schema.server";
+
+function createApplicationClient(sqlite: BetterSqlite3.Database) {
+  return drizzle(sqlite, { schema });
+}
+
+export type ApplicationDatabaseClient = ReturnType<
+  typeof createApplicationClient
+>;
 
 export type DatabaseStatus = {
   appliedMigrations: number;
@@ -23,16 +27,17 @@ export type DatabaseStatus = {
 
 export type ApplicationDatabase = {
   close(): void;
+  getClient(): ApplicationDatabaseClient;
   getStatus(): DatabaseStatus;
 };
 
 export function isDatabaseReady(status: DatabaseStatus): boolean {
   return (
-    status.appliedMigrations >= 1 &&
+    status.appliedMigrations >= 3 &&
     status.busyTimeoutMs === 5_000 &&
     status.foreignKeysEnabled &&
     status.journalMode === "wal" &&
-    status.schemaVersion === "1" &&
+    status.schemaVersion === "3" &&
     status.writable
   );
 }
@@ -42,31 +47,32 @@ type OpenApplicationDatabaseOptions = {
   migrationsFolder: string;
 };
 
-type CountRow = {
-  count: number;
-};
-
-type ValueRow = {
-  value: string;
-};
-
-function verifyWritableStorage(database: BetterSqlite3.Database): boolean {
+function verifyWritableStorage(
+  client: ApplicationDatabaseClient,
+  sqlite: BetterSqlite3.Database,
+): boolean {
   try {
-    database.exec("BEGIN IMMEDIATE");
-    database
-      .prepare(
-        `INSERT INTO application_metadata (key, value, updated_at)
-         VALUES ('readiness_probe', 'ok', '1970-01-01T00:00:00.000Z')
-         ON CONFLICT(key) DO UPDATE SET
-           value = excluded.value,
-           updated_at = excluded.updated_at`,
-      )
+    sqlite.exec("BEGIN IMMEDIATE");
+    client
+      .insert(schema.applicationMetadata)
+      .values({
+        key: "readiness_probe",
+        updatedAt: "1970-01-01T00:00:00.000Z",
+        value: "ok",
+      })
+      .onConflictDoUpdate({
+        set: {
+          updatedAt: "1970-01-01T00:00:00.000Z",
+          value: "ok",
+        },
+        target: schema.applicationMetadata.key,
+      })
       .run();
-    database.exec("ROLLBACK");
+    sqlite.exec("ROLLBACK");
     return true;
   } catch {
-    if (database.inTransaction) {
-      database.exec("ROLLBACK");
+    if (sqlite.inTransaction) {
+      sqlite.exec("ROLLBACK");
     }
     return false;
   }
@@ -85,22 +91,25 @@ export function openApplicationDatabase({
     sqlite.pragma("journal_mode = WAL");
     sqlite.pragma("busy_timeout = 5000");
 
-    migrate(drizzle(sqlite), { migrationsFolder });
+    const client = createApplicationClient(sqlite);
+    migrate(client, { migrationsFolder });
 
     return {
       close() {
         sqlite.close();
       },
+      getClient() {
+        return client;
+      },
       getStatus() {
-        const migration = sqlite
-          .prepare<[], CountRow>(
-            "SELECT COUNT(*) AS count FROM __drizzle_migrations",
-          )
-          .get();
-        const schemaVersion = sqlite
-          .prepare<[], ValueRow>(
-            "SELECT value FROM application_metadata WHERE key = 'schema_version'",
-          )
+        const migration = client
+          .get<{ count: number }>(
+            sql`SELECT COUNT(*) AS count FROM __drizzle_migrations`,
+          );
+        const schemaVersion = client
+          .select({ value: schema.applicationMetadata.value })
+          .from(schema.applicationMetadata)
+          .where(eq(schema.applicationMetadata.key, "schema_version"))
           .get();
 
         return {
@@ -110,7 +119,7 @@ export function openApplicationDatabase({
             sqlite.pragma("foreign_keys", { simple: true }) === 1,
           journalMode: sqlite.pragma("journal_mode", { simple: true }) as string,
           schemaVersion: schemaVersion?.value ?? "unknown",
-          writable: verifyWritableStorage(sqlite),
+          writable: verifyWritableStorage(client, sqlite),
         };
       },
     };

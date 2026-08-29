@@ -8,6 +8,20 @@
       "when": 1788020399173,
       "tag": "0000_whole_gauntlet",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1788023814163,
+      "tag": "0001_whole_dazzler",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1788025009641,
+      "tag": "0002_smooth_iceman",
+      "breakpoints": true
     }
   ]
 }
