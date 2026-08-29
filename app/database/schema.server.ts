@@ -150,6 +150,7 @@ export const foodEntries = sqliteTable(
     providerModifiedDate: text("provider_modified_date"),
     sourceDataType: text("source_data_type").notNull(),
     originalName: text("original_name").notNull(),
+    editedName: text("edited_name"),
     brand: text(),
     barcode: text(),
     marketCountry: text("market_country"),
@@ -168,6 +169,9 @@ export const foodEntries = sqliteTable(
     selectedMeasurementBaseQuantityMicrounits: integer(
       "selected_measurement_base_quantity_microunits",
     ).notNull(),
+    supportedMeasurements: text("supported_measurements")
+      .notNull()
+      .default("[]"),
     quantityMicrounits: integer("quantity_microunits").notNull(),
     energyMilliKcal: integer("authoritative_energy_milli_kcal"),
     proteinMilligrams: integer("authoritative_protein_milligrams"),

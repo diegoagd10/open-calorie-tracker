@@ -28,7 +28,12 @@ import {
   userPreferences,
   users,
 } from "../app/database/schema.server";
-import { FoodEntryService } from "../app/food-entry/food-entry.server";
+import {
+  FoodEntryService,
+  FoodEntryUnavailableError,
+  InvalidFoodEntryInputError,
+  StaleFoodEntryError,
+} from "../app/food-entry/food-entry.server";
 import { scaleCatalogNutrient } from "../app/food-entry/snapshot.server";
 import { FoodLogService } from "../app/food-log/food-log.server";
 import { FutureFoodLogDateError } from "../app/food-log/food-log.server";
@@ -414,5 +419,178 @@ test("authorization, future dates, unsafe measurements, provider failures, and t
   expect(
     new FoodLogService(client, now).read(userId, "2026-08-28")?.entries,
   ).toEqual([]);
+  database.close();
+});
+
+test("a Food Entry edit recalculates from its authoritative snapshot without accumulating rounding", async () => {
+  const database = await setupDatabase();
+  const client = database.getClient();
+  const userId = insertConfiguredUser(client, "edit.rounding");
+  const provider = new FakeCatalogProvider();
+  provider.food.nutritionPerAuthoritativeBase.energyMilliKcal = {
+    amount: 0.0006,
+    fixedPointMultiplier: 1_000,
+  };
+  const service = new FoodEntryService(
+    client,
+    provider,
+    () => new Date("2026-08-29T18:00:00.000Z"),
+  );
+  const created = await service.log(userId, {
+    foodLogDate: "2026-08-29",
+    idempotencyKey: "edit-rounding-create",
+    providerFoodId: "200",
+    quantity: "1",
+    selectedMeasurementId: "portion:7",
+  });
+
+  const tripled = service.update(userId, created.id, {
+    expectedUpdatedAt: created.updatedAt,
+    foodLogDate: created.foodLogDate,
+    name: "Corrected bread",
+    quantity: "3",
+    selectedMeasurementId: "portion:7",
+  });
+  expect(tripled).toMatchObject({
+    energyMilliKcal: 1,
+    name: "Corrected bread",
+    quantityMicrounits: 3_000_000,
+  });
+
+  const restored = service.update(userId, created.id, {
+    expectedUpdatedAt: tripled.updatedAt,
+    foodLogDate: created.foodLogDate,
+    name: "Corrected bread",
+    quantity: "1",
+    selectedMeasurementId: "portion:7",
+  });
+  expect(restored.energyMilliKcal).toBe(0);
+  expect(restored.authoritativeNutrition).toEqual(
+    created.authoritativeNutrition,
+  );
+  database.close();
+});
+
+test("Food Entry corrections and deletion are isolated, concurrency-safe, and preserve ordering", async () => {
+  const database = await setupDatabase();
+  const client = database.getClient();
+  const userId = insertConfiguredUser(client, "edit.owner");
+  const otherUserId = insertConfiguredUser(client, "edit.other");
+  const provider = new FakeCatalogProvider();
+  const service = new FoodEntryService(
+    client,
+    provider,
+    () => new Date("2026-08-29T18:00:00.000Z"),
+  );
+  const first = await service.log(userId, {
+    foodLogDate: "2026-08-28",
+    idempotencyKey: "edit-isolation-first",
+    providerFoodId: "200",
+    quantity: "1",
+    selectedMeasurementId: "portion:7",
+  });
+  const second = await service.log(userId, {
+    foodLogDate: "2026-08-28",
+    idempotencyKey: "edit-isolation-second",
+    providerFoodId: "200",
+    quantity: "1",
+    selectedMeasurementId: "portion:7",
+  });
+
+  const corrected = service.update(userId, first.id, {
+    carbohydrateGrams: "12.345",
+    energyKcal: "",
+    expectedUpdatedAt: first.updatedAt,
+    fatGrams: "0",
+    fiberGrams: "",
+    foodLogDate: first.foodLogDate,
+    name: "My corrected bread",
+    proteinGrams: "0",
+    quantity: "0.5",
+    selectedMeasurementId: "base:g:100000000",
+    sodiumMilligrams: "0",
+    sugarGrams: "",
+  });
+  expect(corrected).toMatchObject({
+    carbohydrateMilligrams: 12_345,
+    energyMilliKcal: null,
+    fatMilligrams: 0,
+    fiberMilligrams: null,
+    name: "My corrected bread",
+    proteinMilligrams: 0,
+    quantityMicrounits: 500_000,
+    sodiumMilligrams: 0,
+    sugarMilligrams: null,
+  });
+  expect(service.read(userId, second.id)).toMatchObject({
+    name: "Bread, whole-wheat",
+    quantityMicrounits: 1_000_000,
+  });
+  expect(
+    new FoodLogService(client, () =>
+      new Date("2026-08-29T18:00:00.000Z"),
+    ).read(userId, "2026-08-28")?.entries.map((entry) => entry.id),
+  ).toEqual([second.id, first.id]);
+
+  expect(() => service.read(otherUserId, first.id)).toThrow(
+    FoodEntryUnavailableError,
+  );
+  expect(() =>
+    service.update(userId, first.id, {
+      expectedUpdatedAt: first.updatedAt,
+      foodLogDate: first.foodLogDate,
+      name: "Stale change",
+      quantity: "1",
+      selectedMeasurementId: "portion:7",
+    }),
+  ).toThrow(StaleFoodEntryError);
+  expect(() =>
+    service.update(userId, second.id, {
+      expectedUpdatedAt: second.updatedAt,
+      foodLogDate: "2026-08-27",
+      name: "Cannot move dates",
+      quantity: "1",
+      selectedMeasurementId: "portion:7",
+    }),
+  ).toThrow(FoodEntryUnavailableError);
+  expect(() =>
+    service.update(userId, second.id, {
+      expectedUpdatedAt: second.updatedAt,
+      foodLogDate: second.foodLogDate,
+      name: "Malformed nutrient",
+      proteinGrams: "1.0009",
+      quantity: "1",
+      selectedMeasurementId: "portion:7",
+    }),
+  ).toThrow(InvalidFoodEntryInputError);
+  expect(service.read(userId, second.id)).toMatchObject({
+    name: "Bread, whole-wheat",
+    proteinMilligrams: 0,
+  });
+  expect(() =>
+    service.delete(otherUserId, first.id, {
+      expectedUpdatedAt: corrected.updatedAt,
+      foodLogDate: first.foodLogDate,
+    }),
+  ).toThrow(FoodEntryUnavailableError);
+  expect(() =>
+    service.delete(userId, first.id, {
+      expectedUpdatedAt: first.updatedAt,
+      foodLogDate: first.foodLogDate,
+    }),
+  ).toThrow(StaleFoodEntryError);
+
+  expect(
+    service.delete(userId, first.id, {
+      expectedUpdatedAt: corrected.updatedAt,
+      foodLogDate: first.foodLogDate,
+    }),
+  ).toEqual({ foodLogDate: "2026-08-28" });
+  expect(
+    new FoodLogService(client, () =>
+      new Date("2026-08-29T18:00:00.000Z"),
+    ).read(userId, "2026-08-28")?.entries.map((entry) => entry.id),
+  ).toEqual([second.id]);
+  expect(provider.getFoodCalls).toBe(2);
   database.close();
 });
