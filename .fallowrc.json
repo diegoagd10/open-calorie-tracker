@@ -1,0 +1,90 @@
+{
+  "$schema": "./node_modules/fallow/schema.json",
+  "dynamicallyLoaded": ["server/app.ts"],
+  "ignorePatterns": ["docs/mocks/**"],
+  "ignoreDependencies": ["@react-router/dev", "isbot"],
+  "usedClassMembers": [
+    "authenticate",
+    "isComplete",
+    "login",
+    "register",
+    "revoke",
+    "revokeSession",
+    "verifyCsrfToken"
+  ],
+  "overrides": [
+    {
+      "files": ["app/routes/health.live.ts"],
+      "rules": {
+        "unused-load-data-keys": "off"
+      }
+    }
+  ],
+  "duplicates": {
+    "ignoredClones": [
+      "dup:c77b3abb6f87acd9-2:4",
+      "dup:c77b3abb6f87acd9-13:2",
+      "dup:c77b3abb6f87acd9-1:2",
+      "dup:c77b3abb6f87acd9-8:2",
+      "dup:c77b3abb6f87acd9-15:4",
+      "dup:c77b3abb6f87acd9-5:2",
+      "dup:c77b3abb6f87acd9-6:3",
+      "dup:1105250b:3",
+      "dup:c36efab8:2",
+      "dup:c77b3abb6f87acd9-11:2",
+      "dup:c77b3abb6f87acd9-7:2",
+      "dup:c77b3abb6f87acd9-4:2",
+      "dup:c77b3abb6f87acd9-3:2",
+      "dup:c77b3abb6f87acd9-12:2",
+      "dup:c77b3abb6f87acd9-9:2",
+      "dup:c77b3abb6f87acd9-14:2",
+      "dup:c77b3abb6f87acd9-16:2",
+      "dup:c77b3abb6f87acd9-10:2",
+      "dup:35be3633:2"
+    ]
+  },
+  "health": {
+    "maxCrap": 0,
+    "thresholdOverrides": [
+      {
+        "files": ["app/routes/home.tsx"],
+        "functions": [
+          "action",
+          "loader",
+          "CatalogDialog",
+          "DailySummary",
+          "Home",
+          "NutrientMetric",
+          "WaterEventDialog"
+        ],
+        "maxCyclomatic": 53,
+        "maxCognitive": 76,
+        "reason": "Existing main-route complexity; fail if it grows."
+      },
+      {
+        "files": ["tests/usda-catalog.live.test.ts"],
+        "functions": ["<arrow>"],
+        "maxCognitive": 36,
+        "reason": "Existing live-test control flow; fail if it grows."
+      },
+      {
+        "files": ["server.js"],
+        "functions": ["startServer"],
+        "maxCognitive": 21,
+        "reason": "Existing server lifecycle flow; fail if it grows."
+      },
+      {
+        "files": ["app/catalog/usda.server.ts"],
+        "functions": ["normalizeMeasurements"],
+        "maxCognitive": 26,
+        "reason": "Existing provider-normalization flow; fail if it grows."
+      },
+      {
+        "files": ["app/ui-icon.tsx"],
+        "functions": ["UiIcon"],
+        "maxCognitive": 36,
+        "reason": "Existing icon selection branches; fail if they grow."
+      }
+    ]
+  }
+}

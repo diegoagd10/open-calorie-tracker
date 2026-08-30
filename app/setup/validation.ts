@@ -6,7 +6,6 @@ import {
 } from "../goals/water-conversion";
 
 export {
-  DISPLAY_UNITS,
   WATER_UNIT_OPTIONS,
   type DisplayUnits,
 } from "../goals/water-conversion";
