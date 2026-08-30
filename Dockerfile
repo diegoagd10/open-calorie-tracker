@@ -36,6 +36,7 @@ COPY --from=build --chown=node:node /app/drizzle ./drizzle
 COPY --from=build --chown=node:node /app/node_modules ./node_modules
 COPY --from=build --chown=node:node /app/package.json ./package.json
 COPY --from=build --chown=node:node /app/scripts ./scripts
+COPY --from=build --chown=node:node /app/server/operational-logging.js ./server/operational-logging.js
 COPY --from=build --chown=node:node /app/server.js ./server.js
 
 RUN mkdir -p /app/data \

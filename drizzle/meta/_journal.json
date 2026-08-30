@@ -57,6 +57,13 @@
       "when": 1788049925648,
       "tag": "0007_stormy_star_brand",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1788094048100,
+      "tag": "0008_production_deployment",
+      "breakpoints": true
     }
   ]
 }

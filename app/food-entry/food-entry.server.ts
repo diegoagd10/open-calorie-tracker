@@ -4,6 +4,7 @@ import { z } from "zod";
 import {
   CatalogInvalidResponseError,
   CatalogUnsafeMeasurementError,
+  type CatalogOperationContext,
   type FoodCatalogProvider,
 } from "../catalog/food-catalog.server";
 import type { ApplicationDatabaseClient } from "../database/database.server";
@@ -123,7 +124,11 @@ export class FoodEntryService {
     this.#now = now;
   }
 
-  async log(userId: number, input: LogFoodInput) {
+  async log(
+    userId: number,
+    input: LogFoodInput,
+    context?: CatalogOperationContext,
+  ) {
     const parsed = logFoodInputSchema.safeParse(input);
     if (!parsed.success) throw new InvalidFoodEntryInputError();
     const quantity = quantityMicrounits(parsed.data.quantity);
@@ -141,7 +146,10 @@ export class FoodEntryService {
     if (existing) return foodEntrySnapshot(existing);
 
     this.#requireWritableDate(userId, parsed.data.foodLogDate);
-    const food = await this.#provider.getFood(parsed.data.providerFoodId);
+    const food = await this.#provider.getFood(
+      parsed.data.providerFoodId,
+      context,
+    );
     if (food.providerFoodId !== parsed.data.providerFoodId) {
       throw new CatalogInvalidResponseError();
     }

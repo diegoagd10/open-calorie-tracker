@@ -33,6 +33,7 @@ import {
   CatalogRateLimitError,
   CatalogUnavailableError,
   CatalogUnsafeMeasurementError,
+  type CatalogOperationContext,
 } from "../catalog/food-catalog.server";
 import { getFoodCatalogProvider } from "../catalog/runtime.server";
 import {
@@ -232,6 +233,13 @@ export function headers() {
   return { "Cache-Control": "no-store" };
 }
 
+function catalogOperationContext(request: Request): CatalogOperationContext {
+  return {
+    requestId:
+      request.headers.get("x-open-calory-request-id") ?? randomUUID(),
+  };
+}
+
 export async function loader({ request }: Route.LoaderArgs) {
   const session = await getAuthenticatedSession(request);
 
@@ -244,6 +252,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   }
 
   const url = new URL(request.url);
+  const catalogContext = catalogOperationContext(request);
   let foodLog;
   try {
     foodLog = foodLogServiceForRequest(request).read(
@@ -359,7 +368,10 @@ export async function loader({ request }: Route.LoaderArgs) {
           catalog = {
             mode: "search",
             query: parsedQuery.data,
-            results: await getFoodCatalogProvider().search(parsedQuery.data),
+            results: await getFoodCatalogProvider().search(
+              parsedQuery.data,
+              catalogContext,
+            ),
           };
         } catch (error) {
           const failure = catalogFailure(error);
@@ -379,6 +391,7 @@ export async function loader({ request }: Route.LoaderArgs) {
         catalog = {
           food: await getFoodCatalogProvider().getFood(
             foodStage.providerFoodId,
+            catalogContext,
           ),
           idempotencyKey: randomUUID(),
           mode: "detail",
@@ -456,6 +469,7 @@ export async function action({ request }: Route.ActionArgs) {
       headers: { "Set-Cookie": serializeClearedSessionCookie() },
     });
   }
+  const catalogContext = catalogOperationContext(request);
 
   const formData = await request.formData();
   if (
@@ -664,6 +678,7 @@ export async function action({ request }: Route.ActionArgs) {
         quantity: parsed.data.quantity,
         selectedMeasurementId: parsed.data.selectedMeasurementId,
       },
+      catalogContext,
     );
     return redirect(foodLogHref(parsed.data.date));
   } catch (error) {

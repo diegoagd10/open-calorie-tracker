@@ -1,0 +1,65 @@
+const SENSITIVE_ENVIRONMENT_NAME =
+  /(api.?key|authorization|cookie|credential|csrf|password|secret|session|token)/i;
+const SENSITIVE_TEXT_VALUE =
+  /((?:api.?key|authorization|cookie|credential|csrf|password|secret|session|token)=)[^&\s;]+/gi;
+
+function configuredSensitiveValues() {
+  return Object.entries(process.env)
+    .filter(
+      ([name, value]) =>
+        SENSITIVE_ENVIRONMENT_NAME.test(name) &&
+        typeof value === "string" &&
+        value.length > 0,
+    )
+    .map(([, value]) => value)
+    .sort((left, right) => right.length - left.length);
+}
+
+function redactText(value) {
+  let redacted = value.replace(SENSITIVE_TEXT_VALUE, "$1[REDACTED]");
+  for (const sensitiveValue of configuredSensitiveValues()) {
+    redacted = redacted.replaceAll(sensitiveValue, "[REDACTED]");
+  }
+  return redacted;
+}
+
+function redact(value, key = "") {
+  if (SENSITIVE_ENVIRONMENT_NAME.test(key)) return "[REDACTED]";
+  if (typeof value === "string") return redactText(value);
+  if (Array.isArray(value)) return value.map((entry) => redact(entry));
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).map(([entryKey, entryValue]) => [
+        entryKey,
+        redact(entryValue, entryKey),
+      ]),
+    );
+  }
+  return value;
+}
+
+export function operationalLog(level, event, details = {}) {
+  const record = redact({
+    timestamp: new Date().toISOString(),
+    level,
+    event,
+    ...details,
+  });
+  const serialized = JSON.stringify(record);
+  if (level === "error" || level === "warn") {
+    console.error(serialized);
+  } else {
+    console.log(serialized);
+  }
+}
+
+export function operationalError(error, includeMessage = true) {
+  if (!(error instanceof Error)) {
+    return includeMessage
+      ? { name: "UnknownError", message: "Unknown operational failure" }
+      : { name: "UnknownError" };
+  }
+  return includeMessage
+    ? { name: error.name, message: redactText(error.message) }
+    : { name: error.name };
+}
