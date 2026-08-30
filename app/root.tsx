@@ -29,6 +29,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <meta name="theme-color" content="#102a43" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="mobile-web-app-capable" content="yes" />
         <meta
           name="apple-mobile-web-app-title"
           content="Open Calory Tracker"

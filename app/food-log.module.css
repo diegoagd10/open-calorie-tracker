@@ -502,57 +502,107 @@
 }
 
 .timeline {
+  position: relative;
   display: grid;
-  gap: 0.7rem;
+}
+
+.timeline::before {
+  position: absolute;
+  top: 1.4rem;
+  bottom: 1.4rem;
+  left: 6.125rem;
+  width: 2px;
+  background: linear-gradient(var(--green), #cdd5df 52%, var(--blue));
+  content: "";
 }
 
 .timeline form {
+  position: relative;
+  z-index: 1;
   margin: 0;
 }
 
 .timelineAddFood,
 .timelineAddWater {
-  min-height: 2.75rem;
+  display: grid;
+  grid-template-columns: 4.75rem 2.75rem minmax(0, 1fr);
+  align-items: center;
+  width: 100%;
+  min-height: 3.875rem;
+  padding: 0.45rem 0;
   border: 0;
   color: var(--green-dark);
   background: transparent;
   font: inherit;
   font-weight: 750;
+  text-align: left;
   cursor: pointer;
+}
+
+.timelineAddFood > span:last-child,
+.timelineAddWater > span:last-child {
+  grid-column: 3;
+  margin-left: 0.5rem;
+  white-space: nowrap;
 }
 
 .timelineAddWater {
   color: var(--blue);
 }
 
-.foodEntryCard {
+.timelineActionMarker {
   display: grid;
-  grid-template-columns: 4.2rem 2.6rem minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 0.6rem;
-  min-height: 5rem;
-  padding: 0.75rem;
-  border: 1px solid var(--rule);
-  border-radius: 0.9rem;
-  background: var(--surface);
-  box-shadow: 0 8px 24px rgb(15 29 45 / 4%);
-  color: var(--ink);
-  text-decoration: none;
-  transition:
-    border-color 120ms ease,
-    box-shadow 120ms ease;
+  grid-column: 2;
+  width: 2.625rem;
+  height: 2.625rem;
+  place-items: center;
+  justify-self: center;
+  border-radius: 50%;
+  color: white;
+  font-size: 1.35rem;
+  font-weight: 400;
 }
 
-.foodEntryCard:hover,
+.timelineActionMarker svg,
+.foodEntryMarker svg,
+.waterEntryMarker svg {
+  width: 1.15rem;
+  height: 1.15rem;
+}
+
+.timelineActionFood {
+  background: var(--green);
+  box-shadow: 0 5px 12px rgb(49 152 58 / 22%);
+}
+
+.timelineActionWater {
+  background: var(--blue);
+  box-shadow: 0 5px 12px rgb(40 118 220 / 22%);
+}
+
+.timeline > article {
+  position: relative;
+  z-index: 1;
+}
+
+.foodEntryCard {
+  display: grid;
+  grid-template-columns: 4.75rem 2.75rem minmax(0, 1fr) auto 1.25rem;
+  align-items: center;
+  min-height: 6rem;
+  padding: 0.45rem 0;
+  color: var(--ink);
+  text-decoration: none;
+}
+
 .foodEntryCard:focus-visible {
-  border-color: #79c982;
-  box-shadow: 0 10px 28px rgb(15 29 45 / 8%);
   outline: none;
 }
 
 .foodEntryCard time {
   color: var(--muted);
   font-size: 0.68rem;
+  font-weight: 650;
   font-variant-numeric: tabular-nums;
 }
 
@@ -590,6 +640,17 @@
   min-width: 0;
 }
 
+.foodEntryContent {
+  align-self: stretch;
+  display: grid;
+  align-content: center;
+  padding: 0.65rem 0.5rem 0.65rem 0.85rem;
+  border: 1px solid var(--rule);
+  border-right: 0;
+  border-radius: 0.7rem 0 0 0.7rem;
+  background: var(--surface);
+}
+
 .foodEntryContent strong {
   overflow: hidden;
   font-size: 0.86rem;
@@ -607,6 +668,12 @@
 }
 
 .foodEntryEnergy {
+  align-self: stretch;
+  display: grid;
+  align-content: center;
+  padding: 0.65rem 0.2rem 0.65rem 0.45rem;
+  border-block: 1px solid var(--rule);
+  background: var(--surface);
   font-size: 0.82rem;
   font-weight: 750;
   white-space: nowrap;
@@ -616,6 +683,27 @@
   color: var(--muted);
   font-size: 0.62rem;
   font-weight: 500;
+}
+
+.foodEntryCard::after {
+  align-self: stretch;
+  display: grid;
+  place-items: center;
+  padding-right: 0.2rem;
+  border-block: 1px solid var(--rule);
+  border-right: 1px solid var(--rule);
+  border-radius: 0 0.7rem 0.7rem 0;
+  color: var(--muted);
+  background: var(--surface);
+  content: "›";
+}
+
+.foodEntryCard:hover :is(.foodEntryContent, .foodEntryEnergy),
+.foodEntryCard:hover::after,
+.foodEntryCard:focus-visible :is(.foodEntryContent, .foodEntryEnergy),
+.foodEntryCard:focus-visible::after {
+  border-color: var(--rule-strong);
+  background: #fbfcfd;
 }
 
 .dialogBackdrop {
@@ -1274,19 +1362,44 @@
   color: var(--green-dark);
 }
 
+.mobileNav svg {
+  width: 1.05rem;
+  height: 1.05rem;
+}
+
 .railBrand {
   gap: 0.7rem;
 }
 
 .brandMark {
   display: grid;
+  grid-template-columns: repeat(3, 0.3rem);
+  align-items: end;
+  gap: 0.18rem;
   width: 2rem;
   height: 2rem;
-  place-items: center;
+  padding: 0.45rem;
   border-radius: 0.65rem;
   color: white;
   background: var(--green);
-  font-weight: 800;
+}
+
+.brandMark > span {
+  display: block;
+  border-radius: 2px;
+  background: white;
+}
+
+.brandMark > span:nth-child(1) {
+  height: 0.55rem;
+}
+
+.brandMark > span:nth-child(2) {
+  height: 1rem;
+}
+
+.brandMark > span:nth-child(3) {
+  height: 0.75rem;
 }
 
 .railBrand strong,
@@ -1308,6 +1421,10 @@
 }
 
 .railNav a {
+  display: grid;
+  grid-template-columns: 1.5rem 1fr;
+  align-items: center;
+  gap: 0.65rem;
   min-height: 2.75rem;
   padding: 0.75rem;
   border-radius: 0.7rem;
@@ -1322,11 +1439,44 @@
   background: #edf7ee;
 }
 
+.railNav svg {
+  width: 1.05rem;
+  height: 1.05rem;
+}
+
 .railFooter {
   align-items: stretch;
   flex-direction: column;
   gap: 0.7rem;
   margin-top: auto;
+}
+
+.railPrivacy {
+  display: grid;
+  grid-template-columns: 1.5rem 1fr;
+  gap: 0.55rem;
+  padding: 0.8rem;
+  border-radius: 0.7rem;
+  color: var(--ink-2);
+  background: #edf1f3;
+}
+
+.railPrivacy > svg {
+  width: 1rem;
+  height: 1rem;
+  color: var(--green-dark);
+}
+
+.railPrivacy strong {
+  display: block;
+  color: var(--ink);
+  font-size: 0.7rem;
+}
+
+.railPrivacy p {
+  margin: 0.15rem 0 0;
+  font-size: 0.62rem;
+  line-height: 1.45;
 }
 
 .railAccount {
@@ -1353,28 +1503,125 @@
   cursor: pointer;
 }
 
-.contextCard {
-  padding: 1rem;
-  border: 1px solid var(--rule);
-  border-radius: 1rem;
-  background: var(--surface);
+.contextHead {
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--rule);
 }
 
-.contextCard span,
-.contextCard strong,
-.contextCard small {
+.contextHead span,
+.contextHead strong,
+.contextMetric > span,
+.contextMetric strong {
   display: block;
 }
 
-.contextCard span,
-.contextCard small {
+.contextHead span,
+.contextMetric > span {
   color: var(--muted);
+  font-size: 0.64rem;
+}
+
+.contextHead span {
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.contextHead strong {
+  margin-top: 0.25rem;
+  font-size: 1rem;
+}
+
+.contextTimeZone {
+  display: block;
+  margin-top: 0.35rem;
+  color: var(--muted);
+  font-size: 0.62rem;
+}
+
+.contextMetric {
+  padding: 1rem 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.contextMetric strong {
+  margin: 0.25rem 0 0.55rem;
+  font-size: 1.2rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.contextMetric small {
+  color: var(--muted);
+  font-size: 0.65rem;
+  font-weight: 500;
+}
+
+.contextGoal::before {
+  content: "/ ";
+}
+
+.contextMetric i {
+  display: block;
+  overflow: hidden;
+  height: 0.45rem;
+  border-radius: 999px;
+  background: #e9edf1;
+}
+
+.contextMetric i span {
+  display: block;
+  width: var(--progress, 0%);
+  height: 100%;
+  border-radius: inherit;
+  background: var(--green);
+}
+
+.waterContext i span {
+  background: var(--blue);
+}
+
+.contextNote {
+  display: grid;
+  grid-template-columns: 1.5rem 1fr;
+  gap: 0.55rem;
+  margin-top: 1rem;
+  padding: 0.8rem;
+  border-radius: 0.7rem;
+  color: var(--green-dark);
+  background: #f2f5f6;
+}
+
+.contextNote > svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.contextNote p {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: 0.64rem;
+  line-height: 1.45;
+}
+
+.contextNote strong {
+  display: block;
+  margin-bottom: 0.2rem;
+  color: var(--ink);
   font-size: 0.68rem;
 }
 
-.contextCard strong {
-  margin: 0.2rem 0 0.8rem;
-  font-size: 0.9rem;
+.contextSource {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-top: auto;
+  color: var(--green-dark);
+  font-size: 0.65rem;
+  font-weight: 700;
+}
+
+.contextSource svg {
+  width: 0.85rem;
+  height: 0.85rem;
 }
 
 @media (max-width: 420px) {
@@ -1395,6 +1642,15 @@
     display: none;
   }
 
+  .timeline::before {
+    left: 5.1875rem;
+  }
+
+  .timelineAddFood,
+  .timelineAddWater {
+    grid-template-columns: 3.875rem 2.625rem minmax(0, 1fr);
+  }
+
   .calorieRow {
     padding-inline: 0.75rem;
   }
@@ -1408,9 +1664,23 @@
   }
 
   .foodEntryCard {
-    grid-template-columns: 3.6rem 2.4rem minmax(0, 1fr) auto;
-    gap: 0.35rem;
-    padding-inline: 0.5rem;
+    grid-template-columns: 3.875rem 2.625rem minmax(0, 1fr) auto 1.125rem;
+  }
+
+  .foodEntryCard time {
+    font-size: 0.65rem;
+  }
+
+  .foodEntryContent {
+    padding-left: 0.65rem;
+  }
+
+  .foodEntryContent strong {
+    font-size: 0.76rem;
+  }
+
+  .foodEntryEnergy {
+    font-size: 0.72rem;
   }
 
   .foodDetailGrid {
@@ -1473,10 +1743,14 @@
 @media (min-width: 1120px) {
   .shell {
     display: grid;
-    grid-template-columns: 13.75rem minmax(0, 47.5rem) 13.75rem;
-    justify-content: center;
-    gap: 1.25rem;
-    padding: 0 1.5rem;
+    grid-template-columns: 15.5rem minmax(35rem, 41.25rem) 16.5rem;
+    gap: 1px;
+    width: min(77.5rem, 100%);
+    min-height: 100dvh;
+    margin-inline: auto;
+    padding: 0;
+    background: var(--rule);
+    box-shadow: 0 0 70px rgb(15 29 45 / 10%);
   }
 
   .desktopRail,
@@ -1485,7 +1759,8 @@
     top: 0;
     display: flex;
     height: 100dvh;
-    padding: 2rem 0;
+    padding: 1.35rem 1.1rem;
+    background: #f7f9fa;
   }
 
   .desktopRail {
@@ -1493,14 +1768,15 @@
   }
 
   .desktopContext {
-    align-items: flex-start;
-    padding-top: 6.5rem;
+    flex-direction: column;
+    padding: 1.5rem 1.15rem;
   }
 
   .appSurface {
-    width: auto;
+    width: 100%;
     margin-inline: 0;
-    padding: 2rem 0 3rem;
+    padding: 1.5rem 2.25rem 2.5rem;
+    background: var(--ground);
   }
 
   .mobileHeader {

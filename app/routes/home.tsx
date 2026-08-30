@@ -24,6 +24,7 @@ import {
   serializeClearedSessionCookie,
 } from "../auth/http.server";
 import { AppNavigation } from "../app-navigation";
+import { UiIcon } from "../ui-icon";
 import { getAuthenticationService } from "../auth/runtime.server";
 import {
   CatalogConfigurationError,
@@ -879,12 +880,14 @@ function EmptyActionForm({
   date,
   intent,
   label,
+  timelineMarker,
 }: {
   className: string;
   csrfToken: string;
   date: string;
   intent: "add-food" | "add-water";
   label: string;
+  timelineMarker?: "food" | "water";
 }) {
   return (
     <Form method="post">
@@ -898,7 +901,23 @@ function EmptyActionForm({
         type="submit"
         value={intent}
       >
-        {label}
+        {timelineMarker ? (
+          <>
+            <span
+              aria-hidden="true"
+              className={`${styles.timelineActionMarker} ${
+                timelineMarker === "food"
+                  ? styles.timelineActionFood
+                  : styles.timelineActionWater
+              }`}
+            >
+              <UiIcon name="plus" />
+            </span>
+            <span>{label}</span>
+          </>
+        ) : (
+          label
+        )}
       </button>
     </Form>
   );
@@ -1208,6 +1227,97 @@ function DailySummary({
         ) : null}
       </section>
     </>
+  );
+}
+
+function DesktopDayContext({
+  foodLog,
+  isObscured,
+}: {
+  foodLog: Route.ComponentProps["loaderData"]["foodLog"];
+  isObscured: boolean;
+}) {
+  const goal = foodLog.goal;
+  const goals = waterGoalValues(foodLog);
+  const calorieTotal = foodLog.nutritionTotals.energyMilliKcal;
+  const calorieGoal = goal?.calorieTargetMilliKcal ?? null;
+  const waterTotal = foodLog.waterTotalMicroliters;
+  const waterTotalDisplay = formatWaterAmount(
+    waterTotal,
+    foodLog.displayUnits,
+    3,
+  );
+  const selectedDay = formatLocalDate(foodLog.selectedDate, {
+    day: "numeric",
+    month: "short",
+    weekday: "short",
+  }).replace(",", " ·");
+
+  return (
+    <aside
+      aria-hidden={isObscured || undefined}
+      aria-label="Selected day context"
+      className={styles.desktopContext}
+    >
+      <div className={styles.contextHead}>
+        <span>Selected day</span>
+        <strong>{selectedDay}</strong>
+        <small className={styles.contextTimeZone}>{foodLog.timeZone}</small>
+      </div>
+      <div className={styles.contextMetric}>
+        <span>Calories</span>
+        <strong>
+          {formatEnergy(calorieTotal.known)}{" "}
+          {calorieGoal ? (
+            <small className={styles.contextGoal}>
+              {formatEnergy(calorieGoal)} kcal
+            </small>
+          ) : (
+            <small>No goal</small>
+          )}
+        </strong>
+        {calorieGoal ? (
+          <i style={progressStyle(calorieTotal.known, calorieGoal)}>
+            <span />
+          </i>
+        ) : null}
+      </div>
+      <div className={`${styles.contextMetric} ${styles.waterContext}`}>
+        <span>Water</span>
+        <strong>
+          {waterTotalDisplay}{" "}
+          {goal ? (
+            <small className={styles.contextGoal}>
+              {goals.water} {goals.waterUnit}
+            </small>
+          ) : (
+            <small>No goal</small>
+          )}
+        </strong>
+        {goal ? (
+          <i style={progressStyle(waterTotal, goal.waterTargetMicroliters)}>
+            <span />
+          </i>
+        ) : null}
+      </div>
+      <div className={styles.contextNote}>
+        <UiIcon name="info" />
+        <p>
+          <strong>Nutrition Snapshot</strong>
+          Existing Food Entries keep their saved provider values even when
+          USDA changes later.
+        </p>
+      </div>
+      <a
+        aria-label="USDA FoodData Central source"
+        className={styles.contextSource}
+        href="https://fdc.nal.usda.gov/"
+        rel="noreferrer"
+        target="_blank"
+      >
+        USDA FoodData Central <UiIcon name="external" />
+      </a>
+    </aside>
   );
 }
 
@@ -2391,7 +2501,8 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
                       csrfToken={csrfToken}
                       date={foodLog.selectedDate}
                       intent="add-food"
-                      label="＋ Add Food"
+                      label="Add Food"
+                      timelineMarker="food"
                     />
                     {foodLog.events.map((entry) =>
                       entry.kind === "food" ? (
@@ -2410,7 +2521,7 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
                               className={styles.foodEntryMarker}
                               aria-hidden="true"
                             >
-                              ◇
+                              <UiIcon name="utensils" />
                             </span>
                             <span className={styles.foodEntryContent}>
                               <strong>{entry.name}</strong>
@@ -2444,7 +2555,7 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
                               className={styles.waterEntryMarker}
                               aria-hidden="true"
                             >
-                              ♢
+                              <UiIcon name="water" />
                             </span>
                             <span className={styles.foodEntryContent}>
                               <strong>Water</strong>
@@ -2470,7 +2581,8 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
                       csrfToken={csrfToken}
                       date={foodLog.selectedDate}
                       intent="add-water"
-                      label="＋ Add Water"
+                      label="Add Water"
+                      timelineMarker="water"
                     />
                     {actionData?.message ? (
                       <p className={styles.actionMessage} role="status">
@@ -2520,18 +2632,12 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
             </section>
           )}
         </main>
-        <aside
-          className={styles.desktopContext}
-          aria-label="Selected day context"
-        >
-          <div className={styles.contextCard}>
-            <span>Selected day</span>
-            <strong>{selectedLabel}</strong>
-            <span>Calendar date</span>
-            <strong>{foodLog.selectedDate}</strong>
-            <small>{foodLog.timeZone}</small>
-          </div>
-        </aside>
+        <DesktopDayContext
+          foodLog={foodLog}
+          isObscured={Boolean(
+            catalog || activeFoodEntryEditor || activeWaterDialog,
+          )}
+        />
       </div>
       {catalog ? (
         <CatalogDialog
