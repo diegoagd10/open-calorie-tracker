@@ -152,7 +152,6 @@ test("production health and logs are safe on a configurable internal port", asyn
     DATABASE_PATH: path.join(directory, "application.sqlite"),
     FDC_API_KEY: apiKey,
     PORT: String(port),
-    TRUST_PROXY: "172.30.0.0/16",
   });
 
   const liveness = await waitForHttpResponse(

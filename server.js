@@ -61,7 +61,7 @@ async function startServer() {
     }
     if (process.env.NODE_ENV === "production") {
       const trustProxy = process.env.TRUST_PROXY;
-      if (!trustProxy || !privateDockerNetworkCidr(trustProxy)) {
+      if (trustProxy && !privateDockerNetworkCidr(trustProxy)) {
         throw new Error(
           "TRUST_PROXY must be one private IPv4 Docker network CIDR with a prefix from 16 through 32",
         );
