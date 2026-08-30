@@ -2,6 +2,8 @@ name: CodeQL
 
 on:
   pull_request:
+  push:
+    branches: [main]
   schedule:
     - cron: "41 7 * * 1"
   workflow_dispatch:
@@ -22,3 +24,14 @@ jobs:
         with:
           languages: javascript-typescript
       - uses: github/codeql-action/analyze@v4
+        with:
+          # This private personal repository is not eligible for GitHub code
+          # scanning. Preserve the complete SARIF output as a workflow artifact.
+          output: codeql-results
+          upload: never
+      - uses: actions/upload-artifact@v7
+        with:
+          name: codeql-sarif-${{ github.sha }}
+          path: codeql-results
+          if-no-files-found: error
+          retention-days: 14
