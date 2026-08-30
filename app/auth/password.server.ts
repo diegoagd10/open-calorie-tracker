@@ -14,7 +14,7 @@ const ALGORITHM = "argon2id";
 const FORMAT_VERSION = 1;
 const SALT_LENGTH = 16;
 
-export type PasswordHashParameters = Argon2Profile;
+type PasswordHashParameters = Argon2Profile;
 
 function currentParameters(): PasswordHashParameters {
   return getArgon2Profile();

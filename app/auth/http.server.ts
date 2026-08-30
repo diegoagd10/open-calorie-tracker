@@ -10,8 +10,8 @@ import {
   getPreAuthenticationCsrfService,
 } from "./runtime.server";
 
-export const SESSION_COOKIE_NAME = "__Host-calorie_session";
-export const PRE_AUTHENTICATION_CSRF_COOKIE_NAME =
+const SESSION_COOKIE_NAME = "__Host-calorie_session";
+const PRE_AUTHENTICATION_CSRF_COOKIE_NAME =
   "__Host-calorie_auth_csrf";
 
 const applicationUrlSchema = z.string().url();
@@ -35,7 +35,7 @@ function parseCookies(header: string | null): Map<string, string> {
   return cookies;
 }
 
-export function getSessionToken(request: Request): string | undefined {
+function getSessionToken(request: Request): string | undefined {
   return parseCookies(request.headers.get("Cookie")).get(SESSION_COOKIE_NAME);
 }
 
