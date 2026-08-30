@@ -9,8 +9,8 @@ services:
       FDC_API_KEY: "${FDC_API_KEY:-}"
       FDC_TIMEOUT_MS: "${FDC_TIMEOUT_MS:-5000}"
       PORT: "${PORT:-3000}"
-    expose:
-      - "${PORT:-3000}"
+    ports:
+      - "${HOST_PORT:-3000}:${PORT:-3000}"
     volumes:
       - type: bind
         source: "${DATA_PATH:?Set DATA_PATH to the host data directory}"
