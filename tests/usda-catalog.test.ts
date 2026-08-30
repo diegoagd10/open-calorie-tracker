@@ -215,6 +215,49 @@ test("USDA detail applies Foundation energy precedence and keeps only safe measu
   });
 });
 
+test("USDA diagnostics use redacted structured request logs", async () => {
+  const stderr = vi.spyOn(console, "error").mockImplementation(() => {});
+  try {
+    const provider = new UsdaFoodDataCentralAdapter({
+      apiKey: "diagnostic-secret-api-key",
+      baseUrl: "https://example.test/fdc/v1",
+      fetchImplementation: vi.fn<typeof fetch>().mockResolvedValue(
+        jsonResponse({
+          dataType: "Foundation",
+          description: "Private diagnostic food",
+          fdcId: 987654,
+          foodNutrients: [
+            { amount: -1, nutrient: { id: 1003, unitName: "g" } },
+          ],
+          publicationDate: "2026-04-01",
+        }),
+      ),
+    });
+
+    await provider.getFood("987654", {
+      requestId: "catalog-diagnostic-request",
+    });
+
+    expect(stderr).toHaveBeenCalledOnce();
+    const diagnostic = JSON.parse(String(stderr.mock.calls[0]?.[0])) as Record<
+      string,
+      unknown
+    >;
+    expect(diagnostic).toMatchObject({
+      code: "negative_nutrient_amount",
+      event: "food_catalog_diagnostic",
+      level: "warn",
+      nutrientId: 1003,
+      requestId: "catalog-diagnostic-request",
+      timestamp: expect.any(String),
+    });
+    expect(JSON.stringify(diagnostic)).not.toContain("diagnostic-secret-api-key");
+    expect(diagnostic).not.toHaveProperty("providerFoodId");
+  } finally {
+    stderr.mockRestore();
+  }
+});
+
 test("USDA detail preserves branded provenance and a provider-backed milliliter basis", async () => {
   const provider = new UsdaFoodDataCentralAdapter({
     apiKey: "registered-test-key",

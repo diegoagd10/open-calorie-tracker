@@ -46,6 +46,10 @@ export type FoodCatalogDiagnostic = {
   providerFoodId: string;
 };
 
+export type CatalogOperationContext = {
+  requestId: string;
+};
+
 export type CatalogFood = CatalogSearchResult & {
   authoritativeBaseQuantityMicrounits: number;
   authoritativeBaseUnit: "g" | "ml";
@@ -57,8 +61,14 @@ export type CatalogFood = CatalogSearchResult & {
 };
 
 export interface FoodCatalogProvider {
-  getFood(providerFoodId: string): Promise<CatalogFood>;
-  search(query: string): Promise<CatalogSearchResult[]>;
+  getFood(
+    providerFoodId: string,
+    context?: CatalogOperationContext,
+  ): Promise<CatalogFood>;
+  search(
+    query: string,
+    context?: CatalogOperationContext,
+  ): Promise<CatalogSearchResult[]>;
 }
 
 export class CatalogConfigurationError extends Error {

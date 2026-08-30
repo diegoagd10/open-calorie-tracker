@@ -3,17 +3,20 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    pull_policy: build
     restart: unless-stopped
     environment:
-      APPLICATION_URL: "${APPLICATION_URL:-http://localhost:3001}"
+      APPLICATION_URL: "${APPLICATION_URL:?Set the canonical HTTPS application origin}"
       FDC_API_KEY: "${FDC_API_KEY:-}"
       FDC_TIMEOUT_MS: "${FDC_TIMEOUT_MS:-5000}"
-      PORT: "3000"
-      TRUST_PROXY: "${TRUST_PROXY:-}"
-    ports:
-      - "${APP_PORT:-3001}:3000"
+      PORT: "${PORT:-3000}"
+      TRUST_PROXY: "${TRUST_PROXY:?Set the Traefik Docker network CIDR}"
+    expose:
+      - "${PORT:-3000}"
     volumes:
       - application-data:/app/data
 
 volumes:
   application-data:
+    external: true
+    name: "${DATA_VOLUME_NAME:-open-calory-tracker-data}"

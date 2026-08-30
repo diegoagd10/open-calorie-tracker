@@ -1,5 +1,8 @@
+import { randomUUID } from "node:crypto";
+
 import { z } from "zod";
 
+import { operationalLog } from "../../server/operational-logging.js";
 import {
   CatalogConfigurationError,
   CatalogCredentialsError,
@@ -10,6 +13,7 @@ import {
   SUPPORTED_CATALOG_DATA_TYPES,
   type CatalogFood,
   type CatalogMeasurement,
+  type CatalogOperationContext,
   type CatalogNutrientValue,
   type CatalogNutrition,
   type CatalogDataType,
@@ -365,16 +369,24 @@ export class UsdaFoodDataCentralAdapter implements FoodCatalogProvider {
   readonly #apiKey: string | undefined;
   readonly #baseUrl: string;
   readonly #fetch: typeof fetch;
-  readonly #onDiagnostic: (diagnostic: FoodCatalogDiagnostic) => void;
+  readonly #onDiagnostic: (
+    diagnostic: FoodCatalogDiagnostic,
+    requestId: string,
+  ) => void;
   readonly #timeoutMs: number;
 
   constructor(options: UsdaAdapterOptions = {}) {
     this.#apiKey = options.apiKey?.trim() || undefined;
     this.#baseUrl = (options.baseUrl ?? DEFAULT_BASE_URL).replace(/\/$/, "");
     this.#fetch = options.fetchImplementation ?? fetch;
-    this.#onDiagnostic =
-      options.onDiagnostic ??
-      ((diagnostic) => console.warn("food_catalog_diagnostic", diagnostic));
+    this.#onDiagnostic = options.onDiagnostic
+      ? (diagnostic) => options.onDiagnostic?.(diagnostic)
+      : (diagnostic, requestId) =>
+          operationalLog("warn", "food_catalog_diagnostic", {
+            code: diagnostic.code,
+            nutrientId: diagnostic.nutrientId,
+            requestId,
+          });
     this.#timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 
     const url = new URL(this.#baseUrl);
@@ -408,7 +420,10 @@ export class UsdaFoodDataCentralAdapter implements FoodCatalogProvider {
     );
   }
 
-  async getFood(providerFoodId: string): Promise<CatalogFood> {
+  async getFood(
+    providerFoodId: string,
+    context?: CatalogOperationContext,
+  ): Promise<CatalogFood> {
     const parsedId = providerFoodIdSchema.safeParse(providerFoodId);
     if (!parsedId.success) throw new CatalogFoodNotFoundError();
     const response = await this.#request(`food/${parsedId.data}`, {
@@ -418,7 +433,10 @@ export class UsdaFoodDataCentralAdapter implements FoodCatalogProvider {
     if (!parsed.success || String(parsed.data.fdcId) !== parsedId.data) {
       throw new CatalogInvalidResponseError();
     }
-    return normalizeDetailFood(parsed.data, this.#onDiagnostic);
+    const requestId = context?.requestId ?? randomUUID();
+    return normalizeDetailFood(parsed.data, (diagnostic) =>
+      this.#onDiagnostic(diagnostic, requestId),
+    );
   }
 
   async #request(path: string, init: RequestInit): Promise<unknown> {

@@ -57,7 +57,7 @@ routes, and tests are TypeScript sources and remain included in strict checking.
 
 ## Container
 
-Build the multi-stage Node 24 Debian-slim image:
+Build the production image directly from the repository and frozen lockfile:
 
 ```sh
 docker build -t open-calory-tracker .
@@ -76,33 +76,23 @@ docker run --rm \
   open-calory-tracker
 ```
 
-Production deployments should expose the container only through the private
-Traefik network rather than publishing a host port. Persist `/app/data` across
-replacement containers.
+Production deployments should expose the container only through the externally
+managed reverse proxy rather than publishing a host port. Persist `/app/data`
+across replacement containers.
 
 ### Portainer
 
-Create the stack from this Git repository and set **Compose path** to
-`docker-compose.yml`. The stack builds the checked-in `Dockerfile`, stores the
-SQLite database in the `application-data` volume, and publishes port `3001` by
-default. The container listens on port `3000`; set `APP_PORT` in Portainer to
-publish a different host port. Set `APPLICATION_URL` to the externally visible
-HTTPS origin before putting the stack behind Traefik. If Traefik supplies
-forwarded client addresses, set `TRUST_PROXY` to only its Docker network CIDR;
-the persisted authentication abuse limits otherwise use the direct peer IP.
-Argon2id defaults to the reviewed 19 MiB, two-pass, single-lane profile. On the
-deployment server, run `pnpm auth:calibrate` from a source checkout, or run
-`docker compose run --rm --entrypoint node application
-scripts/calibrate-argon2.mjs` against the production image. The check measures
-three hashes and fails if any reaches one second. The deployment can raise
-`AUTH_ARGON2_MEMORY_KIB` or `AUTH_ARGON2_PASSES` and rerun that check;
-parallelism remains fixed at one, minimums cannot be lowered outside the
-isolated test environment, and a parameter change rehashes a credential after
-its next successful sign-in.
+Create the stack from this Git repository with `docker-compose.yml`. The
+production Compose contract has no host port: it attaches the application to an
+existing external data volume. It requires the canonical HTTPS origin, trusted
+proxy CIDR, and stable data-volume name before Portainer can render the stack.
+Traefik networking and routing remain in the existing external configuration;
+this stack does not define a Traefik network, router, or service labels.
 
-After routing the service through a private Traefik network, remove the `ports`
-mapping and attach the `application` service to that network instead.
+See [Production deployment](docs/deployment.md) for the exact Portainer values,
+Traefik configuration, volume setup, migration/maintenance workflow, backups,
+health behavior, logging, and emergency restore procedure.
 
 - `GET /health/live` reports whether the HTTP process is alive.
-- `GET /health/ready` verifies the reviewed migration, required SQLite pragmas,
-  and a rollbacked write against application storage.
+- `GET /health/ready` verifies the complete migration journal, required SQLite
+  pragmas, and a rolled-back write against application storage.
