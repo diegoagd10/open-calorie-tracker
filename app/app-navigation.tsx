@@ -1,6 +1,7 @@
 import { Form, Link } from "react-router";
 
 import styles from "./food-log.module.css";
+import { UiIcon } from "./ui-icon";
 
 type AppNavigationProps = {
   active: "history" | "log" | "settings";
@@ -30,7 +31,9 @@ export function AppNavigation({
       <aside className={styles.desktopRail} aria-label="Primary navigation">
         <div className={styles.railBrand}>
           <span className={styles.brandMark} aria-hidden="true">
-            OC
+            <span />
+            <span />
+            <span />
           </span>
           <span>
             <strong>Open Calory</strong>
@@ -42,22 +45,32 @@ export function AppNavigation({
             aria-current={active === "log" ? "page" : undefined}
             to={foodLogHref(today)}
           >
-            Today
+            <UiIcon name="log" />
+            <span>Today</span>
           </Link>
           <Link
             aria-current={active === "history" ? "page" : undefined}
             to={historyHref}
           >
-            History
+            <UiIcon name="calendar" />
+            <span>History</span>
           </Link>
           <Link
             aria-current={active === "settings" ? "page" : undefined}
             to="/settings/goals"
           >
-            Settings
+            <UiIcon name="settings" />
+            <span>Settings</span>
           </Link>
         </nav>
         <div className={styles.railFooter}>
+          <div className={styles.railPrivacy}>
+            <UiIcon name="lock" />
+            <div>
+              <strong>Private by default</strong>
+              <p>Your Food Log is isolated to this account.</p>
+            </div>
+          </div>
           <Link className={styles.railAccount} to="/account/password">
             <strong>Change password</strong>
             <small>Signed in as {username}</small>
@@ -75,21 +88,21 @@ export function AppNavigation({
           aria-current={active === "log" ? "page" : undefined}
           to={foodLogHref(today)}
         >
-          <span aria-hidden="true">▤</span>
+          <UiIcon name="log" />
           Log
         </Link>
         <Link
           aria-current={active === "history" ? "page" : undefined}
           to={historyHref}
         >
-          <span aria-hidden="true">□</span>
+          <UiIcon name="calendar" />
           History
         </Link>
         <Link
           aria-current={active === "settings" ? "page" : undefined}
           to="/settings/goals"
         >
-          <span aria-hidden="true">⚙</span>
+          <UiIcon name="settings" />
           Settings
         </Link>
       </nav>
