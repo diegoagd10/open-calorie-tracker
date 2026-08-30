@@ -255,6 +255,25 @@ export default function Goals({ actionData, loaderData }: Route.ComponentProps) 
           <span aria-hidden="true">›</span>
         </Link>
 
+        <Form
+          action="/logout"
+          className={styles.mobileSignOutForm}
+          method="post"
+        >
+          <input
+            name="csrfToken"
+            type="hidden"
+            value={loaderData.csrfToken}
+          />
+          <button aria-label="Sign out" type="submit">
+            <span>
+              <strong>Sign out this session</strong>
+              <small>Other phones remain signed in.</small>
+            </span>
+            <span aria-hidden="true">›</span>
+          </button>
+        </Form>
+
         <Form className={styles.settingsGroup} method="post" noValidate>
           <input
             name="csrfToken"

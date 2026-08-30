@@ -3,6 +3,52 @@
   max-width: 44rem;
 }
 
+.mobileSignOutForm {
+  max-width: 44rem;
+  margin: -0.25rem 0 0.75rem;
+}
+
+.mobileSignOutForm button {
+  display: flex;
+  width: 100%;
+  min-height: 2.75rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.65rem 1rem;
+  border: 1px solid #efd1d1;
+  border-radius: 0.65rem;
+  color: #a92f28;
+  background: #fff0ef;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 750;
+  cursor: pointer;
+  text-align: left;
+}
+
+.mobileSignOutForm button:hover {
+  border-color: #c63d34;
+}
+
+.mobileSignOutForm button:focus-visible {
+  outline: 3px solid rgb(40 118 220 / 32%);
+  outline-offset: 2px;
+}
+
+.mobileSignOutForm span,
+.mobileSignOutForm strong,
+.mobileSignOutForm small {
+  display: block;
+}
+
+.mobileSignOutForm small {
+  margin-top: 0.15rem;
+  color: #955b5b;
+  font-size: 0.68rem;
+  font-weight: 500;
+}
+
 .accountAccessRow {
   display: grid;
   grid-template-columns: auto 1fr auto;
@@ -264,5 +310,11 @@
 
   .goalGrid {
     gap: 0.55rem;
+  }
+}
+
+@media (min-width: 1120px) {
+  .mobileSignOutForm {
+    display: none;
   }
 }

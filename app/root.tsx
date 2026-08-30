@@ -13,6 +13,11 @@ import readinessStyles from "./readiness.module.css";
 export const links = () => [
   { rel: "stylesheet", href: stylesheet },
   { rel: "icon", href: "/favicon.svg", type: "image/svg+xml" },
+  {
+    rel: "apple-touch-icon",
+    href: "/apple-touch-icon.png",
+    sizes: "180x180",
+  },
   { rel: "manifest", href: "/manifest.webmanifest" },
 ];
 
@@ -23,6 +28,13 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <meta charSet="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <meta name="theme-color" content="#102a43" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta
+          name="apple-mobile-web-app-title"
+          content="Open Calory Tracker"
+        />
+        <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+        <meta name="format-detection" content="telephone=no" />
         <Meta />
         <Links />
       </head>

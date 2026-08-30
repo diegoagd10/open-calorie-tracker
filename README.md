@@ -36,12 +36,16 @@ pnpm test:browser
 pnpm build
 ```
 
-The offline suite uses deterministic catalog fixtures. With a registered key,
+The deterministic suite uses local catalog fixtures. With a registered key,
 run the opt-in provider spike separately:
 
 ```sh
 FDC_API_KEY=... pnpm test:usda-live
 ```
+
+After the Chromium suite passes, complete the
+[Safari on iPhone release checklist](docs/safari-iphone-release-checklist.md)
+against the production HTTPS URL.
 
 The spike rejects `DEMO_KEY`; exercises representative, no-result, and GTIN
 search/detail paths; records duplicate revisions, market and serving metadata,
