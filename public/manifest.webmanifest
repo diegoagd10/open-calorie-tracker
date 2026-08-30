@@ -1,9 +1,19 @@
 {
   "name": "Open Calory Tracker",
   "short_name": "Calory Tracker",
+  "id": "/",
+  "scope": "/",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#f0f4f8",
   "theme_color": "#102a43",
-  "lang": "en"
+  "lang": "en",
+  "icons": [
+    {
+      "src": "/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
 }
