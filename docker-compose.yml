@@ -6,11 +6,9 @@ services:
     pull_policy: build
     restart: unless-stopped
     environment:
-      APPLICATION_URL: "${APPLICATION_URL:?Set the canonical HTTPS application origin}"
       FDC_API_KEY: "${FDC_API_KEY:-}"
       FDC_TIMEOUT_MS: "${FDC_TIMEOUT_MS:-5000}"
       PORT: "${PORT:-3000}"
-      TRUST_PROXY: "${TRUST_PROXY:?Set the Traefik Docker network CIDR}"
     expose:
       - "${PORT:-3000}"
     volumes:
