@@ -26,7 +26,10 @@ function openBrowserTestDatabase() {
   const databasePath = readdirSync(directory)
     .filter((name) => /^application\..+\.sqlite$/.test(name))
     .map((name) => path.join(directory, name))
-    .sort((left, right) => statSync(right).mtimeMs - statSync(left).mtimeMs)[0];
+    .sort(
+      (left, right) =>
+        statSync(right).birthtimeMs - statSync(left).birthtimeMs,
+    )[0];
   if (!databasePath) throw new Error("browser test database was not created");
   return new BetterSqlite3(databasePath);
 }
@@ -249,6 +252,192 @@ test("the full stack resolves UTC boundaries and both DST transitions", async ({
   updateTimeZone.run("Pacific/Kiritimati", "food.log.boundaries");
   database.close();
   await expectToday("2026-01-01T09:30:00.000Z", "Thursday, January 1, 2026");
+});
+
+test("daily calorie and nutrient progress is factual, responsive, and accessible", async ({
+  browser,
+  context,
+  page,
+}) => {
+  await context.setExtraHTTPHeaders({ "X-Test-Client-IP": "203.0.113.87" });
+  await registerAndSetup(page, "nutrition.progress");
+
+  await expect(
+    page.getByRole("progressbar", { name: "Calorie progress" }),
+  ).toHaveAttribute("aria-valuetext", "0 of 2,050 kcal target");
+  await expect(page.getByText("Incomplete", { exact: true })).toHaveCount(0);
+  await expect(
+    page.getByRole("article", { name: /Protein: 0 of 120 g target/ }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("article", { name: /Sugar: 0 of 50 g maximum/ }),
+  ).toBeHidden();
+
+  await page.getByRole("button", { name: "Add Food" }).click();
+  await page
+    .getByRole("searchbox", { name: "Search United States foods" })
+    .fill("yogurt");
+  await page.getByRole("button", { name: "Search" }).click();
+  await page.getByRole("link", { name: /Plain nonfat Greek yogurt/ }).click();
+  await page.getByRole("button", { name: "Add to Food Log" }).click();
+  await expect(
+    page
+      .getByRole("article")
+      .getByText("Plain nonfat Greek yogurt", { exact: true }),
+  ).toBeVisible();
+
+  const database = openBrowserTestDatabase();
+  const user = database
+    .prepare("SELECT id FROM users WHERE username_normalized = ?")
+    .get("nutrition.progress") as { id: number };
+  const updatedEntries = database
+    .prepare(
+      `UPDATE food_entries
+       SET authoritative_energy_milli_kcal = NULL,
+           authoritative_protein_milligrams = 120500,
+           authoritative_carbohydrate_milligrams = 230001,
+           authoritative_fat_milligrams = 70050,
+           authoritative_fiber_milligrams = NULL,
+           authoritative_sugar_milligrams = 50001,
+           authoritative_sodium_milligrams = 2301
+       WHERE user_id = ?`,
+    )
+    .run(user.id);
+  expect(updatedEntries.changes).toBe(1);
+  database
+    .prepare(
+      `INSERT INTO goal_versions (
+         user_id, effective_date, calorie_target_milli_kcal,
+         water_target_microliters, protein_target_milligrams,
+         carbohydrate_target_milligrams, fat_target_milligrams,
+         fiber_target_milligrams, sugar_maximum_milligrams,
+         sodium_maximum_milligrams, created_at
+       ) VALUES (?, '2026-08-29', 1000000, 2000000, 100000, 200000,
+                 60000, 20000, 40000, 2000, '2026-08-29T12:00:00.000Z')`,
+    )
+    .run(user.id);
+  database.close();
+
+  await page.goto("/?date=2026-08-29");
+  const calorieProgress = page.getByRole("progressbar", {
+    name: "Calorie progress",
+  });
+  await expect(calorieProgress).toHaveAttribute(
+    "aria-valuetext",
+    "0 known of 1,000 kcal target; incomplete",
+  );
+  await expect(
+    page.getByRole("article", {
+      name: "Protein: 120.5 of 100 g target",
+    }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("progressbar", { name: "Protein progress" }),
+  ).toHaveCSS("--progress", "100%");
+  await expect(
+    page.getByRole("article", {
+      name: "Fat: 70.05 of 60 g target",
+    }),
+  ).toBeVisible();
+
+  const secondPage = page.getByRole("button", {
+    name: "Show fiber, sugar, and sodium",
+  });
+  await secondPage.focus();
+  await page.keyboard.press("Enter");
+  await expect(secondPage).toHaveAttribute("aria-pressed", "true");
+  await expect(
+    page.getByRole("article", {
+      name: "Fiber: 0 known of 20 g target; incomplete",
+    }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("article", {
+      name: "Sugar: 50.001 of 40 g maximum",
+    }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("article", {
+      name: "Sodium: 2,301 of 2,000 mg maximum",
+    }),
+  ).toBeVisible();
+
+  const precisionDatabase = openBrowserTestDatabase();
+  precisionDatabase
+    .prepare(
+      `UPDATE food_entries
+       SET authoritative_energy_milli_kcal = 1234
+       WHERE user_id = ?`,
+    )
+    .run(user.id);
+  precisionDatabase.close();
+  await page.goto("/?date=2026-08-29");
+  await expect(
+    page.getByRole("region", { name: "Calories" }),
+  ).toContainText("1.2 / 1,000 kcal");
+
+  const touchContext = await browser.newContext({
+    hasTouch: true,
+    isMobile: true,
+    storageState: await context.storageState(),
+    viewport: { height: 844, width: 390 },
+  });
+  const touchPage = await touchContext.newPage();
+  await touchPage.goto("/?date=2026-08-29");
+  await touchPage
+    .getByRole("button", { name: "Show fiber, sugar, and sodium" })
+    .tap();
+  await expect(
+    touchPage.getByRole("article", {
+      name: "Fiber: 0 known of 20 g target; incomplete",
+    }),
+  ).toBeVisible();
+  await touchContext.close();
+
+  for (const viewport of [
+    { height: 844, width: 390 },
+    { height: 900, width: 800 },
+    { height: 900, width: 1_120 },
+  ]) {
+    await page.setViewportSize(viewport);
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= window.innerWidth,
+      ),
+    ).toBe(true);
+  }
+
+  await page.goto("/?date=2026-08-28");
+  await expect(
+    page.getByRole("progressbar", { name: "Calorie progress" }),
+  ).toHaveAttribute("aria-valuetext", "0 of 2,050 kcal target");
+
+  const noGoalDatabase = openBrowserTestDatabase();
+  noGoalDatabase
+    .prepare(
+      `UPDATE food_entries
+       SET food_log_date = '2025-12-31'
+       WHERE user_id = ?`,
+    )
+    .run(user.id);
+  noGoalDatabase.close();
+  await page.goto("/?date=2025-12-31");
+  await expect(
+    page.getByRole("article", {
+      name: "Protein: 120.5; no active target",
+    }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Show fiber, sugar, and sodium" })
+    .click();
+  await expect(
+    page.getByRole("article", {
+      name: "Fiber: 0 known; no active target; incomplete",
+    }),
+  ).toBeVisible();
+
+  const accessibilityScan = await new AxeBuilder({ page }).analyze();
+  expect(accessibilityScan.violations).toEqual([]);
 });
 
 test("authenticated USDA search and idempotent logging preserve a local Nutrition Snapshot", async ({

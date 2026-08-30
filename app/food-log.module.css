@@ -165,13 +165,7 @@
   cursor: not-allowed;
 }
 
-.summaryGrid {
-  display: grid;
-  gap: 0.75rem;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-.summaryCard,
+.summarySurface,
 .calendarCard {
   overflow: hidden;
   border: 1px solid var(--rule);
@@ -180,40 +174,223 @@
   box-shadow: 0 8px 24px rgb(15 29 45 / 5%);
 }
 
-.summaryCard {
-  padding: 1rem;
+.calorieRow {
+  padding: 1.15rem 1rem 1rem;
 }
 
-.summaryCard h2 {
+.calorieRow h2 {
   margin: 0 0 0.35rem;
   font-size: 0.9rem;
   font-weight: 650;
   letter-spacing: 0;
 }
 
-.summaryCard p {
+.calorieRow p {
   margin: 0;
   color: var(--ink);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
-.summaryCard p strong {
+.calorieRow p strong {
   font-size: 1.5rem;
 }
 
-.summaryCard p span,
-.summaryCard > small {
+.calorieRow p span,
+.calorieRow > small {
   color: var(--muted);
   font-size: 0.72rem;
 }
 
-.progress {
+.linearProgress,
+.waterProgress {
   overflow: hidden;
   height: 0.44rem;
   margin: 0.7rem 0 0.4rem;
   border-radius: 999px;
   background: #e9edf1;
+}
+
+.linearProgress span,
+.waterProgress span {
+  display: block;
+  width: var(--progress, 0%);
+  height: 100%;
+  border-radius: inherit;
+  background: var(--green);
+}
+
+.nutrientCarousel {
+  border-top: 1px solid var(--rule);
+}
+
+.nutrientPage {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.nutrientPage[hidden] {
+  display: none;
+}
+
+.nutrientCell {
+  position: relative;
+  min-width: 0;
+  padding: 0.9rem 0.7rem 0.75rem;
+}
+
+.nutrientCell + .nutrientCell::before {
+  position: absolute;
+  inset-block: 0.7rem;
+  left: 0;
+  width: 1px;
+  background: var(--rule);
+  content: "";
+}
+
+.nutrientCell > span,
+.nutrientCell > strong,
+.nutrientCell > em {
+  display: block;
+}
+
+.nutrientCell > span {
+  overflow: hidden;
+  margin-bottom: 0.3rem;
+  font-size: 0.72rem;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nutrientCell > strong {
+  overflow: hidden;
+  font-size: 0.86rem;
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nutrientCell > strong small {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 500;
+}
+
+.nutrientProgress {
+  overflow: hidden;
+  height: 0.25rem;
+  margin-top: 0.55rem;
+  border-radius: 999px;
+  background: #e8edf2;
+}
+
+.nutrientProgress span {
+  display: block;
+  width: var(--progress, 0%);
+  height: 100%;
+  border-radius: inherit;
+  background: var(--blue);
+}
+
+.nutrientCell > em,
+.incompleteLabel {
+  margin-top: 0.35rem;
+  color: #9a6114;
+  font-size: 0.62rem;
+  font-style: normal;
+  font-weight: 750;
+}
+
+.calorieRow .incompleteLabel {
+  display: inline;
+}
+
+.carouselControls {
+  display: flex;
+  justify-content: center;
+  gap: 0.42rem;
+  padding: 0.55rem;
+  border-top: 1px solid var(--rule);
+}
+
+.carouselDot {
+  display: grid;
+  width: 2.75rem;
+  height: 2.75rem;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+}
+
+.carouselDot::after {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: #cbd1d9;
+  content: "";
+}
+
+.carouselDot:hover::after,
+.carouselDot:focus-visible::after {
+  background: var(--ink-2);
+}
+
+.activeCarouselDot::after {
+  background: var(--ink);
+}
+
+.waterOverview {
+  margin-top: 0.75rem;
+  padding: 0.75rem 0.85rem 0.8rem;
+  border: 1px solid var(--rule);
+  border-radius: 1rem;
+  background: var(--surface);
+  box-shadow: 0 8px 24px rgb(15 29 45 / 5%);
+}
+
+.waterOverviewRow {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.waterOverviewRow > span > strong,
+.waterOverviewRow > span > small {
+  display: block;
+}
+
+.waterOverviewRow > span > strong {
+  font-size: 0.88rem;
+}
+
+.waterOverviewRow > span > small {
+  margin-top: 0.1rem;
+  color: var(--muted);
+  font-size: 0.62rem;
+}
+
+.waterOverviewRow > strong {
+  font-size: 0.88rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.waterOverviewRow > strong small {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 500;
+}
+
+.waterProgress {
+  margin-bottom: 0;
+}
+
+.waterProgress span {
+  background: var(--blue);
 }
 
 .timelineSection {
@@ -1071,16 +1248,16 @@
     display: none;
   }
 
-  .summaryGrid {
-    gap: 0.55rem;
-  }
-
-  .summaryCard {
+  .calorieRow {
     padding-inline: 0.75rem;
   }
 
-  .summaryCard p strong {
+  .calorieRow p strong {
     font-size: 1.3rem;
+  }
+
+  .nutrientCell {
+    padding-inline: 0.5rem;
   }
 
   .foodEntryCard {
