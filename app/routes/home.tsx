@@ -1344,6 +1344,39 @@ function formatEventTime(value: string): string {
   return `${displayHour}:${String(minute).padStart(2, "0")} ${suffix}`;
 }
 
+function FoodDetailSkeleton() {
+  return (
+    <div
+      aria-label="Loading food details"
+      aria-live="polite"
+      className={styles.foodDetailSkeleton}
+      role="status"
+    >
+      <span className={styles.pendingLabel}>Loading food details…</span>
+      <div className={styles.skeletonBackLink} />
+      <div className={styles.skeletonIdentity}>
+        <span className={styles.skeletonChip} />
+        <span className={styles.skeletonTitle} />
+        <span className={styles.skeletonText} />
+      </div>
+      <div className={styles.skeletonNote} />
+      <div className={styles.skeletonFieldGrid}>
+        <span className={styles.skeletonField} />
+        <span className={styles.skeletonField} />
+      </div>
+      <div className={styles.skeletonNutritionGrid}>
+        {Array.from({ length: 4 }, (_, index) => (
+          <span className={styles.skeletonNutrition} key={index} />
+        ))}
+      </div>
+      <div className={styles.skeletonActions}>
+        <span />
+        <span />
+      </div>
+    </div>
+  );
+}
+
 function FoodDetailStage({
   actionData,
   catalog,
@@ -1415,6 +1448,7 @@ function FoodDetailStage({
           value={catalog.idempotencyKey}
         />
         <input name="intent" type="hidden" value="log-food" />
+        <input name="pendingFoodName" type="hidden" value={food.name} />
         <input
           name="providerFoodId"
           type="hidden"
@@ -2182,7 +2216,14 @@ function CatalogDialog({
 }) {
   const navigation = useNavigation();
   const [clientSearchMessage, setClientSearchMessage] = useState<string>();
-  const searchPending = navigation.state !== "idle";
+  const pendingFoodStage = catalogRouteState(
+    new URLSearchParams(navigation.location?.search).get("food"),
+  );
+  const detailPending =
+    navigation.state === "loading" &&
+    catalog.mode === "search" &&
+    pendingFoodStage?.mode === "detail";
+  const searchPending = navigation.state !== "idle" && !detailPending;
   const closeHref = foodLogHref(date);
   const { closeDialog, dialogRef, handleDialogKeyDown } = useModalDialog({
     closeHref,
@@ -2223,7 +2264,9 @@ function CatalogDialog({
             ×
           </Link>
         </div>
-        {catalog.mode === "detail" ? (
+        {detailPending ? (
+          <FoodDetailSkeleton />
+        ) : catalog.mode === "detail" ? (
           <FoodDetailStage
             actionData={actionData}
             catalog={catalog}
@@ -2372,6 +2415,28 @@ function CatalogDialog({
   );
 }
 
+function PendingFoodEntry({ name }: { name: string }) {
+  return (
+    <article>
+      <div
+        aria-label="Adding food to Daily log"
+        aria-live="polite"
+        className={`${styles.foodEntryCard} ${styles.pendingFoodEntryCard}`}
+        role="status"
+      >
+        <span className={styles.pendingTime} />
+        <span className={styles.pendingEntryMarker} aria-hidden="true" />
+        <span className={styles.pendingEntryContent}>
+          <strong>{name}</strong>
+          <span className={styles.pendingEntryLine} />
+          <span className={styles.pendingEntryLineShort} />
+        </span>
+        <span className={styles.pendingEntryEnergy} />
+      </div>
+    </article>
+  );
+}
+
 export default function Home({ actionData, loaderData }: Route.ComponentProps) {
   const {
     calendar,
@@ -2391,12 +2456,24 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
   const activeWaterDialog = actionData?.waterEventEditor
     ? { event: actionData.waterEventEditor, mode: "edit" as const }
     : waterDialog;
+  const navigation = useNavigation();
+  const foodLogPending =
+    navigation.state !== "idle" &&
+    navigation.formData?.get("intent") === "log-food";
+  const pendingFoodName = String(
+    navigation.formData?.get("pendingFoodName") ?? "Selected food",
+  );
+  const visibleCatalog = foodLogPending ? undefined : catalog;
 
   return (
     <>
       <div
         className={styles.shell}
-        inert={catalog || activeFoodEntryEditor || activeWaterDialog ? true : undefined}
+        inert={
+          visibleCatalog || activeFoodEntryEditor || activeWaterDialog
+            ? true
+            : undefined
+        }
       >
         <a className={styles.skipLink} href="#food-log-content">
           Skip to daily log
@@ -2515,7 +2592,7 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
                       recorded today or in the past.
                     </p>
                   </div>
-                ) : foodLog.events.length ? (
+                ) : foodLog.events.length || foodLogPending ? (
                   <div className={styles.timeline}>
                     <EmptyActionForm
                       className={styles.timelineAddFood}
@@ -2525,6 +2602,9 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
                       label="Add Food"
                       timelineMarker="food"
                     />
+                    {foodLogPending ? (
+                      <PendingFoodEntry name={pendingFoodName} />
+                    ) : null}
                     {foodLog.events.map((entry) =>
                       entry.kind === "food" ? (
                         <article key={`food-${entry.id}`}>
@@ -2656,14 +2736,14 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
         <DesktopDayContext
           foodLog={foodLog}
           isObscured={Boolean(
-            catalog || activeFoodEntryEditor || activeWaterDialog,
+            visibleCatalog || activeFoodEntryEditor || activeWaterDialog,
           )}
         />
       </div>
-      {catalog ? (
+      {visibleCatalog ? (
         <CatalogDialog
           actionData={actionData}
-          catalog={catalog}
+          catalog={visibleCatalog}
           csrfToken={csrfToken}
           date={foodLog.selectedDate}
         />

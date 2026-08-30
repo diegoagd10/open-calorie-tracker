@@ -646,6 +646,172 @@ test("authenticated USDA search and idempotent logging preserve a local Nutritio
   expect(accessibilityScan.violations).toEqual([]);
 });
 
+test("food selection immediately reveals the pending detail destination", async ({
+  context,
+  page,
+}) => {
+  await context.setExtraHTTPHeaders({ "X-Test-Client-IP": "203.0.113.91" });
+  await registerAndSetup(page, "catalog.pending-destinations");
+
+  await page.getByRole("button", { name: "Add Food" }).click();
+  await page
+    .getByRole("searchbox", { name: "Search United States foods" })
+    .fill("yogurt");
+  await page.getByRole("button", { name: "Search" }).click();
+
+  let releaseDetail!: () => void;
+  const detailGate = new Promise<void>((resolve) => {
+    releaseDetail = resolve;
+  });
+  await page.route(
+    /[?&]food=1001(?:&|$)/,
+    async (route) => {
+      await detailGate;
+      await route.continue();
+    },
+    { times: 1 },
+  );
+
+  const selection = page
+    .getByRole("link", { name: /Plain nonfat Greek yogurt/ })
+    .click();
+  await expect(
+    page.getByRole("status", { name: "Loading food details" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("searchbox", { name: "Search United States foods" }),
+  ).toHaveCount(0);
+  for (const viewport of [
+    { height: 844, width: 390 },
+    { height: 900, width: 800 },
+    { height: 900, width: 1_120 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await expect(
+      page.getByRole("status", { name: "Loading food details" }),
+    ).toBeVisible();
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= window.innerWidth,
+      ),
+    ).toBe(true);
+  }
+  const pendingDetailAccessibility = await new AxeBuilder({ page }).analyze();
+  expect(pendingDetailAccessibility.violations).toEqual([]);
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await expect(
+    page
+      .getByRole("status", { name: "Loading food details" })
+      .locator("div")
+      .first(),
+  ).toHaveCSS("animation-name", "none");
+  releaseDetail();
+  await selection;
+
+  await expect(page.getByText("Saved as a Nutrition Snapshot")).toBeVisible();
+});
+
+test("food logging immediately reveals a pending Daily log row", async ({
+  context,
+  page,
+}) => {
+  await context.setExtraHTTPHeaders({ "X-Test-Client-IP": "203.0.113.92" });
+  await registerAndSetup(page, "catalog.pending-log");
+
+  await page.getByRole("button", { name: "Add Food" }).click();
+  await page
+    .getByRole("searchbox", { name: "Search United States foods" })
+    .fill("yogurt");
+  await page.getByRole("button", { name: "Search" }).click();
+  await page
+    .getByRole("link", { name: /Plain nonfat Greek yogurt/ })
+    .click();
+  await expect(page.getByText("Saved as a Nutrition Snapshot")).toBeVisible();
+
+  let releaseLog!: () => void;
+  let releaseReload!: () => void;
+  let signalLogRequest!: () => void;
+  let signalReloadRequest!: () => void;
+  const logGate = new Promise<void>((resolve) => {
+    releaseLog = resolve;
+  });
+  const reloadGate = new Promise<void>((resolve) => {
+    releaseReload = resolve;
+  });
+  const logRequestStarted = new Promise<void>((resolve) => {
+    signalLogRequest = resolve;
+  });
+  const reloadRequestStarted = new Promise<void>((resolve) => {
+    signalReloadRequest = resolve;
+  });
+  await page.route("**/*", async (route) => {
+    const request = route.request();
+    if (
+      request.method() === "POST" &&
+      request.postData()?.includes("intent=log-food")
+    ) {
+      signalLogRequest();
+      await logGate;
+    } else if (
+      request.method() === "GET" &&
+      new URL(request.url()).searchParams.get("date") === "2026-08-29" &&
+      !new URL(request.url()).searchParams.has("food")
+    ) {
+      signalReloadRequest();
+      await reloadGate;
+    }
+    await route.continue();
+  });
+
+  const submission = page
+    .getByRole("button", { name: "Add to Food Log" })
+    .click();
+  await logRequestStarted;
+  await expect(page.getByRole("dialog", { name: "Add Food" })).toHaveCount(0);
+  await expect(
+    page.getByRole("status", { name: "Adding food to Daily log" }),
+  ).toBeVisible();
+  for (const viewport of [
+    { height: 844, width: 390 },
+    { height: 900, width: 800 },
+    { height: 900, width: 1_120 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await expect(
+      page.getByRole("status", { name: "Adding food to Daily log" }),
+    ).toBeVisible();
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= window.innerWidth,
+      ),
+    ).toBe(true);
+  }
+  const pendingLogAccessibility = await new AxeBuilder({ page }).analyze();
+  expect(pendingLogAccessibility.violations).toEqual([]);
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await expect(
+    page
+      .getByRole("status", { name: "Adding food to Daily log" })
+      .locator("span")
+      .first(),
+  ).toHaveCSS("animation-name", "none");
+  releaseLog();
+  await reloadRequestStarted;
+  await expect(page.getByRole("dialog", { name: "Add Food" })).toHaveCount(0);
+  await expect(
+    page.getByRole("status", { name: "Adding food to Daily log" }),
+  ).toBeVisible();
+  releaseReload();
+  await submission;
+
+  await expect(
+    page.getByRole("link", { name: /Plain nonfat Greek yogurt.*100\.3 kcal/ }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("status", { name: "Adding food to Daily log" }),
+  ).toHaveCount(0);
+});
+
 test("an authenticated user can correct and delete one Food Entry", async ({
   context,
   page,
