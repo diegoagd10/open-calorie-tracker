@@ -22,6 +22,7 @@ import {
   requireValidOrigin,
   serializeClearedSessionCookie,
 } from "../auth/http.server";
+import { AppNavigation } from "../app-navigation";
 import { getAuthenticationService } from "../auth/runtime.server";
 import {
   CatalogConfigurationError,
@@ -583,86 +584,6 @@ function goalValues(foodLog: Route.ComponentProps["loaderData"]["foodLog"]) {
     water,
     waterUnit: foodLog.displayUnits === "metric" ? "ml" : "fl oz",
   };
-}
-
-function Navigation({
-  csrfToken,
-  foodLog,
-  username,
-  view,
-}: {
-  csrfToken: string;
-  foodLog: Route.ComponentProps["loaderData"]["foodLog"];
-  username: string;
-  view: "calendar" | "log";
-}) {
-  return (
-    <>
-      <aside className={styles.desktopRail} aria-label="Primary navigation">
-        <div className={styles.railBrand}>
-          <span className={styles.brandMark} aria-hidden="true">
-            OC
-          </span>
-          <span>
-            <strong>Open Calory</strong>
-            <small>Private tracker</small>
-          </span>
-        </div>
-        <nav className={styles.railNav}>
-          <Link
-            aria-current={view === "log" ? "page" : undefined}
-            to={foodLogHref(foodLog.today)}
-          >
-            Today
-          </Link>
-          <Link
-            aria-current={view === "calendar" ? "page" : undefined}
-            to={foodLogHref(
-              foodLog.selectedDate,
-              foodLog.selectedDate.slice(0, 7),
-            )}
-          >
-            History
-          </Link>
-        </nav>
-        <div className={styles.railFooter}>
-          <Link className={styles.railAccount} to="/account/password">
-            <strong>Change password</strong>
-            <small>Signed in as {username}</small>
-          </Link>
-          <Form action="/logout" method="post">
-            <input name="csrfToken" type="hidden" value={csrfToken} />
-            <button className={styles.logout} type="submit">
-              Sign out
-            </button>
-          </Form>
-        </div>
-      </aside>
-      <nav className={styles.mobileNav} aria-label="Primary navigation">
-        <Link
-          aria-current={view === "log" ? "page" : undefined}
-          to={foodLogHref(foodLog.today)}
-        >
-          <span aria-hidden="true">▤</span>
-          Log
-        </Link>
-        <Link
-          aria-current={view === "calendar" ? "page" : undefined}
-          to={foodLogHref(
-            foodLog.selectedDate,
-            foodLog.selectedDate.slice(0, 7),
-          )}
-        >
-          <span aria-hidden="true">□</span>
-          History
-        </Link>
-        <Link to="/account/password">
-          <span aria-hidden="true">⚙</span>
-          Account
-        </Link>
-      </nav>
-    </>
-  );
 }
 
 function CalendarView({
@@ -1648,11 +1569,12 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
         <a className={styles.skipLink} href="#food-log-content">
           Skip to daily log
         </a>
-        <Navigation
+        <AppNavigation
+          active={view === "calendar" ? "history" : "log"}
           csrfToken={csrfToken}
-          foodLog={foodLog}
+          selectedDate={foodLog.selectedDate}
+          today={foodLog.today}
           username={username}
-          view={view}
         />
         <main className={styles.appSurface} id="food-log-content">
           <header className={styles.mobileHeader}>
