@@ -38,7 +38,6 @@ the frozen pnpm lockfile. Configure these stack environment values:
 | Name | Required value |
 | --- | --- |
 | `APPLICATION_URL` | Exact canonical origin, for example `https://calories.example.com`; no credentials, path, query, or fragment. Production rejects non-HTTPS origins. |
-| `TRUST_PROXY` | One private IPv4 CIDR for the externally managed reverse-proxy network, for example `172.30.0.0/16`; prefixes from 16 through 32 are accepted. Do not use `true`, a hop count, or a public network. |
 | `DATA_VOLUME_NAME` | Existing external volume name; defaults to `open-calory-tracker-data`. |
 
 Optional values:
@@ -46,6 +45,7 @@ Optional values:
 | Name | Default | Purpose |
 | --- | --- | --- |
 | `PORT` | `3000` | Internal-only application port exposed to attached Docker networks. The externally managed Traefik service must target the same port; Compose does not publish it on the host. |
+| `TRUST_PROXY` | unset | Optional private IPv4 CIDR for a trusted reverse-proxy network. Leave unset to ignore forwarded client-IP headers and use the immediate proxy address. If set, prefixes from 16 through 32 are accepted; do not use `true`, a hop count, or a public network. |
 | `FDC_API_KEY` | unset | USDA FoodData Central key. Store it as a Portainer secret value. Readiness remains healthy when USDA is unconfigured or unavailable. |
 | `FDC_TIMEOUT_MS` | `5000` | USDA request timeout from 100 through 20000 milliseconds. |
 | `AUTH_ARGON2_MEMORY_KIB` | `19456` | Argon2id memory cost; production cannot set less than the reviewed minimum. |

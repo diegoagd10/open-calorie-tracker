@@ -87,9 +87,9 @@ across replacement containers.
 ### Portainer
 
 Create the stack from this Git repository with `docker-compose.yml`. The
-production Compose contract has no host port: it attaches the application to an
-existing external data volume. It requires the canonical HTTPS origin, trusted
-proxy CIDR, and stable data-volume name before Portainer can render the stack.
+production Compose contract requires the canonical HTTPS origin and host data
+path before Portainer can render the stack. `TRUST_PROXY` is optional and only
+needed when the application must trust forwarded client-IP headers.
 Traefik networking and routing remain in the existing external configuration;
 this stack does not define a Traefik network, router, or service labels.
 
