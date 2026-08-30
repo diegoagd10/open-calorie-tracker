@@ -35,6 +35,7 @@ import {
   CatalogUnavailableError,
   CatalogUnsafeMeasurementError,
   type CatalogOperationContext,
+  type CatalogSearchResult,
 } from "../catalog/food-catalog.server";
 import { getFoodCatalogProvider } from "../catalog/runtime.server";
 import {
@@ -190,7 +191,7 @@ function catalogFailure(
   if (error instanceof CatalogFoodNotFoundError) {
     return {
       message:
-        "That USDA food is no longer available. Search again for a current result.",
+        "USDA listed this food in search, but its details are no longer available. Choose another result.",
       status: 409,
       title: "Food no longer available",
     };
@@ -388,12 +389,10 @@ export async function loader({ request }: Route.LoaderArgs) {
         }
       }
     } else {
+      const provider = getFoodCatalogProvider();
       try {
         catalog = {
-          food: await getFoodCatalogProvider().getFood(
-            foodStage.providerFoodId,
-            catalogContext,
-          ),
+          food: await provider.getFood(foodStage.providerFoodId, catalogContext),
           idempotencyKey: randomUUID(),
           mode: "detail",
           query: requestedQuery,
@@ -402,11 +401,28 @@ export async function loader({ request }: Route.LoaderArgs) {
         const failure = catalogFailure(error);
         if (!failure) throw error;
         responseStatus = failure.status;
+        let results: CatalogSearchResult[] = [];
+        const parsedQuery = catalogQuerySchema.safeParse(requestedQuery);
+        if (
+          error instanceof CatalogFoodNotFoundError &&
+          parsedQuery.success
+        ) {
+          try {
+            results = (
+              await provider.search(parsedQuery.data, catalogContext)
+            ).filter(
+              (result) => result.providerFoodId !== foodStage.providerFoodId,
+            );
+          } catch {
+            // The original detail failure remains the useful response when
+            // refreshing the surrounding search results also fails.
+          }
+        }
         catalog = {
           message: failure.message,
           mode: "search",
           query: requestedQuery,
-          results: [],
+          results,
           title: failure.title,
         };
       }
@@ -2273,66 +2289,71 @@ function CatalogDialog({
                 <h3>Search not sent</h3>
                 <p>{clientSearchMessage}</p>
               </div>
-            ) : catalog.message ? (
-              <div className={styles.catalogState} role="alert">
-                <h3>{catalog.title ?? "Search unavailable"}</h3>
-                <p>{catalog.message}</p>
-              </div>
-            ) : catalog.results.length ? (
-              <div
-                className={styles.catalogResults}
-                aria-label="USDA search results"
-              >
-                {catalog.results.map((result) => {
-                  const identity = (
-                    <span>
-                      <span className={styles.catalogType}>
-                        {result.dataType}
-                      </span>
-                      <strong>{result.name}</strong>
-                      <small>
-                        {[result.brand, result.measurementSummary]
-                          .filter(Boolean)
-                          .join(" · ")}
-                      </small>
-                    </span>
-                  );
-                  return result.isSelectable ? (
-                    <Link
-                      key={result.providerFoodId}
-                      to={catalogHref(
-                        date,
-                        result.providerFoodId,
-                        catalog.query,
-                      )}
-                    >
-                      {identity}
-                      <small>Select ›</small>
-                    </Link>
-                  ) : (
-                    <div aria-disabled="true" key={result.providerFoodId}>
-                      {identity}
-                      <small>Hidden in production</small>
-                    </div>
-                  );
-                })}
-              </div>
-            ) : catalog.query ? (
-              <div className={styles.catalogState} role="status">
-                <h3>No foods found</h3>
-                <p>
-                  Try a broader product or ingredient name. Your Food Log was
-                  not changed.
-                </p>
-              </div>
             ) : (
-              <div className={styles.catalogState}>
-                <h3>Find a food</h3>
-                <p>
-                  Results can include Branded, Survey/FNDDS, and Foundation
-                  foods.
-                </p>
-              </div>
+              <>
+                {catalog.message ? (
+                  <div className={styles.catalogState} role="alert">
+                    <h3>{catalog.title ?? "Search unavailable"}</h3>
+                    <p>{catalog.message}</p>
+                  </div>
+                ) : null}
+                {catalog.results.length ? (
+                  <div
+                    className={styles.catalogResults}
+                    aria-label="USDA search results"
+                  >
+                    {catalog.results.map((result) => {
+                      const identity = (
+                        <span>
+                          <span className={styles.catalogType}>
+                            {result.dataType}
+                          </span>
+                          <strong>{result.name}</strong>
+                          <small>
+                            {[result.brand, result.measurementSummary]
+                              .filter(Boolean)
+                              .join(" · ")}
+                          </small>
+                        </span>
+                      );
+                      return result.isSelectable ? (
+                        <Link
+                          key={result.providerFoodId}
+                          to={catalogHref(
+                            date,
+                            result.providerFoodId,
+                            catalog.query,
+                          )}
+                        >
+                          {identity}
+                          <small>Select ›</small>
+                        </Link>
+                      ) : (
+                        <div aria-disabled="true" key={result.providerFoodId}>
+                          {identity}
+                          <small>Hidden in production</small>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : catalog.message ? null : catalog.query ? (
+                  <div className={styles.catalogState} role="status">
+                    <h3>No foods found</h3>
+                    <p>
+                      Try a broader product or ingredient name. Your Food Log
+                      was not changed.
+                    </p>
+                  </div>
+                ) : (
+                  <div className={styles.catalogState}>
+                    <h3>Find a food</h3>
+                    <p>
+                      Results can include Branded, Survey/FNDDS, and Foundation
+                      foods.
+                    </p>
+                  </div>
+                )}
+              </>
             )}
             <p className={styles.providerAttribution}>
               Food data from{" "}

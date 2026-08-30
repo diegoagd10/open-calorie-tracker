@@ -45,7 +45,7 @@ const searchResponseSchema = z.object({
   foods: z.array(searchFoodSchema).max(100),
 });
 const foodNutrientSchema = z.object({
-  amount: z.number().finite(),
+  amount: z.number().finite().nullish(),
   nutrient: z.object({
     id: z.number().int().positive(),
     unitName: z.string(),
@@ -69,8 +69,28 @@ const detailFoodSchema = searchFoodSchema.extend({
   foodPortions: z.array(z.unknown()).max(500).nullish(),
   modifiedDate: optionalProviderDateSchema,
 });
+const abridgedFoodNutrientSchema = z.object({
+  amount: z.number().finite(),
+  number: z.string().regex(/^\d+(?:\.\d+)?$/),
+  unitName: z.string(),
+});
+const abridgedDetailFoodSchema = searchFoodSchema.extend({
+  foodNutrients: z.array(abridgedFoodNutrientSchema).max(5_000),
+});
 const querySchema = z.string().trim().min(2).max(100);
 const providerFoodIdSchema = z.string().regex(/^[1-9]\d*$/);
+
+const ABRIDGED_NUTRIENT_IDS: Readonly<Record<string, number>> = {
+  "203": 1003,
+  "204": 1004,
+  "205": 1005,
+  "208": 1008,
+  "269": 2000,
+  "291": 1079,
+  "307": 1093,
+  "957": 2047,
+  "958": 2048,
+};
 
 type SearchFood = z.infer<typeof searchFoodSchema>;
 
@@ -170,6 +190,26 @@ function normalizeSearchFood(food: SearchFood): CatalogSearchResult | null {
 
 type FoodNutrient = z.infer<typeof foodNutrientSchema>;
 type DetailFood = z.infer<typeof detailFoodSchema>;
+type AbridgedDetailFood = z.infer<typeof abridgedDetailFoodSchema>;
+
+function expandAbridgedDetailFood(food: AbridgedDetailFood): DetailFood {
+  const expanded = detailFoodSchema.safeParse({
+    ...food,
+    foodNutrients: food.foodNutrients.flatMap((nutrient) => {
+      const id = ABRIDGED_NUTRIENT_IDS[nutrient.number];
+      return id === undefined
+        ? []
+        : [
+            {
+              amount: nutrient.amount,
+              nutrient: { id, unitName: nutrient.unitName },
+            },
+          ];
+    }),
+  });
+  if (!expanded.success) throw new CatalogInvalidResponseError();
+  return expanded.data;
+}
 
 function fixedPointValue(
   value: number,
@@ -191,20 +231,23 @@ function nutrientValue(
 ): CatalogNutrientValue | null {
   for (const id of ids) {
     const nutrient = nutrients.find(
-      (candidate) => candidate.nutrient.id === id,
+      (candidate) =>
+        candidate.nutrient.id === id && typeof candidate.amount === "number",
     );
     if (!nutrient) continue;
+    const amount = nutrient.amount;
+    if (typeof amount !== "number") continue;
     const multiplier =
       conversions[nutrient.nutrient.unitName.trim().toUpperCase()];
     if (multiplier === undefined) throw new CatalogInvalidResponseError();
-    if (nutrient.amount < 0) {
+    if (amount < 0) {
       onDiagnostic({
         code: "negative_nutrient_amount",
         nutrientId: id,
         providerFoodId,
       });
     }
-    return fixedPointValue(nutrient.amount, multiplier);
+    return fixedPointValue(amount, multiplier);
   }
   return null;
 }
@@ -426,15 +469,37 @@ export class UsdaFoodDataCentralAdapter implements FoodCatalogProvider {
   ): Promise<CatalogFood> {
     const parsedId = providerFoodIdSchema.safeParse(providerFoodId);
     if (!parsedId.success) throw new CatalogFoodNotFoundError();
-    const response = await this.#request(`food/${parsedId.data}`, {
-      method: "GET",
-    });
-    const parsed = detailFoodSchema.safeParse(response);
-    if (!parsed.success || String(parsed.data.fdcId) !== parsedId.data) {
+    let response: unknown;
+    try {
+      response = await this.#request(`food/${parsedId.data}`, {
+        method: "GET",
+      });
+    } catch (error) {
+      if (
+        !(error instanceof CatalogFoodNotFoundError) &&
+        !(error instanceof CatalogUnavailableError)
+      ) {
+        throw error;
+      }
+      response = await this.#request(
+        `food/${parsedId.data}?format=abridged`,
+        { method: "GET" },
+      );
+    }
+    const full = detailFoodSchema.safeParse(response);
+    const abridged = full.success
+      ? undefined
+      : abridgedDetailFoodSchema.safeParse(response);
+    const food = full.success
+      ? full.data
+      : abridged?.success
+        ? expandAbridgedDetailFood(abridged.data)
+        : undefined;
+    if (!food || String(food.fdcId) !== parsedId.data) {
       throw new CatalogInvalidResponseError();
     }
     const requestId = context?.requestId ?? randomUUID();
-    return normalizeDetailFood(parsed.data, (diagnostic) =>
+    return normalizeDetailFood(food, (diagnostic) =>
       this.#onDiagnostic(diagnostic, requestId),
     );
   }

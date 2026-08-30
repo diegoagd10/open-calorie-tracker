@@ -100,6 +100,7 @@ export class TestFoodCatalogProvider implements FoodCatalogProvider {
             name: "Vanished catalog food",
             providerFoodId: "4040",
           },
+          searchResult(yogurt()),
         ];
       default:
         return [searchResult(yogurt())];

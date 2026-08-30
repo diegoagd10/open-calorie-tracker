@@ -78,6 +78,52 @@ async function fdcWebEnergy(
 }
 
 describe.skipIf(!runLiveSpike)("registered USDA FoodData Central spike", () => {
+  test("common-food search results all open as usable details", async () => {
+    const apiKey = process.env.FDC_API_KEY?.trim();
+    expect(apiKey, "FDC_API_KEY is required for the live spike").toBeTruthy();
+    expect(apiKey).not.toBe("DEMO_KEY");
+    const provider = new UsdaFoodDataCentralAdapter({ apiKey });
+    const failures: Array<{
+      dataType: string;
+      error: string;
+      name: string;
+      providerFoodId: string;
+      query: string;
+    }> = [];
+    let detailsChecked = 0;
+
+    for (const query of ["avocado", "ham", "cheese", "egg"]) {
+      const results = (await provider.search(query))
+        .filter((result) => result.isSelectable)
+        .slice(0, 20);
+      expect(results.length, `${query} selectable results`).toBe(20);
+
+      for (const result of results) {
+        try {
+          const detail = await provider.getFood(result.providerFoodId);
+          expect(detail.providerFoodId).toBe(result.providerFoodId);
+          expect(detail.measurements.length).toBeGreaterThan(0);
+          expect(
+            detail.nutritionPerAuthoritativeBase.energyMilliKcal,
+          ).not.toBeNull();
+          detailsChecked += 1;
+        } catch (error) {
+          failures.push({
+            dataType: result.dataType,
+            error:
+              error instanceof Error ? error.constructor.name : typeof error,
+            name: result.name,
+            providerFoodId: result.providerFoodId,
+            query,
+          });
+        }
+      }
+    }
+
+    expect(failures, JSON.stringify(failures, null, 2)).toEqual([]);
+    expect(detailsChecked).toBe(80);
+  }, 180_000);
+
   test("representative United States searches agree with details and expose usable measurements", async () => {
     const apiKey = process.env.FDC_API_KEY?.trim();
     expect(apiKey, "FDC_API_KEY is required for the live spike").toBeTruthy();
