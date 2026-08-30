@@ -13,8 +13,6 @@ services:
       TRUST_PROXY: "${TRUST_PROXY:?Set the Traefik Docker network CIDR}"
     expose:
       - "${PORT:-3000}"
-    networks:
-      - traefik
     volumes:
       - application-data:/app/data
 
@@ -22,8 +20,3 @@ volumes:
   application-data:
     external: true
     name: "${DATA_VOLUME_NAME:-open-calory-tracker-data}"
-
-networks:
-  traefik:
-    external: true
-    name: "${TRAEFIK_NETWORK:?Set the external Traefik network name}"

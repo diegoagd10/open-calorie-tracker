@@ -38,8 +38,7 @@ the frozen pnpm lockfile. Configure these stack environment values:
 | Name | Required value |
 | --- | --- |
 | `APPLICATION_URL` | Exact canonical origin, for example `https://calories.example.com`; no credentials, path, query, or fragment. Production rejects non-HTTPS origins. |
-| `TRAEFIK_NETWORK` | Exact external Docker network name used by Traefik. |
-| `TRUST_PROXY` | One private IPv4 CIDR for that Traefik Docker network, for example `172.30.0.0/16`; prefixes from 16 through 32 are accepted. Do not use `true`, a hop count, or a public network. |
+| `TRUST_PROXY` | One private IPv4 CIDR for the externally managed reverse-proxy network, for example `172.30.0.0/16`; prefixes from 16 through 32 are accepted. Do not use `true`, a hop count, or a public network. |
 | `DATA_VOLUME_NAME` | Existing external volume name; defaults to `open-calory-tracker-data`. |
 
 Optional values:
@@ -59,9 +58,10 @@ container startup; test data creation remains explicit in the test harness.
 Traefik routing is intentionally not declared in this Compose file. Configure
 the existing Traefik installation through its established external mechanism:
 route the hostname from `APPLICATION_URL` through the `websecure` TLS
-entrypoint, target the `application` service on `PORT` over `TRAEFIK_NETWORK`,
-and use `/health/ready` as the service healthcheck. Do not add a second HTTP/TLS
-entry point or publish the application port on the host.
+entrypoint, attach the application to the appropriate proxy network outside this
+Compose definition, target `PORT`, and use `/health/ready` as the service
+healthcheck. Do not add a second HTTP/TLS entry point or publish the application
+port on the host.
 
 ## Startup and updates
 
@@ -144,6 +144,5 @@ pnpm test:deployment
 The deployment suite builds the final image and verifies its Node/Debian and
 non-root runtime, production-only dependencies, configurable port, fresh and
 replacement startup, persistent SQLite data, pending and failed migrations,
-read-only storage, missing configuration, health behavior, and the external
-Traefik network-only Compose topology. Its temporary images, containers, and
-volumes are removed at the end.
+read-only storage, missing configuration, health behavior, and the Compose
+topology. Its temporary images, containers, and volumes are removed at the end.

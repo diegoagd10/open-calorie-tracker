@@ -156,7 +156,7 @@ describe.skipIf(!runDeploymentTests)("production container deployment", () => {
     );
   }, 120_000);
 
-  test("Compose joins the Traefik network without defining its routing", async () => {
+  test("Compose leaves reverse-proxy networking and routing external", async () => {
     const { stdout } = await executeFile(
       "docker",
       ["compose", "config", "--format", "json"],
@@ -166,13 +166,12 @@ describe.skipIf(!runDeploymentTests)("production container deployment", () => {
           ...process.env,
           APPLICATION_URL: "https://calories.example.test",
           DATA_VOLUME_NAME: "open-calory-tracker-production-data",
-          TRAEFIK_NETWORK: "traefik-production",
           TRUST_PROXY: "172.30.0.0/16",
         },
       },
     );
     const configuration = JSON.parse(stdout) as {
-      networks: Record<string, { external?: boolean; name?: string }>;
+      networks?: Record<string, { external?: boolean; name?: string }>;
       volumes: Record<string, { external?: boolean; name?: string }>;
       services: {
         application: {
@@ -193,11 +192,8 @@ describe.skipIf(!runDeploymentTests)("production container deployment", () => {
       PORT: "3000",
       TRUST_PROXY: "172.30.0.0/16",
     });
-    expect(application.networks).toHaveProperty("traefik");
-    expect(configuration.networks.traefik).toMatchObject({
-      external: true,
-      name: "traefik-production",
-    });
+    expect(application.networks).not.toHaveProperty("traefik");
+    expect(configuration.networks).not.toHaveProperty("traefik");
     expect(configuration.volumes["application-data"]).toMatchObject({
       external: true,
       name: "open-calory-tracker-production-data",
