@@ -1,4 +1,4 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 
 import {
@@ -9,6 +9,10 @@ import {
 import type { ApplicationDatabaseClient } from "../database/database.server";
 import { foodEntries, userPreferences } from "../database/schema.server";
 import { localDateAt, parseIsoLocalDate } from "../food-log/date";
+import {
+  localEventTimeForNewFoodLogEvent,
+  nextUpdatedAt,
+} from "../food-log/event-time.server";
 import {
   FutureFoodLogDateError,
   InvalidFoodLogDateError,
@@ -104,36 +108,6 @@ function nullableNutrient(
   return Number(result);
 }
 
-function localTimeAt(instant: Date, timeZone: string): string {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    hour: "2-digit",
-    hourCycle: "h23",
-    minute: "2-digit",
-    second: "2-digit",
-    timeZone,
-  }).formatToParts(instant);
-  const value = (type: Intl.DateTimeFormatPartTypes) =>
-    parts.find((part) => part.type === type)?.value ?? "00";
-  return `${value("hour")}:${value("minute")}:${value("second")}`;
-}
-
-function nextRetroactiveTime(latest: string | undefined): string {
-  if (!latest) return "12:00:00";
-  const [hour, minute, second] = latest.split(":").map(Number);
-  const totalSeconds = hour * 3_600 + minute * 60 + second;
-  if (totalSeconds >= 86_340) return latest;
-  const next = totalSeconds + 60;
-  return [Math.floor(next / 3_600), Math.floor((next % 3_600) / 60), next % 60]
-    .map((value) => String(value).padStart(2, "0"))
-    .join(":");
-}
-
-function nextUpdatedAt(now: Date, previous: string): string {
-  const candidate = now.toISOString();
-  if (candidate > previous) return candidate;
-  return new Date(new Date(previous).getTime() + 1).toISOString();
-}
-
 export class FoodEntryService {
   readonly #database: ApplicationDatabaseClient;
   readonly #now: () => Date;
@@ -209,29 +183,14 @@ export class FoodEntryService {
       const today = localDateAt(instant, preference.timeZone);
       if (parsed.data.foodLogDate > today) throw new FutureFoodLogDateError();
 
-      const latest =
-        parsed.data.foodLogDate === today
-          ? undefined
-          : transaction
-              .select({ localEventTime: foodEntries.localEventTime })
-              .from(foodEntries)
-              .where(
-                and(
-                  eq(foodEntries.userId, userId),
-                  eq(foodEntries.foodLogDate, parsed.data.foodLogDate),
-                ),
-              )
-              .orderBy(
-                desc(foodEntries.localEventTime),
-                desc(foodEntries.createdAt),
-                desc(foodEntries.id),
-              )
-              .limit(1)
-              .get()?.localEventTime;
-      const localEventTime =
-        parsed.data.foodLogDate === today
-          ? localTimeAt(instant, preference.timeZone)
-          : nextRetroactiveTime(latest);
+      const localEventTime = localEventTimeForNewFoodLogEvent(
+        transaction,
+        userId,
+        parsed.data.foodLogDate,
+        today,
+        instant,
+        preference.timeZone,
+      );
 
       const row = transaction
         .insert(foodEntries)

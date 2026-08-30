@@ -50,6 +50,13 @@
       "when": 1788043113482,
       "tag": "0006_aberrant_microbe",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1788049925648,
+      "tag": "0007_stormy_star_brand",
+      "breakpoints": true
     }
   ]
 }

@@ -214,3 +214,31 @@ export const foodEntries = sqliteTable(
     ),
   ],
 );
+
+export const waterEvents = sqliteTable(
+  "water_events",
+  {
+    id: integer().primaryKey({ autoIncrement: true }),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    foodLogDate: text("food_log_date").notNull(),
+    amountMicroliters: integer("amount_microliters").notNull(),
+    localEventTime: text("local_event_time").notNull(),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (table) => [
+    index("water_events_user_date_order_index").on(
+      table.userId,
+      table.foodLogDate,
+      table.localEventTime,
+      table.createdAt,
+      table.id,
+    ),
+    check(
+      "water_events_positive_amount_check",
+      sql`${table.amountMicroliters} > 0`,
+    ),
+  ],
+);
