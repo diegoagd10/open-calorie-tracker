@@ -76,6 +76,7 @@ docker run --rm \
   --mount source=open-calory-tracker-data,target=/app/data \
   --env APPLICATION_URL=https://calories.example.test \
   --env PORT=3000 \
+  --env TRUST_PROXY=172.30.0.0/16 \
   --publish 3000:3000 \
   open-calory-tracker
 ```
@@ -88,8 +89,9 @@ across replacement containers.
 
 Create the stack from this Git repository with `docker-compose.yml`. The
 production Compose contract requires the canonical HTTPS origin and host data
-path before Portainer can render the stack. `TRUST_PROXY` is optional and only
-needed when the application must trust forwarded client-IP headers.
+path plus the private reverse-proxy network CIDR before Portainer can render the
+stack. `TRUST_PROXY` lets Express reconstruct the public HTTPS request origin
+and use the real client IP only when the immediate proxy is trusted.
 Traefik networking and routing remain in the existing external configuration;
 this stack does not define a Traefik network, router, or service labels.
 
