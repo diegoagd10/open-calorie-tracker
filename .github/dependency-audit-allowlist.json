@@ -1,0 +1,21 @@
+{
+  "advisories": [
+    {
+      "githubAdvisoryId": "GHSA-67mh-4wv8-2f99",
+      "pnpmAdvisoryId": 1102341,
+      "moduleName": "esbuild",
+      "findings": [
+        {
+          "version": "0.18.20",
+          "path": ".>drizzle-kit>@esbuild-kit/esm-loader>@esbuild-kit/core-utils>esbuild",
+          "dev": true,
+          "optional": false,
+          "bundled": false
+        }
+      ],
+      "reason": "drizzle-kit is a development-only schema tool; the affected esbuild development server is not included in the production dependency graph or used by the application",
+      "upstream": "https://github.com/drizzle-team/drizzle-orm/issues/4861",
+      "removeWhen": "Upgrade to the first stable drizzle-kit release that removes this dependency path, verify both audits are clean, then delete this allowlist entry"
+    }
+  ]
+}
