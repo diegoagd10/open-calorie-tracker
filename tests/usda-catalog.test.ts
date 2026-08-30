@@ -215,6 +215,190 @@ test("USDA detail applies Foundation energy precedence and keeps only safe measu
   });
 });
 
+test("USDA detail falls back to the abridged format for the Grade A egg white result", async () => {
+  const fetchImplementation = vi
+    .fn<typeof fetch>()
+    .mockResolvedValueOnce(new Response(null, { status: 404 }))
+    .mockResolvedValueOnce(
+      jsonResponse({
+        dataType: "Foundation",
+        description: "Eggs, Grade A, Large, egg white",
+        fdcId: 747997,
+        foodNutrients: [
+          { amount: 55, name: "Energy", number: "208", unitName: "KCAL" },
+          { amount: 10.7, name: "Protein", number: "203", unitName: "G" },
+          {
+            amount: 0,
+            name: "Total lipid (fat)",
+            number: "204",
+            unitName: "G",
+          },
+          {
+            amount: 2.36,
+            name: "Carbohydrate, by difference",
+            number: "205",
+            unitName: "G",
+          },
+          {
+            amount: 0.1,
+            name: "Sugars, added",
+            number: "269.3",
+            unitName: "G",
+          },
+        ],
+        ndbNumber: 1123,
+        publicationDate: "2019-12-16",
+      }),
+    );
+  const provider = new UsdaFoodDataCentralAdapter({
+    apiKey: "registered-test-key",
+    baseUrl: "https://example.test/fdc/v1",
+    fetchImplementation,
+  });
+
+  await expect(provider.getFood("747997")).resolves.toMatchObject({
+    authoritativeBaseUnit: "g",
+    dataType: "Foundation",
+    measurements: [
+      {
+        baseQuantityMicrounits: 100_000_000,
+        id: "base:g:100000000",
+        label: "100 g",
+        unit: "g",
+      },
+    ],
+    name: "Eggs, Grade A, Large, egg white",
+    nutritionPerAuthoritativeBase: {
+      carbohydrateMilligrams: { amount: 2.36, fixedPointMultiplier: 1_000 },
+      energyMilliKcal: { amount: 55, fixedPointMultiplier: 1_000 },
+      fatMilligrams: { amount: 0, fixedPointMultiplier: 1_000 },
+      proteinMilligrams: { amount: 10.7, fixedPointMultiplier: 1_000 },
+    },
+    providerFoodId: "747997",
+    providerPublishedDate: "2019-12-16",
+  });
+
+  expect(fetchImplementation).toHaveBeenCalledTimes(2);
+  expect(String(fetchImplementation.mock.calls[0]?.[0])).toContain(
+    "/food/747997?",
+  );
+  expect(String(fetchImplementation.mock.calls[1]?.[0])).toContain(
+    "/food/747997?format=abridged&",
+  );
+});
+
+test("USDA detail ignores Foundation nutrient group rows without amounts", async () => {
+  const fetchImplementation = vi.fn<typeof fetch>().mockResolvedValue(
+    jsonResponse({
+      dataType: "Foundation",
+      description: "Avocado, Hass, peeled, raw",
+      fdcId: 2710824,
+      foodNutrients: [
+        {
+          nutrient: { id: 2045, unitName: "g" },
+          type: "FoodNutrient",
+        },
+        {
+          amount: 223.334,
+          nutrient: { id: 2047, unitName: "kcal" },
+          type: "FoodNutrient",
+        },
+        {
+          amount: 1.81,
+          nutrient: { id: 1003, unitName: "g" },
+          type: "FoodNutrient",
+        },
+      ],
+      foodPortions: [
+        {
+          amount: 1,
+          gramWeight: 140,
+          id: 312657,
+          measureUnit: { abbreviation: "RACC", name: "RACC" },
+        },
+      ],
+      publicationDate: "2024-10-31",
+    }),
+  );
+  const provider = new UsdaFoodDataCentralAdapter({
+    apiKey: "registered-test-key",
+    baseUrl: "https://example.test/fdc/v1",
+    fetchImplementation,
+  });
+
+  await expect(provider.getFood("2710824")).resolves.toMatchObject({
+    dataType: "Foundation",
+    measurements: [
+      {
+        baseQuantityMicrounits: 140_000_000,
+        id: "portion:312657",
+        label: "1 RACC (140 g)",
+        unit: "g",
+      },
+      {
+        baseQuantityMicrounits: 100_000_000,
+        id: "base:g:100000000",
+        label: "100 g",
+        unit: "g",
+      },
+    ],
+    name: "Avocado, Hass, peeled, raw",
+    nutritionPerAuthoritativeBase: {
+      energyMilliKcal: { amount: 223.334, fixedPointMultiplier: 1_000 },
+      proteinMilligrams: { amount: 1.81, fixedPointMultiplier: 1_000 },
+    },
+    providerFoodId: "2710824",
+  });
+  expect(fetchImplementation).toHaveBeenCalledTimes(1);
+});
+
+test("USDA detail falls back after a transient full-detail failure and maps modern Foundation energy", async () => {
+  const fetchImplementation = vi
+    .fn<typeof fetch>()
+    .mockResolvedValueOnce(new Response(null, { status: 503 }))
+    .mockResolvedValueOnce(
+      jsonResponse({
+        dataType: "Foundation",
+        description: "Avocado, Hass, peeled, raw",
+        fdcId: 2710824,
+        foodNutrients: [
+          {
+            amount: 223,
+            name: "Energy (Atwater General Factors)",
+            number: "957",
+            unitName: "KCAL",
+          },
+          {
+            amount: 206,
+            name: "Energy (Atwater Specific Factors)",
+            number: "958",
+            unitName: "KCAL",
+          },
+          { amount: 1.81, name: "Protein", number: "203", unitName: "G" },
+        ],
+        publicationDate: "2024-10-31",
+      }),
+    );
+  const provider = new UsdaFoodDataCentralAdapter({
+    apiKey: "registered-test-key",
+    baseUrl: "https://example.test/fdc/v1",
+    fetchImplementation,
+  });
+
+  await expect(provider.getFood("2710824")).resolves.toMatchObject({
+    name: "Avocado, Hass, peeled, raw",
+    nutritionPerAuthoritativeBase: {
+      energyMilliKcal: { amount: 206, fixedPointMultiplier: 1_000 },
+      proteinMilligrams: { amount: 1.81, fixedPointMultiplier: 1_000 },
+    },
+    providerFoodId: "2710824",
+  });
+  expect(fetchImplementation).toHaveBeenCalledTimes(2);
+  expect(String(fetchImplementation.mock.calls[1]?.[0])).toContain(
+    "/food/2710824?format=abridged&",
+  );
+});
+
 test("USDA diagnostics use redacted structured request logs", async () => {
   const stderr = vi.spyOn(console, "error").mockImplementation(() => {});
   try {

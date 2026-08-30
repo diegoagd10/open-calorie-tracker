@@ -554,6 +554,8 @@ test("authenticated USDA search and idempotent logging preserve a local Nutritio
   await expect(
     page.getByRole("heading", { name: "Food no longer available" }),
   ).toBeVisible();
+  await expect(page.getByText("Plain nonfat Greek yogurt")).toBeVisible();
+  await expect(page.getByText("Vanished catalog food")).toHaveCount(0);
   await expectCatalogResponsive(page);
 
   await page
