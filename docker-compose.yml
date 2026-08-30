@@ -6,7 +6,6 @@ services:
     pull_policy: build
     restart: unless-stopped
     environment:
-      APPLICATION_HOST: "${APPLICATION_HOST:?Set the canonical application host}"
       APPLICATION_URL: "${APPLICATION_URL:?Set the canonical HTTPS application origin}"
       FDC_API_KEY: "${FDC_API_KEY:-}"
       FDC_TIMEOUT_MS: "${FDC_TIMEOUT_MS:-5000}"
@@ -14,16 +13,6 @@ services:
       TRUST_PROXY: "${TRUST_PROXY:?Set the Traefik Docker network CIDR}"
     expose:
       - "${PORT:-3000}"
-    labels:
-      traefik.enable: "true"
-      traefik.docker.network: "${TRAEFIK_NETWORK:?Set the external Traefik network name}"
-      traefik.http.routers.open-calory-tracker.entrypoints: "websecure"
-      traefik.http.routers.open-calory-tracker.rule: "Host(`${APPLICATION_HOST:?Set the canonical application host}`)"
-      traefik.http.routers.open-calory-tracker.tls: "true"
-      traefik.http.services.open-calory-tracker.loadbalancer.healthcheck.interval: "30s"
-      traefik.http.services.open-calory-tracker.loadbalancer.healthcheck.path: "/health/ready"
-      traefik.http.services.open-calory-tracker.loadbalancer.healthcheck.timeout: "5s"
-      traefik.http.services.open-calory-tracker.loadbalancer.server.port: "${PORT:-3000}"
     networks:
       - traefik
     volumes:

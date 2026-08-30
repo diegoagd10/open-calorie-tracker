@@ -117,26 +117,14 @@ test("missing production configuration exits with a redacted structured log", as
   ]);
 });
 
-test.each([
-  {
-    applicationHost: "other.example.test",
-    name: "canonical host mismatch",
-    trustProxy: "127.0.0.1/32",
-  },
-  {
-    applicationHost: "calories.example.test",
-    name: "public forwarded-header trust",
-    trustProxy: "0.0.0.0/0",
-  },
-])("$name prevents production startup", async ({ applicationHost, trustProxy }) => {
+test("public forwarded-header trust prevents production startup", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "calory-config-"));
   temporaryDirectories.push(directory);
   const running = startProductionProcess({
-    APPLICATION_HOST: applicationHost,
     APPLICATION_URL: "https://calories.example.test",
     DATABASE_PATH: path.join(directory, "application.sqlite"),
     PORT: String(await availablePort()),
-    TRUST_PROXY: trustProxy,
+    TRUST_PROXY: "0.0.0.0/0",
   });
 
   const exit = await waitForExit(running.child, 1_000);
@@ -160,7 +148,6 @@ test("production health and logs are safe on a configurable internal port", asyn
   const csrfToken = "deployment-secret-csrf-token";
   const searchIdentity = "private-owner-and-food-query";
   const running = startProductionProcess({
-    APPLICATION_HOST: "calories.example.test",
     APPLICATION_URL: "https://calories.example.test",
     DATABASE_PATH: path.join(directory, "application.sqlite"),
     FDC_API_KEY: apiKey,

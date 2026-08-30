@@ -38,7 +38,6 @@ the frozen pnpm lockfile. Configure these stack environment values:
 | Name | Required value |
 | --- | --- |
 | `APPLICATION_URL` | Exact canonical origin, for example `https://calories.example.com`; no credentials, path, query, or fragment. Production rejects non-HTTPS origins. |
-| `APPLICATION_HOST` | Hostname from `APPLICATION_URL`, for example `calories.example.com`. Startup requires an exact match and Traefik uses it in the router rule. |
 | `TRAEFIK_NETWORK` | Exact external Docker network name used by Traefik. |
 | `TRUST_PROXY` | One private IPv4 CIDR for that Traefik Docker network, for example `172.30.0.0/16`; prefixes from 16 through 32 are accepted. Do not use `true`, a hop count, or a public network. |
 | `DATA_VOLUME_NAME` | Existing external volume name; defaults to `open-calory-tracker-data`. |
@@ -47,7 +46,7 @@ Optional values:
 
 | Name | Default | Purpose |
 | --- | --- | --- |
-| `PORT` | `3000` | Internal-only application port. Compose updates both the container and Traefik service label; it does not publish the port on the host. |
+| `PORT` | `3000` | Internal-only application port exposed to attached Docker networks. The externally managed Traefik service must target the same port; Compose does not publish it on the host. |
 | `FDC_API_KEY` | unset | USDA FoodData Central key. Store it as a Portainer secret value. Readiness remains healthy when USDA is unconfigured or unavailable. |
 | `FDC_TIMEOUT_MS` | `5000` | USDA request timeout from 100 through 20000 milliseconds. |
 | `AUTH_ARGON2_MEMORY_KIB` | `19456` | Argon2id memory cost; production cannot set less than the reviewed minimum. |
@@ -57,10 +56,12 @@ Keep `NODE_ENV=production`, `DATABASE_PATH`, and `MIGRATIONS_PATH` at their imag
 defaults. Do not set test-fixture variables in production. Seeds are not part of
 container startup; test data creation remains explicit in the test harness.
 
-If the Traefik installation requires a named certificate resolver rather than a
-default TLS store, add that resolver using the installation's existing dynamic
-configuration convention. Do not add a second HTTP/TLS entry point to this
-stack.
+Traefik routing is intentionally not declared in this Compose file. Configure
+the existing Traefik installation through its established external mechanism:
+route the hostname from `APPLICATION_URL` through the `websecure` TLS
+entrypoint, target the `application` service on `PORT` over `TRAEFIK_NETWORK`,
+and use `/health/ready` as the service healthcheck. Do not add a second HTTP/TLS
+entry point or publish the application port on the host.
 
 ## Startup and updates
 
@@ -76,7 +77,8 @@ Use a brief maintenance window for redeployment:
 2. Back up the external data volume.
 3. Ask Portainer to pull and redeploy the Git stack.
 4. Confirm the build used `pnpm install --frozen-lockfile`, then wait for the
-   container and Traefik readiness checks to pass.
+   container healthcheck and the externally managed Traefik readiness check to
+   pass.
 5. Exercise registration/login or the existing Food Log after a first deploy;
    after an update, verify a known historical Food Entry and Water Event.
 
@@ -114,8 +116,9 @@ overwriting the only copy of production data.
 - `GET /health/ready` verifies the applied migration journal, SQLite pragmas,
   and writable storage with a rolled-back probe. It returns 503 when any local
   invariant fails. USDA availability does not affect it.
-- The image healthcheck and Traefik service healthcheck use readiness so traffic
-  reaches only a fully migrated writable instance.
+- The image healthcheck uses readiness. Configure the externally managed
+  Traefik service healthcheck to use the same endpoint so traffic reaches only
+  a fully migrated writable instance.
 
 Logs are one JSON object per stdout/stderr line. Startup and request completion
 records include an event name and timestamp; request records include a request
@@ -141,6 +144,6 @@ pnpm test:deployment
 The deployment suite builds the final image and verifies its Node/Debian and
 non-root runtime, production-only dependencies, configurable port, fresh and
 replacement startup, persistent SQLite data, pending and failed migrations,
-read-only storage, missing configuration, health behavior, and Traefik-only
-Compose topology. Its temporary images, containers, and volumes are removed at
-the end.
+read-only storage, missing configuration, health behavior, and the external
+Traefik network-only Compose topology. Its temporary images, containers, and
+volumes are removed at the end.

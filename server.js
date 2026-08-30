@@ -60,12 +60,6 @@ async function startServer() {
       throw new Error("APPLICATION_URL must use HTTPS in production");
     }
     if (process.env.NODE_ENV === "production") {
-      const applicationHost = process.env.APPLICATION_HOST?.trim().toLowerCase();
-      if (!applicationHost || applicationHost !== canonicalUrl.hostname) {
-        throw new Error(
-          "APPLICATION_HOST must exactly match the canonical APPLICATION_URL hostname",
-        );
-      }
       const trustProxy = process.env.TRUST_PROXY;
       if (!trustProxy || !privateDockerNetworkCidr(trustProxy)) {
         throw new Error(

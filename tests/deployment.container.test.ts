@@ -55,8 +55,6 @@ async function startContainer({
     "--name",
     name,
     "--env",
-    "APPLICATION_HOST=calories.example.test",
-    "--env",
     "APPLICATION_URL=https://calories.example.test",
     "--env",
     "TRUST_PROXY=172.30.0.0/16",
@@ -158,7 +156,7 @@ describe.skipIf(!runDeploymentTests)("production container deployment", () => {
     );
   }, 120_000);
 
-  test("Compose routes only through the configured Traefik network", async () => {
+  test("Compose joins the Traefik network without defining its routing", async () => {
     const { stdout } = await executeFile(
       "docker",
       ["compose", "config", "--format", "json"],
@@ -166,7 +164,6 @@ describe.skipIf(!runDeploymentTests)("production container deployment", () => {
         cwd: process.cwd(),
         env: {
           ...process.env,
-          APPLICATION_HOST: "calories.example.test",
           APPLICATION_URL: "https://calories.example.test",
           DATA_VOLUME_NAME: "open-calory-tracker-production-data",
           TRAEFIK_NETWORK: "traefik-production",
@@ -181,7 +178,7 @@ describe.skipIf(!runDeploymentTests)("production container deployment", () => {
         application: {
           environment: Record<string, string>;
           expose?: Array<string | number>;
-          labels?: Record<string, string>;
+          labels?: unknown;
           networks?: Record<string, unknown>;
           ports?: unknown;
         };
@@ -192,7 +189,6 @@ describe.skipIf(!runDeploymentTests)("production container deployment", () => {
     expect(application.ports).toBeUndefined();
     expect(application.expose).toContain("3000");
     expect(application.environment).toMatchObject({
-      APPLICATION_HOST: "calories.example.test",
       APPLICATION_URL: "https://calories.example.test",
       PORT: "3000",
       TRUST_PROXY: "172.30.0.0/16",
@@ -206,15 +202,7 @@ describe.skipIf(!runDeploymentTests)("production container deployment", () => {
       external: true,
       name: "open-calory-tracker-production-data",
     });
-    expect(application.labels).toMatchObject({
-      "traefik.enable": "true",
-      "traefik.http.routers.open-calory-tracker.entrypoints": "websecure",
-      "traefik.http.routers.open-calory-tracker.rule":
-        "Host(`calories.example.test`)",
-      "traefik.http.routers.open-calory-tracker.tls": "true",
-      "traefik.http.services.open-calory-tracker.loadbalancer.server.port":
-        "3000",
-    });
+    expect(application.labels).toBeUndefined();
   });
 
   test("the final image is a minimal non-root Node 24 SSR runtime", async () => {
@@ -364,8 +352,6 @@ THIS IS NOT VALID SQL;\n`,
     );
     const failedMigration = await failedDockerRun([
       "--env",
-      "APPLICATION_HOST=calories.example.test",
-      "--env",
       "APPLICATION_URL=https://calories.example.test",
       "--env",
       "TRUST_PROXY=172.30.0.0/16",
@@ -400,8 +386,6 @@ THIS IS NOT VALID SQL;\n`,
     expect(JSON.parse(rollback.stdout)).toEqual({ table: 0, user: 0 });
 
     const readOnly = await failedDockerRun([
-      "--env",
-      "APPLICATION_HOST=calories.example.test",
       "--env",
       "APPLICATION_URL=https://calories.example.test",
       "--env",

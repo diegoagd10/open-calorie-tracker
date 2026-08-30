@@ -85,8 +85,10 @@ replacement containers.
 Create the stack from this Git repository with `docker-compose.yml`. The
 production Compose contract has no host port: it attaches the application to an
 existing external Traefik network and mounts an existing external data volume.
-It requires the canonical HTTPS origin and host, the Traefik network name and
-CIDR, and the stable data-volume name before Portainer can render the stack.
+It requires the canonical HTTPS origin, the Traefik network name and CIDR, and
+the stable data-volume name before Portainer can render the stack. Traefik
+routing remains in the existing external Traefik configuration; this stack does
+not define router or service labels.
 
 See [Production deployment](docs/deployment.md) for the exact Portainer values,
 Traefik configuration, volume setup, migration/maintenance workflow, backups,
