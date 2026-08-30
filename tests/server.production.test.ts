@@ -138,6 +138,57 @@ test("public forwarded-header trust prevents production startup", async () => {
   ]);
 });
 
+test("missing trusted-proxy configuration prevents production startup", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "calory-proxy-config-"));
+  temporaryDirectories.push(directory);
+  const running = startProductionProcess({
+    APPLICATION_URL: "https://calories.example.test",
+    DATABASE_PATH: path.join(directory, "application.sqlite"),
+    PORT: String(await availablePort()),
+    TRUST_PROXY: undefined,
+  });
+
+  const exit = await waitForExit(running.child, 1_000);
+
+  expect(exit.signal).toBeNull();
+  expect(exit.code).not.toBe(0);
+  expect(parseJsonLines(running.stderr())).toEqual([
+    expect.objectContaining({
+      event: "startup_failed",
+      level: "error",
+    }),
+  ]);
+});
+
+test("a trusted HTTPS proxy can forward mutation requests", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "calory-proxy-action-"));
+  temporaryDirectories.push(directory);
+  const port = await availablePort();
+  const running = startProductionProcess({
+    APPLICATION_URL: "https://calories.example.test",
+    DATABASE_PATH: path.join(directory, "application.sqlite"),
+    NODE_ENV: "test",
+    PORT: String(port),
+    TRUST_PROXY: "loopback",
+  });
+
+  await waitForHttpResponse(`http://127.0.0.1:${port}/health/live`);
+  const response = await fetch(`http://127.0.0.1:${port}/register.data`, {
+    body: "",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      Host: "calories.example.test",
+      Origin: "https://calories.example.test",
+      "X-Forwarded-Host": "calories.example.test:443",
+      "X-Forwarded-Proto": "https",
+    },
+    method: "POST",
+  });
+
+  expect(response.status).toBe(403);
+  expect(await response.text()).toContain("CSRF token rejected.");
+});
+
 test("production health and logs are safe on a configurable internal port", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "calory-server-"));
   temporaryDirectories.push(directory);
@@ -152,6 +203,7 @@ test("production health and logs are safe on a configurable internal port", asyn
     DATABASE_PATH: path.join(directory, "application.sqlite"),
     FDC_API_KEY: apiKey,
     PORT: String(port),
+    TRUST_PROXY: "172.30.0.0/16",
   });
 
   const liveness = await waitForHttpResponse(
