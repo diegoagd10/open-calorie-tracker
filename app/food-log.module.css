@@ -706,6 +706,98 @@
   background: #fbfcfd;
 }
 
+.pendingFoodEntryCard {
+  cursor: progress;
+}
+
+.pendingFoodEntryCard::after {
+  color: transparent;
+  content: "";
+}
+
+.pendingTime,
+.pendingEntryMarker,
+.pendingEntryLine,
+.pendingEntryLineShort,
+.pendingEntryEnergy,
+.skeletonBackLink,
+.skeletonChip,
+.skeletonTitle,
+.skeletonText,
+.skeletonNote,
+.skeletonField,
+.skeletonNutrition,
+.skeletonActions > span {
+  background: linear-gradient(
+    100deg,
+    #e1e5e9 20%,
+    #f4f6f7 38%,
+    #e1e5e9 56%
+  );
+  background-size: 300% 100%;
+  animation: skeleton-shimmer 1.35s ease-in-out infinite;
+}
+
+.pendingTime {
+  width: 2.8rem;
+  height: 0.6rem;
+  border-radius: 999px;
+}
+
+.pendingEntryMarker {
+  width: 2.6rem;
+  height: 2.6rem;
+  border-radius: 50%;
+}
+
+.pendingEntryContent {
+  align-self: stretch;
+  display: grid;
+  min-width: 0;
+  align-content: center;
+  padding: 0.65rem 0.5rem 0.65rem 0.85rem;
+  border: 1px solid var(--rule);
+  border-right: 0;
+  border-radius: 0.7rem 0 0 0.7rem;
+  background: var(--surface);
+}
+
+.pendingEntryContent strong {
+  overflow: hidden;
+  font-size: 0.86rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pendingEntryLine,
+.pendingEntryLineShort {
+  display: block;
+  height: 0.45rem;
+  margin-top: 0.35rem;
+  border-radius: 999px;
+}
+
+.pendingEntryLine {
+  width: min(90%, 12rem);
+}
+
+.pendingEntryLineShort {
+  width: min(60%, 7rem);
+}
+
+.pendingEntryEnergy {
+  align-self: stretch;
+  width: 3.8rem;
+  border-block: 1px solid var(--rule);
+  background-color: var(--surface);
+}
+
+@keyframes skeleton-shimmer {
+  to {
+    background-position-x: -150%;
+  }
+}
+
 .dialogBackdrop {
   --blue: #1f65bd;
   --blue-soft: #eaf3ff;
@@ -836,6 +928,97 @@
   margin-top: 0.35rem;
   color: var(--muted);
   font-size: 0.78rem;
+}
+
+.foodDetailSkeleton {
+  cursor: progress;
+}
+
+.pendingLabel {
+  display: block;
+  margin-top: 0.9rem;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.skeletonBackLink,
+.skeletonChip,
+.skeletonTitle,
+.skeletonText,
+.skeletonField,
+.skeletonNutrition,
+.skeletonActions > span {
+  display: block;
+  border-radius: 999px;
+}
+
+.skeletonBackLink {
+  width: 7rem;
+  height: 0.65rem;
+  margin-top: 0.9rem;
+}
+
+.skeletonIdentity {
+  display: grid;
+  justify-items: start;
+  gap: 0.55rem;
+  padding: 1rem 0;
+}
+
+.skeletonChip {
+  width: 4.25rem;
+  height: 1.1rem;
+}
+
+.skeletonTitle {
+  width: min(72%, 18rem);
+  height: 1.3rem;
+}
+
+.skeletonText {
+  width: min(48%, 12rem);
+  height: 0.65rem;
+}
+
+.skeletonNote {
+  height: 4.3rem;
+  border-radius: 0.75rem;
+}
+
+.skeletonFieldGrid,
+.skeletonNutritionGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.skeletonField {
+  height: 4.3rem;
+  border-radius: 0.7rem;
+}
+
+.skeletonNutritionGrid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.skeletonNutrition {
+  height: 3.5rem;
+  border-radius: 0.7rem;
+}
+
+.skeletonActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.6rem;
+  margin-top: 1rem;
+}
+
+.skeletonActions > span {
+  width: 7.5rem;
+  height: 2.75rem;
+  border-radius: 0.7rem;
 }
 
 .catalogResults {
@@ -1683,8 +1866,25 @@
     font-size: 0.72rem;
   }
 
+  .pendingEntryContent strong {
+    font-size: 0.76rem;
+  }
+
+  .pendingEntryEnergy {
+    width: 2.8rem;
+  }
+
   .foodDetailGrid {
     grid-template-columns: 1fr;
+  }
+
+  .skeletonFieldGrid,
+  .skeletonNutritionGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .skeletonActions > span {
+    flex: 1;
   }
 
   .editNutritionGrid {
@@ -1713,6 +1913,22 @@
 @media (prefers-reduced-motion: reduce) {
   .foodEntryCard {
     transition: none;
+  }
+
+  .pendingTime,
+  .pendingEntryMarker,
+  .pendingEntryLine,
+  .pendingEntryLineShort,
+  .pendingEntryEnergy,
+  .skeletonBackLink,
+  .skeletonChip,
+  .skeletonTitle,
+  .skeletonText,
+  .skeletonNote,
+  .skeletonField,
+  .skeletonNutrition,
+  .skeletonActions > span {
+    animation: none;
   }
 }
 
