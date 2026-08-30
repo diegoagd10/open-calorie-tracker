@@ -45,3 +45,17 @@ When a stable Drizzle Kit release contains the upstream fix:
 
 The full audit intentionally fails if an allowlisted advisory disappears, so a
 fixed dependency cannot leave a stale exception unnoticed.
+
+## CodeQL results
+
+CodeQL runs for pull requests, pushes to `main`, and the weekly schedule. This
+private, user-owned repository does not currently have GitHub Code Security, so
+GitHub rejects uploads to its code-scanning service. The workflow therefore
+keeps `upload: never`, but it does not treat analysis as automatically green:
+`scripts/check-codeql-results.mjs` validates the generated SARIF and fails the
+job for a missing report, an unsuccessful invocation, or any finding. The SARIF
+is retained as a workflow artifact for 14 days, including on failed jobs.
+
+If the repository becomes public or GitHub Code Security is enabled, change
+CodeQL's `upload` option to `always`, restore `security-events: write`, and keep
+the local SARIF gate as an independent control.

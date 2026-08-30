@@ -11,7 +11,6 @@ on:
 permissions:
   actions: read
   contents: read
-  security-events: write
 
 jobs:
   analyze:
@@ -20,6 +19,10 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - run: node --test scripts/check-codeql-results.test.mjs
       - uses: github/codeql-action/init@v4
         with:
           languages: javascript-typescript
@@ -29,9 +32,12 @@ jobs:
           # scanning. Preserve the complete SARIF output as a workflow artifact.
           output: codeql-results
           upload: never
+      - name: Reject CodeQL findings
+        run: node scripts/check-codeql-results.mjs codeql-results
       - uses: actions/upload-artifact@v7
+        if: always()
         with:
           name: codeql-sarif-${{ github.sha }}
           path: codeql-results
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 14

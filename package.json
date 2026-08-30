@@ -13,6 +13,7 @@
     "audit:policy": "node --test scripts/audit-dependencies.test.mjs",
     "audit:prod": "pnpm audit --prod",
     "build": "react-router build",
+    "codeql:policy": "node --test scripts/check-codeql-results.test.mjs",
     "db:generate": "drizzle-kit generate",
     "dev": "NODE_ENV=development node --conditions development server.js",
     "start": "NODE_ENV=production node server.js",
