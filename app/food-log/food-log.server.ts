@@ -5,9 +5,15 @@ import {
   foodEntries,
   goalVersions,
   userPreferences,
+  waterEvents,
 } from "../database/schema.server";
 import { foodEntrySnapshot } from "../food-entry/snapshot.server";
-import { localDateAt, parseIsoLocalDate } from "./date";
+import type { DisplayUnits } from "../goals/water-conversion";
+import {
+  compareFoodLogEventsDescending,
+  localDateAt,
+  parseIsoLocalDate,
+} from "./date";
 
 export class InvalidFoodLogDateError extends Error {
   constructor() {
@@ -124,16 +130,41 @@ export class FoodLogService {
       )
       .all()
       .map(foodEntrySnapshot);
+    const water = this.#database
+      .select()
+      .from(waterEvents)
+      .where(
+        and(
+          eq(waterEvents.userId, userId),
+          eq(waterEvents.foodLogDate, selectedDate),
+        ),
+      )
+      .orderBy(
+        desc(waterEvents.localEventTime),
+        desc(waterEvents.createdAt),
+        desc(waterEvents.id),
+      )
+      .all();
+    const events = [
+      ...entries.map((entry) => ({ ...entry, kind: "food" as const })),
+      ...water.map((event) => ({ ...event, kind: "water" as const })),
+    ].sort(compareFoodLogEventsDescending);
 
     return {
-      displayUnits: preference.displayUnits,
+      displayUnits: preference.displayUnits as DisplayUnits,
       entries,
+      events,
       goal,
       isFuture: selectedDate > today,
       nutritionTotals: nutritionTotals(entries),
       selectedDate,
       timeZone: preference.timeZone,
       today,
+      waterEvents: water,
+      waterTotalMicroliters: water.reduce(
+        (total, event) => total + event.amountMicroliters,
+        0,
+      ),
     };
   }
 

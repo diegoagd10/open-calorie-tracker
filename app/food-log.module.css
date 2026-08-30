@@ -354,9 +354,11 @@
 
 .waterOverviewRow {
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: 1fr auto auto;
   align-items: center;
   gap: 0.5rem;
+  color: var(--ink);
+  text-decoration: none;
 }
 
 .waterOverviewRow > span > strong,
@@ -563,6 +565,22 @@
   border-radius: 50%;
   color: var(--green-dark);
   background: #edf8ee;
+}
+
+.waterEntryMarker {
+  display: grid;
+  width: 2.6rem;
+  height: 2.6rem;
+  place-items: center;
+  border: 1px solid #78aee5;
+  border-radius: 50%;
+  color: var(--blue);
+  background: #eaf3ff;
+}
+
+.waterEventCard:hover,
+.waterEventCard:focus-visible {
+  border-color: #78aee5;
 }
 
 .foodEntryContent,
@@ -982,6 +1000,135 @@
 .editFoodForm :is(button, input, select):disabled {
   cursor: wait;
   opacity: 0.65;
+}
+
+.waterDialog {
+  width: min(100%, 40rem);
+}
+
+.waterForm {
+  margin-top: 1rem;
+}
+
+.waterForm fieldset {
+  display: grid;
+  gap: 1rem;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.waterPresets {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+
+.waterPresetButton {
+  display: grid;
+  min-height: 5.9rem;
+  place-items: center;
+  align-content: center;
+  gap: 0.12rem;
+  padding: 0.55rem 0.25rem;
+  border: 1px solid var(--rule-strong);
+  border-radius: 0.75rem;
+  color: var(--ink-2);
+  background: white;
+  font: inherit;
+  cursor: pointer;
+}
+
+.waterPresetButton[aria-pressed="true"] {
+  border: 2px solid var(--blue);
+  color: #164f91;
+  background: var(--blue-soft);
+}
+
+.waterPresetButton strong {
+  font-size: 0.85rem;
+}
+
+.waterPresetButton span,
+.waterPresetButton small {
+  font-size: 0.62rem;
+}
+
+.waterAmountField,
+.waterTimeField {
+  display: grid;
+  gap: 0.45rem;
+  padding: 0.75rem;
+  border-radius: 0.75rem;
+  background: var(--surface-soft);
+  font-size: 0.76rem;
+  font-weight: 750;
+}
+
+.waterAmountField > span:last-child {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.waterAmountField input,
+.waterTimeField input {
+  width: 100%;
+  min-height: 3rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--rule-strong);
+  border-radius: 0.7rem;
+  background: white;
+  font: inherit;
+}
+
+.waterAmountField em {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-style: normal;
+  font-weight: 500;
+}
+
+.waterActions,
+.waterActions > div {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.waterActions {
+  justify-content: space-between;
+}
+
+.waterSubmitButton {
+  min-height: 2.75rem;
+  padding: 0.7rem 1rem;
+  border: 1px solid var(--blue);
+  border-radius: 0.7rem;
+  color: white;
+  background: var(--blue);
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+@media (max-width: 520px) {
+  .waterActions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .waterActions > div,
+  .waterActions > button {
+    width: 100%;
+  }
+
+  .waterActions > div > * {
+    flex: 1;
+  }
 }
 
 .catalogError {
