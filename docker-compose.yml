@@ -12,9 +12,6 @@ services:
     expose:
       - "${PORT:-3000}"
     volumes:
-      - application-data:/app/data
-
-volumes:
-  application-data:
-    external: true
-    name: "${DATA_VOLUME_NAME:-open-calory-tracker-data}"
+      - type: bind
+        source: "${DATA_PATH:?Set DATA_PATH to the host data directory}"
+        target: /app/data
