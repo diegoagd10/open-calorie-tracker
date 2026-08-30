@@ -23,6 +23,39 @@ export class FutureFoodLogDateError extends Error {
   }
 }
 
+const nutritionFields = [
+  "carbohydrateMilligrams",
+  "energyMilliKcal",
+  "fatMilligrams",
+  "fiberMilligrams",
+  "proteinMilligrams",
+  "sodiumMilligrams",
+  "sugarMilligrams",
+] as const;
+
+type FoodEntrySnapshot = ReturnType<typeof foodEntrySnapshot>;
+
+function nutritionTotals(entries: FoodEntrySnapshot[]) {
+  return Object.fromEntries(
+    nutritionFields.map((field) => {
+      let isIncomplete = false;
+      let known = 0;
+      for (const entry of entries) {
+        const value = entry[field];
+        if (value === null) {
+          isIncomplete = true;
+        } else {
+          known += value;
+        }
+      }
+      return [field, { isIncomplete, known }];
+    }),
+  ) as Record<
+    (typeof nutritionFields)[number],
+    { isIncomplete: boolean; known: number }
+  >;
+}
+
 export class FoodLogService {
   readonly #database: ApplicationDatabaseClient;
   readonly #now: () => Date;
@@ -97,6 +130,7 @@ export class FoodLogService {
       entries,
       goal,
       isFuture: selectedDate > today,
+      nutritionTotals: nutritionTotals(entries),
       selectedDate,
       timeZone: preference.timeZone,
       today,

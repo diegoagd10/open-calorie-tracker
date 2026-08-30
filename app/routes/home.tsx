@@ -4,6 +4,7 @@ import {
   useEffect,
   useRef,
   useState,
+  type CSSProperties,
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 import { z } from "zod";
@@ -558,19 +559,17 @@ function fullDate(date: string): string {
   });
 }
 
-function goalValues(foodLog: Route.ComponentProps["loaderData"]["foodLog"]) {
+function waterGoalValues(
+  foodLog: Route.ComponentProps["loaderData"]["foodLog"],
+) {
   const goal = foodLog.goal;
   if (!goal) {
     return {
-      calorie: "—",
       water: "—",
       waterUnit: foodLog.displayUnits === "metric" ? "ml" : "fl oz",
     };
   }
 
-  const calorie = new Intl.NumberFormat("en-US", {
-    maximumFractionDigits: 3,
-  }).format(goal.calorieTargetMilliKcal / 1_000);
   const waterAmount =
     foodLog.displayUnits === "metric"
       ? goal.waterTargetMicroliters / 1_000
@@ -580,7 +579,6 @@ function goalValues(foodLog: Route.ComponentProps["loaderData"]["foodLog"]) {
   }).format(waterAmount);
 
   return {
-    calorie,
     water,
     waterUnit: foodLog.displayUnits === "metric" ? "ml" : "fl oz",
   };
@@ -729,6 +727,275 @@ function formatEnergy(value: number | null): string {
   if (value === null) return "—";
   return new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 }).format(
     value / 1_000,
+  );
+}
+
+function formatCanonicalNutrient(value: number, unit: "g" | "mg"): string {
+  return new Intl.NumberFormat("en-US", {
+    maximumFractionDigits: unit === "g" ? 3 : 0,
+  }).format(unit === "g" ? value / 1_000 : value);
+}
+
+function progressStyle(known: number, goal: number): CSSProperties {
+  const percentage = goal > 0 ? Math.min(100, (known / goal) * 100) : 0;
+  return { "--progress": `${percentage}%` } as CSSProperties;
+}
+
+type NutritionMetric = {
+  goal: number | null;
+  goalKind: "maximum" | "target";
+  isIncomplete: boolean;
+  key: string;
+  known: number;
+  label: string;
+  unit: "g" | "mg";
+};
+
+function NutrientMetric({ metric }: { metric: NutritionMetric }) {
+  const known = formatCanonicalNutrient(metric.known, metric.unit);
+  const goal =
+    metric.goal === null
+      ? null
+      : formatCanonicalNutrient(metric.goal, metric.unit);
+  const knownDescription = metric.isIncomplete ? `${known} known` : known;
+  const description =
+    metric.goal === null
+      ? `${metric.label}: ${knownDescription}; no active ${metric.goalKind}${metric.isIncomplete ? "; incomplete" : ""}`
+      : `${metric.label}: ${knownDescription} of ${goal} ${metric.unit} ${metric.goalKind}${metric.isIncomplete ? "; incomplete" : ""}`;
+
+  return (
+    <article aria-label={description} className={styles.nutrientCell}>
+      <span>
+        {metric.label}
+        {metric.goalKind === "maximum" ? " max" : ""}
+      </span>
+      <strong>
+        {knownDescription}{" "}
+        <small>
+          {goal === null ? "/ No active goal" : `/ ${goal} ${metric.unit}`}
+        </small>
+      </strong>
+      {metric.goal === null ? null : (
+        <div
+          aria-label={`${metric.label} progress`}
+          aria-valuemax={
+            metric.unit === "g" ? metric.goal / 1_000 : metric.goal
+          }
+          aria-valuemin={0}
+          aria-valuenow={Math.min(
+            metric.unit === "g" ? metric.known / 1_000 : metric.known,
+            metric.unit === "g" ? metric.goal / 1_000 : metric.goal,
+          )}
+          aria-valuetext={description}
+          className={styles.nutrientProgress}
+          role="progressbar"
+          style={progressStyle(metric.known, metric.goal)}
+        >
+          <span />
+        </div>
+      )}
+      {metric.isIncomplete ? <em>Incomplete</em> : null}
+    </article>
+  );
+}
+
+function DailySummary({
+  foodLog,
+}: {
+  foodLog: Route.ComponentProps["loaderData"]["foodLog"];
+}) {
+  const [nutrientPage, setNutrientPage] = useState(0);
+  const goals = waterGoalValues(foodLog);
+  const goal = foodLog.goal;
+  const totals = foodLog.nutritionTotals;
+  const calorieTotal = totals.energyMilliKcal;
+  const calorieGoal = goal?.calorieTargetMilliKcal;
+  const calorieKnown = formatEnergy(calorieTotal.known);
+  const calorieGoalDisplay = calorieGoal ? formatEnergy(calorieGoal) : "—";
+  const calorieDescription = calorieGoal
+    ? `${calorieKnown}${calorieTotal.isIncomplete ? " known" : ""} of ${calorieGoalDisplay} kcal target${calorieTotal.isIncomplete ? "; incomplete" : ""}`
+    : `${calorieKnown} known kcal; no active goal`;
+  const metricPages: NutritionMetric[][] = [
+    [
+      {
+        goal: goal?.proteinTargetMilligrams ?? null,
+        goalKind: "target",
+        isIncomplete: totals.proteinMilligrams.isIncomplete,
+        key: "protein",
+        known: totals.proteinMilligrams.known,
+        label: "Protein",
+        unit: "g",
+      },
+      {
+        goal: goal?.carbohydrateTargetMilligrams ?? null,
+        goalKind: "target",
+        isIncomplete: totals.carbohydrateMilligrams.isIncomplete,
+        key: "carbohydrate",
+        known: totals.carbohydrateMilligrams.known,
+        label: "Carbohydrate",
+        unit: "g",
+      },
+      {
+        goal: goal?.fatTargetMilligrams ?? null,
+        goalKind: "target",
+        isIncomplete: totals.fatMilligrams.isIncomplete,
+        key: "fat",
+        known: totals.fatMilligrams.known,
+        label: "Fat",
+        unit: "g",
+      },
+    ],
+    [
+      {
+        goal: goal?.fiberTargetMilligrams ?? null,
+        goalKind: "target",
+        isIncomplete: totals.fiberMilligrams.isIncomplete,
+        key: "fiber",
+        known: totals.fiberMilligrams.known,
+        label: "Fiber",
+        unit: "g",
+      },
+      {
+        goal: goal?.sugarMaximumMilligrams ?? null,
+        goalKind: "maximum",
+        isIncomplete: totals.sugarMilligrams.isIncomplete,
+        key: "sugar",
+        known: totals.sugarMilligrams.known,
+        label: "Sugar",
+        unit: "g",
+      },
+      {
+        goal: goal?.sodiumMaximumMilligrams ?? null,
+        goalKind: "maximum",
+        isIncomplete: totals.sodiumMilligrams.isIncomplete,
+        key: "sodium",
+        known: totals.sodiumMilligrams.known,
+        label: "Sodium",
+        unit: "mg",
+      },
+    ],
+  ];
+
+  return (
+    <>
+      <section
+        aria-labelledby="calorie-heading"
+        className={styles.summarySurface}
+      >
+        <div className={styles.calorieRow}>
+          <h2 id="calorie-heading">Calories</h2>
+          <p>
+            <strong>
+              {calorieKnown}
+              {calorieTotal.isIncomplete ? " known" : ""}
+            </strong>{" "}
+            <span>
+              {calorieGoal
+                ? `/ ${calorieGoalDisplay} kcal`
+                : "/ No active goal"}
+            </span>
+          </p>
+          {calorieGoal ? (
+            <div
+              aria-label="Calorie progress"
+              aria-valuemax={calorieGoal / 1_000}
+              aria-valuemin={0}
+              aria-valuenow={Math.min(
+                calorieTotal.known / 1_000,
+                calorieGoal / 1_000,
+              )}
+              aria-valuetext={calorieDescription}
+              className={styles.linearProgress}
+              role="progressbar"
+              style={progressStyle(calorieTotal.known, calorieGoal)}
+            >
+              <span />
+            </div>
+          ) : null}
+          <small>
+            {calorieTotal.isIncomplete ? (
+              <em className={styles.incompleteLabel}>Incomplete</em>
+            ) : null}
+            {calorieTotal.isIncomplete ? " · " : ""}
+            {foodLog.entries.length
+              ? `${foodLog.entries.length} Food ${foodLog.entries.length === 1 ? "Entry" : "Entries"}`
+              : "No Food Entries"}
+          </small>
+        </div>
+
+        <section
+          aria-label="Daily nutrient progress"
+          className={styles.nutrientCarousel}
+        >
+          {metricPages.map((metrics, page) => (
+            <div
+              className={styles.nutrientPage}
+              hidden={nutrientPage !== page}
+              key={page}
+            >
+              {metrics.map((metric) => (
+                <NutrientMetric key={metric.key} metric={metric} />
+              ))}
+            </div>
+          ))}
+          <div
+            aria-label="Nutrition pages"
+            className={styles.carouselControls}
+            role="group"
+          >
+            <button
+              aria-label="Show protein, carbohydrate, and fat"
+              aria-pressed={nutrientPage === 0}
+              className={`${styles.carouselDot} ${nutrientPage === 0 ? styles.activeCarouselDot : ""}`}
+              onClick={() => setNutrientPage(0)}
+              type="button"
+            />
+            <button
+              aria-label="Show fiber, sugar, and sodium"
+              aria-pressed={nutrientPage === 1}
+              className={`${styles.carouselDot} ${nutrientPage === 1 ? styles.activeCarouselDot : ""}`}
+              onClick={() => setNutrientPage(1)}
+              type="button"
+            />
+          </div>
+        </section>
+      </section>
+
+      <section
+        aria-labelledby="water-heading"
+        className={styles.waterOverview}
+      >
+        <div className={styles.waterOverviewRow}>
+          <span>
+            <strong id="water-heading">Water</strong>
+            <small>Target</small>
+          </span>
+          <strong>
+            0{" "}
+            <small>
+              {goal ? `/ ${goals.water} ${goals.waterUnit}` : "/ No active goal"}
+            </small>
+          </strong>
+        </div>
+        {goal ? (
+          <div
+            aria-label="Water progress"
+            aria-valuemax={
+              foodLog.displayUnits === "metric"
+                ? goal.waterTargetMicroliters / 1_000
+                : goal.waterTargetMicroliters / 29_573.529_562_5
+            }
+            aria-valuemin={0}
+            aria-valuenow={0}
+            aria-valuetext={`0 of ${goals.water} ${goals.waterUnit} target`}
+            className={styles.waterProgress}
+            role="progressbar"
+          >
+            <span />
+          </div>
+        ) : null}
+      </section>
+    </>
   );
 }
 
@@ -1552,13 +1819,8 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
   } = loaderData;
   const activeFoodEntryEditor =
     actionData?.foodEntryEditor ?? foodEntryEditor;
-  const goals = goalValues(foodLog);
   const selectedLabel = fullDate(foodLog.selectedDate);
   const view = calendar ? "calendar" : "log";
-  const totalEnergyMilliKcal = foodLog.entries.reduce(
-    (total, entry) => total + (entry.energyMilliKcal ?? 0),
-    0,
-  );
 
   return (
     <>
@@ -1657,38 +1919,7 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
                 </Link>
               </div>
 
-              <div className={styles.summaryGrid}>
-                <section
-                  className={styles.summaryCard}
-                  aria-labelledby="calorie-heading"
-                >
-                  <h2 id="calorie-heading">Calories</h2>
-                  <p>
-                    <strong>{formatEnergy(totalEnergyMilliKcal)}</strong>{" "}
-                    <span>/ {goals.calorie} kcal</span>
-                  </p>
-                  <div className={styles.progress} aria-hidden="true" />
-                  <small>
-                    {foodLog.entries.length
-                      ? `${foodLog.entries.length} Food ${foodLog.entries.length === 1 ? "Entry" : "Entries"}`
-                      : "No Food Entries"}
-                  </small>
-                </section>
-                <section
-                  className={styles.summaryCard}
-                  aria-labelledby="water-heading"
-                >
-                  <h2 id="water-heading">Water</h2>
-                  <p>
-                    <strong>0</strong>{" "}
-                    <span>
-                      / {goals.water} {goals.waterUnit}
-                    </span>
-                  </p>
-                  <div className={styles.progress} aria-hidden="true" />
-                  <small>No Water Events</small>
-                </section>
-              </div>
+              <DailySummary foodLog={foodLog} />
 
               <section
                 className={styles.timelineSection}

@@ -22,6 +22,7 @@ import {
   type ApplicationDatabaseClient,
 } from "../app/database/database.server";
 import {
+  foodEntries,
   goalVersions,
   userPreferences,
   users,
@@ -85,6 +86,64 @@ function insertConfiguredUser(
     .run();
 
   return userId;
+}
+
+function insertFoodEntry(
+  client: ApplicationDatabaseClient,
+  options: {
+    date: string;
+    id: string;
+    nutrients: {
+      carbohydrateMilligrams: number | null;
+      energyMilliKcal: number | null;
+      fatMilligrams: number | null;
+      fiberMilligrams: number | null;
+      proteinMilligrams: number | null;
+      sodiumMilligrams: number | null;
+      sugarMilligrams: number | null;
+    };
+    userId: number;
+  },
+) {
+  const createdAt = "2026-08-29T12:00:00.000Z";
+  client
+    .insert(foodEntries)
+    .values({
+      authoritativeBaseQuantityMicrounits: 100_000_000,
+      authoritativeBaseUnit: "g",
+      authoritativeNutrition: JSON.stringify({
+        carbohydrateMilligrams: null,
+        energyMilliKcal: null,
+        fatMilligrams: null,
+        fiberMilligrams: null,
+        proteinMilligrams: null,
+        sodiumMilligrams: null,
+        sugarMilligrams: null,
+      }),
+      barcode: null,
+      brand: null,
+      createdAt,
+      foodLogDate: options.date,
+      idempotencyKey: options.id,
+      localEventTime: "12:00:00",
+      marketCountry: null,
+      originalName: `Entry ${options.id}`,
+      provider: "usda-fdc",
+      providerFoodId: options.id,
+      providerModifiedDate: null,
+      providerPublishedDate: null,
+      quantityMicrounits: 1_000_000,
+      selectedMeasurementBaseQuantityMicrounits: 100_000_000,
+      selectedMeasurementId: "base:g:100000000",
+      selectedMeasurementLabel: "100 g",
+      selectedMeasurementUnit: "g",
+      sourceDataType: "Foundation",
+      supportedMeasurements: "[]",
+      updatedAt: createdAt,
+      userId: options.userId,
+      ...options.nutrients,
+    })
+    .run();
 }
 
 test("local dates remain stable at UTC boundaries and both DST transitions", () => {
@@ -210,6 +269,157 @@ test("future Food Log writes are rejected at the server boundary", async () => {
   );
   expect(() => service.requireWritableDate(userId, "2026-02-29")).toThrow(
     "Food Log date is invalid",
+  );
+  database.close();
+});
+
+test("daily nutrition totals preserve known values and mark only nutrients affected by missing data", async () => {
+  const database = await setupDatabase();
+  const client = database.getClient();
+  const userId = insertConfiguredUser(client, {
+    timeZone: "America/New_York",
+    username: "nutrition.summary",
+  });
+  const otherUserId = insertConfiguredUser(client, {
+    timeZone: "America/New_York",
+    username: "nutrition.summary.other",
+  });
+
+  insertFoodEntry(client, {
+    date: "2026-08-29",
+    id: "summary-one",
+    nutrients: {
+      carbohydrateMilligrams: null,
+      energyMilliKcal: 1_234,
+      fatMilligrams: 0,
+      fiberMilligrams: 250,
+      proteinMilligrams: 1_501,
+      sodiumMilligrams: 0,
+      sugarMilligrams: 300,
+    },
+    userId,
+  });
+  insertFoodEntry(client, {
+    date: "2026-08-29",
+    id: "summary-two",
+    nutrients: {
+      carbohydrateMilligrams: 2_000,
+      energyMilliKcal: null,
+      fatMilligrams: 100,
+      fiberMilligrams: null,
+      proteinMilligrams: 500,
+      sodiumMilligrams: 100,
+      sugarMilligrams: 200,
+    },
+    userId,
+  });
+  insertFoodEntry(client, {
+    date: "2026-08-28",
+    id: "other-day",
+    nutrients: {
+      carbohydrateMilligrams: 9_000,
+      energyMilliKcal: 9_000,
+      fatMilligrams: 9_000,
+      fiberMilligrams: 9_000,
+      proteinMilligrams: 9_000,
+      sodiumMilligrams: 9_000,
+      sugarMilligrams: 9_000,
+    },
+    userId,
+  });
+  insertFoodEntry(client, {
+    date: "2026-08-29",
+    id: "other-user",
+    nutrients: {
+      carbohydrateMilligrams: 8_000,
+      energyMilliKcal: 8_000,
+      fatMilligrams: 8_000,
+      fiberMilligrams: 8_000,
+      proteinMilligrams: 8_000,
+      sodiumMilligrams: 8_000,
+      sugarMilligrams: 8_000,
+    },
+    userId: otherUserId,
+  });
+
+  const foodLog = new FoodLogService(
+    client,
+    () => new Date("2026-08-29T18:00:00.000Z"),
+  ).read(userId, "2026-08-29");
+
+  expect(foodLog?.nutritionTotals).toEqual({
+    carbohydrateMilligrams: { isIncomplete: true, known: 2_000 },
+    energyMilliKcal: { isIncomplete: true, known: 1_234 },
+    fatMilligrams: { isIncomplete: false, known: 100 },
+    fiberMilligrams: { isIncomplete: true, known: 250 },
+    proteinMilligrams: { isIncomplete: false, known: 2_001 },
+    sodiumMilligrams: { isIncomplete: false, known: 100 },
+    sugarMilligrams: { isIncomplete: false, known: 500 },
+  });
+  database.close();
+});
+
+test("daily nutrition totals are recomputed after edits and deletes and empty Logs report zero known consumption", async () => {
+  const database = await setupDatabase();
+  const client = database.getClient();
+  const userId = insertConfiguredUser(client, {
+    timeZone: "America/New_York",
+    username: "nutrition.freshness",
+  });
+  const service = new FoodLogService(
+    client,
+    () => new Date("2026-08-29T18:00:00.000Z"),
+  );
+
+  const emptyTotals = service.read(userId, "2026-08-29")?.nutritionTotals;
+  expect(emptyTotals).toEqual({
+    carbohydrateMilligrams: { isIncomplete: false, known: 0 },
+    energyMilliKcal: { isIncomplete: false, known: 0 },
+    fatMilligrams: { isIncomplete: false, known: 0 },
+    fiberMilligrams: { isIncomplete: false, known: 0 },
+    proteinMilligrams: { isIncomplete: false, known: 0 },
+    sodiumMilligrams: { isIncomplete: false, known: 0 },
+    sugarMilligrams: { isIncomplete: false, known: 0 },
+  });
+
+  insertFoodEntry(client, {
+    date: "2026-08-29",
+    id: "fresh-summary",
+    nutrients: {
+      carbohydrateMilligrams: 1,
+      energyMilliKcal: 501,
+      fatMilligrams: 1,
+      fiberMilligrams: 1,
+      proteinMilligrams: 501,
+      sodiumMilligrams: 1,
+      sugarMilligrams: 1,
+    },
+    userId,
+  });
+  const entry = client
+    .select({ id: foodEntries.id })
+    .from(foodEntries)
+    .where(eq(foodEntries.userId, userId))
+    .get()!;
+
+  expect(service.read(userId, "2026-08-29")?.nutritionTotals).toMatchObject({
+    energyMilliKcal: { isIncomplete: false, known: 501 },
+    proteinMilligrams: { isIncomplete: false, known: 501 },
+  });
+
+  client
+    .update(foodEntries)
+    .set({ energyMilliKcal: 1_002, proteinMilligrams: 1_002 })
+    .where(eq(foodEntries.id, entry.id))
+    .run();
+  expect(service.read(userId, "2026-08-29")?.nutritionTotals).toMatchObject({
+    energyMilliKcal: { isIncomplete: false, known: 1_002 },
+    proteinMilligrams: { isIncomplete: false, known: 1_002 },
+  });
+
+  client.delete(foodEntries).where(eq(foodEntries.id, entry.id)).run();
+  expect(service.read(userId, "2026-08-29")?.nutritionTotals).toEqual(
+    emptyTotals,
   );
   database.close();
 });
