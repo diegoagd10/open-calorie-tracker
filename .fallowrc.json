@@ -268,7 +268,6 @@
     ]
   },
   "health": {
-    "coverage": "coverage/coverage-final.json",
     "ignore": [
       "tests/**",
       "scripts/**",

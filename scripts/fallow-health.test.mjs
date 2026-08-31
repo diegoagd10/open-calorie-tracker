@@ -43,6 +43,8 @@ function runFallow(...arguments_) {
       "json",
       "--quiet",
       "--no-cache",
+      "--coverage",
+      coveragePath,
       ...arguments_,
     ],
     { cwd: repositoryRoot, encoding: "utf8" },

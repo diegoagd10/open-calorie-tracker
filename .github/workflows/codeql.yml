@@ -2,8 +2,34 @@ name: CodeQL
 
 on:
   pull_request:
+    paths:
+      - ".github/codeql/**"
+      - ".github/workflows/codeql.yml"
+      - "**/*.js"
+      - "**/*.jsx"
+      - "**/*.mjs"
+      - "**/*.mts"
+      - "**/*.cjs"
+      - "**/*.cts"
+      - "**/*.ts"
+      - "**/*.tsx"
+      - "package.json"
+      - "pnpm-lock.yaml"
   push:
     branches: [main]
+    paths:
+      - ".github/codeql/**"
+      - ".github/workflows/codeql.yml"
+      - "**/*.js"
+      - "**/*.jsx"
+      - "**/*.mjs"
+      - "**/*.mts"
+      - "**/*.cjs"
+      - "**/*.cts"
+      - "**/*.ts"
+      - "**/*.tsx"
+      - "package.json"
+      - "pnpm-lock.yaml"
   schedule:
     - cron: "41 7 * * 1"
   workflow_dispatch:
