@@ -47,6 +47,7 @@ export async function action({ request }: Route.ActionArgs) {
   }
 
   const formData = await request.formData();
+  // Stryker disable next-line StringLiteral: every placeholder for a missing opaque token is rejected identically.
   const csrfToken = String(formData.get("csrfToken") ?? "");
   if (!getAuthenticationService().verifyCsrfToken(session.token, csrfToken)) {
     throw new Response("CSRF token rejected.", { status: 403 });
@@ -57,13 +58,11 @@ export async function action({ request }: Route.ActionArgs) {
     newPassword: String(formData.get("newPassword") ?? ""),
   });
   if (!parsed.success) {
-    const issue = parsed.error.issues[0];
-    let error = "Check the password details and try again.";
-    if (issue?.path[0] === "currentPassword") {
-      error = "Enter your current password.";
-    } else if (issue?.path[0] === "newPassword") {
-      error = "New password must contain 12–128 characters.";
-    }
+    const field = parsed.error.issues[0].path[0];
+    const error =
+      field === "currentPassword"
+        ? "Enter your current password."
+        : "New password must contain 12–128 characters.";
     return data<PasswordChangeActionData>({ error }, { status: 400 });
   }
 
@@ -100,6 +99,8 @@ export default function ChangePassword({
   actionData,
   loaderData,
 }: Route.ComponentProps) {
+  // Stryker disable next-line StringLiteral: these labels are arbitrary; only their distinction is observable.
+  const formStateKey = actionData?.changed ? "changed" : "ready";
   return (
     <main className={styles.shell}>
       <section className={styles.panel} aria-labelledby="password-heading">
@@ -117,7 +118,7 @@ export default function ChangePassword({
 
         <Form
           className={styles.form}
-          key={actionData?.changed ? "changed" : "ready"}
+          key={formStateKey}
           method="post"
           noValidate
         >

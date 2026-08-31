@@ -25,40 +25,41 @@ import {
   serializeCatalogMeasurements,
   serializeCatalogNutrition,
 } from "./snapshot.server";
-import {
-  quantityMicrounitsFromDecimal,
-  type NutrientStorageScale,
-} from "./nutrition";
+import { quantityMicrounitsFromDecimal } from "./nutrition";
 
-const logFoodInputSchema = z.object({
-  foodLogDate: z.string(),
-  idempotencyKey: z
-    .string()
-    .min(8)
-    .max(128)
-    .regex(/^[A-Za-z0-9._:-]+$/),
-  providerFoodId: z.string().regex(/^[1-9]\d*$/),
-  quantity: z.string().trim().min(1).max(32),
-  selectedMeasurementId: z.string().min(1).max(128),
-});
+function logFoodInputSchema() {
+  return z.object({
+    foodLogDate: z.string(),
+    idempotencyKey: z
+      .string()
+      .min(8)
+      .max(128)
+      .refine((value) => /^[A-Za-z0-9._:-]+$/.test(value)),
+    providerFoodId: z.string().refine((value) => /^[1-9]\d*$/.test(value)),
+    quantity: z.string().min(1).max(32),
+    selectedMeasurementId: z.string().min(1).max(128),
+  });
+}
 
-const updateFoodInputSchema = z.object({
-  carbohydrateGrams: z.string().max(32).optional(),
-  energyKcal: z.string().max(32).optional(),
-  expectedUpdatedAt: z.iso.datetime({ offset: true }),
-  fatGrams: z.string().max(32).optional(),
-  fiberGrams: z.string().max(32).optional(),
-  foodLogDate: z.string(),
-  name: z.string().trim().min(1).max(200),
-  proteinGrams: z.string().max(32).optional(),
-  quantity: z.string().trim().min(1).max(32),
-  selectedMeasurementId: z.string().min(1).max(128),
-  sodiumMilligrams: z.string().max(32).optional(),
-  sugarGrams: z.string().max(32).optional(),
-});
+function updateFoodInputSchema() {
+  return z.object({
+    carbohydrateGrams: z.string().max(32).optional(),
+    energyKcal: z.string().max(32).optional(),
+    expectedUpdatedAt: z.iso.datetime({ offset: true }),
+    fatGrams: z.string().max(32).optional(),
+    fiberGrams: z.string().max(32).optional(),
+    foodLogDate: z.string(),
+    name: z.string().trim().min(1).max(200),
+    proteinGrams: z.string().max(32).optional(),
+    quantity: z.string().min(1).max(32),
+    selectedMeasurementId: z.string().min(1).max(128),
+    sodiumMilligrams: z.string().max(32).optional(),
+    sugarGrams: z.string().max(32).optional(),
+  });
+}
 
-export type LogFoodInput = z.input<typeof logFoodInputSchema>;
-export type UpdateFoodInput = z.input<typeof updateFoodInputSchema>;
+export type LogFoodInput = z.input<ReturnType<typeof logFoodInputSchema>>;
+export type UpdateFoodInput = z.input<ReturnType<typeof updateFoodInputSchema>>;
 
 export class InvalidFoodEntryInputError extends Error {
   constructor() {
@@ -91,21 +92,20 @@ function quantityMicrounits(value: string): number {
 
 function nullableNutrient(
   value: string | undefined,
-  storageScale: NutrientStorageScale,
+  integerMilligrams: boolean,
 ): number | null | undefined {
   if (value === undefined) return undefined;
   const trimmed = value.trim();
   if (!trimmed) return null;
   const match =
-    storageScale === "integer-milligrams"
+    integerMilligrams
       ? /^(\d{1,7})$/.exec(trimmed)
       : /^(\d{1,6})(?:\.(\d{1,3}))?$/.exec(trimmed);
   if (!match) throw new InvalidFoodEntryInputError();
   const whole = BigInt(match[1]);
   const fraction = BigInt((match[2] ?? "").padEnd(3, "0"));
-  const multiplier = storageScale === "integer-milligrams" ? 1n : 1_000n;
+  const multiplier = integerMilligrams ? 1n : 1_000n;
   const result = whole * multiplier + fraction;
-  if (result > 999_999_999n) throw new InvalidFoodEntryInputError();
   return Number(result);
 }
 
@@ -129,7 +129,7 @@ export class FoodEntryService {
     input: LogFoodInput,
     context?: CatalogOperationContext,
   ) {
-    const parsed = logFoodInputSchema.safeParse(input);
+    const parsed = logFoodInputSchema().safeParse(input);
     if (!parsed.success) throw new InvalidFoodEntryInputError();
     const quantity = quantityMicrounits(parsed.data.quantity);
 
@@ -264,23 +264,27 @@ export class FoodEntryService {
   }
 
   read(userId: number, entryId: number) {
-    if (!Number.isSafeInteger(entryId) || entryId <= 0) {
-      throw new FoodEntryUnavailableError();
-    }
-    const row = this.#database
-      .select()
-      .from(foodEntries)
-      .where(
-        and(eq(foodEntries.userId, userId), eq(foodEntries.id, entryId)),
-      )
-      .get();
+    const parsedId = z.number().int().positive().safeParse(entryId);
+    const row = parsedId.success
+      ? this.#database
+          .select()
+          .from(foodEntries)
+          .where(
+            and(
+              eq(foodEntries.userId, userId),
+              eq(foodEntries.id, parsedId.data),
+            ),
+          )
+          .get()
+      : undefined;
     if (!row) throw new FoodEntryUnavailableError();
     return foodEntrySnapshot(row);
   }
 
   update(userId: number, entryId: number, input: UpdateFoodInput) {
-    const parsed = updateFoodInputSchema.safeParse(input);
-    if (!parsed.success || !Number.isSafeInteger(entryId) || entryId <= 0) {
+    const parsed = updateFoodInputSchema().safeParse(input);
+    const parsedId = z.number().int().positive().safeParse(entryId);
+    if (!parsed.success || !parsedId.success) {
       throw new InvalidFoodEntryInputError();
     }
     const quantity = quantityMicrounits(parsed.data.quantity);
@@ -288,14 +292,11 @@ export class FoodEntryService {
       .select()
       .from(foodEntries)
       .where(
-        and(eq(foodEntries.userId, userId), eq(foodEntries.id, entryId)),
+        and(eq(foodEntries.userId, userId), eq(foodEntries.id, parsedId.data)),
       )
       .get();
     if (!existing || existing.foodLogDate !== parsed.data.foodLogDate) {
       throw new FoodEntryUnavailableError();
-    }
-    if (existing.updatedAt !== parsed.data.expectedUpdatedAt) {
-      throw new StaleFoodEntryError();
     }
     const snapshot = foodEntrySnapshot(existing);
     const measurement = snapshot.supportedMeasurements.find(
@@ -314,10 +315,10 @@ export class FoodEntryService {
       );
     const editedOrScaled = (
       inputValue: string | undefined,
-      storageScale: NutrientStorageScale,
+      integerMilligrams: boolean,
       authoritativeValue: Parameters<typeof scaleCatalogNutrient>[0],
     ) => {
-      const edited = nullableNutrient(inputValue, storageScale);
+      const edited = nullableNutrient(inputValue, integerMilligrams);
       return edited === undefined ? scale(authoritativeValue) : edited;
     };
     const updated = this.#database
@@ -325,28 +326,28 @@ export class FoodEntryService {
       .set({
         carbohydrateMilligrams: editedOrScaled(
           parsed.data.carbohydrateGrams,
-          "decimal-thousandths",
+          false,
           nutrition.carbohydrateMilligrams,
         ),
         editedName: parsed.data.name,
         energyMilliKcal: editedOrScaled(
           parsed.data.energyKcal,
-          "decimal-thousandths",
+          false,
           nutrition.energyMilliKcal,
         ),
         fatMilligrams: editedOrScaled(
           parsed.data.fatGrams,
-          "decimal-thousandths",
+          false,
           nutrition.fatMilligrams,
         ),
         fiberMilligrams: editedOrScaled(
           parsed.data.fiberGrams,
-          "decimal-thousandths",
+          false,
           nutrition.fiberMilligrams,
         ),
         proteinMilligrams: editedOrScaled(
           parsed.data.proteinGrams,
-          "decimal-thousandths",
+          false,
           nutrition.proteinMilligrams,
         ),
         quantityMicrounits: quantity,
@@ -357,12 +358,12 @@ export class FoodEntryService {
         selectedMeasurementUnit: measurement.unit,
         sodiumMilligrams: editedOrScaled(
           parsed.data.sodiumMilligrams,
-          "integer-milligrams",
+          true,
           nutrition.sodiumMilligrams,
         ),
         sugarMilligrams: editedOrScaled(
           parsed.data.sugarGrams,
-          "decimal-thousandths",
+          false,
           nutrition.sugarMilligrams,
         ),
         updatedAt: nextUpdatedAt(this.#now(), existing.updatedAt),
@@ -370,7 +371,7 @@ export class FoodEntryService {
       .where(
         and(
           eq(foodEntries.userId, userId),
-          eq(foodEntries.id, entryId),
+          eq(foodEntries.id, parsedId.data),
           eq(foodEntries.updatedAt, parsed.data.expectedUpdatedAt),
         ),
       )
@@ -388,11 +389,11 @@ export class FoodEntryService {
     const expectedUpdatedAt = z.iso.datetime({ offset: true }).safeParse(
       input.expectedUpdatedAt,
     );
+    const parsedId = z.number().int().positive().safeParse(entryId);
     if (
       !expectedUpdatedAt.success ||
       !parseIsoLocalDate(input.foodLogDate) ||
-      !Number.isSafeInteger(entryId) ||
-      entryId <= 0
+      !parsedId.success
     ) {
       throw new InvalidFoodEntryInputError();
     }
@@ -400,21 +401,18 @@ export class FoodEntryService {
       .select()
       .from(foodEntries)
       .where(
-        and(eq(foodEntries.userId, userId), eq(foodEntries.id, entryId)),
+        and(eq(foodEntries.userId, userId), eq(foodEntries.id, parsedId.data)),
       )
       .get();
     if (!existing || existing.foodLogDate !== input.foodLogDate) {
       throw new FoodEntryUnavailableError();
-    }
-    if (existing.updatedAt !== expectedUpdatedAt.data) {
-      throw new StaleFoodEntryError();
     }
     const deleted = this.#database
       .delete(foodEntries)
       .where(
         and(
           eq(foodEntries.userId, userId),
-          eq(foodEntries.id, entryId),
+          eq(foodEntries.id, parsedId.data),
           eq(foodEntries.updatedAt, expectedUpdatedAt.data),
         ),
       )

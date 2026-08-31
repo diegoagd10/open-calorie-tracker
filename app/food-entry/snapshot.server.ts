@@ -23,13 +23,18 @@ const catalogNutritionSchema = z.object({
   sodiumMilligrams: catalogNutrientValueSchema.nullable(),
   sugarMilligrams: catalogNutrientValueSchema.nullable(),
 });
-const catalogMeasurementSchema = z.object({
-  baseQuantityMicrounits: z.number().int().positive(),
-  id: z.string().min(1).max(128),
-  label: z.string().min(1).max(200),
-  unit: z.enum(["g", "ml"]),
-});
-const catalogMeasurementsSchema = z.array(catalogMeasurementSchema).min(1);
+function catalogMeasurementSchema() {
+  return z.object({
+    baseQuantityMicrounits: z.number().int().positive(),
+    id: z.string().min(1).max(128),
+    label: z.string().min(1).max(200),
+    unit: z.enum(["g", "ml"]),
+  });
+}
+
+function catalogMeasurementsSchema() {
+  return z.array(catalogMeasurementSchema()).min(1);
+}
 
 export function serializeCatalogNutrition(value: CatalogNutrition): string {
   return JSON.stringify(catalogNutritionSchema.parse(value));
@@ -42,12 +47,12 @@ export function parseCatalogNutrition(value: string): CatalogNutrition {
 export function serializeCatalogMeasurements(
   value: CatalogMeasurement[],
 ): string {
-  return JSON.stringify(catalogMeasurementsSchema.parse(value));
+  return JSON.stringify(catalogMeasurementsSchema().parse(value));
 }
 
 function parseCatalogMeasurements(row: FoodEntryRow): CatalogMeasurement[] {
   const parsed = z
-    .array(catalogMeasurementSchema)
+    .array(catalogMeasurementSchema())
     .safeParse(JSON.parse(row.supportedMeasurements));
   if (parsed.success && parsed.data.length) return parsed.data;
 
@@ -60,7 +65,7 @@ function parseCatalogMeasurements(row: FoodEntryRow): CatalogMeasurement[] {
     },
   ];
   const baseId = `base:${row.authoritativeBaseUnit}:${row.authoritativeBaseQuantityMicrounits}`;
-  if (!measurements.some((measurement) => measurement.id === baseId)) {
+  if (row.selectedMeasurementId !== baseId) {
     measurements.push({
       baseQuantityMicrounits: row.authoritativeBaseQuantityMicrounits,
       id: baseId,

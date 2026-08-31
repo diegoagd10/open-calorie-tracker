@@ -5,7 +5,9 @@ import { performance } from "node:perf_hooks";
 
 import {
   compareWithBaseline,
+  isBelowMutationScoreThreshold,
   summarizeMutationReport,
+  validateMutationScoreThreshold,
 } from "./mutation-report.mjs";
 
 const recordBaseline = process.argv.includes("--record-baseline");
@@ -15,6 +17,10 @@ const baselineSummaryPath = `${baselineDirectory}/baseline-summary.json`;
 const reportDirectory = "reports/mutation";
 const currentReportPath = `${reportDirectory}/mutation.json`;
 const incrementalReportPath = "reports/stryker-incremental.json";
+const mutationScoreThreshold =
+  process.env.MUTATION_SCORE_THRESHOLD === undefined
+    ? undefined
+    : validateMutationScoreThreshold(process.env.MUTATION_SCORE_THRESHOLD);
 
 async function exists(path) {
   try {
@@ -63,6 +69,20 @@ const durationMs = performance.now() - startedAt;
 
 const currentReport = JSON.parse(await readFile(currentReportPath, "utf8"));
 const currentSummary = summarizeMutationReport(currentReport, durationMs);
+
+if (
+  mutationScoreThreshold !== undefined &&
+  isBelowMutationScoreThreshold(currentSummary, mutationScoreThreshold)
+) {
+  throw new Error(
+    `Mutation score ${currentSummary.mutationScore.toFixed(2)}% is below the required ${mutationScoreThreshold.toFixed(2)}%.`,
+  );
+}
+if (mutationScoreThreshold !== undefined) {
+  console.log(
+    `Mutation score ${currentSummary.mutationScore.toFixed(2)}% meets the required ${mutationScoreThreshold.toFixed(2)}%.`,
+  );
+}
 
 if (recordBaseline) {
   await mkdir(baselineDirectory, { recursive: true });

@@ -2,6 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
+import { eq, sql } from "drizzle-orm";
 import { afterEach, expect, test } from "vitest";
 
 import type {
@@ -150,6 +151,16 @@ class FakeCatalogProvider implements FoodCatalogProvider {
   async search(): Promise<CatalogSearchResult[]> {
     return [];
   }
+}
+
+function validLogInput() {
+  return {
+    foodLogDate: "2026-08-29",
+    idempotencyKey: "boundary-log-entry",
+    providerFoodId: "200",
+    quantity: "1",
+    selectedMeasurementId: "portion:7",
+  };
 }
 
 test("a provider-backed fractional portion becomes an immutable Food Entry snapshot", async () => {
@@ -592,5 +603,585 @@ test("Food Entry corrections and deletion are isolated, concurrency-safe, and pr
     ).read(userId, "2026-08-28")?.entries.map((entry) => entry.id),
   ).toEqual([second.id]);
   expect(provider.getFoodCalls).toBe(2);
+  database.close();
+});
+
+test("Food Entry errors expose stable user-safe messages", () => {
+  expect(new InvalidFoodEntryInputError().message).toBe(
+    "The Food Entry request is invalid",
+  );
+  expect(new InvalidFoodEntryInputError().name).toBe(
+    "InvalidFoodEntryInputError",
+  );
+  expect(new FoodEntryUnavailableError().message).toBe(
+    "Food Entry is unavailable",
+  );
+  expect(new FoodEntryUnavailableError().name).toBe(
+    "FoodEntryUnavailableError",
+  );
+  expect(new StaleFoodEntryError().message).toBe(
+    "This Food Entry changed after you opened it. Review it and try again.",
+  );
+  expect(new StaleFoodEntryError().name).toBe("StaleFoodEntryError");
+});
+
+test("log rejects malformed public input before consulting the provider", async () => {
+  const database = await setupDatabase();
+  const client = database.getClient();
+  const userId = insertConfiguredUser(client, "log.boundaries");
+  const provider = new FakeCatalogProvider();
+  const service = new FoodEntryService(
+    client,
+    provider,
+    () => new Date("2026-08-29T18:00:00.000Z"),
+  );
+  const valid = validLogInput();
+  const invalidChanges: Array<Partial<typeof valid>> = [
+    { idempotencyKey: "short" },
+    { idempotencyKey: "a".repeat(129) },
+    { idempotencyKey: "!valid-key-123" },
+    { idempotencyKey: "valid-key-123!" },
+    { providerFoodId: "0" },
+    { providerFoodId: "01" },
+    { providerFoodId: "x200" },
+    { providerFoodId: "200x" },
+    { quantity: "" },
+    { quantity: "0" },
+    { quantity: "100" },
+    { quantity: "1.1234567" },
+    { quantity: "value" },
+    { quantity: "1".repeat(33) },
+    { selectedMeasurementId: "" },
+    { selectedMeasurementId: "m".repeat(129) },
+  ];
+
+  for (const [index, change] of invalidChanges.entries()) {
+    await expect(
+      service.log(userId, {
+        ...valid,
+        idempotencyKey: `boundary-${index}-valid-key`,
+        ...change,
+      }),
+    ).rejects.toBeInstanceOf(InvalidFoodEntryInputError);
+  }
+
+  expect(provider.getFoodCalls).toBe(0);
+  expect(client.select().from(foodEntries).all()).toEqual([]);
+  database.close();
+});
+
+test("log validates provider identity and measurement unit", async () => {
+  const database = await setupDatabase();
+  const client = database.getClient();
+  const userId = insertConfiguredUser(client, "provider.boundaries");
+  const provider = new FakeCatalogProvider();
+  const service = new FoodEntryService(
+    client,
+    provider,
+    () => new Date("2026-08-29T18:00:00.000Z"),
+  );
+
+  provider.food.providerFoodId = "201";
+  await expect(service.log(userId, validLogInput())).rejects.toBeInstanceOf(
+    CatalogInvalidResponseError,
+  );
+
+  provider.food.providerFoodId = "200";
+  provider.food.measurements = [
+    {
+      baseQuantityMicrounits: 32_000_000,
+      id: "portion:7",
+      label: "1 volume portion",
+      unit: "ml",
+    },
+  ];
+  await expect(
+    service.log(userId, {
+      ...validLogInput(),
+      idempotencyKey: "wrong-measurement-unit",
+    }),
+  ).rejects.toBeInstanceOf(CatalogUnsafeMeasurementError);
+
+  expect(client.select().from(foodEntries).all()).toEqual([]);
+  database.close();
+});
+
+test("read rejects every unsafe or unavailable entry identity", async () => {
+  const database = await setupDatabase();
+  const client = database.getClient();
+  const userId = insertConfiguredUser(client, "read.boundaries");
+  const otherUserId = insertConfiguredUser(client, "read.other");
+  const service = new FoodEntryService(
+    client,
+    new FakeCatalogProvider(),
+    () => new Date("2026-08-29T18:00:00.000Z"),
+  );
+  const created = await service.log(userId, validLogInput());
+
+  for (const entryId of [0, -1, 1.5, Number.NaN, Number.MAX_SAFE_INTEGER + 1]) {
+    expect(() => service.read(userId, entryId)).toThrow(
+      FoodEntryUnavailableError,
+    );
+  }
+  expect(() => service.read(userId, created.id + 1000)).toThrow(
+    FoodEntryUnavailableError,
+  );
+  expect(() => service.read(otherUserId, created.id)).toThrow(
+    FoodEntryUnavailableError,
+  );
+  expect(service.read(userId, created.id).id).toBe(created.id);
+  database.close();
+});
+
+test("update normalizes editable values at their exact storage boundaries", async () => {
+  const database = await setupDatabase();
+  const client = database.getClient();
+  const userId = insertConfiguredUser(client, "update.boundaries");
+  const service = new FoodEntryService(
+    client,
+    new FakeCatalogProvider(),
+    () => new Date("2026-08-29T18:00:00.000Z"),
+  );
+  const created = await service.log(userId, validLogInput());
+
+  const maximum = service.update(userId, created.id, {
+    carbohydrateGrams: "999999.999",
+    energyKcal: " 1.2 ",
+    expectedUpdatedAt: created.updatedAt,
+    foodLogDate: created.foodLogDate,
+    name: "  Corrected boundary food  ",
+    quantity: " 2.5 ",
+    selectedMeasurementId: "portion:7",
+    sodiumMilligrams: "9999999",
+  });
+  expect(maximum).toMatchObject({
+    carbohydrateMilligrams: 999_999_999,
+    energyMilliKcal: 1_200,
+    name: "Corrected boundary food",
+    quantityMicrounits: 2_500_000,
+    sodiumMilligrams: 9_999_999,
+  });
+
+  const blanked = service.update(userId, created.id, {
+    energyKcal: "   ",
+    expectedUpdatedAt: maximum.updatedAt,
+    foodLogDate: created.foodLogDate,
+    name: "Blank nutrient",
+    quantity: "1",
+    selectedMeasurementId: "portion:7",
+  });
+  expect(blanked.energyMilliKcal).toBeNull();
+
+  for (const change of [
+    { energyKcal: "x1" },
+    { energyKcal: "1x" },
+    { energyKcal: "1.0009" },
+    { energyKcal: "1000000" },
+    { carbohydrateGrams: "1000000.000" },
+    { sodiumMilligrams: "x1" },
+    { sodiumMilligrams: "1x" },
+    { sodiumMilligrams: "1.0" },
+    { sodiumMilligrams: "10000000" },
+  ]) {
+    expect(() =>
+      service.update(userId, created.id, {
+        ...change,
+        expectedUpdatedAt: blanked.updatedAt,
+        foodLogDate: created.foodLogDate,
+        name: "Invalid nutrient",
+        quantity: "1",
+        selectedMeasurementId: "portion:7",
+      }),
+    ).toThrow(InvalidFoodEntryInputError);
+  }
+
+  database.close();
+});
+
+test("update and delete reject malformed identifiers and concurrency tokens", async () => {
+  const database = await setupDatabase();
+  const client = database.getClient();
+  const userId = insertConfiguredUser(client, "mutation.boundaries");
+  const service = new FoodEntryService(
+    client,
+    new FakeCatalogProvider(),
+    () => new Date("2026-08-29T18:00:00.000Z"),
+  );
+  const created = await service.log(userId, validLogInput());
+  const validUpdate = {
+    expectedUpdatedAt: created.updatedAt,
+    foodLogDate: created.foodLogDate,
+    name: "Valid name",
+    quantity: "1",
+    selectedMeasurementId: "portion:7",
+  };
+
+  for (const entryId of [0, -1, 1.5, Number.NaN, Number.MAX_SAFE_INTEGER + 1]) {
+    expect(() => service.update(userId, entryId, validUpdate)).toThrow(
+      InvalidFoodEntryInputError,
+    );
+    expect(() =>
+      service.delete(userId, entryId, {
+        expectedUpdatedAt: created.updatedAt,
+        foodLogDate: created.foodLogDate,
+      }),
+    ).toThrow(InvalidFoodEntryInputError);
+  }
+
+  for (const change of [
+    { expectedUpdatedAt: "not-an-instant" },
+    { foodLogDate: "2026-02-29" },
+    { foodLogDate: "not-a-date" },
+  ]) {
+    expect(() =>
+      service.delete(userId, created.id, {
+        expectedUpdatedAt: created.updatedAt,
+        foodLogDate: created.foodLogDate,
+        ...change,
+      }),
+    ).toThrow(InvalidFoodEntryInputError);
+  }
+
+  for (const change of [
+    { expectedUpdatedAt: "not-an-instant" },
+    { name: "   " },
+    { name: "n".repeat(201) },
+    { quantity: "" },
+    { selectedMeasurementId: "" },
+    { selectedMeasurementId: "m".repeat(129) },
+  ]) {
+    expect(() =>
+      service.update(userId, created.id, { ...validUpdate, ...change }),
+    ).toThrow(InvalidFoodEntryInputError);
+  }
+
+  database.close();
+});
+
+test("snapshots retain only measurements compatible with the authoritative base", async () => {
+  const database = await setupDatabase();
+  const client = database.getClient();
+  const userId = insertConfiguredUser(client, "measurement.filter");
+  const provider = new FakeCatalogProvider();
+  provider.food.measurements.push({
+    baseQuantityMicrounits: 250_000_000,
+    id: "volume:unsafe",
+    label: "Unsafe volume",
+    unit: "ml",
+  });
+  const service = new FoodEntryService(
+    client,
+    provider,
+    () => new Date("2026-08-29T18:00:00.000Z"),
+  );
+
+  const created = await service.log(userId, validLogInput());
+
+  expect(created.supportedMeasurements).toEqual([
+    provider.food.measurements[0],
+    provider.food.measurements[1],
+  ]);
+  database.close();
+});
+
+test("writable-date preflight avoids provider work for invalid and future logs", async () => {
+  const database = await setupDatabase();
+  const client = database.getClient();
+  const userId = insertConfiguredUser(client, "date.preflight");
+  const provider = new FakeCatalogProvider();
+  const service = new FoodEntryService(
+    client,
+    provider,
+    () => new Date("2026-08-29T18:00:00.000Z"),
+  );
+
+  await expect(
+    service.log(userId, { ...validLogInput(), foodLogDate: "2026-02-29" }),
+  ).rejects.toThrow("Food Log date is invalid");
+  await expect(
+    service.log(userId, {
+      ...validLogInput(),
+      foodLogDate: "2026-08-30",
+      idempotencyKey: "future-date-preflight",
+    }),
+  ).rejects.toBeInstanceOf(FutureFoodLogDateError);
+  expect(provider.getFoodCalls).toBe(0);
+  database.close();
+});
+
+test("transaction rechecks idempotency after provider work", async () => {
+  const database = await setupDatabase();
+  const client = database.getClient();
+  const userId = insertConfiguredUser(client, "idempotency.race");
+  const input = validLogInput();
+  const competitor = new FoodEntryService(
+    client,
+    new FakeCatalogProvider(),
+    () => new Date("2026-08-29T18:00:00.000Z"),
+  );
+  let competingEntryId: number | undefined;
+  const racingProvider = new FakeCatalogProvider();
+  racingProvider.getFood = async () => {
+    competingEntryId = (await competitor.log(userId, input)).id;
+    return structuredClone(racingProvider.food);
+  };
+  const service = new FoodEntryService(
+    client,
+    racingProvider,
+    () => new Date("2026-08-29T18:00:00.000Z"),
+  );
+
+  const result = await service.log(userId, input);
+
+  expect(result.id).toBe(competingEntryId);
+  expect(client.select().from(foodEntries).all()).toHaveLength(1);
+  database.close();
+});
+
+test("transaction rechecks account preferences after provider work", async () => {
+  const database = await setupDatabase();
+  const client = database.getClient();
+  const userId = insertConfiguredUser(client, "preference.race");
+  const provider = new FakeCatalogProvider();
+  provider.getFood = async () => {
+    client
+      .delete(userPreferences)
+      .where(eq(userPreferences.userId, userId))
+      .run();
+    return structuredClone(provider.food);
+  };
+  const service = new FoodEntryService(
+    client,
+    provider,
+    () => new Date("2026-08-29T18:00:00.000Z"),
+  );
+
+  await expect(service.log(userId, validLogInput())).rejects.toThrow(
+    "Food Log date is invalid",
+  );
+  expect(client.select().from(foodEntries).all()).toEqual([]);
+  database.close();
+});
+
+test("transaction rechecks the local day after provider work", async () => {
+  const database = await setupDatabase();
+  const client = database.getClient();
+  const userId = insertConfiguredUser(client, "date.race");
+  const instants = [
+    new Date("2026-08-29T18:00:00.000Z"),
+    new Date("2026-08-28T18:00:00.000Z"),
+  ];
+  const service = new FoodEntryService(
+    client,
+    new FakeCatalogProvider(),
+    () => instants.shift() ?? new Date("2026-08-28T18:00:00.000Z"),
+  );
+
+  await expect(service.log(userId, validLogInput())).rejects.toBeInstanceOf(
+    FutureFoodLogDateError,
+  );
+  expect(client.select().from(foodEntries).all()).toEqual([]);
+  database.close();
+});
+
+test("offset timestamps and optimistic update races preserve stale-write safety", async () => {
+  const database = await setupDatabase();
+  const client = database.getClient();
+  const userId = insertConfiguredUser(client, "update.race");
+  const service = new FoodEntryService(
+    client,
+    new FakeCatalogProvider(),
+    () => new Date("2026-08-29T18:00:01.000Z"),
+  );
+  const created = await service.log(userId, validLogInput());
+  const offsetTimestamp = "2026-08-29T18:00:00+00:00";
+  client
+    .update(foodEntries)
+    .set({ updatedAt: offsetTimestamp })
+    .where(eq(foodEntries.id, created.id))
+    .run();
+
+  const accepted = service.update(userId, created.id, {
+    expectedUpdatedAt: offsetTimestamp,
+    foodLogDate: created.foodLogDate,
+    name: "Offset timestamp accepted",
+    quantity: "1",
+    selectedMeasurementId: "portion:7",
+  });
+  expect(accepted.name).toBe("Offset timestamp accepted");
+
+  client.run(sql.raw(`CREATE TRIGGER ignore_food_entry_update
+    BEFORE UPDATE ON food_entries
+    WHEN OLD.id = ${created.id}
+    BEGIN
+      SELECT RAISE(IGNORE);
+    END`));
+  expect(() =>
+    service.update(userId, created.id, {
+      expectedUpdatedAt: accepted.updatedAt,
+      foodLogDate: created.foodLogDate,
+      name: "Lost race",
+      quantity: "1",
+      selectedMeasurementId: "portion:7",
+    }),
+  ).toThrow(StaleFoodEntryError);
+  database.close();
+});
+
+test("optimistic delete reports a race when the database removes no row", async () => {
+  const database = await setupDatabase();
+  const client = database.getClient();
+  const userId = insertConfiguredUser(client, "delete.race");
+  const service = new FoodEntryService(
+    client,
+    new FakeCatalogProvider(),
+    () => new Date("2026-08-29T18:00:00.000Z"),
+  );
+  const created = await service.log(userId, validLogInput());
+  client.run(sql.raw(`CREATE TRIGGER ignore_food_entry_delete
+    BEFORE DELETE ON food_entries
+    WHEN OLD.id = ${created.id}
+    BEGIN
+      SELECT RAISE(IGNORE);
+    END`));
+
+  expect(() =>
+    service.delete(userId, created.id, {
+      expectedUpdatedAt: created.updatedAt,
+      foodLogDate: created.foodLogDate,
+    }),
+  ).toThrow(StaleFoodEntryError);
+  expect(service.read(userId, created.id).id).toBe(created.id);
+  database.close();
+});
+
+test("update selects the requested compatible measurement and rejects unsafe choices", async () => {
+  const database = await setupDatabase();
+  const client = database.getClient();
+  const userId = insertConfiguredUser(client, "update.measurement");
+  const service = new FoodEntryService(
+    client,
+    new FakeCatalogProvider(),
+    () => new Date("2026-08-29T18:00:00.000Z"),
+  );
+  const created = await service.log(userId, validLogInput());
+
+  const changed = service.update(userId, created.id, {
+    expectedUpdatedAt: created.updatedAt,
+    foodLogDate: created.foodLogDate,
+    name: "Base quantity",
+    quantity: "1",
+    selectedMeasurementId: "base:g:100000000",
+  });
+  expect(changed).toMatchObject({
+    energyMilliKcal: 250_000,
+    selectedMeasurementId: "base:g:100000000",
+    selectedMeasurementLabel: "100 g",
+  });
+
+  expect(() =>
+    service.update(userId, created.id, {
+      expectedUpdatedAt: changed.updatedAt,
+      foodLogDate: created.foodLogDate,
+      name: "Missing measurement",
+      quantity: "1",
+      selectedMeasurementId: "missing-measurement",
+    }),
+  ).toThrow(InvalidFoodEntryInputError);
+
+  client
+    .update(foodEntries)
+    .set({
+      supportedMeasurements: JSON.stringify([
+        {
+          baseQuantityMicrounits: 250_000_000,
+          id: "volume:unsafe",
+          label: "Unsafe volume",
+          unit: "ml",
+        },
+      ]),
+    })
+    .where(eq(foodEntries.id, created.id))
+    .run();
+  expect(() =>
+    service.update(userId, created.id, {
+      expectedUpdatedAt: changed.updatedAt,
+      foodLogDate: created.foodLogDate,
+      name: "Wrong measurement unit",
+      quantity: "1",
+      selectedMeasurementId: "volume:unsafe",
+    }),
+  ).toThrow(InvalidFoodEntryInputError);
+  database.close();
+});
+
+test("every decimal nutrient field stores fractional thousandths", async () => {
+  const database = await setupDatabase();
+  const client = database.getClient();
+  const userId = insertConfiguredUser(client, "fractional.nutrients");
+  const service = new FoodEntryService(
+    client,
+    new FakeCatalogProvider(),
+    () => new Date("2026-08-29T18:00:00.000Z"),
+  );
+  const created = await service.log(userId, validLogInput());
+
+  const updated = service.update(userId, created.id, {
+    carbohydrateGrams: "1.001",
+    energyKcal: "2.002",
+    expectedUpdatedAt: created.updatedAt,
+    fatGrams: "3.003",
+    fiberGrams: "4.004",
+    foodLogDate: created.foodLogDate,
+    name: "Fractional nutrients",
+    proteinGrams: "5.005",
+    quantity: "1",
+    selectedMeasurementId: "portion:7",
+    sodiumMilligrams: "6",
+    sugarGrams: "7.007",
+  });
+
+  expect(updated).toMatchObject({
+    carbohydrateMilligrams: 1_001,
+    energyMilliKcal: 2_002,
+    fatMilligrams: 3_003,
+    fiberMilligrams: 4_004,
+    proteinMilligrams: 5_005,
+    sodiumMilligrams: 6,
+    sugarMilligrams: 7_007,
+  });
+  database.close();
+});
+
+test("delete validates the log date and accepts an offset concurrency token", async () => {
+  const database = await setupDatabase();
+  const client = database.getClient();
+  const userId = insertConfiguredUser(client, "delete.offset");
+  const service = new FoodEntryService(
+    client,
+    new FakeCatalogProvider(),
+    () => new Date("2026-08-29T18:00:00.000Z"),
+  );
+  const created = await service.log(userId, validLogInput());
+
+  expect(() =>
+    service.delete(userId, created.id, {
+      expectedUpdatedAt: created.updatedAt,
+      foodLogDate: "2026-08-28",
+    }),
+  ).toThrow(FoodEntryUnavailableError);
+
+  const offsetTimestamp = "2026-08-29T18:00:00+00:00";
+  client
+    .update(foodEntries)
+    .set({ updatedAt: offsetTimestamp })
+    .where(eq(foodEntries.id, created.id))
+    .run();
+  expect(
+    service.delete(userId, created.id, {
+      expectedUpdatedAt: offsetTimestamp,
+      foodLogDate: created.foodLogDate,
+    }),
+  ).toEqual({ foodLogDate: created.foodLogDate });
   database.close();
 });

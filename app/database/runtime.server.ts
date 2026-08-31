@@ -7,10 +7,19 @@ import {
   type ApplicationDatabase,
 } from "./database.server";
 
-const environmentSchema = z.object({
-  DATABASE_PATH: z.string().trim().min(1).optional(),
-  MIGRATIONS_PATH: z.string().trim().min(1).optional(),
-});
+function environmentSchema() {
+  return z.object({
+    DATABASE_PATH: z.string().optional(),
+    MIGRATIONS_PATH: z.string().optional(),
+  });
+}
+
+export function configuredPath(value: string | undefined): string | undefined {
+  if (value === undefined) return undefined;
+  const candidate = value.trim();
+  if (candidate === "") throw new Error("Configured database paths cannot be blank");
+  return candidate;
+}
 
 let applicationDatabase: ApplicationDatabase | undefined;
 
@@ -19,14 +28,14 @@ export function initializeApplicationDatabase(): ApplicationDatabase {
     return applicationDatabase;
   }
 
-  const environment = environmentSchema.parse(process.env);
+  const environment = environmentSchema().parse(process.env);
 
   applicationDatabase = openApplicationDatabase({
     databasePath:
-      environment.DATABASE_PATH ??
+      configuredPath(environment.DATABASE_PATH) ??
       path.resolve("data", "open-calory-tracker.sqlite"),
     migrationsFolder:
-      environment.MIGRATIONS_PATH ?? path.resolve("drizzle"),
+      configuredPath(environment.MIGRATIONS_PATH) ?? path.resolve("drizzle"),
   });
 
   return applicationDatabase;

@@ -13,7 +13,6 @@ import shellStyles from "../food-log.module.css";
 import styles from "../goals.module.css";
 import {
   InvalidGoalVersionDateError,
-  GoalVersionUnavailableError,
 } from "../goals/goal-version.server";
 import { getGoalVersionService } from "../goals/runtime.server";
 import {
@@ -128,6 +127,7 @@ export async function action({ request }: Route.ActionArgs) {
   if (
     !getAuthenticationService().verifyCsrfToken(
       session.token,
+      // Stryker disable next-line StringLiteral: every placeholder for a missing opaque token is rejected identically.
       String(formData.get("csrfToken") ?? ""),
     )
   ) {
@@ -194,7 +194,6 @@ export async function action({ request }: Route.ActionArgs) {
         { status: 400 },
       );
     }
-    if (error instanceof GoalVersionUnavailableError) return redirect("/setup");
     throw error;
   }
 }

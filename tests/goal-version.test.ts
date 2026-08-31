@@ -14,7 +14,11 @@ import {
   userPreferences,
   users,
 } from "../app/database/schema.server";
-import { GoalVersionService } from "../app/goals/goal-version.server";
+import {
+  GoalVersionService,
+  GoalVersionUnavailableError,
+  InvalidGoalVersionDateError,
+} from "../app/goals/goal-version.server";
 import {
   convertWaterDisplay,
   goalFieldsFromCanonical,
@@ -167,6 +171,46 @@ test("US and metric presentation round-trips canonical fixed-point goals", () =>
 test("unit changes convert the draft water amount instead of resetting it", () => {
   expect(convertWaterDisplay("100", "us", "metric")).toBe("2957.353");
   expect(convertWaterDisplay("2957.353", "metric", "us")).toBe("100");
+  expect(convertWaterDisplay("not-water", "metric", "us")).toBeUndefined();
+});
+
+test("Goal Version validation reports the exact failing field and message", () => {
+  const validFields = {
+    calories: "1900",
+    carbohydrate: "210",
+    displayUnits: "metric",
+    effectiveDate: "2026-08-30",
+    fat: "65",
+    fiber: "30",
+    protein: "110",
+    sodium: "2000",
+    sugar: "45",
+    water: "2400",
+  } as const;
+
+  expect(
+    validateGoalVersionFields(
+      { ...validFields, effectiveDate: "not-a-date" },
+      "America/New_York",
+    ),
+  ).toEqual({
+    error: "Enter a valid effective date.",
+    field: "effectiveDate",
+    success: false,
+  });
+  expect(
+    validateGoalVersionFields(
+      { ...validFields, carbohydrate: "" },
+      "America/New_York",
+    ),
+  ).toEqual({
+    error: "Carbohydrate must be from 0.001 to 2,000 g.",
+    field: "carbohydrate",
+    success: false,
+  });
+  expect(
+    validateGoalVersionFields(validFields, "not/a-zone"),
+  ).toMatchObject({ field: "effectiveDate", success: false });
 });
 
 test("saving a converted draft preserves the canonical amount entered before conversion", () => {
@@ -218,7 +262,7 @@ test("an unchanged rounded water display preserves its exact canonical value", (
 
   expect(
     validateGoalVersionFields(
-      { ...usFields, displayUnits: "us" },
+      { ...usFields, displayUnits: "us", water: ` ${usFields.water} ` },
       "America/New_York",
       sourceGoal,
     ),
@@ -226,6 +270,36 @@ test("an unchanged rounded water display preserves its exact canonical value", (
     data: { waterTargetMicroliters: 2_400_000 },
     success: true,
   });
+});
+
+test("source water metadata only preserves the source amount while the converted draft is unchanged", () => {
+  const fields = {
+    calories: "1900",
+    carbohydrate: "210",
+    displayUnits: "us" as const,
+    effectiveDate: "2026-08-30",
+    fat: "65",
+    fiber: "30",
+    protein: "110",
+    sodium: "2000",
+    sugar: "45",
+    waterSourceUnits: "metric",
+    waterSourceValue: "2500",
+  };
+
+  const converted = convertWaterDisplay("2500", "metric", "us")!;
+  expect(
+    validateGoalVersionFields(
+      { ...fields, water: ` ${converted} ` },
+      "America/New_York",
+    ),
+  ).toMatchObject({ data: { waterTargetMicroliters: 2_500_000 } });
+  expect(
+    validateGoalVersionFields(
+      { ...fields, water: "90" },
+      "America/New_York",
+    ),
+  ).toMatchObject({ data: { waterTargetMicroliters: 2_661_618 } });
 });
 
 test.each([
@@ -351,6 +425,34 @@ test("Goal Version reads and replacements stay scoped to one user", async () => 
   expect(service.read(otherId, "2026-08-29")).toMatchObject({
     displayUnits: "us",
     goal: { calorieTargetMilliKcal: 2_050_000 },
+  });
+  database.close();
+});
+
+test("Goal Version service distinguishes unavailable accounts and invalid dates", async () => {
+  const database = await setupDatabase();
+  const client = database.getClient();
+  const userId = insertConfiguredUser(client, "goal.errors");
+  const missingUserId = userId + 10_000;
+  const service = new GoalVersionService(
+    client,
+    () => new Date("2026-08-29T16:00:00.000Z"),
+  );
+
+  expect(service.read(missingUserId)).toBeUndefined();
+  expect(() => service.read(userId, "not-a-date")).toThrow(
+    InvalidGoalVersionDateError,
+  );
+  expect(() => service.replace(missingUserId, "2026-08-30", replacement)).toThrow(
+    GoalVersionUnavailableError,
+  );
+  expect(new InvalidGoalVersionDateError()).toMatchObject({
+    message: "Effective date must be today or a future local date.",
+    name: "InvalidGoalVersionDateError",
+  });
+  expect(new GoalVersionUnavailableError()).toMatchObject({
+    message: "Goal Versions are unavailable for this account.",
+    name: "GoalVersionUnavailableError",
   });
   database.close();
 });

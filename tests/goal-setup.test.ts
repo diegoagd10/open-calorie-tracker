@@ -15,6 +15,7 @@ import {
   users,
 } from "../app/database/schema.server";
 import { GoalSetupService } from "../app/setup/goal-setup.server";
+import { setupClock } from "../app/setup/runtime.server";
 import {
   validateSetupFields,
   type SetupSubmission,
@@ -119,6 +120,78 @@ test("controlled local-date boundaries produce different initial effective dates
   database.close();
 });
 
+test("initial setup refuses either half of a pre-existing setup", async () => {
+  const database = await setupDatabase();
+  const client = database.getClient();
+  const preferenceUserId = insertUser(client, "preference.exists");
+  const goalUserId = insertUser(client, "goal.exists");
+  const createdAt = "2026-01-01T00:00:00.000Z";
+  client.insert(userPreferences).values({
+    createdAt,
+    displayUnits: "metric",
+    timeZone: "UTC",
+    updatedAt: createdAt,
+    userId: preferenceUserId,
+  }).run();
+  client.insert(goalVersions).values({
+    ...canonicalSetup,
+    createdAt,
+    effectiveDate: "2026-01-01",
+    userId: goalUserId,
+  }).run();
+  const service = new GoalSetupService(
+    client,
+    () => new Date("2026-01-01T12:00:00.000Z"),
+  );
+
+  expect(service.completeInitial(preferenceUserId, canonicalSetup)).toEqual({
+    error: "already-complete",
+    ok: false,
+  });
+  expect(service.completeInitial(goalUserId, canonicalSetup)).toEqual({
+    error: "already-complete",
+    ok: false,
+  });
+  database.close();
+});
+
+test.each([
+  "SQLITE_CONSTRAINT_PRIMARYKEY",
+  "SQLITE_CONSTRAINT_UNIQUE",
+])("a %s race is reported as already complete", (code) => {
+  const database = {
+    transaction() {
+      throw Object.assign(new Error("setup race"), { code });
+    },
+  } as unknown as ApplicationDatabaseClient;
+  const service = new GoalSetupService(
+    database,
+    () => new Date("2026-01-01T12:00:00.000Z"),
+  );
+
+  expect(service.completeInitial(1, canonicalSetup)).toEqual({
+    error: "already-complete",
+    ok: false,
+  });
+});
+
+test.each([
+  new Error("ordinary failure"),
+  Object.assign(new Error("different constraint"), {
+    code: "SQLITE_CONSTRAINT_CHECK",
+  }),
+  { code: "SQLITE_CONSTRAINT_UNIQUE" },
+])("non-race setup failures are rethrown", (error) => {
+  const database = {
+    transaction() {
+      throw error;
+    },
+  } as unknown as ApplicationDatabaseClient;
+  const service = new GoalSetupService(database);
+
+  expect(() => service.completeInitial(1, canonicalSetup)).toThrow(error);
+});
+
 test("validation converts display values without SQLite floating point", () => {
   expect(
     validateSetupFields({
@@ -141,4 +214,135 @@ test("validation converts display values without SQLite floating point", () => {
     },
     success: true,
   });
+});
+
+const validSetupFields = {
+  calories: "2000",
+  carbohydrate: "200",
+  displayUnits: "metric",
+  fat: "70",
+  fiber: "30",
+  protein: "100",
+  sodium: "2000",
+  sugar: "50",
+  timeZone: "America/New_York",
+  water: "2500",
+};
+
+test.each([
+  ["decimal prefix", { calories: "1.000junk" }, "calories"],
+  ["decimal suffix", { calories: "junk1.000" }, "calories"],
+  ["integer prefix", { sodium: "1junk" }, "sodium"],
+  ["integer suffix", { sodium: "junk1" }, "sodium"],
+  ["zero calories", { calories: "0" }, "calories"],
+  ["zero water", { water: "0" }, "water"],
+] as const)("validation rejects a %s", (_label, change, field) => {
+  expect(validateSetupFields({ ...validSetupFields, ...change })).toMatchObject({
+    field,
+    success: false,
+  });
+});
+
+test("validation trims numeric values and returns every canonical field", () => {
+  expect(
+    validateSetupFields({
+      ...validSetupFields,
+      calories: " 2000 ",
+      sodium: " 2000 ",
+      timeZone: " Pacific/Honolulu ",
+    }),
+  ).toEqual({
+    data: {
+      calorieTargetMilliKcal: 2_000_000,
+      carbohydrateTargetMilligrams: 200_000,
+      displayUnits: "metric",
+      fatTargetMilligrams: 70_000,
+      fiberTargetMilligrams: 30_000,
+      proteinTargetMilligrams: 100_000,
+      sodiumMaximumMilligrams: 2_000,
+      sugarMaximumMilligrams: 50_000,
+      timeZone: "Pacific/Honolulu",
+      waterTargetMicroliters: 2_500_000,
+    },
+    success: true,
+  });
+});
+
+test("validation enforces time-zone boundaries and exact errors", () => {
+  expect(
+    validateSetupFields({ ...validSetupFields, displayUnits: "imperial" }),
+  ).toEqual({
+    error: "Choose US or metric display units.",
+    field: "displayUnits",
+    success: false,
+  });
+  expect(
+    validateSetupFields({ ...validSetupFields, timeZone: "" }),
+  ).toMatchObject({ field: "timeZone", success: false });
+  expect(
+    validateSetupFields({ ...validSetupFields, timeZone: "A".repeat(101) }),
+  ).toEqual({
+    error: "Enter a valid IANA time zone, such as America/New_York.",
+    field: "timeZone",
+    success: false,
+  });
+  expect(
+    validateSetupFields({ ...validSetupFields, timeZone: "A".repeat(100) }),
+  ).toMatchObject({ field: "timeZone", success: false });
+});
+
+test("validation exposes exact calorie, nutrient, and sodium errors", () => {
+  expect(
+    validateSetupFields({ ...validSetupFields, calories: "20000.001" }),
+  ).toEqual({
+    error: "Calories must be from 0.001 to 20,000 kcal.",
+    field: "calories",
+    success: false,
+  });
+  expect(
+    validateSetupFields({ ...validSetupFields, protein: "2000.001" }),
+  ).toEqual({
+    error: "Protein must be from 0.001 to 2,000 g.",
+    field: "protein",
+    success: false,
+  });
+  expect(
+    validateSetupFields({ ...validSetupFields, sodium: "100001" }),
+  ).toEqual({
+    error: "Sodium maximum must be from 1 to 100,000 mg.",
+    field: "sodium",
+    success: false,
+  });
+});
+
+test("the setup clock only honors a valid test-only instant", () => {
+  const originalNodeEnvironment = process.env.NODE_ENV;
+  const originalSetupNow = process.env.SETUP_TEST_NOW;
+  try {
+    process.env.NODE_ENV = "test";
+    process.env.SETUP_TEST_NOW = "2026-01-01T09:30:00.000Z";
+    const clock = setupClock();
+    expect(clock().toISOString()).toBe("2026-01-01T09:30:00.000Z");
+    expect(clock()).not.toBe(clock());
+
+    delete process.env.SETUP_TEST_NOW;
+    const before = Date.now();
+    expect(setupClock()().getTime()).toBeGreaterThanOrEqual(before);
+
+    process.env.SETUP_TEST_NOW = "not-an-instant";
+    expect(() => setupClock()).toThrow(
+      "SETUP_TEST_NOW must be an ISO date-time",
+    );
+
+    process.env.NODE_ENV = "production";
+    process.env.SETUP_TEST_NOW = "2026-01-01T09:30:00.000Z";
+    expect(setupClock()().getTime()).toBeGreaterThan(
+      new Date("2026-01-02T00:00:00.000Z").getTime(),
+    );
+  } finally {
+    if (originalNodeEnvironment === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = originalNodeEnvironment;
+    if (originalSetupNow === undefined) delete process.env.SETUP_TEST_NOW;
+    else process.env.SETUP_TEST_NOW = originalSetupNow;
+  }
 });

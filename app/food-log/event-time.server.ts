@@ -13,7 +13,7 @@ function localTimeAt(instant: Date, timeZone: string): string {
     timeZone,
   }).formatToParts(instant);
   const value = (type: Intl.DateTimeFormatPartTypes) =>
-    parts.find((part) => part.type === type)?.value ?? "00";
+    parts.find((part) => part.type === type)!.value;
   return `${value("hour")}:${value("minute")}:${value("second")}`;
 }
 

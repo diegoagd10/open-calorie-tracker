@@ -213,6 +213,7 @@ test("USDA detail applies Foundation energy precedence and keeps only safe measu
     nutrientId: 1005,
     providerFoodId: "200",
   });
+  expect(onDiagnostic).toHaveBeenCalledTimes(1);
 });
 
 test("USDA detail falls back to the abridged format for the Grade A egg white result", async () => {

@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "findings": [
+    {
+      "ruleId": "js/insufficient-password-hash",
+      "path": "app/auth/token.server.ts",
+      "primaryLocationLineHash": "2562e8cbd2b34734:1",
+      "rationale": "This helper hashes random high-entropy session and pre-authentication tokens so bearer values are not stored. The password taint comes from a test registration result object, not from a password passed to this helper."
+    },
+    {
+      "ruleId": "js/insufficient-password-hash",
+      "path": "app/auth/rate-limiter.server.ts",
+      "primaryLocationLineHash": "a9271361675b3130:1",
+      "rationale": "This helper hashes rate-limit identifiers such as user IDs, usernames, and IP addresses. The password taint comes from a test registration result object, not from a password used as a rate-limit subject."
+    }
+  ]
+}

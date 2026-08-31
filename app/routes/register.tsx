@@ -52,21 +52,19 @@ export async function action({ request }: Route.ActionArgs) {
   };
   requirePreAuthenticationCsrf(
     request,
+    // Stryker disable next-line StringLiteral: every placeholder for a missing opaque token is rejected identically.
     String(formData.get("csrfToken") ?? ""),
   );
   const parsed = registrationSchema.safeParse(fields);
 
   if (!parsed.success) {
-    const issue = parsed.error.issues[0];
-    let error = "Check the highlighted account details and try again.";
-
-    if (issue?.path[0] === "username") {
-      error = "Use 3–30 ASCII letters, digits, dot, hyphen, or underscore.";
-    } else if (issue?.path[0] === "password") {
-      error = "Password must contain 12–128 characters.";
-    } else if (issue?.path[0] === "confirmPassword") {
-      error = "Passwords do not match.";
-    }
+    const field = parsed.error.issues[0].path[0];
+    const error =
+      field === "username"
+        ? "Use 3–30 ASCII letters, digits, dot, hyphen, or underscore."
+        : field === "password"
+          ? "Password must contain 12–128 characters."
+          : "Passwords do not match.";
 
     return data<RegistrationActionData>(
       { error, username: fields.username },

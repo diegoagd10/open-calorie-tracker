@@ -88,7 +88,7 @@ export class PersistentRateLimiter {
 
   #hashSubject(scope: string, subject: string): string {
     return createHash("sha256")
-      .update(`${scope}\0${subject}`, "utf8")
+      .update(`${scope}\0${subject}`)
       .digest("hex");
   }
 }

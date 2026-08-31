@@ -6,7 +6,9 @@ import type { ApplicationDatabaseClient } from "../database/database.server";
 import { preAuthenticationCsrfSessions } from "../database/schema.server";
 import { deriveCsrfToken, hashOpaqueToken, safelyEqual } from "./token.server";
 
-const PRE_AUTHENTICATION_CSRF_SESSION_MS = 30 * 60 * 1_000;
+function preAuthenticationCsrfSessionMs(): number {
+  return 30 * 60 * 1_000;
+}
 
 export type PreAuthenticationCsrfSession = {
   csrfToken: string;
@@ -29,7 +31,7 @@ export class PreAuthenticationCsrfService {
   issue(): PreAuthenticationCsrfSession {
     const now = this.#now();
     const expiresAt = new Date(
-      now.getTime() + PRE_AUTHENTICATION_CSRF_SESSION_MS,
+      now.getTime() + preAuthenticationCsrfSessionMs(),
     );
     const token = randomBytes(32).toString("base64url");
 

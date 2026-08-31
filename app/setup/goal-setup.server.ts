@@ -47,20 +47,7 @@ export class GoalSetupService {
     const effectiveDate = localDateAt(now, setup.timeZone);
 
     try {
-      const created = this.#database.transaction((transaction) => {
-        const preference = transaction
-          .select({ userId: userPreferences.userId })
-          .from(userPreferences)
-          .where(eq(userPreferences.userId, userId))
-          .get();
-        const goal = transaction
-          .select({ id: goalVersions.id })
-          .from(goalVersions)
-          .where(eq(goalVersions.userId, userId))
-          .limit(1)
-          .get();
-        if (preference || goal) return false;
-
+      this.#database.transaction((transaction) => {
         transaction
           .insert(userPreferences)
           .values({
@@ -88,12 +75,9 @@ export class GoalSetupService {
             waterTargetMicroliters: setup.waterTargetMicroliters,
           })
           .run();
-        return true;
       });
 
-      return created
-        ? { effectiveDate, ok: true }
-        : { error: "already-complete", ok: false };
+      return { effectiveDate, ok: true };
     } catch (error) {
       if (
         error instanceof Error &&

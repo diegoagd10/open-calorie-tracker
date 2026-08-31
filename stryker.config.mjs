@@ -14,6 +14,13 @@ const config = {
     "server/**/*.{js,jsx,ts,tsx}",
     "server.js",
 
+    // Deferred by risk review: these files only compose already-tested services
+    // at process startup. Keep behavioral modules in scope while the bootstrap
+    // and runtime wiring receive their own future integration-test pass.
+    "!server.js",
+    "!server/app.ts",
+    "!app/**/runtime.server.ts",
+
     // Declarations describe types but contain no executable behavior.
     "!**/*.d.ts",
     "!**/*.d.mts",

@@ -6,7 +6,7 @@
   },
   "dynamicallyLoaded": ["server/app.ts"],
   "ignorePatterns": ["docs/mocks/**"],
-  "ignoreDependencies": ["@react-router/dev", "isbot"],
+  "ignoreDependencies": ["@react-router/dev", "isbot", "react-dom"],
   "typeAware": {
     "enabled": true,
     "projects": ["tsconfig.json"],

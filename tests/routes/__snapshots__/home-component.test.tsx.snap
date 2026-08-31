@@ -1,0 +1,57 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`home catalog detail recalculates previews and exposes the log contract 1`] = `"53178c40cee1cd130feb4b05845c738472c1f2b49b4af2c35fb68e341b8ffbb9"`;
+
+exports[`home catalog detail recalculates previews and exposes the log contract 2`] = `"9e9edeffec9322fc4ce1107cdfd39ac1f17b4576c892f517fb55ff4f9dff9178"`;
+
+exports[`home catalog detail recalculates previews and exposes the log contract 3`] = `"2f4eb6fc88d55dc4098a044d57e86b4b570b49a4096fe316f173116b8a013de0"`;
+
+exports[`home catalog renders initial, empty, failure, and selectable result states 1`] = `"bff9c5f4ca1b1c15bc80beb8f4a4a0988515053e1568f431c9793668286b1f87"`;
+
+exports[`home catalog renders initial, empty, failure, and selectable result states 2`] = `"b97c714430d292d0e846f7b276691db5500831abab99b55ab0d86a08859f19ee"`;
+
+exports[`home catalog renders initial, empty, failure, and selectable result states 3`] = `"976b78b27e3fb43b931158dd865af2d92186aad16f5d7d1fbcee531f097c71ca"`;
+
+exports[`home catalog renders initial, empty, failure, and selectable result states 4`] = `"c42e87e4ee9c05831a0622ecb7655289d4b061d451554aae5dfb14aa9798c1d9"`;
+
+exports[`home catalog renders initial, empty, failure, and selectable result states 5`] = `"073ae12124ec087bdeda8f1d6a8b40159086ad522f572b52e2763f859b8a08cb"`;
+
+exports[`home distinguishes past, future, no-goal, and incomplete summaries 1`] = `"b1a399f10e1f11e156d41b4412c299f8c000b30b8f9590fbd4df5aaa0b8c78e7"`;
+
+exports[`home distinguishes past, future, no-goal, and incomplete summaries 2`] = `"293ad0e284663065dedad9ac3225c3f00374c385988fddbd2c607287f4a4ac57"`;
+
+exports[`home food editor exposes saved fields, recalculation, and delete confirmation 1`] = `"eb8df43549bac7946398895841666e03b4b177b45bf76869dfeb3be20bdb1548"`;
+
+exports[`home food editor exposes saved fields, recalculation, and delete confirmation 2`] = `"39bd60f667319aa12a4cdefddbd2ee06e1df1d645ca5a29d2adba26c4e32c4d8"`;
+
+exports[`home food editor exposes saved fields, recalculation, and delete confirmation 3`] = `"37b953a34cf99d19db10126152452cf229c6fcf27c575b3555f5148d10426c90"`;
+
+exports[`home renders calendar navigation, selected dates, and future days 1`] = `"f7df6bda4e3444d119b4420f86cd7be0801eaab4889446d109bc727a7f2721d6"`;
+
+exports[`home renders calendar navigation, selected dates, and future days 2`] = `"cb4660b0bfbc9b99793db63add91fd606054a09310dfcb32f9a1bd21fae3a6eb"`;
+
+exports[`home renders food and water timeline entries with factual units 1`] = `"f37ed25ea582cfdb26fd0c731f9af12d7d96adc67afbc239165aacaa5700d1be"`;
+
+exports[`home renders submission and navigation pending states 1`] = `"25980892d2452a7520b2c0d6b7b978cbef3d8f0d38811c808e604ccd3c132399"`;
+
+exports[`home renders submission and navigation pending states 2`] = `"54c8a1ad06ea9f92e54a869fa4d7f15a01fc48fe4cdbfbda880789b4cdd72179"`;
+
+exports[`home renders submission and navigation pending states 3`] = `"e37b21f1cdf03c5b4e70525288cde0ca191558bd414424c78442e71151f699f3"`;
+
+exports[`home renders submission and navigation pending states 4`] = `"a05a7a905e752c06c6a1e60efc0d67da2e902c22a80fc089bcd57c8f7f136889"`;
+
+exports[`home renders submission and navigation pending states 5`] = `"bd905a17fda15fb483cb80ac12ec0ab3bb88da2f9f716352865aa93ea69cf08a"`;
+
+exports[`home renders today's empty log and all goal progress contracts 1`] = `"892c7bee354ba8b82c75efe31a191cdbf7e1d13bf0fd83d150c3825ed60fd4d0"`;
+
+exports[`home renders today's empty log and all goal progress contracts 2`] = `"58f5319531b3ab27cf04cd2cb7602be90b0a725a711d11768738c88eed2bf783"`;
+
+exports[`home water dialogs cover create, presets, exact values, edit, and deletion 1`] = `"3e893f79475c216abd1a04468cb46b511bbcc7b0861b97031fc3a62fe117f861"`;
+
+exports[`home water dialogs cover create, presets, exact values, edit, and deletion 2`] = `"1fbf8d0d34edf9aac614c1939ba53fbe6d8ce9084fb9c8e47d9272d29ee5665f"`;
+
+exports[`home water dialogs cover create, presets, exact values, edit, and deletion 3`] = `"1832004b67540a0e078f0dde95a567eb96b8b7765adc37d1bee9031caf38f319"`;
+
+exports[`home water dialogs cover create, presets, exact values, edit, and deletion 4`] = `"9e652057cb63ee0f85f6afa39a55e0323690aa1bdf42e4dfe2fc31c1241d0e69"`;
+
+exports[`home water dialogs cover create, presets, exact values, edit, and deletion 5`] = `"cc9893ea1d554c15ba8a2ceb353f33007e189d6bb5539f7ba1c8bb905db8e0a6"`;

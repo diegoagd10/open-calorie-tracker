@@ -1,17 +1,22 @@
 import { mkdtemp, rm } from "node:fs/promises";
+import { createHash, createHmac } from "node:crypto";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
 import { eq } from "drizzle-orm";
 import { afterEach, expect, test } from "vitest";
 
-import { AuthenticationService } from "../app/auth/authentication.server";
+import {
+  AuthenticationService,
+  isUniqueConstraint,
+} from "../app/auth/authentication.server";
 import { hashPassword } from "../app/auth/password.server";
 import { PreAuthenticationCsrfService } from "../app/auth/pre-authentication-csrf.server";
 import { openApplicationDatabase } from "../app/database/database.server";
 import {
   passwordCredentials,
   preAuthenticationCsrfSessions,
+  rateLimitCounters,
   sessions,
 } from "../app/database/schema.server";
 
@@ -49,6 +54,43 @@ async function createFixture() {
   };
 }
 
+test("unique-constraint classification rejects lookalike and unrelated errors", () => {
+  const unique = Object.assign(new Error("duplicate"), {
+    code: "SQLITE_CONSTRAINT_UNIQUE",
+  });
+  const unrelated = Object.assign(new Error("database unavailable"), {
+    code: "SQLITE_ERROR",
+  });
+  expect(isUniqueConstraint(unique)).toBe(true);
+  expect(isUniqueConstraint(unrelated)).toBe(false);
+  expect(isUniqueConstraint(new Error("missing code"))).toBe(false);
+  expect(isUniqueConstraint({ code: "SQLITE_CONSTRAINT_UNIQUE" })).toBe(false);
+  expect(isUniqueConstraint(null)).toBe(false);
+});
+
+test("registration distinguishes duplicates from unexpected database failures", async () => {
+  const duplicateFixture = await createFixture();
+  const first = await duplicateFixture.service.register(
+    "duplicate.user",
+    password,
+    "203.0.113.90",
+  );
+  expect(first.ok).toBe(true);
+  await expect(duplicateFixture.service.register(
+    "duplicate.user",
+    password,
+    "203.0.113.91",
+  )).resolves.toEqual({ error: "duplicate-username", ok: false });
+
+  const brokenFixture = await createFixture();
+  brokenFixture.database.$client.exec("DROP TABLE password_credentials");
+  await expect(brokenFixture.service.register(
+    "database.failure",
+    password,
+    "203.0.113.92",
+  )).rejects.toThrow(/password_credentials|no such table/i);
+});
+
 test("sessions persist only a token hash and enforce idle and absolute expiry", async () => {
   const fixture = await createFixture();
   const registration = await fixture.service.register(
@@ -57,6 +99,13 @@ test("sessions persist only a token hash and enforce idle and absolute expiry", 
     "203.0.113.30",
   );
   expect(registration.ok).toBe(true);
+  expect(
+    fixture.database
+      .select({ scope: rateLimitCounters.scope })
+      .from(rateLimitCounters)
+      .where(eq(rateLimitCounters.scope, "registration"))
+      .get(),
+  ).toEqual({ scope: "registration" });
   if (!registration.ok) throw new Error("registration failed");
   expect(Buffer.from(registration.session.token, "base64url")).toHaveLength(32);
 
@@ -243,6 +292,13 @@ test("password-change failures are persisted and limited to five per 15 minutes"
       ),
     ).toEqual({ error: "invalid-current-password", ok: false });
   }
+  expect(
+    fixture.database
+      .select({ scope: rateLimitCounters.scope })
+      .from(rateLimitCounters)
+      .where(eq(rateLimitCounters.scope, "password-change-failure"))
+      .get(),
+  ).toEqual({ scope: "password-change-failure" });
 
   const restartedService = new AuthenticationService(
     fixture.database,
@@ -267,6 +323,13 @@ test("password-change failures are persisted and limited to five per 15 minutes"
       "replacement after limit",
     ),
   ).toMatchObject({ ok: true });
+  expect(
+    fixture.database
+      .select()
+      .from(rateLimitCounters)
+      .where(eq(rateLimitCounters.scope, "password-change-failure"))
+      .get(),
+  ).toBeUndefined();
 
   fixture.applicationDatabase.close();
 });
@@ -364,4 +427,204 @@ test("production password hashes encode the reviewed profile and random salt", a
     if (originalPasses === undefined) delete process.env.AUTH_ARGON2_PASSES;
     else process.env.AUTH_ARGON2_PASSES = originalPasses;
   }
+});
+
+test("registration and login windows enforce their exact boundaries", async () => {
+  const fixture = await createFixture();
+  for (let index = 0; index < 5; index += 1) {
+    expect(
+      await fixture.service.register(
+        `registration.window.${index}`,
+        password,
+        "203.0.113.100",
+      ),
+    ).toMatchObject({ ok: true });
+  }
+  expect(
+    await fixture.service.register(
+      "registration.window.blocked",
+      password,
+      "203.0.113.100",
+    ),
+  ).toEqual({ error: "rate-limited", ok: false });
+  fixture.setNow("2026-08-29T12:30:00.000Z");
+  expect(
+    await fixture.service.register(
+      "registration.window.still-blocked",
+      password,
+      "203.0.113.100",
+    ),
+  ).toEqual({ error: "rate-limited", ok: false });
+  fixture.setNow("2026-08-29T13:00:00.000Z");
+  expect(
+    await fixture.service.register(
+      "registration.window.after",
+      password,
+      "203.0.113.100",
+    ),
+  ).toMatchObject({ ok: true });
+
+  fixture.setNow("2026-08-29T14:00:00.000Z");
+  const registered = await fixture.service.register(
+    "login.window",
+    password,
+    "203.0.113.101",
+  );
+  expect(registered.ok).toBe(true);
+  for (let index = 0; index < 10; index += 1) {
+    expect(
+      await fixture.service.login(
+        "login.window",
+        "wrong password",
+        "203.0.113.102",
+      ),
+    ).toEqual({ error: "invalid-credentials", ok: false });
+  }
+  fixture.setNow("2026-08-29T14:14:59.999Z");
+  expect(
+    await fixture.service.login(
+      "login.window",
+      password,
+      "203.0.113.102",
+    ),
+  ).toEqual({ error: "rate-limited", ok: false });
+  fixture.setNow("2026-08-29T14:15:00.000Z");
+  expect(
+    await fixture.service.login(
+      "login.window",
+      password,
+      "203.0.113.102",
+    ),
+  ).toMatchObject({ ok: true });
+  fixture.applicationDatabase.close();
+});
+
+test("authentication clears exact rate subjects and leaves current hashes unchanged", async () => {
+  const fixture = await createFixture();
+  const registration = await fixture.service.register(
+    "clear.login",
+    password,
+    "203.0.113.110",
+  );
+  expect(registration.ok).toBe(true);
+  const before = fixture.database.select().from(passwordCredentials).get()!;
+  await fixture.service.login(
+    "clear.login",
+    "wrong password",
+    "203.0.113.111",
+  );
+  const counter = fixture.database
+    .select()
+    .from(rateLimitCounters)
+    .where(eq(rateLimitCounters.scope, "login-failure"))
+    .get();
+  expect(counter).toMatchObject({
+    scope: "login-failure",
+    subjectHash: createHash("sha256")
+      .update(
+        ["login-failure", "203.0.113.111", "clear.login"].join("\0"),
+        "utf8",
+      )
+      .digest("hex"),
+  });
+
+  const login = await fixture.service.login(
+    "clear.login",
+    password,
+    "203.0.113.111",
+  );
+  expect(login.ok).toBe(true);
+  if (!login.ok) throw new Error("login failed");
+  expect(
+    fixture.database
+      .select()
+      .from(rateLimitCounters)
+      .where(eq(rateLimitCounters.scope, "login-failure"))
+      .get(),
+  ).toBeUndefined();
+  expect(fixture.database.select().from(passwordCredentials).get()?.passwordHash)
+    .toBe(before.passwordHash);
+  expect(login.session.csrfToken).toBe(authenticationCsrf(login.session.token));
+  expect(fixture.service.verifyCsrfToken(login.session.token, undefined)).toBe(
+    false,
+  );
+  expect(fixture.service.verifyCsrfToken(login.session.token, "")).toBe(false);
+  fixture.applicationDatabase.close();
+});
+
+function authenticationCsrf(token: string): string {
+  return createHmac("sha256", token)
+    .update("open-calory-tracker:csrf:authenticated-session:v1", "utf8")
+    .digest("base64url");
+}
+
+test("expired sessions are deleted and idle extension is capped absolutely", async () => {
+  const fixture = await createFixture();
+  const registration = await fixture.service.register(
+    "session.boundary",
+    password,
+    "203.0.113.120",
+  );
+  expect(registration.ok).toBe(true);
+  if (!registration.ok) throw new Error("registration failed");
+  fixture.database.update(sessions).set({
+    idleExpiresAt: registration.session.absoluteExpiresAt.toISOString(),
+  }).run();
+  fixture.setNow("2026-11-26T12:00:00.000Z");
+  expect(await fixture.service.authenticate(registration.session.token))
+    .toBeDefined();
+  expect(fixture.database.select().from(sessions).get()?.idleExpiresAt).toBe(
+    "2026-11-27T12:00:00.000Z",
+  );
+  fixture.setNow("2026-11-27T12:00:00.000Z");
+  expect(await fixture.service.authenticate(registration.session.token))
+    .toBeUndefined();
+  expect(fixture.database.select().from(sessions).get()).toBeUndefined();
+  fixture.applicationDatabase.close();
+});
+
+test("password changes reject a vanished or mismatched current session", async () => {
+  const fixture = await createFixture();
+  const first = await fixture.service.register(
+    "change.first",
+    password,
+    "203.0.113.130",
+  );
+  const second = await fixture.service.register(
+    "change.second",
+    password,
+    "203.0.113.131",
+  );
+  if (!first.ok || !second.ok) throw new Error("registration failed");
+
+  expect(
+    await fixture.service.changePassword(
+      {
+        ...first.session,
+        user: { ...first.session.user, id: second.session.user.id },
+      },
+      password,
+      "unused replacement",
+    ),
+  ).toEqual({ error: "invalid-current-password", ok: false });
+
+  expect(
+    await fixture.service.changePassword(
+      { ...first.session, user: second.session.user },
+      password,
+      "unused replacement",
+    ),
+  ).toEqual({ error: "invalid-session", ok: false });
+  fixture.service.revokeSession(first.session.token);
+  expect(
+    await fixture.service.changePassword(
+      first.session,
+      password,
+      "unused replacement",
+    ),
+  ).toEqual({ error: "invalid-session", ok: false });
+  await expect(
+    fixture.service.verifyCredentials("missing.user", password),
+  ).resolves.toEqual({ matches: false, needsRehash: false, user: undefined });
+  fixture.applicationDatabase.close();
 });

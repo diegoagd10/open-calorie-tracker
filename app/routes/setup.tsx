@@ -128,9 +128,11 @@ export default function Setup({ actionData, loaderData }: Route.ComponentProps) 
     WATER_UNIT_OPTIONS.us.defaultValue,
   );
 
+  // Stryker disable ArrayDeclaration: changing the constant dependency array cannot alter this one-time effect.
   useEffect(() => {
     setTimeZone(Intl.DateTimeFormat().resolvedOptions().timeZone);
   }, []);
+  // Stryker restore ArrayDeclaration
 
   function changeDisplayUnits(nextUnits: "metric" | "us") {
     setDisplayUnits(nextUnits);

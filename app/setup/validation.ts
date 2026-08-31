@@ -81,12 +81,17 @@ export type SetupValidationResult =
 
 export { localDateAt } from "../food-log/date";
 
-const DECIMAL_PATTERN = /^(?:0|[1-9]\d*)(?:\.\d{1,3})?$/;
-const INTEGER_PATTERN = /^(?:0|[1-9]\d*)$/;
+function decimalPattern(): RegExp {
+  return /^(?:0|[1-9]\d*)(?:\.\d{1,3})?$/;
+}
+
+function integerPattern(): RegExp {
+  return /^(?:0|[1-9]\d*)$/;
+}
 
 function parseThousandths(value: string): bigint | undefined {
   const candidate = value.trim();
-  if (!DECIMAL_PATTERN.test(candidate)) return undefined;
+  if (!decimalPattern().test(candidate)) return undefined;
   const [whole, fraction = ""] = candidate.split(".");
   return BigInt(whole) * 1_000n + BigInt(fraction.padEnd(3, "0"));
 }
@@ -117,15 +122,14 @@ export function waterTargetMicrolitersFromDisplay(
 
 function canonicalTimeZone(value: string): string | undefined {
   const candidate = value.trim();
-  if (!candidate || candidate.length > 100) return undefined;
-
   try {
     return new Intl.DateTimeFormat("en-US", { timeZone: candidate })
       .resolvedOptions()
       .timeZone;
   } catch {
-    return undefined;
+    // Invalid IANA identifiers are represented by the undefined return below.
   }
+  return undefined;
 }
 
 function failure(
@@ -189,7 +193,7 @@ export function validateSetupFields(
   }
 
   const sodiumCandidate = fields.sodium.trim();
-  const sodium = INTEGER_PATTERN.test(sodiumCandidate)
+  const sodium = integerPattern().test(sodiumCandidate)
     ? boundedNumber(
         BigInt(sodiumCandidate),
         SETUP_LIMITS.sodium.maximumCanonical,

@@ -1,11 +1,12 @@
 import { chmod, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { afterEach, expect, test } from "vitest";
 
 import * as schema from "../app/database/schema.server";
 import {
+  assertDatabaseReady,
   isDatabaseReady,
   openApplicationDatabase,
   type ApplicationDatabaseClient,
@@ -271,6 +272,7 @@ test("readiness requires every database invariant", () => {
   };
 
   expect(isDatabaseReady(readyStatus)).toBe(true);
+  expect(() => assertDatabaseReady(readyStatus)).not.toThrow();
 
   for (const unavailableStatus of [
     { ...readyStatus, appliedMigrations: 0 },
@@ -281,5 +283,50 @@ test("readiness requires every database invariant", () => {
     { ...readyStatus, writable: false },
   ]) {
     expect(isDatabaseReady(unavailableStatus)).toBe(false);
+    expect(() => assertDatabaseReady(unavailableStatus)).toThrow(
+      "SQLite startup invariants failed after applying reviewed migrations",
+    );
   }
+});
+
+test("status detects tampered migration history, metadata, and pragmas", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "calory-status-tamper-"));
+  temporaryDirectories.push(directory);
+  const database = openApplicationDatabase({
+    databasePath: path.join(directory, "application.sqlite"),
+    migrationsFolder: path.resolve("drizzle"),
+  });
+  const client = database.getClient();
+  const latest = client.get<{ createdAt: number; hash: string }>(sql`
+    SELECT created_at AS createdAt, hash
+    FROM __drizzle_migrations
+    ORDER BY created_at DESC
+    LIMIT 1
+  `);
+
+  client.run(sql`UPDATE __drizzle_migrations SET hash = 'tampered'
+    WHERE created_at = ${latest.createdAt}`);
+  expect(database.getStatus().migrationsCurrent).toBe(false);
+  client.run(sql`UPDATE __drizzle_migrations SET hash = ${latest.hash}
+    WHERE created_at = ${latest.createdAt}`);
+  client.run(sql`UPDATE __drizzle_migrations SET created_at = ${latest.createdAt + 1}
+    WHERE created_at = ${latest.createdAt}`);
+  expect(database.getStatus().migrationsCurrent).toBe(false);
+  client.run(sql`UPDATE __drizzle_migrations SET created_at = ${latest.createdAt}
+    WHERE created_at = ${latest.createdAt + 1}`);
+  client.run(sql`DELETE FROM __drizzle_migrations
+    WHERE created_at = (SELECT MAX(created_at) FROM __drizzle_migrations)`);
+  expect(database.getStatus()).toMatchObject({
+    appliedMigrations: 8,
+    availableMigrations: 9,
+    migrationsCurrent: false,
+  });
+  client.delete(schema.applicationMetadata)
+    .where(eq(schema.applicationMetadata.key, "schema_version"))
+    .run();
+  expect(database.getStatus().schemaVersion).toBe("unknown");
+  client.run(sql.raw("PRAGMA foreign_keys = OFF"));
+  expect(database.getStatus().foreignKeysEnabled).toBe(false);
+  database.close();
+  expect(() => client.run(sql`SELECT 1`)).toThrow();
 });

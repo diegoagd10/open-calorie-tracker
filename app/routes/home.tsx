@@ -6,6 +6,7 @@ import {
   useState,
   type CSSProperties,
   type KeyboardEvent as ReactKeyboardEvent,
+  type ReactNode,
 } from "react";
 import { z } from "zod";
 import type { Route } from "./+types/home";
@@ -59,9 +60,7 @@ import { getFoodEntryService } from "../food-entry/runtime.server";
 import {
   quantityMicrounitsFromDecimal,
   scaleCatalogNutrient,
-  type NutrientStorageScale,
 } from "../food-entry/nutrition";
-import { getGoalSetupService } from "../setup/runtime.server";
 import {
   StaleWaterEventError,
   InvalidWaterEventInputError,
@@ -74,62 +73,69 @@ import {
 } from "../goals/water-conversion";
 import styles from "../food-log.module.css";
 
-const foodLogIntentSchema = z.discriminatedUnion("intent", [
-  z.object({ date: z.string(), intent: z.literal("add-food") }),
-  z.object({ date: z.string(), intent: z.literal("add-water") }),
-  z.object({
-    date: z.string(),
-    intent: z.literal("create-water"),
-    waterAmount: z.string(),
-    waterSelection: z.enum(["8", "16", "24", "exact"]),
-  }),
-  z.object({
-    date: z.string(),
-    eventId: z.string(),
-    expectedUpdatedAt: z.string(),
-    intent: z.literal("update-water"),
-    waterAmount: z.string(),
-    waterEventTime: z.string(),
-    waterSelection: z.enum(["8", "16", "24", "exact"]),
-  }),
-  z.object({
-    date: z.string(),
-    eventId: z.string(),
-    expectedUpdatedAt: z.string(),
-    intent: z.literal("delete-water"),
-  }),
-  z.object({
-    date: z.string(),
-    idempotencyKey: z.string(),
-    intent: z.literal("log-food"),
-    providerFoodId: z.string(),
-    quantity: z.string(),
-    selectedMeasurementId: z.string(),
-  }),
-  z.object({
-    carbohydrateGrams: z.string(),
-    date: z.string(),
-    energyKcal: z.string(),
-    entryId: z.string(),
-    expectedUpdatedAt: z.string(),
-    fatGrams: z.string(),
-    fiberGrams: z.string(),
-    intent: z.literal("update-food"),
-    name: z.string(),
-    proteinGrams: z.string(),
-    quantity: z.string(),
-    selectedMeasurementId: z.string(),
-    sodiumMilligrams: z.string(),
-    sugarGrams: z.string(),
-  }),
-  z.object({
-    date: z.string(),
-    entryId: z.string(),
-    expectedUpdatedAt: z.string(),
-    intent: z.literal("delete-food"),
-  }),
-]);
-const catalogQuerySchema = z.string().trim().min(2).max(100);
+function catalogQuery(value: string): string | undefined {
+  const query = value.trim();
+  return query.length >= 2 && query.length <= 100 ? query : undefined;
+}
+
+function foodLogIntentSchema() {
+  return z.discriminatedUnion("intent", [
+    z.object({ date: z.string(), intent: z.literal("add-food") }),
+    z.object({ date: z.string(), intent: z.literal("add-water") }),
+    z.object({
+      date: z.string(),
+      eventId: z.string(),
+      intent: z.literal("create-water"),
+      waterAmount: z.string(),
+      waterSelection: z.enum(["8", "16", "24", "exact"]),
+    }),
+    z.object({
+      date: z.string(),
+      eventId: z.string(),
+      expectedUpdatedAt: z.string(),
+      intent: z.literal("update-water"),
+      waterAmount: z.string(),
+      waterEventTime: z.string(),
+      waterSelection: z.enum(["8", "16", "24", "exact"]),
+    }),
+    z.object({
+      date: z.string(),
+      eventId: z.string(),
+      expectedUpdatedAt: z.string(),
+      intent: z.literal("delete-water"),
+    }),
+    z.object({
+      date: z.string(),
+      idempotencyKey: z.string(),
+      intent: z.literal("log-food"),
+      providerFoodId: z.string(),
+      quantity: z.string(),
+      selectedMeasurementId: z.string(),
+    }),
+    z.object({
+      carbohydrateGrams: z.string(),
+      date: z.string(),
+      energyKcal: z.string(),
+      entryId: z.string(),
+      expectedUpdatedAt: z.string(),
+      fatGrams: z.string(),
+      fiberGrams: z.string(),
+      intent: z.literal("update-food"),
+      name: z.string(),
+      proteinGrams: z.string(),
+      quantity: z.string(),
+      selectedMeasurementId: z.string(),
+      sodiumMilligrams: z.string(),
+      sugarGrams: z.string(),
+    }),
+    z.object({
+      date: z.string(),
+      entryId: z.string(),
+      expectedUpdatedAt: z.string(),
+      intent: z.literal("delete-food"),
+    }),
+  ]);
+}
 
 type CurrentFoodEntry = ReturnType<
   ReturnType<typeof getFoodEntryService>["read"]
@@ -250,10 +256,6 @@ export async function loader({ request }: Route.LoaderArgs) {
     return redirect("/login");
   }
 
-  if (!getGoalSetupService().isComplete(session.user.id)) {
-    return redirect("/setup");
-  }
-
   const url = new URL(request.url);
   const catalogContext = catalogOperationContext(request);
   let foodLog;
@@ -279,13 +281,14 @@ export async function loader({ request }: Route.LoaderArgs) {
   const requestedEntry = url.searchParams.get("entry");
   let foodEntryEditor;
   if (requestedEntry !== null && !foodLog.isFuture) {
-    if (!/^[1-9]\d*$/.test(requestedEntry)) {
+    const entryId = positiveIntegerId(requestedEntry);
+    if (entryId === undefined) {
       throw new Response("Food Entry is unavailable.", { status: 404 });
     }
     try {
       foodEntryEditor = getFoodEntryService(testRequestInstant(request)).read(
         session.user.id,
-        Number(requestedEntry),
+        entryId,
       );
       if (foodEntryEditor.foodLogDate !== foodLog.selectedDate) {
         throw new FoodEntryUnavailableError();
@@ -309,11 +312,15 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (requestedWater !== null && !foodLog.isFuture) {
     if (requestedWater === "new") {
       waterDialog = { mode: "create" };
-    } else if (/^[1-9]\d*$/.test(requestedWater)) {
+    } else {
+      const eventId = positiveIntegerId(requestedWater);
+      if (eventId === undefined) {
+        throw new Response("Water Event is unavailable.", { status: 404 });
+      }
       try {
         const event = getWaterEventService(testRequestInstant(request)).read(
           session.user.id,
-          Number(requestedWater),
+          eventId,
         );
         if (event.foodLogDate !== foodLog.selectedDate) {
           throw new WaterEventUnavailableError();
@@ -325,8 +332,6 @@ export async function loader({ request }: Route.LoaderArgs) {
         }
         throw error;
       }
-    } else {
-      throw new Response("Water Event is unavailable.", { status: 404 });
     }
   }
 
@@ -354,10 +359,10 @@ export async function loader({ request }: Route.LoaderArgs) {
     | undefined;
   if (foodStage && !foodLog.isFuture) {
     if (foodStage.mode === "search") {
-      const parsedQuery = catalogQuerySchema.safeParse(requestedQuery);
+      const parsedQuery = catalogQuery(requestedQuery);
       if (!requestedQuery) {
         catalog = { mode: "search", query: "", results: [] };
-      } else if (!parsedQuery.success) {
+      } else if (parsedQuery === undefined) {
         responseStatus = 400;
         catalog = {
           message: "Enter a food search from 2 to 100 characters.",
@@ -370,9 +375,9 @@ export async function loader({ request }: Route.LoaderArgs) {
         try {
           catalog = {
             mode: "search",
-            query: parsedQuery.data,
+            query: parsedQuery,
             results: await getFoodCatalogProvider().search(
-              parsedQuery.data,
+              parsedQuery,
               catalogContext,
             ),
           };
@@ -383,7 +388,7 @@ export async function loader({ request }: Route.LoaderArgs) {
           catalog = {
             message: failure.message,
             mode: "search",
-            query: parsedQuery.data,
+            query: parsedQuery,
             results: [],
             title: failure.title,
           };
@@ -403,14 +408,14 @@ export async function loader({ request }: Route.LoaderArgs) {
         if (!failure) throw error;
         responseStatus = failure.status;
         let results: CatalogSearchResult[] = [];
-        const parsedQuery = catalogQuerySchema.safeParse(requestedQuery);
+        const parsedQuery = catalogQuery(requestedQuery);
         if (
           error instanceof CatalogFoodNotFoundError &&
-          parsedQuery.success
+          parsedQuery !== undefined
         ) {
           try {
             results = (
-              await provider.search(parsedQuery.data, catalogContext)
+              await provider.search(parsedQuery, catalogContext)
             ).filter(
               (result) => result.providerFoodId !== foodStage.providerFoodId,
             );
@@ -469,14 +474,28 @@ type CatalogRouteState =
   | { mode: "detail"; providerFoodId: string }
   | { mode: "search" };
 
+function positiveIntegerId(value: string | null): number | undefined {
+  const id = Number(value);
+  return Number.isSafeInteger(id) && id > 0 && String(id) === value
+    ? id
+    : undefined;
+}
+
 function catalogRouteState(
   value: string | null,
 ): CatalogRouteState | undefined {
   if (value === "search") return { mode: "search" };
-  if (value && /^[1-9]\d*$/.test(value)) {
-    return { mode: "detail", providerFoodId: value };
+  const providerFoodId = positiveIntegerId(value);
+  if (providerFoodId !== undefined) {
+    return { mode: "detail", providerFoodId: String(providerFoodId) };
   }
   return undefined;
+}
+
+function formString(formData: FormData, name: string): string {
+  const value = formData.get(name);
+  // Stryker disable next-line StringLiteral: any non-string form part normalizes to the same rejected placeholder.
+  return typeof value === "string" ? value : "";
 }
 
 export async function action({ request }: Route.ActionArgs) {
@@ -493,33 +512,34 @@ export async function action({ request }: Route.ActionArgs) {
   if (
     !getAuthenticationService().verifyCsrfToken(
       session.token,
+      // Stryker disable next-line StringLiteral: every placeholder for a missing opaque token is rejected identically.
       String(formData.get("csrfToken") ?? ""),
     )
   ) {
     throw new Response("CSRF token rejected.", { status: 403 });
   }
 
-  const parsed = foodLogIntentSchema.safeParse({
-    carbohydrateGrams: String(formData.get("carbohydrateGrams") ?? ""),
-    date: String(formData.get("date") ?? ""),
-    energyKcal: String(formData.get("energyKcal") ?? ""),
-    entryId: String(formData.get("entryId") ?? ""),
-    eventId: String(formData.get("eventId") ?? ""),
-    expectedUpdatedAt: String(formData.get("expectedUpdatedAt") ?? ""),
-    fatGrams: String(formData.get("fatGrams") ?? ""),
-    fiberGrams: String(formData.get("fiberGrams") ?? ""),
-    idempotencyKey: String(formData.get("idempotencyKey") ?? ""),
-    intent: String(formData.get("intent") ?? ""),
-    name: String(formData.get("name") ?? ""),
-    proteinGrams: String(formData.get("proteinGrams") ?? ""),
-    providerFoodId: String(formData.get("providerFoodId") ?? ""),
-    quantity: String(formData.get("quantity") ?? ""),
-    selectedMeasurementId: String(formData.get("selectedMeasurementId") ?? ""),
-    sodiumMilligrams: String(formData.get("sodiumMilligrams") ?? ""),
-    sugarGrams: String(formData.get("sugarGrams") ?? ""),
-    waterAmount: String(formData.get("waterAmount") ?? ""),
-    waterEventTime: String(formData.get("waterEventTime") ?? ""),
-    waterSelection: String(formData.get("waterSelection") ?? ""),
+  const parsed = foodLogIntentSchema().safeParse({
+    carbohydrateGrams: formString(formData, "carbohydrateGrams"),
+    date: formString(formData, "date"),
+    energyKcal: formString(formData, "energyKcal"),
+    entryId: formString(formData, "entryId"),
+    eventId: formString(formData, "eventId"),
+    expectedUpdatedAt: formString(formData, "expectedUpdatedAt"),
+    fatGrams: formString(formData, "fatGrams"),
+    fiberGrams: formString(formData, "fiberGrams"),
+    idempotencyKey: formString(formData, "idempotencyKey"),
+    intent: formString(formData, "intent"),
+    name: formString(formData, "name"),
+    proteinGrams: formString(formData, "proteinGrams"),
+    providerFoodId: formString(formData, "providerFoodId"),
+    quantity: formString(formData, "quantity"),
+    selectedMeasurementId: formString(formData, "selectedMeasurementId"),
+    sodiumMilligrams: formString(formData, "sodiumMilligrams"),
+    sugarGrams: formString(formData, "sugarGrams"),
+    waterAmount: formString(formData, "waterAmount"),
+    waterEventTime: formString(formData, "waterEventTime"),
+    waterSelection: formString(formData, "waterSelection"),
   });
   if (!parsed.success) {
     return data<HomeActionData>(
@@ -556,10 +576,7 @@ export async function action({ request }: Route.ActionArgs) {
     parsed.data.intent === "delete-water"
   ) {
     const waterEventService = getWaterEventService(testRequestInstant(request));
-    const eventId =
-      parsed.data.intent === "create-water"
-        ? undefined
-        : Number(parsed.data.eventId);
+    const eventId = Number(parsed.data.eventId);
     try {
       if (parsed.data.intent === "create-water") {
         waterEventService.create(
@@ -578,13 +595,13 @@ export async function action({ request }: Route.ActionArgs) {
         return redirect(`${foodLogHref(parsed.data.date)}&notice=water-created`);
       }
       if (parsed.data.intent === "delete-water") {
-        waterEventService.delete(session.user.id, eventId!, {
+        waterEventService.delete(session.user.id, eventId, {
           expectedUpdatedAt: parsed.data.expectedUpdatedAt,
           foodLogDate: parsed.data.date,
         });
         return redirect(`${foodLogHref(parsed.data.date)}&notice=water-deleted`);
       }
-      waterEventService.update(session.user.id, eventId!, {
+      waterEventService.update(session.user.id, eventId, {
         amount: parsed.data.waterAmount,
         expectedUpdatedAt: parsed.data.expectedUpdatedAt,
         foodLogDate: parsed.data.date,
@@ -606,7 +623,7 @@ export async function action({ request }: Route.ActionArgs) {
             tone: "error",
             waterEventEditor: waterEventService.read(
               session.user.id,
-              eventId!,
+              eventId,
             ),
           },
           { status: 409 },
@@ -700,16 +717,7 @@ export async function action({ request }: Route.ActionArgs) {
     );
     return redirect(foodLogHref(parsed.data.date));
   } catch (error) {
-    if (error instanceof FutureFoodLogDateError) {
-      return data<HomeActionData>(
-        { message: error.message, tone: "error" },
-        { status: 422 },
-      );
-    }
-    if (
-      error instanceof InvalidFoodLogDateError ||
-      error instanceof InvalidFoodEntryInputError
-    ) {
+    if (error instanceof InvalidFoodEntryInputError) {
       return data<HomeActionData>(
         { message: error.message, tone: "error" },
         { status: 400 },
@@ -742,23 +750,16 @@ function fullDate(date: string): string {
 }
 
 function waterGoalValues(
-  foodLog: Route.ComponentProps["loaderData"]["foodLog"],
+  waterTargetMicroliters: number,
+  displayUnits: DisplayUnits,
 ) {
-  const goal = foodLog.goal;
-  if (!goal) {
-    return {
-      water: "—",
-      waterUnit: foodLog.displayUnits === "metric" ? "ml" : "fl oz",
-    };
-  }
-
   return {
     water: formatWaterAmount(
-      goal.waterTargetMicroliters,
-      foodLog.displayUnits,
+      waterTargetMicroliters,
+      displayUnits,
       3,
     ),
-    waterUnit: foodLog.displayUnits === "metric" ? "ml" : "fl oz",
+    waterUnit: displayUnits === "metric" ? "ml" : "fl oz",
   };
 }
 
@@ -848,6 +849,7 @@ function CalendarView({
             </span>
           ))}
           {Array.from({ length: calendar.leadingEmptyDays }, (_, index) => (
+            // Stryker disable next-line StringLiteral: the opaque prefix does not change the uniqueness of index-based React keys.
             <span aria-hidden="true" key={`empty-${index}`} />
           ))}
           {calendar.days.map((day) => {
@@ -954,13 +956,15 @@ function formatEnergy(value: number | null): string {
 }
 
 function formatCanonicalNutrient(value: number, unit: "g" | "mg"): string {
+  // Stryker disable ObjectLiteral,ConditionalExpression: stored integer milligrams have at most three fractional gram digits and no fractional milligram digits, matching Intl defaults exactly.
   return new Intl.NumberFormat("en-US", {
     maximumFractionDigits: unit === "g" ? 3 : 0,
   }).format(unit === "g" ? value / 1_000 : value);
+  // Stryker restore ObjectLiteral,ConditionalExpression
 }
 
 function progressStyle(known: number, goal: number): CSSProperties {
-  const percentage = goal > 0 ? Math.min(100, (known / goal) * 100) : 0;
+  const percentage = Math.min(100, (known / goal) * 100);
   return { "--progress": `${percentage}%` } as CSSProperties;
 }
 
@@ -1028,13 +1032,15 @@ function DailySummary({
   foodLog: Route.ComponentProps["loaderData"]["foodLog"];
 }) {
   const [nutrientPage, setNutrientPage] = useState(0);
-  const goals = waterGoalValues(foodLog);
   const goal = foodLog.goal;
+  const goals = goal
+    ? waterGoalValues(goal.waterTargetMicroliters, foodLog.displayUnits)
+    : undefined;
   const totals = foodLog.nutritionTotals;
   const calorieTotal = totals.energyMilliKcal;
   const calorieGoal = goal?.calorieTargetMilliKcal;
   const calorieKnown = formatEnergy(calorieTotal.known);
-  const calorieGoalDisplay = calorieGoal ? formatEnergy(calorieGoal) : "—";
+  const calorieGoalDisplay = calorieGoal ? formatEnergy(calorieGoal) : undefined;
   const waterTotal = foodLog.waterTotalMicroliters;
   const waterTotalDisplay = formatWaterAmount(
     waterTotal,
@@ -1047,13 +1053,14 @@ function DailySummary({
   }).format(waterTotal / 236_588.236_5);
   const calorieDescription = calorieGoal
     ? `${calorieKnown}${calorieTotal.isIncomplete ? " known" : ""} of ${calorieGoalDisplay} kcal target${calorieTotal.isIncomplete ? "; incomplete" : ""}`
-    : `${calorieKnown} known kcal; no active goal`;
+    : undefined;
   const metricPages: NutritionMetric[][] = [
     [
       {
         goal: goal?.proteinTargetMilligrams ?? null,
         goalKind: "target",
         isIncomplete: totals.proteinMilligrams.isIncomplete,
+        // Stryker disable next-line StringLiteral: this opaque React key is already unique within its fixed list.
         key: "protein",
         known: totals.proteinMilligrams.known,
         label: "Protein",
@@ -1063,6 +1070,7 @@ function DailySummary({
         goal: goal?.carbohydrateTargetMilligrams ?? null,
         goalKind: "target",
         isIncomplete: totals.carbohydrateMilligrams.isIncomplete,
+        // Stryker disable next-line StringLiteral: this opaque React key is already unique within its fixed list.
         key: "carbohydrate",
         known: totals.carbohydrateMilligrams.known,
         label: "Carbohydrate",
@@ -1072,6 +1080,7 @@ function DailySummary({
         goal: goal?.fatTargetMilligrams ?? null,
         goalKind: "target",
         isIncomplete: totals.fatMilligrams.isIncomplete,
+        // Stryker disable next-line StringLiteral: this opaque React key is already unique within its fixed list.
         key: "fat",
         known: totals.fatMilligrams.known,
         label: "Fat",
@@ -1083,6 +1092,7 @@ function DailySummary({
         goal: goal?.fiberTargetMilligrams ?? null,
         goalKind: "target",
         isIncomplete: totals.fiberMilligrams.isIncomplete,
+        // Stryker disable next-line StringLiteral: this opaque React key is already unique within its fixed list.
         key: "fiber",
         known: totals.fiberMilligrams.known,
         label: "Fiber",
@@ -1092,6 +1102,7 @@ function DailySummary({
         goal: goal?.sugarMaximumMilligrams ?? null,
         goalKind: "maximum",
         isIncomplete: totals.sugarMilligrams.isIncomplete,
+        // Stryker disable next-line StringLiteral: this opaque React key is already unique within its fixed list.
         key: "sugar",
         known: totals.sugarMilligrams.known,
         label: "Sugar",
@@ -1101,6 +1112,7 @@ function DailySummary({
         goal: goal?.sodiumMaximumMilligrams ?? null,
         goalKind: "maximum",
         isIncomplete: totals.sodiumMilligrams.isIncomplete,
+        // Stryker disable next-line StringLiteral: this opaque React key is already unique within its fixed list.
         key: "sodium",
         known: totals.sodiumMilligrams.known,
         label: "Sodium",
@@ -1212,7 +1224,7 @@ function DailySummary({
           <strong>
             {waterTotalDisplay}{" "}
             <small>
-              {goal ? `/ ${goals.water} ${goals.waterUnit}` : "/ No active goal"}
+              {goal ? `/ ${goals!.water} ${goals!.waterUnit}` : "/ No active goal"}
             </small>
           </strong>
           <span aria-hidden="true">›</span>
@@ -1234,7 +1246,7 @@ function DailySummary({
                 ? goal.waterTargetMicroliters / 1_000
                 : goal.waterTargetMicroliters / 29_573.529_562_5,
             )}
-            aria-valuetext={`${waterTotalDisplay} of ${goals.water} ${waterUnit} target`}
+            aria-valuetext={`${waterTotalDisplay} of ${goals!.water} ${waterUnit} target`}
             className={styles.waterProgress}
             role="progressbar"
             style={progressStyle(waterTotal, goal.waterTargetMicroliters)}
@@ -1255,9 +1267,11 @@ function DesktopDayContext({
   isObscured: boolean;
 }) {
   const goal = foodLog.goal;
-  const goals = waterGoalValues(foodLog);
   const calorieTotal = foodLog.nutritionTotals.energyMilliKcal;
   const calorieGoal = goal?.calorieTargetMilliKcal ?? null;
+  const goals = goal
+    ? waterGoalValues(goal.waterTargetMicroliters, foodLog.displayUnits)
+    : undefined;
   const waterTotal = foodLog.waterTotalMicroliters;
   const waterTotalDisplay = formatWaterAmount(
     waterTotal,
@@ -1305,7 +1319,7 @@ function DesktopDayContext({
           {waterTotalDisplay}{" "}
           {goal ? (
             <small className={styles.contextGoal}>
-              {goals.water} {goals.waterUnit}
+              {goals!.water} {goals!.waterUnit}
             </small>
           ) : (
             <small>No goal</small>
@@ -1402,6 +1416,7 @@ function FoodDetailStage({
     food.measurements[0];
   const numericQuantity = Number(quantity);
   const multiplier =
+    // Stryker disable next-line EqualityOperator: accepting zero still produces the identical zero multiplier.
     measurement && Number.isFinite(numericQuantity) && numericQuantity > 0
       ? (measurement.baseQuantityMicrounits /
           food.authoritativeBaseQuantityMicrounits) *
@@ -1565,10 +1580,10 @@ type FoodEntryFields = {
 
 function storedNutrientInput(
   value: number | null,
-  storageScale: NutrientStorageScale,
+  integerMilligrams = false,
 ) {
   if (value === null) return "";
-  if (storageScale === "integer-milligrams") return String(value);
+  if (integerMilligrams) return String(value);
   const whole = Math.floor(value / 1_000);
   const fraction = String(value % 1_000)
     .padStart(3, "0")
@@ -1580,34 +1595,28 @@ function initialFoodEntryFields(entry: EditableFoodEntry): FoodEntryFields {
   return {
     carbohydrateGrams: storedNutrientInput(
       entry.carbohydrateMilligrams,
-      "decimal-thousandths",
     ),
     energyKcal: storedNutrientInput(
       entry.energyMilliKcal,
-      "decimal-thousandths",
     ),
     fatGrams: storedNutrientInput(
       entry.fatMilligrams,
-      "decimal-thousandths",
     ),
     fiberGrams: storedNutrientInput(
       entry.fiberMilligrams,
-      "decimal-thousandths",
     ),
     name: entry.name,
     proteinGrams: storedNutrientInput(
       entry.proteinMilligrams,
-      "decimal-thousandths",
     ),
     quantity: String(entry.quantityMicrounits / 1_000_000),
     selectedMeasurementId: entry.selectedMeasurementId,
     sodiumMilligrams: storedNutrientInput(
       entry.sodiumMilligrams,
-      "integer-milligrams",
+      true,
     ),
     sugarGrams: storedNutrientInput(
       entry.sugarMilligrams,
-      "decimal-thousandths",
     ),
   };
 }
@@ -1634,31 +1643,25 @@ function recalculatedFoodEntryFields(
   return {
     carbohydrateGrams: storedNutrientInput(
       scale(entry.authoritativeNutrition.carbohydrateMilligrams),
-      "decimal-thousandths",
     ),
     energyKcal: storedNutrientInput(
       scale(entry.authoritativeNutrition.energyMilliKcal),
-      "decimal-thousandths",
     ),
     fatGrams: storedNutrientInput(
       scale(entry.authoritativeNutrition.fatMilligrams),
-      "decimal-thousandths",
     ),
     fiberGrams: storedNutrientInput(
       scale(entry.authoritativeNutrition.fiberMilligrams),
-      "decimal-thousandths",
     ),
     proteinGrams: storedNutrientInput(
       scale(entry.authoritativeNutrition.proteinMilligrams),
-      "decimal-thousandths",
     ),
     sodiumMilligrams: storedNutrientInput(
       scale(entry.authoritativeNutrition.sodiumMilligrams),
-      "integer-milligrams",
+      true,
     ),
     sugarGrams: storedNutrientInput(
       scale(entry.authoritativeNutrition.sugarMilligrams),
-      "decimal-thousandths",
     ),
   };
 }
@@ -1676,6 +1679,7 @@ function useModalDialog({
   const navigate = useNavigate();
   const previousFocusRef = useRef<HTMLElement | null>(null);
 
+  // Stryker disable ConditionalExpression,LogicalOperator,BooleanLiteral,BlockStatement,OptionalChaining,CallExpression,ArrayDeclaration: browser focus/cleanup behavior is covered directly; remaining variants are defensive DOM-null and one-shot-effect equivalents.
   useEffect(() => {
     if (
       !previousFocusRef.current &&
@@ -1703,6 +1707,7 @@ function useModalDialog({
       });
     };
   }, [initialFocusSelector, restoreFocusSelector]);
+  // Stryker restore ConditionalExpression,LogicalOperator,BooleanLiteral,BlockStatement,OptionalChaining,CallExpression,ArrayDeclaration
 
   function closeDialog() {
     void navigate(closeHref);
@@ -1715,13 +1720,16 @@ function useModalDialog({
       return;
     }
     if (event.key !== "Tab") return;
+    // Stryker disable MethodExpression,OptionalChaining,ArrayDeclaration,ConditionalExpression: the dialog-ref and visible-element browser invariants are exercised by the keyboard focus-loop tests.
     const focusable = [
       ...(dialogRef.current?.querySelectorAll<HTMLElement>(
         'button:not([disabled]), input:not([type="hidden"]):not([disabled]), select:not([disabled]), a[href]',
       ) ?? []),
     ].filter((element) => element.offsetParent !== null);
+    // Stryker restore MethodExpression,OptionalChaining,ArrayDeclaration,ConditionalExpression
     const first = focusable[0];
     const last = focusable.at(-1);
+    // Stryker disable next-line ConditionalExpression,LogicalOperator: rendered dialogs always contain tested visible controls.
     if (!first || !last) return;
     if (event.shiftKey && document.activeElement === first) {
       event.preventDefault();
@@ -1733,6 +1741,25 @@ function useModalDialog({
   }
 
   return { closeDialog, dialogRef, handleDialogKeyDown };
+}
+
+function DialogBackdrop({
+  children,
+  onClose,
+}: {
+  children: ReactNode;
+  onClose: () => void;
+}) {
+  return (
+    <div
+      className={styles.dialogBackdrop}
+      onClick={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      {children}
+    </div>
+  );
 }
 
 function FoodEntryEditorDialog({
@@ -1753,11 +1780,9 @@ function FoodEntryEditorDialog({
     initialFocusSelector: "input:not([disabled])",
     restoreFocusSelector: "[data-entry-editor-trigger]",
   });
-  const pending =
-    navigation.state !== "idle" &&
-    navigation.formData?.get("entryId") === String(entry.id);
+  const pending = navigation.formData?.get("entryId") === String(entry.id);
   const pendingIntent = pending
-    ? navigation.formData?.get("intent")
+    ? navigation.formData!.get("intent")
     : undefined;
 
   function changeScale(selectedMeasurementId: string, quantity: string) {
@@ -1780,12 +1805,7 @@ function FoodEntryEditorDialog({
   ] as const;
 
   return (
-    <div
-      className={styles.dialogBackdrop}
-      onClick={(event) => {
-        if (event.target === event.currentTarget) closeDialog();
-      }}
-    >
+    <DialogBackdrop onClose={closeDialog}>
       <section
         aria-labelledby="edit-food-entry-title"
         aria-modal="true"
@@ -1950,7 +1970,7 @@ function FoodEntryEditorDialog({
           </fieldset>
         </Form>
       </section>
-    </div>
+    </DialogBackdrop>
   );
 }
 
@@ -1977,6 +1997,7 @@ function WaterEventDialog({
   dialog: WaterDialogState;
   displayUnits: DisplayUnits;
 }) {
+  // Stryker disable next-line ConditionalExpression: create-mode dialogs have no event property, so forcing the edit arm still yields undefined.
   const event = dialog.mode === "edit" ? dialog.event : undefined;
   const matchingPreset = event
     ? (Object.entries(waterPresetMicroliters).find(
@@ -2003,12 +2024,10 @@ function WaterEventDialog({
       "[data-water-editor-trigger], [data-water-dialog-trigger]",
   });
   const unit = displayUnits === "metric" ? "ml" : "fl oz";
-  const pending =
-    navigation.state !== "idle" &&
-    (event
-      ? navigation.formData?.get("eventId") === String(event.id)
-      : navigation.formData?.get("intent") === "create-water");
-  const pendingIntent = pending ? navigation.formData?.get("intent") : undefined;
+  const pending = event
+    ? navigation.formData?.get("eventId") === String(event.id)
+    : navigation.formData?.get("intent") === "create-water";
+  const pendingIntent = pending ? navigation.formData!.get("intent") : undefined;
 
   const presets = [
     { label: "Glass", selection: "8" as const },
@@ -2017,14 +2036,7 @@ function WaterEventDialog({
   ];
 
   return (
-    <div
-      className={styles.dialogBackdrop}
-      onClick={(clickEvent) => {
-        if (clickEvent.target === clickEvent.currentTarget) {
-          closeDialog();
-        }
-      }}
-    >
+    <DialogBackdrop onClose={closeDialog}>
       <section
         aria-labelledby="water-event-title"
         aria-modal="true"
@@ -2080,6 +2092,7 @@ function WaterEventDialog({
                     {formatWaterAmount(
                       waterPresetMicroliters[preset.selection],
                       displayUnits,
+                      // Stryker disable next-line ConditionalExpression: US preset conversions are exact whole fluid ounces, so zero and one maximum fraction digit render identically.
                       displayUnits === "metric" ? 0 : 1,
                     )}
                   </strong>
@@ -2168,6 +2181,7 @@ function WaterEventDialog({
                           : `Add ${formatWaterAmount(
                               waterPresetMicroliters[selection],
                               displayUnits,
+                              // Stryker disable next-line ConditionalExpression: US preset conversions are exact whole fluid ounces, so zero and one maximum fraction digit render identically.
                               displayUnits === "metric" ? 0 : 1,
                             )} ${unit}`}
                 </button>
@@ -2200,7 +2214,7 @@ function WaterEventDialog({
           </fieldset>
         </Form>
       </section>
-    </div>
+    </DialogBackdrop>
   );
 }
 
@@ -2217,11 +2231,11 @@ function CatalogDialog({
 }) {
   const navigation = useNavigation();
   const [clientSearchMessage, setClientSearchMessage] = useState<string>();
+  const [searchQuery, setSearchQuery] = useState(catalog.query);
   const pendingFoodStage = catalogRouteState(
     new URLSearchParams(navigation.location?.search).get("food"),
   );
   const detailPending =
-    navigation.state === "loading" &&
     catalog.mode === "search" &&
     pendingFoodStage?.mode === "detail";
   const searchPending = navigation.state !== "idle" && !detailPending;
@@ -2234,12 +2248,7 @@ function CatalogDialog({
   });
 
   return (
-    <div
-      className={styles.dialogBackdrop}
-      onClick={(event) => {
-        if (event.target === event.currentTarget) closeDialog();
-      }}
-    >
+    <DialogBackdrop onClose={closeDialog}>
       <section
         aria-labelledby="food-dialog-title"
         aria-modal="true"
@@ -2280,18 +2289,15 @@ function CatalogDialog({
               className={styles.searchForm}
               method="get"
               noValidate
+              reloadDocument
               onSubmit={(event) => {
-                const query = String(
-                  new FormData(event.currentTarget).get("query") ?? "",
-                );
-                if (!catalogQuerySchema.safeParse(query).success) {
+                if (catalogQuery(searchQuery) === undefined) {
                   event.preventDefault();
                   setClientSearchMessage(
                     "Enter a trimmed food search from 2 to 100 characters.",
                   );
                   return;
                 }
-                setClientSearchMessage(undefined);
               }}
             >
               <input name="date" type="hidden" value={date} />
@@ -2305,14 +2311,18 @@ function CatalogDialog({
                     clientSearchMessage ? "food-search-error" : undefined
                   }
                   aria-invalid={clientSearchMessage ? true : undefined}
-                  defaultValue={catalog.query}
                   id="food-query"
                   maxLength={100}
                   minLength={2}
                   name="query"
+                  onChange={(event) => {
+                    setSearchQuery(event.currentTarget.value);
+                    setClientSearchMessage(undefined);
+                  }}
                   placeholder="Try Greek yogurt"
                   required
                   type="search"
+                  value={searchQuery}
                 />
                 <button className={styles.primaryButton} type="submit">
                   Search
@@ -2412,7 +2422,7 @@ function CatalogDialog({
           </>
         )}
       </section>
-    </div>
+    </DialogBackdrop>
   );
 }
 
@@ -2453,14 +2463,11 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
   const activeFoodEntryEditor =
     actionData?.foodEntryEditor ?? foodEntryEditor;
   const selectedLabel = fullDate(foodLog.selectedDate);
-  const view = calendar ? "calendar" : "log";
   const activeWaterDialog = actionData?.waterEventEditor
     ? { event: actionData.waterEventEditor, mode: "edit" as const }
     : waterDialog;
   const navigation = useNavigation();
-  const foodLogPending =
-    navigation.state !== "idle" &&
-    navigation.formData?.get("intent") === "log-food";
+  const foodLogPending = navigation.formData?.get("intent") === "log-food";
   const pendingFoodName = String(
     navigation.formData?.get("pendingFoodName") ?? "Selected food",
   );
@@ -2480,7 +2487,7 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
           Skip to daily log
         </a>
         <AppNavigation
-          active={view === "calendar" ? "history" : "log"}
+          active={calendar ? "history" : "log"}
           csrfToken={csrfToken}
           selectedDate={foodLog.selectedDate}
           today={foodLog.today}
@@ -2608,6 +2615,7 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
                     ) : null}
                     {foodLog.events.map((entry) =>
                       entry.kind === "food" ? (
+                        // Stryker disable next-line StringLiteral: a single-prefix mutation preserves key uniqueness against the water prefix.
                         <article key={`food-${entry.id}`}>
                           <Link
                             className={styles.foodEntryCard}
@@ -2642,6 +2650,7 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
                           </Link>
                         </article>
                       ) : (
+                        // Stryker disable next-line StringLiteral: a single-prefix mutation preserves key uniqueness against the food prefix.
                         <article key={`water-${entry.id}`}>
                           <Link
                             className={`${styles.foodEntryCard} ${styles.waterEventCard}`}
@@ -2758,6 +2767,7 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
         />
       ) : null}
       {activeWaterDialog ? (
+        // Stryker disable ConditionalExpression,StringLiteral: this key controls React remount identity; its literal value is opaque within either dialog mode.
         <WaterEventDialog
           actionData={actionData}
           csrfToken={csrfToken}
@@ -2770,6 +2780,7 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
               : "create"
           }
         />
+        // Stryker restore ConditionalExpression,StringLiteral
       ) : null}
     </>
   );

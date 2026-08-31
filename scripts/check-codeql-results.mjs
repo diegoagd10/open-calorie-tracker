@@ -11,12 +11,31 @@ function findingDescription(result) {
   return `${rule} at ${file}:${line}: ${message}`;
 }
 
-export function evaluateCodeQlResults(documents) {
+function findingKey({ path: file, primaryLocationLineHash, ruleId }) {
+  return JSON.stringify([ruleId, file, primaryLocationLineHash]);
+}
+
+function findingIdentity(result) {
+  return {
+    path:
+      result.locations?.[0]?.physicalLocation?.artifactLocation?.uri ??
+      "unknown file",
+    primaryLocationLineHash:
+      result.partialFingerprints?.primaryLocationLineHash,
+    ruleId: result.ruleId ?? "unknown rule",
+  };
+}
+
+export function evaluateCodeQlResults(documents, reviewedFindings = []) {
   if (documents.length === 0) {
     return ["CodeQL produced no SARIF documents."];
   }
 
   const errors = [];
+  const matchedReviewedFindings = new Set();
+  const reviewedByKey = new Map(
+    reviewedFindings.map((finding) => [findingKey(finding), finding]),
+  );
   for (const document of documents) {
     if (!Array.isArray(document.runs) || document.runs.length === 0) {
       errors.push("CodeQL produced an invalid SARIF document with no runs.");
@@ -30,7 +49,22 @@ export function evaluateCodeQlResults(documents) {
       if (failedInvocation) {
         errors.push("CodeQL reported an unsuccessful analysis invocation.");
       }
-      errors.push(...(run.results ?? []).map(findingDescription));
+      for (const result of run.results ?? []) {
+        const key = findingKey(findingIdentity(result));
+        if (reviewedByKey.has(key)) {
+          matchedReviewedFindings.add(key);
+        } else {
+          errors.push(findingDescription(result));
+        }
+      }
+    }
+  }
+
+  for (const [key, finding] of reviewedByKey) {
+    if (!matchedReviewedFindings.has(key)) {
+      errors.push(
+        `Reviewed CodeQL finding no longer matches: ${finding.ruleId} at ${finding.path} (${finding.primaryLocationLineHash}).`,
+      );
     }
   }
 
@@ -52,7 +86,13 @@ async function main() {
   const directory = process.argv[2];
   if (!directory) throw new Error("Pass the CodeQL SARIF directory to inspect.");
 
-  const errors = evaluateCodeQlResults(await loadSarifDocuments(directory));
+  const allowlist = JSON.parse(
+    await readFile(".github/codeql/finding-allowlist.json", "utf8"),
+  );
+  const errors = evaluateCodeQlResults(
+    await loadSarifDocuments(directory),
+    allowlist.findings,
+  );
   if (errors.length > 0) {
     for (const error of errors) console.error(`- ${error}`);
     process.exitCode = 1;

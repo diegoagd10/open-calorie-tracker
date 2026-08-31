@@ -77,6 +77,27 @@ test("a new account completes setup through the route interface", async () => {
   process.env.SETUP_TEST_NOW = "2026-01-01T09:30:00.000Z";
   initializeApplicationDatabase();
 
+  const anonymousLoader = await setupLoader(
+    routeArgs(new Request("http://localhost:3000/setup")),
+  );
+  expect(anonymousLoader).toBeInstanceOf(Response);
+  expect((anonymousLoader as Response).headers.get("Location")).toBe("/login");
+
+  const anonymousAction = await setupAction(
+    routeArgs(
+      new Request("http://localhost:3000/setup", {
+        body: setupFields("anonymous"),
+        headers: { Origin: "http://localhost:3000" },
+        method: "POST",
+      }),
+    ),
+  );
+  expect(anonymousAction).toBeInstanceOf(Response);
+  expect((anonymousAction as Response).headers.get("Location")).toBe("/login");
+  expect((anonymousAction as Response).headers.get("Set-Cookie")).toContain(
+    "Max-Age=0",
+  );
+
   const registration = await getAuthenticationService().register(
     "setup.route",
     "correct horse battery staple",
@@ -86,6 +107,34 @@ test("a new account completes setup through the route interface", async () => {
   if (!registration.ok) throw new Error("route fixture registration failed");
 
   const cookie = serializeSessionCookie(registration.session).split(";", 1)[0];
+
+  const invalidOrigin = await setupAction(
+    routeArgs(
+      new Request("http://localhost:3000/setup", {
+        body: setupFields(registration.session.csrfToken),
+        headers: { Cookie: cookie, Origin: "https://attacker.example" },
+        method: "POST",
+      }),
+    ),
+  ).catch((error: unknown) => error);
+  expect(invalidOrigin).toBeInstanceOf(Response);
+  expect((invalidOrigin as Response).status).toBe(403);
+
+  const invalidCsrf = await setupAction(
+    routeArgs(
+      new Request("http://localhost:3000/setup", {
+        body: setupFields("wrong-csrf-token"),
+        headers: { Cookie: cookie, Origin: "http://localhost:3000" },
+        method: "POST",
+      }),
+    ),
+  ).catch((error: unknown) => error);
+  expect(invalidCsrf).toBeInstanceOf(Response);
+  expect((invalidCsrf as Response).status).toBe(403);
+  await expect((invalidCsrf as Response).text()).resolves.toBe(
+    "CSRF token rejected.",
+  );
+
   const initialResult = await setupLoader(
     routeArgs(
       new Request("http://localhost:3000/setup", {
@@ -111,6 +160,7 @@ test("a new account completes setup through the route interface", async () => {
   expect(markup).toContain("Set up your Food Log");
   expect(markup).toContain('name="csrfToken"');
   expect(markup).toContain(`value="${registration.session.csrfToken}"`);
+  expect(markup).toMatch(/name="timeZone"[^>]*value="UTC"/);
   expect(markup).toContain("Only what the log needs");
   expect(markup).not.toContain('name="email"');
 
@@ -175,4 +225,16 @@ test("a new account completes setup through the route interface", async () => {
   }
   expect(afterCompletion.status).toBe(302);
   expect(afterCompletion.headers.get("Location")).toBe("/");
+
+  const repeatedAction = await setupAction(
+    routeArgs(
+      new Request("http://localhost:3000/setup", {
+        body: setupFields("invalid-after-completion"),
+        headers: { Cookie: cookie, Origin: "http://localhost:3000" },
+        method: "POST",
+      }),
+    ),
+  );
+  expect(repeatedAction).toBeInstanceOf(Response);
+  expect((repeatedAction as Response).headers.get("Location")).toBe("/");
 });
