@@ -1,0 +1,17 @@
+{
+  "clone_groups": [
+    "app/routes/account.password.tsx:40-49|app/routes/home.tsx:482-490|app/routes/logout.tsx:11-21|app/routes/settings.goals.tsx:118-127",
+    "app/routes/login.tsx:51-58|app/routes/register.tsx:50-57",
+    "app/water-event/water-event.server.ts:168-173|app/water-event/water-event.server.ts:98-106"
+  ],
+  "clone_fingerprints": [
+    "dup:ba3f0559:4",
+    "dup:62196146:2",
+    "dup:1f6847c3:2"
+  ],
+  "normalized_clone_fingerprints": [
+    "dup:c77b3abb6f87acd9-2:4",
+    "dup:c77b3abb6f87acd9-1:2",
+    "dup:c77b3abb6f87acd9-3:2"
+  ]
+}

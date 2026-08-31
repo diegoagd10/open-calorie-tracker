@@ -1,8 +1,17 @@
 {
   "$schema": "./node_modules/fallow/schema.json",
+  "audit": {
+    "gate": "new-only",
+    "typeAware": true
+  },
   "dynamicallyLoaded": ["server/app.ts"],
   "ignorePatterns": ["docs/mocks/**"],
   "ignoreDependencies": ["@react-router/dev", "isbot"],
+  "typeAware": {
+    "enabled": true,
+    "projects": ["tsconfig.json"],
+    "require": "best-effort"
+  },
   "usedClassMembers": [
     "authenticate",
     "isComplete",
