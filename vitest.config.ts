@@ -12,6 +12,6 @@ export default defineConfig({
       provider: "v8",
       reporter: ["text", "json"],
     },
-    include: ["tests/**/*.test.ts"],
+    include: ["tests/**/*.test.{ts,tsx}"],
   },
 });

@@ -3,7 +3,9 @@ import test from "node:test";
 
 import {
   compareWithBaseline,
+  isBelowMutationScoreThreshold,
   summarizeMutationReport,
+  validateMutationScoreThreshold,
 } from "./mutation-report.mjs";
 
 function mutant(status, mutatorName) {
@@ -78,4 +80,25 @@ test("detects score regressions without rounding", () => {
     ).regressed,
     true,
   );
+});
+
+test("enforces an inclusive mutation score threshold", () => {
+  assert.equal(
+    isBelowMutationScoreThreshold({ mutationScore: 98.999 }, 99),
+    true,
+  );
+  assert.equal(
+    isBelowMutationScoreThreshold({ mutationScore: 99 }, 99),
+    false,
+  );
+  assert.equal(
+    isBelowMutationScoreThreshold({ mutationScore: 99.46 }, 99),
+    false,
+  );
+});
+
+test("validates the configured mutation score threshold", () => {
+  assert.equal(validateMutationScoreThreshold("99"), 99);
+  assert.throws(() => validateMutationScoreThreshold("not-a-score"));
+  assert.throws(() => validateMutationScoreThreshold("101"));
 });

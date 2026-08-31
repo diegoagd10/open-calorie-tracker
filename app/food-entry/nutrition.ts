@@ -3,23 +3,29 @@ export type AuthoritativeNutrientValue = {
   fixedPointMultiplier: number;
 };
 
-export type NutrientStorageScale =
-  | "decimal-thousandths"
-  | "integer-milligrams";
-
 function decimalFraction(value: number): {
   denominator: bigint;
   numerator: bigint;
 } {
-  const match = /^(\d+)(?:\.(\d+))?(?:e([+-]?\d+))?$/i.exec(String(value));
-  if (!match) throw new Error("Catalog nutrient is invalid");
-  const fractionLength = match[2]?.length ?? 0;
-  const exponent = Number(match[3] ?? "0") - fractionLength;
-  const digits = BigInt(`${match[1]}${match[2] ?? ""}`);
-  if (exponent >= 0) {
-    return { denominator: 1n, numerator: digits * 10n ** BigInt(exponent) };
-  }
-  return { denominator: 10n ** BigInt(-exponent), numerator: digits };
+  const text = String(value).toLowerCase();
+  const exponentMarker = text.indexOf("e");
+  const coefficient =
+    exponentMarker === -1 ? text : text.slice(0, exponentMarker);
+  const scientificExponent =
+    exponentMarker === -1 ? 0 : Number(text.slice(exponentMarker + 1));
+  const decimalPoint = coefficient.indexOf(".");
+  const fractionLength =
+    decimalPoint === -1 ? 0 : coefficient.length - decimalPoint - 1;
+  const digits = BigInt(
+    decimalPoint === -1
+      ? coefficient
+      : coefficient.slice(0, decimalPoint) + coefficient.slice(decimalPoint + 1),
+  );
+  const exponent = scientificExponent - fractionLength;
+  return {
+    denominator: 10n ** BigInt(Math.max(-exponent, 0)),
+    numerator: digits * 10n ** BigInt(Math.max(exponent, 0)),
+  };
 }
 
 export function quantityMicrounitsFromDecimal(value: string): number | undefined {

@@ -9,16 +9,21 @@ import {
 } from "./runtime.server";
 import { applicationOrigin } from "../runtime.server";
 
-const SESSION_COOKIE_NAME = "__Host-calorie_session";
-const PRE_AUTHENTICATION_CSRF_COOKIE_NAME =
-  "__Host-calorie_auth_csrf";
+function sessionCookieName(): string {
+  return "__Host-calorie_session";
+}
+
+function preAuthenticationCsrfCookieName(): string {
+  return "__Host-calorie_auth_csrf";
+}
 
 export function parseCookies(header: string | null): Map<string, string> {
   const cookies = new Map<string, string>();
+  if (header === null) return cookies;
 
-  for (const entry of header?.split(";") ?? []) {
+  for (const entry of header.split(";")) {
     const separator = entry.indexOf("=");
-    if (separator < 0) continue;
+    if (separator <= 0) continue;
 
     const name = entry.slice(0, separator).trim();
     const value = entry.slice(separator + 1).trim();
@@ -33,12 +38,12 @@ export function parseCookies(header: string | null): Map<string, string> {
 }
 
 function getSessionToken(request: Request): string | undefined {
-  return parseCookies(request.headers.get("Cookie")).get(SESSION_COOKIE_NAME);
+  return parseCookies(request.headers.get("Cookie")).get(sessionCookieName());
 }
 
 function getPreAuthenticationCsrfToken(request: Request): string | undefined {
   return parseCookies(request.headers.get("Cookie")).get(
-    PRE_AUTHENTICATION_CSRF_COOKIE_NAME,
+    preAuthenticationCsrfCookieName(),
   );
 }
 
@@ -54,14 +59,14 @@ export async function getAuthenticatedSession(
 
 export function serializeSessionCookie(session: IssuedSession): string {
   return serializeHostCookie(
-    SESSION_COOKIE_NAME,
+    sessionCookieName(),
     session.token,
     session.absoluteExpiresAt,
   );
 }
 
 export function serializeClearedSessionCookie(): string {
-  return serializeHostCookie(SESSION_COOKIE_NAME, "", new Date(0));
+  return serializeHostCookie(sessionCookieName(), "", new Date(0));
 }
 
 function serializeHostCookie(
@@ -89,7 +94,7 @@ function serializePreAuthenticationCsrfCookie(
   session: PreAuthenticationCsrfSession,
 ): string {
   return serializeHostCookie(
-    PRE_AUTHENTICATION_CSRF_COOKIE_NAME,
+    preAuthenticationCsrfCookieName(),
     session.token,
     session.expiresAt,
   );
@@ -97,7 +102,7 @@ function serializePreAuthenticationCsrfCookie(
 
 function serializeClearedPreAuthenticationCsrfCookie(): string {
   return serializeHostCookie(
-    PRE_AUTHENTICATION_CSRF_COOKIE_NAME,
+    preAuthenticationCsrfCookieName(),
     "",
     new Date(0),
   );

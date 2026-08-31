@@ -3,7 +3,7 @@ import { GoalSetupService } from "./goal-setup.server";
 
 let goalSetupService: GoalSetupService | undefined;
 
-function setupClock(): () => Date {
+export function setupClock(): () => Date {
   const configuredInstant =
     process.env.NODE_ENV === "test" ? process.env.SETUP_TEST_NOW : undefined;
   if (!configuredInstant) return () => new Date();

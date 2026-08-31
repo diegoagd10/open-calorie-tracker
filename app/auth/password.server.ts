@@ -4,6 +4,7 @@ import {
   timingSafeEqual,
   type Argon2Parameters,
 } from "node:crypto";
+import { promisify } from "node:util";
 
 import {
   getArgon2Profile,
@@ -15,6 +16,7 @@ const FORMAT_VERSION = 1;
 const SALT_LENGTH = 16;
 
 type PasswordHashParameters = Argon2Profile;
+const deriveArgon2 = promisify(argon2);
 
 function currentParameters(): PasswordHashParameters {
   return getArgon2Profile();
@@ -26,21 +28,12 @@ function derive(
   parameters: PasswordHashParameters,
 ): Promise<Buffer> {
   const options: Argon2Parameters = {
-    message: Buffer.from(password, "utf8"),
+    message: Buffer.from(password),
     nonce: salt,
     ...parameters,
   };
 
-  return new Promise((resolve, reject) => {
-    argon2(ALGORITHM, options, (error, derivedKey) => {
-      if (error) {
-        reject(error);
-        return;
-      }
-
-      resolve(derivedKey);
-    });
-  });
+  return deriveArgon2(ALGORITHM, options);
 }
 
 function encode(

@@ -2,7 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { afterEach, expect, test } from "vitest";
 
 import {
@@ -14,10 +14,20 @@ import {
   goalVersions,
   userPreferences,
   users,
+  waterEvents,
 } from "../app/database/schema.server";
-import { FoodLogService } from "../app/food-log/food-log.server";
+import {
+  FoodLogService,
+  InvalidFoodLogDateError,
+} from "../app/food-log/food-log.server";
 import { FoodEntryService } from "../app/food-entry/food-entry.server";
-import { WaterEventService } from "../app/water-event/water-event.server";
+import { localDateAt } from "../app/food-log/date";
+import {
+  InvalidWaterEventInputError,
+  StaleWaterEventError,
+  WaterEventService,
+  WaterEventUnavailableError,
+} from "../app/water-event/water-event.server";
 
 const temporaryDirectories: string[] = [];
 
@@ -159,6 +169,28 @@ test("retroactive Water Events start at noon and advance newest-first", async ()
     "12:00:00",
     "12:01:00",
   ]);
+  database.close();
+});
+
+test("update accepts an explicit exact selection", async () => {
+  const database = await setupDatabase();
+  const client = database.getClient();
+  const userId = insertConfiguredUser(client, "water.update.explicit.exact");
+  const service = new WaterEventService(
+    client,
+    () => new Date("2026-08-29T18:45:31.000Z"),
+  );
+  const event = service.create(userId, {
+    foodLogDate: "2026-08-29",
+    selection: "8",
+  });
+  expect(service.update(userId, event.id, {
+    amount: "12",
+    expectedUpdatedAt: event.updatedAt,
+    foodLogDate: event.foodLogDate,
+    localEventTime: "09:15",
+    selection: "exact",
+  }).amountMicroliters).toBe(354_882);
   database.close();
 });
 
@@ -338,6 +370,15 @@ test("retroactive food and water actions share one newest-first clock", async ()
     nextFood.localEventTime,
     newestWater.localEventTime,
   ]).toEqual(["12:00:00", "12:01:00", "12:02:00"]);
+  expect(
+    new FoodLogService(client, now).read(userId, "2026-08-28")?.events.map(
+      (event) => ({ id: event.id, kind: event.kind }),
+    ),
+  ).toEqual([
+    { id: newestWater.id, kind: "water" },
+    { id: nextFood.id, kind: "food" },
+    { id: firstWater.id, kind: "water" },
+  ]);
   database.close();
 });
 
@@ -426,5 +467,312 @@ test("a time-zone change never moves a historical Water Event", async () => {
   expect(new WaterEventService(client).read(userId, event.id)).toMatchObject({
     foodLogDate: "2026-08-28",
   });
+  database.close();
+});
+
+test("Water Event errors preserve their public names and messages", () => {
+  expect(new InvalidWaterEventInputError()).toMatchObject({
+    message: "Enter a valid bounded water amount.",
+    name: "InvalidWaterEventInputError",
+  });
+  expect(new WaterEventUnavailableError()).toMatchObject({
+    message: "Water Event is unavailable",
+    name: "WaterEventUnavailableError",
+  });
+  expect(new StaleWaterEventError()).toMatchObject({
+    message:
+      "This Water Event changed after you opened it. Review it and try again.",
+    name: "StaleWaterEventError",
+  });
+});
+
+test.each([
+  [
+    { amount: "8", foodLogDate: "bad-date", selection: "exact" },
+    InvalidFoodLogDateError,
+  ],
+  [
+    { amount: "8".repeat(17), foodLogDate: "2026-08-29", selection: "exact" },
+    InvalidWaterEventInputError,
+  ],
+  [
+    { foodLogDate: "2026-08-29", selection: "7" },
+    InvalidWaterEventInputError,
+  ],
+  [
+    { foodLogDate: "2026-08-29", selection: "" },
+    InvalidWaterEventInputError,
+  ],
+] as const)("malformed Water Event creation is rejected", async (input, ErrorType) => {
+  const database = await setupDatabase();
+  const client = database.getClient();
+  const userId = insertConfiguredUser(client, `water.create.invalid.${input.selection}`);
+  const service = new WaterEventService(
+    client,
+    () => new Date("2026-08-29T18:45:30.000Z"),
+  );
+
+  expect(() => service.create(userId, input as never)).toThrow(ErrorType);
+  database.close();
+});
+
+test("creation requires configured display preferences", async () => {
+  const database = await setupDatabase();
+  const client = database.getClient();
+  const userId = insertUserOnly(client, "water.unconfigured");
+  const service = new WaterEventService(
+    client,
+    () => new Date("2026-08-29T18:45:30.000Z"),
+  );
+
+  expect(() =>
+    service.create(userId, { foodLogDate: "2026-08-29", selection: "8" }),
+  ).toThrow(InvalidFoodLogDateError);
+  database.close();
+});
+
+test("the default clock can create a Water Event for the current local day", async () => {
+  const database = await setupDatabase();
+  const client = database.getClient();
+  const userId = insertConfiguredUser(client, "water.default.clock");
+  const today = localDateAt(new Date(), "America/New_York");
+
+  expect(
+    new WaterEventService(client).create(userId, {
+      foodLogDate: today,
+      selection: "8",
+    }),
+  ).toMatchObject({ foodLogDate: today });
+  database.close();
+});
+
+test.each([0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1, Number.NaN])(
+  "Water Event id %s is unavailable",
+  async (eventId) => {
+    const database = await setupDatabase();
+    const client = database.getClient();
+    const userId = insertConfiguredUser(client, `water.id.${String(eventId)}`);
+    expect(() => new WaterEventService(client).read(userId, eventId)).toThrow(
+      WaterEventUnavailableError,
+    );
+    database.close();
+  },
+);
+
+function insertUserOnly(
+  client: ApplicationDatabaseClient,
+  username: string,
+): number {
+  return client
+    .insert(users)
+    .values({
+      createdAt: "2026-01-01T00:00:00.000Z",
+      usernameNormalized: username,
+    })
+    .returning({ id: users.id })
+    .get().id;
+}
+
+test("update validates its full input and id boundaries", async () => {
+  const database = await setupDatabase();
+  const client = database.getClient();
+  const userId = insertConfiguredUser(client, "water.update.validation");
+  const service = new WaterEventService(
+    client,
+    () => new Date("2026-08-29T18:45:30.000Z"),
+  );
+  const event = service.create(userId, {
+    foodLogDate: "2026-08-29",
+    selection: "8",
+  });
+  const base = {
+    amount: "12",
+    expectedUpdatedAt: event.updatedAt,
+    foodLogDate: event.foodLogDate,
+    localEventTime: "09:15",
+  };
+
+  for (const change of [
+    { localEventTime: "x09:15" },
+    { localEventTime: "09:15x" },
+    { localEventTime: "24:00" },
+    { localEventTime: "09:60" },
+    { amount: "1".repeat(33) },
+    { selection: "32" },
+  ]) {
+    expect(() => service.update(userId, event.id, { ...base, ...change } as never))
+      .toThrow(InvalidWaterEventInputError);
+  }
+  for (const eventId of [0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1]) {
+    expect(() => service.update(userId, eventId, base)).toThrow(
+      InvalidWaterEventInputError,
+    );
+  }
+  database.close();
+});
+
+test("update enforces date, version, preference, and preset semantics", async () => {
+  const database = await setupDatabase();
+  const client = database.getClient();
+  const userId = insertConfiguredUser(client, "water.update.contract");
+  const service = new WaterEventService(
+    client,
+    () => new Date("2026-08-29T18:45:31.000Z"),
+  );
+  const event = service.create(userId, {
+    foodLogDate: "2026-08-29",
+    selection: "8",
+  });
+  const base = {
+    amount: "999",
+    expectedUpdatedAt: event.updatedAt,
+    foodLogDate: event.foodLogDate,
+    localEventTime: "09:15",
+    selection: "24" as const,
+  };
+
+  expect(() =>
+    service.update(userId, event.id, {
+      ...base,
+      foodLogDate: "2026-08-28",
+    }),
+  ).toThrow(WaterEventUnavailableError);
+  expect(() =>
+    service.update(userId, event.id, {
+      ...base,
+      expectedUpdatedAt: "2026-08-29T18:45:30.001Z",
+    }),
+  ).toThrow(StaleWaterEventError);
+  expect(() =>
+    service.update(userId, event.id, {
+      ...base,
+      expectedUpdatedAt: "2026-08-29T18:45:30.000+00:00",
+    }),
+  ).toThrow(StaleWaterEventError);
+  client.delete(userPreferences).where(eq(userPreferences.userId, userId)).run();
+  expect(() => service.update(userId, event.id, base)).toThrow(
+    WaterEventUnavailableError,
+  );
+
+  client.insert(userPreferences).values({
+    createdAt: "2026-01-01T00:00:00.000Z",
+    displayUnits: "metric",
+    timeZone: "America/New_York",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+    userId,
+  }).run();
+  expect(service.update(userId, event.id, base)).toMatchObject({
+    amountMicroliters: 709_765,
+    localEventTime: "09:15:00",
+  });
+  database.close();
+});
+
+test.each([
+  ["8", 236_588],
+  ["16", 473_176],
+  ["24", 709_765],
+] as const)("update accepts the %s fl oz preset", async (selection, amountMicroliters) => {
+  const database = await setupDatabase();
+  const client = database.getClient();
+  const userId = insertConfiguredUser(client, `water.update.preset.${selection}`);
+  const service = new WaterEventService(
+    client,
+    () => new Date("2026-08-29T18:45:31.000Z"),
+  );
+  const event = service.create(userId, {
+    foodLogDate: "2026-08-29",
+    selection: "8",
+  });
+
+  expect(service.update(userId, event.id, {
+    amount: "999",
+    expectedUpdatedAt: event.updatedAt,
+    foodLogDate: event.foodLogDate,
+    localEventTime: "09:15",
+    selection,
+  }).amountMicroliters).toBe(amountMicroliters);
+  database.close();
+});
+
+test("a concurrent Water Event update is reported as stale", async () => {
+  const database = await setupDatabase();
+  const client = database.getClient();
+  const userId = insertConfiguredUser(client, "water.update.race");
+  const service = new WaterEventService(
+    client,
+    () => new Date("2026-08-29T18:45:31.000Z"),
+  );
+  const event = service.create(userId, {
+    foodLogDate: "2026-08-29",
+    selection: "8",
+  });
+  client.run(sql.raw(`CREATE TRIGGER ignore_water_update
+    BEFORE UPDATE ON water_events
+    WHEN OLD.id = ${event.id}
+    BEGIN SELECT RAISE(IGNORE); END`));
+
+  expect(() => service.update(userId, event.id, {
+    amount: "12",
+    expectedUpdatedAt: event.updatedAt,
+    foodLogDate: event.foodLogDate,
+    localEventTime: "09:15",
+  })).toThrow(StaleWaterEventError);
+  database.close();
+});
+
+test("delete validates input, ownership date, version, and atomic races", async () => {
+  const database = await setupDatabase();
+  const client = database.getClient();
+  const userId = insertConfiguredUser(client, "water.delete.contract");
+  const service = new WaterEventService(
+    client,
+    () => new Date("2026-08-29T18:45:30.000Z"),
+  );
+  const event = service.create(userId, {
+    foodLogDate: "2026-08-29",
+    selection: "8",
+  });
+  const base = {
+    expectedUpdatedAt: event.updatedAt,
+    foodLogDate: event.foodLogDate,
+  };
+
+  for (const [eventId, input] of [
+    [0, base],
+    [-1, base],
+    [1.5, base],
+    [event.id, { ...base, expectedUpdatedAt: "not-an-instant" }],
+    [event.id, { ...base, foodLogDate: "not-a-date" }],
+  ] as const) {
+    expect(() => service.delete(userId, eventId, input)).toThrow(
+      InvalidWaterEventInputError,
+    );
+  }
+  expect(() =>
+    service.delete(userId, event.id, { ...base, foodLogDate: "2026-08-28" }),
+  ).toThrow(WaterEventUnavailableError);
+  expect(() =>
+    service.delete(userId, event.id, {
+      ...base,
+      expectedUpdatedAt: "2026-08-29T18:45:30.001Z",
+    }),
+  ).toThrow(StaleWaterEventError);
+  expect(() =>
+    service.delete(userId, event.id, {
+      ...base,
+      expectedUpdatedAt: "2026-08-29T18:45:30.000+00:00",
+    }),
+  ).toThrow(StaleWaterEventError);
+
+  client.run(sql.raw(`CREATE TRIGGER ignore_water_delete
+    BEFORE DELETE ON water_events
+    WHEN OLD.id = ${event.id}
+    BEGIN SELECT RAISE(IGNORE); END`));
+  expect(() => service.delete(userId, event.id, base)).toThrow(
+    StaleWaterEventError,
+  );
+  expect(client.select().from(waterEvents).where(eq(waterEvents.id, event.id)).get())
+    .toBeDefined();
   database.close();
 });

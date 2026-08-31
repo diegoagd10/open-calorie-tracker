@@ -18,9 +18,17 @@ import { deriveCsrfToken, hashOpaqueToken, safelyEqual } from "./token.server";
 
 const IDLE_SESSION_MS = 5 * 24 * 60 * 60 * 1_000;
 const ABSOLUTE_SESSION_MS = 90 * 24 * 60 * 60 * 1_000;
-const LOGIN_FAILURE_WINDOW_MS = 15 * 60 * 1_000;
-const PASSWORD_CHANGE_FAILURE_WINDOW_MS = 15 * 60 * 1_000;
-const REGISTRATION_WINDOW_MS = 60 * 60 * 1_000;
+function passwordChangeFailureWindowMs(): number {
+  return 15 * 60 * 1_000;
+}
+
+function loginFailureWindowMs(): number {
+  return 15 * 60 * 1_000;
+}
+
+function registrationWindowMs(): number {
+  return 60 * 60 * 1_000;
+}
 
 export type CredentialUser = Pick<
   typeof users.$inferSelect,
@@ -91,7 +99,7 @@ function prepareIssuedSession(
   };
 }
 
-function isUniqueConstraint(error: unknown): boolean {
+export function isUniqueConstraint(error: unknown): boolean {
   return (
     error instanceof Error &&
     "code" in error &&
@@ -123,7 +131,7 @@ export class AuthenticationService {
         "registration",
         clientIp,
         5,
-        REGISTRATION_WINDOW_MS,
+        registrationWindowMs(),
       )
     ) {
       return { error: "rate-limited", ok: false };
@@ -194,7 +202,7 @@ export class AuthenticationService {
     const idleExpiresAt = new Date(session.idleExpiresAt);
     const absoluteExpiresAt = new Date(session.absoluteExpiresAt);
 
-    if (idleExpiresAt <= now || absoluteExpiresAt <= now) {
+    if (idleExpiresAt <= now) {
       this.#database
         .delete(sessions)
         .where(eq(sessions.tokenHash, tokenHash))
@@ -236,7 +244,7 @@ export class AuthenticationService {
         "password-change-failure",
         rateLimitSubject,
         5,
-        PASSWORD_CHANGE_FAILURE_WINDOW_MS,
+        passwordChangeFailureWindowMs(),
       )
     ) {
       return { error: "rate-limited", ok: false };
@@ -248,7 +256,7 @@ export class AuthenticationService {
     );
     if (
       !verification.matches ||
-      verification.user?.id !== currentSession.user.id
+      verification.user!.id !== currentSession.user.id
     ) {
       return { error: "invalid-current-password", ok: false };
     }
@@ -313,7 +321,7 @@ export class AuthenticationService {
         "login-failure",
         rateLimitSubject,
         10,
-        LOGIN_FAILURE_WINDOW_MS,
+        loginFailureWindowMs(),
       )
     ) {
       return { error: "rate-limited", ok: false };
@@ -359,10 +367,6 @@ export class AuthenticationService {
   }
 
   verifyCsrfToken(sessionToken: string, candidate: string | undefined): boolean {
-    if (!candidate) {
-      return false;
-    }
-
     return safelyEqual(csrfTokenFor(sessionToken), candidate);
   }
 

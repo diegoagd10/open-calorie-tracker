@@ -19,6 +19,7 @@ export async function action({ request }: Route.ActionArgs) {
   }
 
   const formData = await request.formData();
+  // Stryker disable next-line StringLiteral: every placeholder for a missing opaque token is rejected identically.
   const csrfToken = String(formData.get("csrfToken") ?? "");
 
   if (

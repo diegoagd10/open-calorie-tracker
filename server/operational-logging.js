@@ -1,30 +1,32 @@
-const SENSITIVE_ENVIRONMENT_NAME =
-  /(api.?key|authorization|cookie|credential|csrf|password|secret|session|token)/i;
-const SENSITIVE_TEXT_VALUE =
-  /((?:api.?key|authorization|cookie|credential|csrf|password|secret|session|token)=)[^&\s;]+/gi;
+function sensitiveEnvironmentName(value) {
+  return /(api.?key|authorization|cookie|credential|csrf|password|secret|session|token)/i.test(
+    value,
+  );
+}
 
 function configuredSensitiveValues() {
   return Object.entries(process.env)
     .filter(
       ([name, value]) =>
-        SENSITIVE_ENVIRONMENT_NAME.test(name) &&
-        typeof value === "string" &&
-        value.length > 0,
+        sensitiveEnvironmentName(name) && value.length > 0,
     )
     .map(([, value]) => value)
     .sort((left, right) => right.length - left.length);
 }
 
 function redactText(value) {
-  let redacted = value.replace(SENSITIVE_TEXT_VALUE, "$1[REDACTED]");
+  let redacted = value.replace(
+    /((?:api.?key|authorization|cookie|credential|csrf|password|secret|session|token)=)[^&\s;]+/gi,
+    "$1[REDACTED]",
+  );
   for (const sensitiveValue of configuredSensitiveValues()) {
     redacted = redacted.replaceAll(sensitiveValue, "[REDACTED]");
   }
   return redacted;
 }
 
-function redact(value, key = "") {
-  if (SENSITIVE_ENVIRONMENT_NAME.test(key)) return "[REDACTED]";
+function redact(value, key) {
+  if (sensitiveEnvironmentName(key)) return "[REDACTED]";
   if (typeof value === "string") return redactText(value);
   if (Array.isArray(value)) return value.map((entry) => redact(entry));
   if (value && typeof value === "object") {

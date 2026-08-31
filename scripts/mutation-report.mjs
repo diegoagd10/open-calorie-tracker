@@ -99,3 +99,17 @@ export function compareWithBaseline(current, baseline) {
     difference: current.mutationScore - baseline.mutationScore,
   };
 }
+
+export function validateMutationScoreThreshold(value) {
+  const threshold = Number(value);
+  if (!Number.isFinite(threshold) || threshold < 0 || threshold > 100) {
+    throw new Error(
+      `MUTATION_SCORE_THRESHOLD must be a number between 0 and 100; received ${JSON.stringify(value)}.`,
+    );
+  }
+  return threshold;
+}
+
+export function isBelowMutationScoreThreshold(summary, threshold) {
+  return summary.mutationScore < threshold;
+}

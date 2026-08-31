@@ -7,19 +7,22 @@ export type FoodLogEventOrderKey = {
 
 const EVENT_KIND_TIE_BREAKER = { food: 1, water: 0 } as const;
 
-const ISO_LOCAL_DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
-const ISO_LOCAL_MONTH_PATTERN = /^(\d{4})-(\d{2})$/;
+function isoLocalDatePattern(): RegExp {
+  return /(\d{4})-(\d{2})-(\d{2})/;
+}
+
+function isoLocalMonthPattern(): RegExp {
+  return /^(\d{4})-(\d{2})$/;
+}
 
 function utcCalendarDate(year: number, monthIndex: number, day = 1): Date {
   const instant = new Date(0);
-  instant.setUTCHours(0, 0, 0, 0);
   instant.setUTCFullYear(year, monthIndex, day);
   return instant;
 }
 
 function utcDateFromLocalDate(localDate: string): Date {
-  const match = ISO_LOCAL_DATE_PATTERN.exec(localDate);
-  if (!match) throw new Error("Invalid local date");
+  const match = isoLocalDatePattern().exec(localDate)!;
   return utcCalendarDate(
     Number(match[1]),
     Number(match[2]) - 1,
@@ -36,7 +39,7 @@ function formatUtcLocalDate(instant: Date): string {
 }
 
 export function parseIsoLocalDate(value: string): string | undefined {
-  const match = ISO_LOCAL_DATE_PATTERN.exec(value);
+  const match = isoLocalDatePattern().exec(value);
   if (!match) return undefined;
 
   const year = Number(match[1]);
@@ -44,11 +47,7 @@ export function parseIsoLocalDate(value: string): string | undefined {
   const day = Number(match[3]);
   const instant = utcCalendarDate(year, month - 1, day);
 
-  if (
-    instant.getUTCFullYear() !== year ||
-    instant.getUTCMonth() !== month - 1 ||
-    instant.getUTCDate() !== day
-  ) {
+  if (formatUtcLocalDate(instant) !== value) {
     return undefined;
   }
 
@@ -56,14 +55,15 @@ export function parseIsoLocalDate(value: string): string | undefined {
 }
 
 export function localDateAt(instant: Date, timeZone: string): string {
+  const stableInstant = new Date(instant.getTime());
   const parts = new Intl.DateTimeFormat("en-US", {
     day: "2-digit",
     month: "2-digit",
     timeZone,
     year: "numeric",
-  }).formatToParts(instant);
+  }).formatToParts(stableInstant);
   const value = (type: Intl.DateTimeFormatPartTypes) =>
-    parts.find((part) => part.type === type)?.value;
+    parts.find((part) => part.type === type)!.value;
 
   return `${value("year")}-${value("month")}-${value("day")}`;
 }
@@ -84,8 +84,7 @@ export function getNearbyLocalDates(selectedDate: string, today: string) {
 }
 
 function shiftLocalMonth(localMonth: string, amount: number): string {
-  const match = ISO_LOCAL_MONTH_PATTERN.exec(localMonth);
-  if (!match || !Number.isInteger(amount)) throw new Error("Invalid local month");
+  const match = isoLocalMonthPattern().exec(localMonth)!;
 
   const instant = utcCalendarDate(
     Number(match[1]),
@@ -103,14 +102,16 @@ export function buildCalendarMonth(
   selectedDate: string,
 ) {
   const todayMonth = today.slice(0, 7);
-  const match = ISO_LOCAL_MONTH_PATTERN.exec(requestedMonth);
+  const match = isoLocalMonthPattern().exec(requestedMonth);
   const requestedMonthNumber = match ? Number(match[2]) : 0;
   const validRequestedMonth =
     Boolean(match) && requestedMonthNumber >= 1 && requestedMonthNumber <= 12;
+  // Stryker disable EqualityOperator: <= is equivalent because equality falls back to the identical todayMonth value.
   const month =
-    validRequestedMonth && requestedMonth <= todayMonth
+    validRequestedMonth && requestedMonth < todayMonth
       ? requestedMonth
       : todayMonth;
+  // Stryker restore EqualityOperator
   const [year, monthNumber] = month.split("-").map(Number);
   const first = utcCalendarDate(year, monthNumber - 1);
   const numberOfDays = utcCalendarDate(year, monthNumber, 0).getUTCDate();

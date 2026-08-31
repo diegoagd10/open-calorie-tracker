@@ -14,29 +14,37 @@ import {
 } from "../food-log/food-log.server";
 import { waterTargetMicrolitersFromDisplay } from "../setup/validation";
 
-const createWaterEventSchema = z.discriminatedUnion("selection", [
-  z.object({
+function createWaterEventSchema() {
+  return z.discriminatedUnion("selection", [
+    z.object({
+      amount: z.string().max(32),
+      foodLogDate: z.string(),
+      selection: z.literal("exact"),
+    }),
+    z.object({
+      foodLogDate: z.string(),
+      selection: z.enum(["8", "16", "24"]),
+    }),
+  ]);
+}
+
+export type CreateWaterEventInput = z.input<
+  ReturnType<typeof createWaterEventSchema>
+>;
+
+function updateWaterEventSchema() {
+  return z.object({
     amount: z.string().max(32),
+    expectedUpdatedAt: z.iso.datetime({ offset: true }),
     foodLogDate: z.string(),
-    selection: z.literal("exact"),
-  }),
-  z.object({
-    foodLogDate: z.string(),
-    selection: z.enum(["8", "16", "24"]),
-  }),
-]);
+    localEventTime: z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/),
+    selection: z.enum(["8", "16", "24", "exact"]).default("exact"),
+  });
+}
 
-export type CreateWaterEventInput = z.input<typeof createWaterEventSchema>;
-
-const updateWaterEventSchema = z.object({
-  amount: z.string().max(32),
-  expectedUpdatedAt: z.iso.datetime({ offset: true }),
-  foodLogDate: z.string(),
-  localEventTime: z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/),
-  selection: z.enum(["8", "16", "24", "exact"]).default("exact"),
-});
-
-export type UpdateWaterEventInput = z.input<typeof updateWaterEventSchema>;
+export type UpdateWaterEventInput = z.input<
+  ReturnType<typeof updateWaterEventSchema>
+>;
 
 export class InvalidWaterEventInputError extends Error {
   constructor() {
@@ -62,13 +70,13 @@ export class StaleWaterEventError extends Error {
 }
 
 function canonicalWaterAmount(
-  selection: "8" | "16" | "24" | "exact",
-  amount: string,
+  input: { amount?: string; selection: "8" | "16" | "24" | "exact" },
   displayUnits: "metric" | "us",
 ): number {
+  const exact = input.selection === "exact";
   const amountMicroliters = waterTargetMicrolitersFromDisplay(
-    selection === "exact" ? amount : selection,
-    selection === "exact" ? displayUnits : "us",
+    exact ? (input.amount ?? "") : input.selection,
+    exact ? displayUnits : "us",
   );
   if (amountMicroliters === undefined) {
     throw new InvalidWaterEventInputError();
@@ -89,7 +97,7 @@ export class WaterEventService {
   }
 
   create(userId: number, input: CreateWaterEventInput) {
-    const parsed = createWaterEventSchema.safeParse(input);
+    const parsed = createWaterEventSchema().safeParse(input);
     if (!parsed.success) throw new InvalidWaterEventInputError();
     const foodLogDate = parseIsoLocalDate(parsed.data.foodLogDate);
     if (!foodLogDate) throw new InvalidFoodLogDateError();
@@ -110,8 +118,7 @@ export class WaterEventService {
     const today = localDateAt(instant, preference.timeZone);
     if (foodLogDate > today) throw new FutureFoodLogDateError();
     const amountMicroliters = canonicalWaterAmount(
-      parsed.data.selection,
-      parsed.data.selection === "exact" ? parsed.data.amount : "",
+      parsed.data,
       preference.displayUnits as "metric" | "us",
     );
 
@@ -138,9 +145,6 @@ export class WaterEventService {
   }
 
   read(userId: number, eventId: number) {
-    if (!Number.isSafeInteger(eventId) || eventId <= 0) {
-      throw new WaterEventUnavailableError();
-    }
     const event = this.#database
       .select()
       .from(waterEvents)
@@ -153,16 +157,13 @@ export class WaterEventService {
   }
 
   update(userId: number, eventId: number, input: UpdateWaterEventInput) {
-    const parsed = updateWaterEventSchema.safeParse(input);
+    const parsed = updateWaterEventSchema().safeParse(input);
     if (!parsed.success || !Number.isSafeInteger(eventId) || eventId <= 0) {
       throw new InvalidWaterEventInputError();
     }
     const existing = this.read(userId, eventId);
     if (existing.foodLogDate !== parsed.data.foodLogDate) {
       throw new WaterEventUnavailableError();
-    }
-    if (existing.updatedAt !== parsed.data.expectedUpdatedAt) {
-      throw new StaleWaterEventError();
     }
     const preference = this.#database
       .select({ displayUnits: userPreferences.displayUnits })
@@ -173,8 +174,7 @@ export class WaterEventService {
       throw new WaterEventUnavailableError();
     }
     const amountMicroliters = canonicalWaterAmount(
-      parsed.data.selection,
-      parsed.data.amount,
+      parsed.data,
       preference.displayUnits as "metric" | "us",
     );
     const updated = this.#database
@@ -216,9 +216,6 @@ export class WaterEventService {
     const existing = this.read(userId, eventId);
     if (existing.foodLogDate !== input.foodLogDate) {
       throw new WaterEventUnavailableError();
-    }
-    if (existing.updatedAt !== expectedUpdatedAt.data) {
-      throw new StaleWaterEventError();
     }
     const deleted = this.#database
       .delete(waterEvents)

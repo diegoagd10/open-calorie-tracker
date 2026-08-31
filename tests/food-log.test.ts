@@ -9,6 +9,7 @@ import {
   addLocalDays,
   buildCalendarMonth,
   compareFoodLogEventsDescending,
+  formatLocalDate,
   getNearbyLocalDates,
   localDateAt,
   parseIsoLocalDate,
@@ -16,7 +17,13 @@ import {
 import {
   FoodLogService,
   FutureFoodLogDateError,
+  InvalidFoodLogDateError,
 } from "../app/food-log/food-log.server";
+import {
+  localEventTimeForNewFoodLogEvent,
+  nextUpdatedAt,
+  type EventTimeDatabase,
+} from "../app/food-log/event-time.server";
 import {
   openApplicationDatabase,
   type ApplicationDatabaseClient,
@@ -215,6 +222,154 @@ test("nearby dates and calendar months use civil-date arithmetic", () => {
   expect(ancientCalendar.days.at(-1)?.date).toBe("0099-12-31");
 });
 
+test.each([
+  "x2026-01-01",
+  "2026-01-01x",
+  "2026-00-01",
+  "2026-13-01",
+  "2026-01-00",
+  "2026-01-32",
+  "0000-02-30",
+])("ISO local date %s is rejected without normalization", (value) => {
+  expect(parseIsoLocalDate(value)).toBeUndefined();
+});
+
+test("local-day arithmetic validates both date and integer amount", () => {
+  expect(() => addLocalDays("not-a-date", 1)).toThrow("Invalid local date");
+  expect(() => addLocalDays("2026-01-01", 0.5)).toThrow("Invalid local date");
+  expect(addLocalDays("2026-12-31", 1)).toBe("2027-01-01");
+});
+
+test.each(["bad", "x2026-01", "02026-01", "2026-01x", "2026-00", "2026-13", "2026-09"])(
+  "calendar request %s falls back to the current month",
+  (requestedMonth) => {
+    const calendar = buildCalendarMonth(
+      requestedMonth,
+      "2026-08-31",
+      "2026-08-30",
+    );
+    expect(calendar.month).toBe("2026-08");
+    expect(calendar.nextMonth).toBeUndefined();
+  },
+);
+
+test("a historical calendar exposes exact navigation and day states", () => {
+  const calendar = buildCalendarMonth(
+    "0099-12",
+    "0100-01-01",
+    "0099-12-01",
+  );
+  expect(calendar.previousMonth).toBe("0099-11");
+  expect(calendar.nextMonth).toBe("0100-01");
+  expect(calendar.days[0]).toEqual({
+    date: "0099-12-01",
+    day: 1,
+    isFuture: false,
+    isSelected: true,
+    isToday: false,
+  });
+  expect(calendar.days.at(-1)).toEqual({
+    date: "0099-12-31",
+    day: 31,
+    isFuture: false,
+    isSelected: false,
+    isToday: false,
+  });
+  const futureDay = buildCalendarMonth(
+    "2026-08",
+    "2026-08-15",
+    "2026-08-14",
+  ).days[15];
+  expect(futureDay).toMatchObject({
+    date: "2026-08-16",
+    isFuture: true,
+    isSelected: false,
+    isToday: false,
+  });
+});
+
+test("calendar month boundaries accept January and reject month 13 before today", () => {
+  expect(
+    buildCalendarMonth("2026-01", "2027-01-15", "2026-01-01").month,
+  ).toBe("2026-01");
+  expect(
+    buildCalendarMonth("2026-13", "2027-01-15", "2027-01-01").month,
+  ).toBe("2027-01");
+});
+
+test("local date formatting is UTC-stable and rejects invalid dates", () => {
+  expect(formatLocalDate("2026-01-02", { dateStyle: "full" })).toBe(
+    "Friday, January 2, 2026",
+  );
+  expect(() => formatLocalDate("2026-02-29", { dateStyle: "full" })).toThrow(
+    "Invalid local date",
+  );
+});
+
+test("event clocks cover current, retroactive, cap, and monotonic boundaries", () => {
+  const currentDatabase = {
+    get: () => undefined,
+  } as unknown as EventTimeDatabase;
+  expect(
+    localEventTimeForNewFoodLogEvent(
+      currentDatabase,
+      1,
+      "2026-08-29",
+      "2026-08-29",
+      new Date("2026-08-29T18:45:30.000Z"),
+      "America/New_York",
+    ),
+  ).toBe("14:45:30");
+
+  const retroactive = (localEventTime: string | null | undefined) =>
+    localEventTimeForNewFoodLogEvent(
+      {
+        get: () =>
+          localEventTime === undefined ? undefined : { localEventTime },
+      } as unknown as EventTimeDatabase,
+      1,
+      "2026-08-28",
+      "2026-08-29",
+      new Date("2026-08-29T18:45:30.000Z"),
+      "UTC",
+    );
+  expect(retroactive(undefined)).toBe("12:00:00");
+  expect(retroactive(null)).toBe("12:00:00");
+  expect(retroactive("12:34:56")).toBe("12:35:56");
+  expect(retroactive("23:59:00")).toBe("23:59:00");
+  expect(retroactive("23:59:30")).toBe("23:59:30");
+
+  expect(
+    nextUpdatedAt(
+      new Date("2026-08-29T18:45:31.000Z"),
+      "2026-08-29T18:45:30.000Z",
+    ),
+  ).toBe("2026-08-29T18:45:31.000Z");
+  expect(
+    nextUpdatedAt(
+      new Date("2026-08-29T18:45:30.000Z"),
+      "2026-08-29T18:45:30.000Z",
+    ),
+  ).toBe("2026-08-29T18:45:30.001Z");
+  expect(
+    nextUpdatedAt(
+      new Date("2026-08-29T18:45:29.000Z"),
+      "2026-08-29T18:45:30.000Z",
+    ),
+  ).toBe("2026-08-29T18:45:30.001Z");
+});
+
+test("Food Log errors retain their public contract", () => {
+  expect(new InvalidFoodLogDateError()).toMatchObject({
+    message: "Food Log date is invalid",
+    name: "InvalidFoodLogDateError",
+  });
+  expect(new FutureFoodLogDateError()).toMatchObject({
+    message: "Future Food Logs cannot be changed",
+    name: "FutureFoodLogDateError",
+  });
+});
+
 test("a selected historical Food Log survives travel between time zones", async () => {
   const database = await setupDatabase();
   const client = database.getClient();
@@ -270,6 +425,37 @@ test("future Food Log writes are rejected at the server boundary", async () => {
   expect(() => service.requireWritableDate(userId, "2026-02-29")).toThrow(
     "Food Log date is invalid",
   );
+  database.close();
+});
+
+test("an account without preferences has no readable or writable Food Log", async () => {
+  const database = await setupDatabase();
+  const client = database.getClient();
+  const userId = client.insert(users).values({
+    createdAt: "2026-01-01T00:00:00.000Z",
+    usernameNormalized: "food.log.unconfigured",
+  }).returning({ id: users.id }).get().id;
+  const service = new FoodLogService(client);
+
+  expect(service.read(userId, "2026-08-29")).toBeUndefined();
+  expect(() => service.requireWritableDate(userId, "2026-08-29")).toThrow(
+    InvalidFoodLogDateError,
+  );
+  database.close();
+});
+
+test("the default Food Log clock selects the current account-local date", async () => {
+  const database = await setupDatabase();
+  const client = database.getClient();
+  const userId = insertConfiguredUser(client, {
+    timeZone: "America/New_York",
+    username: "food.log.default.clock",
+  });
+  const expectedToday = localDateAt(new Date(), "America/New_York");
+  expect(new FoodLogService(client).read(userId)).toMatchObject({
+    selectedDate: expectedToday,
+    today: expectedToday,
+  });
   database.close();
 });
 

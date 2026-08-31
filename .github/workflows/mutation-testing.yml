@@ -43,9 +43,11 @@ permissions:
 
 jobs:
   stryker:
-    name: Reject mutation score regressions
+    name: Require at least 99% and reject regressions
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      MUTATION_SCORE_THRESHOLD: "99"
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/setup@v2

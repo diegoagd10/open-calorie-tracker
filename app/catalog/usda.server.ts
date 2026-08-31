@@ -26,8 +26,6 @@ import {
 
 const DEFAULT_BASE_URL = "https://api.nal.usda.gov/fdc/v1";
 const DEFAULT_TIMEOUT_MS = 5_000;
-const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
-
 const optionalProviderDateSchema = z.string().min(1).max(32).nullish();
 const searchFoodSchema = z.object({
   brandName: z.string().max(300).nullish(),
@@ -73,14 +71,16 @@ const detailFoodSchema = searchFoodSchema.extend({
 });
 const abridgedFoodNutrientSchema = z.object({
   amount: z.number().finite(),
-  number: z.string().regex(/^\d+(?:\.\d+)?$/),
+  number: z.string().refine((value) => /^\d+(?:\.\d+)?$/.test(value)),
   unitName: z.string(),
 });
 const abridgedDetailFoodSchema = searchFoodSchema.extend({
   foodNutrients: z.array(abridgedFoodNutrientSchema).max(5_000),
 });
 const querySchema = z.string().trim().min(2).max(100);
-const providerFoodIdSchema = z.string().regex(/^[1-9]\d*$/);
+const providerFoodIdSchema = z
+  .string()
+  .refine((value) => /^[1-9]\d*$/.test(value));
 
 const ABRIDGED_NUTRIENT_IDS: Readonly<Record<string, number>> = {
   "203": 1003,
@@ -105,18 +105,17 @@ function optionalText(value: string | null | undefined): string | null {
   return trimmed ? trimmed.normalize("NFC") : null;
 }
 
+function calendarDate(year: number, month: number, day: number): boolean {
+  const instant = new Date(Date.UTC(year, month - 1, day));
+  const expected = `${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+  return instant.toISOString().slice(0, 10) === expected;
+}
+
 function providerDate(value: string | null | undefined): string | null {
   if (!value) return null;
-  if (ISO_DATE.test(value)) {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
     const [year, month, day] = value.split("-").map(Number);
-    const instant = new Date(Date.UTC(year, month - 1, day));
-    if (
-      instant.getUTCFullYear() !== year ||
-      instant.getUTCMonth() !== month - 1 ||
-      instant.getUTCDate() !== day
-    ) {
-      throw new CatalogInvalidResponseError();
-    }
+    if (!calendarDate(year, month, day)) throw new CatalogInvalidResponseError();
     return value;
   }
   const match = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(value);
@@ -124,15 +123,8 @@ function providerDate(value: string | null | undefined): string | null {
   const month = Number(match[1]);
   const day = Number(match[2]);
   const year = Number(match[3]);
-  const instant = new Date(Date.UTC(year, month - 1, day));
-  if (
-    instant.getUTCFullYear() !== year ||
-    instant.getUTCMonth() !== month - 1 ||
-    instant.getUTCDate() !== day
-  ) {
-    throw new CatalogInvalidResponseError();
-  }
-  return `${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+  if (!calendarDate(year, month, day)) throw new CatalogInvalidResponseError();
+  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }
 
 function barcode(value: string | null | undefined): string | null {
@@ -142,8 +134,10 @@ function barcode(value: string | null | undefined): string | null {
 
 function supportedUnit(value: string | null | undefined): "g" | "ml" | null {
   const normalized = value?.trim().toLowerCase();
-  if (["g", "gram", "grams", "grm"].includes(normalized ?? "")) return "g";
-  if (["ml", "milliliter", "milliliters", "mlt"].includes(normalized ?? ""))
+  if (["g", "gram", "grams", "grm"].includes(normalized as string)) return "g";
+  if (
+    ["ml", "milliliter", "milliliters", "mlt"].includes(normalized as string)
+  )
     return "ml";
   return null;
 }
@@ -151,13 +145,7 @@ function supportedUnit(value: string | null | undefined): "g" | "ml" | null {
 function measurementSummary(food: SearchFood): string {
   const unit = supportedUnit(food.servingSizeUnit);
   const amount = food.servingSize;
-  if (
-    unit &&
-    amount !== null &&
-    amount !== undefined &&
-    Number.isFinite(amount) &&
-    amount > 0
-  ) {
+  if (unit && (amount as number) > 0) {
     const household = optionalText(food.householdServingFullText);
     return `${household ? `${household} · ` : ""}${amount} ${unit}`;
   }
@@ -195,7 +183,7 @@ type DetailFood = z.infer<typeof detailFoodSchema>;
 type AbridgedDetailFood = z.infer<typeof abridgedDetailFoodSchema>;
 
 function expandAbridgedDetailFood(food: AbridgedDetailFood): DetailFood {
-  const expanded = detailFoodSchema.safeParse({
+  return detailFoodSchema.parse({
     ...food,
     foodNutrients: food.foodNutrients.flatMap((nutrient) => {
       const id = ABRIDGED_NUTRIENT_IDS[nutrient.number];
@@ -209,8 +197,6 @@ function expandAbridgedDetailFood(food: AbridgedDetailFood): DetailFood {
           ];
     }),
   });
-  if (!expanded.success) throw new CatalogInvalidResponseError();
-  return expanded.data;
 }
 
 function fixedPointValue(
@@ -218,9 +204,6 @@ function fixedPointValue(
   multiplier: number,
 ): CatalogNutrientValue | null {
   if (value < 0) return null;
-  if (!Number.isSafeInteger(multiplier) || multiplier <= 0) {
-    throw new CatalogInvalidResponseError();
-  }
   return { amount: value, fixedPointMultiplier: multiplier };
 }
 
@@ -237,8 +220,7 @@ function nutrientValue(
         candidate.nutrient.id === id && typeof candidate.amount === "number",
     );
     if (!nutrient) continue;
-    const amount = nutrient.amount;
-    if (typeof amount !== "number") continue;
+    const amount = nutrient.amount as number;
     const multiplier =
       conversions[nutrient.nutrient.unitName.trim().toUpperCase()];
     if (multiplier === undefined) throw new CatalogInvalidResponseError();
@@ -286,7 +268,10 @@ function normalizeNutrition(
 }
 
 function portionLabel(portion: z.infer<typeof foodPortionSchema>): string {
-  const amount = portion.amount && portion.amount > 0 ? portion.amount : 1;
+  const amount =
+    (portion.amount as number) > 0
+      ? portion.amount
+      : 1;
   const unit =
     optionalText(portion.portionDescription) ??
     optionalText(portion.measureUnit?.name) ??
@@ -302,23 +287,22 @@ function normalizeMeasurements(
 ): CatalogMeasurement[] {
   const measurements = new Map<string, CatalogMeasurement>();
   const servingUnit = supportedUnit(food.servingSizeUnit);
-  if (
-    servingUnit === baseUnit &&
-    food.servingSize !== null &&
-    food.servingSize !== undefined &&
-    Number.isFinite(food.servingSize) &&
-    food.servingSize > 0
-  ) {
-    const baseQuantityMicrounits = Math.round(food.servingSize * 1_000_000);
+  if (servingUnit === baseUnit) {
+    const baseQuantityMicrounits = Math.round(
+      (food.servingSize as number) * 1_000_000,
+    );
     if (
       Number.isSafeInteger(baseQuantityMicrounits) &&
       baseQuantityMicrounits > 0
     ) {
       const household = optionalText(food.householdServingFullText);
-      const label = `${household ? `${household} (` : ""}${food.servingSize} ${baseUnit}${household ? ")" : ""}`;
-      measurements.set(`serving:${baseUnit}:${baseQuantityMicrounits}`, {
+      const label = household
+        ? `${household} (${food.servingSize} ${baseUnit})`
+        : `${food.servingSize} ${baseUnit}`;
+      const id = `serving:${baseUnit}:${baseQuantityMicrounits}`;
+      measurements.set(id, {
         baseQuantityMicrounits,
-        id: `serving:${baseUnit}:${baseQuantityMicrounits}`,
+        id,
         label,
         unit: baseUnit,
       });
@@ -326,24 +310,27 @@ function normalizeMeasurements(
   }
 
   if (baseUnit === "g") {
-    for (const [index, candidate] of (food.foodPortions ?? []).entries()) {
-      const parsed = foodPortionSchema.safeParse(candidate);
-      if (!parsed.success) continue;
-      const portion = parsed.data;
-      if (!(portion.gramWeight > 0)) continue;
-      const baseQuantityMicrounits = Math.round(portion.gramWeight * 1_000_000);
-      if (
-        !Number.isSafeInteger(baseQuantityMicrounits) ||
-        baseQuantityMicrounits <= 0
-      )
-        continue;
-      const id = `portion:${portion.id ?? index}`;
-      measurements.set(id, {
-        baseQuantityMicrounits,
-        id,
-        label: portionLabel(portion),
-        unit: "g",
-      });
+    if (food.foodPortions) {
+      for (const [index, candidate] of food.foodPortions.entries()) {
+        const parsed = foodPortionSchema.safeParse(candidate);
+        if (!parsed.success) continue;
+        const portion = parsed.data;
+        const baseQuantityMicrounits = Math.round(
+          portion.gramWeight * 1_000_000,
+        );
+        if (
+          !Number.isSafeInteger(baseQuantityMicrounits) ||
+          baseQuantityMicrounits <= 0
+        )
+          continue;
+        const id = `portion:${portion.id ?? index}`;
+        measurements.set(id, {
+          baseQuantityMicrounits,
+          id,
+          label: portionLabel(portion),
+          unit: "g",
+        });
+      }
     }
   }
 
@@ -382,24 +369,39 @@ function normalizeDetailFood(
 function newestDuplicateRevision(
   foods: CatalogSearchResult[],
 ): CatalogSearchResult[] {
-  const revisions = new Map<string, CatalogSearchResult>();
+  const revisions: CatalogSearchResult[] = [];
   for (const food of foods) {
-    const key = food.barcode
-      ? [
-          food.barcode,
-          food.name.toLocaleLowerCase("en-US"),
-          food.brand?.toLocaleLowerCase("en-US") ?? "",
-        ].join("\u0000")
-      : `fdc:${food.providerFoodId}`;
-    const current = revisions.get(key);
-    if (
-      !current ||
-      (food.providerPublishedDate ?? "") > (current.providerPublishedDate ?? "")
-    ) {
-      revisions.set(key, food);
+    const index = revisions.findIndex((candidate) => {
+      if (food.barcode !== candidate.barcode) return false;
+      if (food.barcode === null) {
+        return food.providerFoodId === candidate.providerFoodId;
+      }
+      const sameBrand =
+        JSON.stringify(food.brand).localeCompare(
+          JSON.stringify(candidate.brand),
+          "en-US",
+          { sensitivity: "base" },
+        ) === 0;
+      return (
+        sameBrand &&
+        food.name.localeCompare(candidate.name, "en-US", {
+          sensitivity: "base",
+        }) === 0
+      );
+    });
+    if (index === -1) {
+      revisions.push(food);
+    } else {
+      const current = revisions[index];
+      if (
+        (food.providerPublishedDate ?? "") >
+        (current.providerPublishedDate ?? "")
+      ) {
+        revisions[index] = food;
+      }
     }
   }
-  return [...revisions.values()];
+  return revisions;
 }
 
 export type UsdaAdapterOptions = {
@@ -421,11 +423,12 @@ export class UsdaFoodDataCentralAdapter implements FoodCatalogProvider {
   readonly #timeoutMs: number;
 
   constructor(options: UsdaAdapterOptions = {}) {
+    const onDiagnostic = options.onDiagnostic;
     this.#apiKey = options.apiKey?.trim() || undefined;
     this.#baseUrl = (options.baseUrl ?? DEFAULT_BASE_URL).replace(/\/$/, "");
     this.#fetch = options.fetchImplementation ?? fetch;
-    this.#onDiagnostic = options.onDiagnostic
-      ? (diagnostic) => options.onDiagnostic?.(diagnostic)
+    this.#onDiagnostic = onDiagnostic
+      ? (diagnostic) => onDiagnostic(diagnostic)
       : (diagnostic, requestId) =>
           operationalLog("warn", "food_catalog_diagnostic", {
             code: diagnostic.code,
@@ -489,14 +492,13 @@ export class UsdaFoodDataCentralAdapter implements FoodCatalogProvider {
       );
     }
     const full = detailFoodSchema.safeParse(response);
-    const abridged = full.success
-      ? undefined
-      : abridgedDetailFoodSchema.safeParse(response);
-    const food = full.success
-      ? full.data
-      : abridged?.success
-        ? expandAbridgedDetailFood(abridged.data)
-        : undefined;
+    let food: DetailFood | undefined;
+    if (full.success) {
+      food = full.data;
+    } else {
+      const abridged = abridgedDetailFoodSchema.safeParse(response);
+      if (abridged.success) food = expandAbridgedDetailFood(abridged.data);
+    }
     if (!food || String(food.fdcId) !== parsedId.data) {
       throw new CatalogInvalidResponseError();
     }
@@ -522,12 +524,11 @@ export class UsdaFoodDataCentralAdapter implements FoodCatalogProvider {
       if (response.status === 404) throw new CatalogFoodNotFoundError();
       if (response.status === 429) throw new CatalogRateLimitError();
       if (!response.ok) throw new CatalogUnavailableError();
-      try {
-        return await response.json();
-      } catch {
+      return await response.json();
+    } catch (error) {
+      if (error instanceof SyntaxError) {
         throw new CatalogInvalidResponseError();
       }
-    } catch (error) {
       if (
         error instanceof CatalogCredentialsError ||
         error instanceof CatalogFoodNotFoundError ||
