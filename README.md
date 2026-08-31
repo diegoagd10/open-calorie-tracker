@@ -5,6 +5,12 @@ Tracker. It serves an English SSR readiness page, applies reviewed Drizzle
 migrations to server-side SQLite before accepting traffic, and exposes separate
 liveness and readiness endpoints.
 
+## Production deployment
+
+Follow the [production deployment guide](docs/deployment.md) for the complete
+Portainer and Traefik procedure. It is the source of truth for every production
+environment variable, including how to discover the exact `TRUST_PROXY` CIDR.
+
 ## Local development
 
 Requires Node 24.7 or newer on the Node 24 line and pnpm 11.19.0. Node 24.7
@@ -36,6 +42,12 @@ pnpm test:browser
 pnpm build
 ```
 
+Before a production release, also run the real-container deployment suite:
+
+```sh
+pnpm test:deployment
+```
+
 The deterministic suite uses local catalog fixtures. With a registered key,
 run the opt-in provider spike separately:
 
@@ -58,47 +70,3 @@ Drizzle 0.45.2, so the project uses the newest prior stable TypeScript line,
 they do on 5.9), so `skipLibCheck` omits declaration-file implementation
 checking. The application schema, typed Drizzle connection, queries, services,
 routes, and tests are TypeScript sources and remain included in strict checking.
-
-## Container
-
-Build the production image directly from the repository and frozen lockfile:
-
-```sh
-docker build -t open-calory-tracker .
-```
-
-Run it with a persistent volume and a configurable internal port:
-
-```sh
-docker volume create open-calory-tracker-data
-docker run --rm \
-  --name open-calory-tracker \
-  --mount source=open-calory-tracker-data,target=/app/data \
-  --env APPLICATION_URL=https://calories.example.test \
-  --env PORT=3000 \
-  --env TRUST_PROXY=172.30.0.0/16 \
-  --publish 3000:3000 \
-  open-calory-tracker
-```
-
-Production deployments should expose the container only through the externally
-managed reverse proxy rather than publishing a host port. Persist `/app/data`
-across replacement containers.
-
-### Portainer
-
-Create the stack from this Git repository with `docker-compose.yml`. The
-production Compose contract requires the canonical HTTPS origin and host data
-path plus the private reverse-proxy network CIDR before Portainer can render the
-stack. `TRUST_PROXY` lets Express reconstruct the public HTTPS request origin
-and use the real client IP only when the immediate proxy is trusted.
-Traefik networking and routing remain in the existing external configuration;
-this stack does not define a Traefik network, router, or service labels.
-
-See [Production deployment](docs/deployment.md) for the exact Portainer values,
-Traefik configuration, volume setup, migration/maintenance workflow, backups,
-health behavior, logging, and emergency restore procedure.
-
-- `GET /health/live` reports whether the HTTP process is alive.
-- `GET /health/ready` verifies the complete migration journal, required SQLite
-  pragmas, and a rolled-back write against application storage.
