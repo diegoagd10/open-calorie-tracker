@@ -18,12 +18,14 @@ export default tseslint.config(
     ignores: [
       ".agents/**",
       ".react-router/**",
+      ".stryker-tmp/**",
       "build/**",
       "coverage/**",
       "docs/mocks/**",
       "drizzle/**",
       "node_modules/**",
       "public/**",
+      "reports/**",
     ],
   },
   {
