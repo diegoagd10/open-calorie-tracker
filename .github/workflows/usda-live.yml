@@ -1,0 +1,40 @@
+name: USDA live tests
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  live:
+    name: FoodData Central API and website contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      FDC_API_KEY: ${{ secrets.FDC_API_KEY }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/setup@v2
+        with:
+          runtime: node@24
+          cache: true
+          install: false
+      - name: Require the FoodData Central credential
+        run: |
+          if [ -z "$FDC_API_KEY" ]; then
+            echo "::error::Configure the FDC_API_KEY Actions secret before running this workflow."
+            exit 1
+          fi
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: mkdir -p reports/ci
+      - name: Test the live USDA contract
+        run: pnpm test:usda-live 2>&1 | tee reports/ci/usda-live.log
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: usda-live-${{ github.run_id }}
+          path: reports/ci/usda-live.log
+          if-no-files-found: warn
+          retention-days: 14

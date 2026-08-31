@@ -2,8 +2,30 @@ name: Dependency audit
 
 on:
   pull_request:
+    paths:
+      - ".github/dependency-audit-allowlist.json"
+      - ".github/workflows/dependency-audit.yml"
+      - ".npmrc"
+      - "package.json"
+      - "patches/**"
+      - "pnpm-lock.yaml"
+      - "pnpmfile.cjs"
+      - "pnpm-workspace.yaml"
+      - "scripts/audit-dependencies.mjs"
+      - "scripts/audit-dependencies.test.mjs"
   push:
     branches: [main]
+    paths:
+      - ".github/dependency-audit-allowlist.json"
+      - ".github/workflows/dependency-audit.yml"
+      - ".npmrc"
+      - "package.json"
+      - "patches/**"
+      - "pnpm-lock.yaml"
+      - "pnpmfile.cjs"
+      - "pnpm-workspace.yaml"
+      - "scripts/audit-dependencies.mjs"
+      - "scripts/audit-dependencies.test.mjs"
   schedule:
     - cron: "17 7 * * 1"
   workflow_dispatch:
@@ -18,13 +40,11 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: pnpm/setup@v2
         with:
-          node-version: 24
-      - uses: pnpm/action-setup@v6
-        with:
-          version: 11.19.0
-          run_install: false
+          runtime: node@24
+          cache: true
+          install: false
       - run: pnpm audit:prod
 
   full:
@@ -33,12 +53,10 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: pnpm/setup@v2
         with:
-          node-version: 24
-      - uses: pnpm/action-setup@v6
-        with:
-          version: 11.19.0
-          run_install: false
+          runtime: node@24
+          cache: true
+          install: false
       - run: pnpm audit:policy
       - run: pnpm audit:full
