@@ -16,6 +16,9 @@
     "codeql:policy": "node --test scripts/check-codeql-results.test.mjs",
     "db:generate": "drizzle-kit generate",
     "dev": "NODE_ENV=development node --conditions development server.js",
+    "lint": "eslint . --max-warnings 0 && node --test scripts/eslint-policy.test.mjs",
+    "lint:ci": "eslint . --max-warnings 0 --format json",
+    "lint:policy": "node --test scripts/eslint-policy.test.mjs",
     "start": "NODE_ENV=production node server.js",
     "test": "vitest run",
     "test:browser": "playwright test",
@@ -39,6 +42,7 @@
   },
   "devDependencies": {
     "@axe-core/playwright": "4.13.0",
+    "@eslint/js": "10.0.1",
     "@playwright/test": "1.62.1",
     "@react-router/dev": "8.3.1",
     "@types/better-sqlite3": "9.6.0",
@@ -47,9 +51,14 @@
     "@types/node": "24.13.3",
     "@types/react": "19.2.18",
     "@types/react-dom": "19.2.5",
+    "@vitest/eslint-plugin": "1.6.27",
     "drizzle-kit": "0.31.10",
+    "eslint": "10.9.1",
+    "eslint-plugin-react-hooks": "7.1.1",
     "fallow": "3.20.0",
+    "globals": "17.11.0",
     "typescript": "6.0.3",
+    "typescript-eslint": "8.68.0",
     "vite": "8.2.2",
     "vitest": "4.1.11"
   }

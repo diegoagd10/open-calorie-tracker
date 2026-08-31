@@ -100,7 +100,7 @@ test("USDA search normalizes supported foods and keeps the newest duplicate revi
   ]);
 
   expect(fetchImplementation).toHaveBeenCalledOnce();
-  const [url, request] = fetchImplementation.mock.calls[0]!;
+  const [url, request] = fetchImplementation.mock.calls[0];
   expect(String(url)).not.toContain("yogurt");
   expect(String(url)).toContain("api_key=registered-test-key");
   expect(JSON.parse(String(request?.body))).toEqual({
@@ -205,7 +205,7 @@ test("USDA detail applies Foundation energy precedence and keeps only safe measu
     providerPublishedDate: "2026-04-01",
   });
 
-  const [url, request] = fetchImplementation.mock.calls[0]!;
+  const [url, request] = fetchImplementation.mock.calls[0];
   expect(String(url)).toContain("/food/200?");
   expect(request?.method).toBe("GET");
   expect(onDiagnostic).toHaveBeenCalledWith({
@@ -423,17 +423,16 @@ test("USDA diagnostics use redacted structured request logs", async () => {
     });
 
     expect(stderr).toHaveBeenCalledOnce();
-    const diagnostic = JSON.parse(String(stderr.mock.calls[0]?.[0])) as Record<
-      string,
-      unknown
-    >;
+    const diagnostic = JSON.parse(
+      String(stderr.mock.calls[0]?.[0]),
+    ) as unknown;
     expect(diagnostic).toMatchObject({
       code: "negative_nutrient_amount",
       event: "food_catalog_diagnostic",
       level: "warn",
       nutrientId: 1003,
       requestId: "catalog-diagnostic-request",
-      timestamp: expect.any(String),
+      timestamp: expect.any(String) as unknown,
     });
     expect(JSON.stringify(diagnostic)).not.toContain("diagnostic-secret-api-key");
     expect(diagnostic).not.toHaveProperty("providerFoodId");

@@ -112,7 +112,7 @@ test("missing production configuration exits with a redacted structured log", as
     expect.objectContaining({
       event: "startup_failed",
       level: "error",
-      timestamp: expect.any(String),
+      timestamp: expect.any(String) as unknown,
     }),
   ]);
 });
@@ -164,7 +164,7 @@ test("a trusted HTTPS proxy can forward mutation requests", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "calory-proxy-action-"));
   temporaryDirectories.push(directory);
   const port = await availablePort();
-  const running = startProductionProcess({
+  startProductionProcess({
     APPLICATION_URL: "https://calories.example.test",
     DATABASE_PATH: path.join(directory, "application.sqlite"),
     NODE_ENV: "test",
@@ -249,7 +249,7 @@ test("production health and logs are safe on a configurable internal port", asyn
         event: "server_started",
         level: "info",
         port,
-        timestamp: expect.any(String),
+        timestamp: expect.any(String) as unknown,
       }),
       expect.objectContaining({
         event: "request_completed",
@@ -257,7 +257,7 @@ test("production health and logs are safe on a configurable internal port", asyn
         path: "/health/live",
         requestId,
         status: 200,
-        timestamp: expect.any(String),
+        timestamp: expect.any(String) as unknown,
       }),
     ]),
   );

@@ -29,12 +29,16 @@ Never place the key in browser configuration or client-side environment files.
 
 ```sh
 pnpm typecheck
+pnpm lint
 pnpm typecheck:usda
 pnpm test
 pnpm exec playwright install chromium
 pnpm test:browser
 pnpm build
 ```
+
+See [Code quality gates](docs/code-quality.md) for the type-aware lint contract,
+environment-variable boundary, TypeScript flags, and documented deferrals.
 
 The deterministic suite uses local catalog fixtures. With a registered key,
 run the opt-in provider spike separately:

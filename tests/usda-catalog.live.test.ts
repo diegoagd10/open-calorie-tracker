@@ -81,6 +81,7 @@ describe.skipIf(!runLiveSpike)("registered USDA FoodData Central spike", () => {
   test("common-food search results all open as usable details", async () => {
     const apiKey = process.env.FDC_API_KEY?.trim();
     expect(apiKey, "FDC_API_KEY is required for the live spike").toBeTruthy();
+    if (!apiKey) throw new Error("FDC_API_KEY is required for the live spike");
     expect(apiKey).not.toBe("DEMO_KEY");
     const provider = new UsdaFoodDataCentralAdapter({ apiKey });
     const failures: Array<{
@@ -127,6 +128,7 @@ describe.skipIf(!runLiveSpike)("registered USDA FoodData Central spike", () => {
   test("representative United States searches agree with details and expose usable measurements", async () => {
     const apiKey = process.env.FDC_API_KEY?.trim();
     expect(apiKey, "FDC_API_KEY is required for the live spike").toBeTruthy();
+    if (!apiKey) throw new Error("FDC_API_KEY is required for the live spike");
     expect(apiKey).not.toBe("DEMO_KEY");
     const provider = new UsdaFoodDataCentralAdapter({ apiKey });
     const queries = [
@@ -180,7 +182,7 @@ describe.skipIf(!runLiveSpike)("registered USDA FoodData Central spike", () => {
       const results = await provider.search(query);
       latencies.push(performance.now() - startedAt);
       expect(results.length).toBeGreaterThan(0);
-      const selected = results[0]!;
+      const selected = results[0];
       for (const result of results) {
         observedTypes.add(result.dataType);
         if (!representativeByType.has(result.dataType)) {
@@ -236,7 +238,7 @@ describe.skipIf(!runLiveSpike)("registered USDA FoodData Central spike", () => {
       expect(representative, `representative ${dataType} result`).toBeDefined();
       const detail = await provider.getFood(representative!.providerFoodId);
       const rawResponse = await fetch(
-        `https://api.nal.usda.gov/fdc/v1/food/${detail.providerFoodId}?api_key=${encodeURIComponent(apiKey!)}`,
+        `https://api.nal.usda.gov/fdc/v1/food/${detail.providerFoodId}?api_key=${encodeURIComponent(apiKey)}`,
       );
       expect(rawResponse.ok).toBe(true);
       const providerEnergy = rawEnergy(await rawResponse.json(), dataType);
@@ -265,10 +267,10 @@ describe.skipIf(!runLiveSpike)("registered USDA FoodData Central spike", () => {
         gtinProbeResults.push({ barcode, found: false });
         continue;
       }
-      const detail = await provider.getFood(exact!.providerFoodId);
+      const detail = await provider.getFood(exact.providerFoodId);
       expect(detail.barcode).toBe(barcode);
       const rawSearchResponse = await fetch(
-        `https://api.nal.usda.gov/fdc/v1/foods/search?api_key=${encodeURIComponent(apiKey!)}`,
+        `https://api.nal.usda.gov/fdc/v1/foods/search?api_key=${encodeURIComponent(apiKey)}`,
         {
           body: JSON.stringify({
             dataType: ["Branded", "Survey (FNDDS)", "Foundation"],
@@ -290,7 +292,7 @@ describe.skipIf(!runLiveSpike)("registered USDA FoodData Central spike", () => {
       gtinProbeResults.push({
         barcode,
         found: true,
-        measurementSummary: exact!.measurementSummary,
+        measurementSummary: exact.measurementSummary,
         marketCountry: detail.marketCountry,
         measurementCount: detail.measurements.length,
         nutrientNulls: nutrientNames.filter(
@@ -302,11 +304,14 @@ describe.skipIf(!runLiveSpike)("registered USDA FoodData Central spike", () => {
     }
 
     expect(gramWeightedPortion).toBeDefined();
-    const scalableFood = gramWeightedPortion!;
+    if (!gramWeightedPortion) {
+      throw new Error("USDA returned no gram-weighted portion");
+    }
+    const scalableFood = gramWeightedPortion;
     const scalableMeasurement =
       scalableFood.measurements.find((measurement) =>
         measurement.id.startsWith("portion:"),
-      ) ?? scalableFood.measurements[0]!;
+      ) ?? scalableFood.measurements[0];
     for (const quantity of [0.5, 1, 1.5, 2]) {
       for (const nutrientName of nutrientNames) {
         const nutrient =
@@ -339,7 +344,7 @@ describe.skipIf(!runLiveSpike)("registered USDA FoodData Central spike", () => {
     const sorted = [...latencies].sort((left, right) => left - right);
     const percentile = (ratio: number) =>
       Math.round(
-        sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * ratio))]!,
+        sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * ratio))],
       );
     console.info(
       JSON.stringify({

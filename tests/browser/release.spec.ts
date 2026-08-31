@@ -65,7 +65,7 @@ async function tabTo(page: Page, target: Locator) {
     }
     await page.keyboard.press("Tab");
   }
-  throw new Error(`keyboard focus did not reach ${await target.toString()}`);
+  throw new Error(`keyboard focus did not reach ${target.toString()}`);
 }
 
 async function expectMobileReflowAndTargets(page: Page) {
