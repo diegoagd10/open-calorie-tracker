@@ -79,14 +79,12 @@ function parse(encoded: string): ParsedPasswordHash | undefined {
     return undefined;
   }
 
-  const entries = Object.fromEntries(
-    parametersPart.split(",").map((entry) => entry.split("=", 2)),
-  );
+  const entries = new URLSearchParams(parametersPart.replaceAll(",", "&"));
   const parameters = {
-    memory: Number(entries.m),
-    passes: Number(entries.t),
-    parallelism: Number(entries.p),
-    tagLength: Number(entries.l),
+    memory: Number(entries.get("m")),
+    passes: Number(entries.get("t")),
+    parallelism: Number(entries.get("p")),
+    tagLength: Number(entries.get("l")),
   };
   const version = Number(versionPart.slice(2));
   const salt = Buffer.from(saltPart, "base64url");

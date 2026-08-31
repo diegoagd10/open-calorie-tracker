@@ -1,5 +1,3 @@
-import { z } from "zod";
-
 import type {
   AuthenticatedSession,
   IssuedSession,
@@ -9,12 +7,11 @@ import {
   getAuthenticationService,
   getPreAuthenticationCsrfService,
 } from "./runtime.server";
+import { applicationOrigin } from "../runtime.server";
 
 const SESSION_COOKIE_NAME = "__Host-calorie_session";
 const PRE_AUTHENTICATION_CSRF_COOKIE_NAME =
   "__Host-calorie_auth_csrf";
-
-const applicationUrlSchema = z.string().url();
 
 function parseCookies(header: string | null): Map<string, string> {
   const cookies = new Map<string, string>();
@@ -147,13 +144,7 @@ export function authenticatedSessionHeaders(
 }
 
 export function requireValidOrigin(request: Request): void {
-  const fallbackUrl = `http://localhost:${process.env.PORT ?? "3000"}`;
-  const applicationUrl = applicationUrlSchema.parse(
-    process.env.APPLICATION_URL ?? fallbackUrl,
-  );
-  const expectedOrigin = new URL(applicationUrl).origin;
-
-  if (request.headers.get("Origin") !== expectedOrigin) {
+  if (request.headers.get("Origin") !== applicationOrigin()) {
     throw new Response("Request origin rejected.", { status: 403 });
   }
 }

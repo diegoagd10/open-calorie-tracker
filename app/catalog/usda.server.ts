@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 
 import { z } from "zod";
 
+import { isProductionEnvironment } from "../runtime.server";
+
 import { operationalLog } from "../../server/operational-logging.js";
 import {
   CatalogConfigurationError,
@@ -434,7 +436,7 @@ export class UsdaFoodDataCentralAdapter implements FoodCatalogProvider {
 
     const url = new URL(this.#baseUrl);
     if (
-      process.env.NODE_ENV === "production" &&
+      isProductionEnvironment() &&
       (url.protocol !== "https:" || url.hostname !== "api.nal.usda.gov")
     ) {
       throw new CatalogConfigurationError();
