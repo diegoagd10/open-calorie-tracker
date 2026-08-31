@@ -48,6 +48,50 @@ test("rejects every CodeQL finding", () => {
   ]);
 });
 
+test("accepts only an exact reviewed CodeQL finding", () => {
+  const document = {
+    runs: [
+      {
+        invocations: [{ executionSuccessful: true }],
+        results: [
+          {
+            locations: [
+              {
+                physicalLocation: {
+                  artifactLocation: { uri: "app/auth/token.server.ts" },
+                  region: { startLine: 4 },
+                },
+              },
+            ],
+            message: { text: "Password is hashed insecurely." },
+            partialFingerprints: {
+              primaryLocationLineHash: "reviewed-line:1",
+            },
+            ruleId: "js/insufficient-password-hash",
+          },
+        ],
+      },
+    ],
+  };
+  const reviewedFinding = {
+    path: "app/auth/token.server.ts",
+    primaryLocationLineHash: "reviewed-line:1",
+    rationale: "The value is an opaque token, not a password.",
+    ruleId: "js/insufficient-password-hash",
+  };
+
+  assert.deepEqual(evaluateCodeQlResults([document], [reviewedFinding]), []);
+  assert.deepEqual(
+    evaluateCodeQlResults([document], [
+      { ...reviewedFinding, primaryLocationLineHash: "different-line:1" },
+    ]),
+    [
+      "js/insufficient-password-hash at app/auth/token.server.ts:4: Password is hashed insecurely.",
+      "Reviewed CodeQL finding no longer matches: js/insufficient-password-hash at app/auth/token.server.ts (different-line:1).",
+    ],
+  );
+});
+
 test("rejects missing results and unsuccessful invocations", () => {
   assert.deepEqual(evaluateCodeQlResults([]), [
     "CodeQL produced no SARIF documents.",
