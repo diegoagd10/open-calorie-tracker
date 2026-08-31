@@ -87,6 +87,9 @@ export class PersistentRateLimiter {
   }
 
   #hashSubject(scope: string, subject: string): string {
+    // Rate-limit subjects are identifiers such as user IDs, usernames, and IPs,
+    // not passwords; this digest minimizes stored identifying information.
+    // codeql[js/insufficient-password-hash]
     return createHash("sha256")
       .update(`${scope}\0${subject}`)
       .digest("hex");
