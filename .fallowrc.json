@@ -256,46 +256,26 @@
     ]
   },
   "health": {
-    "maxCrap": 0,
+    "coverage": "coverage/coverage-final.json",
+    "ignore": [
+      "tests/**",
+      "scripts/**",
+      "app/catalog/test-fixture.server.ts",
+      "app/routes/**",
+      "app/**/*.tsx",
+      "drizzle.config.ts",
+      "eslint.config.js",
+      "playwright.config.ts",
+      "react-router.config.ts",
+      "vite.config.ts",
+      "vitest.config.ts"
+    ],
     "thresholdOverrides": [
-      {
-        "files": ["app/routes/home.tsx"],
-        "functions": [
-          "action",
-          "loader",
-          "CatalogDialog",
-          "DailySummary",
-          "Home",
-          "NutrientMetric",
-          "WaterEventDialog"
-        ],
-        "maxCyclomatic": 53,
-        "maxCognitive": 76,
-        "reason": "Existing main-route complexity; fail if it grows."
-      },
-      {
-        "files": ["tests/usda-catalog.live.test.ts"],
-        "functions": ["<arrow>"],
-        "maxCognitive": 36,
-        "reason": "Existing live-test control flow; fail if it grows."
-      },
-      {
-        "files": ["server.js"],
-        "functions": ["startServer"],
-        "maxCognitive": 21,
-        "reason": "Existing server lifecycle flow; fail if it grows."
-      },
       {
         "files": ["app/catalog/usda.server.ts"],
         "functions": ["normalizeMeasurements"],
         "maxCognitive": 26,
-        "reason": "Existing provider-normalization flow; fail if it grows."
-      },
-      {
-        "files": ["app/ui-icon.tsx"],
-        "functions": ["UiIcon"],
-        "maxCognitive": 36,
-        "reason": "Existing icon selection branches; fail if they grow."
+        "reason": "USDA portions need the existing unit, amount, and identifier normalization branches; fail if they grow."
       }
     ]
   }

@@ -13,7 +13,7 @@ const SESSION_COOKIE_NAME = "__Host-calorie_session";
 const PRE_AUTHENTICATION_CSRF_COOKIE_NAME =
   "__Host-calorie_auth_csrf";
 
-function parseCookies(header: string | null): Map<string, string> {
+export function parseCookies(header: string | null): Map<string, string> {
   const cookies = new Map<string, string>();
 
   for (const entry of header?.split(";") ?? []) {
