@@ -26,7 +26,11 @@ function findingIdentity(result) {
   };
 }
 
-export function evaluateCodeQlResults(documents, reviewedFindings = []) {
+export function evaluateCodeQlResults(
+  documents,
+  reviewedFindings = [],
+  { requireReviewedMatches = true } = {},
+) {
   if (documents.length === 0) {
     return ["CodeQL produced no SARIF documents."];
   }
@@ -60,11 +64,13 @@ export function evaluateCodeQlResults(documents, reviewedFindings = []) {
     }
   }
 
-  for (const [key, finding] of reviewedByKey) {
-    if (!matchedReviewedFindings.has(key)) {
-      errors.push(
-        `Reviewed CodeQL finding no longer matches: ${finding.ruleId} at ${finding.path} (${finding.primaryLocationLineHash}).`,
-      );
+  if (requireReviewedMatches) {
+    for (const [key, finding] of reviewedByKey) {
+      if (!matchedReviewedFindings.has(key)) {
+        errors.push(
+          `Reviewed CodeQL finding no longer matches: ${finding.ruleId} at ${finding.path} (${finding.primaryLocationLineHash}).`,
+        );
+      }
     }
   }
 
@@ -85,6 +91,10 @@ async function loadSarifDocuments(directory) {
 async function main() {
   const directory = process.argv[2];
   if (!directory) throw new Error("Pass the CodeQL SARIF directory to inspect.");
+  const reviewMode = process.argv[3] ?? "full";
+  if (!new Set(["differential", "full"]).has(reviewMode)) {
+    throw new Error('Review mode must be either "differential" or "full".');
+  }
 
   const allowlist = JSON.parse(
     await readFile(".github/codeql/finding-allowlist.json", "utf8"),
@@ -92,6 +102,7 @@ async function main() {
   const errors = evaluateCodeQlResults(
     await loadSarifDocuments(directory),
     allowlist.findings,
+    { requireReviewedMatches: reviewMode === "full" },
   );
   if (errors.length > 0) {
     for (const error of errors) console.error(`- ${error}`);

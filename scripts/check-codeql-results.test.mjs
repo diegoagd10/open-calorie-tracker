@@ -92,6 +92,67 @@ test("accepts only an exact reviewed CodeQL finding", () => {
   );
 });
 
+test("allows reviewed base findings to be absent from differential SARIF", () => {
+  const reviewedFinding = {
+    path: "app/auth/token.server.ts",
+    primaryLocationLineHash: "reviewed-line:1",
+    rationale: "The value is an opaque token, not a password.",
+    ruleId: "js/insufficient-password-hash",
+  };
+  const differentialDocument = {
+    runs: [
+      {
+        invocations: [{ executionSuccessful: true }],
+        results: [],
+      },
+    ],
+  };
+
+  assert.deepEqual(
+    evaluateCodeQlResults([differentialDocument], [reviewedFinding], {
+      requireReviewedMatches: false,
+    }),
+    [],
+  );
+});
+
+test("still rejects unreviewed findings in differential SARIF", () => {
+  const reviewedFinding = {
+    path: "app/auth/token.server.ts",
+    primaryLocationLineHash: "reviewed-line:1",
+    rationale: "The value is an opaque token, not a password.",
+    ruleId: "js/insufficient-password-hash",
+  };
+  const differentialDocument = {
+    runs: [
+      {
+        invocations: [{ executionSuccessful: true }],
+        results: [
+          {
+            locations: [
+              {
+                physicalLocation: {
+                  artifactLocation: { uri: "app/example.ts" },
+                  region: { startLine: 42 },
+                },
+              },
+            ],
+            message: { text: "Unsafe behavior" },
+            ruleId: "js/example-query",
+          },
+        ],
+      },
+    ],
+  };
+
+  assert.deepEqual(
+    evaluateCodeQlResults([differentialDocument], [reviewedFinding], {
+      requireReviewedMatches: false,
+    }),
+    ["js/example-query at app/example.ts:42: Unsafe behavior"],
+  );
+});
+
 test("rejects missing results and unsuccessful invocations", () => {
   assert.deepEqual(evaluateCodeQlResults([]), [
     "CodeQL produced no SARIF documents.",
