@@ -156,7 +156,7 @@ describe.skipIf(!runDeploymentTests)("production container deployment", () => {
     );
   }, 120_000);
 
-  test("Compose leaves reverse-proxy networking and routing external", async () => {
+  test("Compose publishes a host port and bind-mounts application data", async () => {
     const { stdout } = await executeFile(
       "docker",
       ["compose", "config", "--format", "json"],
@@ -165,28 +165,46 @@ describe.skipIf(!runDeploymentTests)("production container deployment", () => {
         env: {
           ...process.env,
           APPLICATION_URL: "https://calories.example.test",
-          DATA_VOLUME_NAME: "open-calory-tracker-production-data",
+          DATA_PATH: "/srv/open-calory-tracker/data",
+          HOST_PORT: "3001",
           TRUST_PROXY: "172.30.0.0/16",
         },
       },
     );
     const configuration = JSON.parse(stdout) as {
       networks?: Record<string, { external?: boolean; name?: string }>;
-      volumes: Record<string, { external?: boolean; name?: string }>;
       services: {
         application: {
           environment: Record<string, string>;
-          expose?: Array<string | number>;
           labels?: unknown;
           networks?: Record<string, unknown>;
-          ports?: unknown;
+          ports: Array<{
+            mode: string;
+            protocol: string;
+            published: string;
+            target: number;
+          }>;
+          volumes: Array<{
+            source: string;
+            target: string;
+            type: string;
+          }>;
         };
       };
     };
     const application = configuration.services.application;
 
-    expect(application.ports).toBeUndefined();
-    expect(application.expose).toContain("3000");
+    expect(application.ports).toContainEqual({
+      mode: "ingress",
+      protocol: "tcp",
+      published: "3001",
+      target: 3000,
+    });
+    expect(application.volumes).toContainEqual({
+      source: "/srv/open-calory-tracker/data",
+      target: "/app/data",
+      type: "bind",
+    });
     expect(application.environment).toMatchObject({
       APPLICATION_URL: "https://calories.example.test",
       PORT: "3000",
@@ -194,10 +212,6 @@ describe.skipIf(!runDeploymentTests)("production container deployment", () => {
     });
     expect(application.networks).not.toHaveProperty("traefik");
     expect(configuration.networks).not.toHaveProperty("traefik");
-    expect(configuration.volumes["application-data"]).toMatchObject({
-      external: true,
-      name: "open-calory-tracker-production-data",
-    });
     expect(application.labels).toBeUndefined();
   });
 
