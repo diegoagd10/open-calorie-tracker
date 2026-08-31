@@ -19,9 +19,3 @@ coaching, judgment, or gamification.
 
 For production configuration, deployment, updates, and backups, follow the
 [production deployment guide](docs/deployment.md).
-
-## Verification
-
-For the local fast and deep gates, GitHub Actions triggers, retained reports,
-and external-suite requirements, follow the
-[verification guide](docs/verification.md).
