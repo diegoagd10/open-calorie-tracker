@@ -124,7 +124,14 @@ test("Fallow health consumes Vitest coverage and preserves gating exit codes", a
   const currentReport = JSON.parse(currentGate.stdout);
   assert.equal(currentReport.summary.functions_above_threshold, 0);
   assert.equal(currentReport.findings.length, 0);
-  assert.equal(currentReport.summary.baseline_staleness, undefined);
+  assert.deepEqual(currentReport.summary.baseline_staleness, {
+    baseline_entries: 0,
+    change_scoped: false,
+    matched_entries: 0,
+    moved_entries: 0,
+    stale: false,
+    stale_entries: 0,
+  });
 
   await writeFile(
     regressionPath,
