@@ -43,9 +43,6 @@ pnpm test:browser
 pnpm build
 ```
 
-See [Code quality gates](docs/code-quality.md) for the type-aware lint contract,
-environment-variable boundary, TypeScript flags, and documented deferrals.
-
 Before a production release, also run the real-container deployment suite:
 
 ```sh
