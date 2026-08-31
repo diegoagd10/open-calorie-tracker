@@ -19,9 +19,3 @@ coaching, judgment, or gamification.
 
 For production configuration, deployment, updates, and backups, follow the
 [production deployment guide](docs/deployment.md).
-
-## Local verification
-
-Use `pnpm verify` for the fast local gate and `pnpm verify:deep` for the full
-gate. Their scope, expected duration, prerequisites, and opt-in external suites
-are documented in the [verification guide](docs/verification.md).
