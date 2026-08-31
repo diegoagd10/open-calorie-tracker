@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { isIP } from "node:net";
 
 import compression from "compression";
 import express from "express";
@@ -8,6 +7,7 @@ import {
   operationalError,
   operationalLog,
 } from "./server/operational-logging.js";
+import { validateServerConfiguration } from "./server/startup-configuration.js";
 
 const BUILD_PATH = "./build/server/index.js";
 const DEVELOPMENT = process.env.NODE_ENV === "development";
@@ -19,55 +19,8 @@ function requestIdFor(request) {
     : randomUUID();
 }
 
-function privateDockerNetworkCidr(value) {
-  const match = /^([^/]+)\/(\d{1,2})$/.exec(value.trim());
-  if (!match || isIP(match[1]) !== 4) return false;
-  const prefix = Number(match[2]);
-  if (!Number.isInteger(prefix) || prefix < 16 || prefix > 32) return false;
-  const octets = match[1].split(".").map(Number);
-  return (
-    octets[0] === 10 ||
-    (octets[0] === 172 && octets[1] >= 16 && octets[1] <= 31) ||
-    (octets[0] === 192 && octets[1] === 168)
-  );
-}
-
 async function startServer() {
-  const port = Number.parseInt(process.env.PORT ?? "3000", 10);
-  if (!Number.isInteger(port) || port < 1 || port > 65_535) {
-    throw new Error("PORT must be an integer from 1 through 65535");
-  }
-
-  if (!DEVELOPMENT) {
-    const applicationUrl = process.env.APPLICATION_URL;
-    if (!applicationUrl) {
-      throw new Error("APPLICATION_URL is required outside development");
-    }
-
-    const canonicalUrl = new URL(applicationUrl);
-    if (
-      canonicalUrl.username ||
-      canonicalUrl.password ||
-      canonicalUrl.pathname !== "/" ||
-      canonicalUrl.search ||
-      canonicalUrl.hash
-    ) {
-      throw new Error(
-        "APPLICATION_URL must be an origin without credentials, path, query, or hash",
-      );
-    }
-    if (process.env.NODE_ENV === "production" && canonicalUrl.protocol !== "https:") {
-      throw new Error("APPLICATION_URL must use HTTPS in production");
-    }
-    if (process.env.NODE_ENV === "production") {
-      const trustProxy = process.env.TRUST_PROXY;
-      if (!trustProxy || !privateDockerNetworkCidr(trustProxy)) {
-        throw new Error(
-          "TRUST_PROXY must be one private IPv4 Docker network CIDR with a prefix from 16 through 32",
-        );
-      }
-    }
-  }
+  const { port } = validateServerConfiguration(process.env);
 
   const app = express();
   let shutdownApplication = () => {};

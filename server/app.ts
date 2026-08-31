@@ -2,6 +2,7 @@ import { createRequestHandler } from "@react-router/express";
 import express from "express";
 
 import { initializeApplicationDatabase } from "../app/database/runtime.server";
+import { resolveClientIp } from "./client-ip";
 
 export { shutdownApplicationDatabase as shutdown } from "../app/database/runtime.server";
 
@@ -19,8 +20,12 @@ app.use((request, _response, next) => {
       ? request.header("X-Test-Client-IP")
       : undefined;
 
-  request.headers["x-open-calory-client-ip"] =
-    testClientIp ?? request.ip ?? request.socket.remoteAddress ?? "unknown";
+  request.headers["x-open-calory-client-ip"] = resolveClientIp({
+    nodeEnvironment: process.env.NODE_ENV,
+    proxyClientIp: request.ip,
+    remoteAddress: request.socket.remoteAddress,
+    testClientIp,
+  });
   next();
 });
 
