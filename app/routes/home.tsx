@@ -24,6 +24,7 @@ import {
   serializeClearedSessionCookie,
 } from "../auth/http.server";
 import { AppNavigation } from "../app-navigation";
+import { isTestEnvironment } from "../runtime.server";
 import { UiIcon } from "../ui-icon";
 import { getAuthenticationService } from "../auth/runtime.server";
 import {
@@ -145,7 +146,7 @@ type HomeActionData = {
 
 function testRequestInstant(request: Request): Date | undefined {
   const requestedInstant =
-    process.env.NODE_ENV === "test"
+    isTestEnvironment()
       ? request.headers.get("X-Test-Food-Log-Now")
       : undefined;
   if (!requestedInstant) return undefined;

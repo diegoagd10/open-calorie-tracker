@@ -5,7 +5,6 @@ import type {
   CatalogNutrition,
 } from "../catalog/food-catalog.server";
 import { foodEntries } from "../database/schema.server";
-import { scaleCatalogNutrient } from "./nutrition";
 
 export { scaleCatalogNutrient } from "./nutrition";
 

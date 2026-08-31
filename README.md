@@ -35,6 +35,7 @@ Never place the key in browser configuration or client-side environment files.
 
 ```sh
 pnpm typecheck
+pnpm lint
 pnpm typecheck:usda
 pnpm test
 pnpm exec playwright install chromium
