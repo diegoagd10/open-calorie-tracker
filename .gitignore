@@ -4,4 +4,6 @@ build/
 data/
 playwright-report/
 test-results/
+reports/
+.stryker-tmp/
 *.tsbuildinfo

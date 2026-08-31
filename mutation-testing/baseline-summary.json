@@ -1,0 +1,83 @@
+{
+  "schemaVersion": 1,
+  "durationMs": 252498,
+  "mutationScore": 31.615598885793872,
+  "counts": {
+    "Pending": 0,
+    "Killed": 1588,
+    "Timeout": 1,
+    "Survived": 777,
+    "NoCoverage": 2660,
+    "RuntimeError": 0,
+    "CompileError": 0,
+    "Ignored": 0,
+    "detected": 1589,
+    "undetected": 3437,
+    "valid": 5026,
+    "total": 5026
+  },
+  "survivingMutants": {
+    "byModule": {
+      "app": 7,
+      "app/auth": 99,
+      "app/catalog": 186,
+      "app/database": 95,
+      "app/food-entry": 131,
+      "app/food-log": 48,
+      "app/goals": 11,
+      "app/routes": 81,
+      "app/setup": 35,
+      "app/water-event": 51,
+      "server": 33
+    },
+    "byCategory": {
+      "ArithmeticOperator": 12,
+      "ArrayDeclaration": 15,
+      "ArrowFunction": 26,
+      "BlockStatement": 17,
+      "BooleanLiteral": 11,
+      "CallExpression": 14,
+      "ConditionalExpression": 259,
+      "EqualityOperator": 54,
+      "LogicalOperator": 72,
+      "MethodExpression": 35,
+      "ObjectLiteral": 27,
+      "OptionalChaining": 15,
+      "Regex": 46,
+      "StringLiteral": 174
+    }
+  },
+  "undetectedMutants": {
+    "byModule": {
+      "app": 132,
+      "app/auth": 243,
+      "app/catalog": 264,
+      "app/database": 107,
+      "app/food-entry": 180,
+      "app/food-log": 82,
+      "app/goals": 39,
+      "app/routes": 1969,
+      "app/setup": 54,
+      "app/water-event": 96,
+      "server": 271
+    },
+    "byCategory": {
+      "ArithmeticOperator": 44,
+      "ArrayDeclaration": 47,
+      "ArrowFunction": 93,
+      "AssignmentOperator": 5,
+      "BlockStatement": 337,
+      "BooleanLiteral": 98,
+      "CallExpression": 106,
+      "ConditionalExpression": 858,
+      "EqualityOperator": 246,
+      "LogicalOperator": 188,
+      "MethodExpression": 56,
+      "ObjectLiteral": 260,
+      "OptionalChaining": 70,
+      "Regex": 79,
+      "StringLiteral": 948,
+      "UnaryOperator": 2
+    }
+  }
+}
