@@ -54,13 +54,32 @@ test("an authenticated user replaces complete effective-dated goals", async ({
     "min",
     "2026-08-29",
   );
+  await page.setViewportSize({ height: 908, width: 365 });
+  const effectiveDate = page.getByLabel("Effective date");
+  const mobileDateContainment = await effectiveDate.evaluate((input) => {
+    const card = input.closest("form");
+    if (!(card instanceof HTMLFormElement)) {
+      throw new Error("Effective date card was not rendered");
+    }
+    const style = getComputedStyle(input);
+    return {
+      maxInlineSize: style.maxInlineSize,
+      minInlineSize: style.minInlineSize,
+      rightOverflow:
+        input.getBoundingClientRect().right - card.getBoundingClientRect().right,
+    };
+  });
+  expect(mobileDateContainment.minInlineSize).toBe("0px");
+  expect(mobileDateContainment.maxInlineSize).toBe("100%");
+  expect(mobileDateContainment.rightOverflow).toBeLessThanOrEqual(0);
+  await page.setViewportSize({ height: 720, width: 1_280 });
 
   await page.getByLabel("Water target").fill("100");
   await page.getByLabel("Metric").check();
   await expect(page.getByLabel("Water target")).toHaveValue("2957.353");
   await expect(page.getByText("ml", { exact: true })).toBeVisible();
   await page.getByLabel("Water target").fill("2365.882");
-  await page.getByLabel("Effective date").fill("2026-08-30");
+  await effectiveDate.fill("2026-08-30");
   await page.getByLabel("Calories target").fill("1900");
   await page.getByLabel("Protein target").fill("110");
   await page.getByLabel("Carbohydrate target").fill("210");

@@ -1826,12 +1826,22 @@
   }
 
   .timeline::before {
-    left: 5.1875rem;
+    left: 1.25rem;
   }
 
   .timelineAddFood,
   .timelineAddWater {
-    grid-template-columns: 3.875rem 2.625rem minmax(0, 1fr);
+    grid-template-columns: 2.625rem minmax(0, 1fr);
+  }
+
+  .timelineAddFood > span:last-child,
+  .timelineAddWater > span:last-child {
+    grid-column: 2;
+    margin-left: 0.75rem;
+  }
+
+  .timelineActionMarker {
+    grid-column: 1;
   }
 
   .calorieRow {
@@ -1847,14 +1857,30 @@
   }
 
   .foodEntryCard {
-    grid-template-columns: 3.875rem 2.625rem minmax(0, 1fr) auto 1.125rem;
+    grid-template-columns: 2.625rem minmax(0, 1fr) auto 1.125rem;
+    grid-template-rows: auto minmax(4.5rem, auto);
   }
 
-  .foodEntryCard time {
+  .foodEntryCard time,
+  .pendingTime {
+    grid-column: 2 / -1;
+    grid-row: 1;
+    margin-bottom: 0.3rem;
     font-size: 0.65rem;
   }
 
-  .foodEntryContent {
+  .foodEntryMarker,
+  .waterEntryMarker,
+  .pendingEntryMarker {
+    grid-column: 1;
+    grid-row: 2;
+    justify-self: center;
+  }
+
+  .foodEntryContent,
+  .pendingEntryContent {
+    grid-column: 2;
+    grid-row: 2;
     padding-left: 0.65rem;
   }
 
@@ -1862,8 +1888,19 @@
     font-size: 0.76rem;
   }
 
+  .foodEntryEnergy,
+  .pendingEntryEnergy {
+    grid-column: 3;
+    grid-row: 2;
+  }
+
   .foodEntryEnergy {
     font-size: 0.72rem;
+  }
+
+  .foodEntryCard::after {
+    grid-column: 4;
+    grid-row: 2;
   }
 
   .pendingEntryContent strong {

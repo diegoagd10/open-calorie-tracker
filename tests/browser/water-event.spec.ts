@@ -38,7 +38,20 @@ test("a user can add, inspect, edit, and delete one Water Event", async ({
     "aria-valuetext",
     /16 of 80 fl oz target/,
   );
-  await page.getByRole("link", { name: /Water.*16 fl oz/ }).click();
+  const waterEventLink = page.getByRole("link", { name: /Water.*16 fl oz/ });
+  await page.setViewportSize({ height: 908, width: 385 });
+  const mobileContentStartRatio = await waterEventLink.evaluate((link) => {
+    const content = link.children.item(2);
+    if (!(content instanceof HTMLElement)) {
+      throw new Error("Water Event content was not rendered");
+    }
+    const linkBounds = link.getBoundingClientRect();
+    const contentBounds = content.getBoundingClientRect();
+    return (contentBounds.x - linkBounds.x) / linkBounds.width;
+  });
+  expect(mobileContentStartRatio).toBeLessThanOrEqual(0.2);
+  await page.setViewportSize({ height: 720, width: 1_280 });
+  await waterEventLink.click();
 
   const editDialog = page.getByRole("dialog", { name: "Edit Water Event" });
   await expect(editDialog).toBeVisible();
