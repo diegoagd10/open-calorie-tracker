@@ -1,8 +1,5 @@
 # Production deployment
 
-This is the source of truth for deploying Open Calory Tracker with Portainer
-and an existing Traefik instance.
-
 The checked-in `docker-compose.yml` publishes one host port. Traefik terminates
 HTTPS and forwards requests to that port:
 
