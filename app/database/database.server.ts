@@ -45,7 +45,7 @@ export function isDatabaseReady(status: DatabaseStatus): boolean {
   );
 }
 
-type OpenApplicationDatabaseOptions = {
+export type OpenApplicationDatabaseOptions = {
   databasePath: string;
   migrationsFolder: string;
 };

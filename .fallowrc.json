@@ -12,6 +12,218 @@
     "revokeSession",
     "verifyCsrfToken"
   ],
+  "rules": {
+    "boundary-violation": "error",
+    "circular-dependencies": "error",
+    "private-type-leaks": "error",
+    "re-export-cycle": "error"
+  },
+  "boundaries": {
+    "zones": [
+      {
+        "name": "web",
+        "patterns": [
+          "app/routes/**",
+          "app/root.tsx",
+          "app/routes.ts",
+          "app/app-navigation.tsx",
+          "app/ui-icon.tsx",
+          "app/account.module.css",
+          "app/readiness.module.css",
+          "app/styles.css"
+        ]
+      },
+      {
+        "name": "auth",
+        "patterns": [
+          "app/auth/**",
+          "app/auth.module.css",
+          "scripts/argon2-profile.d.mts",
+          "scripts/argon2-profile.mjs"
+        ]
+      },
+      {
+        "name": "catalog",
+        "patterns": ["app/catalog/**"]
+      },
+      {
+        "name": "database",
+        "patterns": ["app/database/**"]
+      },
+      {
+        "name": "food-entry",
+        "patterns": ["app/food-entry/**"]
+      },
+      {
+        "name": "food-log",
+        "patterns": ["app/food-log/**", "app/food-log.module.css"]
+      },
+      {
+        "name": "goals",
+        "patterns": ["app/goals/**", "app/goals.module.css"]
+      },
+      {
+        "name": "setup",
+        "patterns": ["app/setup/**", "app/setup.module.css"]
+      },
+      {
+        "name": "water-event",
+        "patterns": ["app/water-event/**"]
+      },
+      {
+        "name": "server",
+        "patterns": ["server.js", "server/**", "app/runtime.server.ts"]
+      },
+      {
+        "name": "tests",
+        "patterns": ["tests/**", "scripts/**/*.test.mjs"]
+      },
+      {
+        "name": "tooling",
+        "patterns": [
+          "drizzle.config.ts",
+          "eslint.config.js",
+          "playwright.config.ts",
+          "react-router.config.ts",
+          "vite.config.ts",
+          "vitest.config.ts",
+          "scripts/audit-dependencies.mjs",
+          "scripts/calibrate-argon2.mjs",
+          "scripts/check-codeql-results.mjs"
+        ]
+      }
+    ],
+    "rules": [
+      {
+        "from": "web",
+        "allow": [
+          "auth",
+          "catalog",
+          "database",
+          "food-entry",
+          "food-log",
+          "goals",
+          "server",
+          "setup",
+          "water-event"
+        ]
+      },
+      { "from": "auth", "allow": ["database", "server"] },
+      { "from": "catalog", "allow": ["server"] },
+      { "from": "database", "allow": [] },
+      {
+        "from": "food-entry",
+        "allow": ["catalog", "database", "food-log"]
+      },
+      {
+        "from": "food-log",
+        "allow": ["database", "food-entry"],
+        "allowTypeOnly": ["goals"]
+      },
+      { "from": "goals", "allow": ["database", "food-log", "setup"] },
+      { "from": "setup", "allow": ["database", "food-log", "goals"] },
+      {
+        "from": "water-event",
+        "allow": ["database", "food-log", "setup"]
+      },
+      { "from": "server", "allow": ["database"] },
+      {
+        "from": "tests",
+        "allow": [
+          "auth",
+          "catalog",
+          "database",
+          "food-entry",
+          "food-log",
+          "goals",
+          "server",
+          "setup",
+          "tooling",
+          "water-event",
+          "web"
+        ]
+      },
+      { "from": "tooling", "allow": ["auth"] }
+    ],
+    "coverage": {
+      "requireAllFiles": true
+    },
+    "calls": {
+      "forbidden": [
+        {
+          "from": "web",
+          "callee": [
+            "fetch",
+            "fs.*",
+            "child_process.*",
+            "process.exit",
+            "better-sqlite3",
+            "better-sqlite3.*",
+            "drizzle-orm.*",
+            "drizzle-orm/better-sqlite3.*",
+            "drizzle-orm/better-sqlite3/migrator.*",
+            "drizzle-orm/migrator.*"
+          ]
+        },
+        {
+          "from": "auth",
+          "callee": ["fetch", "fs.*", "child_process.*", "process.exit"]
+        },
+        {
+          "from": "catalog",
+          "callee": [
+            "fs.*",
+            "child_process.*",
+            "process.exit",
+            "better-sqlite3",
+            "better-sqlite3.*",
+            "drizzle-orm.*",
+            "drizzle-orm/better-sqlite3.*",
+            "drizzle-orm/better-sqlite3/migrator.*",
+            "drizzle-orm/migrator.*"
+          ]
+        },
+        {
+          "from": "database",
+          "callee": ["fetch", "child_process.*", "process.exit"]
+        },
+        {
+          "from": "food-entry",
+          "callee": ["fetch", "fs.*", "child_process.*", "process.exit"]
+        },
+        {
+          "from": "food-log",
+          "callee": ["fetch", "fs.*", "child_process.*", "process.exit"]
+        },
+        {
+          "from": "goals",
+          "callee": ["fetch", "fs.*", "child_process.*", "process.exit"]
+        },
+        {
+          "from": "setup",
+          "callee": ["fetch", "fs.*", "child_process.*", "process.exit"]
+        },
+        {
+          "from": "water-event",
+          "callee": ["fetch", "fs.*", "child_process.*", "process.exit"]
+        },
+        {
+          "from": "server",
+          "callee": [
+            "fetch",
+            "fs.*",
+            "child_process.*",
+            "better-sqlite3",
+            "better-sqlite3.*",
+            "drizzle-orm.*",
+            "drizzle-orm/better-sqlite3.*",
+            "drizzle-orm/better-sqlite3/migrator.*",
+            "drizzle-orm/migrator.*"
+          ]
+        }
+      ]
+    }
+  },
   "overrides": [
     {
       "files": ["app/routes/health.live.ts"],

@@ -8,6 +8,9 @@
     "node": ">=24.7 <25"
   },
   "scripts": {
+    "architecture": "pnpm architecture:check && pnpm architecture:test",
+    "architecture:check": "fallow dead-code",
+    "architecture:test": "node --test scripts/fallow-architecture.test.mjs",
     "auth:calibrate": "node scripts/calibrate-argon2.mjs",
     "audit:full": "node scripts/audit-dependencies.mjs",
     "audit:policy": "node --test scripts/audit-dependencies.test.mjs",
@@ -16,7 +19,7 @@
     "codeql:policy": "node --test scripts/check-codeql-results.test.mjs",
     "db:generate": "drizzle-kit generate",
     "dev": "NODE_ENV=development node --conditions development server.js",
-    "lint": "eslint . --max-warnings 0 && node --test scripts/eslint-policy.test.mjs",
+    "lint": "eslint . --max-warnings 0 && node --test scripts/eslint-policy.test.mjs && pnpm architecture",
     "lint:ci": "eslint . --max-warnings 0 --format json",
     "lint:policy": "node --test scripts/eslint-policy.test.mjs",
     "start": "NODE_ENV=production node server.js",

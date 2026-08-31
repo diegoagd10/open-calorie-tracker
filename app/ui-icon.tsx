@@ -1,4 +1,4 @@
-type UiIconName =
+export type UiIconName =
   | "calendar"
   | "external"
   | "info"

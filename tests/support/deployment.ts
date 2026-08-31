@@ -1,7 +1,7 @@
 import { cp, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-type ExtraMigration = {
+export type ExtraMigration = {
   sql: string;
   tag: string;
 };

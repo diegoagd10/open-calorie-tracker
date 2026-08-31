@@ -402,7 +402,7 @@ function newestDuplicateRevision(
   return [...revisions.values()];
 }
 
-type UsdaAdapterOptions = {
+export type UsdaAdapterOptions = {
   apiKey?: string;
   baseUrl?: string;
   fetchImplementation?: typeof fetch;
