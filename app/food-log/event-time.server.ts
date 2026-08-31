@@ -2,7 +2,7 @@ import { sql } from "drizzle-orm";
 
 import type { ApplicationDatabaseClient } from "../database/database.server";
 
-type EventTimeDatabase = Pick<ApplicationDatabaseClient, "get">;
+export type EventTimeDatabase = Pick<ApplicationDatabaseClient, "get">;
 
 function localTimeAt(instant: Date, timeZone: string): string {
   const parts = new Intl.DateTimeFormat("en-US", {

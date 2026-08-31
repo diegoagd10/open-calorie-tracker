@@ -3,7 +3,7 @@ import { Link } from "react-router";
 
 import styles from "../auth.module.css";
 
-type AuthShellProps = {
+export type AuthShellProps = {
   activePage: "login" | "register";
   children: ReactNode;
 };

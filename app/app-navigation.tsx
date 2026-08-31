@@ -3,7 +3,7 @@ import { Form, Link } from "react-router";
 import styles from "./food-log.module.css";
 import { UiIcon } from "./ui-icon";
 
-type AppNavigationProps = {
+export type AppNavigationProps = {
   active: "history" | "log" | "settings";
   csrfToken: string;
   selectedDate: string;

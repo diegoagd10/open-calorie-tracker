@@ -27,7 +27,7 @@ export type GoalVersionValidationResult =
     }
   | { error: string; field: keyof GoalVersionFields; success: false };
 
-type CanonicalGoal = CanonicalGoalValues & {
+export type CanonicalGoal = CanonicalGoalValues & {
   effectiveDate: string;
 };
 

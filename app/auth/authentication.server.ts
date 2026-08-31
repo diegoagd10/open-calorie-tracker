@@ -22,7 +22,7 @@ const LOGIN_FAILURE_WINDOW_MS = 15 * 60 * 1_000;
 const PASSWORD_CHANGE_FAILURE_WINDOW_MS = 15 * 60 * 1_000;
 const REGISTRATION_WINDOW_MS = 60 * 60 * 1_000;
 
-type CredentialUser = Pick<
+export type CredentialUser = Pick<
   typeof users.$inferSelect,
   "id" | "usernameNormalized"
 > &

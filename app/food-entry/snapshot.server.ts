@@ -8,7 +8,7 @@ import { foodEntries } from "../database/schema.server";
 
 export { scaleCatalogNutrient } from "./nutrition";
 
-type FoodEntryRow = typeof foodEntries.$inferSelect;
+export type FoodEntryRow = typeof foodEntries.$inferSelect;
 
 const catalogNutrientValueSchema = z.object({
   amount: z.number().finite().nonnegative(),
