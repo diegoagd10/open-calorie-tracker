@@ -19,8 +19,3 @@ coaching, judgment, or gamification.
 
 For production configuration, deployment, updates, and backups, follow the
 [production deployment guide](docs/deployment.md).
-
-## Architecture
-
-The feature zones, public APIs, entry points, allowed dependency graph, and
-side-effect owners are defined in the [architecture contract](docs/architecture.md).
