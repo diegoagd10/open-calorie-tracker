@@ -2,17 +2,17 @@
 
 ## What it is
 
-Open Calory Tracker is a private, mobile-first daily log for nutrition and
-water. It helps people find existing foods, record what they consume, set their
-own goals, compare daily totals, and revisit or correct past entries.
+Open Calory Tracker is a private daily log for nutrition and water. It helps
+people find existing foods, record what they consume, set their own goals,
+compare daily totals, and revisit or correct past entries.
 
 ## Why it exists
 
 It was built for people who want a fast, self-hosted way to track nutrition and
-water from an iPhone without manually transcribing food data or giving up
-control of their history. The application keeps past records useful even when
-its external food catalog changes or is temporarily unavailable, and presents
-progress factually without coaching, judgment, or gamification.
+water without manually transcribing food data or giving up control of their
+history. The application keeps past records useful even when its external food
+catalog changes or is temporarily unavailable, and presents progress factually
+without coaching, judgment, or gamification.
 
 ## Deployment
 
