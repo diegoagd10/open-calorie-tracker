@@ -270,8 +270,13 @@ test("daily calorie and nutrient progress is factual, responsive, and accessible
     page.getByRole("article", { name: /Protein: 0 of 120 g target/ }),
   ).toBeVisible();
   await expect(
-    page.getByRole("article", { name: /Sugar: 0 of 50 g maximum/ }),
-  ).toBeHidden();
+    page
+      .getByRole("article", {
+        includeHidden: true,
+        name: /Sugar: 0 of 50 g maximum/,
+      })
+      .locator(".."),
+  ).toHaveAttribute("aria-hidden", "true");
 
   await page.getByRole("button", { name: "Add Food" }).click();
   await page
@@ -384,14 +389,66 @@ test("daily calorie and nutrient progress is factual, responsive, and accessible
   });
   const touchPage = await touchContext.newPage();
   await touchPage.goto("/?date=2026-08-29");
-  await touchPage
-    .getByRole("button", { name: "Show fiber, sugar, and sodium" })
-    .tap();
+  const nutrientCarousel = touchPage.getByRole("region", {
+    name: "Daily nutrient progress",
+  });
+  const carouselBox = await nutrientCarousel.boundingBox();
+  expect(carouselBox).not.toBeNull();
+  const touchClient = await touchContext.newCDPSession(touchPage);
+  const swipeY = carouselBox!.y + carouselBox!.height / 2;
+  const touchStart = async (x: number) => {
+    await touchClient.send("Input.dispatchTouchEvent", {
+      touchPoints: [{ x, y: swipeY }],
+      type: "touchStart",
+    });
+  };
+  const touchMove = async (x: number) => {
+    await touchClient.send("Input.dispatchTouchEvent", {
+      touchPoints: [{ x, y: swipeY }],
+      type: "touchMove",
+    });
+  };
+  const touchEnd = async () => {
+    await touchClient.send("Input.dispatchTouchEvent", {
+      touchPoints: [],
+      type: "touchEnd",
+    });
+  };
+  const swipeLeftStart = carouselBox!.x + carouselBox!.width * 0.75;
+  const swipeLeftEnd = carouselBox!.x + carouselBox!.width * 0.25;
+  const fiberPage = touchPage
+    .getByRole("article", {
+      includeHidden: true,
+      name: "Fiber: 0 known of 20 g target; incomplete",
+    })
+    .locator("..");
+  const nutrientTrack = fiberPage.locator("..");
+  await touchStart(swipeLeftStart);
+  await touchMove(swipeLeftEnd);
+  await expect
+    .poll(async () => (await fiberPage.boundingBox())?.x)
+    .toBeLessThan(carouselBox!.x + carouselBox!.width);
+  await expect(nutrientTrack).toHaveCSS("transition-duration", "0s");
+  await touchEnd();
   await expect(
     touchPage.getByRole("article", {
       name: "Fiber: 0 known of 20 g target; incomplete",
     }),
   ).toBeVisible();
+  await expect(nutrientTrack).toHaveCSS("transition-duration", "0.32s");
+  await touchStart(swipeLeftEnd);
+  await touchMove(swipeLeftStart);
+  await touchEnd();
+  await expect(
+    touchPage.getByRole("article", {
+      name: "Protein: 120.5 of 100 g target",
+    }),
+  ).toBeVisible();
+  await touchPage.emulateMedia({ reducedMotion: "reduce" });
+  await touchStart(swipeLeftStart);
+  await touchMove(swipeLeftEnd);
+  await touchEnd();
+  await expect(nutrientTrack).toHaveCSS("transition-duration", "0s");
   await touchContext.close();
 
   for (const viewport of [
