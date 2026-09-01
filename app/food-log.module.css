@@ -221,16 +221,25 @@
 }
 
 .nutrientCarousel {
+  overflow: hidden;
   border-top: 1px solid var(--rule);
+  touch-action: pan-y;
+}
+
+.nutrientTrack {
+  display: flex;
+  width: 200%;
+  will-change: transform;
+}
+
+.nutrientTrackSettling {
+  transition: transform 320ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .nutrientPage {
   display: grid;
+  flex: 0 0 50%;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-}
-
-.nutrientPage[hidden] {
-  display: none;
 }
 
 .nutrientCell {
@@ -1948,6 +1957,10 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .nutrientTrackSettling {
+    transition: none;
+  }
+
   .foodEntryCard {
     transition: none;
   }

@@ -6,6 +6,7 @@ import {
   useState,
   type CSSProperties,
   type KeyboardEvent as ReactKeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from "react";
 import { z } from "zod";
@@ -1031,7 +1032,89 @@ function DailySummary({
 }: {
   foodLog: Route.ComponentProps["loaderData"]["foodLog"];
 }) {
+  const [nutrientDragX, setNutrientDragX] = useState(0);
   const [nutrientPage, setNutrientPage] = useState(0);
+  const [nutrientSettling, setNutrientSettling] = useState(false);
+  const nutrientSwipe = useRef<{
+    isHorizontal: boolean;
+    pointerId: number;
+    startX: number;
+    startY: number;
+    width: number;
+  } | null>(null);
+
+  function startNutrientSwipe(event: ReactPointerEvent<HTMLElement>) {
+    if (event.pointerType !== "touch") return;
+    setNutrientSettling(false);
+    nutrientSwipe.current = {
+      isHorizontal: false,
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      width: event.currentTarget.getBoundingClientRect().width,
+    };
+  }
+
+  function moveNutrientSwipe(event: ReactPointerEvent<HTMLElement>) {
+    const swipe = nutrientSwipe.current;
+    if (!swipe || event.pointerId !== swipe.pointerId) return;
+
+    const horizontalDistance = event.clientX - swipe.startX;
+    const verticalDistance = event.clientY - swipe.startY;
+    if (!swipe.isHorizontal) {
+      if (
+        Math.abs(horizontalDistance) < 6 &&
+        Math.abs(verticalDistance) < 6
+      ) {
+        return;
+      }
+      if (Math.abs(horizontalDistance) <= Math.abs(verticalDistance)) {
+        nutrientSwipe.current = null;
+        return;
+      }
+      swipe.isHorizontal = true;
+    }
+
+    event.preventDefault();
+    const minimum =
+      nutrientPage === metricPages.length - 1 ? 0 : -swipe.width;
+    const maximum = nutrientPage === 0 ? 0 : swipe.width;
+    setNutrientDragX(
+      Math.max(minimum, Math.min(maximum, horizontalDistance)),
+    );
+  }
+
+  function cancelNutrientSwipe() {
+    nutrientSwipe.current = null;
+    setNutrientDragX(0);
+    setNutrientSettling(true);
+  }
+
+  function finishNutrientSwipe(event: ReactPointerEvent<HTMLElement>) {
+    const swipe = nutrientSwipe.current;
+    nutrientSwipe.current = null;
+    if (
+      !swipe ||
+      event.pointerId !== swipe.pointerId ||
+      !swipe.isHorizontal
+    ) {
+      return;
+    }
+
+    const horizontalDistance = event.clientX - swipe.startX;
+    const shouldChangePage =
+      Math.abs(horizontalDistance) >= Math.min(64, swipe.width * 0.2);
+    if (shouldChangePage) {
+      setNutrientPage((page) =>
+        horizontalDistance < 0
+          ? Math.min(page + 1, metricPages.length - 1)
+          : Math.max(page - 1, 0),
+      );
+    }
+    setNutrientDragX(0);
+    setNutrientSettling(true);
+  }
+
   const goal = foodLog.goal;
   const goals = goal
     ? waterGoalValues(goal.waterTargetMicroliters, foodLog.displayUnits)
@@ -1120,6 +1203,9 @@ function DailySummary({
       },
     ],
   ];
+  const nutrientTrackStyle = {
+    transform: `translate3d(calc(${-nutrientPage * 50}% + ${nutrientDragX}px), 0, 0)`,
+  } satisfies CSSProperties;
 
   return (
     <>
@@ -1171,18 +1257,27 @@ function DailySummary({
         <section
           aria-label="Daily nutrient progress"
           className={styles.nutrientCarousel}
+          onPointerCancel={cancelNutrientSwipe}
+          onPointerDown={startNutrientSwipe}
+          onPointerMove={moveNutrientSwipe}
+          onPointerUp={finishNutrientSwipe}
         >
-          {metricPages.map((metrics, page) => (
-            <div
-              className={styles.nutrientPage}
-              hidden={nutrientPage !== page}
-              key={page}
-            >
-              {metrics.map((metric) => (
-                <NutrientMetric key={metric.key} metric={metric} />
-              ))}
-            </div>
-          ))}
+          <div
+            className={`${styles.nutrientTrack} ${nutrientSettling ? styles.nutrientTrackSettling : ""}`}
+            style={nutrientTrackStyle}
+          >
+            {metricPages.map((metrics, page) => (
+              <div
+                aria-hidden={nutrientPage !== page}
+                className={styles.nutrientPage}
+                key={page}
+              >
+                {metrics.map((metric) => (
+                  <NutrientMetric key={metric.key} metric={metric} />
+                ))}
+              </div>
+            ))}
+          </div>
           <div
             aria-label="Nutrition pages"
             className={styles.carouselControls}
@@ -1192,14 +1287,20 @@ function DailySummary({
               aria-label="Show protein, carbohydrate, and fat"
               aria-pressed={nutrientPage === 0}
               className={`${styles.carouselDot} ${nutrientPage === 0 ? styles.activeCarouselDot : ""}`}
-              onClick={() => setNutrientPage(0)}
+              onClick={() => {
+                setNutrientSettling(false);
+                setNutrientPage(0);
+              }}
               type="button"
             />
             <button
               aria-label="Show fiber, sugar, and sodium"
               aria-pressed={nutrientPage === 1}
               className={`${styles.carouselDot} ${nutrientPage === 1 ? styles.activeCarouselDot : ""}`}
-              onClick={() => setNutrientPage(1)}
+              onClick={() => {
+                setNutrientSettling(false);
+                setNutrientPage(1);
+              }}
               type="button"
             />
           </div>
