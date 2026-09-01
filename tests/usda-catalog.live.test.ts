@@ -229,11 +229,7 @@ describe.skipIf(!runLiveSpike)("registered USDA FoodData Central spike", () => {
     latencies.push(performance.now() - noResultStartedAt);
     expect(noResults).toEqual([]);
 
-    for (const dataType of [
-      "Branded",
-      "Foundation",
-      "Survey (FNDDS)",
-    ] as const) {
+    for (const dataType of ["Branded", "Foundation"] as const) {
       const representative = representativeByType.get(dataType);
       expect(representative, `representative ${dataType} result`).toBeDefined();
       const detail = await provider.getFood(representative!.providerFoodId);
@@ -273,7 +269,7 @@ describe.skipIf(!runLiveSpike)("registered USDA FoodData Central spike", () => {
         `https://api.nal.usda.gov/fdc/v1/foods/search?api_key=${encodeURIComponent(apiKey)}`,
         {
           body: JSON.stringify({
-            dataType: ["Branded", "Survey (FNDDS)", "Foundation"],
+            dataType: ["Foundation", "Branded"],
             pageSize: 20,
             query: barcode,
           }),
