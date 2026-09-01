@@ -26,6 +26,7 @@ import {
 
 const DEFAULT_BASE_URL = "https://api.nal.usda.gov/fdc/v1";
 const DEFAULT_TIMEOUT_MS = 5_000;
+const SEARCH_CATALOG_DATA_TYPES = ["Foundation", "Branded"] as const;
 const optionalProviderDateSchema = z.string().min(1).max(32).nullish();
 const searchFoodSchema = z.object({
   brandName: z.string().max(300).nullish(),
@@ -451,7 +452,7 @@ export class UsdaFoodDataCentralAdapter implements FoodCatalogProvider {
     if (!parsedQuery.success) throw new CatalogInvalidResponseError();
     const response = await this.#request("foods/search", {
       body: JSON.stringify({
-        dataType: [...SUPPORTED_CATALOG_DATA_TYPES],
+        dataType: [...SEARCH_CATALOG_DATA_TYPES],
         pageSize: 20,
         query: parsedQuery.data,
       }),

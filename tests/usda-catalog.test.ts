@@ -104,7 +104,7 @@ test("USDA search normalizes supported foods and keeps the newest duplicate revi
   expect(String(url)).not.toContain("yogurt");
   expect(String(url)).toContain("api_key=registered-test-key");
   expect(JSON.parse(String(request?.body))).toEqual({
-    dataType: ["Branded", "Survey (FNDDS)", "Foundation"],
+    dataType: ["Foundation", "Branded"],
     pageSize: 20,
     query: "yogurt",
   });
