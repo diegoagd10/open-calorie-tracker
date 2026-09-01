@@ -88,7 +88,7 @@ describe("login component", () => {
     const renderer = await renderRoute(
       Login,
       "/login",
-      { csrfToken: "login-csrf" },
+      { csrfToken: "login-csrf", registrationOpen: true },
     );
     expect(input(renderer, "csrfToken").props).toMatchObject({
       type: "hidden",
@@ -121,7 +121,7 @@ describe("login component", () => {
     const renderer = await renderRoute(
       Login,
       "/login",
-      { csrfToken: "login-csrf" },
+      { csrfToken: "login-csrf", registrationOpen: true },
       { error: "Credentials rejected", username: "Attempted.User" },
     );
     expect(input(renderer, "username").props.defaultValue)
@@ -129,6 +129,17 @@ describe("login component", () => {
     expect(renderer.root.findByProps({ role: "alert" }).children)
       .toContain("Credentials rejected");
     expect(text(renderer)).toContain("Couldn’t sign in");
+    renderer.unmount();
+  });
+
+  test("hides registration after the instance is claimed", async () => {
+    const renderer = await renderRoute(
+      Login,
+      "/login",
+      { csrfToken: "login-csrf", registrationOpen: false },
+    );
+    expect(text(renderer)).not.toContain("Register");
+    expect(renderer.root.findAllByProps({ href: "/register" })).toHaveLength(0);
     renderer.unmount();
   });
 });

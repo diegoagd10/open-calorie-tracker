@@ -20,9 +20,14 @@ export const users = sqliteTable(
   {
     id: integer().primaryKey({ autoIncrement: true }),
     usernameNormalized: text("username_normalized").notNull(),
+    role: text({ enum: ["admin", "member"] }).notNull().default("member"),
     createdAt: text("created_at").notNull(),
   },
   (table) => [
+    check("users_role_check", sql`role IN ('admin', 'member')`),
+    uniqueIndex("users_single_admin_unique")
+      .on(table.role)
+      .where(sql`${table.role} = 'admin'`),
     uniqueIndex("users_username_normalized_unique").on(
       sql`${table.usernameNormalized} COLLATE NOCASE`,
     ),

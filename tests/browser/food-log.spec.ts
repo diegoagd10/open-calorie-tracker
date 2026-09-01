@@ -1,37 +1,23 @@
 import AxeBuilder from "@axe-core/playwright";
-import { expect, test, type Page } from "@playwright/test";
-import BetterSqlite3 from "better-sqlite3";
-import { readdirSync, statSync } from "node:fs";
-import path from "node:path";
+import type { Page } from "@playwright/test";
+import {
+  bootstrapOrSignInBrowserTestUser,
+  expect,
+  openBrowserTestDatabase,
+  test,
+} from "./reset-database";
 
 const validPassword = "correct horse 🔐 battery";
 
-async function registerAndSetup(
+async function completeSetupForTestUser(
   page: Page,
   username = "food.log.navigation",
   timeZone = "America/New_York",
 ) {
-  await page.goto("/register");
-  await page.getByLabel("Username").fill(username);
-  await page.getByLabel("Password", { exact: true }).fill(validPassword);
-  await page.getByLabel("Confirm password").fill(validPassword);
-  await page.getByRole("button", { name: "Create private account" }).click();
+  await bootstrapOrSignInBrowserTestUser(page, username, validPassword);
   await page.getByLabel("Time zone").fill(timeZone);
   await page.getByRole("button", { name: "Finish setup" }).click();
   await expect(page).toHaveURL("/");
-}
-
-function openBrowserTestDatabase() {
-  const directory = path.resolve("data/playwright-tests");
-  const databasePath = readdirSync(directory)
-    .filter((name) => /^application\..+\.sqlite$/.test(name))
-    .map((name) => path.join(directory, name))
-    .sort(
-      (left, right) =>
-        statSync(right).birthtimeMs - statSync(left).birthtimeMs,
-    )[0];
-  if (!databasePath) throw new Error("browser test database was not created");
-  return new BetterSqlite3(databasePath);
 }
 
 async function expectCatalogResponsive(page: Page) {
@@ -93,7 +79,7 @@ test("today, historical navigation, calendar access, travel, and future rejectio
   page,
 }) => {
   await context.setExtraHTTPHeaders({ "X-Test-Client-IP": "203.0.113.80" });
-  await registerAndSetup(page);
+  await completeSetupForTestUser(page);
 
   await expect(
     page.getByRole("heading", { name: "Today's Food Log" }),
@@ -222,7 +208,7 @@ test("the full stack resolves UTC boundaries and both DST transitions", async ({
   page,
 }) => {
   await context.setExtraHTTPHeaders({ "X-Test-Client-IP": "203.0.113.81" });
-  await registerAndSetup(page, "food.log.boundaries");
+  await completeSetupForTestUser(page, "food.log.boundaries");
 
   async function expectToday(instant: string, expectedDate: string) {
     await page.setExtraHTTPHeaders({ "X-Test-Food-Log-Now": instant });
@@ -260,7 +246,7 @@ test("daily calorie and nutrient progress is factual, responsive, and accessible
   page,
 }) => {
   await context.setExtraHTTPHeaders({ "X-Test-Client-IP": "203.0.113.87" });
-  await registerAndSetup(page, "nutrition.progress");
+  await completeSetupForTestUser(page, "nutrition.progress");
 
   await expect(
     page.getByRole("progressbar", { name: "Calorie progress" }),
@@ -503,7 +489,7 @@ test("authenticated USDA search and idempotent logging preserve a local Nutritio
   page,
 }) => {
   await context.setExtraHTTPHeaders({ "X-Test-Client-IP": "203.0.113.82" });
-  await registerAndSetup(page, "catalog.search");
+  await completeSetupForTestUser(page, "catalog.search");
 
   await page.getByRole("button", { name: "Add Food" }).click();
   await expect(page).toHaveURL(/food=search/);
@@ -708,7 +694,7 @@ test("food selection immediately reveals the pending detail destination", async 
   page,
 }) => {
   await context.setExtraHTTPHeaders({ "X-Test-Client-IP": "203.0.113.91" });
-  await registerAndSetup(page, "catalog.pending-destinations");
+  await completeSetupForTestUser(page, "catalog.pending-destinations");
 
   await page.getByRole("button", { name: "Add Food" }).click();
   await page
@@ -773,7 +759,7 @@ test("food logging immediately reveals a pending Daily log row", async ({
   page,
 }) => {
   await context.setExtraHTTPHeaders({ "X-Test-Client-IP": "203.0.113.92" });
-  await registerAndSetup(page, "catalog.pending-log");
+  await completeSetupForTestUser(page, "catalog.pending-log");
 
   await page.getByRole("button", { name: "Add Food" }).click();
   await page
@@ -874,7 +860,7 @@ test("an authenticated user can correct and delete one Food Entry", async ({
   page,
 }) => {
   await context.setExtraHTTPHeaders({ "X-Test-Client-IP": "203.0.113.83" });
-  await registerAndSetup(page, "food.entry.edit");
+  await completeSetupForTestUser(page, "food.entry.edit");
   await page.getByRole("button", { name: "Add Food" }).click();
   await page
     .getByRole("searchbox", { name: "Search United States foods" })
@@ -1008,7 +994,7 @@ test("an authenticated user can correct and delete one Food Entry", async ({
     "X-Test-Client-IP": "203.0.113.84",
   });
   const otherPage = await otherContext.newPage();
-  await registerAndSetup(otherPage, "food.entry.other");
+  await completeSetupForTestUser(otherPage, "food.entry.other");
   const unavailableRead = await otherPage.goto(
     `/?date=2026-08-29&entry=${entryId}`,
   );
@@ -1081,7 +1067,7 @@ test("a stale Food Entry editor refreshes to the current occurrence and can retr
   page,
 }) => {
   await context.setExtraHTTPHeaders({ "X-Test-Client-IP": "203.0.113.85" });
-  await registerAndSetup(page, "food.entry.stale-recovery");
+  await completeSetupForTestUser(page, "food.entry.stale-recovery");
   await page.getByRole("button", { name: "Add Food" }).click();
   await page
     .getByRole("searchbox", { name: "Search United States foods" })
@@ -1130,7 +1116,7 @@ test("delete pending state names only the destructive mutation", async ({
   page,
 }) => {
   await context.setExtraHTTPHeaders({ "X-Test-Client-IP": "203.0.113.86" });
-  await registerAndSetup(page, "food.entry.delete-pending");
+  await completeSetupForTestUser(page, "food.entry.delete-pending");
   await page.getByRole("button", { name: "Add Food" }).click();
   await page
     .getByRole("searchbox", { name: "Search United States foods" })

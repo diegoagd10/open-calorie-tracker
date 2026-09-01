@@ -6,10 +6,7 @@ import path from "node:path";
 import { eq } from "drizzle-orm";
 import { afterEach, expect, test } from "vitest";
 
-import {
-  AuthenticationService,
-  isUniqueConstraint,
-} from "../app/auth/authentication.server";
+import { AuthenticationService } from "../app/auth/authentication.server";
 import { hashPassword } from "../app/auth/password.server";
 import { PreAuthenticationCsrfService } from "../app/auth/pre-authentication-csrf.server";
 import { openApplicationDatabase } from "../app/database/database.server";
@@ -19,6 +16,10 @@ import {
   rateLimitCounters,
   sessions,
 } from "../app/database/schema.server";
+import {
+  seedAccount,
+  seedAuthenticatedAccount,
+} from "./support/authentication";
 
 const temporaryDirectories: string[] = [];
 const password = "correct horse 🔐 battery";
@@ -54,21 +55,7 @@ async function createFixture() {
   };
 }
 
-test("unique-constraint classification rejects lookalike and unrelated errors", () => {
-  const unique = Object.assign(new Error("duplicate"), {
-    code: "SQLITE_CONSTRAINT_UNIQUE",
-  });
-  const unrelated = Object.assign(new Error("database unavailable"), {
-    code: "SQLITE_ERROR",
-  });
-  expect(isUniqueConstraint(unique)).toBe(true);
-  expect(isUniqueConstraint(unrelated)).toBe(false);
-  expect(isUniqueConstraint(new Error("missing code"))).toBe(false);
-  expect(isUniqueConstraint({ code: "SQLITE_CONSTRAINT_UNIQUE" })).toBe(false);
-  expect(isUniqueConstraint(null)).toBe(false);
-});
-
-test("registration distinguishes duplicates from unexpected database failures", async () => {
+test("bootstrap distinguishes a claimed instance from unexpected database failures", async () => {
   const duplicateFixture = await createFixture();
   const first = await duplicateFixture.service.register(
     "duplicate.user",
@@ -80,7 +67,7 @@ test("registration distinguishes duplicates from unexpected database failures", 
     "duplicate.user",
     password,
     "203.0.113.91",
-  )).resolves.toEqual({ error: "duplicate-username", ok: false });
+  )).resolves.toEqual({ error: "claimed-instance", ok: false });
 
   const brokenFixture = await createFixture();
   brokenFixture.database.$client.exec("DROP TABLE password_credentials");
@@ -137,8 +124,8 @@ test("sessions persist only a token hash and enforce idle and absolute expiry", 
     await fixture.service.authenticate(registration.session.token),
   ).toBeUndefined();
 
-  fixture.setNow("2026-08-29T12:00:00.000Z");
-  const activeRegistration = await fixture.service.register(
+  const activeFixture = await createFixture();
+  const activeRegistration = await activeFixture.service.register(
     "active.user",
     password,
     "203.0.113.31",
@@ -147,19 +134,20 @@ test("sessions persist only a token hash and enforce idle and absolute expiry", 
   if (!activeRegistration.ok) throw new Error("registration failed");
 
   for (let day = 4; day <= 88; day += 4) {
-    fixture.setNow(
+    activeFixture.setNow(
       new Date(Date.UTC(2026, 7, 29 + day, 12)).toISOString(),
     );
     expect(
-      await fixture.service.authenticate(activeRegistration.session.token),
+      await activeFixture.service.authenticate(activeRegistration.session.token),
     ).toBeDefined();
   }
 
-  fixture.setNow("2026-11-27T12:00:00.000Z");
+  activeFixture.setNow("2026-11-27T12:00:00.000Z");
   expect(
-    await fixture.service.authenticate(activeRegistration.session.token),
+    await activeFixture.service.authenticate(activeRegistration.session.token),
   ).toBeUndefined();
 
+  activeFixture.applicationDatabase.close();
   fixture.applicationDatabase.close();
 });
 
@@ -431,15 +419,22 @@ test("production password hashes encode the reviewed profile and random salt", a
 
 test("registration and login windows enforce their exact boundaries", async () => {
   const fixture = await createFixture();
+  const registrationOutcomes: string[] = [];
   for (let index = 0; index < 5; index += 1) {
-    expect(
-      await fixture.service.register(
-        `registration.window.${index}`,
-        password,
-        "203.0.113.100",
-      ),
-    ).toMatchObject({ ok: true });
+    const result = await fixture.service.register(
+      `registration.window.${index}`,
+      password,
+      "203.0.113.100",
+    );
+    registrationOutcomes.push(result.ok ? "succeeded" : result.error);
   }
+  expect(registrationOutcomes).toEqual([
+    "succeeded",
+    "claimed-instance",
+    "claimed-instance",
+    "claimed-instance",
+    "claimed-instance",
+  ]);
   expect(
     await fixture.service.register(
       "registration.window.blocked",
@@ -462,15 +457,14 @@ test("registration and login windows enforce their exact boundaries", async () =
       password,
       "203.0.113.100",
     ),
-  ).toMatchObject({ ok: true });
+  ).toEqual({ error: "claimed-instance", ok: false });
 
   fixture.setNow("2026-08-29T14:00:00.000Z");
-  const registered = await fixture.service.register(
+  await seedAccount(
+    fixture.database,
     "login.window",
     password,
-    "203.0.113.101",
   );
-  expect(registered.ok).toBe(true);
   for (let index = 0; index < 10; index += 1) {
     expect(
       await fixture.service.login(
@@ -590,18 +584,20 @@ test("password changes reject a vanished or mismatched current session", async (
     password,
     "203.0.113.130",
   );
-  const second = await fixture.service.register(
+  const second = await seedAuthenticatedAccount(
+    fixture.service,
+    fixture.database,
     "change.second",
     password,
     "203.0.113.131",
   );
-  if (!first.ok || !second.ok) throw new Error("registration failed");
+  if (!first.ok) throw new Error("registration failed");
 
   expect(
     await fixture.service.changePassword(
       {
         ...first.session,
-        user: { ...first.session.user, id: second.session.user.id },
+        user: { ...first.session.user, id: second.user.id },
       },
       password,
       "unused replacement",
@@ -610,7 +606,7 @@ test("password changes reject a vanished or mismatched current session", async (
 
   expect(
     await fixture.service.changePassword(
-      { ...first.session, user: second.session.user },
+      { ...first.session, user: second.user },
       password,
       "unused replacement",
     ),

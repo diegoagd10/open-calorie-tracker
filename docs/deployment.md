@@ -84,6 +84,21 @@ temporary `TRUST_PROXY` value.
 The container is ready when Portainer reports it healthy and
 `GET /health/ready` returns 200.
 
+## Claim a new instance before public exposure
+
+A database with no users is intentionally unclaimed. The first successful
+registration becomes the sole administrator, receives an authenticated session,
+and closes public registration. There is no bootstrap token or second approval.
+
+Keep Traefik disconnected from a new instance until you have opened the
+application through a trusted local path, registered the administrator, and
+finished the nutrition setup. Afterward, verify that an anonymous request to
+`/register` redirects to `/login`; only then expose the instance publicly.
+
+Existing installations are claimed automatically during migration: the oldest
+user becomes the administrator and all other legacy users become members. Their
+usernames, password hashes, sessions, and nutrition data are preserved.
+
 ## Configure Traefik
 
 Route the hostname from `APPLICATION_URL` through the existing `websecure`
@@ -108,8 +123,10 @@ Complete all checks after the initial deployment or a configuration change:
 
 1. Confirm Portainer reports the container as healthy.
 2. Confirm `https://<hostname>/health/ready` returns 200.
-3. Register a test account or sign in. This verifies `TRUST_PROXY`, forwarded
-   HTTPS, cookies, CSRF protection, and writable SQLite storage together.
+3. On a new database, claim the administrator before connecting the public
+   route; on an existing database, sign in with the oldest account. This verifies
+   `TRUST_PROXY`, forwarded HTTPS, cookies, CSRF protection, and writable SQLite
+   storage together.
 4. Confirm the container logs contain a successful POST rather than
    `singleFetchAction` followed by `400 Bad Request`.
 

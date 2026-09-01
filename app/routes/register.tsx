@@ -13,6 +13,7 @@ import {
 } from "../auth/http.server";
 import { getAuthenticationService } from "../auth/runtime.server";
 import { registrationSchema } from "../auth/validation";
+import { logBootstrapRejected } from "../auth/bootstrap-events.server";
 
 type RegistrationActionData = {
   error?: string;
@@ -30,10 +31,24 @@ export function headers() {
   return { "Cache-Control": "no-store" };
 }
 
-export async function loader({ request }: Route.LoaderArgs) {
+async function registrationAccess(request: Request) {
   if (await getAuthenticatedSession(request)) {
-    return redirect("/");
+    logBootstrapRejected("authenticated-request");
+    throw new Response("Not Found", { status: 404 });
   }
+
+  const authentication = getAuthenticationService();
+  if (!authentication.isRegistrationOpen()) {
+    logBootstrapRejected("claimed-instance");
+    return redirect("/login");
+  }
+
+  return authentication;
+}
+
+export async function loader({ request }: Route.LoaderArgs) {
+  const access = await registrationAccess(request);
+  if (access instanceof Response) return access;
 
   const csrf = loadPreAuthenticationCsrf(request);
   return data(
@@ -43,21 +58,35 @@ export async function loader({ request }: Route.LoaderArgs) {
 }
 
 export async function action({ request }: Route.ActionArgs) {
-  requireValidOrigin(request);
+  const authentication = await registrationAccess(request);
+  if (authentication instanceof Response) return authentication;
+
+  try {
+    requireValidOrigin(request);
+  } catch (error) {
+    logBootstrapRejected("invalid-origin");
+    throw error;
+  }
   const formData = await request.formData();
   const fields = {
     confirmPassword: String(formData.get("confirmPassword") ?? ""),
     password: String(formData.get("password") ?? ""),
     username: String(formData.get("username") ?? ""),
   };
-  requirePreAuthenticationCsrf(
-    request,
-    // Stryker disable next-line StringLiteral: every placeholder for a missing opaque token is rejected identically.
-    String(formData.get("csrfToken") ?? ""),
-  );
+  try {
+    requirePreAuthenticationCsrf(
+      request,
+      // Stryker disable next-line StringLiteral: every placeholder for a missing opaque token is rejected identically.
+      String(formData.get("csrfToken") ?? ""),
+    );
+  } catch (error) {
+    logBootstrapRejected("invalid-csrf");
+    throw error;
+  }
   const parsed = registrationSchema.safeParse(fields);
 
   if (!parsed.success) {
+    logBootstrapRejected("invalid-input");
     const field = parsed.error.issues[0].path[0];
     const error =
       field === "username"
@@ -72,7 +101,7 @@ export async function action({ request }: Route.ActionArgs) {
     );
   }
 
-  const result = await getAuthenticationService().register(
+  const result = await authentication.register(
     parsed.data.username,
     parsed.data.password,
     getClientIp(request),
@@ -89,14 +118,7 @@ export async function action({ request }: Route.ActionArgs) {
       );
     }
 
-    return data<RegistrationActionData>(
-      {
-        error:
-          "That username is already registered. Usernames are compared case-insensitively.",
-        username: fields.username,
-      },
-      { status: 409 },
-    );
+    return redirect("/login");
   }
 
   return redirect("/", {
@@ -109,7 +131,7 @@ export default function Register({
   loaderData,
 }: Route.ComponentProps) {
   return (
-    <AuthShell activePage="register">
+    <AuthShell activePage="register" registrationOpen>
       <Form className={styles.form} method="post" noValidate>
         <input
           name="csrfToken"

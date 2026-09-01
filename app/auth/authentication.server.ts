@@ -15,6 +15,11 @@ import {
 } from "./password.server";
 import { PersistentRateLimiter } from "./rate-limiter.server";
 import { deriveCsrfToken, hashOpaqueToken, safelyEqual } from "./token.server";
+import {
+  logBootstrapFailed,
+  logBootstrapRejected,
+  logBootstrapSucceeded,
+} from "./bootstrap-events.server";
 
 const IDLE_SESSION_MS = 5 * 24 * 60 * 60 * 1_000;
 const ABSOLUTE_SESSION_MS = 90 * 24 * 60 * 60 * 1_000;
@@ -49,7 +54,7 @@ export type AuthenticatedSession = {
 export type IssuedSession = AuthenticatedSession;
 
 export type RegistrationResult =
-  | { error: "duplicate-username"; ok: false }
+  | { error: "claimed-instance"; ok: false }
   | { error: "rate-limited"; ok: false }
   | { ok: true; session: IssuedSession };
 
@@ -99,14 +104,6 @@ function prepareIssuedSession(
   };
 }
 
-export function isUniqueConstraint(error: unknown): boolean {
-  return (
-    error instanceof Error &&
-    "code" in error &&
-    error.code === "SQLITE_CONSTRAINT_UNIQUE"
-  );
-}
-
 export class AuthenticationService {
   readonly #database: ApplicationDatabaseClient;
   readonly #now: () => Date;
@@ -126,51 +123,71 @@ export class AuthenticationService {
     password: string,
     clientIp: string,
   ): Promise<RegistrationResult> {
-    if (
-      !this.#rateLimiter.consume(
-        "registration",
-        clientIp,
-        5,
-        registrationWindowMs(),
-      )
-    ) {
-      return { error: "rate-limited", ok: false };
-    }
-
-    const passwordHash = await hashPassword(password);
-    const createdAt = this.#now().toISOString();
-
     try {
-      const userId = this.#database.transaction((transaction) => {
-        const user = transaction
-          .insert(users)
-          .values({ createdAt, usernameNormalized })
-          .returning({ id: users.id })
-          .get();
-
-        transaction
-          .insert(passwordCredentials)
-          .values({
-            passwordHash,
-            updatedAt: createdAt,
-            userId: user.id,
-          })
-          .run();
-
-        return user.id;
-      });
-
-      return {
-        ok: true,
-        session: this.#issueSession(userId, usernameNormalized),
-      };
-    } catch (error) {
-      if (isUniqueConstraint(error)) {
-        return { error: "duplicate-username", ok: false };
+      if (
+        !this.#rateLimiter.consume(
+          "registration",
+          clientIp,
+          5,
+          registrationWindowMs(),
+        )
+      ) {
+        logBootstrapRejected("rate-limited");
+        return { error: "rate-limited", ok: false };
       }
 
+      const passwordHash = await hashPassword(password);
+      const createdAt = this.#now().toISOString();
+      const registered = this.#database.transaction(
+        (transaction) => {
+          const existingUser = transaction
+            .select({ id: users.id })
+            .from(users)
+            .limit(1)
+            .get();
+          if (existingUser) return undefined;
+
+          const user = transaction
+            .insert(users)
+            .values({ createdAt, role: "admin", usernameNormalized })
+            .returning({ id: users.id })
+            .get();
+
+          transaction
+            .insert(passwordCredentials)
+            .values({
+              passwordHash,
+              updatedAt: createdAt,
+              userId: user.id,
+            })
+            .run();
+
+          const issued = prepareIssuedSession(this.#now(), {
+            id: user.id,
+            username: usernameNormalized,
+          });
+          transaction.insert(sessions).values(issued.persisted).run();
+          return issued.session;
+        },
+        { behavior: "immediate" },
+      );
+
+      if (!registered) {
+        logBootstrapRejected("claimed-instance");
+        return { error: "claimed-instance", ok: false };
+      }
+
+      logBootstrapSucceeded(registered.user.id, registered.user.username);
+      return { ok: true, session: registered };
+    } catch (error) {
+      logBootstrapFailed(error);
       throw error;
     }
+  }
+
+  isRegistrationOpen(): boolean {
+    return this.#database.select({ id: users.id }).from(users).limit(1).get() ===
+      undefined;
   }
 
   async authenticate(

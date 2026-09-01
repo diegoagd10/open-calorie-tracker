@@ -1,21 +1,20 @@
 import AxeBuilder from "@axe-core/playwright";
-import { expect, test, type Page } from "@playwright/test";
-import BetterSqlite3 from "better-sqlite3";
-import { readdirSync, statSync } from "node:fs";
-import path from "node:path";
+import type { Page } from "@playwright/test";
+import {
+  bootstrapOrSignInBrowserTestUser,
+  expect,
+  openBrowserTestDatabase,
+  test,
+} from "./reset-database";
 
 const validPassword = "correct horse 🔐 battery";
 
-async function registerAndSetup(
+async function completeSetupForTestUser(
   page: Page,
   username: string,
   options?: { displayUnits: "metric"; water: string },
 ) {
-  await page.goto("/register");
-  await page.getByLabel("Username").fill(username);
-  await page.getByLabel("Password", { exact: true }).fill(validPassword);
-  await page.getByLabel("Confirm password").fill(validPassword);
-  await page.getByRole("button", { name: "Create private account" }).click();
+  await bootstrapOrSignInBrowserTestUser(page, username, validPassword);
   await page.getByLabel("Time zone").fill("America/New_York");
   if (options) {
     await page.getByLabel("Metric").check();
@@ -25,22 +24,12 @@ async function registerAndSetup(
   await expect(page).toHaveURL("/");
 }
 
-function openBrowserTestDatabase() {
-  const directory = path.resolve("data/playwright-tests");
-  const databasePath = readdirSync(directory)
-    .filter((name) => /^application\..+\.sqlite$/.test(name))
-    .map((name) => path.join(directory, name))
-    .sort((left, right) => statSync(right).mtimeMs - statSync(left).mtimeMs)[0];
-  if (!databasePath) throw new Error("browser test database was not created");
-  return new BetterSqlite3(databasePath);
-}
-
 test("an authenticated user replaces complete effective-dated goals", async ({
   context,
   page,
 }) => {
   await context.setExtraHTTPHeaders({ "X-Test-Client-IP": "203.0.113.95" });
-  await registerAndSetup(page, "effective.goals");
+  await completeSetupForTestUser(page, "effective.goals");
 
   await page.getByRole("link", { name: "Settings" }).click();
   await expect(page).toHaveURL("/settings/goals");
@@ -128,7 +117,7 @@ test("Goal Version requests ignore manipulated user IDs", async ({
   page,
 }) => {
   await context.setExtraHTTPHeaders({ "X-Test-Client-IP": "203.0.113.96" });
-  await registerAndSetup(page, "goal.owner");
+  await completeSetupForTestUser(page, "goal.owner");
   const database = openBrowserTestDatabase();
   const owner = database
     .prepare("SELECT id FROM users WHERE username_normalized = ?")
@@ -138,7 +127,7 @@ test("Goal Version requests ignore manipulated user IDs", async ({
   await page.getByRole("button", { name: "Sign out" }).click();
   await expect(page).toHaveURL("/login");
   await context.setExtraHTTPHeaders({ "X-Test-Client-IP": "203.0.113.97" });
-  await registerAndSetup(page, "goal.other");
+  await completeSetupForTestUser(page, "goal.other");
   await page.goto(`/settings/goals?userId=${owner.id}`);
   await expect(page.getByText("goal.owner")).toHaveCount(0);
 
@@ -180,7 +169,7 @@ test("saving an unchanged rounded water display preserves canonical storage", as
   page,
 }) => {
   await context.setExtraHTTPHeaders({ "X-Test-Client-IP": "203.0.113.98" });
-  await registerAndSetup(page, "goal.precision", {
+  await completeSetupForTestUser(page, "goal.precision", {
     displayUnits: "metric",
     water: "2400",
   });

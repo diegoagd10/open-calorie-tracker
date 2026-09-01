@@ -39,7 +39,10 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const csrf = loadPreAuthenticationCsrf(request);
   return data(
-    { csrfToken: csrf.csrfToken },
+    {
+      csrfToken: csrf.csrfToken,
+      registrationOpen: getAuthenticationService().isRegistrationOpen(),
+    },
     { headers: csrf.headers },
   );
 }
@@ -95,7 +98,10 @@ export async function action({ request }: Route.ActionArgs) {
 
 export default function Login({ actionData, loaderData }: Route.ComponentProps) {
   return (
-    <AuthShell activePage="login">
+    <AuthShell
+      activePage="login"
+      registrationOpen={loaderData.registrationOpen}
+    >
       <Form className={styles.form} method="post" noValidate>
         <input
           name="csrfToken"

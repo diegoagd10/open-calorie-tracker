@@ -59,6 +59,7 @@ describe("shared route components", () => {
           {
             activePage,
             children: createElement("p", null, "Form contents"),
+            registrationOpen: true,
           },
         ),
       );

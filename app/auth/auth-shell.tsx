@@ -6,9 +6,14 @@ import styles from "../auth.module.css";
 export type AuthShellProps = {
   activePage: "login" | "register";
   children: ReactNode;
+  registrationOpen: boolean;
 };
 
-export function AuthShell({ activePage, children }: AuthShellProps) {
+export function AuthShell({
+  activePage,
+  children,
+  registrationOpen,
+}: AuthShellProps) {
   return (
     <main className={styles.shell}>
       <section className={styles.panel} aria-labelledby="auth-title">
@@ -29,15 +34,17 @@ export function AuthShell({ activePage, children }: AuthShellProps) {
           >
             Sign in
           </Link>
-          <Link
-            aria-current={activePage === "register" ? "page" : undefined}
-            className={`${styles.tab} ${
-              activePage === "register" ? styles.activeTab : ""
-            }`}
-            to="/register"
-          >
-            Register
-          </Link>
+          {registrationOpen ? (
+            <Link
+              aria-current={activePage === "register" ? "page" : undefined}
+              className={`${styles.tab} ${
+                activePage === "register" ? styles.activeTab : ""
+              }`}
+              to="/register"
+            >
+              Register
+            </Link>
+          ) : null}
         </nav>
 
         {children}

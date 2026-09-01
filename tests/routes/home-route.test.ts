@@ -10,6 +10,7 @@ import { getAuthenticationService } from "../../app/auth/runtime.server";
 import { setFoodCatalogProviderForTests } from "../../app/catalog/runtime.server";
 import { CatalogFoodNotFoundError } from "../../app/catalog/food-catalog.server";
 import {
+  getApplicationDatabase,
   initializeApplicationDatabase,
   shutdownApplicationDatabase,
 } from "../../app/database/runtime.server";
@@ -24,6 +25,7 @@ import { getFoodLogService } from "../../app/food-log/runtime.server";
 import { getGoalSetupService } from "../../app/setup/runtime.server";
 import { validateSetupFields } from "../../app/setup/validation";
 import { getWaterEventService } from "../../app/water-event/runtime.server";
+import { seedAuthenticatedAccount } from "../support/authentication";
 
 const origin = "http://localhost:3000";
 const instant = "2026-08-31T16:00:00.000Z";
@@ -122,13 +124,14 @@ beforeAll(async () => {
   if (!setup.success) throw new Error("home setup fixture was invalid");
   getGoalSetupService().completeInitial(account.session.user.id, setup.data);
 
-  const incomplete = await getAuthenticationService().register(
+  const incomplete = await seedAuthenticatedAccount(
+    getAuthenticationService(),
+    getApplicationDatabase().getClient(),
     "home.incomplete",
     "correct horse battery staple",
     "203.0.113.231",
   );
-  if (!incomplete.ok) throw new Error("incomplete home account was not created");
-  incompleteCookie = serializeSessionCookie(incomplete.session).split(";", 1)[0];
+  incompleteCookie = serializeSessionCookie(incomplete).split(";", 1)[0];
 });
 
 afterAll(async () => {

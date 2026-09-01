@@ -254,7 +254,9 @@ export async function loader({ request }: Route.LoaderArgs) {
   const session = await getAuthenticatedSession(request);
 
   if (!session) {
-    return redirect("/login");
+    return redirect(
+      getAuthenticationService().isRegistrationOpen() ? "/register" : "/login",
+    );
   }
 
   const url = new URL(request.url);
