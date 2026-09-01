@@ -98,6 +98,33 @@ describe("operational logging", () => {
     });
   });
 
+  test("Open Food Facts contact details are omitted from operational logs", () => {
+    vi.stubEnv("OPEN_FOOD_FACTS_CONTACT_EMAIL", "private@example.test");
+    vi.spyOn(console, "log").mockImplementation(() => {});
+
+    operationalLog("info", "catalog_configuration", {
+      contactEmail: "private@example.test",
+      message: "configured for private@example.test",
+    });
+
+    expect(loggedRecord("log")).toMatchObject({
+      contactEmail: "[REDACTED]",
+      message: "configured for [REDACTED]",
+    });
+
+    vi.mocked(console.log).mockClear();
+    operationalLog("info", "catalog_configuration", {
+      "contact-email": "private@example.test",
+      contact_email: "private@example.test",
+      contactemail: "different@example.test",
+    });
+    expect(loggedRecord("log")).toMatchObject({
+      "contact-email": "[REDACTED]",
+      contact_email: "[REDACTED]",
+      contactemail: "[REDACTED]",
+    });
+  });
+
   test("empty configured secrets do not alter ordinary log text", () => {
     vi.stubEnv("EMPTY_PASSWORD", "");
     vi.spyOn(console, "log").mockImplementation(() => {});

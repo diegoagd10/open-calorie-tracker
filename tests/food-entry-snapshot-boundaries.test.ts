@@ -46,7 +46,7 @@ function row(change: Partial<FoodEntryRow> = {}): FoodEntryRow {
   };
 }
 
-test("measurement serialization accepts only nonempty gram or milliliter arrays", () => {
+test("measurement serialization accepts mass, volume, and serving authority", () => {
   const measurements = [
     {
       baseQuantityMicrounits: 25_000_000,
@@ -59,6 +59,12 @@ test("measurement serialization accepts only nonempty gram or milliliter arrays"
       id: "volume:1",
       label: "1 cup",
       unit: "ml" as const,
+    },
+    {
+      baseQuantityMicrounits: 1_000_000,
+      id: "serving",
+      label: "1 serving",
+      unit: "serving" as const,
     },
   ];
   expect(JSON.parse(serializeCatalogMeasurements(measurements))).toEqual(

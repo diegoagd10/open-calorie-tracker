@@ -207,6 +207,7 @@ describe.skipIf(!runDeploymentTests)("production container deployment", () => {
     });
     expect(application.environment).toMatchObject({
       APPLICATION_URL: "https://calories.example.test",
+      OPEN_FOOD_FACTS_CONTACT_EMAIL: "",
       PORT: "3000",
       TRUST_PROXY: "172.30.0.0/16",
     });

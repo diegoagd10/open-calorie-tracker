@@ -21,6 +21,14 @@ async function registerAndSetup(
   await expect(page).toHaveURL("/");
 }
 
+async function openUsdaSearch(page: Page) {
+  await page.getByRole("button", { name: "Add Food" }).click();
+  await page.getByRole("link", { name: /Search for food/ }).click();
+  await expect(
+    page.getByRole("searchbox", { name: "Search United States foods" }),
+  ).toBeVisible();
+}
+
 function openBrowserTestDatabase() {
   const directory = path.resolve("data/playwright-tests");
   const databasePath = readdirSync(directory)
@@ -278,7 +286,7 @@ test("daily calorie and nutrient progress is factual, responsive, and accessible
       .locator(".."),
   ).toHaveAttribute("aria-hidden", "true");
 
-  await page.getByRole("button", { name: "Add Food" }).click();
+  await openUsdaSearch(page);
   await page
     .getByRole("searchbox", { name: "Search United States foods" })
     .fill("yogurt");
@@ -506,14 +514,22 @@ test("authenticated USDA search and idempotent logging preserve a local Nutritio
   await registerAndSetup(page, "catalog.search");
 
   await page.getByRole("button", { name: "Add Food" }).click();
+  await expect(page).toHaveURL(/food=choose/);
+  await expect(page.getByRole("link", { name: /Search for food/ })).toBeVisible();
+  await expect(page.getByRole("link", { name: /Scan barcode/ })).toBeVisible();
+  await page.getByRole("link", { name: /Search for food/ }).click();
   await expect(page).toHaveURL(/food=search/);
   await expect(page.getByRole("dialog", { name: "Add Food" })).toBeVisible();
-  await expect(page.getByText("Search is deliberate.")).toBeVisible();
+  await expect(
+    page.getByText("Nothing changes in your Food Log until a later confirmation step."),
+  ).toBeVisible();
   await expect(page.locator("body")).toHaveCSS("overflow", "hidden");
   const closeFoodSearch = page.getByRole("link", {
     name: "Close food search",
   });
-  await expect(closeFoodSearch).toBeFocused();
+  await expect(
+    page.getByRole("searchbox", { name: "Search United States foods" }),
+  ).toBeFocused();
   const providerLink = page.getByRole("link", {
     name: "USDA FoodData Central",
   });
@@ -703,6 +719,76 @@ test("authenticated USDA search and idempotent logging preserve a local Nutritio
   expect(accessibilityScan.violations).toEqual([]);
 });
 
+test("authenticated manual barcode lookup reviews Open Food Facts without logging", async ({
+  context,
+  page,
+}) => {
+  await context.setExtraHTTPHeaders({ "X-Test-Client-IP": "203.0.113.93" });
+  await registerAndSetup(page, "catalog.barcode");
+
+  await page.getByRole("button", { name: "Add Food" }).click();
+  await page.getByRole("link", { name: /Scan barcode/ }).click();
+  const barcodeInput = page.getByLabel("Enter barcode");
+  await expect(barcodeInput).toBeVisible();
+  await expect(barcodeInput).toBeFocused();
+  await expect(page.getByRole("link", { name: "Search for food" })).toBeVisible();
+  await expectCatalogResponsive(page);
+
+  await barcodeInput.fill("123");
+  await page.getByRole("button", { name: "Look up" }).click();
+  await expect(page.getByRole("alert")).toContainText(
+    "Enter a supported 7, 8, 12, 13, or 14 digit barcode.",
+  );
+
+  await barcodeInput.fill("034000470693");
+  await page.getByRole("button", { name: "Look up" }).click();
+  await expect(page.getByRole("heading", { name: "Example cereal" })).toBeVisible();
+  await expect(page.getByText("Barcode 0034000470693")).toBeVisible();
+  await expect(page.getByText("1 serving", { exact: true })).toBeVisible();
+  await expect(page.getByText("180 kcal")).toBeVisible();
+  await expect(page.getByText("24 g")).toBeVisible();
+  await expect(page.getByText("0 g", { exact: true })).toBeVisible();
+  await expect(page.getByText("Not reported")).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "Open Food Facts" }),
+  ).toBeVisible();
+  await expect(page.locator("img")).toHaveCount(0);
+  await expect(barcodeInput).toBeVisible();
+  await expect(page.getByRole("button", { name: "Add to Food Log" }))
+    .toHaveCount(0);
+  await expect(page.getByText("No entries for this day")).toBeVisible();
+  await expectCatalogResponsive(page);
+
+  for (const [barcode, status, title] of [
+    ["0000000000000", 503, "Open Food Facts is not configured"],
+    ["0000000000001", 404, "Product not found"],
+    ["0000000000002", 422, "Nutrition per serving unavailable"],
+    ["0000000000003", 429, "Open Food Facts rate limit reached"],
+    ["0000000000004", 503, "Open Food Facts is unavailable"],
+    ["0000000000005", 502, "Open Food Facts response could not be used"],
+  ] as const) {
+    const lookup = await page.goto(
+      `/?date=2026-08-29&food=barcode&barcode=${barcode}`,
+    );
+    expect(lookup?.status()).toBe(status);
+    await expect(page.getByRole("heading", { name: title })).toBeVisible();
+    await expect(page.getByLabel("Enter barcode")).toBeVisible();
+    await expect(page.getByRole("link", { name: "Search for food" })).toBeVisible();
+  }
+
+  await page.goto("/?date=2026-08-29&food=barcode&barcode=0000000000006");
+  await expect(
+    page.getByRole("heading", { name: "Unnamed product · 0000000000006" }),
+  ).toBeVisible();
+  await page.getByRole("link", { name: "Search for food" }).click();
+  await expect(
+    page.getByRole("searchbox", { name: "Search United States foods" }),
+  ).toBeVisible();
+
+  const accessibilityScan = await new AxeBuilder({ page }).analyze();
+  expect(accessibilityScan.violations).toEqual([]);
+});
+
 test("food selection immediately reveals the pending detail destination", async ({
   context,
   page,
@@ -710,7 +796,7 @@ test("food selection immediately reveals the pending detail destination", async 
   await context.setExtraHTTPHeaders({ "X-Test-Client-IP": "203.0.113.91" });
   await registerAndSetup(page, "catalog.pending-destinations");
 
-  await page.getByRole("button", { name: "Add Food" }).click();
+  await openUsdaSearch(page);
   await page
     .getByRole("searchbox", { name: "Search United States foods" })
     .fill("yogurt");
@@ -775,7 +861,7 @@ test("food logging immediately reveals a pending Daily log row", async ({
   await context.setExtraHTTPHeaders({ "X-Test-Client-IP": "203.0.113.92" });
   await registerAndSetup(page, "catalog.pending-log");
 
-  await page.getByRole("button", { name: "Add Food" }).click();
+  await openUsdaSearch(page);
   await page
     .getByRole("searchbox", { name: "Search United States foods" })
     .fill("yogurt");
@@ -875,7 +961,7 @@ test("an authenticated user can correct and delete one Food Entry", async ({
 }) => {
   await context.setExtraHTTPHeaders({ "X-Test-Client-IP": "203.0.113.83" });
   await registerAndSetup(page, "food.entry.edit");
-  await page.getByRole("button", { name: "Add Food" }).click();
+  await openUsdaSearch(page);
   await page
     .getByRole("searchbox", { name: "Search United States foods" })
     .fill("yogurt");
@@ -1082,7 +1168,7 @@ test("a stale Food Entry editor refreshes to the current occurrence and can retr
 }) => {
   await context.setExtraHTTPHeaders({ "X-Test-Client-IP": "203.0.113.85" });
   await registerAndSetup(page, "food.entry.stale-recovery");
-  await page.getByRole("button", { name: "Add Food" }).click();
+  await openUsdaSearch(page);
   await page
     .getByRole("searchbox", { name: "Search United States foods" })
     .fill("yogurt");
@@ -1131,7 +1217,7 @@ test("delete pending state names only the destructive mutation", async ({
 }) => {
   await context.setExtraHTTPHeaders({ "X-Test-Client-IP": "203.0.113.86" });
   await registerAndSetup(page, "food.entry.delete-pending");
-  await page.getByRole("button", { name: "Add Food" }).click();
+  await openUsdaSearch(page);
   await page
     .getByRole("searchbox", { name: "Search United States foods" })
     .fill("yogurt");

@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unsafe-call -- react-test-renderer host props are untyped */
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access -- react-test-renderer host props are untyped */
 /* eslint-disable @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return -- react-test-renderer host props are untyped */
 import { createHash } from "node:crypto";
 
@@ -293,6 +293,138 @@ test("home renders today's empty log and all goal progress contracts", async () 
   await act(async () => renderer.unmount());
 });
 
+test("daily nutrients support guarded touch swipes, cancellation, and both directions", async () => {
+  const renderer = await renderHome();
+  const carousel = () =>
+    renderer.root.findByProps({ "aria-label": "Daily nutrient progress" });
+  const track = () => carousel().findAllByType("div").find(
+    (node) => typeof node.props.style?.transform === "string",
+  )!;
+  const event = (
+    pointerId: number,
+    clientX: number,
+    clientY: number,
+    pointerType = "touch",
+  ) => ({
+    clientX,
+    clientY,
+    currentTarget: {
+      getBoundingClientRect: () => ({ width: 200 }),
+    },
+    pointerId,
+    pointerType,
+    preventDefault: () => undefined,
+  });
+
+  await act(async () => carousel().props.onPointerDown(event(1, 100, 100, "mouse")));
+  await act(async () => carousel().props.onPointerMove(event(1, 20, 100)));
+  expect(track().props.style.transform).toContain("+ 0px");
+
+  let boundaryPreventions = 0;
+  const boundaryEvent = (pointerId: number, clientX: number, clientY: number) => ({
+    ...event(pointerId, clientX, clientY),
+    preventDefault: () => {
+      boundaryPreventions += 1;
+    },
+  });
+  await act(async () => carousel().props.onPointerDown(event(10, 100, 100)));
+  await act(async () => carousel().props.onPointerMove(boundaryEvent(10, 95, 95)));
+  await act(async () => carousel().props.onPointerMove(boundaryEvent(10, 80, 100)));
+  expect(boundaryPreventions).toBe(1);
+  await act(async () => carousel().props.onPointerCancel());
+
+  boundaryPreventions = 0;
+  await act(async () => carousel().props.onPointerDown(event(11, 100, 100)));
+  await act(async () => carousel().props.onPointerMove(boundaryEvent(11, 94, 95)));
+  expect(boundaryPreventions).toBe(1);
+  await act(async () => carousel().props.onPointerCancel());
+
+  boundaryPreventions = 0;
+  await act(async () => carousel().props.onPointerDown(event(12, 100, 100)));
+  await act(async () => carousel().props.onPointerMove(boundaryEvent(12, 95, 94)));
+  await act(async () => carousel().props.onPointerMove(boundaryEvent(12, 80, 100)));
+  expect(boundaryPreventions).toBe(0);
+
+  boundaryPreventions = 0;
+  await act(async () => carousel().props.onPointerDown(event(13, 100, 100)));
+  await act(async () => carousel().props.onPointerMove(boundaryEvent(13, 94, 94)));
+  expect(boundaryPreventions).toBe(0);
+
+  await act(async () => carousel().props.onPointerDown(event(1, 100, 100)));
+  await act(async () => carousel().props.onPointerMove(event(2, 20, 100)));
+  await act(async () => carousel().props.onPointerMove(event(1, 96, 96)));
+  expect(track().props.style.transform).toContain("+ 0px");
+  await act(async () => carousel().props.onPointerMove(event(1, 98, 80)));
+  await act(async () => carousel().props.onPointerMove(event(1, 20, 100)));
+  expect(track().props.style.transform).toContain("+ 0px");
+
+  let prevented = 0;
+  const horizontal = event(3, 50, 100);
+  horizontal.preventDefault = () => {
+    prevented += 1;
+  };
+  await act(async () => carousel().props.onPointerDown(event(3, 100, 100)));
+  await act(async () => carousel().props.onPointerMove(horizontal));
+  expect(prevented).toBe(1);
+  expect(track().props.style.transform).toContain("-50px");
+  await act(async () => carousel().props.onPointerUp(event(4, 20, 100)));
+  expect(track().props.style.transform).toContain("-50px");
+  await act(async () => carousel().props.onPointerCancel());
+  expect(track().props.style.transform).toContain("+ 0px");
+  const cancelledClass = track().props.className;
+  await act(async () => carousel().props.onPointerDown(event(14, 100, 100)));
+  expect(track().props.className).not.toBe(cancelledClass);
+  await act(async () => carousel().props.onPointerCancel());
+
+  await act(async () => carousel().props.onPointerUp(event(99, 20, 100)));
+
+  await act(async () => carousel().props.onPointerDown(event(5, 100, 100)));
+  await act(async () => carousel().props.onPointerUp(event(5, 20, 100)));
+  expect(track().props.style.transform).toContain("+ 0px");
+
+  await act(async () => carousel().props.onPointerDown(event(6, 100, 100)));
+  await act(async () => carousel().props.onPointerMove(event(6, 60, 100)));
+  const movingClass = track().props.className;
+  await act(async () => carousel().props.onPointerUp(event(6, 60, 100)));
+  expect(track().props.style.transform).toContain("-50%");
+  expect(track().props.style.transform).toContain("+ 0px");
+  expect(track().props.className).not.toBe(movingClass);
+  expect(
+    renderer.root.findByProps({ "aria-label": "Show fiber, sugar, and sodium" })
+      .props["aria-pressed"],
+  ).toBe(true);
+
+  await act(async () => carousel().props.onPointerDown(event(7, 100, 100)));
+  await act(async () => carousel().props.onPointerMove(event(7, 40, 100)));
+  expect(track().props.style.transform).toContain("+ 0px");
+  await act(async () => carousel().props.onPointerUp(event(7, 40, 100)));
+  expect(
+    renderer.root.findByProps({ "aria-label": "Show fiber, sugar, and sodium" })
+      .props["aria-pressed"],
+  ).toBe(true);
+  await act(async () => carousel().props.onPointerDown(event(17, 100, 100)));
+  await act(async () => carousel().props.onPointerCancel());
+  const settlingClass = track().props.className;
+  await act(async () =>
+    renderer.root.findByProps({
+      "aria-label": "Show protein, carbohydrate, and fat",
+    }).props.onClick()
+  );
+  expect(track().props.className).not.toBe(settlingClass);
+
+  await act(async () => carousel().props.onPointerDown(event(8, 100, 100)));
+  await act(async () => carousel().props.onPointerMove(event(8, 160, 100)));
+  await act(async () => carousel().props.onPointerUp(event(8, 180, 100)));
+  expect(track().props.style.transform).toContain("0%");
+  expect(track().props.style.transform).toContain("+ 0px");
+
+  await act(async () => carousel().props.onPointerDown(event(9, 100, 100)));
+  await act(async () => carousel().props.onPointerMove(event(9, 160, 100)));
+  expect(track().props.style.transform).toContain("+ 0px");
+  await act(async () => carousel().props.onPointerCancel());
+  await act(async () => renderer.unmount());
+});
+
 test("home distinguishes past, future, no-goal, and incomplete summaries", async () => {
   const pastFoodLog = {
     ...baseFoodLog,
@@ -551,6 +683,209 @@ const catalogFood = {
   providerPublishedDate: "2026-04-01",
 };
 
+const barcodeFood = {
+  ...catalogFood,
+  authoritativeBaseQuantityMicrounits: 1_000_000,
+  authoritativeBaseUnit: "serving",
+  barcode: "0034000470693",
+  brand: "Example Foods",
+  dataType: "Open Food Facts",
+  marketCountry: "United States",
+  measurementSummary: "1 serving",
+  measurements: [
+    {
+      baseQuantityMicrounits: 1_000_000,
+      id: "serving",
+      label: "1 serving",
+      unit: "serving",
+    },
+  ],
+  name: "Example cereal",
+  nutritionPerAuthoritativeBase: {
+    carbohydrateMilligrams: { amount: 24, fixedPointMultiplier: 1_000 },
+    energyMilliKcal: { amount: 180, fixedPointMultiplier: 1_000 },
+    fatMilligrams: { amount: 0, fixedPointMultiplier: 1_000 },
+    fiberMilligrams: null,
+    proteinMilligrams: null,
+    sodiumMilligrams: null,
+    sugarMilligrams: null,
+  },
+  originalName: "Example cereal",
+  provider: "open-food-facts",
+  providerFoodId: "0034000470693",
+  providerModifiedDate: null,
+  providerPublishedDate: null,
+};
+
+test("Add Food offers search and barcode paths before either provider runs", async () => {
+  const renderer = await renderHome({ catalog: { mode: "choose", query: "" } });
+  expect(semanticDom(renderer)).toMatchSnapshot();
+  expect(allText(renderer)).toContain("Search for food");
+  expect(allText(renderer)).toContain("Scan barcode");
+  expect(renderer.root.findByProps({
+    href: "/?date=2026-08-31&food=search",
+  })).toBeDefined();
+  expect(renderer.root.findByProps({
+    href: "/?date=2026-08-31&food=barcode",
+  })).toBeDefined();
+  expect(renderer.root.findAllByType("img")).toHaveLength(0);
+  await act(async () => renderer.unmount());
+});
+
+test("barcode mode keeps manual entry visible across detail and recoverable errors", async () => {
+  for (const catalog of [
+    { barcode: "", mode: "barcode", query: "" },
+    {
+      barcode: "034000470693",
+      food: barcodeFood,
+      mode: "barcode",
+      query: "",
+    },
+    {
+      barcode: "0000000000004",
+      message: "Open Food Facts is unavailable right now. Retry in a moment.",
+      mode: "barcode",
+      query: "",
+      title: "Open Food Facts is unavailable",
+    },
+  ] as const) {
+    const renderer = await renderHome({ catalog });
+    expect(semanticDom(renderer)).toMatchSnapshot();
+    expect(input(renderer, "barcode")).toBeDefined();
+    expect(allText(renderer)).toContain("Enter barcode");
+    expect(renderer.root.findByProps({
+      href: "/?date=2026-08-31&food=search",
+    })).toBeDefined();
+    expect(renderer.root.findAllByType("img")).toHaveLength(0);
+    await act(async () => renderer.unmount());
+  }
+
+  const detail = await renderHome({
+    catalog: {
+      barcode: "034000470693",
+      food: barcodeFood,
+      mode: "barcode",
+      query: "",
+    },
+  });
+  const text = allText(detail);
+  expect(semanticDom(detail)).toMatchSnapshot();
+  expect(text).toContain("Example cereal");
+  expect(text).toContain("0034000470693");
+  expect(text).toContain("Open Food Facts");
+  expect(text).toContain("1 serving");
+  expect(text).toContain("180 kcal");
+  expect(text).toContain("24 g");
+  expect(text).toContain("0 g");
+  expect(text).toContain("Not reported");
+  expect(text).not.toContain("Log Food");
+  await act(async () => detail.unmount());
+
+  const unnamed = await renderHome({
+    catalog: {
+      barcode: "0000000000006",
+      food: {
+        ...barcodeFood,
+        barcode: "0000000000006",
+        name: "Unnamed product",
+        nutritionPerAuthoritativeBase: {
+          ...barcodeFood.nutritionPerAuthoritativeBase,
+          proteinMilligrams: { amount: 6, fixedPointMultiplier: 1_000 },
+        },
+        originalName: "Unnamed product",
+        providerFoodId: "0000000000006",
+      },
+      mode: "barcode",
+      query: "",
+    },
+  });
+  expect(semanticDom(unnamed)).toMatchSnapshot();
+  expect(allText(unnamed)).toContain("Unnamed product · 0000000000006");
+  expect(allText(unnamed)).toContain("6 g");
+  await act(async () => unnamed.unmount());
+});
+
+test("barcode entry validates client-side and exposes only matching navigation as pending", async () => {
+  const renderer = await renderHome({
+    catalog: { barcode: "", mode: "barcode", query: "" },
+  });
+  const barcodeInput = input(renderer, "barcode");
+  const form = renderer.root.findAllByType("form").find((candidate) =>
+    candidate.findAllByProps({ name: "barcode" }).length > 0
+  )!;
+  let prevented = 0;
+  const submitEvent = () => ({
+    defaultPrevented: true,
+    nativeEvent: { submitter: null },
+    preventDefault: () => {
+      prevented += 1;
+    },
+  });
+  await act(async () => form.props.onSubmit(submitEvent()));
+  expect(prevented).toBe(1);
+  expect(allText(renderer)).toContain("Barcode not valid");
+  expect(barcodeInput.props["aria-invalid"]).toBe(true);
+  expect(barcodeInput.props["aria-describedby"]).toBe("barcode-input-error");
+
+  await act(async () => barcodeInput.props.onChange({
+    currentTarget: { value: "034000470693" },
+  }));
+  expect(input(renderer, "barcode").props["aria-invalid"]).toBeUndefined();
+  await act(async () => form.props.onSubmit(submitEvent()));
+  expect(prevented).toBe(1);
+  await act(async () => renderer.unmount());
+
+  const pending = await renderPendingHome(
+    { catalog: { barcode: "034000470693", mode: "barcode", query: "" } },
+    { to: "/?food=barcode&barcode=034000470693" },
+  );
+  expect(allText(pending)).toContain("Checking Open Food Facts");
+  await act(async () => pending.unmount());
+
+  const otherNavigation = await renderPendingHome(
+    { catalog: { barcode: "034000470693", mode: "barcode", query: "" } },
+    { to: "/?food=search&query=yogurt" },
+  );
+  expect(allText(otherNavigation)).not.toContain("Checking Open Food Facts");
+  await act(async () => otherNavigation.unmount());
+
+  const unknownNavigation = await renderPendingHome(
+    { catalog: { barcode: "034000470693", mode: "barcode", query: "" } },
+    { to: "/?unrelated=1" },
+  );
+  expect(allText(unknownNavigation)).not.toContain("Checking Open Food Facts");
+  await act(async () => unknownNavigation.unmount());
+});
+
+test("USDA search validates its controlled query before navigation", async () => {
+  const renderer = await renderHome({
+    catalog: { mode: "search", query: "", results: [] },
+  });
+  const queryInput = input(renderer, "query");
+  const form = renderer.root.findAllByType("form").find((candidate) =>
+    candidate.findAllByProps({ name: "query" }).length > 0
+  )!;
+  let prevented = 0;
+  const submitEvent = () => ({
+    defaultPrevented: true,
+    nativeEvent: { submitter: null },
+    preventDefault: () => {
+      prevented += 1;
+    },
+  });
+  await act(async () => form.props.onSubmit(submitEvent()));
+  expect(prevented).toBe(1);
+  expect(allText(renderer)).toContain(
+    "Enter a trimmed food search from 2 to 100 characters.",
+  );
+  await act(async () => queryInput.props.onChange({
+    currentTarget: { value: "yogurt" },
+  }));
+  await act(async () => form.props.onSubmit(submitEvent()));
+  expect(prevented).toBe(1);
+  await act(async () => renderer.unmount());
+});
+
 test("home catalog renders initial, empty, failure, and selectable result states", async () => {
   queriedSelectors.length = 0;
   documentSelectors.length = 0;
@@ -646,9 +981,6 @@ test("home catalog renders initial, empty, failure, and selectable result states
   );
   await act(async () => searchInput.props.onChange({
     currentTarget: { value: "valid query" },
-  }));
-  await act(async () => searchForm.props.onSubmit({
-    preventDefault: () => { preventedSearches += 1; },
   }));
   expect(preventedSearches).toBe(1);
   expect(input(renderer, "query").props["aria-invalid"]).toBeUndefined();

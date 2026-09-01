@@ -21,7 +21,7 @@ import {
   type CatalogDataType,
   type CatalogSearchResult,
   type FoodCatalogDiagnostic,
-  type FoodCatalogProvider,
+  type SearchFoodCatalogProvider,
 } from "./food-catalog.server";
 
 const DEFAULT_BASE_URL = "https://api.nal.usda.gov/fdc/v1";
@@ -413,7 +413,7 @@ export type UsdaAdapterOptions = {
   timeoutMs?: number;
 };
 
-export class UsdaFoodDataCentralAdapter implements FoodCatalogProvider {
+export class UsdaFoodDataCentralAdapter implements SearchFoodCatalogProvider {
   readonly #apiKey: string | undefined;
   readonly #baseUrl: string;
   readonly #fetch: typeof fetch;

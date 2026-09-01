@@ -4,7 +4,10 @@ export const SUPPORTED_CATALOG_DATA_TYPES = [
   "Foundation",
 ] as const;
 
-export type CatalogDataType = (typeof SUPPORTED_CATALOG_DATA_TYPES)[number];
+export type CatalogDataType =
+  | (typeof SUPPORTED_CATALOG_DATA_TYPES)[number]
+  | "Open Food Facts";
+export type CatalogProviderId = "open-food-facts" | "usda-fdc";
 
 export type CatalogSearchResult = {
   barcode: string | null;
@@ -13,7 +16,7 @@ export type CatalogSearchResult = {
   isSelectable: boolean;
   measurementSummary: string;
   name: string;
-  provider: "usda-fdc";
+  provider: CatalogProviderId;
   providerFoodId: string;
   providerPublishedDate: string | null;
 };
@@ -22,7 +25,7 @@ export type CatalogMeasurement = {
   baseQuantityMicrounits: number;
   id: string;
   label: string;
-  unit: "g" | "ml";
+  unit: "g" | "ml" | "serving";
 };
 
 export type CatalogNutrientValue = {
@@ -52,7 +55,7 @@ export type CatalogOperationContext = {
 
 export type CatalogFood = CatalogSearchResult & {
   authoritativeBaseQuantityMicrounits: number;
-  authoritativeBaseUnit: "g" | "ml";
+  authoritativeBaseUnit: "g" | "ml" | "serving";
   marketCountry: string | null;
   measurements: CatalogMeasurement[];
   nutritionPerAuthoritativeBase: CatalogNutrition;
@@ -65,10 +68,20 @@ export interface FoodCatalogProvider {
     providerFoodId: string,
     context?: CatalogOperationContext,
   ): Promise<CatalogFood>;
+}
+
+export interface SearchFoodCatalogProvider extends FoodCatalogProvider {
   search(
     query: string,
     context?: CatalogOperationContext,
   ): Promise<CatalogSearchResult[]>;
+}
+
+export interface BarcodeFoodCatalogProvider extends FoodCatalogProvider {
+  lookupBarcode(
+    barcode: string,
+    context?: CatalogOperationContext,
+  ): Promise<CatalogFood>;
 }
 
 export class CatalogConfigurationError extends Error {
@@ -117,5 +130,121 @@ export class CatalogUnsafeMeasurementError extends Error {
   constructor() {
     super("The selected catalog measurement is unavailable");
     this.name = "CatalogUnsafeMeasurementError";
+  }
+}
+
+export class CatalogNutritionUnavailableError extends Error {
+  constructor() {
+    super("The catalog food has no usable nutrition per serving");
+    this.name = "CatalogNutritionUnavailableError";
+  }
+}
+
+export class CatalogUnknownProviderError extends Error {
+  constructor() {
+    super("The food catalog provider is unavailable");
+    this.name = "CatalogUnknownProviderError";
+  }
+}
+
+export class CatalogUnsupportedCapabilityError extends Error {
+  constructor() {
+    super("The food catalog provider does not support that operation");
+    this.name = "CatalogUnsupportedCapabilityError";
+  }
+}
+
+export type FoodCatalogRegistration =
+  | {
+      capability: "barcode";
+      provider: CatalogProviderId;
+      service: BarcodeFoodCatalogProvider;
+    }
+  | {
+      capability: "search";
+      provider: CatalogProviderId;
+      service: SearchFoodCatalogProvider;
+    };
+
+type RegisteredProvider = {
+  capabilities: Set<FoodCatalogRegistration["capability"]>;
+  service: FoodCatalogProvider;
+};
+
+export class FoodCatalog {
+  readonly #providers = new Map<CatalogProviderId, RegisteredProvider>();
+
+  constructor(registrations: FoodCatalogRegistration[]) {
+    for (const registration of registrations) {
+      const existing = this.#providers.get(registration.provider);
+      if (existing) {
+        if (existing.service !== registration.service) {
+          throw new CatalogConfigurationError();
+        }
+        existing.capabilities.add(registration.capability);
+      } else {
+        this.#providers.set(registration.provider, {
+          capabilities: new Set([registration.capability]),
+          service: registration.service,
+        });
+      }
+    }
+  }
+
+  async search(
+    provider: string,
+    query: string,
+    context?: CatalogOperationContext,
+  ): Promise<CatalogSearchResult[]> {
+    const registered = this.#provider(provider, "search");
+    const service = registered.service as SearchFoodCatalogProvider;
+    const results = await service.search(query, context);
+    if (results.some((result) => result.provider !== provider)) {
+      throw new CatalogInvalidResponseError();
+    }
+    return results;
+  }
+
+  async lookupBarcode(
+    provider: string,
+    barcode: string,
+    context?: CatalogOperationContext,
+  ): Promise<CatalogFood> {
+    const registered = this.#provider(provider, "barcode");
+    const service = registered.service as BarcodeFoodCatalogProvider;
+    return this.#validatedFood(
+      provider,
+      await service.lookupBarcode(barcode, context),
+    );
+  }
+
+  async getFood(
+    provider: string,
+    providerFoodId: string,
+    context?: CatalogOperationContext,
+  ): Promise<CatalogFood> {
+    const registered = this.#providers.get(provider as CatalogProviderId);
+    if (!registered) throw new CatalogUnknownProviderError();
+    return this.#validatedFood(
+      provider,
+      await registered.service.getFood(providerFoodId, context),
+    );
+  }
+
+  #provider(
+    provider: string,
+    capability: FoodCatalogRegistration["capability"],
+  ): RegisteredProvider {
+    const registered = this.#providers.get(provider as CatalogProviderId);
+    if (!registered) throw new CatalogUnknownProviderError();
+    if (!registered.capabilities.has(capability)) {
+      throw new CatalogUnsupportedCapabilityError();
+    }
+    return registered;
+  }
+
+  #validatedFood(provider: string, food: CatalogFood): CatalogFood {
+    if (food.provider !== provider) throw new CatalogInvalidResponseError();
+    return food;
   }
 }

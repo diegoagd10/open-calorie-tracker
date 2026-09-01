@@ -31,6 +31,11 @@ async function registerAndSetup(
   await expect(page).toHaveURL("/");
 }
 
+async function openUsdaSearch(page: Page) {
+  await page.getByRole("button", { name: "Add Food" }).click();
+  await page.getByRole("link", { name: /Search for food/ }).click();
+}
+
 function browserTestDatabase() {
   const directory = path.resolve("data/playwright-tests");
   const databasePath = readdirSync(directory)
@@ -162,7 +167,7 @@ test("one mobile Chromium journey verifies the complete private MVP", async ({
   await page.getByRole("link", { name: "Sat 29" }).click();
   await expect(page).toHaveURL("/?date=2026-08-29");
 
-  await page.getByRole("button", { name: "Add Food" }).click();
+  await openUsdaSearch(page);
   await page
     .getByRole("searchbox", { name: "Search United States foods" })
     .fill("yogurt");
@@ -192,7 +197,7 @@ test("one mobile Chromium journey verifies the complete private MVP", async ({
     "0s",
   );
 
-  await page.getByRole("button", { name: "Add Food" }).click();
+  await openUsdaSearch(page);
   await page
     .getByRole("searchbox", { name: "Search United States foods" })
     .fill("timeout");
@@ -288,7 +293,7 @@ test("a second user cannot list, read, edit, or delete another user's records", 
   await context.setExtraHTTPHeaders({ "X-Test-Client-IP": "203.0.113.111" });
   await registerAndSetup(page, "release.isolation.owner");
 
-  await page.getByRole("button", { name: "Add Food" }).click();
+  await openUsdaSearch(page);
   await page
     .getByRole("searchbox", { name: "Search United States foods" })
     .fill("yogurt");
@@ -527,6 +532,9 @@ test("the critical mobile experience is operable with only a keyboard", async ({
   await expect(
     page.getByRole("link", { name: "Close food search" }),
   ).toBeFocused();
+  const searchForFood = page.getByRole("link", { name: /Search for food/ });
+  await tabTo(page, searchForFood);
+  await page.keyboard.press("Enter");
   const searchbox = page.getByRole("searchbox", {
     name: "Search United States foods",
   });

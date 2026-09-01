@@ -46,13 +46,13 @@ test("startup applies the initial migration and configures writable SQLite stora
   });
 
   expect(database.getStatus()).toEqual({
-    appliedMigrations: 9,
-    availableMigrations: 9,
+    appliedMigrations: 10,
+    availableMigrations: 10,
     busyTimeoutMs: 5_000,
     foreignKeysEnabled: true,
     journalMode: "wal",
     migrationsCurrent: true,
-    schemaVersion: "8",
+    schemaVersion: "9",
     writable: true,
   });
 
@@ -68,13 +68,13 @@ test("starting twice preserves the applied migration state", async () => {
   };
 
   const firstStartup = openApplicationDatabase(options);
-  expect(firstStartup.getStatus().appliedMigrations).toBe(9);
+  expect(firstStartup.getStatus().appliedMigrations).toBe(10);
   firstStartup.close();
 
   const replacementStartup = openApplicationDatabase(options);
   expect(replacementStartup.getStatus()).toMatchObject({
-    appliedMigrations: 9,
-    schemaVersion: "8",
+    appliedMigrations: 10,
+    schemaVersion: "9",
     writable: true,
   });
   replacementStartup.close();
@@ -179,10 +179,10 @@ test("the production migration preserves every representative field from the pri
   });
 
   expect(upgraded.getStatus()).toMatchObject({
-    appliedMigrations: 9,
-    availableMigrations: 9,
+    appliedMigrations: 10,
+    availableMigrations: 10,
     migrationsCurrent: true,
-    schemaVersion: "8",
+    schemaVersion: "9",
     writable: true,
   });
   expect(isDatabaseReady(upgraded.getStatus())).toBe(true);
@@ -235,7 +235,7 @@ THIS IS NOT VALID SQL;\n`,
   ).toEqual([]);
   expect(recovered.getClient().select().from(schema.users).all()).toEqual([]);
   expect(recovered.getStatus()).toMatchObject({
-    appliedMigrations: 9,
+    appliedMigrations: 10,
     migrationsCurrent: true,
   });
   recovered.close();
@@ -261,13 +261,13 @@ test("read-only application storage prevents startup", async () => {
 
 test("readiness requires every database invariant", () => {
   const readyStatus: DatabaseStatus = {
-    appliedMigrations: 9,
-    availableMigrations: 9,
+    appliedMigrations: 10,
+    availableMigrations: 10,
     busyTimeoutMs: 5_000,
     foreignKeysEnabled: true,
     journalMode: "wal",
     migrationsCurrent: true,
-    schemaVersion: "8",
+    schemaVersion: "9",
     writable: true,
   };
 
@@ -317,8 +317,8 @@ test("status detects tampered migration history, metadata, and pragmas", async (
   client.run(sql`DELETE FROM __drizzle_migrations
     WHERE created_at = (SELECT MAX(created_at) FROM __drizzle_migrations)`);
   expect(database.getStatus()).toMatchObject({
-    appliedMigrations: 8,
-    availableMigrations: 9,
+    appliedMigrations: 9,
+    availableMigrations: 10,
     migrationsCurrent: false,
   });
   client.delete(schema.applicationMetadata)

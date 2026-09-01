@@ -407,9 +407,6 @@ test("authorization, future dates, unsafe measurements, provider failures, and t
       async getFood() {
         throw providerFailure;
       },
-      async search() {
-        return [];
-      },
     };
     await expect(
       new FoodEntryService(client, failingProvider, now).log(userId, {

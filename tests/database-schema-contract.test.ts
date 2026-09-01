@@ -236,3 +236,68 @@ test("Drizzle schema metadata matches the migrated SQLite contract", async () =>
     await rm(directory, { force: true, recursive: true });
   }
 });
+
+test("food snapshots accept coherent providers and reject mixed provider semantics", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "calory-provider-schema-"));
+  const database = openApplicationDatabase({
+    databasePath: path.join(directory, "application.sqlite"),
+    migrationsFolder: path.resolve("drizzle"),
+  });
+  const client = database.getClient();
+
+  const insert = (change: {
+    authoritativeBaseUnit?: string;
+    idempotencyKey: string;
+    provider?: string;
+    selectedMeasurementUnit?: string;
+    sourceDataType?: string;
+  }) =>
+    client.run(sql.raw(`
+      INSERT INTO food_entries (
+        user_id, food_log_date, local_event_time, provider, provider_food_id,
+        source_data_type, original_name, authoritative_base_unit,
+        authoritative_base_quantity_microunits, selected_measurement_id,
+        selected_measurement_label, selected_measurement_unit,
+        selected_measurement_base_quantity_microunits, quantity_microunits,
+        idempotency_key, created_at, updated_at
+      ) VALUES (
+        1, '2026-09-01', '12:00:00', '${change.provider ?? "open-food-facts"}',
+        '0034000470693', '${change.sourceDataType ?? "Open Food Facts"}',
+        'Example cereal', '${change.authoritativeBaseUnit ?? "serving"}',
+        1000000, 'serving', '1 serving',
+        '${change.selectedMeasurementUnit ?? "serving"}', 1000000, 1000000,
+        '${change.idempotencyKey}', '2026-09-01T12:00:00.000Z',
+        '2026-09-01T12:00:00.000Z'
+      )
+    `));
+
+  try {
+    client.run(sql.raw(
+      "INSERT INTO users (id, username_normalized, created_at) VALUES (1, 'schema.owner', '2026-09-01T12:00:00.000Z')",
+    ));
+    expect(() => insert({ idempotencyKey: "valid-open-food-facts" }))
+      .not.toThrow();
+    expect(() =>
+      insert({
+        authoritativeBaseUnit: "g",
+        idempotencyKey: "mixed-open-food-facts-unit",
+        selectedMeasurementUnit: "g",
+      }),
+    ).toThrow();
+    expect(() =>
+      insert({
+        idempotencyKey: "mixed-usda-source",
+        provider: "usda-fdc",
+      }),
+    ).toThrow();
+    expect(() =>
+      insert({
+        idempotencyKey: "unknown-provider",
+        provider: "unknown",
+      }),
+    ).toThrow();
+  } finally {
+    database.close();
+    await rm(directory, { force: true, recursive: true });
+  }
+});

@@ -6,9 +6,11 @@ import {
   CatalogRateLimitError,
   CatalogUnavailableError,
   CatalogUnsafeMeasurementError,
+  CatalogNutritionUnavailableError,
   type CatalogFood,
   type CatalogSearchResult,
-  type FoodCatalogProvider,
+  type SearchFoodCatalogProvider,
+  type BarcodeFoodCatalogProvider,
 } from "./food-catalog.server";
 
 function yogurt(): CatalogFood {
@@ -67,7 +69,7 @@ function searchResult(food: CatalogFood): CatalogSearchResult {
   };
 }
 
-export class TestFoodCatalogProvider implements FoodCatalogProvider {
+export class TestFoodCatalogProvider implements SearchFoodCatalogProvider {
   async search(query: string): Promise<CatalogSearchResult[]> {
     switch (query.trim().toLowerCase()) {
       case "configuration":
@@ -112,5 +114,70 @@ export class TestFoodCatalogProvider implements FoodCatalogProvider {
     if (providerFoodId === "9999") throw new CatalogUnsafeMeasurementError();
     if (providerFoodId !== "1001") throw new CatalogUnavailableError();
     return yogurt();
+  }
+}
+
+function barcodeProduct(barcode: string, unnamed = false): CatalogFood {
+  return {
+    authoritativeBaseQuantityMicrounits: 1_000_000,
+    authoritativeBaseUnit: "serving",
+    barcode,
+    brand: unnamed ? null : "Example Foods",
+    dataType: "Open Food Facts",
+    isSelectable: true,
+    marketCountry: "United States",
+    measurementSummary: "1 serving",
+    measurements: [
+      {
+        baseQuantityMicrounits: 1_000_000,
+        id: "serving",
+        label: "1 serving",
+        unit: "serving",
+      },
+    ],
+    name: unnamed ? "Unnamed product" : "Example cereal",
+    nutritionPerAuthoritativeBase: {
+      carbohydrateMilligrams: { amount: 24, fixedPointMultiplier: 1_000 },
+      energyMilliKcal: { amount: 180, fixedPointMultiplier: 1_000 },
+      fatMilligrams: { amount: 0, fixedPointMultiplier: 1_000 },
+      fiberMilligrams: null,
+      proteinMilligrams: null,
+      sodiumMilligrams: null,
+      sugarMilligrams: null,
+    },
+    originalName: unnamed ? "Unnamed product" : "Example cereal",
+    provider: "open-food-facts",
+    providerFoodId: barcode,
+    providerModifiedDate: null,
+    providerPublishedDate: null,
+  };
+}
+
+export class TestOpenFoodFactsProvider implements BarcodeFoodCatalogProvider {
+  async getFood(providerFoodId: string): Promise<CatalogFood> {
+    return await this.lookupBarcode(providerFoodId);
+  }
+
+  async lookupBarcode(barcode: string): Promise<CatalogFood> {
+    switch (barcode) {
+      case "0000000000000":
+        throw new CatalogConfigurationError();
+      case "0000000000001":
+        throw new CatalogFoodNotFoundError();
+      case "0000000000002":
+        throw new CatalogNutritionUnavailableError();
+      case "0000000000003":
+        throw new CatalogRateLimitError();
+      case "0000000000004":
+        throw new CatalogUnavailableError();
+      case "0000000000005":
+        throw new CatalogInvalidResponseError();
+      case "0000000000006":
+        return barcodeProduct(barcode, true);
+      default:
+        return barcodeProduct(
+          barcode.length === 12 ? barcode.padStart(13, "0") : barcode,
+        );
+    }
   }
 }

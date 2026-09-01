@@ -16,6 +16,18 @@ describe("server startup configuration", () => {
     });
   });
 
+  test.each([undefined, "", "maintainer@example.test"])(
+    "Open Food Facts contact %s never blocks startup or leaks into startup state",
+    (OPEN_FOOD_FACTS_CONTACT_EMAIL) => {
+      expect(
+        validateServerConfiguration({
+          ...productionEnvironment,
+          OPEN_FOOD_FACTS_CONTACT_EMAIL,
+        }),
+      ).toEqual({ port: 4173 });
+    },
+  );
+
   test.each([
     [undefined, 3000],
     ["1", 1],

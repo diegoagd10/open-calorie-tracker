@@ -34,13 +34,19 @@ import {
   CatalogCredentialsError,
   CatalogFoodNotFoundError,
   CatalogInvalidResponseError,
+  CatalogNutritionUnavailableError,
   CatalogRateLimitError,
   CatalogUnavailableError,
   CatalogUnsafeMeasurementError,
   type CatalogOperationContext,
+  type CatalogFood,
   type CatalogSearchResult,
 } from "../catalog/food-catalog.server";
-import { getFoodCatalogProvider } from "../catalog/runtime.server";
+import { isSupportedCommercialBarcode } from "../catalog/barcode";
+import {
+  getFoodCatalog,
+  getFoodCatalogProvider,
+} from "../catalog/runtime.server";
 import {
   addLocalDays,
   buildCalendarMonth,
@@ -77,6 +83,11 @@ import styles from "../food-log.module.css";
 function catalogQuery(value: string): string | undefined {
   const query = value.trim();
   return query.length >= 2 && query.length <= 100 ? query : undefined;
+}
+
+function catalogBarcode(value: string): string | undefined {
+  const barcode = value.trim();
+  return isSupportedCommercialBarcode(barcode) ? barcode : undefined;
 }
 
 function foodLogIntentSchema() {
@@ -229,6 +240,56 @@ function catalogFailure(
   return undefined;
 }
 
+function barcodeCatalogFailure(
+  error: unknown,
+): { message: string; status: number; title: string } | undefined {
+  if (error instanceof CatalogConfigurationError) {
+    return {
+      message:
+        "Open Food Facts needs a valid contact email before barcode lookup can be used. USDA search and saved Food Entries remain available.",
+      status: 503,
+      title: "Open Food Facts is not configured",
+    };
+  }
+  if (error instanceof CatalogFoodNotFoundError) {
+    return {
+      message: "Product not found. Check the barcode or enter another code.",
+      status: 404,
+      title: "Product not found",
+    };
+  }
+  if (error instanceof CatalogNutritionUnavailableError) {
+    return {
+      message:
+        "This product does not report usable nutrition per serving. Values per 100 g or 100 ml are not converted.",
+      status: 422,
+      title: "Nutrition per serving unavailable",
+    };
+  }
+  if (error instanceof CatalogRateLimitError) {
+    return {
+      message: "Open Food Facts rate limit reached. Wait a moment before retrying.",
+      status: 429,
+      title: "Open Food Facts rate limit reached",
+    };
+  }
+  if (error instanceof CatalogInvalidResponseError) {
+    return {
+      message: "Open Food Facts returned product data that could not be used safely.",
+      status: 502,
+      title: "Open Food Facts response could not be used",
+    };
+  }
+  if (error instanceof CatalogUnavailableError) {
+    return {
+      message: "Open Food Facts is unavailable right now. Retry in a moment.",
+      status: 503,
+      title: "Open Food Facts is unavailable",
+    };
+  }
+  return undefined;
+}
+
 export function meta() {
   return [
     { title: "Open Calory Tracker · Private application" },
@@ -341,6 +402,18 @@ export async function loader({ request }: Route.LoaderArgs) {
   let responseStatus = 200;
   let catalog:
     | {
+        mode: "choose";
+        query: string;
+      }
+    | {
+        barcode: string;
+        food?: CatalogFood;
+        message?: string;
+        mode: "barcode";
+        query: string;
+        title?: string;
+      }
+    | {
         mode: "search";
         query: string;
         results: Awaited<
@@ -359,7 +432,50 @@ export async function loader({ request }: Route.LoaderArgs) {
       }
     | undefined;
   if (foodStage && !foodLog.isFuture) {
-    if (foodStage.mode === "search") {
+    if (foodStage.mode === "choose") {
+      catalog = { mode: "choose", query: "" };
+    } else if (foodStage.mode === "barcode") {
+      const requestedBarcode = url.searchParams.get("barcode") ?? "";
+      if (!requestedBarcode) {
+        catalog = { barcode: "", mode: "barcode", query: "" };
+      } else {
+        const parsedBarcode = catalogBarcode(requestedBarcode);
+        if (parsedBarcode === undefined) {
+          responseStatus = 400;
+          catalog = {
+            barcode: requestedBarcode,
+            message: "Enter a supported 7, 8, 12, 13, or 14 digit barcode.",
+            mode: "barcode",
+            query: "",
+            title: "Barcode not valid",
+          };
+        } else {
+          try {
+            catalog = {
+              barcode: parsedBarcode,
+              food: await getFoodCatalog().lookupBarcode(
+                "open-food-facts",
+                parsedBarcode,
+                catalogContext,
+              ),
+              mode: "barcode",
+              query: "",
+            };
+          } catch (error) {
+            const failure = barcodeCatalogFailure(error);
+            if (!failure) throw error;
+            responseStatus = failure.status;
+            catalog = {
+              barcode: parsedBarcode,
+              message: failure.message,
+              mode: "barcode",
+              query: "",
+              title: failure.title,
+            };
+          }
+        }
+      }
+    } else if (foodStage.mode === "search") {
       const parsedQuery = catalogQuery(requestedQuery);
       if (!requestedQuery) {
         catalog = { mode: "search", query: "", results: [] };
@@ -472,6 +588,8 @@ function noticeMessage(value: string | null): string | undefined {
 }
 
 type CatalogRouteState =
+  | { mode: "barcode" }
+  | { mode: "choose" }
   | { mode: "detail"; providerFoodId: string }
   | { mode: "search" };
 
@@ -486,6 +604,8 @@ function catalogRouteState(
   value: string | null,
 ): CatalogRouteState | undefined {
   if (value === "search") return { mode: "search" };
+  if (value === "choose") return { mode: "choose" };
+  if (value === "barcode") return { mode: "barcode" };
   const providerFoodId = positiveIntegerId(value);
   if (providerFoodId !== undefined) {
     return { mode: "detail", providerFoodId: String(providerFoodId) };
@@ -565,7 +685,7 @@ export async function action({ request }: Route.ActionArgs) {
   }
 
   if (parsed.data.intent === "add-food") {
-    return redirect(`${foodLogHref(parsed.data.date)}&food=search`);
+    return redirect(`${foodLogHref(parsed.data.date)}&food=choose`);
   }
   if (parsed.data.intent === "add-water") {
     return redirect(`${foodLogHref(parsed.data.date)}&water=new`);
@@ -1106,6 +1226,7 @@ function DailySummary({
       Math.abs(horizontalDistance) >= Math.min(64, swipe.width * 0.2);
     if (shouldChangePage) {
       setNutrientPage((page) =>
+        // Stryker disable next-line EqualityOperator: shouldChangePage proves the distance is nonzero because its threshold is positive.
         horizontalDistance < 0
           ? Math.min(page + 1, metricPages.length - 1)
           : Math.max(page - 1, 0),
@@ -2319,6 +2440,199 @@ function WaterEventDialog({
   );
 }
 
+function CatalogChoiceStage({ date }: { date: string }) {
+  return (
+    <div className={styles.catalogResults} aria-label="Add Food methods">
+      <Link to={catalogHref(date, "search")}>
+        <span>
+          <strong>Search for food</strong>
+          <small>Search United States foods with USDA FoodData Central.</small>
+        </span>
+        <small>Choose ›</small>
+      </Link>
+      <Link to={catalogHref(date, "barcode")}>
+        <span>
+          <strong>Scan barcode</strong>
+          <small>Enter a commercial barcode to review Open Food Facts data.</small>
+        </span>
+        <small>Choose ›</small>
+      </Link>
+    </div>
+  );
+}
+
+function BarcodeFoodDetail({ food }: { food: CatalogFood }) {
+  const preview = (
+    value: CatalogFood["nutritionPerAuthoritativeBase"]["energyMilliKcal"],
+    divisor: number,
+    unit: string,
+  ) =>
+    value === null
+      ? "Not reported"
+      : `${new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 }).format(
+          (value.amount * value.fixedPointMultiplier) / divisor,
+        )} ${unit}`;
+  const displayName =
+    food.name === "Unnamed product" && food.barcode
+      ? `Unnamed product · ${food.barcode}`
+      : food.name;
+
+  return (
+    <section aria-labelledby="barcode-product-title">
+      <div className={styles.foodIdentity}>
+        <span className={styles.catalogType}>Open Food Facts</span>
+        <h3 id="barcode-product-title">{displayName}</h3>
+        <p>Barcode {food.barcode}</p>
+      </div>
+      <div className={styles.snapshotNote}>
+        <span aria-hidden="true">◇</span>
+        <p>
+          <strong>Review only</strong>
+          This lookup does not create a Food Entry. Nutrition is shown only
+          when Open Food Facts reports it per serving.
+        </p>
+      </div>
+      <div className={styles.foodDetailGrid}>
+        <div className={styles.stackedField}>
+          <span>Measurement</span>
+          <strong>1 serving</strong>
+        </div>
+      </div>
+      <dl className={styles.nutritionPreview}>
+        <div>
+          <dt>Calories</dt>
+          <dd>
+            {preview(food.nutritionPerAuthoritativeBase.energyMilliKcal, 1_000, "kcal")}
+          </dd>
+        </div>
+        <div>
+          <dt>Protein</dt>
+          <dd>
+            {preview(food.nutritionPerAuthoritativeBase.proteinMilligrams, 1_000, "g")}
+          </dd>
+        </div>
+        <div>
+          <dt>Carbohydrates</dt>
+          <dd>
+            {preview(
+              food.nutritionPerAuthoritativeBase.carbohydrateMilligrams,
+              1_000,
+              "g",
+            )}
+          </dd>
+        </div>
+        <div>
+          <dt>Fat</dt>
+          <dd>
+            {preview(food.nutritionPerAuthoritativeBase.fatMilligrams, 1_000, "g")}
+          </dd>
+        </div>
+      </dl>
+      <p className={styles.providerAttribution}>
+        Food data from{" "}
+        <a
+          href="https://world.openfoodfacts.org/"
+          rel="noreferrer"
+          target="_blank"
+        >
+          Open Food Facts
+        </a>
+      </p>
+    </section>
+  );
+}
+
+function BarcodeCatalogStage({
+  catalog,
+  date,
+  pending,
+}: {
+  catalog: Extract<
+    NonNullable<Route.ComponentProps["loaderData"]["catalog"]>,
+    { mode: "barcode" }
+  >;
+  date: string;
+  pending: boolean;
+}) {
+  const [barcode, setBarcode] = useState(catalog.barcode);
+  const [clientMessage, setClientMessage] = useState<string>();
+  const validBarcode = catalogBarcode(barcode);
+
+  return (
+    <>
+      <div className={styles.dialogActions}>
+        <Link className={styles.backToResults} to={catalogHref(date, "search")}>
+          Search for food
+        </Link>
+      </div>
+      <Form
+        className={styles.searchForm}
+        method="get"
+        noValidate
+        onSubmit={(event) => {
+          if (validBarcode === undefined) {
+            event.preventDefault();
+            setClientMessage(
+              "Enter a supported 7, 8, 12, 13, or 14 digit barcode.",
+            );
+          }
+        }}
+      >
+        <input name="date" type="hidden" value={date} />
+        <input name="food" type="hidden" value="barcode" />
+        <label htmlFor="food-barcode">Enter barcode</label>
+        <div className={styles.searchControl}>
+          <input
+            aria-describedby={clientMessage ? "barcode-input-error" : undefined}
+            aria-invalid={clientMessage ? true : undefined}
+            autoComplete="off"
+            autoFocus
+            id="food-barcode"
+            inputMode="numeric"
+            maxLength={14}
+            name="barcode"
+            onChange={(event) => {
+              setBarcode(event.currentTarget.value);
+              setClientMessage(undefined);
+            }}
+            pattern="[0-9]*"
+            placeholder="034000470693"
+            required
+            type="text"
+            value={barcode}
+          />
+          <button className={styles.primaryButton} type="submit">
+            {catalog.message && validBarcode ? "Retry" : "Look up"}
+          </button>
+        </div>
+      </Form>
+      {pending ? (
+        <div className={styles.catalogState} role="status">
+          <h3>Checking Open Food Facts</h3>
+          <p>Reviewing the entered barcode without changing your Food Log.</p>
+        </div>
+      ) : clientMessage ? (
+        <div className={styles.catalogState} id="barcode-input-error" role="alert">
+          <h3>Barcode not valid</h3>
+          <p>{clientMessage}</p>
+        </div>
+      ) : catalog.message ? (
+        <div className={styles.catalogState} role="alert">
+          <h3>{catalog.title}</h3>
+          <p>{catalog.message}</p>
+        </div>
+      ) : catalog.food ? (
+        <BarcodeFoodDetail food={catalog.food} />
+      ) : (
+        <div className={styles.catalogState}>
+          <h3>Scan barcode</h3>
+          <p>Type the digits printed below a commercial barcode to review it.</p>
+        </div>
+      )}
+    </>
+  );
+}
+
 function CatalogDialog({
   actionData,
   catalog,
@@ -2339,7 +2653,10 @@ function CatalogDialog({
   const detailPending =
     catalog.mode === "search" &&
     pendingFoodStage?.mode === "detail";
-  const searchPending = navigation.state !== "idle" && !detailPending;
+  const searchPending =
+    navigation.state !== "idle" &&
+    !detailPending;
+  const barcodePending = pendingFoodStage?.mode === "barcode";
   const closeHref = foodLogHref(date);
   const { closeDialog, dialogRef, handleDialogKeyDown } = useModalDialog({
     closeHref,
@@ -2361,10 +2678,15 @@ function CatalogDialog({
         <div className={styles.dialogHead}>
           <div>
             <h2 id="food-dialog-title">Add Food</h2>
-            <span className={styles.dialogChip}>USDA catalog</span>
+            <span className={styles.dialogChip}>
+              {catalog.mode === "search" || catalog.mode === "detail"
+                ? "USDA catalog"
+                : catalog.mode === "barcode"
+                  ? "Open Food Facts"
+                  : "Choose a method"}
+            </span>
             <p>
-              Search is deliberate. Nothing is logged until you confirm a
-              measurement and quantity.
+              Nothing changes in your Food Log until a later confirmation step.
             </p>
           </div>
           <Link
@@ -2384,13 +2706,20 @@ function CatalogDialog({
             csrfToken={csrfToken}
             date={date}
           />
+        ) : catalog.mode === "choose" ? (
+          <CatalogChoiceStage date={date} />
+        ) : catalog.mode === "barcode" ? (
+          <BarcodeCatalogStage
+            catalog={catalog}
+            date={date}
+            pending={barcodePending}
+          />
         ) : (
           <>
             <Form
               className={styles.searchForm}
               method="get"
               noValidate
-              reloadDocument
               onSubmit={(event) => {
                 if (catalogQuery(searchQuery) === undefined) {
                   event.preventDefault();

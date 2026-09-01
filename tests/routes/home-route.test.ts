@@ -7,8 +7,14 @@ import { afterAll, beforeAll, expect, test } from "vitest";
 
 import { serializeSessionCookie } from "../../app/auth/http.server";
 import { getAuthenticationService } from "../../app/auth/runtime.server";
-import { setFoodCatalogProviderForTests } from "../../app/catalog/runtime.server";
-import { CatalogFoodNotFoundError } from "../../app/catalog/food-catalog.server";
+import {
+  CatalogFoodNotFoundError,
+  FoodCatalog,
+} from "../../app/catalog/food-catalog.server";
+import {
+  setFoodCatalogForTests,
+  setFoodCatalogProviderForTests,
+} from "../../app/catalog/runtime.server";
 import {
   initializeApplicationDatabase,
   shutdownApplicationDatabase,
@@ -367,6 +373,98 @@ test("home loader maps every catalog search and detail state", async () => {
   expect(futureStage.data.catalog).toBeUndefined();
 });
 
+test("home loader exposes barcode lookup without creating a Food Entry", async () => {
+  const chooser = await load("/?food=choose");
+  expect(chooser.data.catalog).toEqual({ mode: "choose", query: "" });
+
+  const empty = await load("/?food=barcode");
+  expect(empty.data.catalog).toEqual({
+    barcode: "",
+    mode: "barcode",
+    query: "",
+  });
+
+  const invalid = await load("/?food=barcode&barcode=123");
+  expect(invalid.init?.status).toBe(400);
+  expect(invalid.data.catalog).toEqual({
+    barcode: "123",
+    message: "Enter a supported 7, 8, 12, 13, or 14 digit barcode.",
+    mode: "barcode",
+    query: "",
+    title: "Barcode not valid",
+  });
+
+  for (const barcode of ["a1234567", "1234567a"]) {
+    const malformed = await load(`/?food=barcode&barcode=${barcode}`);
+    expect(malformed.init?.status).toBe(400);
+  }
+  const trimmed = await load("/?food=barcode&barcode=%201234567%20");
+  expect(trimmed.data.catalog).toMatchObject({
+    barcode: "1234567",
+    mode: "barcode",
+  });
+
+  const found = await load("/?food=barcode&barcode=034000470693");
+  expect(found.data.catalog).toEqual({
+    barcode: "034000470693",
+    food: {
+      authoritativeBaseUnit: "serving",
+      barcode: "0034000470693",
+      name: "Example cereal",
+      provider: "open-food-facts",
+      providerFoodId: "0034000470693",
+      authoritativeBaseQuantityMicrounits: 1_000_000,
+      brand: "Example Foods",
+      dataType: "Open Food Facts",
+      isSelectable: true,
+      marketCountry: "United States",
+      measurementSummary: "1 serving",
+      measurements: [
+        {
+          baseQuantityMicrounits: 1_000_000,
+          id: "serving",
+          label: "1 serving",
+          unit: "serving",
+        },
+      ],
+      nutritionPerAuthoritativeBase: {
+        carbohydrateMilligrams: { amount: 24, fixedPointMultiplier: 1_000 },
+        energyMilliKcal: { amount: 180, fixedPointMultiplier: 1_000 },
+        fatMilligrams: { amount: 0, fixedPointMultiplier: 1_000 },
+        fiberMilligrams: null,
+        proteinMilligrams: null,
+        sodiumMilligrams: null,
+        sugarMilligrams: null,
+      },
+      originalName: "Example cereal",
+      providerModifiedDate: null,
+      providerPublishedDate: null,
+    },
+    mode: "barcode",
+    query: "",
+  });
+  expect(getFoodLogService().read(1, today)?.entries).toHaveLength(0);
+
+  for (const [barcode, status, title, message] of [
+    ["0000000000000", 503, "Open Food Facts is not configured", "contact email"],
+    ["0000000000001", 404, "Product not found", "another code"],
+    ["0000000000002", 422, "Nutrition per serving unavailable", "per serving"],
+    ["0000000000003", 429, "Open Food Facts rate limit reached", "Wait a moment"],
+    ["0000000000004", 503, "Open Food Facts is unavailable", "Retry"],
+    ["0000000000005", 502, "Open Food Facts response could not be used", "could not be used safely"],
+  ] as const) {
+    const result = await load(`/?food=barcode&barcode=${barcode}`);
+    expect(result.init?.status).toBe(status);
+    if (result.data.catalog?.mode !== "barcode") {
+      throw new Error("Expected barcode state");
+    }
+    expect(result.data.catalog.barcode).toBe(barcode);
+    expect(result.data.catalog.query).toBe("");
+    expect(result.data.catalog.title).toBe(title);
+    expect(result.data.catalog.message).toContain(message);
+  }
+});
+
 test("home passes request correlation to the catalog and propagates unknown failures", async () => {
   const contexts: string[] = [];
   const unexpected = new Error("unexpected catalog adapter failure");
@@ -437,6 +535,31 @@ test("home passes request correlation to the catalog and propagates unknown fail
   }
 });
 
+test("home propagates an unexpected barcode provider failure", async () => {
+  const unexpected = new Error("unexpected barcode adapter failure");
+  setFoodCatalogForTests(
+    new FoodCatalog([
+      {
+        capability: "barcode",
+        provider: "open-food-facts",
+        service: {
+          async getFood() {
+            throw unexpected;
+          },
+          async lookupBarcode() {
+            throw unexpected;
+          },
+        },
+      },
+    ]),
+  );
+  const failure = await homeLoader(
+    routeArgs(get("/?food=barcode&barcode=034000470693")) as never,
+  ).catch((error: unknown) => error);
+  expect(failure).toBe(unexpected);
+  setFoodCatalogProviderForTests(undefined);
+});
+
 test("home actions enforce security, request shape, and writable dates", async () => {
   const wrongOrigin = await homeAction(
     routeArgs(post({ intent: "add-food" }, { origin: "https://attacker.example" })) as never,
@@ -501,7 +624,7 @@ test("home actions enforce security, request shape, and writable dates", async (
 
   expectRedirect(
     await homeAction(routeArgs(post({ intent: "add-food" }))),
-    "/?date=2026-08-31&food=search",
+    "/?date=2026-08-31&food=choose",
   );
   expectRedirect(
     await homeAction(routeArgs(post({ intent: "add-water" }))),

@@ -196,15 +196,29 @@ export const foodEntries = sqliteTable(
       table.createdAt,
       table.id,
     ),
-    check("food_entries_provider_check", sql`${table.provider} = 'usda-fdc'`),
+    check(
+      "food_entries_provider_check",
+      sql`${table.provider} IN ('usda-fdc', 'open-food-facts')`,
+    ),
     check(
       "food_entries_data_type_check",
-      sql`${table.sourceDataType} IN ('Branded', 'Survey (FNDDS)', 'Foundation')`,
+      sql`${table.sourceDataType} IN ('Branded', 'Survey (FNDDS)', 'Foundation', 'Open Food Facts')`,
     ),
     check(
       "food_entries_units_check",
-      sql`${table.authoritativeBaseUnit} IN ('g', 'ml')
-        AND ${table.selectedMeasurementUnit} IN ('g', 'ml')`,
+      sql`${table.authoritativeBaseUnit} IN ('g', 'ml', 'serving')
+        AND ${table.selectedMeasurementUnit} IN ('g', 'ml', 'serving')`,
+    ),
+    check(
+      "food_entries_provider_semantics_check",
+      sql`(${table.provider} = 'usda-fdc'
+          AND ${table.sourceDataType} IN ('Branded', 'Survey (FNDDS)', 'Foundation')
+          AND ${table.authoritativeBaseUnit} IN ('g', 'ml')
+          AND ${table.selectedMeasurementUnit} IN ('g', 'ml'))
+        OR (${table.provider} = 'open-food-facts'
+          AND ${table.sourceDataType} = 'Open Food Facts'
+          AND ${table.authoritativeBaseUnit} = 'serving'
+          AND ${table.selectedMeasurementUnit} = 'serving')`,
     ),
     check(
       "food_entries_positive_quantities_check",
