@@ -36,10 +36,12 @@
           "app/root.tsx",
           "app/routes.ts",
           "app/app-navigation.tsx",
+          "app/settings-destinations.tsx",
           "app/ui-icon.tsx",
           "app/account.module.css",
           "app/readiness.module.css",
-          "app/styles.css"
+          "app/styles.css",
+          "app/users.module.css"
         ]
       },
       {

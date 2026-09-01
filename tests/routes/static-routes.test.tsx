@@ -34,14 +34,35 @@ describe("static route contracts", () => {
   test("the complete public route table maps URLs to their modules", () => {
     expect(routeConfig).toEqual([
       { file: "./routes/home.tsx", index: true },
-      { file: "./routes/login.tsx", path: "login" },
-      { file: "./routes/logout.tsx", path: "logout" },
-      { file: "./routes/register.tsx", path: "register" },
-      { file: "./routes/setup.tsx", path: "setup" },
-      { file: "./routes/settings.goals.tsx", path: "settings/goals" },
-      { file: "./routes/account.password.tsx", path: "account/password" },
-      { file: "./routes/health.live.ts", path: "health/live" },
-      { file: "./routes/health.ready.ts", path: "health/ready" },
+      { children: undefined, file: "./routes/login.tsx", path: "login" },
+      { children: undefined, file: "./routes/logout.tsx", path: "logout" },
+      { children: undefined, file: "./routes/register.tsx", path: "register" },
+      { children: undefined, file: "./routes/setup.tsx", path: "setup" },
+      {
+        children: undefined,
+        file: "./routes/settings.goals.tsx",
+        path: "settings/goals",
+      },
+      {
+        children: undefined,
+        file: "./routes/settings.users.tsx",
+        path: "settings/users",
+      },
+      {
+        children: undefined,
+        file: "./routes/account.password.tsx",
+        path: "account/password",
+      },
+      {
+        children: undefined,
+        file: "./routes/health.live.ts",
+        path: "health/live",
+      },
+      {
+        children: undefined,
+        file: "./routes/health.ready.ts",
+        path: "health/ready",
+      },
     ]);
   });
 });

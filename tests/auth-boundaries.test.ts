@@ -181,7 +181,7 @@ test("cookie serialization and parsing preserve the exact host-only contract", (
       absoluteExpiresAt: new Date("2026-08-29T12:01:00.000Z"),
       csrfToken: "csrf",
       token: "token with spaces",
-      user: { id: 1, username: "cookie.user" },
+      user: { id: 1, role: "member", username: "cookie.user" },
     }),
   ).toBe(
     "__Host-calorie_session=token%20with%20spaces; Path=/; Max-Age=60; Expires=Sat, 29 Aug 2026 12:01:00 GMT; HttpOnly; Secure; SameSite=Lax",

@@ -1,0 +1,67 @@
+import { Form, Link } from "react-router";
+
+import styles from "./goals.module.css";
+
+export type SettingsDestinationsProps = {
+  active: "goals" | "users";
+  csrfToken: string;
+  isAdministrator: boolean;
+};
+
+export function SettingsDestinations({
+  active,
+  csrfToken,
+  isAdministrator,
+}: SettingsDestinationsProps) {
+  return (
+    <>
+      <nav className={styles.settingsDestinations} aria-label="Settings">
+        {active !== "goals" ? (
+          <Link className={styles.accountAccessRow} to="/settings/goals">
+            <span className={styles.accountAccessIcon} aria-hidden="true">
+              ◇
+            </span>
+            <span>
+              <strong>Display and goals</strong>
+              <small>Manage units and effective-dated nutrition goals.</small>
+            </span>
+            <span aria-hidden="true">›</span>
+          </Link>
+        ) : null}
+        {isAdministrator && active !== "users" ? (
+          <Link className={styles.accountAccessRow} to="/settings/users">
+            <span className={styles.accountAccessIcon} aria-hidden="true">
+              ◎
+            </span>
+            <span>
+              <strong>Users</strong>
+              <small>View member accounts and their access state.</small>
+            </span>
+            <span aria-hidden="true">›</span>
+          </Link>
+        ) : null}
+        <Link className={styles.accountAccessRow} to="/account/password">
+          <span className={styles.accountAccessIcon} aria-hidden="true">
+            ◇
+          </span>
+          <span>
+            <strong>Account security</strong>
+            <small>Change your password and rotate active sessions.</small>
+          </span>
+          <span aria-hidden="true">›</span>
+        </Link>
+      </nav>
+
+      <Form action="/logout" className={styles.mobileSignOutForm} method="post">
+        <input name="csrfToken" type="hidden" value={csrfToken} />
+        <button aria-label="Sign out" type="submit">
+          <span>
+            <strong>Sign out this session</strong>
+            <small>Other phones remain signed in.</small>
+          </span>
+          <span aria-hidden="true">›</span>
+        </button>
+      </Form>
+    </>
+  );
+}

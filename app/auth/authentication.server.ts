@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 
 import type { ApplicationDatabaseClient } from "../database/database.server";
 import {
@@ -37,9 +37,12 @@ function registrationWindowMs(): number {
 
 export type CredentialUser = Pick<
   typeof users.$inferSelect,
-  "id" | "usernameNormalized"
+  "id" | "role" | "usernameNormalized"
 > &
   Pick<typeof passwordCredentials.$inferSelect, "passwordHash">;
+
+export type UserRole = (typeof users.$inferSelect)["role"];
+export type AccountAccessState = (typeof users.$inferSelect)["accessState"];
 
 export type AuthenticatedSession = {
   absoluteExpiresAt: Date;
@@ -47,8 +50,15 @@ export type AuthenticatedSession = {
   token: string;
   user: {
     id: number;
+    role: UserRole;
     username: string;
   };
+};
+
+export type ManageableMember = {
+  accessState: AccountAccessState;
+  createdAt: string;
+  username: string;
 };
 
 export type IssuedSession = AuthenticatedSession;
@@ -164,6 +174,7 @@ export class AuthenticationService {
 
           const issued = prepareIssuedSession(this.#now(), {
             id: user.id,
+            role: "admin",
             username: usernameNormalized,
           });
           transaction.insert(sessions).values(issued.persisted).run();
@@ -204,6 +215,7 @@ export class AuthenticationService {
         idleExpiresAt: sessions.idleExpiresAt,
         tokenHash: sessions.tokenHash,
         userId: sessions.userId,
+        role: users.role,
         usernameNormalized: users.usernameNormalized,
       })
       .from(sessions)
@@ -245,6 +257,7 @@ export class AuthenticationService {
       token,
       user: {
         id: session.userId,
+        role: session.role,
         username: session.usernameNormalized,
       },
     };
@@ -371,6 +384,7 @@ export class AuthenticationService {
       ok: true,
       session: this.#issueSession(
         verification.user.id,
+        verification.user.role,
         verification.user.usernameNormalized,
       ),
     };
@@ -387,9 +401,14 @@ export class AuthenticationService {
     return safelyEqual(csrfTokenFor(sessionToken), candidate);
   }
 
-  #issueSession(userId: number, usernameNormalized: string): IssuedSession {
+  #issueSession(
+    userId: number,
+    role: UserRole,
+    usernameNormalized: string,
+  ): IssuedSession {
     const issued = prepareIssuedSession(this.#now(), {
       id: userId,
+      role,
       username: usernameNormalized,
     });
     this.#database
@@ -411,6 +430,7 @@ export class AuthenticationService {
       .select({
         id: users.id,
         passwordHash: passwordCredentials.passwordHash,
+        role: users.role,
         usernameNormalized: users.usernameNormalized,
       })
       .from(users)
@@ -428,5 +448,18 @@ export class AuthenticationService {
       needsRehash: verification.needsRehash,
       user,
     };
+  }
+
+  listManageableMembers(): ManageableMember[] {
+    return this.#database
+      .select({
+        accessState: users.accessState,
+        createdAt: users.createdAt,
+        username: users.usernameNormalized,
+      })
+      .from(users)
+      .where(eq(users.role, "member"))
+      .orderBy(asc(users.usernameNormalized))
+      .all();
   }
 }

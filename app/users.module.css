@@ -1,0 +1,119 @@
+.directory {
+  max-width: 44rem;
+  overflow: hidden;
+  border: 1px solid var(--rule);
+  border-radius: 1rem;
+  background: var(--surface);
+  box-shadow: 0 8px 24px rgb(15 29 45 / 5%);
+}
+
+.directoryHeading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--rule);
+}
+
+.directoryHeading h2,
+.directoryHeading p {
+  margin: 0;
+}
+
+.directoryHeading h2 {
+  font-size: 1rem;
+}
+
+.directoryHeading p {
+  margin-top: 0.2rem;
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.directoryHeading > strong {
+  display: grid;
+  min-width: 2rem;
+  min-height: 2rem;
+  place-items: center;
+  border-radius: 999px;
+  color: var(--ink-2);
+  background: #f4f6f8;
+  font-size: 0.75rem;
+}
+
+.memberList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.memberList li {
+  display: flex;
+  min-height: 4.25rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.85rem 1.25rem;
+}
+
+.memberList li + li {
+  border-top: 1px solid var(--rule);
+}
+
+.memberList li > span:first-child,
+.memberList strong,
+.memberList small {
+  display: block;
+  min-width: 0;
+}
+
+.memberList li > span:first-child {
+  overflow: hidden;
+}
+
+.memberList strong {
+  overflow: hidden;
+  font-size: 0.82rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.memberList small {
+  margin-top: 0.2rem;
+  color: var(--muted);
+  font-size: 0.68rem;
+}
+
+.activeState,
+.disabledState {
+  flex: none;
+  padding: 0.32rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.65rem;
+  font-weight: 750;
+}
+
+.activeState {
+  color: var(--green-dark);
+  background: #edf7ee;
+}
+
+.disabledState {
+  color: #8a1c14;
+  background: #fff1f0;
+}
+
+.empty {
+  margin: 0;
+  padding: 1.25rem;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+@media (max-width: 420px) {
+  .directoryHeading,
+  .memberList li {
+    padding-inline: 0.9rem;
+  }
+}

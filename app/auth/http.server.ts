@@ -3,6 +3,7 @@ import type {
   IssuedSession,
 } from "./authentication.server";
 import type { PreAuthenticationCsrfSession } from "./pre-authentication-csrf.server";
+import { redirect } from "react-router";
 import {
   getAuthenticationService,
   getPreAuthenticationCsrfService,
@@ -55,6 +56,17 @@ export async function getAuthenticatedSession(
   request: Request,
 ): Promise<AuthenticatedSession | undefined> {
   return getAuthenticationService().authenticate(getSessionToken(request));
+}
+
+export async function requireAdministratorSession(
+  request: Request,
+): Promise<AuthenticatedSession> {
+  const session = await getAuthenticatedSession(request);
+  if (!session) throw redirect("/login");
+  if (session.user.role !== "admin") {
+    throw new Response("Not Found", { status: 404 });
+  }
+  return session;
 }
 
 export function serializeSessionCookie(session: IssuedSession): string {
