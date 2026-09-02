@@ -535,6 +535,29 @@ describe("password route", () => {
       init: { status: 400 },
     });
 
+    const reused = await passwordAction(
+      routeArgs(
+        post(
+          "/account/password",
+          new URLSearchParams({
+            csrfToken: restrictedSession.csrfToken,
+            currentPassword: initialPassword,
+            newPassword: initialPassword,
+          }),
+          loginCookie,
+        ),
+        "/account/password",
+      ),
+    );
+    expect(reused).toMatchObject({
+      data: {
+        error: "Choose a password different from the temporary password.",
+      },
+      init: { status: 400 },
+    });
+    await expect(authentication.authenticate(loginToken)).resolves
+      .toMatchObject({ user: { passwordChangeRequired: true } });
+
     const changed = await passwordAction(
       routeArgs(
         post(

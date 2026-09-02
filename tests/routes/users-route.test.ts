@@ -180,7 +180,7 @@ test("administrator provisions a normalized restricted member through the Users 
   );
 
   expect(created).toMatchObject({
-    data: { created: "new.member" },
+    data: { createdUsername: "new.member" },
     init: { status: 201 },
   });
   expect(JSON.stringify(created)).not.toContain(initialPassword);

@@ -118,7 +118,8 @@ test("restricted sessions can open only password change and are denied every ord
     registerLoader(routeArgs(request("/register"), "/register")),
   );
   expect(registration).toBeInstanceOf(Response);
-  expect((registration as Response).status).toBe(404);
+  expect((registration as Response).headers.get("Location"))
+    .toBe("/account/password");
 
   const password = await passwordLoader(
     routeArgs(request("/account/password"), "/account/password"),

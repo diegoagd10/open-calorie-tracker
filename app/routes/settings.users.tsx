@@ -14,7 +14,7 @@ import { SettingsDestinations } from "../settings-destinations";
 import styles from "../users.module.css";
 
 type UsersActionData = {
-  created?: string;
+  createdUsername?: string;
   error?: string;
   username?: string;
 };
@@ -92,7 +92,7 @@ export async function action({ request }: Route.ActionArgs) {
   }
 
   return data<UsersActionData>(
-    { created: result.member.username },
+    { createdUsername: result.member.username },
     { status: 201 },
   );
 }
@@ -140,7 +140,11 @@ export default function Users({ actionData, loaderData }: Route.ComponentProps) 
           </header>
           <Form
             className={styles.provisioningForm}
-            key={actionData?.created ? `created-${actionData.created}` : "ready"}
+            key={
+              actionData?.createdUsername
+                ? `created-${actionData.createdUsername}`
+                : "ready"
+            }
             method="post"
             noValidate
           >
@@ -191,10 +195,10 @@ export default function Users({ actionData, loaderData }: Route.ComponentProps) 
                 {actionData.error}
               </p>
             ) : null}
-            {actionData?.created ? (
+            {actionData?.createdUsername ? (
               <p className={styles.success} role="status">
-                <strong>{actionData.created}</strong> was created. Deliver the
-                initial password outside this application.
+                <strong>{actionData.createdUsername}</strong> was created.
+                Deliver the initial password outside this application.
               </p>
             ) : null}
             <button type="submit">Create member</button>

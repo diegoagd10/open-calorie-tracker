@@ -1,8 +1,12 @@
 import { randomBytes } from "node:crypto";
 
-import { and, asc, eq } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 
 import type { ApplicationDatabaseClient } from "../database/database.server";
+import {
+  createMemberAccount,
+  replacePasswordAndSessions,
+} from "../database/member-accounts.server";
 import {
   passwordCredentials,
   sessions,
@@ -83,6 +87,7 @@ export type LoginResult =
 export type PasswordChangeResult =
   | { error: "invalid-current-password"; ok: false }
   | { error: "invalid-session"; ok: false }
+  | { error: "password-reuse"; ok: false }
   | { error: "rate-limited"; ok: false }
   | { ok: true; session: IssuedSession };
 
@@ -215,43 +220,23 @@ export class AuthenticationService {
   ): Promise<ProvisionMemberResult> {
     const passwordHash = await hashPassword(initialPassword);
     const createdAt = this.#now().toISOString();
-    const member = this.#database.transaction(
-      (transaction) => {
-        const user = transaction
-          .insert(users)
-          .values({
-            accessState: "active",
-            createdAt,
-            passwordChangeRequired: true,
-            role: "member",
-            usernameNormalized,
-          })
-          .onConflictDoNothing()
-          .returning({ id: users.id })
-          .get();
-        if (!user) return undefined;
-
-        transaction.insert(passwordCredentials).values({
-          passwordHash,
-          updatedAt: createdAt,
-          userId: user.id,
-        }).run();
-        return {
-          id: user.id,
-          member: {
-            accessState: "active" as const,
-            createdAt,
-            passwordChangeRequired: true,
-            username: usernameNormalized,
-          },
-        };
-      },
-      { behavior: "immediate" },
-    );
+    const member = createMemberAccount(this.#database, {
+      createdAt,
+      passwordHash,
+      usernameNormalized,
+    });
 
     if (!member) return { error: "duplicate-username", ok: false };
     logMemberProvisioned(member.id, usernameNormalized);
-    return { member: member.member, ok: true };
+    return {
+      member: {
+        accessState: "active",
+        createdAt,
+        passwordChangeRequired: true,
+        username: usernameNormalized,
+      },
+      ok: true,
+    };
   }
 
   async authenticate(
@@ -345,6 +330,12 @@ export class AuthenticationService {
     ) {
       return { error: "invalid-current-password", ok: false };
     }
+    if (
+      currentSession.user.passwordChangeRequired &&
+      currentPassword === nextPassword
+    ) {
+      return { error: "password-reuse", ok: false };
+    }
 
     const now = this.#now();
     const nextPasswordHash = await hashPassword(nextPassword);
@@ -355,41 +346,12 @@ export class AuthenticationService {
     );
     const currentTokenHash = hashOpaqueToken(currentSession.token);
 
-    const rotated = this.#database.transaction((transaction) => {
-      const persistedCurrentSession = transaction
-        .select({ tokenHash: sessions.tokenHash })
-        .from(sessions)
-        .where(
-          and(
-            eq(sessions.tokenHash, currentTokenHash),
-            eq(sessions.userId, currentSession.user.id),
-          ),
-        )
-        .get();
-      if (!persistedCurrentSession) return false;
-
-      transaction
-        .update(passwordCredentials)
-        .set({
-          passwordHash: nextPasswordHash,
-          updatedAt: now.toISOString(),
-        })
-        .where(eq(passwordCredentials.userId, currentSession.user.id))
-        .run();
-      transaction
-        .update(users)
-        .set({ passwordChangeRequired: false })
-        .where(eq(users.id, currentSession.user.id))
-        .run();
-      transaction
-        .delete(sessions)
-        .where(eq(sessions.userId, currentSession.user.id))
-        .run();
-      transaction
-        .insert(sessions)
-        .values(nextSession.persisted)
-        .run();
-      return true;
+    const rotated = replacePasswordAndSessions(this.#database, {
+      currentTokenHash,
+      nextPasswordHash,
+      nextSession: nextSession.persisted,
+      updatedAt: now.toISOString(),
+      userId: currentSession.user.id,
     });
 
     if (!rotated) {
@@ -442,12 +404,12 @@ export class AuthenticationService {
 
     return {
       ok: true,
-      session: this.#issueSession(
-        verification.user.id,
-        verification.user.passwordChangeRequired,
-        verification.user.role,
-        verification.user.usernameNormalized,
-      ),
+      session: this.#issueSession({
+        id: verification.user.id,
+        passwordChangeRequired: verification.user.passwordChangeRequired,
+        role: verification.user.role,
+        username: verification.user.usernameNormalized,
+      }),
     };
   }
 
@@ -462,18 +424,8 @@ export class AuthenticationService {
     return safelyEqual(csrfTokenFor(sessionToken), candidate);
   }
 
-  #issueSession(
-    userId: number,
-    passwordChangeRequired: boolean,
-    role: UserRole,
-    usernameNormalized: string,
-  ): IssuedSession {
-    const issued = prepareIssuedSession(this.#now(), {
-      id: userId,
-      passwordChangeRequired,
-      role,
-      username: usernameNormalized,
-    });
+  #issueSession(user: AuthenticatedSession["user"]): IssuedSession {
+    const issued = prepareIssuedSession(this.#now(), user);
     this.#database
       .insert(sessions)
       .values(issued.persisted)

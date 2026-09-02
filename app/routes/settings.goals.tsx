@@ -6,7 +6,6 @@ import { AppNavigation } from "../app-navigation";
 import { SettingsDestinations } from "../settings-destinations";
 import {
   getAuthenticatedSession,
-  requireCompletedPasswordOnboarding,
   requireValidOrigin,
   serializeClearedSessionCookie,
 } from "../auth/http.server";
@@ -83,7 +82,6 @@ export function headers() {
 export async function loader({ request }: Route.LoaderArgs) {
   const session = await getAuthenticatedSession(request);
   if (!session) return redirect("/login");
-  requireCompletedPasswordOnboarding(session);
 
   const service = getGoalVersionService();
   const url = new URL(request.url);
@@ -126,7 +124,6 @@ export async function action({ request }: Route.ActionArgs) {
       headers: { "Set-Cookie": serializeClearedSessionCookie() },
     });
   }
-  requireCompletedPasswordOnboarding(session);
 
   const formData = await request.formData();
   if (

@@ -33,7 +33,9 @@ export function headers() {
 }
 
 export async function loader({ request }: Route.LoaderArgs) {
-  const session = await getAuthenticatedSession(request);
+  const session = await getAuthenticatedSession(request, {
+    allowPasswordChangeRequired: true,
+  });
   if (session) {
     return redirect(
       session.user.passwordChangeRequired ? "/account/password" : "/",

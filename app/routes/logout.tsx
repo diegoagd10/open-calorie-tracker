@@ -10,7 +10,9 @@ import { getAuthenticationService } from "../auth/runtime.server";
 
 export async function action({ request }: Route.ActionArgs) {
   requireValidOrigin(request);
-  const session = await getAuthenticatedSession(request);
+  const session = await getAuthenticatedSession(request, {
+    allowPasswordChangeRequired: true,
+  });
 
   if (!session) {
     return redirect("/login", {

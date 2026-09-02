@@ -28,7 +28,9 @@ export function headers() {
 }
 
 export async function loader({ request }: Route.LoaderArgs) {
-  const session = await getAuthenticatedSession(request);
+  const session = await getAuthenticatedSession(request, {
+    allowPasswordChangeRequired: true,
+  });
   if (!session) return redirect("/login");
 
   return {
@@ -40,7 +42,9 @@ export async function loader({ request }: Route.LoaderArgs) {
 
 export async function action({ request }: Route.ActionArgs) {
   requireValidOrigin(request);
-  const session = await getAuthenticatedSession(request);
+  const session = await getAuthenticatedSession(request, {
+    allowPasswordChangeRequired: true,
+  });
   if (!session) {
     return redirect("/login", {
       headers: { "Set-Cookie": serializeClearedSessionCookie() },
@@ -82,6 +86,12 @@ export async function action({ request }: Route.ActionArgs) {
       return data<PasswordChangeActionData>(
         { error: "Too many password attempts. Try again later." },
         { status: 429 },
+      );
+    }
+    if (result.error === "password-reuse") {
+      return data<PasswordChangeActionData>(
+        { error: "Choose a password different from the temporary password." },
+        { status: 400 },
       );
     }
     return data<PasswordChangeActionData>(
