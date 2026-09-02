@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-const usernameSchema = z
+export const usernameSchema = z
   .string()
   .regex(/^[A-Za-z0-9._-]{3,30}$/)
   .transform((username) => username.toLowerCase());

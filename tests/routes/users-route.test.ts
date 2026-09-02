@@ -320,3 +320,157 @@ test("member provisioning rejects duplicate, malformed, unauthorized, CSRF-inval
       "unauthorized.member",
     ]));
 });
+
+test("administrator disables and reactivates a member through confirmed safe route actions", async () => {
+  const authentication = getAuthenticationService();
+  const administrator = await authentication.authenticate(
+    administratorCookie.split("=", 2)[1],
+  );
+  const ordinaryMember = await authentication.authenticate(
+    memberCookie.split("=", 2)[1],
+  );
+  if (!administrator || !ordinaryMember) {
+    throw new Error("route sessions unavailable");
+  }
+  const initialPassword = "temporary route access passphrase";
+  await expect(authentication.provisionMember("route.access", initialPassword))
+    .resolves.toMatchObject({ ok: true });
+  const firstDevice = await authentication.login(
+    "route.access",
+    initialPassword,
+    "203.0.113.185",
+  );
+  const secondDevice = await authentication.login(
+    "route.access",
+    initialPassword,
+    "203.0.113.186",
+  );
+  if (!firstDevice.ok || !secondDevice.ok) throw new Error("route login failed");
+
+  const invalidOriginRequest = post({
+    confirmationUsername: "route.access",
+    csrfToken: administrator.csrfToken,
+    intent: "disable-member",
+    targetUsername: "route.access",
+  });
+  invalidOriginRequest.headers.set("Origin", "https://attacker.example");
+  const invalidOrigin = await usersAction(
+    routeArgs(invalidOriginRequest) as never,
+  ).catch((error: unknown) => error);
+  expect(invalidOrigin).toBeInstanceOf(Response);
+  expect((invalidOrigin as Response).status).toBe(403);
+
+  const invalidCsrf = await usersAction(
+    routeArgs(post({
+      confirmationUsername: "route.access",
+      csrfToken: "invalid",
+      intent: "disable-member",
+      targetUsername: "route.access",
+    })) as never,
+  ).catch((error: unknown) => error);
+  expect(invalidCsrf).toBeInstanceOf(Response);
+  expect((invalidCsrf as Response).status).toBe(403);
+
+  const unauthorized = await usersAction(
+    routeArgs(post({
+      confirmationUsername: "route.access",
+      csrfToken: ordinaryMember.csrfToken,
+      intent: "disable-member",
+      targetUsername: "route.access",
+    }, memberCookie)) as never,
+  ).catch((error: unknown) => error);
+  expect(unauthorized).toBeInstanceOf(Response);
+  expect((unauthorized as Response).status).toBe(404);
+
+  const mismatch = await usersAction(
+    routeArgs(post({
+      confirmationUsername: "Route.Access",
+      csrfToken: administrator.csrfToken,
+      intent: "disable-member",
+      targetUsername: "route.access",
+    })),
+  );
+  expect(mismatch).toMatchObject({
+    data: { accessError: "Enter route.access exactly to confirm." },
+    init: { status: 400 },
+  });
+
+  const stale = await usersAction(
+    routeArgs(post({
+      confirmationUsername: "missing.member",
+      csrfToken: administrator.csrfToken,
+      intent: "disable-member",
+      targetUsername: "missing.member",
+    })),
+  );
+  expect(stale).toMatchObject({ init: { status: 409 } });
+  await expect(authentication.authenticate(firstDevice.session.token))
+    .resolves.toBeDefined();
+  await expect(authentication.authenticate(secondDevice.session.token))
+    .resolves.toBeDefined();
+  await expect(authentication.authenticate(ordinaryMember.token))
+    .resolves.toBeDefined();
+
+  const disabled = await usersAction(
+    routeArgs(post({
+      confirmationUsername: "route.access",
+      csrfToken: administrator.csrfToken,
+      intent: "disable-member",
+      targetUsername: "route.access",
+    })),
+  );
+  expect(disabled).toMatchObject({
+    data: {
+      accessChanged: { action: "disabled", username: "route.access" },
+    },
+    init: { status: 200 },
+  });
+  await expect(authentication.authenticate(firstDevice.session.token))
+    .resolves.toBeUndefined();
+  await expect(authentication.authenticate(secondDevice.session.token))
+    .resolves.toBeUndefined();
+  await expect(authentication.authenticate(ordinaryMember.token))
+    .resolves.toBeDefined();
+
+  const repeatedDisable = await usersAction(
+    routeArgs(post({
+      confirmationUsername: "route.access",
+      csrfToken: administrator.csrfToken,
+      intent: "disable-member",
+      targetUsername: "route.access",
+    })),
+  );
+  expect(repeatedDisable).toMatchObject({ init: { status: 409 } });
+
+  const reactivated = await usersAction(
+    routeArgs(post({
+      csrfToken: administrator.csrfToken,
+      intent: "reactivate-member",
+      targetUsername: "route.access",
+    })),
+  );
+  expect(reactivated).toMatchObject({
+    data: {
+      accessChanged: { action: "reactivated", username: "route.access" },
+    },
+    init: { status: 200 },
+  });
+  const repeatedReactivate = await usersAction(
+    routeArgs(post({
+      csrfToken: administrator.csrfToken,
+      intent: "reactivate-member",
+      targetUsername: "route.access",
+    })),
+  );
+  expect(repeatedReactivate).toMatchObject({ init: { status: 409 } });
+  await expect(
+    authentication.login(
+      "route.access",
+      initialPassword,
+      "203.0.113.187",
+    ),
+  ).resolves.toMatchObject({
+    ok: true,
+    session: { user: { passwordChangeRequired: true } },
+  });
+});
