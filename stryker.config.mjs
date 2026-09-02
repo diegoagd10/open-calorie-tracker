@@ -29,6 +29,7 @@ const config = {
   ],
   concurrency: 4,
   coverageAnalysis: "perTest",
+  ignoreStatic: true,
   incremental: true,
   incrementalFile: "reports/stryker-incremental.json",
   reporters: ["progress", "html", "json"],
