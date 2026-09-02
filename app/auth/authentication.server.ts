@@ -56,7 +56,7 @@ function registrationWindowMs(): number {
 export type CredentialUser = CredentialRecord;
 
 export type UserRole = (typeof users.$inferSelect)["role"];
-export type AccountAccessState = (typeof users.$inferSelect)["accessState"];
+type AccountAccessState = (typeof users.$inferSelect)["accessState"];
 type MemberAccessAction = "disable" | "reactivate";
 type MemberAccessStaleError = "already-active" | "already-disabled";
 
