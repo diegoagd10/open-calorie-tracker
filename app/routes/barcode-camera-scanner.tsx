@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
-import { isSupportedCommercialBarcode } from "../catalog/barcode";
+import { hasValidGtinCheckDigit } from "../catalog/barcode";
 import type {
   BarcodeDecoder,
   BarcodeDecoderSession,
@@ -23,6 +23,34 @@ type ScannerState =
       title: string;
     };
 
+type NumericCameraCapability = {
+  max: number;
+  min: number;
+  step?: number;
+};
+
+type EnhancedCameraCapabilities = MediaTrackCapabilities & {
+  focusMode?: string[];
+  torch?: boolean;
+  zoom?: NumericCameraCapability;
+};
+
+type EnhancedCameraConstraintSet = MediaTrackConstraintSet & {
+  focusMode?: string;
+  torch?: boolean;
+  zoom?: number;
+};
+
+type CameraEnhancements = {
+  torchAvailable: boolean;
+  torchEnabled: boolean;
+};
+
+const noCameraEnhancements: CameraEnhancements = {
+  torchAvailable: false,
+  torchEnabled: false,
+};
+
 function scannerError(
   title: string,
   message: string,
@@ -33,8 +61,68 @@ function scannerError(
 
 const cameraConstraints: MediaStreamConstraints = {
   audio: false,
-  video: { facingMode: { ideal: "environment" } },
+  video: {
+    facingMode: { ideal: "environment" },
+    frameRate: { ideal: 30 },
+    height: { ideal: 1080 },
+    width: { ideal: 1920 },
+  },
 };
+
+function validZoomCapability(
+  value: unknown,
+): value is NumericCameraCapability {
+  // Stryker disable next-line ConditionalExpression: non-object primitives expose no finite min/max and therefore reach the same false result through the range checks.
+  if (!value || typeof value !== "object") return false;
+  const range = value as Partial<NumericCameraCapability>;
+  return Number.isFinite(range.min) && Number.isFinite(range.max) &&
+    range.min! <= range.max!;
+}
+
+function preferredZoom(capability: NumericCameraCapability): number {
+  return Math.min(capability.max, Math.max(capability.min, 1.5));
+}
+
+async function configureCameraTrack(
+  track: MediaStreamTrack | undefined,
+): Promise<CameraEnhancements> {
+  // Stryker disable ConditionalExpression,LogicalOperator,BlockStatement: each missing capability API deliberately selects the same enhancement-free fallback; the runtime combinations are covered as one contract below.
+  if (
+    !track ||
+    typeof track.applyConstraints !== "function" ||
+    typeof track.getCapabilities !== "function"
+  ) {
+    return noCameraEnhancements;
+  }
+  // Stryker restore ConditionalExpression,LogicalOperator,BlockStatement
+  let capabilities: EnhancedCameraCapabilities;
+  try {
+    capabilities = track.getCapabilities();
+  } catch {
+    return noCameraEnhancements;
+  }
+  const enhancements: EnhancedCameraConstraintSet = {};
+
+  if (capabilities.focusMode?.includes("continuous")) {
+    enhancements.focusMode = "continuous";
+  }
+  if (validZoomCapability(capabilities.zoom)) {
+    enhancements.zoom = preferredZoom(capabilities.zoom);
+  }
+
+  if (Object.keys(enhancements).length > 0) {
+    try {
+      await track.applyConstraints({ advanced: [enhancements] });
+    } catch {
+      // Camera enhancements are progressive; decoding still works without them.
+    }
+  }
+
+  return {
+    torchAvailable: capabilities.torch === true,
+    torchEnabled: false,
+  };
+}
 
 function cameraFailure(error: unknown): Extract<ScannerState, { phase: "error" }> {
   // Stryker disable next-line StringLiteral: every non-Error input takes the same generic failure path regardless of its placeholder name.
@@ -89,13 +177,14 @@ export function createBarcodeCameraScanner(ports: ScannerPorts) {
     stopRequested?: boolean;
   }) {
     const [state, setState] = useState<ScannerState>({ phase: "idle" });
+    const [cameraEnhancements, setCameraEnhancements] =
+      useState<CameraEnhancements>(noCameraEnhancements);
     const activeControlRef = useRef<HTMLButtonElement>(null);
+    const cameraTrackRef = useRef<MediaStreamTrack | null>(null);
     const decoderSessionRef = useRef<BarcodeDecoderSession | null>(null);
     // Stryker disable next-line BooleanLiteral: every scan start resets this value before it can become observable.
     const detectionCompletedRef = useRef(false);
     const generationRef = useRef(0);
-    const lastCandidateRef = useRef<string | undefined>(undefined);
-    const matchingReadsRef = useRef(0);
     const streamRef = useRef<MediaStream | null>(null);
     const videoRef = useRef<HTMLVideoElement>(null);
 
@@ -106,15 +195,11 @@ export function createBarcodeCameraScanner(ports: ScannerPorts) {
 
       const stream = streamRef.current;
       streamRef.current = null;
+      cameraTrackRef.current = null;
       stream?.getTracks().forEach((track) => track.stop());
 
       // Stryker disable next-line ConditionalExpression: a missing detached video ref has no srcObject to clear.
       if (videoRef.current) videoRef.current.srcObject = null;
-    }
-
-    function resetCandidates() {
-      lastCandidateRef.current = undefined;
-      matchingReadsRef.current = 0;
     }
 
     function cancelCamera() {
@@ -123,12 +208,27 @@ export function createBarcodeCameraScanner(ports: ScannerPorts) {
       setState({ phase: "idle" });
     }
 
+    async function toggleTorch() {
+      const track = cameraTrackRef.current;
+      if (!track) return;
+      const torchEnabled = !cameraEnhancements.torchEnabled;
+      try {
+        const constraint: EnhancedCameraConstraintSet = { torch: torchEnabled };
+        await track.applyConstraints({ advanced: [constraint] });
+        if (cameraTrackRef.current === track) {
+          setCameraEnhancements((current) => ({ ...current, torchEnabled }));
+        }
+      } catch {
+        // Keep scanning if this browser advertises but rejects torch control.
+      }
+    }
+
     async function startCamera() {
       if (stopRequested) return;
       detectionCompletedRef.current = false;
       const generation = generationRef.current + 1;
       generationRef.current = generation;
-      resetCandidates();
+      setCameraEnhancements(noCameraEnhancements);
       setState({ phase: "starting" });
 
       let decoder: BarcodeDecoder;
@@ -153,6 +253,14 @@ export function createBarcodeCameraScanner(ports: ScannerPorts) {
         return;
       }
       streamRef.current = stream;
+      const cameraTrack = stream.getVideoTracks()[0];
+      cameraTrackRef.current = cameraTrack ?? null;
+      const enhancements = await configureCameraTrack(cameraTrack);
+      if (generationRef.current !== generation) {
+        stopResources();
+        return;
+      }
+      setCameraEnhancements(enhancements);
 
       const video = videoRef.current;
       if (!video) {
@@ -177,17 +285,7 @@ export function createBarcodeCameraScanner(ports: ScannerPorts) {
           (barcode) => {
             if (generationRef.current !== generation) return;
             const supportedBarcode = barcode.trim();
-            if (!isSupportedCommercialBarcode(supportedBarcode)) {
-              resetCandidates();
-              return;
-            }
-            if (lastCandidateRef.current === supportedBarcode) {
-              matchingReadsRef.current += 1;
-            } else {
-              lastCandidateRef.current = supportedBarcode;
-              matchingReadsRef.current = 1;
-            }
-            if (matchingReadsRef.current < 2) return;
+            if (!hasValidGtinCheckDigit(supportedBarcode)) return;
 
             detectionCompletedRef.current = true;
             // Stryker disable next-line AssignmentOperator: either arithmetic direction invalidates this terminal scan generation, and this component exposes no detected-state restart.
@@ -198,6 +296,7 @@ export function createBarcodeCameraScanner(ports: ScannerPorts) {
           },
           () => {
             if (generationRef.current !== generation) return;
+            // Stryker disable next-line AssignmentOperator: either arithmetic direction invalidates this terminal decoder generation, and restart establishes a new generation.
             generationRef.current += 1;
             stopResources();
             setState(decoderFailure);
@@ -258,16 +357,21 @@ export function createBarcodeCameraScanner(ports: ScannerPorts) {
             access requires permission and a secure browser connection.
           </p>
         </div>
-        <video
-          aria-label="Live barcode camera preview"
-          className={styles.barcodeScannerPreview}
+        <div
+          className={styles.barcodeScannerPreviewFrame}
           hidden={!active}
-          muted
-          playsInline
-          ref={(video) => {
-            if (video) videoRef.current = video;
-          }}
-        />
+        >
+          <video
+            aria-label="Live barcode camera preview"
+            className={styles.barcodeScannerPreview}
+            muted
+            playsInline
+            ref={(video) => {
+              if (video) videoRef.current = video;
+            }}
+          />
+          <span aria-hidden="true" className={styles.barcodeScannerGuide} />
+        </div>
         {state.phase === "idle" ? (
           <button
             className={styles.cameraButton}
@@ -301,7 +405,20 @@ export function createBarcodeCameraScanner(ports: ScannerPorts) {
             role="status"
           >
             <strong>Point the camera at the barcode</strong>
-            <p>Hold the package steady until the code is recognized.</p>
+            <p>Fill the guide with the barcode and avoid glare.</p>
+            {cameraEnhancements.torchAvailable ? (
+              <div className={styles.barcodeScannerCameraControls}>
+                <button
+                  className={styles.secondaryButton}
+                  onClick={() => void toggleTorch()}
+                  type="button"
+                >
+                  {cameraEnhancements.torchEnabled
+                    ? "Turn light off"
+                    : "Turn light on"}
+                </button>
+              </div>
+            ) : null}
             <button
               className={styles.secondaryButton}
               onClick={cancelCamera}

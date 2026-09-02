@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return -- react-test-renderer host props are untyped */
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return -- react-test-renderer host props are untyped */
 import { createElement } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { expect, test, vi } from "vitest";
@@ -17,6 +17,14 @@ class VideoElementDouble {
 }
 
 class TrackDouble {
+  constructor(
+    private readonly capabilities: Record<string, unknown> = {},
+    private readonly settings: Record<string, unknown> = {},
+  ) {}
+
+  applyConstraints = vi.fn(async () => undefined);
+  getCapabilities = vi.fn(() => this.capabilities);
+  getSettings = vi.fn(() => this.settings);
   stop = vi.fn();
 }
 
@@ -35,12 +43,18 @@ function button(renderer: ReactTestRenderer, name: string) {
 function scannerHarness(options?: {
   decoderFailure?: Error;
   mediaFailure?: Error;
+  trackCapabilities?: Record<string, unknown>;
+  trackSettings?: Record<string, unknown>;
   withoutVideo?: boolean;
 }) {
   const video = new VideoElementDouble();
-  const track = new TrackDouble();
+  const track = new TrackDouble(
+    options?.trackCapabilities,
+    options?.trackSettings,
+  );
   const stream = {
     getTracks: () => [track],
+    getVideoTracks: () => [track],
   } as unknown as MediaStream;
   let reportCandidate: ((barcode: string) => void) | undefined;
   let reportTerminalError: ((error: unknown) => void) | undefined;
@@ -101,7 +115,12 @@ test("camera access starts only after the explicit action and never requests aud
 
   expect(harness.requestCamera).toHaveBeenCalledWith({
     audio: false,
-    video: { facingMode: { ideal: "environment" } },
+    video: {
+      facingMode: { ideal: "environment" },
+      frameRate: { ideal: 30 },
+      height: { ideal: 1080 },
+      width: { ideal: 1920 },
+    },
   });
   expect(harness.video.srcObject).toBeTruthy();
   expect(harness.video.play).toHaveBeenCalledOnce();
@@ -110,7 +129,7 @@ test("camera access starts only after the explicit action and never requests aud
   await act(async () => harness.renderer.unmount());
 });
 
-test("two matching local reads deliver one manual-equivalent barcode and stop every resource", async () => {
+test("one checksum-valid local read delivers a barcode and stops every resource", async () => {
   const harness = scannerHarness();
   await act(async () => button(harness.renderer, "Use camera").props.onClick());
 
@@ -119,34 +138,229 @@ test("two matching local reads deliver one manual-equivalent barcode and stop ev
   await act(async () => reportCandidate("not-a-barcode"));
   await act(async () => reportCandidate("not-a-barcode"));
   expect(harness.onDetected).not.toHaveBeenCalled();
-  await act(async () => reportCandidate("034000470693"));
-  await act(async () => reportCandidate("not-a-barcode"));
-  await act(async () => reportCandidate("034000470693"));
-  expect(harness.onDetected).not.toHaveBeenCalled();
-
-  await act(async () => reportCandidate(" 0000000000004 "));
-  expect(harness.onDetected).not.toHaveBeenCalled();
-  expect(harness.track.stop).not.toHaveBeenCalled();
-
   await act(async () => reportCandidate("0000000000004"));
+  await act(async () => reportCandidate("0000000000004"));
+  expect(harness.onDetected).not.toHaveBeenCalled();
+
+  await act(async () => reportCandidate(" 034000470693 "));
 
   expect(harness.onDetected).toHaveBeenCalledOnce();
-  expect(harness.onDetected).toHaveBeenCalledWith("0000000000004");
+  expect(harness.onDetected).toHaveBeenCalledWith("034000470693");
   expect(harness.stopDecoder).toHaveBeenCalledOnce();
   expect(harness.track.stop).toHaveBeenCalledOnce();
   expect(harness.video.srcObject).toBeNull();
-  expect(text(harness.renderer.root)).toContain("Recognized 0000000000004");
-  await act(async () => reportCandidate("0000000000004"));
+  expect(text(harness.renderer.root)).toContain("Recognized 034000470693");
+  await act(async () => reportCandidate("034000470693"));
   await act(async () => reportTerminalError(new Error("late decoder error")));
   expect(harness.onDetected).toHaveBeenCalledOnce();
-  expect(text(harness.renderer.root)).toContain("Recognized 0000000000004");
+  expect(text(harness.renderer.root)).toContain("Recognized 034000470693");
   act(() => {
     harness.renderer.update(createElement(harness.Scanner, {
       onDetected: harness.onDetected,
       stopRequested: true,
     }));
   });
-  expect(text(harness.renderer.root)).toContain("Recognized 0000000000004");
+  expect(text(harness.renderer.root)).toContain("Recognized 034000470693");
+  await act(async () => harness.renderer.unmount());
+});
+
+test("supported cameras receive continuous focus, automatic zoom, and torch control", async () => {
+  const harness = scannerHarness({
+    trackCapabilities: {
+      focusMode: ["manual", "continuous"],
+      torch: true,
+      zoom: { max: 4, min: 1, step: 0.25 },
+    },
+    trackSettings: { zoom: 1 },
+  });
+
+  await act(async () => button(harness.renderer, "Use camera").props.onClick());
+
+  expect(harness.track.applyConstraints).toHaveBeenCalledWith({
+    advanced: [{ focusMode: "continuous", zoom: 1.5 }],
+  });
+  expect(button(harness.renderer, "Turn light on")).toBeTruthy();
+  expect(harness.renderer.root.findAllByProps({
+    "aria-label": "Camera zoom",
+  })).toHaveLength(0);
+
+  await act(async () => button(harness.renderer, "Turn light on").props.onClick());
+  expect(harness.track.applyConstraints).toHaveBeenLastCalledWith({
+    advanced: [{ torch: true }],
+  });
+  expect(button(harness.renderer, "Turn light off")).toBeTruthy();
+  await act(async () => harness.renderer.unmount());
+});
+
+test("preferred zoom is clamped to each camera's advertised range", async () => {
+  const lowMaximum = scannerHarness({
+    trackCapabilities: { zoom: { max: 1.25, min: 1 } },
+  });
+  await act(async () => button(
+    lowMaximum.renderer,
+    "Use camera",
+  ).props.onClick());
+  expect(lowMaximum.track.applyConstraints).toHaveBeenCalledWith({
+    advanced: [{ zoom: 1.25 }],
+  });
+  await act(async () => lowMaximum.renderer.unmount());
+
+  const highMinimum = scannerHarness({
+    trackCapabilities: { zoom: { max: 4, min: 2 } },
+  });
+  await act(async () => button(
+    highMinimum.renderer,
+    "Use camera",
+  ).props.onClick());
+  expect(highMinimum.track.applyConstraints).toHaveBeenCalledWith({
+    advanced: [{ zoom: 2 }],
+  });
+  await act(async () => highMinimum.renderer.unmount());
+
+  const fixedZoom = scannerHarness({
+    trackCapabilities: { zoom: { max: 2, min: 2 } },
+  });
+  await act(async () => button(fixedZoom.renderer, "Use camera").props.onClick());
+  expect(fixedZoom.track.applyConstraints).toHaveBeenCalledWith({
+    advanced: [{ zoom: 2 }],
+  });
+  await act(async () => fixedZoom.renderer.unmount());
+});
+
+test.each([
+  null,
+  "1-4",
+  {},
+  { max: 4 },
+  { min: 1 },
+  { max: Number.POSITIVE_INFINITY, min: 1 },
+  { max: 4, min: Number.NaN },
+  { max: 1, min: 2 },
+])("invalid zoom capability %j is ignored", async (zoom) => {
+  const harness = scannerHarness({
+    trackCapabilities: { torch: "true", zoom },
+  });
+  await act(async () => button(harness.renderer, "Use camera").props.onClick());
+
+  expect(harness.track.applyConstraints).not.toHaveBeenCalled();
+  expect(harness.renderer.root.findAllByProps({
+    "aria-label": "Camera zoom",
+  })).toHaveLength(0);
+  expect(text(harness.renderer.root)).not.toContain("Turn light on");
+  await act(async () => harness.renderer.unmount());
+});
+
+test("camera capability APIs can be absent or throw without blocking scanning", async () => {
+  for (const method of [
+    "applyConstraints",
+    "getCapabilities",
+  ] as const) {
+    const harness = scannerHarness();
+    Object.defineProperty(harness.track, method, { value: undefined });
+    await act(async () => button(harness.renderer, "Use camera").props.onClick());
+    expect(harness.decoder.start).toHaveBeenCalledOnce();
+    expect(text(harness.renderer.root)).toContain(
+      "Point the camera at the barcode",
+    );
+    await act(async () => harness.renderer.unmount());
+  }
+
+  const throwing = scannerHarness();
+  throwing.track.getCapabilities.mockImplementation(() => {
+    throw new Error("capabilities unavailable");
+  });
+  await act(async () => button(throwing.renderer, "Use camera").props.onClick());
+  expect(throwing.decoder.start).toHaveBeenCalledOnce();
+  expect(throwing.track.applyConstraints).not.toHaveBeenCalled();
+  await act(async () => throwing.renderer.unmount());
+});
+
+test("unsupported or rejected camera enhancements do not prevent scanning", async () => {
+  const unsupported = scannerHarness();
+  await act(async () => button(unsupported.renderer, "Use camera").props.onClick());
+  expect(unsupported.track.applyConstraints).not.toHaveBeenCalled();
+  expect(text(unsupported.renderer.root)).not.toContain("Turn light on");
+  expect(unsupported.renderer.root.findAllByProps({
+    "aria-label": "Camera zoom",
+  })).toHaveLength(0);
+  expect(unsupported.renderer.root.findAll((node) =>
+    typeof node.props.className === "string" &&
+    node.props.className.includes("barcodeScannerCameraControls")
+  )).toHaveLength(0);
+  await act(async () => unsupported.renderer.unmount());
+
+  const rejected = scannerHarness({
+    trackCapabilities: {
+      focusMode: ["continuous"],
+      zoom: { max: 3, min: 1, step: 0.25 },
+    },
+  });
+  rejected.track.applyConstraints.mockRejectedValueOnce(
+    new DOMException("unsupported", "OverconstrainedError"),
+  );
+  await act(async () => button(rejected.renderer, "Use camera").props.onClick());
+  expect(text(rejected.renderer.root)).toContain("Point the camera at the barcode");
+  expect(rejected.decoder.start).toHaveBeenCalledOnce();
+  expect(rejected.renderer.root.findAllByProps({
+    "aria-label": "Camera zoom",
+  })).toHaveLength(0);
+  await act(async () => rejected.renderer.unmount());
+});
+
+test("cancellation during camera configuration closes the stream before decoding", async () => {
+  const harness = scannerHarness({
+    trackCapabilities: { zoom: { max: 4, min: 1 } },
+  });
+  let releaseEnhancements!: () => void;
+  harness.track.applyConstraints.mockImplementationOnce(() => new Promise((resolve) => {
+    releaseEnhancements = () => resolve(undefined);
+  }));
+
+  await act(async () => {
+    void button(harness.renderer, "Use camera").props.onClick();
+    await Promise.resolve();
+  });
+  await act(async () => button(harness.renderer, "Cancel camera").props.onClick());
+  await act(async () => releaseEnhancements());
+
+  expect(harness.track.stop).toHaveBeenCalledOnce();
+  expect(harness.decoder.start).not.toHaveBeenCalled();
+  expect(text(harness.renderer.root)).toContain("Use camera");
+  await act(async () => harness.renderer.unmount());
+});
+
+test("a rejected torch change retains the last working control", async () => {
+  const harness = scannerHarness({
+    trackCapabilities: {
+      torch: true,
+      zoom: { max: 4, min: 1, step: 0.25 },
+    },
+  });
+  await act(async () => button(harness.renderer, "Use camera").props.onClick());
+  harness.track.applyConstraints.mockRejectedValue(
+    new DOMException("rejected", "OverconstrainedError"),
+  );
+
+  await act(async () => button(harness.renderer, "Turn light on").props.onClick());
+  expect(button(harness.renderer, "Turn light on")).toBeTruthy();
+  await act(async () => harness.renderer.unmount());
+});
+
+test("camera controls cannot update state after cancellation", async () => {
+  const harness = scannerHarness({
+    trackCapabilities: {
+      torch: true,
+      zoom: { max: 4, min: 1, step: 0.25 },
+    },
+  });
+  await act(async () => button(harness.renderer, "Use camera").props.onClick());
+  const torchClick = button(harness.renderer, "Turn light on").props.onClick;
+  await act(async () => button(harness.renderer, "Cancel camera").props.onClick());
+
+  const calls = harness.track.applyConstraints.mock.calls.length;
+  await act(async () => torchClick());
+  expect(harness.track.applyConstraints).toHaveBeenCalledTimes(calls);
+  expect(text(harness.renderer.root)).toContain("Use camera");
   await act(async () => harness.renderer.unmount());
 });
 
@@ -281,7 +495,7 @@ test("callbacks from a cancelled generation cannot affect a restarted scan", asy
   await act(async () => button(harness.renderer, "Use camera").props.onClick());
   const currentCandidate = harness.reportCandidate();
 
-  await act(async () => staleCandidate("034000470693"));
+  await act(async () => staleCandidate("0000000000004"));
   await act(async () => staleCandidate("034000470693"));
   await act(async () => staleTerminalError(new Error("stale")));
   expect(harness.onDetected).not.toHaveBeenCalled();
@@ -429,7 +643,7 @@ test("an unavailable or terminal decoder closes the camera and offers safe recov
   await act(async () => button(terminal.renderer, "Use camera").props.onClick());
   const staleCandidate = terminal.reportCandidate();
   const staleTerminalError = terminal.reportTerminalError();
-  await act(async () => staleCandidate("034000470693"));
+  await act(async () => staleCandidate("0000000000004"));
   await act(async () => staleTerminalError(new Error("stopped")));
   expect(text(terminal.renderer.root)).toContain("Barcode decoder unavailable");
   expect(terminal.stopDecoder).toHaveBeenCalledOnce();
@@ -437,12 +651,12 @@ test("an unavailable or terminal decoder closes the camera and offers safe recov
   await act(async () => button(terminal.renderer, "Retry camera").props.onClick());
   const currentCandidate = terminal.reportCandidate();
   await act(async () => currentCandidate("034000470693"));
-  expect(terminal.onDetected).not.toHaveBeenCalled();
+  expect(terminal.onDetected).toHaveBeenCalledOnce();
   await act(async () => staleCandidate("034000470693"));
   await act(async () => staleCandidate("034000470693"));
   await act(async () => staleTerminalError(new Error("still stale")));
-  expect(terminal.onDetected).not.toHaveBeenCalled();
-  expect(text(terminal.renderer.root)).toContain("Point the camera at the barcode");
+  expect(terminal.onDetected).toHaveBeenCalledOnce();
+  expect(text(terminal.renderer.root)).toContain("Recognized 034000470693");
   await act(async () => terminal.renderer.unmount());
 });
 

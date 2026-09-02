@@ -2,9 +2,9 @@
 
 exports[`Add Food offers search and barcode paths before either provider runs 1`] = `"aff0ed8649c1595cb2e85b83d4b1c1b733c9fd967add3618d9474aa33b079302"`;
 
-exports[`barcode mode separates confirmation from scanning while keeping errors recoverable 1`] = `"8d99600f3f4b7d9459a04b8c152fd934997e68b8c0908f1b1ac48379220c1d02"`;
+exports[`barcode mode separates confirmation from scanning while keeping errors recoverable 1`] = `"76946bfeef20a05b3a9bc38f381a8fd9eee33fe910ba71059de060f1828b961b"`;
 
-exports[`barcode mode separates confirmation from scanning while keeping errors recoverable 2`] = `"b6af6c102106c1acd0f9f1723f566a529f0271b77d1c9454bb92a2a22d4cd1b2"`;
+exports[`barcode mode separates confirmation from scanning while keeping errors recoverable 2`] = `"7e56d8d5f45e0b6baad523d184b9d1815746a9d907966d840f78205ee650dc4b"`;
 
 exports[`barcode mode separates confirmation from scanning while keeping errors recoverable 3`] = `"7a7b835b740727984258773327b422c2f75116870ccad92df4b9e0a2143eff55"`;
 
