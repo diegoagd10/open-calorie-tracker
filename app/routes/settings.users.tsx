@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { data, Form } from "react-router";
 
 import { AppNavigation } from "../app-navigation";
@@ -31,25 +31,46 @@ type UsersActionData = {
   username?: string;
 };
 
-type UsersActionIntent =
-  | "create-member"
-  | "disable-member"
-  | "reactivate-member"
-  | "reset-member-password";
+const usersActionIntents = {
+  "create-member": true,
+  "disable-member": true,
+  "reactivate-member": true,
+  "reset-member-password": true,
+} as const;
+
+type UsersActionIntent = keyof typeof usersActionIntents;
 
 function parseUsersActionIntent(
   value: FormDataEntryValue | null,
 ): UsersActionIntent | undefined {
-  if (typeof value !== "string") return undefined;
-  switch (value) {
-    case "create-member":
-    case "disable-member":
-    case "reactivate-member":
-    case "reset-member-password":
-      return value;
-    default:
-      return undefined;
-  }
+  return typeof value === "string" && Object.hasOwn(usersActionIntents, value)
+    ? value as UsersActionIntent
+    : undefined;
+}
+
+function useMemberDialog() {
+  const [username, setUsername] = useState<string>();
+  const dialog = useRef<HTMLDialogElement | null>(null);
+  const trigger = useRef<HTMLButtonElement | null>(null);
+
+  useEffect(() => {
+    if (username && !dialog.current?.open) dialog.current?.showModal();
+  }, [username]);
+
+  const dismiss = useCallback(() => setUsername(undefined), []);
+  const cancel = useCallback(() => {
+    setUsername(undefined);
+    queueMicrotask(() => trigger.current?.focus());
+  }, []);
+  const open = useCallback(
+    (nextUsername: string, nextTrigger: HTMLButtonElement) => {
+      trigger.current = nextTrigger;
+      setUsername(nextUsername);
+    },
+    [],
+  );
+
+  return { cancel, dialog, dismiss, open, username };
 }
 
 export function meta() {
@@ -242,25 +263,11 @@ export async function action({ request }: Route.ActionArgs) {
 }
 
 export default function Users({ actionData, loaderData }: Route.ComponentProps) {
-  const [confirmingUsername, setConfirmingUsername] = useState<string>();
-  const [resettingUsername, setResettingUsername] = useState<string>();
-  const confirmationDialog = useRef<HTMLDialogElement | null>(null);
-  const passwordResetDialog = useRef<HTMLDialogElement | null>(null);
-  const disableTrigger = useRef<HTMLButtonElement | null>(null);
-  const passwordResetTrigger = useRef<HTMLButtonElement | null>(null);
+  const disableDialog = useMemberDialog();
+  const passwordResetDialog = useMemberDialog();
   const passwordResetSubmissionPending = useRef(false);
-
-  useEffect(() => {
-    if (confirmingUsername && !confirmationDialog.current?.open) {
-      confirmationDialog.current?.showModal();
-    }
-  }, [confirmingUsername]);
-
-  useEffect(() => {
-    if (resettingUsername && !passwordResetDialog.current?.open) {
-      passwordResetDialog.current?.showModal();
-    }
-  }, [resettingUsername]);
+  const dismissPasswordReset = passwordResetDialog.dismiss;
+  const resettingUsername = passwordResetDialog.username;
 
   useEffect(() => {
     if (!passwordResetSubmissionPending.current) return;
@@ -269,19 +276,9 @@ export default function Users({ actionData, loaderData }: Route.ComponentProps) 
       actionData?.passwordResetUsername &&
       actionData.passwordResetUsername === resettingUsername
     ) {
-      setResettingUsername(undefined);
+      dismissPasswordReset();
     }
-  }, [actionData, resettingUsername]);
-
-  function cancelDisable() {
-    setConfirmingUsername(undefined);
-    queueMicrotask(() => disableTrigger.current?.focus());
-  }
-
-  function cancelPasswordReset() {
-    setResettingUsername(undefined);
-    queueMicrotask(() => passwordResetTrigger.current?.focus());
-  }
+  }, [actionData, dismissPasswordReset, resettingUsername]);
 
   return (
     <div className={shellStyles.shell}>
@@ -453,8 +450,10 @@ export default function Users({ actionData, loaderData }: Route.ComponentProps) 
                         aria-label={`Reset password for ${member.username}`}
                         className={styles.resetButton}
                         onClick={(event) => {
-                          passwordResetTrigger.current = event.currentTarget;
-                          setResettingUsername(member.username);
+                          passwordResetDialog.open(
+                            member.username,
+                            event.currentTarget,
+                          );
                         }}
                         type="button"
                       >
@@ -465,8 +464,10 @@ export default function Users({ actionData, loaderData }: Route.ComponentProps) 
                           aria-label={`Disable ${member.username}`}
                           className={styles.disableButton}
                           onClick={(event) => {
-                            disableTrigger.current = event.currentTarget;
-                            setConfirmingUsername(member.username);
+                            disableDialog.open(
+                              member.username,
+                              event.currentTarget,
+                            );
                           }}
                           type="button"
                         >
@@ -505,29 +506,29 @@ export default function Users({ actionData, loaderData }: Route.ComponentProps) 
             </ul>
           )}
         </section>
-        {confirmingUsername ? (
+        {disableDialog.username ? (
           <dialog
             aria-labelledby="disable-member-heading"
             aria-modal="true"
             className={styles.confirmationDialog}
             onCancel={(event) => {
               event.preventDefault();
-              cancelDisable();
+              disableDialog.cancel();
             }}
-            ref={confirmationDialog}
+            ref={disableDialog.dialog}
           >
             <h2 id="disable-member-heading">
-              Disable {confirmingUsername}
+              Disable {disableDialog.username}
             </h2>
             <p>
               This immediately signs the member out on every device. Enter the
-              complete normalized username <strong>{confirmingUsername}</strong>
+              complete normalized username <strong>{disableDialog.username}</strong>
               {" "}to confirm.
             </p>
             <Form
               className={styles.confirmationForm}
               method="post"
-              onSubmit={() => setConfirmingUsername(undefined)}
+              onSubmit={disableDialog.dismiss}
             >
               <input
                 name="csrfToken"
@@ -538,7 +539,7 @@ export default function Users({ actionData, loaderData }: Route.ComponentProps) 
               <input
                 name="targetUsername"
                 type="hidden"
-                value={confirmingUsername}
+                value={disableDialog.username}
               />
               <label>
                 <span>Normalized username</span>
@@ -550,7 +551,9 @@ export default function Users({ actionData, loaderData }: Route.ComponentProps) 
                 />
               </label>
               <div className={styles.confirmationActions}>
-                <button onClick={cancelDisable} type="button">Cancel</button>
+                <button onClick={disableDialog.cancel} type="button">
+                  Cancel
+                </button>
                 <button className={styles.confirmDisableButton} type="submit">
                   Disable member
                 </button>
@@ -565,9 +568,9 @@ export default function Users({ actionData, loaderData }: Route.ComponentProps) 
             className={styles.confirmationDialog}
             onCancel={(event) => {
               event.preventDefault();
-              cancelPasswordReset();
+              passwordResetDialog.cancel();
             }}
-            ref={passwordResetDialog}
+            ref={passwordResetDialog.dialog}
           >
             <h2 id="reset-member-password-heading">
               Reset password for {resettingUsername}
@@ -635,7 +638,7 @@ export default function Users({ actionData, loaderData }: Route.ComponentProps) 
                 </p>
               ) : null}
               <div className={styles.confirmationActions}>
-                <button onClick={cancelPasswordReset} type="button">
+                <button onClick={passwordResetDialog.cancel} type="button">
                   Cancel
                 </button>
                 <button className={styles.confirmResetButton} type="submit">
