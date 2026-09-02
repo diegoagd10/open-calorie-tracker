@@ -1,28 +1,16 @@
 import AxeBuilder from "@axe-core/playwright";
-import { expect, test, type Page } from "@playwright/test";
-import BetterSqlite3 from "better-sqlite3";
-import { readdirSync, statSync } from "node:fs";
-import path from "node:path";
+import type { Page } from "@playwright/test";
+import {
+  bootstrapOrSignInBrowserTestUser,
+  expect,
+  openBrowserTestDatabase,
+  test,
+} from "./reset-database";
 
 const validPassword = "correct horse 🔐 battery";
 
-async function register(page: Page, username: string) {
-  await page.goto("/register");
-  await page.getByLabel("Username").fill(username);
-  await page.getByLabel("Password", { exact: true }).fill(validPassword);
-  await page.getByLabel("Confirm password").fill(validPassword);
-  await page.getByRole("button", { name: "Create private account" }).click();
-  await expect(page).toHaveURL("/setup");
-}
-
-function openBrowserTestDatabase(options: { writable?: boolean } = {}) {
-  const directory = path.resolve("data/playwright-tests");
-  const databasePath = readdirSync(directory)
-    .filter((name) => /^application\..+\.sqlite$/.test(name))
-    .map((name) => path.join(directory, name))
-    .sort((left, right) => statSync(right).mtimeMs - statSync(left).mtimeMs)[0];
-  if (!databasePath) throw new Error("browser test database was not created");
-  return new BetterSqlite3(databasePath, { readonly: !options.writable });
+async function reachSetupAsTestUser(page: Page, username: string) {
+  await bootstrapOrSignInBrowserTestUser(page, username, validPassword);
 }
 
 test("a new account must complete the privacy-minimal Food Log setup", async ({
@@ -30,7 +18,7 @@ test("a new account must complete the privacy-minimal Food Log setup", async ({
   page,
 }) => {
   await context.setExtraHTTPHeaders({ "X-Test-Client-IP": "203.0.113.70" });
-  await register(page, "setup.required");
+  await reachSetupAsTestUser(page, "setup.required");
 
   await expect(page).toHaveURL("/setup");
   await expect(
@@ -72,7 +60,7 @@ test("US setup creates fixed-point records on the previous local date at a bound
   page,
 }) => {
   await context.setExtraHTTPHeaders({ "X-Test-Client-IP": "203.0.113.71" });
-  await register(page, "setup.us");
+  await reachSetupAsTestUser(page, "setup.us");
   await page.getByLabel("Time zone").fill("Pacific/Honolulu");
 
   await page.getByRole("button", { name: "Finish setup" }).click();
@@ -82,7 +70,7 @@ test("US setup creates fixed-point records on the previous local date at a bound
     page.getByRole("heading", { name: "Today's Food Log" }),
   ).toBeVisible();
 
-  const database = openBrowserTestDatabase();
+  const database = openBrowserTestDatabase({ readonly: true });
   const setup = database
     .prepare(
       `SELECT
@@ -125,7 +113,7 @@ test("metric setup converts fractional values on the next side of a local-date b
   page,
 }) => {
   await context.setExtraHTTPHeaders({ "X-Test-Client-IP": "203.0.113.72" });
-  await register(page, "setup.metric");
+  await reachSetupAsTestUser(page, "setup.metric");
 
   await page.getByLabel("Metric", { exact: true }).check();
   await expect(
@@ -144,7 +132,7 @@ test("metric setup converts fractional values on the next side of a local-date b
   await page.getByRole("button", { name: "Finish setup" }).click();
   await expect(page).toHaveURL("/");
 
-  const database = openBrowserTestDatabase();
+  const database = openBrowserTestDatabase({ readonly: true });
   const setup = database
     .prepare(
       `SELECT
@@ -187,7 +175,7 @@ test("bounded validation is accessible and an invalid submission persists nothin
   page,
 }) => {
   await context.setExtraHTTPHeaders({ "X-Test-Client-IP": "203.0.113.73" });
-  await register(page, "setup.invalid");
+  await reachSetupAsTestUser(page, "setup.invalid");
 
   const manipulatedStatus = await page.evaluate(async () => {
     const response = await fetch("/setup", {
@@ -226,7 +214,7 @@ test("bounded validation is accessible and an invalid submission persists nothin
   );
   await expect(page.getByLabel("Water target")).toHaveValue("500.001");
 
-  const database = openBrowserTestDatabase();
+  const database = openBrowserTestDatabase({ readonly: true });
   const persisted = database
     .prepare(
       `SELECT
@@ -248,10 +236,10 @@ test("a full-stack database failure rolls back the preference and Goal Version",
   page,
 }) => {
   await context.setExtraHTTPHeaders({ "X-Test-Client-IP": "203.0.113.76" });
-  await register(page, "setup.rollback");
+  await reachSetupAsTestUser(page, "setup.rollback");
   await page.getByLabel("Time zone").fill("UTC");
 
-  const database = openBrowserTestDatabase({ writable: true });
+  const database = openBrowserTestDatabase();
   const user = database
     .prepare("SELECT id FROM users WHERE username_normalized = ?")
     .get("setup.rollback") as { id: number };
@@ -271,7 +259,7 @@ test("a full-stack database failure rolls back the preference and Goal Version",
   await page.getByRole("button", { name: "Finish setup" }).click();
   expect((await failedSave).status()).toBe(500);
 
-  const persistedDatabase = openBrowserTestDatabase({ writable: true });
+  const persistedDatabase = openBrowserTestDatabase();
   const persisted = persistedDatabase
     .prepare(
       `SELECT
@@ -291,12 +279,12 @@ test("setup reads and writes remain scoped to the authenticated user", async ({
   page,
 }) => {
   await context.setExtraHTTPHeaders({ "X-Test-Client-IP": "203.0.113.74" });
-  await register(page, "setup.owner");
+  await reachSetupAsTestUser(page, "setup.owner");
   await page.getByLabel("Time zone").fill("UTC");
   await page.getByRole("button", { name: "Finish setup" }).click();
   await expect(page).toHaveURL("/");
 
-  const database = openBrowserTestDatabase();
+  const database = openBrowserTestDatabase({ readonly: true });
   const owner = database
     .prepare("SELECT id FROM users WHERE username_normalized = ?")
     .get("setup.owner") as { id: number };
@@ -305,7 +293,7 @@ test("setup reads and writes remain scoped to the authenticated user", async ({
   await page.getByRole("button", { name: "Sign out" }).click();
   await expect(page).toHaveURL("/login");
   await context.setExtraHTTPHeaders({ "X-Test-Client-IP": "203.0.113.75" });
-  await register(page, "setup.other");
+  await reachSetupAsTestUser(page, "setup.other");
   await page.goto(`/setup?userId=${owner.id}`);
   await expect(page).toHaveURL(`/setup?userId=${owner.id}`);
   await expect(page.getByText("setup.owner")).toHaveCount(0);
@@ -322,7 +310,7 @@ test("setup reads and writes remain scoped to the authenticated user", async ({
   await expect(page.getByText("Signed in as setup.other")).toBeVisible();
   await expect(page.getByText("setup.owner")).toHaveCount(0);
 
-  const persistedDatabase = openBrowserTestDatabase();
+  const persistedDatabase = openBrowserTestDatabase({ readonly: true });
   const goals = persistedDatabase
     .prepare(
       `SELECT

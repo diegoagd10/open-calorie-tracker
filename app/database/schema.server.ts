@@ -20,9 +20,26 @@ export const users = sqliteTable(
   {
     id: integer().primaryKey({ autoIncrement: true }),
     usernameNormalized: text("username_normalized").notNull(),
+    role: text({ enum: ["admin", "member"] }).notNull().default("member"),
+    accessState: text("access_state", { enum: ["active", "disabled"] })
+      .notNull()
+      .default("active"),
+    passwordChangeRequired: integer("password_change_required", {
+      mode: "boolean",
+    })
+      .notNull()
+      .default(false),
     createdAt: text("created_at").notNull(),
   },
   (table) => [
+    check("users_role_check", sql`role IN ('admin', 'member')`),
+    check(
+      "users_access_state_check",
+      sql`access_state IN ('active', 'disabled')`,
+    ),
+    uniqueIndex("users_single_admin_unique")
+      .on(table.role)
+      .where(sql`${table.role} = 'admin'`),
     uniqueIndex("users_username_normalized_unique").on(
       sql`${table.usernameNormalized} COLLATE NOCASE`,
     ),

@@ -62,17 +62,20 @@ export function ErrorBoundary({ error }: { error: unknown }) {
   }
 
   return (
-    <main className={readinessStyles.shell}>
-      <section
-        className={readinessStyles.panel}
-        aria-labelledby="error-heading"
-      >
-        <p className={readinessStyles.eyebrow}>Open Calory Tracker</p>
-        <h1 className={readinessStyles.heading} id="error-heading">
-          {heading}
-        </h1>
-        <p>{message}</p>
-      </section>
-    </main>
+    <>
+      <title>{`${heading} · Open Calory Tracker`}</title>
+      <main className={readinessStyles.shell}>
+        <section
+          className={readinessStyles.panel}
+          aria-labelledby="error-heading"
+        >
+          <p className={readinessStyles.eyebrow}>Open Calory Tracker</p>
+          <h1 className={readinessStyles.heading} id="error-heading">
+            {heading}
+          </h1>
+          <p>{message}</p>
+        </section>
+      </main>
+    </>
   );
 }

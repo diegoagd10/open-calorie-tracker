@@ -59,5 +59,5 @@ CREATE UNIQUE INDEX `food_entries_user_idempotency_unique` ON `food_entries` (`u
 CREATE INDEX `food_entries_user_date_order_index` ON `food_entries` (`user_id`,`food_log_date`,`local_event_time`,`created_at`,`id`);
 --> statement-breakpoint
 UPDATE `application_metadata`
-SET `value` = '9', `updated_at` = '2026-09-01T00:00:00.000Z'
+SET `value` = '12', `updated_at` = '2026-09-02T12:00:00.000Z'
 WHERE `key` = 'schema_version';

@@ -1,8 +1,11 @@
 import AxeBuilder from "@axe-core/playwright";
-import { expect, test, type Locator, type Page } from "@playwright/test";
-import BetterSqlite3 from "better-sqlite3";
-import { readdirSync, statSync } from "node:fs";
-import path from "node:path";
+import type { Locator, Page } from "@playwright/test";
+import {
+  bootstrapOrSignInBrowserTestUser,
+  expect,
+  openBrowserTestDatabase,
+  test,
+} from "./reset-database";
 
 const validPassword = "correct horse 🔐 battery";
 
@@ -16,16 +19,12 @@ async function expectNoSeriousAxeViolations(page: Page) {
   ).toEqual([]);
 }
 
-async function registerAndSetup(
+async function completeSetupForTestUser(
   page: Page,
   username: string,
   timeZone = "America/New_York",
 ) {
-  await page.goto("/register");
-  await page.getByLabel("Username").fill(username);
-  await page.getByLabel("Password", { exact: true }).fill(validPassword);
-  await page.getByLabel("Confirm password").fill(validPassword);
-  await page.getByRole("button", { name: "Create private account" }).click();
+  await bootstrapOrSignInBrowserTestUser(page, username, validPassword);
   await page.getByLabel("Time zone").fill(timeZone);
   await page.getByRole("button", { name: "Finish setup" }).click();
   await expect(page).toHaveURL("/");
@@ -35,17 +34,6 @@ async function openUsdaSearch(page: Page) {
   await page.getByRole("button", { name: "Add Food" }).click();
   await page.getByRole("link", { name: /Search for food/ }).click();
 }
-
-function browserTestDatabase() {
-  const directory = path.resolve("data/playwright-tests");
-  const databasePath = readdirSync(directory)
-    .filter((name) => /^application\..+\.sqlite$/.test(name))
-    .map((name) => path.join(directory, name))
-    .sort((left, right) => statSync(right).mtimeMs - statSync(left).mtimeMs)[0];
-  if (!databasePath) throw new Error("browser test database was not created");
-  return new BetterSqlite3(databasePath);
-}
-
 async function csrfTokenFor(page: Page, buttonName: "Add Food" | "Add Water") {
   return page
     .locator("form")
@@ -274,6 +262,9 @@ test("one mobile Chromium journey verifies the complete private MVP", async ({
   await page
     .getByLabel("New password", { exact: true })
     .fill("release replacement 🔐");
+  await page
+    .getByLabel("Confirm new password")
+    .fill("release replacement 🔐");
   await page.getByRole("button", { name: "Change password" }).click();
   await expect(page.getByRole("status")).toContainText("Password changed");
   await expectNoSeriousAxeViolations(page);
@@ -291,7 +282,7 @@ test("a second user cannot list, read, edit, or delete another user's records", 
   page,
 }) => {
   await context.setExtraHTTPHeaders({ "X-Test-Client-IP": "203.0.113.111" });
-  await registerAndSetup(page, "release.isolation.owner");
+  await completeSetupForTestUser(page, "release.isolation.owner");
 
   await openUsdaSearch(page);
   await page
@@ -326,7 +317,7 @@ test("a second user cannot list, read, edit, or delete another user's records", 
       Object.fromEntries(new FormData(form as HTMLFormElement).entries()),
     );
 
-  const database = browserTestDatabase();
+  const database = openBrowserTestDatabase();
   const owner = database
     .prepare(
       `SELECT u.id AS userId, g.id AS goalId
@@ -345,7 +336,7 @@ test("a second user cannot list, read, edit, or delete another user's records", 
     extraHTTPHeaders: { "X-Test-Client-IP": "203.0.113.112" },
   });
   const otherPage = await otherContext.newPage();
-  await registerAndSetup(otherPage, "release.isolation.other");
+  await completeSetupForTestUser(otherPage, "release.isolation.other");
 
   await expect(otherPage.getByText("No entries for this day")).toBeVisible();
   await expect(

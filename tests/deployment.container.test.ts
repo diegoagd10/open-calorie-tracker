@@ -5,6 +5,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 
+import { hashPassword, verifyPassword } from "../app/auth/password.server";
 import {
   createMigrationFolder,
   waitForHttpResponse,
@@ -16,6 +17,7 @@ const suffix = `${process.pid}-${Date.now()}`;
 const image = `open-calory-tracker:deployment-${suffix}`;
 const durableVolume = `open-calory-tracker-durable-${suffix}`;
 const pendingVolume = `open-calory-tracker-pending-${suffix}`;
+const recoveryVolume = `open-calory-tracker-recovery-${suffix}`;
 const containers = new Set<string>();
 const temporaryDirectories: string[] = [];
 
@@ -132,12 +134,13 @@ describe.skipIf(!runDeploymentTests)("production container deployment", () => {
     await Promise.all([
       docker(["volume", "create", durableVolume]),
       docker(["volume", "create", pendingVolume]),
+      docker(["volume", "create", recoveryVolume]),
     ]);
   }, 300_000);
 
   afterAll(async () => {
     for (const container of [...containers]) await removeContainer(container);
-    for (const volume of [durableVolume, pendingVolume]) {
+    for (const volume of [durableVolume, pendingVolume, recoveryVolume]) {
       try {
         await docker(["volume", "rm", volume], 30_000);
       } catch {
@@ -312,6 +315,78 @@ describe.skipIf(!runDeploymentTests)("production container deployment", () => {
     ]);
     expect(marker.stdout).toBe("preserved");
     await removeContainer(replacementName);
+  }, 60_000);
+
+  test("administrator recovery runs against the live configured database", async () => {
+    const name = `calory-recovery-${suffix}`;
+    const baseUrl = await startContainer({
+      name,
+      port: 4321,
+      volume: recoveryVolume,
+    });
+    await waitForContainerReady(baseUrl);
+    const originalPassword = "forgotten container password";
+    const originalPasswordHash = await hashPassword(originalPassword);
+    await docker([
+      "exec",
+      "--env",
+      `ORIGINAL_PASSWORD_HASH=${originalPasswordHash}`,
+      name,
+      "node",
+      "--input-type=module",
+      "--eval",
+      `import Database from 'better-sqlite3';
+       const database = new Database('/app/data/open-calory-tracker.sqlite');
+       const timestamp = '2026-09-02T12:00:00.000Z';
+       const user = database.prepare("INSERT INTO users (username_normalized, role, created_at) VALUES ('recover.admin', 'admin', ?)").run(timestamp);
+       database.prepare('INSERT INTO password_credentials (user_id, password_hash, updated_at) VALUES (?, ?, ?)').run(user.lastInsertRowid, process.env.ORIGINAL_PASSWORD_HASH, timestamp);
+       const insertSession = database.prepare('INSERT INTO sessions (token_hash, user_id, created_at, last_seen_at, idle_expires_at, absolute_expires_at) VALUES (?, ?, ?, ?, ?, ?)');
+       insertSession.run('a'.repeat(64), user.lastInsertRowid, timestamp, timestamp, '2026-09-07T12:00:00.000Z', '2026-12-01T12:00:00.000Z');
+       insertSession.run('b'.repeat(64), user.lastInsertRowid, timestamp, timestamp, '2026-09-07T12:00:00.000Z', '2026-12-01T12:00:00.000Z');
+       database.close();`,
+    ]);
+
+    const recovered = await docker([
+      "exec",
+      name,
+      "node",
+      "build/recovery/recover-administrator.js",
+    ]);
+    const temporaryPassword = recovered.stdout.trim();
+    expect(recovered.stdout).toBe(`${temporaryPassword}\n`);
+    expect(temporaryPassword).toMatch(/^[A-Za-z0-9_-]{32}$/);
+    expect(recovered.stderr).toContain('"event":"administrator_recovery"');
+    expect(recovered.stderr).toContain('"outcome":"succeeded"');
+    expect(recovered.stderr).not.toContain(temporaryPassword);
+    expect(recovered.stderr).not.toContain(originalPasswordHash);
+
+    const { stdout: persistedOutput } = await docker([
+      "exec",
+      name,
+      "node",
+      "--input-type=module",
+      "--eval",
+      `import Database from 'better-sqlite3';
+       const database = new Database('/app/data/open-calory-tracker.sqlite', { readonly: true });
+       const user = database.prepare("SELECT id, password_change_required AS passwordChangeRequired FROM users WHERE role = 'admin'").get();
+       const passwordHash = database.prepare('SELECT password_hash FROM password_credentials WHERE user_id = ?').pluck().get(user.id);
+       const sessions = database.prepare('SELECT count(*) FROM sessions WHERE user_id = ?').pluck().get(user.id);
+       process.stdout.write(JSON.stringify({ passwordChangeRequired: user.passwordChangeRequired, passwordHash, sessions }));
+       database.close();`,
+    ]);
+    const persisted = JSON.parse(persistedOutput) as {
+      passwordChangeRequired: number;
+      passwordHash: string;
+      sessions: number;
+    };
+    expect(persisted.passwordChangeRequired).toBe(1);
+    expect(persisted.passwordHash).not.toBe(temporaryPassword);
+    await expect(
+      verifyPassword(temporaryPassword, persisted.passwordHash),
+    ).resolves.toMatchObject({ matches: true });
+    expect(persisted.sessions).toBe(0);
+    expect((await fetch(`${baseUrl}/health/ready`)).status).toBe(200);
+    await removeContainer(name);
   }, 60_000);
 
   test("a container applies a pending migration before becoming ready", async () => {

@@ -2,7 +2,7 @@ import { redirect } from "react-router";
 
 import type { Route } from "./+types/logout";
 import {
-  getAuthenticatedSession,
+  getSessionForAccountAccess,
   requireValidOrigin,
   serializeClearedSessionCookie,
 } from "../auth/http.server";
@@ -10,7 +10,7 @@ import { getAuthenticationService } from "../auth/runtime.server";
 
 export async function action({ request }: Route.ActionArgs) {
   requireValidOrigin(request);
-  const session = await getAuthenticatedSession(request);
+  const session = await getSessionForAccountAccess(request);
 
   if (!session) {
     return redirect("/login", {

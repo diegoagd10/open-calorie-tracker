@@ -4,21 +4,35 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 
 import { eq } from "drizzle-orm";
-import { afterEach, expect, test } from "vitest";
+import { afterEach, expect, test, vi } from "vitest";
 
-import {
-  AuthenticationService,
-  isUniqueConstraint,
-} from "../app/auth/authentication.server";
+import { AuthenticationService } from "../app/auth/authentication.server";
 import { hashPassword } from "../app/auth/password.server";
 import { PreAuthenticationCsrfService } from "../app/auth/pre-authentication-csrf.server";
+import { FoodCatalog } from "../app/catalog/food-catalog.server";
+import { TestFoodCatalogProvider } from "../app/catalog/test-fixture.server";
 import { openApplicationDatabase } from "../app/database/database.server";
 import {
   passwordCredentials,
   preAuthenticationCsrfSessions,
   rateLimitCounters,
   sessions,
+  users,
 } from "../app/database/schema.server";
+import {
+  FoodEntryService,
+  FoodEntryUnavailableError,
+} from "../app/food-entry/food-entry.server";
+import { GoalVersionService } from "../app/goals/goal-version.server";
+import { GoalSetupService } from "../app/setup/goal-setup.server";
+import {
+  WaterEventService,
+  WaterEventUnavailableError,
+} from "../app/water-event/water-event.server";
+import {
+  seedAccount,
+  seedAuthenticatedAccount,
+} from "./support/authentication";
 
 const temporaryDirectories: string[] = [];
 const password = "correct horse 🔐 battery";
@@ -54,21 +68,863 @@ async function createFixture() {
   };
 }
 
-test("unique-constraint classification rejects lookalike and unrelated errors", () => {
-  const unique = Object.assign(new Error("duplicate"), {
-    code: "SQLITE_CONSTRAINT_UNIQUE",
+function memberTarget(service: AuthenticationService, username: string) {
+  const target = service.listManageableMembers().find(
+    (member) => member.username === username,
+  );
+  if (!target) throw new Error(`${username} is not manageable`);
+  return target;
+}
+
+test("an administrator-provisioned member is active and restricted without retaining the initial password", async () => {
+  const fixture = await createFixture();
+  const initialPassword = "temporary member passphrase";
+  const output = vi.spyOn(console, "log").mockImplementation(() => {});
+
+  const provisioned = await fixture.service.provisionMember(
+    "new.member",
+    initialPassword,
+  );
+
+  expect(provisioned).toEqual({
+    member: {
+      accessState: "active",
+      createdAt: "2026-08-29T12:00:00.000Z",
+      passwordChangeRequired: true,
+      username: "new.member",
+    },
+    ok: true,
   });
-  const unrelated = Object.assign(new Error("database unavailable"), {
-    code: "SQLITE_ERROR",
+  expect(fixture.service.listManageableMembers()).toMatchObject([
+    provisioned.ok ? provisioned.member : undefined,
+  ]);
+  const persisted = fixture.database
+    .select({
+      passwordChangeRequired: users.passwordChangeRequired,
+      passwordHash: passwordCredentials.passwordHash,
+    })
+    .from(users)
+    .innerJoin(passwordCredentials, eq(passwordCredentials.userId, users.id))
+    .get();
+  expect(persisted?.passwordChangeRequired).toBe(true);
+  expect(persisted?.passwordHash).toMatch(/^argon2id\$v=1\$/);
+  expect(persisted?.passwordHash).not.toContain(initialPassword);
+
+  const login = await fixture.service.login(
+    "new.member",
+    initialPassword,
+    "203.0.113.201",
+  );
+  expect(login).toMatchObject({
+    ok: true,
+    session: { user: { passwordChangeRequired: true } },
   });
-  expect(isUniqueConstraint(unique)).toBe(true);
-  expect(isUniqueConstraint(unrelated)).toBe(false);
-  expect(isUniqueConstraint(new Error("missing code"))).toBe(false);
-  expect(isUniqueConstraint({ code: "SQLITE_CONSTRAINT_UNIQUE" })).toBe(false);
-  expect(isUniqueConstraint(null)).toBe(false);
+  const logRecord = JSON.parse(String(output.mock.calls.at(-1)?.[0])) as Record<
+    string,
+    unknown
+  >;
+  expect(logRecord).toMatchObject({
+    event: "member_provisioning",
+    outcome: "succeeded",
+    username: "new.member",
+  });
+  expect(JSON.stringify(logRecord)).not.toContain(initialPassword);
+
+  output.mockRestore();
+  fixture.applicationDatabase.close();
 });
 
-test("registration distinguishes duplicates from unexpected database failures", async () => {
+test("mandatory password replacement clears the restriction and rotates every session", async () => {
+  const fixture = await createFixture();
+  const initialPassword = "temporary member passphrase";
+  const nextPassword = "private replacement passphrase";
+  expect(await fixture.service.provisionMember("onboarding.member", initialPassword))
+    .toMatchObject({ ok: true });
+  const current = await fixture.service.login(
+    "onboarding.member",
+    initialPassword,
+    "203.0.113.202",
+  );
+  const other = await fixture.service.login(
+    "onboarding.member",
+    initialPassword,
+    "203.0.113.203",
+  );
+  if (!current.ok || !other.ok) throw new Error("member login failed");
+
+  const changed = await fixture.service.changePassword(
+    current.session,
+    initialPassword,
+    nextPassword,
+  );
+
+  expect(changed).toMatchObject({
+    ok: true,
+    session: { user: { passwordChangeRequired: false } },
+  });
+  if (!changed.ok) throw new Error("mandatory password replacement failed");
+  await expect(fixture.service.authenticate(current.session.token))
+    .resolves.toBeUndefined();
+  await expect(fixture.service.authenticate(other.session.token))
+    .resolves.toBeUndefined();
+  await expect(fixture.service.authenticate(changed.session.token))
+    .resolves.toMatchObject({ user: { passwordChangeRequired: false } });
+  expect(
+    fixture.database
+      .select({ required: users.passwordChangeRequired })
+      .from(users)
+      .where(eq(users.usernameNormalized, "onboarding.member"))
+      .get(),
+  ).toEqual({ required: false });
+  await expect(
+    fixture.service.login(
+      "onboarding.member",
+      initialPassword,
+      "203.0.113.204",
+    ),
+  ).resolves.toEqual({ error: "invalid-credentials", ok: false });
+  await expect(
+    fixture.service.login(
+      "onboarding.member",
+      nextPassword,
+      "203.0.113.205",
+    ),
+  ).resolves.toMatchObject({
+    ok: true,
+    session: { user: { passwordChangeRequired: false } },
+  });
+
+  fixture.applicationDatabase.close();
+});
+
+test("administrator reset replaces an active member password and revokes every target session", async () => {
+  const fixture = await createFixture();
+  const administrator = await fixture.service.register(
+    "reset.admin",
+    password,
+    "203.0.113.216",
+  );
+  if (!administrator.ok) throw new Error("administrator registration failed");
+  const originalPassword = "forgotten private passphrase";
+  const temporaryPassword = "replacement temporary passphrase";
+  const firstDevice = await seedAuthenticatedAccount(
+    fixture.service,
+    fixture.database,
+    "reset.member",
+    originalPassword,
+    "203.0.113.217",
+  );
+  const secondDevice = await fixture.service.login(
+    "reset.member",
+    originalPassword,
+    "203.0.113.218",
+  );
+  if (!secondDevice.ok) throw new Error("second member login failed");
+  const output = vi.spyOn(console, "log").mockImplementation(() => {});
+
+  await expect(
+    fixture.service.resetMemberPassword(
+      administrator.session.user,
+      "reset.member",
+      temporaryPassword,
+    ),
+  ).resolves.toEqual({ ok: true });
+
+  expect(fixture.service.listManageableMembers()).toContainEqual(expect.objectContaining({
+    accessState: "active",
+    createdAt: "2026-08-29T11:00:00.000Z",
+    passwordChangeRequired: true,
+    username: "reset.member",
+  }));
+  await expect(fixture.service.authenticate(firstDevice.token))
+    .resolves.toBeUndefined();
+  await expect(fixture.service.authenticate(secondDevice.session.token))
+    .resolves.toBeUndefined();
+  await expect(
+    fixture.service.login(
+      "reset.member",
+      originalPassword,
+      "203.0.113.219",
+    ),
+  ).resolves.toEqual({ error: "invalid-credentials", ok: false });
+  await expect(
+    fixture.service.login(
+      "reset.member",
+      temporaryPassword,
+      "203.0.113.220",
+    ),
+  ).resolves.toMatchObject({
+    ok: true,
+    session: { user: { passwordChangeRequired: true } },
+  });
+  const logRecord = JSON.parse(String(output.mock.calls.at(-1)?.[0])) as Record<
+    string,
+    unknown
+  >;
+  expect(logRecord).toMatchObject({
+    actorId: administrator.session.user.id,
+    actorUsername: "reset.admin",
+    event: "member_password_reset",
+    outcome: "succeeded",
+    targetUsername: "reset.member",
+  });
+  expect(JSON.stringify(logRecord)).not.toContain(temporaryPassword);
+
+  output.mockRestore();
+  fixture.applicationDatabase.close();
+});
+
+test("repeated resets preserve disabled access and only the latest temporary password", async () => {
+  const fixture = await createFixture();
+  const administrator = await fixture.service.register(
+    "disabled.reset.admin",
+    password,
+    "203.0.113.221",
+  );
+  if (!administrator.ok) throw new Error("administrator registration failed");
+  await expect(
+    fixture.service.provisionMember(
+      "disabled.reset.member",
+      "original disabled passphrase",
+    ),
+  ).resolves.toMatchObject({ ok: true });
+  await expect(
+    fixture.service.disableMemberAccess(
+      administrator.session.user,
+      "disabled.reset.member",
+      "disabled.reset.member",
+    ),
+  ).resolves.toEqual({ ok: true });
+
+  await expect(
+    fixture.service.resetMemberPassword(
+      administrator.session.user,
+      "disabled.reset.member",
+      "first temporary passphrase",
+    ),
+  ).resolves.toEqual({ ok: true });
+  await expect(
+    fixture.service.login(
+      "disabled.reset.member",
+      "first temporary passphrase",
+      "203.0.113.222",
+    ),
+  ).resolves.toEqual({ error: "account-disabled", ok: false });
+  expect(fixture.service.listManageableMembers()).toContainEqual(expect.objectContaining({
+    accessState: "disabled",
+    createdAt: "2026-08-29T12:00:00.000Z",
+    passwordChangeRequired: true,
+    username: "disabled.reset.member",
+  }));
+
+  await expect(
+    fixture.service.resetMemberPassword(
+      administrator.session.user,
+      "disabled.reset.member",
+      "second temporary passphrase",
+    ),
+  ).resolves.toEqual({ ok: true });
+  await expect(
+    fixture.service.reactivateMemberAccess(
+      administrator.session.user,
+      "disabled.reset.member",
+    ),
+  ).resolves.toEqual({ ok: true });
+  await expect(
+    fixture.service.login(
+      "disabled.reset.member",
+      "first temporary passphrase",
+      "203.0.113.223",
+    ),
+  ).resolves.toEqual({ error: "invalid-credentials", ok: false });
+  await expect(
+    fixture.service.login(
+      "disabled.reset.member",
+      "second temporary passphrase",
+      "203.0.113.224",
+    ),
+  ).resolves.toMatchObject({
+    ok: true,
+    session: { user: { passwordChangeRequired: true } },
+  });
+
+  fixture.applicationDatabase.close();
+});
+
+test("password reset rolls back credentials and sessions when revocation fails", async () => {
+  const fixture = await createFixture();
+  const administrator = await fixture.service.register(
+    "rollback.reset.admin",
+    password,
+    "203.0.113.225",
+  );
+  if (!administrator.ok) throw new Error("administrator registration failed");
+  const originalPassword = "rollback original passphrase";
+  const temporaryPassword = "rollback temporary passphrase";
+  const member = await seedAuthenticatedAccount(
+    fixture.service,
+    fixture.database,
+    "rollback.reset.member",
+    originalPassword,
+    "203.0.113.226",
+  );
+  const credentialBefore = fixture.database
+    .select({
+      passwordChangeRequired: users.passwordChangeRequired,
+      passwordHash: passwordCredentials.passwordHash,
+    })
+    .from(users)
+    .innerJoin(passwordCredentials, eq(passwordCredentials.userId, users.id))
+    .where(eq(users.usernameNormalized, "rollback.reset.member"))
+    .get();
+  const errorOutput = vi.spyOn(console, "error").mockImplementation(() => {});
+  fixture.database.$client.exec(`
+    CREATE TRIGGER reject_reset_session_delete
+    BEFORE DELETE ON sessions
+    WHEN OLD.user_id = ${member.user.id}
+    BEGIN
+      SELECT RAISE(ABORT, 'simulated reset revocation failure');
+    END;
+  `);
+
+  await expect(
+    fixture.service.resetMemberPassword(
+      administrator.session.user,
+      "rollback.reset.member",
+      temporaryPassword,
+    ),
+  ).rejects.toThrow("simulated reset revocation failure");
+  expect(
+    fixture.database
+      .select({
+        passwordChangeRequired: users.passwordChangeRequired,
+        passwordHash: passwordCredentials.passwordHash,
+      })
+      .from(users)
+      .innerJoin(passwordCredentials, eq(passwordCredentials.userId, users.id))
+      .where(eq(users.usernameNormalized, "rollback.reset.member"))
+      .get(),
+  ).toEqual(credentialBefore);
+  await expect(fixture.service.authenticate(member.token)).resolves.toBeDefined();
+  await expect(
+    fixture.service.login(
+      "rollback.reset.member",
+      originalPassword,
+      "203.0.113.227",
+    ),
+  ).resolves.toMatchObject({ ok: true });
+  const logRecord = JSON.parse(String(errorOutput.mock.calls.at(-1)?.[0])) as
+    Record<string, unknown>;
+  expect(logRecord).toMatchObject({
+    actorUsername: "rollback.reset.admin",
+    event: "member_password_reset",
+    outcome: "failed",
+    targetUsername: "rollback.reset.member",
+  });
+  expect(JSON.stringify(logRecord)).not.toContain(temporaryPassword);
+
+  errorOutput.mockRestore();
+  fixture.applicationDatabase.close();
+});
+
+test("member access suspension revokes every target session and reactivation preserves onboarding", async () => {
+  const fixture = await createFixture();
+  const administrator = await fixture.service.register(
+    "access.admin",
+    password,
+    "203.0.113.206",
+  );
+  if (!administrator.ok) throw new Error("administrator registration failed");
+  const initialPassword = "temporary access passphrase";
+  const provisioned = await fixture.service.provisionMember(
+    "access.member",
+    initialPassword,
+  );
+  if (!provisioned.ok) throw new Error("member provisioning failed");
+  const firstDevice = await fixture.service.login(
+    "access.member",
+    initialPassword,
+    "203.0.113.207",
+  );
+  const secondDevice = await fixture.service.login(
+    "access.member",
+    initialPassword,
+    "203.0.113.208",
+  );
+  const unrelated = await seedAuthenticatedAccount(
+    fixture.service,
+    fixture.database,
+    "unrelated.member",
+    password,
+    "203.0.113.209",
+  );
+  if (!firstDevice.ok || !secondDevice.ok) {
+    throw new Error("member login failed");
+  }
+  const credentialBefore = fixture.database
+    .select({ passwordHash: passwordCredentials.passwordHash })
+    .from(passwordCredentials)
+    .innerJoin(users, eq(users.id, passwordCredentials.userId))
+    .where(eq(users.usernameNormalized, "access.member"))
+    .get();
+
+  await expect(
+    fixture.service.disableMemberAccess(
+      administrator.session.user,
+      "access.member",
+      "access.member",
+    ),
+  ).resolves.toEqual({ ok: true });
+  expect(fixture.service.listManageableMembers()).toContainEqual(expect.objectContaining({
+    accessState: "disabled",
+    createdAt: "2026-08-29T12:00:00.000Z",
+    passwordChangeRequired: true,
+    username: "access.member",
+  }));
+  await expect(fixture.service.authenticate(firstDevice.session.token))
+    .resolves.toBeUndefined();
+  await expect(fixture.service.authenticate(secondDevice.session.token))
+    .resolves.toBeUndefined();
+  await expect(fixture.service.authenticate(unrelated.token))
+    .resolves.toMatchObject({ user: { username: "unrelated.member" } });
+  await expect(
+    fixture.service.login(
+      "access.member",
+      initialPassword,
+      "203.0.113.210",
+    ),
+  ).resolves.toEqual({ error: "account-disabled", ok: false });
+  await expect(
+    fixture.service.login(
+      "access.member",
+      "wrong password",
+      "203.0.113.211",
+    ),
+  ).resolves.toEqual({ error: "invalid-credentials", ok: false });
+  await expect(
+    fixture.service.login(
+      "missing.member",
+      initialPassword,
+      "203.0.113.212",
+    ),
+  ).resolves.toEqual({ error: "invalid-credentials", ok: false });
+
+  await expect(
+    fixture.service.reactivateMemberAccess(
+      administrator.session.user,
+      "access.member",
+    ),
+  ).resolves.toEqual({ ok: true });
+  const restoredLogin = await fixture.service.login(
+    "access.member",
+    initialPassword,
+    "203.0.113.213",
+  );
+  expect(restoredLogin).toMatchObject({
+    ok: true,
+    session: { user: { passwordChangeRequired: true } },
+  });
+  expect(
+    fixture.database
+      .select({
+        passwordChangeRequired: users.passwordChangeRequired,
+        passwordHash: passwordCredentials.passwordHash,
+      })
+      .from(users)
+      .innerJoin(passwordCredentials, eq(passwordCredentials.userId, users.id))
+      .where(eq(users.usernameNormalized, "access.member"))
+      .get(),
+  ).toEqual({
+    passwordChangeRequired: true,
+    passwordHash: credentialBefore?.passwordHash,
+  });
+
+  fixture.applicationDatabase.close();
+});
+
+test("member access transitions reject stale targets and roll back failed session revocation", async () => {
+  const fixture = await createFixture();
+  const administrator = await fixture.service.register(
+    "transition.admin",
+    password,
+    "203.0.113.214",
+  );
+  if (!administrator.ok) throw new Error("administrator registration failed");
+  const target = await seedAuthenticatedAccount(
+    fixture.service,
+    fixture.database,
+    "transition.member",
+    password,
+    "203.0.113.215",
+  );
+  const output = vi.spyOn(console, "log").mockImplementation(() => {});
+  const errorOutput = vi.spyOn(console, "error").mockImplementation(() => {});
+  fixture.database.$client.exec(`
+    CREATE TRIGGER reject_target_session_delete
+    BEFORE DELETE ON sessions
+    WHEN OLD.user_id = ${target.user.id}
+    BEGIN
+      SELECT RAISE(ABORT, 'simulated session revocation failure');
+    END;
+  `);
+
+  await expect(
+    fixture.service.disableMemberAccess(
+      administrator.session.user,
+      "transition.member",
+      "transition.member",
+    ),
+  ).rejects.toThrow("simulated session revocation failure");
+  expect(fixture.service.listManageableMembers()).toContainEqual(expect.objectContaining({
+    accessState: "active",
+    createdAt: "2026-08-29T11:00:00.000Z",
+    passwordChangeRequired: false,
+    username: "transition.member",
+  }));
+  await expect(fixture.service.authenticate(target.token)).resolves.toBeDefined();
+  expect(JSON.parse(String(errorOutput.mock.calls.at(-1)?.[0])))
+    .toMatchObject({
+      action: "disable",
+      actorId: administrator.session.user.id,
+      actorUsername: "transition.admin",
+      event: "member_access",
+      outcome: "failed",
+      targetUsername: "transition.member",
+    });
+
+  fixture.database.$client.exec("DROP TRIGGER reject_target_session_delete");
+  await expect(
+    fixture.service.disableMemberAccess(
+      administrator.session.user,
+      "transition.member",
+      "transition.member",
+    ),
+  ).resolves.toEqual({ ok: true });
+  await expect(
+    fixture.service.disableMemberAccess(
+      administrator.session.user,
+      "transition.member",
+      "transition.member",
+    ),
+  ).resolves.toEqual({ error: "already-disabled", ok: false });
+  await expect(
+    fixture.service.reactivateMemberAccess(
+      administrator.session.user,
+      "transition.member",
+    ),
+  ).resolves.toEqual({ ok: true });
+  await expect(
+    fixture.service.reactivateMemberAccess(
+      administrator.session.user,
+      "transition.member",
+    ),
+  ).resolves.toEqual({ error: "already-active", ok: false });
+  await expect(
+    fixture.service.disableMemberAccess(
+      administrator.session.user,
+      "missing.member",
+      "missing.member",
+    ),
+  ).resolves.toEqual({ error: "not-found", ok: false });
+
+  const records = output.mock.calls.map(([record]) =>
+    JSON.parse(String(record)) as Record<string, unknown>
+  );
+  expect(records.map(({ outcome }) => outcome)).toEqual([
+    "succeeded",
+    "already-disabled",
+    "succeeded",
+    "already-active",
+    "not-found",
+  ]);
+  expect(JSON.stringify(records)).not.toContain(password);
+  output.mockRestore();
+  errorOutput.mockRestore();
+  fixture.applicationDatabase.close();
+});
+
+test("administrator deletion removes an active member identity and permits unrelated username reuse", async () => {
+  const fixture = await createFixture();
+  const administrator = await fixture.service.register(
+    "deletion.admin",
+    password,
+    "203.0.113.216",
+  );
+  if (!administrator.ok) throw new Error("administrator registration failed");
+  const original = await seedAuthenticatedAccount(
+    fixture.service,
+    fixture.database,
+    "deleted.member",
+    password,
+    "203.0.113.217",
+  );
+  const originalTarget = memberTarget(fixture.service, "deleted.member");
+
+  await expect(
+    fixture.service.deleteMember(
+      administrator.session.user,
+      originalTarget,
+      "deleted.member",
+    ),
+  ).resolves.toEqual({ ok: true });
+  expect(fixture.service.listManageableMembers()).not.toContainEqual(
+    expect.objectContaining({ username: "deleted.member" }),
+  );
+  await expect(fixture.service.authenticate(original.token))
+    .resolves.toBeUndefined();
+  await expect(
+    fixture.service.login(
+      "deleted.member",
+      password,
+      "203.0.113.218",
+    ),
+  ).resolves.toEqual({ error: "invalid-credentials", ok: false });
+
+  await expect(fixture.service.provisionMember("deleted.member", password))
+    .resolves.toMatchObject({ ok: true });
+  const replacement = await fixture.service.login(
+    "deleted.member",
+    password,
+    "203.0.113.219",
+  );
+  expect(replacement).toMatchObject({ ok: true });
+  if (!replacement.ok) throw new Error("replacement login failed");
+  expect(replacement.session.user.id).not.toBe(original.user.id);
+
+  fixture.applicationDatabase.close();
+});
+
+test("administrator deletion removes a disabled member's owned nutrition history", async () => {
+  const fixture = await createFixture();
+  const administrator = await fixture.service.register(
+    "history.admin",
+    password,
+    "203.0.113.220",
+  );
+  if (!administrator.ok) throw new Error("administrator registration failed");
+  const member = await seedAuthenticatedAccount(
+    fixture.service,
+    fixture.database,
+    "history.member",
+    password,
+    "203.0.113.221",
+  );
+  const now = () => new Date("2026-08-29T18:00:00.000Z");
+  const setup = new GoalSetupService(fixture.database, now);
+  const goals = new GoalVersionService(fixture.database, now);
+  const foodProvider = new TestFoodCatalogProvider();
+  const foodEntries = new FoodEntryService(
+    fixture.database,
+    new FoodCatalog([
+      {
+        capability: "search",
+        provider: "usda-fdc",
+        service: foodProvider,
+      },
+    ]),
+    now,
+  );
+  const waterEvents = new WaterEventService(fixture.database, now);
+  expect(
+    setup.completeInitial(member.user.id, {
+      calorieTargetMilliKcal: 2_000_000,
+      carbohydrateTargetMilligrams: 200_000,
+      displayUnits: "metric",
+      fatTargetMilligrams: 70_000,
+      fiberTargetMilligrams: 30_000,
+      proteinTargetMilligrams: 100_000,
+      sodiumMaximumMilligrams: 2_000,
+      sugarMaximumMilligrams: 50_000,
+      timeZone: "UTC",
+      waterTargetMicroliters: 2_500_000,
+    }),
+  ).toEqual({ effectiveDate: "2026-08-29", ok: true });
+  const foodEntry = await foodEntries.log(member.user.id, {
+    foodLogDate: "2026-08-29",
+    idempotencyKey: "deleted-owned-food-entry",
+    provider: "usda-fdc",
+    providerFoodId: "1001",
+    quantity: "1",
+    selectedMeasurementId: "serving:g:170000000",
+  });
+  const waterEvent = waterEvents.create(member.user.id, {
+    foodLogDate: "2026-08-29",
+    selection: "8",
+  });
+  expect(goals.read(member.user.id)?.goal).toBeDefined();
+  const deletionTarget = memberTarget(fixture.service, "history.member");
+
+  await expect(
+    fixture.service.disableMemberAccess(
+      administrator.session.user,
+      "history.member",
+      "history.member",
+    ),
+  ).resolves.toEqual({ ok: true });
+  await expect(
+    fixture.service.deleteMember(
+      administrator.session.user,
+      deletionTarget,
+      "history.member",
+    ),
+  ).resolves.toEqual({ ok: true });
+
+  expect(setup.isComplete(member.user.id)).toBe(false);
+  expect(goals.read(member.user.id)).toBeUndefined();
+  expect(() => foodEntries.read(member.user.id, foodEntry.id)).toThrow(
+    FoodEntryUnavailableError,
+  );
+  expect(() => waterEvents.read(member.user.id, waterEvent.id)).toThrow(
+    WaterEventUnavailableError,
+  );
+
+  const replacement = await fixture.service.provisionMember(
+    "history.member",
+    password,
+  );
+  if (!replacement.ok) throw new Error("replacement member was not created");
+  const replacementLogin = await fixture.service.login(
+    "history.member",
+    password,
+    "203.0.113.222",
+  );
+  if (!replacementLogin.ok) throw new Error("replacement login failed");
+  expect(replacementLogin.session.user.id).not.toBe(member.user.id);
+  expect(goals.read(replacementLogin.session.user.id)).toBeUndefined();
+  expect(() =>
+    foodEntries.read(replacementLogin.session.user.id, foodEntry.id)
+  ).toThrow(FoodEntryUnavailableError);
+  expect(() =>
+    waterEvents.read(replacementLogin.session.user.id, waterEvent.id)
+  ).toThrow(WaterEventUnavailableError);
+
+  fixture.applicationDatabase.close();
+});
+
+test("member deletion rejects self-service and never exposes the administrator as a target", async () => {
+  const fixture = await createFixture();
+  const administrator = await fixture.service.register(
+    "protected.admin",
+    password,
+    "203.0.113.223",
+  );
+  if (!administrator.ok) throw new Error("administrator registration failed");
+  const member = await seedAuthenticatedAccount(
+    fixture.service,
+    fixture.database,
+    "self.member",
+    password,
+    "203.0.113.224",
+  );
+  const selfTarget = memberTarget(fixture.service, "self.member");
+
+  await expect(
+    fixture.service.deleteMember(
+      member.user,
+      selfTarget,
+      "self.member",
+    ),
+  ).resolves.toEqual({ error: "not-found", ok: false });
+  await expect(
+    fixture.service.deleteMember(
+      administrator.session.user,
+      { id: administrator.session.user.id, username: "protected.admin" },
+      "protected.admin",
+    ),
+  ).resolves.toEqual({ error: "not-found", ok: false });
+  await expect(fixture.service.authenticate(member.token)).resolves.toBeDefined();
+  await expect(fixture.service.authenticate(administrator.session.token))
+    .resolves.toBeDefined();
+
+  fixture.applicationDatabase.close();
+});
+
+test("member deletion rolls back a failed cascade and emits only redacted outcomes", async () => {
+  const fixture = await createFixture();
+  const administrator = await fixture.service.register(
+    "rollback.admin",
+    password,
+    "203.0.113.225",
+  );
+  if (!administrator.ok) throw new Error("administrator registration failed");
+  const member = await seedAuthenticatedAccount(
+    fixture.service,
+    fixture.database,
+    "rollback.member",
+    password,
+    "203.0.113.226",
+  );
+  const rollbackTarget = memberTarget(fixture.service, "rollback.member");
+  const output = vi.spyOn(console, "log").mockImplementation(() => {});
+  const errorOutput = vi.spyOn(console, "error").mockImplementation(() => {});
+  fixture.database.$client.exec(`
+    CREATE TRIGGER reject_member_delete
+    BEFORE DELETE ON users
+    WHEN OLD.id = ${member.user.id}
+    BEGIN
+      SELECT RAISE(ABORT, 'simulated member deletion failure');
+    END;
+  `);
+
+  await expect(
+    fixture.service.deleteMember(
+      administrator.session.user,
+      rollbackTarget,
+      "rollback.member",
+    ),
+  ).rejects.toThrow("simulated member deletion failure");
+  expect(fixture.service.listManageableMembers()).toContainEqual(
+    expect.objectContaining({ username: "rollback.member" }),
+  );
+  await expect(fixture.service.authenticate(member.token)).resolves.toBeDefined();
+  expect(JSON.parse(String(errorOutput.mock.calls.at(-1)?.[0])))
+    .toMatchObject({
+      actorId: administrator.session.user.id,
+      actorUsername: "rollback.admin",
+      event: "member_deletion",
+      outcome: "failed",
+      targetUsername: "rollback.member",
+    });
+
+  fixture.database.$client.exec("DROP TRIGGER reject_member_delete");
+  await expect(
+    fixture.service.deleteMember(
+      administrator.session.user,
+      rollbackTarget,
+      "wrong.member",
+    ),
+  ).resolves.toEqual({ error: "confirmation-mismatch", ok: false });
+  await expect(
+    fixture.service.deleteMember(
+      administrator.session.user,
+      { id: 999_999, username: "missing.member" },
+      "missing.member",
+    ),
+  ).resolves.toEqual({ error: "not-found", ok: false });
+  await expect(
+    fixture.service.deleteMember(
+      administrator.session.user,
+      rollbackTarget,
+      "rollback.member",
+    ),
+  ).resolves.toEqual({ ok: true });
+
+  const records = output.mock.calls.map(([record]) =>
+    JSON.parse(String(record)) as Record<string, unknown>
+  );
+  expect(records.map(({ outcome }) => outcome)).toEqual([
+    "confirmation-mismatch",
+    "not-found",
+    "succeeded",
+  ]);
+  expect(JSON.stringify(records)).not.toContain(password);
+  expect(JSON.stringify(records)).not.toContain(member.token);
+  output.mockRestore();
+  errorOutput.mockRestore();
+  fixture.applicationDatabase.close();
+});
+
+test("bootstrap distinguishes a claimed instance from unexpected database failures", async () => {
   const duplicateFixture = await createFixture();
   const first = await duplicateFixture.service.register(
     "duplicate.user",
@@ -80,7 +936,7 @@ test("registration distinguishes duplicates from unexpected database failures", 
     "duplicate.user",
     password,
     "203.0.113.91",
-  )).resolves.toEqual({ error: "duplicate-username", ok: false });
+  )).resolves.toEqual({ error: "claimed-instance", ok: false });
 
   const brokenFixture = await createFixture();
   brokenFixture.database.$client.exec("DROP TABLE password_credentials");
@@ -137,8 +993,8 @@ test("sessions persist only a token hash and enforce idle and absolute expiry", 
     await fixture.service.authenticate(registration.session.token),
   ).toBeUndefined();
 
-  fixture.setNow("2026-08-29T12:00:00.000Z");
-  const activeRegistration = await fixture.service.register(
+  const activeFixture = await createFixture();
+  const activeRegistration = await activeFixture.service.register(
     "active.user",
     password,
     "203.0.113.31",
@@ -147,19 +1003,20 @@ test("sessions persist only a token hash and enforce idle and absolute expiry", 
   if (!activeRegistration.ok) throw new Error("registration failed");
 
   for (let day = 4; day <= 88; day += 4) {
-    fixture.setNow(
+    activeFixture.setNow(
       new Date(Date.UTC(2026, 7, 29 + day, 12)).toISOString(),
     );
     expect(
-      await fixture.service.authenticate(activeRegistration.session.token),
+      await activeFixture.service.authenticate(activeRegistration.session.token),
     ).toBeDefined();
   }
 
-  fixture.setNow("2026-11-27T12:00:00.000Z");
+  activeFixture.setNow("2026-11-27T12:00:00.000Z");
   expect(
-    await fixture.service.authenticate(activeRegistration.session.token),
+    await activeFixture.service.authenticate(activeRegistration.session.token),
   ).toBeUndefined();
 
+  activeFixture.applicationDatabase.close();
   fixture.applicationDatabase.close();
 });
 
@@ -431,15 +1288,22 @@ test("production password hashes encode the reviewed profile and random salt", a
 
 test("registration and login windows enforce their exact boundaries", async () => {
   const fixture = await createFixture();
+  const registrationOutcomes: string[] = [];
   for (let index = 0; index < 5; index += 1) {
-    expect(
-      await fixture.service.register(
-        `registration.window.${index}`,
-        password,
-        "203.0.113.100",
-      ),
-    ).toMatchObject({ ok: true });
+    const result = await fixture.service.register(
+      `registration.window.${index}`,
+      password,
+      "203.0.113.100",
+    );
+    registrationOutcomes.push(result.ok ? "succeeded" : result.error);
   }
+  expect(registrationOutcomes).toEqual([
+    "succeeded",
+    "claimed-instance",
+    "claimed-instance",
+    "claimed-instance",
+    "claimed-instance",
+  ]);
   expect(
     await fixture.service.register(
       "registration.window.blocked",
@@ -462,15 +1326,14 @@ test("registration and login windows enforce their exact boundaries", async () =
       password,
       "203.0.113.100",
     ),
-  ).toMatchObject({ ok: true });
+  ).toEqual({ error: "claimed-instance", ok: false });
 
   fixture.setNow("2026-08-29T14:00:00.000Z");
-  const registered = await fixture.service.register(
+  await seedAccount(
+    fixture.database,
     "login.window",
     password,
-    "203.0.113.101",
   );
-  expect(registered.ok).toBe(true);
   for (let index = 0; index < 10; index += 1) {
     expect(
       await fixture.service.login(
@@ -590,18 +1453,20 @@ test("password changes reject a vanished or mismatched current session", async (
     password,
     "203.0.113.130",
   );
-  const second = await fixture.service.register(
+  const second = await seedAuthenticatedAccount(
+    fixture.service,
+    fixture.database,
     "change.second",
     password,
     "203.0.113.131",
   );
-  if (!first.ok || !second.ok) throw new Error("registration failed");
+  if (!first.ok) throw new Error("registration failed");
 
   expect(
     await fixture.service.changePassword(
       {
         ...first.session,
-        user: { ...first.session.user, id: second.session.user.id },
+        user: { ...first.session.user, id: second.user.id },
       },
       password,
       "unused replacement",
@@ -610,7 +1475,7 @@ test("password changes reject a vanished or mismatched current session", async (
 
   expect(
     await fixture.service.changePassword(
-      { ...first.session, user: second.session.user },
+      { ...first.session, user: second.user },
       password,
       "unused replacement",
     ),

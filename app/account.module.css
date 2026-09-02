@@ -97,10 +97,10 @@
 .submit {
   min-height: 2.75rem;
   padding: 0.65rem 1rem;
-  border: 1px solid var(--color-border);
+  border: 0;
   border-radius: 0.65rem;
-  color: var(--color-text);
-  background: var(--color-surface);
+  color: white;
+  background: #126c24;
   font: inherit;
   font-size: 0.8rem;
   font-weight: 750;
@@ -108,7 +108,27 @@
 }
 
 .submit:hover {
-  background: var(--color-background);
+  background: #105f1e;
+}
+
+.signOutForm {
+  margin-top: 0.75rem;
+}
+
+.signOutForm button {
+  min-height: 2.75rem;
+  width: 100%;
+  border: 0;
+  color: var(--color-text-muted);
+  background: transparent;
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.signOutForm button:hover {
+  color: var(--color-text);
 }
 
 @media (max-width: 420px) {

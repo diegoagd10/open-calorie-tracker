@@ -1,8 +1,23 @@
 import { randomBytes } from "node:crypto";
 
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 
 import type { ApplicationDatabaseClient } from "../database/database.server";
+import {
+  findActiveSessionByTokenHash,
+  findCredentialByUsername,
+  issueSessionForVerifiedCredential,
+  replacePasswordAndSessions,
+  resetMemberPasswordAndSessions,
+  type CredentialRecord,
+} from "../database/credential-sessions.server";
+import {
+  createMemberAccount,
+  listMemberAccounts,
+  type MemberAccountDirectoryEntry,
+} from "../database/member-accounts.server";
+import { transitionMemberAccess } from "../database/member-access.server";
+import { deleteMemberAccount } from "../database/member-deletion.server";
 import {
   passwordCredentials,
   sessions,
@@ -15,6 +30,17 @@ import {
 } from "./password.server";
 import { PersistentRateLimiter } from "./rate-limiter.server";
 import { deriveCsrfToken, hashOpaqueToken, safelyEqual } from "./token.server";
+import {
+  logBootstrapFailed,
+  logBootstrapRejected,
+  logBootstrapSucceeded,
+} from "./bootstrap-events.server";
+import {
+  logMemberAccessChanged,
+  logMemberDeleted,
+  logMemberPasswordReset,
+  logMemberProvisioned,
+} from "./member-events.server";
 
 const IDLE_SESSION_MS = 5 * 24 * 60 * 60 * 1_000;
 const ABSOLUTE_SESSION_MS = 90 * 24 * 60 * 60 * 1_000;
@@ -30,11 +56,32 @@ function registrationWindowMs(): number {
   return 60 * 60 * 1_000;
 }
 
-export type CredentialUser = Pick<
-  typeof users.$inferSelect,
-  "id" | "usernameNormalized"
-> &
-  Pick<typeof passwordCredentials.$inferSelect, "passwordHash">;
+export type CredentialUser = CredentialRecord;
+
+export type UserRole = (typeof users.$inferSelect)["role"];
+type AccountAccessState = (typeof users.$inferSelect)["accessState"];
+type MemberAccessAction = "disable" | "reactivate";
+type MemberAccessStaleError = "already-active" | "already-disabled";
+
+const memberAccessTransitions = {
+  disable: {
+    expectedState: "active",
+    nextState: "disabled",
+    staleError: "already-disabled",
+  },
+  reactivate: {
+    expectedState: "disabled",
+    nextState: "active",
+    staleError: "already-active",
+  },
+} as const satisfies Record<
+  MemberAccessAction,
+  {
+    expectedState: AccountAccessState;
+    nextState: AccountAccessState;
+    staleError: MemberAccessStaleError;
+  }
+>;
 
 export type AuthenticatedSession = {
   absoluteExpiresAt: Date;
@@ -42,18 +89,46 @@ export type AuthenticatedSession = {
   token: string;
   user: {
     id: number;
+    passwordChangeRequired: boolean;
+    role: UserRole;
     username: string;
   };
 };
 
+export type ManageableMember = MemberAccountDirectoryEntry;
+
+export type ProvisionMemberResult =
+  | { error: "duplicate-username"; ok: false }
+  | { member: Omit<ManageableMember, "id">; ok: true };
+
+export type MemberAccessChangeResult =
+  | {
+      error:
+        | "already-active"
+        | "already-disabled"
+        | "confirmation-mismatch"
+        | "not-found";
+      ok: false;
+    }
+  | { ok: true };
+
+export type MemberPasswordResetResult =
+  | { error: "not-found"; ok: false }
+  | { ok: true };
+
+export type MemberDeletionResult =
+  | { error: "confirmation-mismatch" | "not-found"; ok: false }
+  | { ok: true };
+
 export type IssuedSession = AuthenticatedSession;
 
 export type RegistrationResult =
-  | { error: "duplicate-username"; ok: false }
+  | { error: "claimed-instance"; ok: false }
   | { error: "rate-limited"; ok: false }
   | { ok: true; session: IssuedSession };
 
 export type LoginResult =
+  | { error: "account-disabled"; ok: false }
   | { error: "invalid-credentials"; ok: false }
   | { error: "rate-limited"; ok: false }
   | { ok: true; session: IssuedSession };
@@ -61,6 +136,7 @@ export type LoginResult =
 export type PasswordChangeResult =
   | { error: "invalid-current-password"; ok: false }
   | { error: "invalid-session"; ok: false }
+  | { error: "password-reuse"; ok: false }
   | { error: "rate-limited"; ok: false }
   | { ok: true; session: IssuedSession };
 
@@ -99,25 +175,20 @@ function prepareIssuedSession(
   };
 }
 
-export function isUniqueConstraint(error: unknown): boolean {
-  return (
-    error instanceof Error &&
-    "code" in error &&
-    error.code === "SQLITE_CONSTRAINT_UNIQUE"
-  );
-}
-
 export class AuthenticationService {
   readonly #database: ApplicationDatabaseClient;
   readonly #now: () => Date;
+  readonly #passwordVerifier: typeof verifyPassword;
   readonly #rateLimiter: PersistentRateLimiter;
 
   constructor(
     database: ApplicationDatabaseClient,
     now: () => Date = () => new Date(),
+    passwordVerifier: typeof verifyPassword = verifyPassword,
   ) {
     this.#database = database;
     this.#now = now;
+    this.#passwordVerifier = passwordVerifier;
     this.#rateLimiter = new PersistentRateLimiter(database, now);
   }
 
@@ -126,51 +197,98 @@ export class AuthenticationService {
     password: string,
     clientIp: string,
   ): Promise<RegistrationResult> {
-    if (
-      !this.#rateLimiter.consume(
-        "registration",
-        clientIp,
-        5,
-        registrationWindowMs(),
-      )
-    ) {
-      return { error: "rate-limited", ok: false };
-    }
-
-    const passwordHash = await hashPassword(password);
-    const createdAt = this.#now().toISOString();
-
     try {
-      const userId = this.#database.transaction((transaction) => {
-        const user = transaction
-          .insert(users)
-          .values({ createdAt, usernameNormalized })
-          .returning({ id: users.id })
-          .get();
-
-        transaction
-          .insert(passwordCredentials)
-          .values({
-            passwordHash,
-            updatedAt: createdAt,
-            userId: user.id,
-          })
-          .run();
-
-        return user.id;
-      });
-
-      return {
-        ok: true,
-        session: this.#issueSession(userId, usernameNormalized),
-      };
-    } catch (error) {
-      if (isUniqueConstraint(error)) {
-        return { error: "duplicate-username", ok: false };
+      if (
+        !this.#rateLimiter.consume(
+          "registration",
+          clientIp,
+          5,
+          registrationWindowMs(),
+        )
+      ) {
+        logBootstrapRejected("rate-limited");
+        return { error: "rate-limited", ok: false };
       }
 
+      const passwordHash = await hashPassword(password);
+      const createdAt = this.#now().toISOString();
+      const registered = this.#database.transaction(
+        (transaction) => {
+          const existingUser = transaction
+            .select({ id: users.id })
+            .from(users)
+            .limit(1)
+            .get();
+          if (existingUser) return undefined;
+
+          const user = transaction
+            .insert(users)
+            .values({ createdAt, role: "admin", usernameNormalized })
+            .returning({ id: users.id })
+            .get();
+
+          transaction
+            .insert(passwordCredentials)
+            .values({
+              passwordHash,
+              updatedAt: createdAt,
+              userId: user.id,
+            })
+            .run();
+
+          const issued = prepareIssuedSession(this.#now(), {
+            id: user.id,
+            passwordChangeRequired: false,
+            role: "admin",
+            username: usernameNormalized,
+          });
+          transaction.insert(sessions).values(issued.persisted).run();
+          return issued.session;
+        },
+        { behavior: "immediate" },
+      );
+
+      if (!registered) {
+        logBootstrapRejected("claimed-instance");
+        return { error: "claimed-instance", ok: false };
+      }
+
+      logBootstrapSucceeded(registered.user.id, registered.user.username);
+      return { ok: true, session: registered };
+    } catch (error) {
+      logBootstrapFailed(error);
       throw error;
     }
+  }
+
+  isRegistrationOpen(): boolean {
+    return this.#database.select({ id: users.id }).from(users).limit(1).get() ===
+      undefined;
+  }
+
+  async provisionMember(
+    usernameNormalized: string,
+    initialPassword: string,
+  ): Promise<ProvisionMemberResult> {
+    const passwordHash = await hashPassword(initialPassword);
+    const createdAt = this.#now().toISOString();
+    const member = createMemberAccount(this.#database, {
+      createdAt,
+      passwordHash,
+      usernameNormalized,
+    });
+
+    if (!member) return { error: "duplicate-username", ok: false };
+    logMemberProvisioned(member.id, usernameNormalized);
+    return {
+      member: {
+        accessState: "active",
+        createdAt,
+        passwordChangeRequired: true,
+        username: usernameNormalized,
+      },
+      ok: true,
+    };
   }
 
   async authenticate(
@@ -181,18 +299,7 @@ export class AuthenticationService {
     }
 
     const tokenHash = hashOpaqueToken(token);
-    const session = this.#database
-      .select({
-        absoluteExpiresAt: sessions.absoluteExpiresAt,
-        idleExpiresAt: sessions.idleExpiresAt,
-        tokenHash: sessions.tokenHash,
-        userId: sessions.userId,
-        usernameNormalized: users.usernameNormalized,
-      })
-      .from(sessions)
-      .innerJoin(users, eq(users.id, sessions.userId))
-      .where(eq(sessions.tokenHash, tokenHash))
-      .get();
+    const session = findActiveSessionByTokenHash(this.#database, tokenHash);
 
     if (!session) {
       return undefined;
@@ -228,6 +335,8 @@ export class AuthenticationService {
       token,
       user: {
         id: session.userId,
+        passwordChangeRequired: session.passwordChangeRequired,
+        role: session.role,
         username: session.usernameNormalized,
       },
     };
@@ -260,46 +369,28 @@ export class AuthenticationService {
     ) {
       return { error: "invalid-current-password", ok: false };
     }
+    if (
+      currentSession.user.passwordChangeRequired &&
+      currentPassword === nextPassword
+    ) {
+      return { error: "password-reuse", ok: false };
+    }
 
     const now = this.#now();
     const nextPasswordHash = await hashPassword(nextPassword);
     const nextSession = prepareIssuedSession(
       now,
-      currentSession.user,
+      { ...currentSession.user, passwordChangeRequired: false },
       currentSession.absoluteExpiresAt,
     );
     const currentTokenHash = hashOpaqueToken(currentSession.token);
 
-    const rotated = this.#database.transaction((transaction) => {
-      const persistedCurrentSession = transaction
-        .select({ tokenHash: sessions.tokenHash })
-        .from(sessions)
-        .where(
-          and(
-            eq(sessions.tokenHash, currentTokenHash),
-            eq(sessions.userId, currentSession.user.id),
-          ),
-        )
-        .get();
-      if (!persistedCurrentSession) return false;
-
-      transaction
-        .update(passwordCredentials)
-        .set({
-          passwordHash: nextPasswordHash,
-          updatedAt: now.toISOString(),
-        })
-        .where(eq(passwordCredentials.userId, currentSession.user.id))
-        .run();
-      transaction
-        .delete(sessions)
-        .where(eq(sessions.userId, currentSession.user.id))
-        .run();
-      transaction
-        .insert(sessions)
-        .values(nextSession.persisted)
-        .run();
-      return true;
+    const rotated = replacePasswordAndSessions(this.#database, {
+      currentTokenHash,
+      nextPasswordHash,
+      nextSession: nextSession.persisted,
+      updatedAt: now.toISOString(),
+      userId: currentSession.user.id,
     });
 
     if (!rotated) {
@@ -335,28 +426,36 @@ export class AuthenticationService {
     if (!verification.matches || !verification.user) {
       return { error: "invalid-credentials", ok: false };
     }
-
-    if (verification.needsRehash) {
-      const replacement = await hashPassword(password);
-      this.#database
-        .update(passwordCredentials)
-        .set({
-          passwordHash: replacement,
-          updatedAt: this.#now().toISOString(),
-        })
-        .where(eq(passwordCredentials.userId, verification.user.id))
-        .run();
+    if (verification.user.accessState !== "active") {
+      this.#rateLimiter.clear("login-failure", rateLimitSubject);
+      return { error: "account-disabled", ok: false };
     }
 
-    this.#rateLimiter.clear("login-failure", rateLimitSubject);
+    const issued = prepareIssuedSession(this.#now(), {
+        id: verification.user.id,
+        passwordChangeRequired: verification.user.passwordChangeRequired,
+        role: verification.user.role,
+        username: verification.user.usernameNormalized,
+    });
+    const replacementPasswordHash = verification.needsRehash
+      ? await hashPassword(password)
+      : undefined;
+    const sessionIssued = issueSessionForVerifiedCredential(this.#database, {
+      ...(replacementPasswordHash
+        ? {
+            credentialReplacement: {
+              passwordHash: replacementPasswordHash,
+              updatedAt: this.#now().toISOString(),
+            },
+          }
+        : {}),
+      expectedPasswordHash: verification.user.passwordHash,
+      session: issued.persisted,
+    });
+    if (!sessionIssued) return { error: "invalid-credentials", ok: false };
 
-    return {
-      ok: true,
-      session: this.#issueSession(
-        verification.user.id,
-        verification.user.usernameNormalized,
-      ),
-    };
+    this.#rateLimiter.clear("login-failure", rateLimitSubject);
+    return { ok: true, session: issued.session };
   }
 
   revokeSession(token: string): void {
@@ -370,18 +469,6 @@ export class AuthenticationService {
     return safelyEqual(csrfTokenFor(sessionToken), candidate);
   }
 
-  #issueSession(userId: number, usernameNormalized: string): IssuedSession {
-    const issued = prepareIssuedSession(this.#now(), {
-      id: userId,
-      username: usernameNormalized,
-    });
-    this.#database
-      .insert(sessions)
-      .values(issued.persisted)
-      .run();
-    return issued.session;
-  }
-
   async verifyCredentials(
     usernameNormalized: string,
     password: string,
@@ -390,26 +477,129 @@ export class AuthenticationService {
     needsRehash: boolean;
     user?: CredentialUser;
   }> {
-    const user = this.#database
-      .select({
-        id: users.id,
-        passwordHash: passwordCredentials.passwordHash,
-        usernameNormalized: users.usernameNormalized,
-      })
-      .from(users)
-      .innerJoin(
-        passwordCredentials,
-        eq(passwordCredentials.userId, users.id),
-      )
-      .where(eq(users.usernameNormalized, usernameNormalized))
-      .get();
+    const user = findCredentialByUsername(
+      this.#database,
+      usernameNormalized,
+    );
     const credential = user?.passwordHash ?? createDummyPasswordHash();
-    const verification = await verifyPassword(password, credential);
+    const verification = await this.#passwordVerifier(password, credential);
 
     return {
       matches: Boolean(user) && verification.matches,
       needsRehash: verification.needsRehash,
       user,
     };
+  }
+
+  async disableMemberAccess(
+    actor: AuthenticatedSession["user"],
+    targetUsername: string,
+    confirmationUsername: string,
+  ): Promise<MemberAccessChangeResult> {
+    if (confirmationUsername !== targetUsername) {
+      logMemberAccessChanged(
+        "disable",
+        actor,
+        targetUsername,
+        "confirmation-mismatch",
+      );
+      return { error: "confirmation-mismatch", ok: false };
+    }
+    return this.#changeMemberAccess(actor, targetUsername, "disable");
+  }
+
+  async reactivateMemberAccess(
+    actor: AuthenticatedSession["user"],
+    targetUsername: string,
+  ): Promise<MemberAccessChangeResult> {
+    return this.#changeMemberAccess(actor, targetUsername, "reactivate");
+  }
+
+  async resetMemberPassword(
+    actor: AuthenticatedSession["user"],
+    targetUsername: string,
+    temporaryPassword: string,
+  ): Promise<MemberPasswordResetResult> {
+    const nextPasswordHash = await hashPassword(temporaryPassword);
+    try {
+      const changed = resetMemberPasswordAndSessions(this.#database, {
+        nextPasswordHash,
+        targetUsername,
+        updatedAt: this.#now().toISOString(),
+      });
+      if (!changed) {
+        logMemberPasswordReset(actor, targetUsername, "not-found");
+        return { error: "not-found", ok: false };
+      }
+
+      logMemberPasswordReset(actor, targetUsername, "succeeded");
+      return { ok: true };
+    } catch (error) {
+      logMemberPasswordReset(actor, targetUsername, "failed");
+      throw error;
+    }
+  }
+
+  async deleteMember(
+    actor: AuthenticatedSession["user"],
+    target: Pick<ManageableMember, "id" | "username">,
+    confirmationUsername: string,
+  ): Promise<MemberDeletionResult> {
+    if (actor.role !== "admin") {
+      logMemberDeleted(actor, target.username, "not-found");
+      return { error: "not-found", ok: false };
+    }
+    if (confirmationUsername !== target.username) {
+      logMemberDeleted(actor, target.username, "confirmation-mismatch");
+      return { error: "confirmation-mismatch", ok: false };
+    }
+
+    try {
+      if (!deleteMemberAccount(this.#database, {
+        id: target.id,
+        usernameNormalized: target.username,
+      })) {
+        logMemberDeleted(actor, target.username, "not-found");
+        return { error: "not-found", ok: false };
+      }
+      logMemberDeleted(actor, target.username, "succeeded");
+      return { ok: true };
+    } catch (error) {
+      logMemberDeleted(actor, target.username, "failed");
+      throw error;
+    }
+  }
+
+  #changeMemberAccess(
+    actor: AuthenticatedSession["user"],
+    targetUsername: string,
+    action: MemberAccessAction,
+  ): MemberAccessChangeResult {
+    try {
+      const transition = memberAccessTransitions[action];
+      const result = transitionMemberAccess(
+        this.#database,
+        targetUsername,
+        transition.expectedState,
+        transition.nextState,
+      );
+      if (result === "changed") {
+        logMemberAccessChanged(action, actor, targetUsername, "succeeded");
+        return { ok: true };
+      }
+
+      const error = result === "not-found"
+        ? "not-found"
+        : transition.staleError;
+      logMemberAccessChanged(action, actor, targetUsername, error);
+      return { error, ok: false };
+    } catch (error) {
+      logMemberAccessChanged(action, actor, targetUsername, "failed");
+      throw error;
+    }
+  }
+
+  listManageableMembers(): ManageableMember[] {
+    return listMemberAccounts(this.#database);
   }
 }

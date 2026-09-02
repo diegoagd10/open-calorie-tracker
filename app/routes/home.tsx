@@ -21,7 +21,7 @@ import {
 } from "react-router";
 
 import {
-  getAuthenticatedSession,
+  getSessionForApplicationAccess,
   requireValidOrigin,
   serializeClearedSessionCookie,
 } from "../auth/http.server";
@@ -324,10 +324,12 @@ function catalogOperationContext(request: Request): CatalogOperationContext {
 }
 
 export async function loader({ request }: Route.LoaderArgs) {
-  const session = await getAuthenticatedSession(request);
+  const session = await getSessionForApplicationAccess(request);
 
   if (!session) {
-    return redirect("/login");
+    return redirect(
+      getAuthenticationService().isRegistrationOpen() ? "/register" : "/login",
+    );
   }
 
   const url = new URL(request.url);
@@ -644,7 +646,7 @@ function formString(formData: FormData, name: string): string {
 
 export async function action({ request }: Route.ActionArgs) {
   requireValidOrigin(request);
-  const session = await getAuthenticatedSession(request);
+  const session = await getSessionForApplicationAccess(request);
   if (!session) {
     return redirect("/login", {
       headers: { "Set-Cookie": serializeClearedSessionCookie() },

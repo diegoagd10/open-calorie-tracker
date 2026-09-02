@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "c5260248-72dc-4a8e-82d2-70fc339d1d0a",
+  "id": "9a5aa910-87d5-40cb-b3ab-13f101eb93bf",
   "prevId": "f1ae1eed-b72e-4cf2-a7dd-e4e20cdf7b67",
   "tables": {
     "application_metadata": {
@@ -313,19 +313,15 @@
       "checkConstraints": {
         "food_entries_provider_check": {
           "name": "food_entries_provider_check",
-          "value": "\"food_entries\".\"provider\" IN ('usda-fdc', 'open-food-facts')"
+          "value": "\"food_entries\".\"provider\" = 'usda-fdc'"
         },
         "food_entries_data_type_check": {
           "name": "food_entries_data_type_check",
-          "value": "\"food_entries\".\"source_data_type\" IN ('Branded', 'Survey (FNDDS)', 'Foundation', 'Open Food Facts')"
+          "value": "\"food_entries\".\"source_data_type\" IN ('Branded', 'Survey (FNDDS)', 'Foundation')"
         },
         "food_entries_units_check": {
           "name": "food_entries_units_check",
-          "value": "\"food_entries\".\"authoritative_base_unit\" IN ('g', 'ml', 'serving')\n        AND \"food_entries\".\"selected_measurement_unit\" IN ('g', 'ml', 'serving')"
-        },
-        "food_entries_provider_semantics_check": {
-          "name": "food_entries_provider_semantics_check",
-          "value": "(\"food_entries\".\"provider\" = 'usda-fdc'\n          AND \"food_entries\".\"source_data_type\" IN ('Branded', 'Survey (FNDDS)', 'Foundation')\n          AND \"food_entries\".\"authoritative_base_unit\" IN ('g', 'ml')\n          AND \"food_entries\".\"selected_measurement_unit\" IN ('g', 'ml'))\n        OR (\"food_entries\".\"provider\" = 'open-food-facts'\n          AND \"food_entries\".\"source_data_type\" = 'Open Food Facts'\n          AND \"food_entries\".\"authoritative_base_unit\" = 'serving'\n          AND \"food_entries\".\"selected_measurement_unit\" = 'serving')"
+          "value": "\"food_entries\".\"authoritative_base_unit\" IN ('g', 'ml')\n        AND \"food_entries\".\"selected_measurement_unit\" IN ('g', 'ml')"
         },
         "food_entries_positive_quantities_check": {
           "name": "food_entries_positive_quantities_check",
@@ -747,6 +743,14 @@
           "notNull": true,
           "autoincrement": false
         },
+        "role": {
+          "name": "role",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'member'"
+        },
         "created_at": {
           "name": "created_at",
           "type": "text",
@@ -756,6 +760,14 @@
         }
       },
       "indexes": {
+        "users_single_admin_unique": {
+          "name": "users_single_admin_unique",
+          "columns": [
+            "role"
+          ],
+          "isUnique": true,
+          "where": "\"users\".\"role\" = 'admin'"
+        },
         "users_username_normalized_unique": {
           "name": "users_username_normalized_unique",
           "columns": [
@@ -767,7 +779,12 @@
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
-      "checkConstraints": {}
+      "checkConstraints": {
+        "users_role_check": {
+          "name": "users_role_check",
+          "value": "role IN ('admin', 'member')"
+        }
+      }
     },
     "water_events": {
       "name": "water_events",

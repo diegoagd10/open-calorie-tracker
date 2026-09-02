@@ -8,6 +8,7 @@
     "node": ">=24.7 <25"
   },
   "scripts": {
+    "admin:recover": "node build/recovery/recover-administrator.js",
     "architecture": "pnpm architecture:check && pnpm architecture:test",
     "architecture:check": "fallow dead-code --baseline fallow-baselines/dead-code.json --fail-on-issues",
     "architecture:test": "node --test scripts/fallow-architecture.test.mjs",
@@ -15,7 +16,7 @@
     "audit:full": "node scripts/audit-dependencies.mjs",
     "audit:policy": "node --test scripts/audit-dependencies.test.mjs",
     "audit:prod": "pnpm audit --prod",
-    "build": "react-router build",
+    "build": "react-router build && vite build --config vite.recovery.config.ts",
     "codeql:policy": "node --test scripts/check-codeql-results.test.mjs",
     "db:generate": "drizzle-kit generate",
     "dev": "NODE_ENV=development node --conditions development server.js",

@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 
 import type { Route } from "./+types/setup";
 import {
-  getAuthenticatedSession,
+  getSessionForApplicationAccess,
   requireValidOrigin,
   serializeClearedSessionCookie,
 } from "../auth/http.server";
@@ -38,7 +38,7 @@ export function headers() {
 }
 
 export async function loader({ request }: Route.LoaderArgs) {
-  const session = await getAuthenticatedSession(request);
+  const session = await getSessionForApplicationAccess(request);
   if (!session) return redirect("/login");
   if (getGoalSetupService().isComplete(session.user.id)) return redirect("/");
 
@@ -47,7 +47,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 
 export async function action({ request }: Route.ActionArgs) {
   requireValidOrigin(request);
-  const session = await getAuthenticatedSession(request);
+  const session = await getSessionForApplicationAccess(request);
   if (!session) {
     return redirect("/login", {
       headers: { "Set-Cookie": serializeClearedSessionCookie() },

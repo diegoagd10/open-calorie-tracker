@@ -98,6 +98,21 @@ temporary `TRUST_PROXY` value.
 The container is ready when Portainer reports it healthy and
 `GET /health/ready` returns 200.
 
+## Claim a new instance before public exposure
+
+A database with no users is intentionally unclaimed. The first successful
+registration becomes the sole administrator, receives an authenticated session,
+and closes public registration. There is no bootstrap token or second approval.
+
+Keep Traefik disconnected from a new instance until you have opened the
+application through a trusted local path, registered the administrator, and
+finished the nutrition setup. Afterward, verify that an anonymous request to
+`/register` redirects to `/login`; only then expose the instance publicly.
+
+Existing installations are claimed automatically during migration: the oldest
+user becomes the administrator and all other legacy users become members. Their
+usernames, password hashes, sessions, and nutrition data are preserved.
+
 ## Configure Traefik
 
 Route the hostname from `APPLICATION_URL` through the existing `websecure`
@@ -122,14 +137,52 @@ Complete all checks after the initial deployment or a configuration change:
 
 1. Confirm Portainer reports the container as healthy.
 2. Confirm `https://<hostname>/health/ready` returns 200.
-3. Register a test account or sign in. This verifies `TRUST_PROXY`, forwarded
-   HTTPS, cookies, CSRF protection, and writable SQLite storage together.
+3. On a new database, claim the administrator before connecting the public
+   route; on an existing database, sign in with the oldest account. This verifies
+   `TRUST_PROXY`, forwarded HTTPS, cookies, CSRF protection, and writable SQLite
+   storage together.
 4. Confirm the container logs contain a successful POST rather than
    `singleFetchAction` followed by `400 Bad Request`.
 
 If step 3 fails with `400 Bad Request`, inspect the application's current
 network again. Docker may assign a different subnet when a network is recreated;
 update `TRUST_PROXY` and redeploy.
+
+## Recover a forgotten administrator password
+
+If the sole administrator no longer knows the current password, run the local
+recovery command inside the running application container. The web service does
+not need to be stopped:
+
+```sh
+docker compose exec -T application node build/recovery/recover-administrator.js
+```
+
+For a Portainer-managed container, use its actual container name:
+
+```sh
+docker exec -i <application-container> node build/recovery/recover-administrator.js
+```
+
+Run this from a private terminal. The one line written to standard output is a
+new, one-time temporary password. Do not redirect it to a file, paste it into
+chat or a ticket, include it in a screenshot, or retain it in terminal logs.
+Copy it directly into a password manager or the login form, then clear the
+terminal display.
+
+The command uses the container's configured `DATABASE_PATH` and migrations. It
+finds the account by the `admin` role, replaces its credential, and revokes all
+administrator sessions in one transaction. A redacted outcome is written to
+standard error. If there is no administrator or the database does not contain
+exactly one administrator, the command exits unsuccessfully, prints no
+password, and changes nothing.
+
+After a successful recovery, sign in with the displayed temporary password.
+Only password replacement and logout are available until a new private password
+is saved; that replacement rotates the session and restores normal
+administrator access. If the current private password is still known, use the
+authenticated password-change page in Settings instead of this recovery
+command.
 
 ## Updates and backups
 

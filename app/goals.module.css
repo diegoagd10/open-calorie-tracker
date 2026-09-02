@@ -1,6 +1,11 @@
+.settingsDestinations,
 .accountAccessRow,
 .settingsGroup {
   max-width: 44rem;
+}
+
+.settingsDestinations {
+  margin-bottom: 0.75rem;
 }
 
 .mobileSignOutForm {
@@ -55,7 +60,7 @@
   align-items: center;
   gap: 0.75rem;
   min-height: 4rem;
-  margin-bottom: 0.75rem;
+  margin-bottom: 0.5rem;
   padding: 0.8rem 1rem;
   border: 1px solid var(--rule);
   border-radius: 1rem;
@@ -63,6 +68,10 @@
   background: var(--surface);
   box-shadow: 0 8px 24px rgb(15 29 45 / 5%);
   text-decoration: none;
+}
+
+.settingsDestinations .accountAccessRow:last-child {
+  margin-bottom: 0;
 }
 
 .accountAccessRow:hover {

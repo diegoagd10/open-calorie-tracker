@@ -1,0 +1,381 @@
+.provisioning,
+.directory {
+  max-width: 44rem;
+  overflow: hidden;
+  border: 1px solid var(--rule);
+  border-radius: 1rem;
+  background: var(--surface);
+  box-shadow: 0 8px 24px rgb(15 29 45 / 5%);
+}
+
+.provisioning {
+  margin-bottom: 1rem;
+  padding: 1.25rem;
+}
+
+.provisioning header h2,
+.provisioning header p {
+  margin: 0;
+}
+
+.provisioning header h2 {
+  font-size: 1rem;
+}
+
+.provisioning header p,
+.provisioningForm small {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.provisioning header p {
+  margin-top: 0.25rem;
+}
+
+.provisioningForm,
+.provisioningForm label {
+  display: grid;
+}
+
+.provisioningForm {
+  gap: 0.8rem;
+  margin-top: 1rem;
+}
+
+.provisioningForm label {
+  gap: 0.35rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.provisioningForm input:not([type="hidden"]) {
+  min-height: 2.75rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--rule);
+  border-radius: 0.6rem;
+  font: inherit;
+  font-weight: 400;
+}
+
+.provisioningForm button {
+  min-height: 2.75rem;
+  border: 0;
+  border-radius: 0.65rem;
+  color: white;
+  background: #126c24;
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.provisioningForm button:hover {
+  background: #105f1e;
+}
+
+.error,
+.success {
+  margin: 0;
+  padding: 0.75rem;
+  border-radius: 0.6rem;
+  font-size: 0.78rem;
+}
+
+.error {
+  color: #8a1c14;
+  background: #fff1f0;
+}
+
+.success {
+  color: var(--green-dark);
+  background: #edf7ee;
+}
+
+.directoryHeading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--rule);
+}
+
+.directoryHeading h2,
+.directoryHeading p {
+  margin: 0;
+}
+
+.directoryHeading h2 {
+  font-size: 1rem;
+}
+
+.directoryHeading p {
+  margin-top: 0.2rem;
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.directoryHeading > strong {
+  display: grid;
+  min-width: 2rem;
+  min-height: 2rem;
+  place-items: center;
+  border-radius: 999px;
+  color: var(--ink-2);
+  background: #f4f6f8;
+  font-size: 0.75rem;
+}
+
+.memberList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.memberList li {
+  display: flex;
+  min-height: 4.25rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.85rem 1.25rem;
+}
+
+.memberList li + li {
+  border-top: 1px solid var(--rule);
+}
+
+.memberList li > span:first-child,
+.memberList strong,
+.memberList small {
+  display: block;
+  min-width: 0;
+}
+
+.memberIdentity {
+  flex: 1;
+}
+
+.memberList li > span:first-child {
+  overflow: hidden;
+}
+
+.memberList strong {
+  overflow: hidden;
+  font-size: 0.82rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.memberList small {
+  margin-top: 0.2rem;
+  color: var(--muted);
+  font-size: 0.68rem;
+}
+
+.activeState,
+.disabledState,
+.onboardingState {
+  flex: none;
+  padding: 0.32rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.65rem;
+  font-weight: 750;
+}
+
+.memberStates {
+  display: flex;
+  flex: none;
+  align-items: flex-end;
+  gap: 0.3rem;
+  flex-direction: column;
+}
+
+.memberAccess {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.memberAccess form {
+  margin: 0;
+}
+
+.memberControls {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.45rem;
+}
+
+.disableButton,
+.deleteButton,
+.reactivateButton,
+.resetButton,
+.confirmationActions button {
+  min-height: 2.25rem;
+  padding: 0.45rem 0.7rem;
+  border: 1px solid var(--rule);
+  border-radius: 0.55rem;
+  background: var(--surface);
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.disableButton,
+.deleteButton,
+.confirmDisableButton {
+  color: #8a1c14;
+}
+
+.confirmationActions .confirmDeleteButton {
+  border-color: #8a1c14;
+  color: white;
+  background: #8a1c14;
+}
+
+.reactivateButton {
+  color: var(--green-dark);
+}
+
+.resetButton,
+.confirmResetButton {
+  color: var(--ink-2);
+}
+
+.directoryMessageError,
+.directoryMessageSuccess {
+  margin: 0;
+  padding: 0.75rem 1.25rem;
+  border-bottom: 1px solid var(--rule);
+  font-size: 0.78rem;
+}
+
+.directoryMessageError {
+  color: #8a1c14;
+  background: #fff1f0;
+}
+
+.directoryMessageSuccess {
+  color: var(--green-dark);
+  background: #edf7ee;
+}
+
+.confirmationDialog {
+  position: fixed;
+  z-index: 100;
+  inset: 0;
+  width: min(28rem, calc(100% - 2rem));
+  max-height: calc(100dvh - 2rem);
+  padding: 1.25rem;
+  border: 1px solid var(--rule);
+  border-radius: 1rem;
+  box-shadow: 0 18px 55px rgb(15 29 45 / 24%);
+}
+
+.confirmationDialog::backdrop {
+  background: rgb(15 29 45 / 48%);
+}
+
+.confirmationDialog h2,
+.confirmationDialog p {
+  margin: 0;
+}
+
+.confirmationDialog h2 {
+  font-size: 1.05rem;
+}
+
+.confirmationDialog p {
+  margin-top: 0.5rem;
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+
+.confirmationForm,
+.confirmationForm label {
+  display: grid;
+}
+
+.confirmationForm {
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.confirmationForm label {
+  gap: 0.35rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.confirmationForm input:not([type="hidden"]) {
+  min-height: 2.75rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--rule);
+  border-radius: 0.6rem;
+  font: inherit;
+  font-weight: 400;
+}
+
+.confirmationActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.65rem;
+}
+
+.activeState {
+  color: var(--green-dark);
+  background: #edf7ee;
+}
+
+.disabledState {
+  color: #8a1c14;
+  background: #fff1f0;
+}
+
+.onboardingState {
+  color: #744210;
+  background: #fff8db;
+}
+
+.empty {
+  margin: 0;
+  padding: 1.25rem;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+@media (max-width: 420px) {
+  .directoryHeading,
+  .memberList li {
+    padding-inline: 0.9rem;
+  }
+
+  .provisioning {
+    padding-inline: 0.9rem;
+  }
+
+  .memberList li {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .memberStates {
+    align-items: flex-start;
+  }
+
+  .memberAccess {
+    width: 100%;
+    align-items: flex-start;
+    justify-content: space-between;
+  }
+
+  .memberControls {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
