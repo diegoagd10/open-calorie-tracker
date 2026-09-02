@@ -5,7 +5,9 @@ import { asc, eq } from "drizzle-orm";
 import type { ApplicationDatabaseClient } from "../database/database.server";
 import {
   findActiveSessionByTokenHash,
+  findCredentialByUsername,
   replacePasswordAndSessions,
+  type CredentialRecord,
 } from "../database/credential-sessions.server";
 import { createMemberAccount } from "../database/member-accounts.server";
 import { transitionMemberAccess } from "../database/member-access.server";
@@ -45,15 +47,7 @@ function registrationWindowMs(): number {
   return 60 * 60 * 1_000;
 }
 
-export type CredentialUser = Pick<
-  typeof users.$inferSelect,
-  | "accessState"
-  | "id"
-  | "passwordChangeRequired"
-  | "role"
-  | "usernameNormalized"
-> &
-  Pick<typeof passwordCredentials.$inferSelect, "passwordHash">;
+export type CredentialUser = CredentialRecord;
 
 export type UserRole = (typeof users.$inferSelect)["role"];
 export type AccountAccessState = (typeof users.$inferSelect)["accessState"];
@@ -474,22 +468,10 @@ export class AuthenticationService {
     needsRehash: boolean;
     user?: CredentialUser;
   }> {
-    const user = this.#database
-      .select({
-        accessState: users.accessState,
-        id: users.id,
-        passwordHash: passwordCredentials.passwordHash,
-        passwordChangeRequired: users.passwordChangeRequired,
-        role: users.role,
-        usernameNormalized: users.usernameNormalized,
-      })
-      .from(users)
-      .innerJoin(
-        passwordCredentials,
-        eq(passwordCredentials.userId, users.id),
-      )
-      .where(eq(users.usernameNormalized, usernameNormalized))
-      .get();
+    const user = findCredentialByUsername(
+      this.#database,
+      usernameNormalized,
+    );
     const credential = user?.passwordHash ?? createDummyPasswordHash();
     const verification = await verifyPassword(password, credential);
 
