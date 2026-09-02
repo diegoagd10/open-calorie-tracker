@@ -60,7 +60,9 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: mkdir -p reports/ci
       - name: Test the production container
-        run: pnpm test:deployment 2>&1 | tee reports/ci/deployment.log
+        run: |
+          set -o pipefail
+          pnpm test:deployment 2>&1 | tee reports/ci/deployment.log
       - uses: actions/upload-artifact@v7
         if: always()
         with:
