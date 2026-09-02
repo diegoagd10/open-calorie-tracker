@@ -18,6 +18,7 @@ import {
   loader as registerLoader,
 } from "../../app/routes/register";
 import { loader as homeLoader } from "../../app/routes/home";
+import { loader as loginLoader } from "../../app/routes/login";
 
 const origin = "http://localhost:3000";
 const password = "correct horse battery staple";
@@ -52,9 +53,16 @@ afterAll(async () => {
 
 describe("administrator bootstrap route", () => {
   test("anonymous navigation to an empty instance leads to registration", async () => {
-    const result = await homeLoader(routeArgs(new Request(origin), "/"));
-    expect(result).toBeInstanceOf(Response);
-    expect((result as Response).headers.get("Location")).toBe("/register");
+    const homeResult = await homeLoader(routeArgs(new Request(origin), "/"));
+    expect(homeResult).toBeInstanceOf(Response);
+    expect((homeResult as Response).headers.get("Location")).toBe("/register");
+
+    const loginResult = await loginLoader(
+      routeArgs(new Request(`${origin}/login`), "/login"),
+    );
+    expect(loginResult).toBeInstanceOf(Response);
+    expect((loginResult as Response).headers.get("Location"))
+      .toBe("/register");
   });
 
   test("an open bootstrap preserves validation, Origin, CSRF, and rate limits", async () => {

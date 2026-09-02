@@ -55,6 +55,7 @@ export async function action({ request }: Route.ActionArgs) {
   }
 
   const parsed = passwordChangeSchema.safeParse({
+    confirmNewPassword: String(formData.get("confirmNewPassword") ?? ""),
     currentPassword: String(formData.get("currentPassword") ?? ""),
     newPassword: String(formData.get("newPassword") ?? ""),
   });
@@ -63,7 +64,9 @@ export async function action({ request }: Route.ActionArgs) {
     const error =
       field === "currentPassword"
         ? "Enter your current password."
-        : "New password must contain 12–128 characters.";
+        : field === "newPassword"
+          ? "New password must contain 12–128 characters."
+          : "New passwords do not match.";
     return data<PasswordChangeActionData>({ error }, { status: 400 });
   }
 
@@ -172,6 +175,16 @@ export default function ChangePassword({
             <small id="new-password-help">
               12–128 characters; spaces and Unicode are welcome.
             </small>
+          </div>
+          <div className={styles.field}>
+            <label htmlFor="confirm-new-password">Confirm new password</label>
+            <input
+              autoComplete="new-password"
+              id="confirm-new-password"
+              name="confirmNewPassword"
+              required
+              type="password"
+            />
           </div>
           {actionData?.error ? (
             <p className={styles.error} role="alert">

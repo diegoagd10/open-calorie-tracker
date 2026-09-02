@@ -68,46 +68,23 @@ describe("static route contracts", () => {
 });
 
 describe("shared route components", () => {
-  test.each([
-    ["login", "page", undefined, true, false],
-    ["register", undefined, "page", false, true],
-  ] as const)(
-    "authentication shell marks only %s active",
-    async (activePage, loginCurrent, registerCurrent, loginActive, registerActive) => {
+  test("authentication shell presents content without redundant navigation", async () => {
       const renderer = await renderInRoute(
         createElement(
           AuthShell,
           {
-            activePage,
             children: createElement("p", null, "Form contents"),
-            registrationOpen: true,
           },
         ),
       );
-      const links = renderer.root.findAllByType("a");
-      expect(links).toHaveLength(2);
-      expect(links[0].props).toMatchObject({
-        "aria-current": loginCurrent,
-        href: "/login",
-      });
-      expect(links[1].props).toMatchObject({
-        "aria-current": registerCurrent,
-        href: "/register",
-      });
-      expect(String(links[0].props.className).includes("activeTab"))
-        .toBe(loginActive);
-      expect(String(links[1].props.className).includes("activeTab"))
-        .toBe(registerActive);
-      expect(links[loginActive ? 1 : 0].props.className).not.toContain(
-        "Stryker was here!",
-      );
+      expect(renderer.root.findAllByType("nav")).toHaveLength(0);
+      expect(renderer.root.findAllByType("a")).toHaveLength(0);
       expect(renderer.root.findByProps({ id: "auth-title" }).children.join(""))
         .toBe("Private account access");
       expect(renderer.root.findByType("p").children.join(""))
         .toBe("Form contents");
       renderer.unmount();
-    },
-  );
+  });
 
   test.each(["log", "history", "settings"] as const)(
     "application navigation marks only %s active",

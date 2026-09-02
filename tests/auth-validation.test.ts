@@ -56,6 +56,7 @@ describe("authentication input validation", () => {
 
   test("password length failures expose the stable validation contract", () => {
     const result = passwordChangeSchema.safeParse({
+      confirmNewPassword: "too short",
       currentPassword: "current",
       newPassword: "too short",
     });
@@ -67,6 +68,24 @@ describe("authentication input validation", () => {
       message: "invalid password length",
       path: ["newPassword"],
     });
+  });
+
+  test("password changes identify confirmation mismatches", () => {
+    const result = passwordChangeSchema.safeParse({
+      confirmNewPassword: "different replacement password",
+      currentPassword: "current",
+      newPassword: "correct horse battery staple",
+    });
+
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error("mismatched passwords were accepted");
+    expect(result.error.issues).toContainEqual(
+      expect.objectContaining({
+        code: "custom",
+        message: "passwords do not match",
+        path: ["confirmNewPassword"],
+      }),
+    );
   });
 
   test("registration identifies confirmation mismatches", () => {
@@ -106,21 +125,28 @@ describe("authentication input validation", () => {
   test("password changes require both the current and a valid new password", () => {
     expect(
       passwordChangeSchema.safeParse({
+        confirmNewPassword: "a".repeat(12),
         currentPassword: "",
         newPassword: "a".repeat(12),
       }).success,
     ).toBe(false);
     expect(
       passwordChangeSchema.safeParse({
+        confirmNewPassword: "a".repeat(11),
         currentPassword: "current",
         newPassword: "a".repeat(11),
       }).success,
     ).toBe(false);
     expect(
       passwordChangeSchema.parse({
+        confirmNewPassword: "a".repeat(12),
         currentPassword: "current",
         newPassword: "a".repeat(12),
       }),
-    ).toEqual({ currentPassword: "current", newPassword: "a".repeat(12) });
+    ).toEqual({
+      confirmNewPassword: "a".repeat(12),
+      currentPassword: "current",
+      newPassword: "a".repeat(12),
+    });
   });
 });

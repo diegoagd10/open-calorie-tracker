@@ -128,6 +128,7 @@ export type RegistrationResult =
   | { ok: true; session: IssuedSession };
 
 export type LoginResult =
+  | { error: "account-disabled"; ok: false }
   | { error: "invalid-credentials"; ok: false }
   | { error: "rate-limited"; ok: false }
   | { ok: true; session: IssuedSession };
@@ -422,12 +423,12 @@ export class AuthenticationService {
       password,
     );
 
-    if (
-      !verification.matches ||
-      !verification.user ||
-      verification.user.accessState !== "active"
-    ) {
+    if (!verification.matches || !verification.user) {
       return { error: "invalid-credentials", ok: false };
+    }
+    if (verification.user.accessState !== "active") {
+      this.#rateLimiter.clear("login-failure", rateLimitSubject);
+      return { error: "account-disabled", ok: false };
     }
 
     const issued = prepareIssuedSession(this.#now(), {

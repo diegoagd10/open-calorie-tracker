@@ -308,7 +308,7 @@ test("repeated resets preserve disabled access and only the latest temporary pas
       "first temporary passphrase",
       "203.0.113.222",
     ),
-  ).resolves.toEqual({ error: "invalid-credentials", ok: false });
+  ).resolves.toEqual({ error: "account-disabled", ok: false });
   expect(fixture.service.listManageableMembers()).toContainEqual(expect.objectContaining({
     accessState: "disabled",
     createdAt: "2026-08-29T12:00:00.000Z",
@@ -492,7 +492,7 @@ test("member access suspension revokes every target session and reactivation pre
       initialPassword,
       "203.0.113.210",
     ),
-  ).resolves.toEqual({ error: "invalid-credentials", ok: false });
+  ).resolves.toEqual({ error: "account-disabled", ok: false });
   await expect(
     fixture.service.login(
       "access.member",

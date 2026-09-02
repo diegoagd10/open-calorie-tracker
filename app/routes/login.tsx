@@ -40,12 +40,13 @@ export async function loader({ request }: Route.LoaderArgs) {
     );
   }
 
+  if (getAuthenticationService().isRegistrationOpen()) {
+    return redirect("/register");
+  }
+
   const csrf = loadPreAuthenticationCsrf(request);
   return data(
-    {
-      csrfToken: csrf.csrfToken,
-      registrationOpen: getAuthenticationService().isRegistrationOpen(),
-    },
+    { csrfToken: csrf.csrfToken },
     { headers: csrf.headers },
   );
 }
@@ -87,6 +88,15 @@ export async function action({ request }: Route.ActionArgs) {
         { status: 429 },
       );
     }
+    if (result.error === "account-disabled") {
+      return data<LoginActionData>(
+        {
+          error: "Your account has been disabled.",
+          username: fields.username,
+        },
+        { status: 403 },
+      );
+    }
 
     return data<LoginActionData>(
       { error: genericLoginError, username: fields.username },
@@ -104,10 +114,7 @@ export async function action({ request }: Route.ActionArgs) {
 
 export default function Login({ actionData, loaderData }: Route.ComponentProps) {
   return (
-    <AuthShell
-      activePage="login"
-      registrationOpen={loaderData.registrationOpen}
-    >
+    <AuthShell>
       <Form className={styles.form} method="post" noValidate>
         <input
           name="csrfToken"

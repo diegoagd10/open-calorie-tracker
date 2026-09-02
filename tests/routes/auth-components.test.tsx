@@ -88,7 +88,7 @@ describe("login component", () => {
     const renderer = await renderRoute(
       Login,
       "/login",
-      { csrfToken: "login-csrf", registrationOpen: true },
+      { csrfToken: "login-csrf" },
     );
     expect(input(renderer, "csrfToken").props).toMatchObject({
       type: "hidden",
@@ -113,6 +113,8 @@ describe("login component", () => {
     });
     expect(renderer.root.findByType("button").children.join(""))
       .toBe("Sign in");
+    expect(renderer.root.findAllByType("nav")).toHaveLength(0);
+    expect(renderer.root.findAllByType("a")).toHaveLength(0);
     expect(renderer.root.findAllByProps({ role: "alert" })).toHaveLength(0);
     renderer.unmount();
   });
@@ -121,7 +123,7 @@ describe("login component", () => {
     const renderer = await renderRoute(
       Login,
       "/login",
-      { csrfToken: "login-csrf", registrationOpen: true },
+      { csrfToken: "login-csrf" },
       { error: "Credentials rejected", username: "Attempted.User" },
     );
     expect(input(renderer, "username").props.defaultValue)
@@ -132,16 +134,6 @@ describe("login component", () => {
     renderer.unmount();
   });
 
-  test("hides registration after the instance is claimed", async () => {
-    const renderer = await renderRoute(
-      Login,
-      "/login",
-      { csrfToken: "login-csrf", registrationOpen: false },
-    );
-    expect(text(renderer)).not.toContain("Register");
-    expect(renderer.root.findAllByProps({ href: "/register" })).toHaveLength(0);
-    renderer.unmount();
-  });
 });
 
 describe("registration component", () => {
@@ -184,6 +176,9 @@ describe("registration component", () => {
     );
     expect(renderer.root.findByType("button").children.join(""))
       .toBe("Create private account");
+    expect(
+      renderer.root.findAllByProps({ "aria-label": "Account access" }),
+    ).toHaveLength(0);
     expect(renderer.root.findAllByProps({ role: "alert" })).toHaveLength(0);
     renderer.unmount();
   });
@@ -236,6 +231,12 @@ describe("password component", () => {
         "aria-describedby": "new-password-help",
         autoComplete: "new-password",
         id: "new-password",
+        required: true,
+        type: "password",
+      });
+      expect(input(renderer, "confirmNewPassword").props).toMatchObject({
+        autoComplete: "new-password",
+        id: "confirm-new-password",
         required: true,
         type: "password",
       });

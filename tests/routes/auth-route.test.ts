@@ -190,7 +190,7 @@ describe("login route", () => {
       .toContain("__Host-calorie_session=");
   });
 
-  test("disabled, missing, and wrong-password accounts share the public login failure", async () => {
+  test("a disabled account with valid credentials receives a dedicated login failure", async () => {
     const authentication = getAuthenticationService();
     await expect(
       authentication.provisionMember("disabled.login", password),
@@ -203,8 +203,27 @@ describe("login route", () => {
       ),
     ).resolves.toEqual({ ok: true });
 
+    const disabledCsrf = await issuePreAuthentication(loginLoader, "/login");
+    const disabled = await loginAction(
+      routeArgs(
+        post(
+          "/login",
+          new URLSearchParams({
+            csrfToken: disabledCsrf.csrfToken,
+            password,
+            username: "disabled.login",
+          }),
+          disabledCsrf.cookie,
+        ),
+        "/login",
+      ),
+    );
+    expect(disabled).toMatchObject({
+      data: { error: "Your account has been disabled." },
+      init: { status: 403 },
+    });
+
     const attempts = [
-      { password, username: "disabled.login" },
       { password: "incorrect password value", username: "disabled.login" },
       { password, username: "missing.login" },
     ];
@@ -330,6 +349,7 @@ describe("password route", () => {
         post(
           "/account/password",
           new URLSearchParams({
+            confirmNewPassword: "replacement passphrase",
             csrfToken: "wrong",
             currentPassword: password,
             newPassword: "replacement passphrase",
@@ -365,6 +385,7 @@ describe("password route", () => {
         post(
           "/account/password",
           new URLSearchParams({
+            confirmNewPassword: "replacement passphrase",
             csrfToken: session.csrfToken,
             currentPassword: "",
             newPassword: "replacement passphrase",
@@ -384,6 +405,7 @@ describe("password route", () => {
         post(
           "/account/password",
           new URLSearchParams({
+            confirmNewPassword: "short",
             csrfToken: session.csrfToken,
             currentPassword: password,
             newPassword: "short",
@@ -398,11 +420,32 @@ describe("password route", () => {
       init: { status: 400 },
     });
 
+    const mismatchedConfirmation = await passwordAction(
+      routeArgs(
+        post(
+          "/account/password",
+          new URLSearchParams({
+            confirmNewPassword: "different replacement password",
+            csrfToken: session.csrfToken,
+            currentPassword: password,
+            newPassword: "replacement passphrase",
+          }),
+          cookieFor(session),
+        ),
+        "/account/password",
+      ),
+    );
+    expect(mismatchedConfirmation).toMatchObject({
+      data: { error: "New passwords do not match." },
+      init: { status: 400 },
+    });
+
     const wrongCurrent = await passwordAction(
       routeArgs(
         post(
           "/account/password",
           new URLSearchParams({
+            confirmNewPassword: "replacement passphrase",
             csrfToken: session.csrfToken,
             currentPassword: "incorrect current password",
             newPassword: "replacement passphrase",
@@ -425,6 +468,7 @@ describe("password route", () => {
         post(
           "/account/password",
           new URLSearchParams({
+            confirmNewPassword: "replacement passphrase",
             csrfToken: session.csrfToken,
             currentPassword: password,
             newPassword: "replacement passphrase",
@@ -461,6 +505,7 @@ describe("password route", () => {
         post(
           "/account/password",
           new URLSearchParams({
+            confirmNewPassword: "replacement passphrase",
             csrfToken: rateSession.csrfToken,
             currentPassword: password,
             newPassword: "replacement passphrase",
@@ -479,6 +524,7 @@ describe("password route", () => {
     const request = post(
       "/account/password",
       new URLSearchParams({
+        confirmNewPassword: "replacement passphrase",
         csrfToken: staleSession.csrfToken,
         currentPassword: password,
         newPassword: "replacement passphrase",
@@ -560,6 +606,7 @@ describe("password route", () => {
         post(
           "/account/password",
           new URLSearchParams({
+            confirmNewPassword: nextPassword,
             csrfToken: restrictedSession.csrfToken,
             currentPassword: "incorrect temporary password",
             newPassword: nextPassword,
@@ -579,6 +626,7 @@ describe("password route", () => {
         post(
           "/account/password",
           new URLSearchParams({
+            confirmNewPassword: initialPassword,
             csrfToken: restrictedSession.csrfToken,
             currentPassword: initialPassword,
             newPassword: initialPassword,
@@ -602,6 +650,7 @@ describe("password route", () => {
         post(
           "/account/password",
           new URLSearchParams({
+            confirmNewPassword: nextPassword,
             csrfToken: restrictedSession.csrfToken,
             currentPassword: initialPassword,
             newPassword: nextPassword,

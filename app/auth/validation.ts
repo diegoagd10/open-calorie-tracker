@@ -17,10 +17,21 @@ export const loginSchema = z.object({
   username: usernameSchema,
 });
 
-export const passwordChangeSchema = z.object({
-  currentPassword: z.string().min(1),
-  newPassword: passwordSchema,
-});
+export const passwordChangeSchema = z
+  .object({
+    confirmNewPassword: z.string(),
+    currentPassword: z.string().min(1),
+    newPassword: passwordSchema,
+  })
+  .superRefine((passwordChange, context) => {
+    if (passwordChange.newPassword !== passwordChange.confirmNewPassword) {
+      context.addIssue({
+        code: "custom",
+        message: "passwords do not match",
+        path: ["confirmNewPassword"],
+      });
+    }
+  });
 
 export const memberPasswordResetSchema = z
   .object({

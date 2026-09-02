@@ -42,10 +42,8 @@ test("a mobile visitor claims an empty instance and completes nutrition setup", 
   await page.setViewportSize({ height: 844, width: 390 });
   await page.goto("/");
   await expect(page).toHaveURL("/register");
-  await expect(page.getByRole("link", { name: "Register" })).toHaveAttribute(
-    "aria-current",
-    "page",
-  );
+  await expect(page.getByRole("navigation", { name: "Account access" }))
+    .toHaveCount(0);
   expect(
     await page.evaluate(() =>
       document.documentElement.scrollWidth <= window.innerWidth,
@@ -164,6 +162,7 @@ test("password rotation revokes other devices and the previous credential", asyn
   await page
     .getByLabel("New password", { exact: true })
     .fill(replacementPassword);
+  await page.getByLabel("Confirm new password").fill(replacementPassword);
   await page.getByRole("button", { name: "Change password" }).click();
   await expect(page.getByRole("status")).toContainText("Password changed");
   expect((await sessionCookie(context))?.value).not.toBe(originalCookie.value);

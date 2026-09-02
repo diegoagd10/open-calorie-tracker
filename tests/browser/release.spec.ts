@@ -258,6 +258,9 @@ test("one mobile Chromium journey verifies the complete private MVP", async ({
   await page
     .getByLabel("New password", { exact: true })
     .fill("release replacement 🔐");
+  await page
+    .getByLabel("Confirm new password")
+    .fill("release replacement 🔐");
   await page.getByRole("button", { name: "Change password" }).click();
   await expect(page.getByRole("status")).toContainText("Password changed");
   await expectNoSeriousAxeViolations(page);

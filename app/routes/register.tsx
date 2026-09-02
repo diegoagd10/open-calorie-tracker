@@ -131,7 +131,7 @@ export default function Register({
   loaderData,
 }: Route.ComponentProps) {
   return (
-    <AuthShell activePage="register" registrationOpen>
+    <AuthShell>
       <Form className={styles.form} method="post" noValidate>
         <input
           name="csrfToken"

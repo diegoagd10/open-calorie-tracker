@@ -170,6 +170,8 @@ test("administrator provisions a member through mandatory password onboarding an
   await page.keyboard.press("Tab");
   await page.keyboard.type("private replacement passphrase");
   await page.keyboard.press("Tab");
+  await page.keyboard.type("private replacement passphrase");
+  await page.keyboard.press("Tab");
   await page.keyboard.press("Enter");
   await expect(page).toHaveURL("/setup");
 
@@ -263,6 +265,15 @@ test("administrator confirms suspension, signs out another device, and reactivat
   await expect(memberPage).toHaveURL("/login");
   await otherMemberPage.reload();
   await expect(otherMemberPage).toHaveURL("/login");
+
+  await memberPage.getByLabel("Username").fill("suspended.member");
+  await memberPage.getByLabel("Password", { exact: true }).fill(validPassword);
+  await memberPage.getByRole("button", { name: "Sign in" }).click();
+  await expect(memberPage).toHaveURL("/login");
+  await expect(memberPage.getByRole("alert")).toContainText(
+    "Your account has been disabled.",
+  );
+
   await memberRow.getByRole("button", {
     name: "Reactivate suspended.member",
   }).click();
@@ -367,7 +378,10 @@ test("administrator resets a member password and the member completes private on
   await memberPage.goto("/");
   await expect(memberPage).toHaveURL("/account/password");
   await memberPage.getByLabel("Current password").fill(temporaryPassword);
-  await memberPage.getByLabel("New password").fill(privatePassword);
+  await memberPage
+    .getByLabel("New password", { exact: true })
+    .fill(privatePassword);
+  await memberPage.getByLabel("Confirm new password").fill(privatePassword);
   await memberPage.getByRole("button", {
     name: "Set password and continue",
   }).click();
