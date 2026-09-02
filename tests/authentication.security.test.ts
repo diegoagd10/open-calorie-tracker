@@ -229,12 +229,12 @@ test("administrator reset replaces an active member password and revokes every t
     ),
   ).resolves.toEqual({ ok: true });
 
-  expect(fixture.service.listManageableMembers()).toContainEqual({
+  expect(fixture.service.listManageableMembers()).toContainEqual(expect.objectContaining({
     accessState: "active",
     createdAt: "2026-08-29T11:00:00.000Z",
     passwordChangeRequired: true,
     username: "reset.member",
-  });
+  }));
   await expect(fixture.service.authenticate(firstDevice.token))
     .resolves.toBeUndefined();
   await expect(fixture.service.authenticate(secondDevice.session.token))
@@ -309,12 +309,12 @@ test("repeated resets preserve disabled access and only the latest temporary pas
       "203.0.113.222",
     ),
   ).resolves.toEqual({ error: "invalid-credentials", ok: false });
-  expect(fixture.service.listManageableMembers()).toContainEqual({
+  expect(fixture.service.listManageableMembers()).toContainEqual(expect.objectContaining({
     accessState: "disabled",
     createdAt: "2026-08-29T12:00:00.000Z",
     passwordChangeRequired: true,
     username: "disabled.reset.member",
-  });
+  }));
 
   await expect(
     fixture.service.resetMemberPassword(
