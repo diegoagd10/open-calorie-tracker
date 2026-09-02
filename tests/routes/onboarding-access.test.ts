@@ -50,7 +50,7 @@ function routeArgs(request: Request, pattern: string) {
   };
 }
 
-async function capture(result: Promise<unknown>): Promise<unknown> {
+async function captureThrownResult(result: Promise<unknown>): Promise<unknown> {
   return result.catch((error: unknown) => error);
 }
 
@@ -99,7 +99,7 @@ test("restricted sessions can open only password change and are denied every ord
     ["/settings/goals", goalsLoader],
     ["/settings/users", usersLoader],
   ] as const) {
-    const result = await capture(
+    const result = await captureThrownResult(
       loader(routeArgs(request(pathname), pathname)),
     );
     expect(result, pathname).toBeInstanceOf(Response);
@@ -114,7 +114,7 @@ test("restricted sessions can open only password change and are denied every ord
   expect((login as Response).headers.get("Location"))
     .toBe("/account/password");
 
-  const registration = await capture(
+  const registration = await captureThrownResult(
     registerLoader(routeArgs(request("/register"), "/register")),
   );
   expect(registration).toBeInstanceOf(Response);
@@ -138,7 +138,7 @@ test("restricted sessions cannot invoke ordinary mutations but can log out", asy
     ["/settings/goals", goalsAction],
     ["/settings/users", usersAction],
   ] as const) {
-    const result = await capture(
+    const result = await captureThrownResult(
       action(
         routeArgs(
           new Request(`${origin}${pathname}`, {
