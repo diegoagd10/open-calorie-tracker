@@ -491,3 +491,143 @@ test("administrator disables and reactivates a member through confirmed safe rou
     session: { user: { passwordChangeRequired: true } },
   });
 });
+
+test("administrator permanently deletes a member through exact route confirmation", async () => {
+  const authentication = getAuthenticationService();
+  const administrator = await authentication.authenticate(
+    administratorCookie.split("=", 2)[1],
+  );
+  if (!administrator) throw new Error("administrator session unavailable");
+  await expect(authentication.provisionMember("route.delete", password))
+    .resolves.toMatchObject({ ok: true });
+  const member = await authentication.login(
+    "route.delete",
+    password,
+    "203.0.113.191",
+  );
+  if (!member.ok) throw new Error("member login failed");
+
+  const deleted = await usersAction(
+    routeArgs(post({
+      confirmationUsername: "route.delete",
+      csrfToken: administrator.csrfToken,
+      intent: "delete-member",
+      targetUsername: "route.delete",
+    })),
+  );
+
+  expect(deleted).toMatchObject({
+    data: { deletedUsername: "route.delete" },
+    init: { status: 200 },
+  });
+  expect(authentication.listManageableMembers()).not.toContainEqual(
+    expect.objectContaining({ username: "route.delete" }),
+  );
+  await expect(authentication.authenticate(member.session.token))
+    .resolves.toBeUndefined();
+});
+
+test("member deletion rejects unsafe route requests without changing the target", async () => {
+  const authentication = getAuthenticationService();
+  const administrator = await authentication.authenticate(
+    administratorCookie.split("=", 2)[1],
+  );
+  const ordinaryMember = await authentication.authenticate(
+    memberCookie.split("=", 2)[1],
+  );
+  if (!administrator || !ordinaryMember) {
+    throw new Error("route sessions unavailable");
+  }
+  await expect(authentication.provisionMember("route.protected", password))
+    .resolves.toMatchObject({ ok: true });
+  const target = await authentication.login(
+    "route.protected",
+    password,
+    "203.0.113.192",
+  );
+  if (!target.ok) throw new Error("target login failed");
+
+  const mismatch = await usersAction(routeArgs(post({
+    confirmationUsername: "Route.Protected",
+    csrfToken: administrator.csrfToken,
+    intent: "delete-member",
+    targetUsername: "route.protected",
+  })));
+  expect(mismatch).toMatchObject({ init: { status: 400 } });
+
+  const missingConfirmation = await usersAction(routeArgs(post({
+    csrfToken: administrator.csrfToken,
+    intent: "delete-member",
+    targetUsername: "route.protected",
+  })));
+  expect(missingConfirmation).toMatchObject({ init: { status: 400 } });
+
+  const malformed = await usersAction(routeArgs(post({
+    confirmationUsername: "not a username",
+    csrfToken: administrator.csrfToken,
+    intent: "delete-member",
+    targetUsername: "not a username",
+  })));
+  expect(malformed).toMatchObject({ init: { status: 409 } });
+
+  const stale = await usersAction(routeArgs(post({
+    confirmationUsername: "missing.member",
+    csrfToken: administrator.csrfToken,
+    intent: "delete-member",
+    targetUsername: "missing.member",
+  })));
+  expect(stale).toMatchObject({ init: { status: 409 } });
+
+  const administratorTarget = await usersAction(routeArgs(post({
+    confirmationUsername: "sole.admin",
+    csrfToken: administrator.csrfToken,
+    intent: "delete-member",
+    targetUsername: "sole.admin",
+  })));
+  expect(administratorTarget).toMatchObject({ init: { status: 409 } });
+
+  const invalidCsrf = await usersAction(
+    routeArgs(post({
+      confirmationUsername: "route.protected",
+      csrfToken: "invalid",
+      intent: "delete-member",
+      targetUsername: "route.protected",
+    })) as never,
+  ).catch((error: unknown) => error);
+  expect(invalidCsrf).toBeInstanceOf(Response);
+  expect((invalidCsrf as Response).status).toBe(403);
+
+  const invalidOriginRequest = post({
+    confirmationUsername: "route.protected",
+    csrfToken: administrator.csrfToken,
+    intent: "delete-member",
+    targetUsername: "route.protected",
+  });
+  invalidOriginRequest.headers.set("Origin", "https://attacker.example");
+  const invalidOrigin = await usersAction(
+    routeArgs(invalidOriginRequest) as never,
+  ).catch((error: unknown) => error);
+  expect(invalidOrigin).toBeInstanceOf(Response);
+  expect((invalidOrigin as Response).status).toBe(403);
+
+  const unauthorized = await usersAction(
+    routeArgs(post({
+      confirmationUsername: "regular.member",
+      csrfToken: ordinaryMember.csrfToken,
+      intent: "delete-member",
+      targetUsername: "regular.member",
+    }, memberCookie)) as never,
+  ).catch((error: unknown) => error);
+  expect(unauthorized).toBeInstanceOf(Response);
+  expect((unauthorized as Response).status).toBe(404);
+
+  expect(authentication.listManageableMembers()).toContainEqual(
+    expect.objectContaining({ username: "route.protected" }),
+  );
+  await expect(authentication.authenticate(target.session.token))
+    .resolves.toBeDefined();
+  await expect(authentication.authenticate(ordinaryMember.token))
+    .resolves.toBeDefined();
+  await expect(authentication.authenticate(administrator.token))
+    .resolves.toBeDefined();
+});

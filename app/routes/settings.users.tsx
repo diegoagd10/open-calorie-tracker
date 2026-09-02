@@ -21,12 +21,15 @@ type UsersActionData = {
   };
   accessError?: string;
   createdUsername?: string;
+  deletedUsername?: string;
+  deletionError?: string;
   error?: string;
   username?: string;
 };
 
 type UsersActionIntent =
   | "create-member"
+  | "delete-member"
   | "disable-member"
   | "reactivate-member";
 
@@ -36,6 +39,7 @@ function parseUsersActionIntent(
   if (typeof value !== "string") return undefined;
   switch (value) {
     case "create-member":
+    case "delete-member":
     case "disable-member":
     case "reactivate-member":
       return value;
@@ -89,13 +93,43 @@ export async function action({ request }: Route.ActionArgs) {
       { status: 400 },
     );
   }
-  if (intent === "disable-member" || intent === "reactivate-member") {
+  if (intent !== "create-member") {
     const targetUsername = String(formData.get("targetUsername") ?? "");
     const parsedTarget = usernameSchema.safeParse(targetUsername);
     if (!parsedTarget.success || parsedTarget.data !== targetUsername) {
       return data<UsersActionData>(
-        { accessError: "Member is no longer available. Refresh and try again." },
+        intent === "delete-member"
+          ? {
+              deletionError:
+                "Member is no longer available. Refresh and try again.",
+            }
+          : {
+              accessError:
+                "Member is no longer available. Refresh and try again.",
+            },
         { status: 409 },
+      );
+    }
+
+    if (intent === "delete-member") {
+      const result = await authentication.deleteMember(
+        session.user,
+        targetUsername,
+        String(formData.get("confirmationUsername") ?? ""),
+      );
+      if (!result.ok) {
+        return data<UsersActionData>(
+          {
+            deletionError: result.error === "confirmation-mismatch"
+              ? `Enter ${targetUsername} exactly to confirm permanent deletion.`
+              : "Member is no longer available. Refresh and try again.",
+          },
+          { status: result.error === "confirmation-mismatch" ? 400 : 409 },
+        );
+      }
+      return data<UsersActionData>(
+        { deletedUsername: targetUsername },
+        { status: 200 },
       );
     }
 
@@ -175,8 +209,11 @@ export async function action({ request }: Route.ActionArgs) {
 
 export default function Users({ actionData, loaderData }: Route.ComponentProps) {
   const [confirmingUsername, setConfirmingUsername] = useState<string>();
+  const [deletingUsername, setDeletingUsername] = useState<string>();
   const confirmationDialog = useRef<HTMLDialogElement | null>(null);
+  const deletionDialog = useRef<HTMLDialogElement | null>(null);
   const disableTrigger = useRef<HTMLButtonElement | null>(null);
+  const deleteTrigger = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
     if (confirmingUsername && !confirmationDialog.current?.open) {
@@ -184,9 +221,20 @@ export default function Users({ actionData, loaderData }: Route.ComponentProps) 
     }
   }, [confirmingUsername]);
 
+  useEffect(() => {
+    if (deletingUsername && !deletionDialog.current?.open) {
+      deletionDialog.current?.showModal();
+    }
+  }, [deletingUsername]);
+
   function cancelDisable() {
     setConfirmingUsername(undefined);
     queueMicrotask(() => disableTrigger.current?.focus());
+  }
+
+  function cancelDelete() {
+    setDeletingUsername(undefined);
+    queueMicrotask(() => deleteTrigger.current?.focus());
   }
 
   return (
@@ -315,6 +363,17 @@ export default function Users({ actionData, loaderData }: Route.ComponentProps) 
               <strong>{actionData.accessChanged.username}</strong> was {actionData.accessChanged.action}.
             </p>
           ) : null}
+          {actionData?.deletionError ? (
+            <p className={styles.directoryMessageError} role="alert">
+              {actionData.deletionError}
+            </p>
+          ) : null}
+          {actionData?.deletedUsername ? (
+            <p className={styles.directoryMessageSuccess} role="status">
+              <strong>{actionData.deletedUsername}</strong> was permanently
+              deleted.
+            </p>
+          ) : null}
           {loaderData.members.length === 0 ? (
             <p className={styles.empty}>No member accounts yet.</p>
           ) : (
@@ -348,44 +407,57 @@ export default function Users({ actionData, loaderData }: Route.ComponentProps) 
                         {member.accessState === "active" ? "Active" : "Disabled"}
                       </span>
                     </span>
-                    {member.accessState === "active" ? (
+                    <span className={styles.memberControls}>
+                      {member.accessState === "active" ? (
+                        <button
+                          aria-label={`Disable ${member.username}`}
+                          className={styles.disableButton}
+                          onClick={(event) => {
+                            disableTrigger.current = event.currentTarget;
+                            setConfirmingUsername(member.username);
+                          }}
+                          type="button"
+                        >
+                          Disable
+                        </button>
+                      ) : (
+                        <Form method="post">
+                          <input
+                            name="csrfToken"
+                            type="hidden"
+                            value={loaderData.csrfToken}
+                          />
+                          <input
+                            name="intent"
+                            type="hidden"
+                            value="reactivate-member"
+                          />
+                          <input
+                            name="targetUsername"
+                            type="hidden"
+                            value={member.username}
+                          />
+                          <button
+                            aria-label={`Reactivate ${member.username}`}
+                            className={styles.reactivateButton}
+                            type="submit"
+                          >
+                            Reactivate
+                          </button>
+                        </Form>
+                      )}
                       <button
-                        aria-label={`Disable ${member.username}`}
-                        className={styles.disableButton}
+                        aria-label={`Delete ${member.username}`}
+                        className={styles.deleteButton}
                         onClick={(event) => {
-                          disableTrigger.current = event.currentTarget;
-                          setConfirmingUsername(member.username);
+                          deleteTrigger.current = event.currentTarget;
+                          setDeletingUsername(member.username);
                         }}
                         type="button"
                       >
-                        Disable
+                        Delete
                       </button>
-                    ) : (
-                      <Form method="post">
-                        <input
-                          name="csrfToken"
-                          type="hidden"
-                          value={loaderData.csrfToken}
-                        />
-                        <input
-                          name="intent"
-                          type="hidden"
-                          value="reactivate-member"
-                        />
-                        <input
-                          name="targetUsername"
-                          type="hidden"
-                          value={member.username}
-                        />
-                        <button
-                          aria-label={`Reactivate ${member.username}`}
-                          className={styles.reactivateButton}
-                          type="submit"
-                        >
-                          Reactivate
-                        </button>
-                      </Form>
-                    )}
+                    </span>
                   </span>
                 </li>
               ))}
@@ -440,6 +512,62 @@ export default function Users({ actionData, loaderData }: Route.ComponentProps) 
                 <button onClick={cancelDisable} type="button">Cancel</button>
                 <button className={styles.confirmDisableButton} type="submit">
                   Disable member
+                </button>
+              </div>
+            </Form>
+          </dialog>
+        ) : null}
+        {deletingUsername ? (
+          <dialog
+            aria-labelledby="delete-member-heading"
+            aria-modal="true"
+            className={styles.confirmationDialog}
+            onCancel={(event) => {
+              event.preventDefault();
+              cancelDelete();
+            }}
+            ref={deletionDialog}
+          >
+            <h2 id="delete-member-heading">Delete {deletingUsername}</h2>
+            <p>
+              This permanently removes the account and nutrition data,
+              including preferences, Goal Versions, Food Entries, and Water
+              Events. It cannot be recovered in this application.
+            </p>
+            <p>
+              Enter the complete displayed username <strong>
+                {deletingUsername}
+              </strong> to confirm.
+            </p>
+            <Form
+              className={styles.confirmationForm}
+              method="post"
+              onSubmit={() => setDeletingUsername(undefined)}
+            >
+              <input
+                name="csrfToken"
+                type="hidden"
+                value={loaderData.csrfToken}
+              />
+              <input name="intent" type="hidden" value="delete-member" />
+              <input
+                name="targetUsername"
+                type="hidden"
+                value={deletingUsername}
+              />
+              <label>
+                <span>Complete username</span>
+                <input
+                  autoComplete="off"
+                  autoFocus
+                  name="confirmationUsername"
+                  required
+                />
+              </label>
+              <div className={styles.confirmationActions}>
+                <button onClick={cancelDelete} type="button">Cancel</button>
+                <button className={styles.confirmDeleteButton} type="submit">
+                  Permanently delete member
                 </button>
               </div>
             </Form>

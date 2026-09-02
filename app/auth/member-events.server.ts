@@ -28,3 +28,16 @@ export function logMemberAccessChanged(
     targetUsername,
   });
 }
+
+export function logMemberDeleted(
+  actor: { id: number; username: string },
+  targetUsername: string,
+  outcome: "confirmation-mismatch" | "failed" | "not-found" | "succeeded",
+): void {
+  operationalLog(outcome === "failed" ? "error" : "info", "member_deletion", {
+    actorId: actor.id,
+    actorUsername: actor.username,
+    outcome,
+    targetUsername,
+  });
+}

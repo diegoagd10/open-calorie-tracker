@@ -11,6 +11,7 @@ import {
 } from "../database/credential-sessions.server";
 import { createMemberAccount } from "../database/member-accounts.server";
 import { transitionMemberAccess } from "../database/member-access.server";
+import { deleteMemberAccount } from "../database/member-deletion.server";
 import {
   passwordCredentials,
   sessions,
@@ -30,6 +31,7 @@ import {
 } from "./bootstrap-events.server";
 import {
   logMemberAccessChanged,
+  logMemberDeleted,
   logMemberProvisioned,
 } from "./member-events.server";
 
@@ -106,6 +108,10 @@ export type MemberAccessChangeResult =
         | "not-found";
       ok: false;
     }
+  | { ok: true };
+
+export type MemberDeletionResult =
+  | { error: "confirmation-mismatch" | "not-found"; ok: false }
   | { ok: true };
 
 export type IssuedSession = AuthenticatedSession;
@@ -504,6 +510,33 @@ export class AuthenticationService {
     targetUsername: string,
   ): Promise<MemberAccessChangeResult> {
     return this.#changeMemberAccess(actor, targetUsername, "reactivate");
+  }
+
+  async deleteMember(
+    actor: AuthenticatedSession["user"],
+    targetUsername: string,
+    confirmationUsername: string,
+  ): Promise<MemberDeletionResult> {
+    if (actor.role !== "admin") {
+      logMemberDeleted(actor, targetUsername, "not-found");
+      return { error: "not-found", ok: false };
+    }
+    if (confirmationUsername !== targetUsername) {
+      logMemberDeleted(actor, targetUsername, "confirmation-mismatch");
+      return { error: "confirmation-mismatch", ok: false };
+    }
+
+    try {
+      if (!deleteMemberAccount(this.#database, targetUsername)) {
+        logMemberDeleted(actor, targetUsername, "not-found");
+        return { error: "not-found", ok: false };
+      }
+      logMemberDeleted(actor, targetUsername, "succeeded");
+      return { ok: true };
+    } catch (error) {
+      logMemberDeleted(actor, targetUsername, "failed");
+      throw error;
+    }
   }
 
   #changeMemberAccess(

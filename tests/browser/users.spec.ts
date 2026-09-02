@@ -280,3 +280,121 @@ test("administrator confirms suspension, signs out another device, and reactivat
   await memberContext.close();
   await otherMemberContext.close();
 });
+
+test("administrator deliberately deletes an active member and its live session", async ({
+  browser,
+  context,
+  page,
+}) => {
+  await context.setExtraHTTPHeaders({ "X-Test-Client-IP": "203.0.113.193" });
+  await bootstrapOrSignInBrowserTestUser(
+    page,
+    "deletion.admin",
+    validPassword,
+  );
+  await finishSetup(page);
+  await provisionBrowserTestMember("deleted.member", validPassword);
+
+  const memberContext = await browser.newContext({
+    baseURL: "http://127.0.0.1:4173",
+    extraHTTPHeaders: { "X-Test-Client-IP": "203.0.113.194" },
+  });
+  const memberPage = await memberContext.newPage();
+  await memberPage.goto("/login");
+  await memberPage.getByLabel("Username").fill("deleted.member");
+  await memberPage.getByLabel("Password", { exact: true }).fill(validPassword);
+  await memberPage.getByRole("button", { name: "Sign in" }).click();
+  await expect(memberPage).toHaveURL("/setup");
+  await finishSetup(memberPage);
+
+  await page.goto("/settings/users");
+  const memberRow = page.getByRole("listitem").filter({
+    hasText: "deleted.member",
+  });
+  const deleteButton = memberRow.getByRole("button", {
+    name: "Delete deleted.member",
+  });
+  await deleteButton.click();
+  const dialog = page.getByRole("dialog", { name: "Delete deleted.member" });
+  await expect(dialog).toContainText("account and nutrition data");
+  await expect(dialog).toContainText("cannot be recovered");
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+  await expect(deleteButton).toBeFocused();
+
+  await deleteButton.click();
+  await dialog.getByLabel("Complete username").fill("Deleted.Member");
+  await dialog.getByRole("button", { name: "Permanently delete member" })
+    .click();
+  await expect(page.getByRole("alert")).toContainText(
+    "Enter deleted.member exactly",
+  );
+  await expect(memberRow).toBeVisible();
+  await memberPage.reload();
+  await expect(memberPage).toHaveURL("/");
+
+  await page.setViewportSize({ height: 844, width: 320 });
+  await deleteButton.click();
+  await dialog.getByLabel("Complete username").fill("deleted.member");
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+  await dialog.getByRole("button", { name: "Permanently delete member" })
+    .click();
+  await expect(page.getByRole("status")).toContainText(
+    "deleted.member was permanently deleted",
+  );
+  await expect(memberRow).toHaveCount(0);
+
+  await memberPage.reload();
+  await expect(memberPage).toHaveURL("/login");
+  await memberPage.getByLabel("Username").fill("deleted.member");
+  await memberPage.getByLabel("Password", { exact: true }).fill(validPassword);
+  await memberPage.getByRole("button", { name: "Sign in" }).click();
+  await expect(memberPage.getByRole("alert")).toContainText(
+    "The username or password is incorrect",
+  );
+  await memberContext.close();
+});
+
+test("administrator can permanently delete a disabled member", async ({
+  context,
+  page,
+}) => {
+  await context.setExtraHTTPHeaders({ "X-Test-Client-IP": "203.0.113.195" });
+  await bootstrapOrSignInBrowserTestUser(
+    page,
+    "disabled-deletion.admin",
+    validPassword,
+  );
+  await finishSetup(page);
+  await provisionBrowserTestMember("disabled-delete.member", validPassword);
+  const database = openBrowserTestDatabase();
+  database.prepare(
+    `UPDATE users SET access_state = 'disabled'
+     WHERE username_normalized = 'disabled-delete.member'`,
+  ).run();
+  database.close();
+
+  await page.goto("/settings/users");
+  const memberRow = page.getByRole("listitem").filter({
+    hasText: "disabled-delete.member",
+  });
+  await expect(memberRow).toContainText("Disabled");
+  await memberRow.getByRole("button", {
+    name: "Delete disabled-delete.member",
+  }).click();
+  const dialog = page.getByRole("dialog", {
+    name: "Delete disabled-delete.member",
+  });
+  await dialog.getByLabel("Complete username").fill("disabled-delete.member");
+  await dialog.getByRole("button", { name: "Permanently delete member" })
+    .click();
+
+  await expect(page.getByRole("status")).toContainText(
+    "disabled-delete.member was permanently deleted",
+  );
+  await expect(memberRow).toHaveCount(0);
+});

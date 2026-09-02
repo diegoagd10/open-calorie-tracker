@@ -202,7 +202,13 @@
   margin: 0;
 }
 
+.memberControls {
+  display: flex;
+  gap: 0.4rem;
+}
+
 .disableButton,
+.deleteButton,
 .reactivateButton,
 .confirmationActions button {
   min-height: 2.25rem;
@@ -217,8 +223,15 @@
 }
 
 .disableButton,
+.deleteButton,
 .confirmDisableButton {
   color: #8a1c14;
+}
+
+.confirmationActions .confirmDeleteButton {
+  border-color: #8a1c14;
+  color: white;
+  background: #8a1c14;
 }
 
 .reactivateButton {
@@ -351,5 +364,10 @@
     width: 100%;
     align-items: flex-start;
     justify-content: space-between;
+  }
+
+  .memberControls {
+    flex-wrap: wrap;
+    justify-content: flex-end;
   }
 }
