@@ -98,6 +98,7 @@
           "playwright.config.ts",
           "react-router.config.ts",
           "vite.config.ts",
+          "vite.recovery.config.ts",
           "vitest.config.ts",
           "scripts/audit-dependencies.mjs",
           "scripts/calibrate-argon2.mjs",
@@ -141,7 +142,7 @@
         "from": "water-event",
         "allow": ["database", "food-log", "setup"]
       },
-      { "from": "server", "allow": ["database"] },
+      { "from": "server", "allow": ["auth", "database"] },
       {
         "from": "tests",
         "allow": [

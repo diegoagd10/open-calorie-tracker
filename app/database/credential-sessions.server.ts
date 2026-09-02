@@ -11,6 +11,47 @@ export type PasswordAndSessionReplacement = {
   userId: number;
 };
 
+export type VerifiedCredentialSession = {
+  credentialReplacement?: {
+    passwordHash: string;
+    updatedAt: string;
+  };
+  expectedPasswordHash: string;
+  session: typeof sessions.$inferInsert;
+};
+
+export function issueSessionForVerifiedCredential(
+  database: ApplicationDatabaseClient,
+  issuance: VerifiedCredentialSession,
+): boolean {
+  return database.transaction(
+    (transaction) => {
+      const credential = transaction
+        .select({ passwordHash: passwordCredentials.passwordHash })
+        .from(passwordCredentials)
+        .where(eq(passwordCredentials.userId, issuance.session.userId))
+        .get();
+      if (credential?.passwordHash !== issuance.expectedPasswordHash) {
+        return false;
+      }
+
+      if (issuance.credentialReplacement) {
+        transaction
+          .update(passwordCredentials)
+          .set({
+            passwordHash: issuance.credentialReplacement.passwordHash,
+            updatedAt: issuance.credentialReplacement.updatedAt,
+          })
+          .where(eq(passwordCredentials.userId, issuance.session.userId))
+          .run();
+      }
+      transaction.insert(sessions).values(issuance.session).run();
+      return true;
+    },
+    { behavior: "immediate" },
+  );
+}
+
 export function replacePasswordAndSessions(
   database: ApplicationDatabaseClient,
   replacement: PasswordAndSessionReplacement,

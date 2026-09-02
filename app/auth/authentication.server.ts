@@ -3,7 +3,10 @@ import { randomBytes } from "node:crypto";
 import { asc, eq } from "drizzle-orm";
 
 import type { ApplicationDatabaseClient } from "../database/database.server";
-import { replacePasswordAndSessions } from "../database/credential-sessions.server";
+import {
+  issueSessionForVerifiedCredential,
+  replacePasswordAndSessions,
+} from "../database/credential-sessions.server";
 import { createMemberAccount } from "../database/member-accounts.server";
 import {
   passwordCredentials,
@@ -127,14 +130,17 @@ function prepareIssuedSession(
 export class AuthenticationService {
   readonly #database: ApplicationDatabaseClient;
   readonly #now: () => Date;
+  readonly #passwordVerifier: typeof verifyPassword;
   readonly #rateLimiter: PersistentRateLimiter;
 
   constructor(
     database: ApplicationDatabaseClient,
     now: () => Date = () => new Date(),
+    passwordVerifier: typeof verifyPassword = verifyPassword,
   ) {
     this.#database = database;
     this.#now = now;
+    this.#passwordVerifier = passwordVerifier;
     this.#rateLimiter = new PersistentRateLimiter(database, now);
   }
 
@@ -386,29 +392,31 @@ export class AuthenticationService {
       return { error: "invalid-credentials", ok: false };
     }
 
-    if (verification.needsRehash) {
-      const replacement = await hashPassword(password);
-      this.#database
-        .update(passwordCredentials)
-        .set({
-          passwordHash: replacement,
-          updatedAt: this.#now().toISOString(),
-        })
-        .where(eq(passwordCredentials.userId, verification.user.id))
-        .run();
-    }
-
-    this.#rateLimiter.clear("login-failure", rateLimitSubject);
-
-    return {
-      ok: true,
-      session: this.#issueSession({
+    const issued = prepareIssuedSession(this.#now(), {
         id: verification.user.id,
         passwordChangeRequired: verification.user.passwordChangeRequired,
         role: verification.user.role,
         username: verification.user.usernameNormalized,
-      }),
-    };
+    });
+    const replacementPasswordHash = verification.needsRehash
+      ? await hashPassword(password)
+      : undefined;
+    const stored = issueSessionForVerifiedCredential(this.#database, {
+      ...(replacementPasswordHash
+        ? {
+            credentialReplacement: {
+              passwordHash: replacementPasswordHash,
+              updatedAt: this.#now().toISOString(),
+            },
+          }
+        : {}),
+      expectedPasswordHash: verification.user.passwordHash,
+      session: issued.persisted,
+    });
+    if (!stored) return { error: "invalid-credentials", ok: false };
+
+    this.#rateLimiter.clear("login-failure", rateLimitSubject);
+    return { ok: true, session: issued.session };
   }
 
   revokeSession(token: string): void {
@@ -420,15 +428,6 @@ export class AuthenticationService {
 
   verifyCsrfToken(sessionToken: string, candidate: string | undefined): boolean {
     return safelyEqual(csrfTokenFor(sessionToken), candidate);
-  }
-
-  #issueSession(user: AuthenticatedSession["user"]): IssuedSession {
-    const issued = prepareIssuedSession(this.#now(), user);
-    this.#database
-      .insert(sessions)
-      .values(issued.persisted)
-      .run();
-    return issued.session;
   }
 
   async verifyCredentials(
@@ -455,7 +454,7 @@ export class AuthenticationService {
       .where(eq(users.usernameNormalized, usernameNormalized))
       .get();
     const credential = user?.passwordHash ?? createDummyPasswordHash();
-    const verification = await verifyPassword(password, credential);
+    const verification = await this.#passwordVerifier(password, credential);
 
     return {
       matches: Boolean(user) && verification.matches,

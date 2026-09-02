@@ -134,6 +134,42 @@ If step 3 fails with `400 Bad Request`, inspect the application's current
 network again. Docker may assign a different subnet when a network is recreated;
 update `TRUST_PROXY` and redeploy.
 
+## Recover a forgotten administrator password
+
+If the sole administrator no longer knows the current password, run the local
+recovery command inside the running application container. The web service does
+not need to be stopped:
+
+```sh
+docker compose exec -T application node build/recovery/recover-administrator.js
+```
+
+For a Portainer-managed container, use its actual container name:
+
+```sh
+docker exec -i <application-container> node build/recovery/recover-administrator.js
+```
+
+Run this from a private terminal. The one line written to standard output is a
+new, one-time temporary password. Do not redirect it to a file, paste it into
+chat or a ticket, include it in a screenshot, or retain it in terminal logs.
+Copy it directly into a password manager or the login form, then clear the
+terminal display.
+
+The command uses the container's configured `DATABASE_PATH` and migrations. It
+finds the account by the `admin` role, replaces its credential, and revokes all
+administrator sessions in one transaction. A redacted outcome is written to
+standard error. If there is no administrator or the database does not contain
+exactly one administrator, the command exits unsuccessfully, prints no
+password, and changes nothing.
+
+After a successful recovery, sign in with the displayed temporary password.
+Only password replacement and logout are available until a new private password
+is saved; that replacement rotates the session and restores normal
+administrator access. If the current private password is still known, use the
+authenticated password-change page in Settings instead of this recovery
+command.
+
 ## Updates and backups
 
 Use a short maintenance window:
