@@ -401,7 +401,7 @@ export class AuthenticationService {
     const replacementPasswordHash = verification.needsRehash
       ? await hashPassword(password)
       : undefined;
-    const stored = issueSessionForVerifiedCredential(this.#database, {
+    const sessionIssued = issueSessionForVerifiedCredential(this.#database, {
       ...(replacementPasswordHash
         ? {
             credentialReplacement: {
@@ -413,7 +413,7 @@ export class AuthenticationService {
       expectedPasswordHash: verification.user.passwordHash,
       session: issued.persisted,
     });
-    if (!stored) return { error: "invalid-credentials", ok: false };
+    if (!sessionIssued) return { error: "invalid-credentials", ok: false };
 
     this.#rateLimiter.clear("login-failure", rateLimitSubject);
     return { ok: true, session: issued.session };

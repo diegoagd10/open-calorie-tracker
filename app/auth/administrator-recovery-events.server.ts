@@ -1,12 +1,8 @@
 import { operationalLog } from "../../server/operational-logging.js";
+import type { AdministratorRecoveryError } from "../database/administrator-recovery.server";
 
 export function logAdministratorRecovery(
-  outcome:
-    | "administrator-not-found"
-    | "administrator-invariant-violated"
-    | "administrator-credential-not-found"
-    | "failed"
-    | "succeeded",
+  outcome: AdministratorRecoveryError | "failed" | "succeeded",
 ): void {
   operationalLog(outcome === "succeeded" ? "warn" : "error", "administrator_recovery", {
     outcome,

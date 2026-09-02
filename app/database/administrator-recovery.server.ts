@@ -3,10 +3,13 @@ import { eq } from "drizzle-orm";
 import type { ApplicationDatabaseClient } from "./database.server";
 import { passwordCredentials, sessions, users } from "./schema.server";
 
+export type AdministratorRecoveryError =
+  | "administrator-not-found"
+  | "administrator-invariant-violated"
+  | "administrator-credential-not-found";
+
 export type AdministratorRecoveryPersistenceResult =
-  | { error: "administrator-not-found"; ok: false }
-  | { error: "administrator-invariant-violated"; ok: false }
-  | { error: "administrator-credential-not-found"; ok: false }
+  | { error: AdministratorRecoveryError; ok: false }
   | { ok: true };
 
 export function replaceSoleAdministratorCredential(

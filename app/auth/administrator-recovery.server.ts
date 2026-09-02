@@ -1,18 +1,15 @@
 import { randomBytes } from "node:crypto";
 
 import type { ApplicationDatabaseClient } from "../database/database.server";
-import { replaceSoleAdministratorCredential } from "../database/administrator-recovery.server";
+import {
+  replaceSoleAdministratorCredential,
+  type AdministratorRecoveryError,
+} from "../database/administrator-recovery.server";
 import { logAdministratorRecovery } from "./administrator-recovery-events.server";
 import { hashPassword } from "./password.server";
 
 export type AdministratorRecoveryResult =
-  | {
-      error:
-        | "administrator-not-found"
-        | "administrator-invariant-violated"
-        | "administrator-credential-not-found";
-      ok: false;
-    }
+  | { error: AdministratorRecoveryError; ok: false }
   | { ok: true; temporaryPassword: string };
 
 function generateTemporaryPassword(): string {
