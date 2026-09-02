@@ -6,7 +6,7 @@ import { AuthShell } from "../auth/auth-shell";
 import {
   authenticatedSessionHeaders,
   getClientIp,
-  getAuthenticatedSession,
+  getSessionForAccountAccess,
   loadPreAuthenticationCsrf,
   requirePreAuthenticationCsrf,
   requireValidOrigin,
@@ -33,8 +33,15 @@ export function headers() {
 }
 
 export async function loader({ request }: Route.LoaderArgs) {
-  if (await getAuthenticatedSession(request)) {
-    return redirect("/");
+  const session = await getSessionForAccountAccess(request);
+  if (session) {
+    return redirect(
+      session.user.passwordChangeRequired ? "/account/password" : "/",
+    );
+  }
+
+  if (getAuthenticationService().isRegistrationOpen()) {
+    return redirect("/register");
   }
 
   const csrf = loadPreAuthenticationCsrf(request);
@@ -81,6 +88,15 @@ export async function action({ request }: Route.ActionArgs) {
         { status: 429 },
       );
     }
+    if (result.error === "account-disabled") {
+      return data<LoginActionData>(
+        {
+          error: "Your account has been disabled.",
+          username: fields.username,
+        },
+        { status: 403 },
+      );
+    }
 
     return data<LoginActionData>(
       { error: genericLoginError, username: fields.username },
@@ -88,14 +104,17 @@ export async function action({ request }: Route.ActionArgs) {
     );
   }
 
-  return redirect("/", {
+  return redirect(
+    result.session.user.passwordChangeRequired ? "/account/password" : "/",
+    {
     headers: authenticatedSessionHeaders(request, result.session),
-  });
+    },
+  );
 }
 
 export default function Login({ actionData, loaderData }: Route.ComponentProps) {
   return (
-    <AuthShell activePage="login">
+    <AuthShell>
       <Form className={styles.form} method="post" noValidate>
         <input
           name="csrfToken"

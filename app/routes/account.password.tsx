@@ -3,7 +3,7 @@ import { data, Form, Link, redirect } from "react-router";
 import type { Route } from "./+types/account.password";
 import styles from "../account.module.css";
 import {
-  getAuthenticatedSession,
+  getSessionForAccountAccess,
   requireValidOrigin,
   serializeClearedSessionCookie,
   serializeSessionCookie,
@@ -28,18 +28,19 @@ export function headers() {
 }
 
 export async function loader({ request }: Route.LoaderArgs) {
-  const session = await getAuthenticatedSession(request);
+  const session = await getSessionForAccountAccess(request);
   if (!session) return redirect("/login");
 
   return {
     csrfToken: session.csrfToken,
+    passwordChangeRequired: session.user.passwordChangeRequired,
     username: session.user.username,
   };
 }
 
 export async function action({ request }: Route.ActionArgs) {
   requireValidOrigin(request);
-  const session = await getAuthenticatedSession(request);
+  const session = await getSessionForAccountAccess(request);
   if (!session) {
     return redirect("/login", {
       headers: { "Set-Cookie": serializeClearedSessionCookie() },
@@ -54,6 +55,7 @@ export async function action({ request }: Route.ActionArgs) {
   }
 
   const parsed = passwordChangeSchema.safeParse({
+    confirmNewPassword: String(formData.get("confirmNewPassword") ?? ""),
     currentPassword: String(formData.get("currentPassword") ?? ""),
     newPassword: String(formData.get("newPassword") ?? ""),
   });
@@ -62,7 +64,9 @@ export async function action({ request }: Route.ActionArgs) {
     const error =
       field === "currentPassword"
         ? "Enter your current password."
-        : "New password must contain 12–128 characters.";
+        : field === "newPassword"
+          ? "New password must contain 12–128 characters."
+          : "New passwords do not match.";
     return data<PasswordChangeActionData>({ error }, { status: 400 });
   }
 
@@ -83,10 +87,22 @@ export async function action({ request }: Route.ActionArgs) {
         { status: 429 },
       );
     }
+    if (result.error === "password-reuse") {
+      return data<PasswordChangeActionData>(
+        { error: "Choose a password different from the temporary password." },
+        { status: 400 },
+      );
+    }
     return data<PasswordChangeActionData>(
       { error: "The current password is incorrect." },
       { status: 400 },
     );
+  }
+
+  if (session.user.passwordChangeRequired) {
+    return redirect("/setup", {
+      headers: { "Set-Cookie": serializeSessionCookie(result.session) },
+    });
   }
 
   return data<PasswordChangeActionData>(
@@ -104,15 +120,21 @@ export default function ChangePassword({
   return (
     <main className={styles.shell}>
       <section className={styles.panel} aria-labelledby="password-heading">
-        <Link className={styles.backLink} to="/">
-          ← Back to account
-        </Link>
+        {!loaderData.passwordChangeRequired ? (
+          <Link className={styles.backLink} to="/">
+            ← Back to account
+          </Link>
+        ) : null}
         <header className={styles.header}>
           <h1 className={styles.heading} id="password-heading">
-            Account security
+            {loaderData.passwordChangeRequired
+              ? "Set your private password"
+              : "Account security"}
           </h1>
           <p className={styles.summary}>
-            Changing the password revokes other sessions and rotates this one.
+            {loaderData.passwordChangeRequired
+              ? "Replace the temporary password before continuing."
+              : "Changing the password revokes other sessions and rotates this one."}
           </p>
         </header>
 
@@ -133,6 +155,7 @@ export default function ChangePassword({
             <label htmlFor="current-password">Current password</label>
             <input
               autoComplete="current-password"
+              autoFocus={loaderData.passwordChangeRequired}
               id="current-password"
               name="currentPassword"
               required
@@ -153,6 +176,16 @@ export default function ChangePassword({
               12–128 characters; spaces and Unicode are welcome.
             </small>
           </div>
+          <div className={styles.field}>
+            <label htmlFor="confirm-new-password">Confirm new password</label>
+            <input
+              autoComplete="new-password"
+              id="confirm-new-password"
+              name="confirmNewPassword"
+              required
+              type="password"
+            />
+          </div>
           {actionData?.error ? (
             <p className={styles.error} role="alert">
               {actionData.error}
@@ -165,9 +198,21 @@ export default function ChangePassword({
           ) : null}
 
           <button className={styles.submit} type="submit">
-            Change password
+            {loaderData.passwordChangeRequired
+              ? "Set password and continue"
+              : "Change password"}
           </button>
         </Form>
+        {loaderData.passwordChangeRequired ? (
+          <Form action="/logout" className={styles.signOutForm} method="post">
+            <input
+              name="csrfToken"
+              type="hidden"
+              value={loaderData.csrfToken}
+            />
+            <button type="submit">Sign out</button>
+          </Form>
+        ) : null}
       </section>
     </main>
   );

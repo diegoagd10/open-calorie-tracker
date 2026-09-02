@@ -3,6 +3,7 @@ import type {
   IssuedSession,
 } from "./authentication.server";
 import type { PreAuthenticationCsrfSession } from "./pre-authentication-csrf.server";
+import { redirect } from "react-router";
 import {
   getAuthenticationService,
   getPreAuthenticationCsrfService,
@@ -51,10 +52,39 @@ export function getClientIp(request: Request): string {
   return request.headers.get("X-Open-Calory-Client-IP") ?? "unknown";
 }
 
-export async function getAuthenticatedSession(
+async function authenticateRequest(
   request: Request,
 ): Promise<AuthenticatedSession | undefined> {
-  return getAuthenticationService().authenticate(getSessionToken(request));
+  return getAuthenticationService().authenticate(
+    getSessionToken(request),
+  );
+}
+
+export function getSessionForAccountAccess(
+  request: Request,
+): Promise<AuthenticatedSession | undefined> {
+  return authenticateRequest(request);
+}
+
+export async function getSessionForApplicationAccess(
+  request: Request,
+): Promise<AuthenticatedSession | undefined> {
+  const session = await authenticateRequest(request);
+  if (session?.user.passwordChangeRequired) {
+    throw redirect("/account/password");
+  }
+  return session;
+}
+
+export async function requireAdministratorSession(
+  request: Request,
+): Promise<AuthenticatedSession> {
+  const session = await getSessionForApplicationAccess(request);
+  if (!session) throw redirect("/login");
+  if (session.user.role !== "admin") {
+    throw new Response("Not Found", { status: 404 });
+  }
+  return session;
 }
 
 export function serializeSessionCookie(session: IssuedSession): string {

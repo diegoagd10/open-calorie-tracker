@@ -34,58 +34,57 @@ describe("static route contracts", () => {
   test("the complete public route table maps URLs to their modules", () => {
     expect(routeConfig).toEqual([
       { file: "./routes/home.tsx", index: true },
-      { file: "./routes/login.tsx", path: "login" },
-      { file: "./routes/logout.tsx", path: "logout" },
-      { file: "./routes/register.tsx", path: "register" },
-      { file: "./routes/setup.tsx", path: "setup" },
-      { file: "./routes/settings.goals.tsx", path: "settings/goals" },
-      { file: "./routes/account.password.tsx", path: "account/password" },
-      { file: "./routes/health.live.ts", path: "health/live" },
-      { file: "./routes/health.ready.ts", path: "health/ready" },
+      { children: undefined, file: "./routes/login.tsx", path: "login" },
+      { children: undefined, file: "./routes/logout.tsx", path: "logout" },
+      { children: undefined, file: "./routes/register.tsx", path: "register" },
+      { children: undefined, file: "./routes/setup.tsx", path: "setup" },
+      {
+        children: undefined,
+        file: "./routes/settings.goals.tsx",
+        path: "settings/goals",
+      },
+      {
+        children: undefined,
+        file: "./routes/settings.users.tsx",
+        path: "settings/users",
+      },
+      {
+        children: undefined,
+        file: "./routes/account.password.tsx",
+        path: "account/password",
+      },
+      {
+        children: undefined,
+        file: "./routes/health.live.ts",
+        path: "health/live",
+      },
+      {
+        children: undefined,
+        file: "./routes/health.ready.ts",
+        path: "health/ready",
+      },
     ]);
   });
 });
 
 describe("shared route components", () => {
-  test.each([
-    ["login", "page", undefined, true, false],
-    ["register", undefined, "page", false, true],
-  ] as const)(
-    "authentication shell marks only %s active",
-    async (activePage, loginCurrent, registerCurrent, loginActive, registerActive) => {
+  test("authentication shell presents content without redundant navigation", async () => {
       const renderer = await renderInRoute(
         createElement(
           AuthShell,
           {
-            activePage,
             children: createElement("p", null, "Form contents"),
           },
         ),
       );
-      const links = renderer.root.findAllByType("a");
-      expect(links).toHaveLength(2);
-      expect(links[0].props).toMatchObject({
-        "aria-current": loginCurrent,
-        href: "/login",
-      });
-      expect(links[1].props).toMatchObject({
-        "aria-current": registerCurrent,
-        href: "/register",
-      });
-      expect(String(links[0].props.className).includes("activeTab"))
-        .toBe(loginActive);
-      expect(String(links[1].props.className).includes("activeTab"))
-        .toBe(registerActive);
-      expect(links[loginActive ? 1 : 0].props.className).not.toContain(
-        "Stryker was here!",
-      );
+      expect(renderer.root.findAllByType("nav")).toHaveLength(0);
+      expect(renderer.root.findAllByType("a")).toHaveLength(0);
       expect(renderer.root.findByProps({ id: "auth-title" }).children.join(""))
         .toBe("Private account access");
       expect(renderer.root.findByType("p").children.join(""))
         .toBe("Form contents");
       renderer.unmount();
-    },
-  );
+  });
 
   test.each(["log", "history", "settings"] as const)(
     "application navigation marks only %s active",

@@ -1,10 +1,11 @@
 import { useState } from "react";
-import { data, Form, Link, redirect } from "react-router";
+import { data, Form, redirect } from "react-router";
 
 import type { Route } from "./+types/settings.goals";
 import { AppNavigation } from "../app-navigation";
+import { SettingsDestinations } from "../settings-destinations";
 import {
-  getAuthenticatedSession,
+  getSessionForApplicationAccess,
   requireValidOrigin,
   serializeClearedSessionCookie,
 } from "../auth/http.server";
@@ -79,7 +80,7 @@ export function headers() {
 }
 
 export async function loader({ request }: Route.LoaderArgs) {
-  const session = await getAuthenticatedSession(request);
+  const session = await getSessionForApplicationAccess(request);
   if (!session) return redirect("/login");
 
   const service = getGoalVersionService();
@@ -108,6 +109,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       current.displayUnits,
     ),
     goal: current.goal,
+    isAdministrator: session.user.role === "admin",
     timeZone: current.timeZone,
     today: current.today,
     username: session.user.username,
@@ -116,7 +118,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 
 export async function action({ request }: Route.ActionArgs) {
   requireValidOrigin(request);
-  const session = await getAuthenticatedSession(request);
+  const session = await getSessionForApplicationAccess(request);
   if (!session) {
     return redirect("/login", {
       headers: { "Set-Cookie": serializeClearedSessionCookie() },
@@ -243,35 +245,11 @@ export default function Goals({ actionData, loaderData }: Route.ComponentProps) 
           </p>
         </header>
 
-        <Link className={styles.accountAccessRow} to="/account/password">
-          <span className={styles.accountAccessIcon} aria-hidden="true">
-            ◇
-          </span>
-          <span>
-            <strong>Account security</strong>
-            <small>Change your password and rotate active sessions.</small>
-          </span>
-          <span aria-hidden="true">›</span>
-        </Link>
-
-        <Form
-          action="/logout"
-          className={styles.mobileSignOutForm}
-          method="post"
-        >
-          <input
-            name="csrfToken"
-            type="hidden"
-            value={loaderData.csrfToken}
-          />
-          <button aria-label="Sign out" type="submit">
-            <span>
-              <strong>Sign out this session</strong>
-              <small>Other phones remain signed in.</small>
-            </span>
-            <span aria-hidden="true">›</span>
-          </button>
-        </Form>
+        <SettingsDestinations
+          active="goals"
+          csrfToken={loaderData.csrfToken}
+          isAdministrator={loaderData.isAdministrator}
+        />
 
         <Form className={styles.settingsGroup} method="post" noValidate>
           <input

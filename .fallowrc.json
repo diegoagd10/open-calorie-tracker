@@ -16,6 +16,7 @@
     "authenticate",
     "isComplete",
     "login",
+    "provisionMember",
     "register",
     "revoke",
     "revokeSession",
@@ -36,10 +37,12 @@
           "app/root.tsx",
           "app/routes.ts",
           "app/app-navigation.tsx",
+          "app/settings-destinations.tsx",
           "app/ui-icon.tsx",
           "app/account.module.css",
           "app/readiness.module.css",
-          "app/styles.css"
+          "app/styles.css",
+          "app/users.module.css"
         ]
       },
       {
@@ -95,6 +98,7 @@
           "playwright.config.ts",
           "react-router.config.ts",
           "vite.config.ts",
+          "vite.recovery.config.ts",
           "vitest.config.ts",
           "scripts/audit-dependencies.mjs",
           "scripts/calibrate-argon2.mjs",
@@ -138,7 +142,7 @@
         "from": "water-event",
         "allow": ["database", "food-log", "setup"]
       },
-      { "from": "server", "allow": ["database"] },
+      { "from": "server", "allow": ["auth", "database"] },
       {
         "from": "tests",
         "allow": [

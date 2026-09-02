@@ -113,6 +113,8 @@ describe("login component", () => {
     });
     expect(renderer.root.findByType("button").children.join(""))
       .toBe("Sign in");
+    expect(renderer.root.findAllByType("nav")).toHaveLength(0);
+    expect(renderer.root.findAllByType("a")).toHaveLength(0);
     expect(renderer.root.findAllByProps({ role: "alert" })).toHaveLength(0);
     renderer.unmount();
   });
@@ -131,6 +133,7 @@ describe("login component", () => {
     expect(text(renderer)).toContain("Couldn’t sign in");
     renderer.unmount();
   });
+
 });
 
 describe("registration component", () => {
@@ -173,6 +176,9 @@ describe("registration component", () => {
     );
     expect(renderer.root.findByType("button").children.join(""))
       .toBe("Create private account");
+    expect(
+      renderer.root.findAllByProps({ "aria-label": "Account access" }),
+    ).toHaveLength(0);
     expect(renderer.root.findAllByProps({ role: "alert" })).toHaveLength(0);
     renderer.unmount();
   });
@@ -202,7 +208,11 @@ describe("password component", () => {
       const renderer = await renderRoute(
         ChangePassword,
         "/account/password",
-        { csrfToken: "password-csrf", username: "account.owner" },
+        {
+          csrfToken: "password-csrf",
+          passwordChangeRequired: false,
+          username: "account.owner",
+        },
         actionData,
       );
       expect(input(renderer, "csrfToken").props.value).toBe("password-csrf");
@@ -224,6 +234,12 @@ describe("password component", () => {
         required: true,
         type: "password",
       });
+      expect(input(renderer, "confirmNewPassword").props).toMatchObject({
+        autoComplete: "new-password",
+        id: "confirm-new-password",
+        required: true,
+        type: "password",
+      });
       const errors = renderer.root.findAllByProps({ role: "alert" });
       expect(errors.map((node) => node.children.join("")))
         .toEqual(expectedError ? [expectedError] : []);
@@ -239,4 +255,30 @@ describe("password component", () => {
       renderer.unmount();
     },
   );
+
+  test("mandatory password onboarding exposes only replacement and logout", async () => {
+    const renderer = await renderRoute(
+      ChangePassword,
+      "/account/password",
+      {
+        csrfToken: "restricted-csrf",
+        passwordChangeRequired: true,
+        username: "invited.member",
+      },
+    );
+    expect(text(renderer)).toContain("Set your private password");
+    expect(text(renderer)).toContain(
+      "Replace the temporary password before continuing.",
+    );
+    expect(input(renderer, "currentPassword").props.autoFocus).toBe(true);
+    expect(
+      renderer.root.findAllByProps({ href: "/" }),
+    ).toHaveLength(0);
+    const forms = renderer.root.findAllByType("form");
+    expect(forms).toHaveLength(2);
+    expect(forms.at(-1)?.props).toMatchObject({ action: "/logout" });
+    expect(text(renderer)).toContain("Sign out");
+    expect(text(renderer)).not.toContain("temporary member passphrase");
+    renderer.unmount();
+  });
 });

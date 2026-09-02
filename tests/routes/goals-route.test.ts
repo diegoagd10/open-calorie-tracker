@@ -9,6 +9,7 @@ import { afterAll, beforeAll, expect, test } from "vitest";
 import { serializeSessionCookie } from "../../app/auth/http.server";
 import { getAuthenticationService } from "../../app/auth/runtime.server";
 import {
+  getApplicationDatabase,
   initializeApplicationDatabase,
   shutdownApplicationDatabase,
 } from "../../app/database/runtime.server";
@@ -18,6 +19,7 @@ import {
 } from "../../app/routes/settings.goals";
 import { getGoalSetupService } from "../../app/setup/runtime.server";
 import { validateSetupFields } from "../../app/setup/validation";
+import { seedAuthenticatedAccount } from "../support/authentication";
 
 const origin = "http://localhost:3000";
 const password = "correct horse battery staple";
@@ -97,14 +99,15 @@ beforeAll(async () => {
   if (!setup.success) throw new Error("goal setup fixture was invalid");
   getGoalSetupService().completeInitial(configured.session.user.id, setup.data);
 
-  const incomplete = await getAuthenticationService().register(
+  const incomplete = await seedAuthenticatedAccount(
+    getAuthenticationService(),
+    getApplicationDatabase().getClient(),
     "goals.incomplete",
     password,
     "203.0.113.221",
   );
-  if (!incomplete.ok) throw new Error("incomplete goal account was not created");
-  incompleteCookie = serializeSessionCookie(incomplete.session).split(";", 1)[0];
-  incompleteCsrf = incomplete.session.csrfToken;
+  incompleteCookie = serializeSessionCookie(incomplete).split(";", 1)[0];
+  incompleteCsrf = incomplete.csrfToken;
 });
 
 afterAll(async () => {

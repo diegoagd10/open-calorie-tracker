@@ -6,16 +6,9 @@ import { RouterContextProvider } from "react-router";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 
 import { PersistentRateLimiter } from "../../app/auth/rate-limiter.server";
-import {
-  parseCookies,
-  requirePreAuthenticationCsrf,
-  serializeSessionCookie,
-  type getAuthenticatedSession,
-} from "../../app/auth/http.server";
-import {
-  getAuthenticationService,
-  getPreAuthenticationCsrfService,
-} from "../../app/auth/runtime.server";
+import type { AuthenticatedSession } from "../../app/auth/authentication.server";
+import { serializeSessionCookie } from "../../app/auth/http.server";
+import { getAuthenticationService } from "../../app/auth/runtime.server";
 import {
   getApplicationDatabase,
   initializeApplicationDatabase,
@@ -33,14 +26,9 @@ import {
   action as logoutAction,
   loader as logoutLoader,
 } from "../../app/routes/logout";
-import {
-  action as registerAction,
-  loader as registerLoader,
-} from "../../app/routes/register";
+import { seedAuthenticatedAccount } from "../support/authentication";
 
-type Session = NonNullable<Awaited<ReturnType<typeof getAuthenticatedSession>>> & {
-  absoluteExpiresAt: Date;
-};
+type Session = AuthenticatedSession;
 
 const origin = "http://localhost:3000";
 const password = "correct horse battery staple";
@@ -68,8 +56,8 @@ function cookieFor(session: Session): string {
 }
 
 async function issuePreAuthentication(
-  loader: typeof loginLoader | typeof registerLoader,
-  pathname: "/login" | "/register",
+  loader: typeof loginLoader,
+  pathname: "/login",
 ) {
   const result = await loader(
     routeArgs(new Request(`${origin}${pathname}`), pathname),
@@ -85,13 +73,14 @@ async function issuePreAuthentication(
 }
 
 async function seedAccount(username: string): Promise<Session> {
-  const result = await getAuthenticationService().register(
+  const session = await seedAuthenticatedAccount(
+    getAuthenticationService(),
+    getApplicationDatabase().getClient(),
     username,
     password,
     `198.51.100.${sessions.size + 10}`,
+    sessions.size === 0 ? "admin" : "member",
   );
-  if (!result.ok) throw new Error(`could not seed ${username}`);
-  const session = result.session as Session;
   sessions.set(username, session);
   return session;
 }
@@ -113,224 +102,6 @@ afterAll(async () => {
   await rm(temporaryDirectory, { force: true, recursive: true });
   delete process.env.APPLICATION_URL;
   delete process.env.DATABASE_PATH;
-});
-
-describe("registration route", () => {
-  test("redirects an already authenticated account", async () => {
-    const session = sessions.get("login.owner")!;
-    const result = await registerLoader(
-      routeArgs(
-        new Request(`${origin}/register`, {
-          headers: { Cookie: cookieFor(session) },
-        }),
-        "/register",
-      ),
-    );
-    expect(result).toBeInstanceOf(Response);
-    expect((result as Response).headers.get("Location")).toBe("/");
-  });
-
-  test.each([
-    [
-      { confirmPassword: password, password, username: "bad user" },
-      "Use 3–30 ASCII letters, digits, dot, hyphen, or underscore.",
-    ],
-    [
-      { confirmPassword: "short", password: "short", username: "new.user" },
-      "Password must contain 12–128 characters.",
-    ],
-    [
-      { confirmPassword: "different password", password, username: "new.user" },
-      "Passwords do not match.",
-    ],
-  ])("returns the specific safe validation error %#", async (fields, error) => {
-    const preAuth = await issuePreAuthentication(registerLoader, "/register");
-    const result = await registerAction(
-      routeArgs(
-        post(
-          "/register",
-          new URLSearchParams({ ...fields, csrfToken: preAuth.csrfToken }),
-          preAuth.cookie,
-        ),
-        "/register",
-      ),
-    );
-    expect(result).toMatchObject({
-      data: { error, username: fields.username },
-      init: { status: 400 },
-    });
-  });
-
-  test("never accepts an omitted confirmation for any valid password text", async () => {
-    const csrf = await issuePreAuthentication(registerLoader, "/register");
-    const result = await registerAction(
-      routeArgs(
-        post(
-          "/register",
-          new URLSearchParams({
-            csrfToken: csrf.csrfToken,
-            password: "Stryker was here!",
-            username: "missing.confirmation.boundary",
-          }),
-          csrf.cookie,
-        ),
-        "/register",
-      ),
-    );
-    expect(result).toMatchObject({
-      data: {
-        error: "Passwords do not match.",
-        username: "missing.confirmation.boundary",
-      },
-      init: { status: 400 },
-    });
-  });
-
-  test.each([
-    [{ confirmPassword: password, password }, "", "Use 3–30 ASCII letters"],
-    [
-      { confirmPassword: password, username: "missing.password" },
-      "missing.password",
-      "Password must contain 12–128 characters",
-    ],
-    [
-      { password, username: "missing.confirmation" },
-      "missing.confirmation",
-      "Passwords do not match",
-    ],
-  ])("maps a missing registration field to its contract %#", async (
-    fields,
-    username,
-    error,
-  ) => {
-    const csrf = await issuePreAuthentication(registerLoader, "/register");
-    const result = await registerAction(
-      routeArgs(
-        post(
-          "/register",
-          new URLSearchParams({ ...fields, csrfToken: csrf.csrfToken }),
-          csrf.cookie,
-        ),
-        "/register",
-      ),
-    );
-    expect(result).toMatchObject({
-      data: { username },
-      init: { status: 400 },
-    });
-    if (result instanceof Response) throw new Error("Expected registration data");
-    expect(result.data.error).toContain(error);
-  });
-
-  test("normalizes a new account and rejects a case-insensitive duplicate", async () => {
-    const firstCsrf = await issuePreAuthentication(registerLoader, "/register");
-    const firstCsrfRequest = new Request(`${origin}/register`, {
-      headers: { Cookie: firstCsrf.cookie },
-    });
-    expect(() => requirePreAuthenticationCsrf(
-      firstCsrfRequest,
-      firstCsrf.csrfToken,
-    )).not.toThrow();
-    const rejectedCandidate = (() => {
-      try {
-        requirePreAuthenticationCsrf(firstCsrfRequest, "wrong-csrf");
-        return undefined;
-      } catch (error) {
-        return error;
-      }
-    })();
-    expect(rejectedCandidate).toBeInstanceOf(Response);
-    expect((rejectedCandidate as Response).status).toBe(403);
-    await expect((rejectedCandidate as Response).text()).resolves.toBe(
-      "CSRF token rejected.",
-    );
-    const first = await registerAction(
-      routeArgs(
-        post(
-          "/register",
-          new URLSearchParams({
-            confirmPassword: password,
-            csrfToken: firstCsrf.csrfToken,
-            password,
-            username: "Route.NewUser",
-          }),
-          firstCsrf.cookie,
-        ),
-        "/register",
-      ),
-    );
-    expect(first).toBeInstanceOf(Response);
-    expect((first as Response).status).toBe(302);
-    expect((first as Response).headers.get("Location")).toBe("/");
-    expect((first as Response).headers.get("Set-Cookie"))
-      .toContain("__Host-calorie_session=");
-    expect((first as Response).headers.get("Set-Cookie"))
-      .toContain("__Host-calorie_auth_csrf=; Path=/; Max-Age=0;");
-    const revokedToken = parseCookies(firstCsrf.cookie).get(
-      "__Host-calorie_auth_csrf",
-    );
-    expect(getPreAuthenticationCsrfService().verify(
-      revokedToken,
-      firstCsrf.csrfToken,
-    )).toBe(false);
-
-    const duplicateCsrf = await issuePreAuthentication(registerLoader, "/register");
-    const duplicate = await registerAction(
-      routeArgs(
-        post(
-          "/register",
-          new URLSearchParams({
-            confirmPassword: password,
-            csrfToken: duplicateCsrf.csrfToken,
-            password,
-            username: "ROUTE.NEWUSER",
-          }),
-          duplicateCsrf.cookie,
-        ),
-        "/register",
-      ),
-    );
-    expect(duplicate).toMatchObject({
-      data: {
-        error:
-          "That username is already registered. Usernames are compared case-insensitively.",
-        username: "ROUTE.NEWUSER",
-      },
-      init: { status: 409 },
-    });
-  });
-
-  test("returns a specific registration rate-limit response", async () => {
-    const limiter = new PersistentRateLimiter(
-      getApplicationDatabase().getClient(),
-    );
-    for (let attempt = 0; attempt < 5; attempt += 1) {
-      expect(limiter.consume("registration", "203.0.113.210", 5, 60_000))
-        .toBe(true);
-    }
-    const csrf = await issuePreAuthentication(registerLoader, "/register");
-    const request = post(
-      "/register",
-      new URLSearchParams({
-        confirmPassword: password,
-        csrfToken: csrf.csrfToken,
-        password,
-        username: "rate.register",
-      }),
-      csrf.cookie,
-    );
-    request.headers.set("X-Open-Calory-Client-IP", "203.0.113.210");
-    const result = await registerAction(
-      routeArgs(request, "/register"),
-    );
-    expect(result).toMatchObject({
-      data: {
-        error: "Too many registration attempts. Try again later.",
-        username: "rate.register",
-      },
-      init: { status: 429 },
-    });
-  });
 });
 
 describe("login route", () => {
@@ -417,6 +188,68 @@ describe("login route", () => {
     expect((valid as Response).headers.get("Location")).toBe("/");
     expect((valid as Response).headers.get("Set-Cookie"))
       .toContain("__Host-calorie_session=");
+  });
+
+  test("a disabled account with valid credentials receives a dedicated login failure", async () => {
+    const authentication = getAuthenticationService();
+    await expect(
+      authentication.provisionMember("disabled.login", password),
+    ).resolves.toMatchObject({ ok: true });
+    await expect(
+      authentication.disableMemberAccess(
+        sessions.get("login.owner")!.user,
+        "disabled.login",
+        "disabled.login",
+      ),
+    ).resolves.toEqual({ ok: true });
+
+    const disabledCsrf = await issuePreAuthentication(loginLoader, "/login");
+    const disabled = await loginAction(
+      routeArgs(
+        post(
+          "/login",
+          new URLSearchParams({
+            csrfToken: disabledCsrf.csrfToken,
+            password,
+            username: "disabled.login",
+          }),
+          disabledCsrf.cookie,
+        ),
+        "/login",
+      ),
+    );
+    expect(disabled).toMatchObject({
+      data: { error: "Your account has been disabled." },
+      init: { status: 403 },
+    });
+
+    const attempts = [
+      { password: "incorrect password value", username: "disabled.login" },
+      { password, username: "missing.login" },
+    ];
+    const failures = [];
+    for (const attempt of attempts) {
+      const csrf = await issuePreAuthentication(loginLoader, "/login");
+      failures.push(await loginAction(
+        routeArgs(
+          post(
+            "/login",
+            new URLSearchParams({ ...attempt, csrfToken: csrf.csrfToken }),
+            csrf.cookie,
+          ),
+          "/login",
+        ),
+      ));
+    }
+
+    for (const [index, failure] of failures.entries()) {
+      expect(failure).toMatchObject({
+        data: { error: "The username or password is incorrect." },
+        init: { status: 401 },
+      });
+      expect((failure as { data: { username: string } }).data.username)
+        .toBe(attempts[index]?.username);
+    }
   });
 
   test.each([
@@ -507,6 +340,7 @@ describe("password route", () => {
     );
     expect(loaded).toEqual({
       csrfToken: session.csrfToken,
+      passwordChangeRequired: false,
       username: "password.owner",
     });
 
@@ -515,6 +349,7 @@ describe("password route", () => {
         post(
           "/account/password",
           new URLSearchParams({
+            confirmNewPassword: "replacement passphrase",
             csrfToken: "wrong",
             currentPassword: password,
             newPassword: "replacement passphrase",
@@ -550,6 +385,7 @@ describe("password route", () => {
         post(
           "/account/password",
           new URLSearchParams({
+            confirmNewPassword: "replacement passphrase",
             csrfToken: session.csrfToken,
             currentPassword: "",
             newPassword: "replacement passphrase",
@@ -569,6 +405,7 @@ describe("password route", () => {
         post(
           "/account/password",
           new URLSearchParams({
+            confirmNewPassword: "short",
             csrfToken: session.csrfToken,
             currentPassword: password,
             newPassword: "short",
@@ -583,11 +420,32 @@ describe("password route", () => {
       init: { status: 400 },
     });
 
+    const mismatchedConfirmation = await passwordAction(
+      routeArgs(
+        post(
+          "/account/password",
+          new URLSearchParams({
+            confirmNewPassword: "different replacement password",
+            csrfToken: session.csrfToken,
+            currentPassword: password,
+            newPassword: "replacement passphrase",
+          }),
+          cookieFor(session),
+        ),
+        "/account/password",
+      ),
+    );
+    expect(mismatchedConfirmation).toMatchObject({
+      data: { error: "New passwords do not match." },
+      init: { status: 400 },
+    });
+
     const wrongCurrent = await passwordAction(
       routeArgs(
         post(
           "/account/password",
           new URLSearchParams({
+            confirmNewPassword: "replacement passphrase",
             csrfToken: session.csrfToken,
             currentPassword: "incorrect current password",
             newPassword: "replacement passphrase",
@@ -610,6 +468,7 @@ describe("password route", () => {
         post(
           "/account/password",
           new URLSearchParams({
+            confirmNewPassword: "replacement passphrase",
             csrfToken: session.csrfToken,
             currentPassword: password,
             newPassword: "replacement passphrase",
@@ -646,6 +505,7 @@ describe("password route", () => {
         post(
           "/account/password",
           new URLSearchParams({
+            confirmNewPassword: "replacement passphrase",
             csrfToken: rateSession.csrfToken,
             currentPassword: password,
             newPassword: "replacement passphrase",
@@ -664,6 +524,7 @@ describe("password route", () => {
     const request = post(
       "/account/password",
       new URLSearchParams({
+        confirmNewPassword: "replacement passphrase",
         csrfToken: staleSession.csrfToken,
         currentPassword: password,
         newPassword: "replacement passphrase",
@@ -703,6 +564,113 @@ describe("password route", () => {
       data: { error: "New password must contain 12–128 characters." },
       init: { status: 400 },
     });
+  });
+
+  test("restricted login requires the temporary password and continues to setup with a rotated session", async () => {
+    const authentication = getAuthenticationService();
+    const initialPassword = "temporary member passphrase";
+    const nextPassword = "private replacement passphrase";
+    expect(await authentication.provisionMember("invited.member", initialPassword))
+      .toMatchObject({ ok: true });
+    const preAuthentication = await issuePreAuthentication(loginLoader, "/login");
+    const login = await loginAction(
+      routeArgs(
+        post(
+          "/login",
+          new URLSearchParams({
+            csrfToken: preAuthentication.csrfToken,
+            password: initialPassword,
+            username: "invited.member",
+          }),
+          preAuthentication.cookie,
+        ),
+        "/login",
+      ),
+    );
+    expect(login).toBeInstanceOf(Response);
+    expect((login as Response).headers.get("Location"))
+      .toBe("/account/password");
+    const loginCookie = (login as Response).headers.get("Set-Cookie")
+      ?.split(",", 1)[0]
+      .split(";", 1)[0];
+    if (!loginCookie) throw new Error("restricted session cookie missing");
+    const loginToken = decodeURIComponent(
+      loginCookie.split("=").slice(1).join("="),
+    );
+    const restrictedSession = await authentication.authenticate(loginToken);
+    if (!restrictedSession) throw new Error("restricted session unavailable");
+    expect(restrictedSession.user.passwordChangeRequired).toBe(true);
+
+    const incorrect = await passwordAction(
+      routeArgs(
+        post(
+          "/account/password",
+          new URLSearchParams({
+            confirmNewPassword: nextPassword,
+            csrfToken: restrictedSession.csrfToken,
+            currentPassword: "incorrect temporary password",
+            newPassword: nextPassword,
+          }),
+          loginCookie,
+        ),
+        "/account/password",
+      ),
+    );
+    expect(incorrect).toMatchObject({
+      data: { error: "The current password is incorrect." },
+      init: { status: 400 },
+    });
+
+    const reused = await passwordAction(
+      routeArgs(
+        post(
+          "/account/password",
+          new URLSearchParams({
+            confirmNewPassword: initialPassword,
+            csrfToken: restrictedSession.csrfToken,
+            currentPassword: initialPassword,
+            newPassword: initialPassword,
+          }),
+          loginCookie,
+        ),
+        "/account/password",
+      ),
+    );
+    expect(reused).toMatchObject({
+      data: {
+        error: "Choose a password different from the temporary password.",
+      },
+      init: { status: 400 },
+    });
+    await expect(authentication.authenticate(loginToken)).resolves
+      .toMatchObject({ user: { passwordChangeRequired: true } });
+
+    const changed = await passwordAction(
+      routeArgs(
+        post(
+          "/account/password",
+          new URLSearchParams({
+            confirmNewPassword: nextPassword,
+            csrfToken: restrictedSession.csrfToken,
+            currentPassword: initialPassword,
+            newPassword: nextPassword,
+          }),
+          loginCookie,
+        ),
+        "/account/password",
+      ),
+    );
+    expect(changed).toBeInstanceOf(Response);
+    expect((changed as Response).headers.get("Location")).toBe("/setup");
+    const replacementCookie = (changed as Response).headers.get("Set-Cookie");
+    expect(replacementCookie).toContain("__Host-calorie_session=");
+    expect(replacementCookie).not.toContain(loginToken);
+    await expect(authentication.authenticate(loginToken)).resolves.toBeUndefined();
+    const replacementToken = decodeURIComponent(
+      replacementCookie!.split(";", 1)[0].split("=").slice(1).join("="),
+    );
+    await expect(authentication.authenticate(replacementToken)).resolves
+      .toMatchObject({ user: { passwordChangeRequired: false } });
   });
 });
 
@@ -770,7 +738,6 @@ describe("logout route", () => {
 
 test.each([
   ["login", loginAction],
-  ["register", registerAction],
   ["account/password", passwordAction],
   ["logout", logoutAction],
 ] as const)("%s action rejects a cross-origin request before side effects", async (

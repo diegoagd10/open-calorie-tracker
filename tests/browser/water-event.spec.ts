@@ -1,14 +1,15 @@
 import AxeBuilder from "@axe-core/playwright";
-import { expect, test, type Page } from "@playwright/test";
+import type { Page } from "@playwright/test";
+import {
+  bootstrapOrSignInBrowserTestUser,
+  expect,
+  test,
+} from "./reset-database";
 
 const validPassword = "correct horse 🔐 battery";
 
-async function registerAndSetup(page: Page, username: string) {
-  await page.goto("/register");
-  await page.getByLabel("Username").fill(username);
-  await page.getByLabel("Password", { exact: true }).fill(validPassword);
-  await page.getByLabel("Confirm password").fill(validPassword);
-  await page.getByRole("button", { name: "Create private account" }).click();
+async function completeSetupForTestUser(page: Page, username: string) {
+  await bootstrapOrSignInBrowserTestUser(page, username, validPassword);
   if (username.endsWith(".metric")) {
     await page.getByLabel("Metric", { exact: true }).check();
   }
@@ -23,7 +24,7 @@ test("a user can add, inspect, edit, and delete one Water Event", async ({
   page,
 }) => {
   await context.setExtraHTTPHeaders({ "X-Test-Client-IP": "203.0.113.90" });
-  await registerAndSetup(page, "water.full.stack");
+  await completeSetupForTestUser(page, "water.full.stack");
 
   await page.getByRole("button", { name: "Add Water" }).click();
   const addDialog = page.getByRole("dialog", { name: "Add Water" });
@@ -74,7 +75,7 @@ test("a user can add, inspect, edit, and delete one Water Event", async ({
     "X-Test-Client-IP": "203.0.113.92",
   });
   const otherPage = await otherContext.newPage();
-  await registerAndSetup(otherPage, "water.full.stack.other");
+  await completeSetupForTestUser(otherPage, "water.full.stack.other");
   const unavailableRead = await otherPage.goto(
     `/?date=2026-08-29&water=${String(ownerFields.eventId)}`,
   );
@@ -132,7 +133,7 @@ test("metric display converts the canonical US water presets", async ({
   page,
 }) => {
   await context.setExtraHTTPHeaders({ "X-Test-Client-IP": "203.0.113.91" });
-  await registerAndSetup(page, "water.full.stack.metric");
+  await completeSetupForTestUser(page, "water.full.stack.metric");
 
   await page.getByRole("button", { name: "Add Water" }).click();
   const dialog = page.getByRole("dialog", { name: "Add Water" });
