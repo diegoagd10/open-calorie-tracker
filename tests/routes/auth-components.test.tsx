@@ -267,7 +267,7 @@ describe("password component", () => {
     );
     expect(text(renderer)).toContain("Set your private password");
     expect(text(renderer)).toContain(
-      "Replace the temporary password before setting up your Food Log.",
+      "Replace the temporary password before continuing.",
     );
     expect(input(renderer, "currentPassword").props.autoFocus).toBe(true);
     expect(

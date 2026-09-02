@@ -130,7 +130,7 @@ export default function ChangePassword({
           </h1>
           <p className={styles.summary}>
             {loaderData.passwordChangeRequired
-              ? "Replace the temporary password before setting up your Food Log."
+              ? "Replace the temporary password before continuing."
               : "Changing the password revokes other sessions and rotates this one."}
           </p>
         </header>
