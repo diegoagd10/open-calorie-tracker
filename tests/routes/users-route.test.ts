@@ -45,7 +45,7 @@ async function captureUsersLoaderResult(request: Request) {
 
 function post(fields: Record<string, string>, cookie = administratorCookie) {
   return new Request(`${origin}/settings/users`, {
-    body: new URLSearchParams(fields),
+    body: new URLSearchParams({ intent: "create-member", ...fields }),
     headers: { Cookie: cookie, Origin: origin },
     method: "POST",
   });
@@ -253,6 +253,22 @@ test("member provisioning rejects duplicate, malformed, unauthorized, CSRF-inval
   );
   expect(malformed).toMatchObject({ init: { status: 400 } });
 
+  const unknownIntent = await usersAction(
+    routeArgs(
+      post({
+        confirmPassword: initialPassword,
+        csrfToken: administrator.csrfToken,
+        intent: "forged-action",
+        password: initialPassword,
+        username: "forged.member",
+      }),
+    ),
+  );
+  expect(unknownIntent).toMatchObject({
+    data: { error: "Unsupported action." },
+    init: { status: 400 },
+  });
+
   const unauthorized = await usersAction(
     routeArgs(
       post(
@@ -316,6 +332,7 @@ test("member provisioning rejects duplicate, malformed, unauthorized, CSRF-inval
     .not.toEqual(expect.arrayContaining([
       "anonymous.member",
       "csrf.member",
+      "forged.member",
       "origin.member",
       "unauthorized.member",
     ]));

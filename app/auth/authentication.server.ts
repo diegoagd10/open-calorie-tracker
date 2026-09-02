@@ -1,9 +1,12 @@
 import { randomBytes } from "node:crypto";
 
-import { and, asc, eq } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 
 import type { ApplicationDatabaseClient } from "../database/database.server";
-import { replacePasswordAndSessions } from "../database/credential-sessions.server";
+import {
+  findActiveSessionByTokenHash,
+  replacePasswordAndSessions,
+} from "../database/credential-sessions.server";
 import { createMemberAccount } from "../database/member-accounts.server";
 import { transitionMemberAccess } from "../database/member-access.server";
 import {
@@ -54,6 +57,28 @@ export type CredentialUser = Pick<
 
 export type UserRole = (typeof users.$inferSelect)["role"];
 export type AccountAccessState = (typeof users.$inferSelect)["accessState"];
+type MemberAccessAction = "disable" | "reactivate";
+type MemberAccessStaleError = "already-active" | "already-disabled";
+
+const memberAccessTransitions = {
+  disable: {
+    expectedState: "active",
+    nextState: "disabled",
+    staleError: "already-disabled",
+  },
+  reactivate: {
+    expectedState: "disabled",
+    nextState: "active",
+    staleError: "already-active",
+  },
+} as const satisfies Record<
+  MemberAccessAction,
+  {
+    expectedState: AccountAccessState;
+    nextState: AccountAccessState;
+    staleError: MemberAccessStaleError;
+  }
+>;
 
 export type AuthenticatedSession = {
   absoluteExpiresAt: Date;
@@ -264,25 +289,7 @@ export class AuthenticationService {
     }
 
     const tokenHash = hashOpaqueToken(token);
-    const session = this.#database
-      .select({
-        absoluteExpiresAt: sessions.absoluteExpiresAt,
-        idleExpiresAt: sessions.idleExpiresAt,
-        passwordChangeRequired: users.passwordChangeRequired,
-        tokenHash: sessions.tokenHash,
-        userId: sessions.userId,
-        role: users.role,
-        usernameNormalized: users.usernameNormalized,
-      })
-      .from(sessions)
-      .innerJoin(users, eq(users.id, sessions.userId))
-      .where(
-        and(
-          eq(sessions.tokenHash, tokenHash),
-          eq(users.accessState, "active"),
-        ),
-      )
-      .get();
+    const session = findActiveSessionByTokenHash(this.#database, tokenHash);
 
     if (!session) {
       return undefined;
@@ -520,14 +527,15 @@ export class AuthenticationService {
   #changeMemberAccess(
     actor: AuthenticatedSession["user"],
     targetUsername: string,
-    action: "disable" | "reactivate",
+    action: MemberAccessAction,
   ): MemberAccessChangeResult {
     try {
+      const transition = memberAccessTransitions[action];
       const result = transitionMemberAccess(
         this.#database,
         targetUsername,
-        action === "disable" ? "active" : "disabled",
-        action === "disable" ? "disabled" : "active",
+        transition.expectedState,
+        transition.nextState,
       );
       if (result === "changed") {
         logMemberAccessChanged(action, actor, targetUsername, "succeeded");
@@ -536,9 +544,7 @@ export class AuthenticationService {
 
       const error = result === "not-found"
         ? "not-found"
-        : action === "disable"
-          ? "already-disabled"
-          : "already-active";
+        : transition.staleError;
       logMemberAccessChanged(action, actor, targetUsername, error);
       return { error, ok: false };
     } catch (error) {

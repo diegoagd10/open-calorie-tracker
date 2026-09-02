@@ -25,6 +25,25 @@ type UsersActionData = {
   username?: string;
 };
 
+type UsersActionIntent =
+  | "create-member"
+  | "disable-member"
+  | "reactivate-member";
+
+function parseUsersActionIntent(
+  value: FormDataEntryValue | null,
+): UsersActionIntent | undefined {
+  if (typeof value !== "string") return undefined;
+  switch (value) {
+    case "create-member":
+    case "disable-member":
+    case "reactivate-member":
+      return value;
+    default:
+      return undefined;
+  }
+}
+
 export function meta() {
   return [
     { title: "Users · Open Calory Tracker" },
@@ -63,7 +82,13 @@ export async function action({ request }: Route.ActionArgs) {
     throw new Response("CSRF token rejected.", { status: 403 });
   }
 
-  const intent = String(formData.get("intent") ?? "create-member");
+  const intent = parseUsersActionIntent(formData.get("intent"));
+  if (!intent) {
+    return data<UsersActionData>(
+      { error: "Unsupported action." },
+      { status: 400 },
+    );
+  }
   if (intent === "disable-member" || intent === "reactivate-member") {
     const targetUsername = String(formData.get("targetUsername") ?? "");
     const parsedTarget = usernameSchema.safeParse(targetUsername);

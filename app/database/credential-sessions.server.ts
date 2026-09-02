@@ -11,6 +11,39 @@ export type PasswordAndSessionReplacement = {
   userId: number;
 };
 
+export type ActiveSessionRecord = Pick<
+  typeof sessions.$inferSelect,
+  "absoluteExpiresAt" | "idleExpiresAt" | "userId"
+> &
+  Pick<
+    typeof users.$inferSelect,
+    "passwordChangeRequired" | "role" | "usernameNormalized"
+  >;
+
+export function findActiveSessionByTokenHash(
+  database: ApplicationDatabaseClient,
+  tokenHash: string,
+): ActiveSessionRecord | undefined {
+  return database
+    .select({
+      absoluteExpiresAt: sessions.absoluteExpiresAt,
+      idleExpiresAt: sessions.idleExpiresAt,
+      passwordChangeRequired: users.passwordChangeRequired,
+      role: users.role,
+      userId: sessions.userId,
+      usernameNormalized: users.usernameNormalized,
+    })
+    .from(sessions)
+    .innerJoin(users, eq(users.id, sessions.userId))
+    .where(
+      and(
+        eq(sessions.tokenHash, tokenHash),
+        eq(users.accessState, "active"),
+      ),
+    )
+    .get();
+}
+
 export function replacePasswordAndSessions(
   database: ApplicationDatabaseClient,
   replacement: PasswordAndSessionReplacement,
