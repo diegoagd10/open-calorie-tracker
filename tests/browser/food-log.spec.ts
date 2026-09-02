@@ -83,6 +83,7 @@ async function expectFoodEntryStatusResponsive(page: Page, message: string) {
 async function installSimulatedBarcodeCamera(page: Page) {
   await page.addInitScript(() => {
     const scannerState = {
+      appliedConstraints: [] as MediaTrackConstraints[],
       barcode: "034000470693",
       cameraStarts: 0,
       constraints: undefined as MediaStreamConstraints | undefined,
@@ -109,9 +110,24 @@ async function installSimulatedBarcodeCamera(page: Page) {
       value: SimulatedBarcodeDetector,
     });
 
+    const track = {
+      applyConstraints: async (constraints: MediaTrackConstraints) => {
+        scannerState.appliedConstraints.push(constraints);
+      },
+      getCapabilities: () => ({
+        focusMode: ["manual", "continuous"],
+        torch: true,
+        zoom: { max: 4, min: 1, step: 0.1 },
+      }),
+      getSettings: () => ({ zoom: 1 }),
+      stop: () => { scannerState.trackStops += 1; },
+    };
     const stream = new MediaStream();
     Object.defineProperty(stream, "getTracks", {
-      value: () => [{ stop: () => { scannerState.trackStops += 1; } }],
+      value: () => [track],
+    });
+    Object.defineProperty(stream, "getVideoTracks", {
+      value: () => [track],
     });
     Object.defineProperty(navigator, "mediaDevices", {
       configurable: true,
@@ -872,8 +888,24 @@ test("@camera-matrix simulated scan stays local and follows review before one sn
     }
   ).__scannerState.constraints)).toEqual({
     audio: false,
-    video: { facingMode: { ideal: "environment" } },
+    video: {
+      facingMode: { ideal: "environment" },
+      frameRate: { ideal: 30 },
+      height: { ideal: 1080 },
+      width: { ideal: 1920 },
+    },
   });
+  await expect(page.getByRole("button", { name: "Turn light on" })).toBeVisible();
+  await expect(page.getByRole("slider", { name: "Camera zoom" })).toHaveValue("1.5");
+  expect(await page.evaluate(() => (
+    window as typeof window & {
+      __scannerState: { appliedConstraints: MediaTrackConstraints[] };
+    }
+  ).__scannerState.appliedConstraints)).toEqual([
+    { advanced: [{ focusMode: "continuous", zoom: 1.5 }] },
+  ]);
+  await page.getByRole("button", { name: "Turn light on" }).click();
+  await expect(page.getByRole("button", { name: "Turn light off" })).toBeVisible();
   await expectCatalogResponsive(page);
   const activeCameraAxe = await new AxeBuilder({ page }).analyze();
   expect(activeCameraAxe.violations).toEqual([]);
@@ -935,7 +967,7 @@ test("@camera-matrix simulated scan stays local and follows review before one sn
       window as typeof window & {
         __scannerState: { barcode: string; emit: boolean };
       }
-    ).__scannerState.barcode = "0000000000004";
+    ).__scannerState.barcode = "0000000000048";
     (
       window as typeof window & { __scannerState: { emit: boolean } }
     ).__scannerState.emit = false;

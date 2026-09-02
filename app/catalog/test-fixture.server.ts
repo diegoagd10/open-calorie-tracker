@@ -169,6 +169,7 @@ export class TestOpenFoodFactsProvider implements BarcodeFoodCatalogProvider {
       case "0000000000003":
         throw new CatalogRateLimitError();
       case "0000000000004":
+      case "0000000000048":
         throw new CatalogUnavailableError();
       case "0000000000005":
         throw new CatalogInvalidResponseError();
