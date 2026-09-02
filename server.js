@@ -1,50 +1,22 @@
-import { randomUUID } from "node:crypto";
-
-import compression from "compression";
-import express from "express";
-
+import {
+  closeOnProcessSignals,
+  createHttpApplication,
+  mountOperationalErrorHandler,
+  mountProductionApplication,
+} from "./server/http-host.js";
 import {
   operationalError,
   operationalLog,
 } from "./server/operational-logging.js";
 import { validateServerConfiguration } from "./server/startup-configuration.js";
 
-const BUILD_PATH = "./build/server/index.js";
 const DEVELOPMENT = process.env.NODE_ENV === "development";
-
-function requestIdFor(request) {
-  const supplied = request.get("x-request-id");
-  return supplied && /^[A-Za-z0-9._:-]{1,128}$/.test(supplied)
-    ? supplied
-    : randomUUID();
-}
 
 async function startServer() {
   const { port } = validateServerConfiguration(process.env);
 
-  const app = express();
-  let shutdownApplication = () => {};
-
-  app.disable("x-powered-by");
-  app.use(compression());
-  app.use((request, response, next) => {
-    const requestId = requestIdFor(request);
-    const startedAt = performance.now();
-
-    response.locals.requestId = requestId;
-    request.headers["x-open-calory-request-id"] = requestId;
-    response.setHeader("x-request-id", requestId);
-    response.on("finish", () => {
-      operationalLog("info", "request_completed", {
-        requestId,
-        method: request.method,
-        path: request.path,
-        status: response.statusCode,
-        durationMs: Math.round(performance.now() - startedAt),
-      });
-    });
-    next();
-  });
+  const app = createHttpApplication();
+  let shutdownApplication;
 
   if (DEVELOPMENT) {
     const viteDevelopmentServer = await import("vite").then((vite) =>
@@ -69,25 +41,10 @@ async function startServer() {
       }
     });
   } else {
-    app.use(
-      "/assets",
-      express.static("build/client/assets", { immutable: true, maxAge: "1y" }),
-    );
-    app.use(express.static("build/client", { maxAge: "1h" }));
-
-    const production = await import(BUILD_PATH);
-    shutdownApplication = production.shutdown;
-    app.use(production.app);
+    shutdownApplication = await mountProductionApplication(app);
   }
 
-  app.use((error, _request, response, next) => {
-    operationalLog("error", "request_failed", {
-      requestId: response.locals.requestId,
-      error: operationalError(error, false),
-    });
-    if (response.headersSent) return next(error);
-    return response.status(500).json({ status: "internal_error" });
-  });
+  mountOperationalErrorHandler(app);
 
   const server = app.listen(port, "0.0.0.0", () => {
     operationalLog("info", "server_started", {
@@ -96,15 +53,7 @@ async function startServer() {
     });
   });
 
-  for (const signal of ["SIGINT", "SIGTERM"]) {
-    process.once(signal, () => {
-      server.close(() => {
-        shutdownApplication();
-        operationalLog("info", "server_stopped", { signal });
-        process.exit(0);
-      });
-    });
-  }
+  closeOnProcessSignals(server, shutdownApplication);
 }
 
 startServer().catch((error) => {

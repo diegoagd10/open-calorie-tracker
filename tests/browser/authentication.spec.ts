@@ -7,7 +7,7 @@ import {
 } from "@playwright/test";
 
 const validPassword = "correct horse 🔐 battery";
-const applicationOrigin = "http://127.0.0.1:4173";
+const applicationOrigin = "https://localhost:4173";
 
 async function finishInitialSetup(page: Page) {
   await expect(page).toHaveURL("/setup");
@@ -21,7 +21,9 @@ async function fetchCsrfToken(
   path: "/login" | "/register",
   headers: Record<string, string>,
 ): Promise<{ cookie: string; token: string }> {
-  const response = await request.get(path, { headers });
+  const response = await request.get(path, {
+    headers: { ...headers, Cookie: "" },
+  });
   expect(response.status()).toBe(200);
   const cookie = response.headers()["set-cookie"]?.split(";", 1)[0];
   const match = (await response.text()).match(
@@ -74,7 +76,7 @@ test("a returning user can sign in and revoke the current session", async ({
     (cookie) => cookie.name === "__Host-calorie_session",
   );
   expect(issuedCookie).toMatchObject({
-    domain: "127.0.0.1",
+    domain: "localhost",
     httpOnly: true,
     path: "/",
     sameSite: "Lax",

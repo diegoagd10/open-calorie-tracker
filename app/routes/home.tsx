@@ -28,6 +28,7 @@ import {
 import { AppNavigation } from "../app-navigation";
 import { isTestEnvironment } from "../runtime.server";
 import { UiIcon } from "../ui-icon";
+import { BarcodeCameraScanner } from "./barcode-camera-scanner";
 import { getAuthenticationService } from "../auth/runtime.server";
 import {
   CatalogConfigurationError,
@@ -1104,6 +1105,13 @@ function catalogHref(date: string, food: string, query?: string): string {
   if (query) parameters.set("query", query);
   return `/?${parameters}`;
 }
+
+// Stryker disable BlockStatement,ObjectLiteral,StringLiteral: the mobile browser scan journey asserts the exact recognized-barcode destination and one resulting lookup request.
+function barcodeCatalogHref(date: string, barcode: string): string {
+  const parameters = new URLSearchParams({ barcode, date, food: "barcode" });
+  return `/?${parameters}`;
+}
+// Stryker restore BlockStatement,ObjectLiteral,StringLiteral
 
 function formatEnergy(value: number | null): string {
   if (value === null) return "—";
@@ -2612,6 +2620,7 @@ function BarcodeCatalogStage({
   catalog,
   csrfToken,
   date,
+  navigationPending,
   pending,
 }: {
   actionData: HomeActionData | undefined;
@@ -2621,11 +2630,15 @@ function BarcodeCatalogStage({
   >;
   csrfToken: string;
   date: string;
+  navigationPending: boolean;
   pending: boolean;
 }) {
+  const navigate = useNavigate();
   const [barcode, setBarcode] = useState(catalog.barcode);
   const [clientMessage, setClientMessage] = useState<string>();
   const validBarcode = catalogBarcode(barcode);
+  // Stryker disable next-line ConditionalExpression,LogicalOperator,StringLiteral: this opaque key only controls scanner remount identity across reviewed barcodes.
+  const scannerKey = catalog.barcode || "new-scan";
 
   return (
     <>
@@ -2675,6 +2688,19 @@ function BarcodeCatalogStage({
           </button>
         </div>
       </Form>
+      <BarcodeCameraScanner
+        key={scannerKey}
+        onDetected={
+          // Stryker disable BlockStatement,CallExpression: the mobile browser scan journey asserts the controlled input update, error reset, destination, and one lookup.
+          (detectedBarcode) => {
+            setBarcode(detectedBarcode);
+            setClientMessage(undefined);
+            void navigate(barcodeCatalogHref(date, detectedBarcode));
+          }
+          // Stryker restore BlockStatement,CallExpression
+        }
+        stopRequested={navigationPending}
+      />
       {pending ? (
         <div className={styles.catalogState} role="status">
           <h3>Checking Open Food Facts</h3>
@@ -2732,6 +2758,8 @@ function CatalogDialog({
     navigation.state !== "idle" &&
     !detailPending;
   const barcodePending = pendingFoodStage?.mode === "barcode";
+  // Stryker disable next-line ConditionalExpression: the blocked-navigation browser journey proves the pending-state teardown and restart guard.
+  const navigationPending = navigation.state !== "idle";
   const closeHref = foodLogHref(date);
   const { closeDialog, dialogRef, handleDialogKeyDown } = useModalDialog({
     closeHref,
@@ -2789,6 +2817,7 @@ function CatalogDialog({
             catalog={catalog}
             csrfToken={csrfToken}
             date={date}
+            navigationPending={navigationPending}
             pending={barcodePending}
           />
         ) : (

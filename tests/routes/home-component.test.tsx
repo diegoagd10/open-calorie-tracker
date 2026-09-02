@@ -756,6 +756,8 @@ test("barcode mode keeps manual entry visible across detail and recoverable erro
     expect(semanticDom(renderer)).toMatchSnapshot();
     expect(input(renderer, "barcode")).toBeDefined();
     expect(allText(renderer)).toContain("Enter barcode");
+    expect(allText(renderer)).toContain("Use camera");
+    expect(allText(renderer)).toContain("Frames stay on this device");
     expect(renderer.root.findByProps({
       href: "/?date=2026-08-31&food=search",
     })).toBeDefined();

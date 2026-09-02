@@ -95,6 +95,56 @@ async function expectFoodEntryStatusResponsive(page: Page, message: string) {
   await page.setViewportSize({ height: 720, width: 1_280 });
 }
 
+async function installSimulatedBarcodeCamera(page: Page) {
+  await page.addInitScript(() => {
+    const scannerState = {
+      barcode: "034000470693",
+      cameraStarts: 0,
+      constraints: undefined as MediaStreamConstraints | undefined,
+      emit: false,
+      trackStops: 0,
+    };
+    const browserWindow = window as typeof window & {
+      BarcodeDetector?: unknown;
+      __scannerState: typeof scannerState;
+    };
+    browserWindow.__scannerState = scannerState;
+
+    class SimulatedBarcodeDetector {
+      static async getSupportedFormats() {
+        return ["ean_8", "ean_13", "itf", "upc_a", "upc_e"];
+      }
+
+      async detect() {
+        return scannerState.emit ? [{ rawValue: scannerState.barcode }] : [];
+      }
+    }
+    Object.defineProperty(browserWindow, "BarcodeDetector", {
+      configurable: true,
+      value: SimulatedBarcodeDetector,
+    });
+
+    const stream = new MediaStream();
+    Object.defineProperty(stream, "getTracks", {
+      value: () => [{ stop: () => { scannerState.trackStops += 1; } }],
+    });
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: {
+        getUserMedia: async (constraints: MediaStreamConstraints) => {
+          scannerState.cameraStarts += 1;
+          scannerState.constraints = constraints;
+          return stream;
+        },
+      },
+    });
+    Object.defineProperty(HTMLMediaElement.prototype, "play", {
+      configurable: true,
+      value: async () => undefined,
+    });
+  });
+}
+
 test("today, historical navigation, calendar access, travel, and future rejection", async ({
   browser,
   context,
@@ -743,6 +793,7 @@ test("authenticated manual barcode confirmation creates one attributed serving s
   await barcodeInput.fill("034000470693");
   await page.getByRole("button", { name: "Look up" }).click();
   await expect(page.getByRole("heading", { name: "Example cereal" })).toBeVisible();
+  await expect(barcodeInput).toBeVisible();
   await expect(page.getByText("Barcode 0034000470693")).toBeVisible();
   await expect(page.getByText("1 serving", { exact: true })).toBeVisible();
   await expect(page.getByText("180 kcal")).toBeVisible();
@@ -802,6 +853,175 @@ test("authenticated manual barcode confirmation creates one attributed serving s
 
   const accessibilityScan = await new AxeBuilder({ page }).analyze();
   expect(accessibilityScan.violations).toEqual([]);
+});
+
+test("@camera-matrix simulated scan stays local and follows review before one snapshot", async ({
+  context,
+  page,
+}, testInfo) => {
+  await context.setExtraHTTPHeaders({ "X-Test-Client-IP": "203.0.113.94" });
+  await installSimulatedBarcodeCamera(page);
+  await registerAndSetup(page, `camera.${testInfo.project.name}`);
+
+  const transmittedPayloads: string[] = [];
+  page.on("request", (request) => {
+    const body = request.postData();
+    if (body) transmittedPayloads.push(body);
+  });
+
+  await page.getByRole("button", { name: "Add Food" }).click();
+  await page.getByRole("link", { name: /Scan barcode/ }).click();
+  const barcodeInput = page.getByLabel("Enter barcode");
+  await expect(barcodeInput).toBeVisible();
+  await page.getByRole("button", { name: "Use camera" }).click();
+  await expect(page.getByText("Point the camera at the barcode")).toBeVisible();
+  await expect(page.getByLabel("Live barcode camera preview")).toBeVisible();
+  await expect(barcodeInput).toBeVisible();
+  expect(await page.evaluate(() => (
+    window as typeof window & {
+      __scannerState: { constraints?: MediaStreamConstraints };
+    }
+  ).__scannerState.constraints)).toEqual({
+    audio: false,
+    video: { facingMode: { ideal: "environment" } },
+  });
+  await expectCatalogResponsive(page);
+  const activeCameraAxe = await new AxeBuilder({ page }).analyze();
+  expect(activeCameraAxe.violations).toEqual([]);
+
+  let releaseLookup!: () => void;
+  const lookupGate = new Promise<void>((resolve) => {
+    releaseLookup = resolve;
+  });
+  let lookupRequests = 0;
+  await page.route(/(?=.*[?&]food=barcode)(?=.*[?&]barcode=034000470693)/, async (route) => {
+    lookupRequests += 1;
+    await lookupGate;
+    await route.continue();
+  }, { times: 1 });
+
+  await page.evaluate(() => {
+    (
+      window as typeof window & { __scannerState: { emit: boolean } }
+    ).__scannerState.emit = true;
+  });
+  await expect(page.getByText("Recognized 034000470693")).toBeVisible();
+  await expect(barcodeInput).toHaveValue("034000470693");
+  await expect(page.getByLabel("Live barcode camera preview")).toBeHidden();
+  await expect.poll(() => page.evaluate(() => (
+    window as typeof window & {
+      __scannerState: { trackStops: number };
+    }
+  ).__scannerState.trackStops)).toBe(1);
+  expect(lookupRequests).toBe(1);
+  releaseLookup();
+
+  await expect(page.getByRole("heading", { name: "Example cereal" })).toBeVisible();
+  await expect(page.getByText("Barcode 0034000470693")).toBeVisible();
+  await expect(page.getByText("1 serving", { exact: true })).toBeVisible();
+  await expect(page.getByText("180 kcal")).toBeVisible();
+  await expect(page.getByText("24 g")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Open Food Facts" })).toBeVisible();
+  const quantity = page.getByLabel("Quantity");
+  await quantity.fill("0.5");
+  await expect(page.getByText("90 kcal")).toBeVisible();
+  await expect(page.getByText("12 g")).toBeVisible();
+  await expect(page.getByText("No entries for this day")).toBeVisible();
+
+  await page.getByRole("button", { name: "Add to Food Log" }).click();
+  const savedEntry = page.getByRole("article").filter({ hasText: "Example cereal" });
+  await expect(savedEntry).toHaveCount(1);
+  await expect(savedEntry).toContainText("Open Food Facts");
+  await expect(savedEntry).toContainText("1 serving × 0.5");
+  await expect(savedEntry).toContainText("90 kcal");
+  expect(transmittedPayloads.join("\n")).not.toMatch(
+    /(?:blob:|data:image|frame|photograph|photo=)/i,
+  );
+  await expect(page.locator("img")).toHaveCount(0);
+
+  await page.evaluate(() => {
+    (
+      window as typeof window & {
+        __scannerState: { barcode: string; emit: boolean };
+      }
+    ).__scannerState.barcode = "0000000000004";
+    (
+      window as typeof window & { __scannerState: { emit: boolean } }
+    ).__scannerState.emit = false;
+  });
+  await page.getByRole("button", { name: "Add Food" }).click();
+  await page.getByRole("link", { name: /Scan barcode/ }).click();
+  await page.getByRole("button", { name: "Use camera" }).click();
+  await expect(page.getByText("Point the camera at the barcode")).toBeVisible();
+  await page.evaluate(() => {
+    (
+      window as typeof window & { __scannerState: { emit: boolean } }
+    ).__scannerState.emit = true;
+  });
+  await expect(
+    page.getByRole("heading", { name: "Open Food Facts is unavailable" }),
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "Retry" })).toBeVisible();
+  await expect(page.getByLabel("Enter barcode")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Search for food" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Use camera" })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => (
+    window as typeof window & {
+      __scannerState: { trackStops: number };
+    }
+  ).__scannerState.trackStops)).toBe(2);
+
+  await page.evaluate(() => {
+    (
+      window as typeof window & { __scannerState: { emit: boolean } }
+    ).__scannerState.emit = false;
+  });
+  await page.getByRole("button", { name: "Use camera" }).click();
+  await expect(page.getByText("Point the camera at the barcode")).toBeVisible();
+  let releaseSearch!: () => void;
+  const searchGate = new Promise<void>((resolve) => {
+    releaseSearch = resolve;
+  });
+  await page.route(/(?=.*[?&]food=search)/, async (route) => {
+    await searchGate;
+    await route.continue();
+  }, { times: 1 });
+  await page.getByRole("link", { name: "Search for food" }).click();
+  await expect.poll(() => page.evaluate(() => (
+    window as typeof window & {
+      __scannerState: { trackStops: number };
+    }
+  ).__scannerState.trackStops)).toBe(3);
+  const blockedCameraButton = page.getByRole("button", { name: "Use camera" });
+  await expect(blockedCameraButton).toBeDisabled();
+  await blockedCameraButton.evaluate((button) => {
+    button.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  });
+  expect(await page.evaluate(() => (
+    window as typeof window & {
+      __scannerState: { cameraStarts: number };
+    }
+  ).__scannerState.cameraStarts)).toBe(3);
+  releaseSearch();
+  await expect(
+    page.getByRole("searchbox", { name: "Search United States foods" }),
+  ).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog", { name: "Add Food" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Add Food" })).toBeFocused();
+
+  await page.getByRole("button", { name: "Add Food" }).click();
+  await page.getByRole("link", { name: /Scan barcode/ }).click();
+  await page.getByRole("button", { name: "Use camera" }).click();
+  await expect(page.getByText("Point the camera at the barcode")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog", { name: "Add Food" })).toHaveCount(0);
+  await expect.poll(() => page.evaluate(() => (
+    window as typeof window & {
+      __scannerState: { trackStops: number };
+    }
+  ).__scannerState.trackStops)).toBe(4);
+  await expect(page.getByRole("button", { name: "Add Food" })).toBeFocused();
 });
 
 test("food selection immediately reveals the pending detail destination", async ({

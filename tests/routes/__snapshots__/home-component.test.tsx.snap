@@ -2,15 +2,15 @@
 
 exports[`Add Food offers search and barcode paths before either provider runs 1`] = `"aff0ed8649c1595cb2e85b83d4b1c1b733c9fd967add3618d9474aa33b079302"`;
 
-exports[`barcode mode keeps manual entry visible across detail and recoverable errors 1`] = `"4f5267351aedb55d74c1427e9b61f654711c714de04ef7ab0fc196bcba428a16"`;
+exports[`barcode mode keeps manual entry visible across detail and recoverable errors 1`] = `"8d99600f3f4b7d9459a04b8c152fd934997e68b8c0908f1b1ac48379220c1d02"`;
 
-exports[`barcode mode keeps manual entry visible across detail and recoverable errors 2`] = `"77e322ea7c52520268056d85d68eec66c8f2d8fdd717b4e42fb26eb818c8c940"`;
+exports[`barcode mode keeps manual entry visible across detail and recoverable errors 2`] = `"022b3bd7f816be6b485e1062eb3182e6c9b3879b9e15bb0218af9062b98e8860"`;
 
-exports[`barcode mode keeps manual entry visible across detail and recoverable errors 3`] = `"eb9959e4a2eb3f10b0027a6acb118ecdad09a2e0418b91000e5cfb8326b2ec6f"`;
+exports[`barcode mode keeps manual entry visible across detail and recoverable errors 3`] = `"b6af6c102106c1acd0f9f1723f566a529f0271b77d1c9454bb92a2a22d4cd1b2"`;
 
-exports[`barcode mode keeps manual entry visible across detail and recoverable errors 4`] = `"5d3051de28512d9ee2c97ceb5e2d9d58d9b8933162c74bdcd6023a99b9cce449"`;
+exports[`barcode mode keeps manual entry visible across detail and recoverable errors 4`] = `"ea8fd57a8cb0ff895f29933ec3823d5cc5310102a4ec71c7d2b41e0f6565bf90"`;
 
-exports[`barcode mode keeps manual entry visible across detail and recoverable errors 5`] = `"55bd5ee5166ee4ca3408fbe82a1213f84c05d6c247264fb59b3fb29b6cab7132"`;
+exports[`barcode mode keeps manual entry visible across detail and recoverable errors 5`] = `"c3a95d9bb0d292df3e57fdbc10e6095146a8067986fa4b06e378905b9f0afc59"`;
 
 exports[`home catalog detail recalculates previews and exposes the log contract 1`] = `"a79a6c3b56746c7fec850c12f2c237c024634d617e95a252adc85d0efebbe5e3"`;
 

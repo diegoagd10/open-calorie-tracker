@@ -19,6 +19,8 @@ const config = {
     // and runtime wiring receive their own future integration-test pass.
     "!server.js",
     "!server/app.ts",
+    "!server/http-host.js",
+    "!server/playwright-https.js",
     "!app/**/runtime.server.ts",
 
     // Declarations describe types but contain no executable behavior.

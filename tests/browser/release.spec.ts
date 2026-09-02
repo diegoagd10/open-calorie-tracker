@@ -340,7 +340,8 @@ test("a second user cannot list, read, edit, or delete another user's records", 
   database.close();
 
   const otherContext = await browser.newContext({
-    baseURL: "http://127.0.0.1:4173",
+    baseURL: "https://localhost:4173",
+    ignoreHTTPSErrors: true,
     extraHTTPHeaders: { "X-Test-Client-IP": "203.0.113.112" },
   });
   const otherPage = await otherContext.newPage();

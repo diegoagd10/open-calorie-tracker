@@ -1,24 +1,43 @@
+import { existsSync } from "node:fs";
+
 import { defineConfig, devices } from "@playwright/test";
+
+const includeWebKit = !existsSync("/etc/arch-release");
 
 export default defineConfig({
   testDir: "./tests/browser",
   fullyParallel: false,
   workers: 1,
   use: {
-    baseURL: "http://127.0.0.1:4173",
+    baseURL: "https://localhost:4173",
+    ignoreHTTPSErrors: true,
     trace: "retain-on-failure",
   },
   projects: [
     {
       name: "chromium",
+      grepInvert: /@camera-matrix/,
       use: { ...devices["Desktop Chrome"] },
     },
+    {
+      name: "mobile-chromium",
+      grep: /@camera-matrix/,
+      use: { ...devices["Pixel 7"] },
+    },
+    ...(includeWebKit
+      ? [{
+          name: "mobile-webkit",
+          grep: /@camera-matrix/,
+          use: { ...devices["iPhone 15"] },
+        }]
+      : []),
   ],
   webServer: {
     command:
-      "pnpm build && mkdir -p data/playwright-tests && AUTH_TEST_DB_PATH=$(mktemp -p data/playwright-tests application.XXXXXX.sqlite) && NODE_ENV=test SETUP_TEST_NOW=2026-01-01T09:30:00.000Z FOOD_LOG_TEST_NOW=2026-08-29T18:00:00.000Z FOOD_CATALOG_TEST_FIXTURE=1 DATABASE_PATH=$AUTH_TEST_DB_PATH APPLICATION_URL=http://127.0.0.1:4173 PORT=4173 node server.js",
+      "pnpm build && mkdir -p data/playwright-tests && BROWSER_TLS_DIR=$(mktemp -d -p data/playwright-tests tls.XXXXXX) && openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj /CN=localhost -addext subjectAltName=DNS:localhost,IP:127.0.0.1 -keyout $BROWSER_TLS_DIR/key.pem -out $BROWSER_TLS_DIR/cert.pem >/dev/null 2>&1 && AUTH_TEST_DB_PATH=$(mktemp -p data/playwright-tests application.XXXXXX.sqlite) && NODE_ENV=test SETUP_TEST_NOW=2026-01-01T09:30:00.000Z FOOD_LOG_TEST_NOW=2026-08-29T18:00:00.000Z FOOD_CATALOG_TEST_FIXTURE=1 DATABASE_PATH=$AUTH_TEST_DB_PATH APPLICATION_URL=https://localhost:4173 node server/playwright-https.js $BROWSER_TLS_DIR/key.pem $BROWSER_TLS_DIR/cert.pem 4173",
+    ignoreHTTPSErrors: true,
     reuseExistingServer: false,
     timeout: 120_000,
-    url: "http://127.0.0.1:4173/health/live",
+    url: "https://localhost:4173/health/live",
   },
 });

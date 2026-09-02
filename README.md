@@ -19,3 +19,6 @@ coaching, judgment, or gamification.
 
 For production configuration, deployment, updates, and backups, follow the
 [production deployment guide](docs/deployment.md).
+
+Camera barcode scanning requirements and privacy behavior are documented in
+[the camera scanning guide](docs/barcode-scanning.md).

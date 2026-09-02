@@ -1,0 +1,78 @@
+import { randomUUID } from "node:crypto";
+
+import compression from "compression";
+import express from "express";
+
+import {
+  operationalError,
+  operationalLog,
+} from "./operational-logging.js";
+
+const BUILD_PATH = "../build/server/index.js";
+
+function requestIdFor(request) {
+  const supplied = request.get("x-request-id");
+  return supplied && /^[A-Za-z0-9._:-]{1,128}$/.test(supplied)
+    ? supplied
+    : randomUUID();
+}
+
+export function createHttpApplication() {
+  const app = express();
+  app.disable("x-powered-by");
+  app.use(compression());
+  app.use((request, response, next) => {
+    const requestId = requestIdFor(request);
+    const startedAt = performance.now();
+
+    response.locals.requestId = requestId;
+    request.headers["x-open-calory-request-id"] = requestId;
+    response.setHeader("x-request-id", requestId);
+    response.on("finish", () => {
+      operationalLog("info", "request_completed", {
+        requestId,
+        method: request.method,
+        path: request.path,
+        status: response.statusCode,
+        durationMs: Math.round(performance.now() - startedAt),
+      });
+    });
+    next();
+  });
+  return app;
+}
+
+export async function mountProductionApplication(app) {
+  app.use(
+    "/assets",
+    express.static("build/client/assets", { immutable: true, maxAge: "1y" }),
+  );
+  app.use(express.static("build/client", { maxAge: "1h" }));
+
+  const production = await import(BUILD_PATH);
+  app.use(production.app);
+  return production.shutdown;
+}
+
+export function mountOperationalErrorHandler(app) {
+  app.use((error, _request, response, next) => {
+    operationalLog("error", "request_failed", {
+      requestId: response.locals.requestId,
+      error: operationalError(error, false),
+    });
+    if (response.headersSent) return next(error);
+    return response.status(500).json({ status: "internal_error" });
+  });
+}
+
+export function closeOnProcessSignals(server, shutdownApplication) {
+  for (const signal of ["SIGINT", "SIGTERM"]) {
+    process.once(signal, () => {
+      server.close(() => {
+        shutdownApplication();
+        operationalLog("info", "server_stopped", { signal });
+        process.exit(0);
+      });
+    });
+  }
+}
