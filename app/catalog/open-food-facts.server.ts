@@ -46,7 +46,7 @@ const productSchema = z.object({
 });
 const responseSchema = z.object({
   product: productSchema,
-  status: z.literal("success"),
+  status: z.enum(["success", "success_with_warnings"]),
 });
 
 type CachedFood = { expiresAt: number; food: CatalogFood };

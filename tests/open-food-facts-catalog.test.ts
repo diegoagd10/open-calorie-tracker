@@ -61,6 +61,45 @@ afterEach(() => {
 });
 
 describe("Open Food Facts barcode lookup", () => {
+  test("accepts a successful response when the provider normalizes the UPC", async () => {
+    const provider = adapter(
+      vi.fn<typeof fetch>().mockResolvedValue(
+        response({
+          ...product({
+            code: "0038000138577",
+            nutriments: {
+              carbohydrates_serving: 16,
+              "energy-kcal_serving": 150,
+              fat_serving: 9,
+              proteins_serving: 1,
+            },
+            product_name: "Cheddar Cheese",
+          }),
+          status: "success_with_warnings",
+          warnings: [
+            {
+              field: { id: "code" },
+              impact: { id: "none" },
+              message: { id: "different_normalized_product_code" },
+            },
+          ],
+        }),
+      ),
+    );
+
+    await expect(provider.lookupBarcode("038000138577")).resolves.toMatchObject({
+      barcode: "0038000138577",
+      name: "Cheddar Cheese",
+      nutritionPerAuthoritativeBase: {
+        carbohydrateMilligrams: { amount: 16 },
+        energyMilliKcal: { amount: 150 },
+        fatMilligrams: { amount: 9 },
+        proteinMilligrams: { amount: 1 },
+      },
+      providerFoodId: "0038000138577",
+    });
+  });
+
   test("detail lookup uses the canonical provider food ID", async () => {
     const provider = adapter(
       vi.fn<typeof fetch>().mockResolvedValue(response(product())),

@@ -2527,6 +2527,12 @@ function BarcodeFoodDetail({
 
   return (
     <section aria-labelledby="barcode-product-title">
+      <Link
+        className={styles.backToResults}
+        to={catalogHref(date, "barcode")}
+      >
+        ‹ Back to scanner
+      </Link>
       <div className={styles.foodIdentity}>
         <span className={styles.catalogType}>Open Food Facts</span>
         <h3 id="barcode-product-title">{displayName}</h3>
@@ -2640,6 +2646,18 @@ function BarcodeCatalogStage({
   // Stryker disable next-line ConditionalExpression,LogicalOperator,StringLiteral: this opaque key only controls scanner remount identity across reviewed barcodes.
   const scannerKey = catalog.barcode || "new-scan";
 
+  if (catalog.food && !catalog.message && !pending) {
+    return (
+      <BarcodeFoodDetail
+        actionData={actionData}
+        csrfToken={csrfToken}
+        date={date}
+        food={catalog.food}
+        idempotencyKey={catalog.idempotencyKey}
+      />
+    );
+  }
+
   return (
     <>
       <div className={styles.dialogActions}>
@@ -2716,14 +2734,6 @@ function BarcodeCatalogStage({
           <h3>{catalog.title}</h3>
           <p>{catalog.message}</p>
         </div>
-      ) : catalog.food ? (
-        <BarcodeFoodDetail
-          actionData={actionData}
-          csrfToken={csrfToken}
-          date={date}
-          food={catalog.food}
-          idempotencyKey={catalog.idempotencyKey}
-        />
       ) : (
         <div className={styles.catalogState}>
           <h3>Scan barcode</h3>

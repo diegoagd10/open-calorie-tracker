@@ -734,16 +734,9 @@ test("Add Food offers search and barcode paths before either provider runs", asy
   await act(async () => renderer.unmount());
 });
 
-test("barcode mode keeps manual entry visible across detail and recoverable errors", async () => {
+test("barcode mode separates confirmation from scanning while keeping errors recoverable", async () => {
   for (const catalog of [
     { barcode: "", mode: "barcode", query: "" },
-    {
-      barcode: "034000470693",
-      food: barcodeFood,
-      idempotencyKey: "off-detail-loop",
-      mode: "barcode",
-      query: "",
-    },
     {
       barcode: "0000000000004",
       message: "Open Food Facts is unavailable right now. Retry in a moment.",
@@ -788,6 +781,12 @@ test("barcode mode keeps manual entry visible across detail and recoverable erro
   expect(text).toContain("Sugar5 g");
   expect(text).toContain("Sodium150 mg");
   expect(text).toContain("Add to Food Log");
+  expect(text).not.toContain("Enter barcode");
+  expect(text).not.toContain("Use camera");
+  expect(input(detail, "barcode")).toBeUndefined();
+  expect(detail.root.findByProps({
+    href: "/?date=2026-08-31&food=barcode",
+  })).toBeDefined();
   expect(input(detail, "idempotencyKey").props.value).toBe("off-detail");
   expect(input(detail, "provider").props.value).toBe("open-food-facts");
   expect(input(detail, "providerFoodId").props.value).toBe("0034000470693");

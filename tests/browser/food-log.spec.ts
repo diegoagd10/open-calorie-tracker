@@ -793,7 +793,9 @@ test("authenticated manual barcode confirmation creates one attributed serving s
   await barcodeInput.fill("034000470693");
   await page.getByRole("button", { name: "Look up" }).click();
   await expect(page.getByRole("heading", { name: "Example cereal" })).toBeVisible();
-  await expect(barcodeInput).toBeVisible();
+  await expect(barcodeInput).toBeHidden();
+  await expect(page.getByRole("link", { name: "Back to scanner" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Search for food" })).toHaveCount(0);
   await expect(page.getByText("Barcode 0034000470693")).toBeVisible();
   await expect(page.getByText("1 serving", { exact: true })).toBeVisible();
   await expect(page.getByText("180 kcal")).toBeVisible();
@@ -804,7 +806,7 @@ test("authenticated manual barcode confirmation creates one attributed serving s
     page.getByRole("link", { name: "Open Food Facts" }),
   ).toBeVisible();
   await expect(page.locator("img")).toHaveCount(0);
-  await expect(barcodeInput).toBeVisible();
+  await expect(barcodeInput).toBeHidden();
   const quantity = page.getByLabel("Quantity");
   await expect(quantity).toHaveValue("1");
   await quantity.fill("0.5");
@@ -846,6 +848,8 @@ test("authenticated manual barcode confirmation creates one attributed serving s
   await expect(
     page.getByRole("heading", { name: "Unnamed product · 0000000000006" }),
   ).toBeVisible();
+  await page.getByRole("link", { name: "Back to scanner" }).click();
+  await expect(page.getByLabel("Enter barcode")).toBeFocused();
   await page.getByRole("link", { name: "Search for food" }).click();
   await expect(
     page.getByRole("searchbox", { name: "Search United States foods" }),
@@ -917,6 +921,8 @@ test("@camera-matrix simulated scan stays local and follows review before one sn
   releaseLookup();
 
   await expect(page.getByRole("heading", { name: "Example cereal" })).toBeVisible();
+  await expect(barcodeInput).toBeHidden();
+  await expect(page.getByRole("link", { name: "Back to scanner" })).toBeVisible();
   await expect(page.getByText("Barcode 0034000470693")).toBeVisible();
   await expect(page.getByText("1 serving", { exact: true })).toBeVisible();
   await expect(page.getByText("180 kcal")).toBeVisible();
