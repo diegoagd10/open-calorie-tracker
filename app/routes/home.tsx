@@ -36,10 +36,12 @@ import {
   CatalogInvalidResponseError,
   CatalogNutritionUnavailableError,
   CatalogRateLimitError,
+  CatalogUnknownProviderError,
   CatalogUnavailableError,
   CatalogUnsafeMeasurementError,
   type CatalogOperationContext,
   type CatalogFood,
+  type CatalogNutrientValue,
   type CatalogSearchResult,
 } from "../catalog/food-catalog.server";
 import { isSupportedCommercialBarcode } from "../catalog/barcode";
@@ -120,6 +122,7 @@ function foodLogIntentSchema() {
       date: z.string(),
       idempotencyKey: z.string(),
       intent: z.literal("log-food"),
+      provider: z.string().min(1),
       providerFoodId: z.string(),
       quantity: z.string(),
       selectedMeasurementId: z.string(),
@@ -266,6 +269,14 @@ function barcodeCatalogFailure(
       title: "Nutrition per serving unavailable",
     };
   }
+  if (error instanceof CatalogUnsafeMeasurementError) {
+    return {
+      message:
+        "This product no longer has the same usable 1 serving measurement. Your Food Log was not changed.",
+      status: 422,
+      title: "Serving unavailable",
+    };
+  }
   if (error instanceof CatalogRateLimitError) {
     return {
       message: "Open Food Facts rate limit reached. Wait a moment before retrying.",
@@ -407,7 +418,17 @@ export async function loader({ request }: Route.LoaderArgs) {
       }
     | {
         barcode: string;
-        food?: CatalogFood;
+        food: CatalogFood;
+        idempotencyKey: string;
+        message?: never;
+        mode: "barcode";
+        query: string;
+        title?: never;
+      }
+    | {
+        barcode: string;
+        food?: undefined;
+        idempotencyKey?: undefined;
         message?: string;
         mode: "barcode";
         query: string;
@@ -458,6 +479,7 @@ export async function loader({ request }: Route.LoaderArgs) {
                 parsedBarcode,
                 catalogContext,
               ),
+              idempotencyKey: randomUUID(),
               mode: "barcode",
               query: "",
             };
@@ -654,6 +676,7 @@ export async function action({ request }: Route.ActionArgs) {
     name: formString(formData, "name"),
     proteinGrams: formString(formData, "proteinGrams"),
     providerFoodId: formString(formData, "providerFoodId"),
+    provider: formString(formData, "provider"),
     quantity: formString(formData, "quantity"),
     selectedMeasurementId: formString(formData, "selectedMeasurementId"),
     sodiumMilligrams: formString(formData, "sodiumMilligrams"),
@@ -830,6 +853,7 @@ export async function action({ request }: Route.ActionArgs) {
       {
         foodLogDate: parsed.data.date,
         idempotencyKey: parsed.data.idempotencyKey,
+        provider: parsed.data.provider,
         providerFoodId: parsed.data.providerFoodId,
         quantity: parsed.data.quantity,
         selectedMeasurementId: parsed.data.selectedMeasurementId,
@@ -844,7 +868,19 @@ export async function action({ request }: Route.ActionArgs) {
         { status: 400 },
       );
     }
-    const failure = catalogFailure(error);
+    if (error instanceof CatalogUnknownProviderError) {
+      return data<HomeActionData>(
+        {
+          message: "The selected Food Catalog provider is unavailable.",
+          tone: "error",
+        },
+        { status: 400 },
+      );
+    }
+    const failure =
+      parsed.data.provider === "open-food-facts"
+        ? barcodeCatalogFailure(error)
+        : catalogFailure(error);
     if (failure) {
       return data<HomeActionData>(
         { message: failure.message, tone: "error" },
@@ -1614,6 +1650,54 @@ function FoodDetailSkeleton() {
   );
 }
 
+function CatalogNutritionPreview({
+  carbohydrateLabel = "Carbohydrate",
+  food,
+  includeAdditional = false,
+  multiplier,
+}: {
+  carbohydrateLabel?: string;
+  food: CatalogFood;
+  includeAdditional?: boolean;
+  multiplier: number;
+}) {
+  const nutrition = food.nutritionPerAuthoritativeBase;
+  const fields: Array<
+    [string, CatalogNutrientValue | null, number, string]
+  > = [
+    ["Calories", nutrition.energyMilliKcal, 1_000, "kcal"],
+    ["Protein", nutrition.proteinMilligrams, 1_000, "g"],
+    [carbohydrateLabel, nutrition.carbohydrateMilligrams, 1_000, "g"],
+    ["Fat", nutrition.fatMilligrams, 1_000, "g"],
+  ];
+  if (includeAdditional) {
+    fields.push(
+      ["Fiber", nutrition.fiberMilligrams, 1_000, "g"],
+      ["Sugar", nutrition.sugarMilligrams, 1_000, "g"],
+      ["Sodium", nutrition.sodiumMilligrams, 1, "mg"],
+    );
+  }
+  return (
+    <dl className={styles.nutritionPreview}>
+      {fields.map(([label, value, divisor, unit]) => (
+        <div key={label}>
+          <dt>{label}</dt>
+          <dd>
+            {value === null
+              ? "Not reported"
+              : `${new Intl.NumberFormat("en-US", {
+                  maximumFractionDigits: 1,
+                }).format(
+                  (value.amount * value.fixedPointMultiplier * multiplier) /
+                    divisor,
+                )} ${unit}`}
+          </dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
 function FoodDetailStage({
   actionData,
   catalog,
@@ -1644,15 +1728,6 @@ function FoodDetailStage({
           food.authoritativeBaseQuantityMicrounits) *
         numericQuantity
       : 0;
-  const preview = (
-    value: (typeof food.nutritionPerAuthoritativeBase)["energyMilliKcal"],
-    divisor: number,
-    unit: string,
-  ) =>
-    value === null
-      ? "Not reported"
-      : `${new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 }).format((value.amount * value.fixedPointMultiplier * multiplier) / divisor)} ${unit}`;
-
   return (
     <>
       <Link
@@ -1686,7 +1761,7 @@ function FoodDetailStage({
           value={catalog.idempotencyKey}
         />
         <input name="intent" type="hidden" value="log-food" />
-        <input name="pendingFoodName" type="hidden" value={food.name} />
+        <input name="provider" type="hidden" value={food.provider} />
         <input
           name="providerFoodId"
           type="hidden"
@@ -1723,48 +1798,7 @@ function FoodDetailStage({
             />
           </label>
         </div>
-        <dl className={styles.nutritionPreview}>
-          <div>
-            <dt>Calories</dt>
-            <dd>
-              {preview(
-                food.nutritionPerAuthoritativeBase.energyMilliKcal,
-                1_000,
-                "kcal",
-              )}
-            </dd>
-          </div>
-          <div>
-            <dt>Protein</dt>
-            <dd>
-              {preview(
-                food.nutritionPerAuthoritativeBase.proteinMilligrams,
-                1_000,
-                "g",
-              )}
-            </dd>
-          </div>
-          <div>
-            <dt>Carbohydrate</dt>
-            <dd>
-              {preview(
-                food.nutritionPerAuthoritativeBase.carbohydrateMilligrams,
-                1_000,
-                "g",
-              )}
-            </dd>
-          </div>
-          <div>
-            <dt>Fat</dt>
-            <dd>
-              {preview(
-                food.nutritionPerAuthoritativeBase.fatMilligrams,
-                1_000,
-                "g",
-              )}
-            </dd>
-          </div>
-        </dl>
+        <CatalogNutritionPreview food={food} multiplier={multiplier} />
         {actionData?.message ? (
           <p className={styles.catalogError} role="alert">
             {actionData.message}
@@ -2461,17 +2495,23 @@ function CatalogChoiceStage({ date }: { date: string }) {
   );
 }
 
-function BarcodeFoodDetail({ food }: { food: CatalogFood }) {
-  const preview = (
-    value: CatalogFood["nutritionPerAuthoritativeBase"]["energyMilliKcal"],
-    divisor: number,
-    unit: string,
-  ) =>
-    value === null
-      ? "Not reported"
-      : `${new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 }).format(
-          (value.amount * value.fixedPointMultiplier) / divisor,
-        )} ${unit}`;
+function BarcodeFoodDetail({
+  actionData,
+  csrfToken,
+  date,
+  food,
+  idempotencyKey,
+}: {
+  actionData: HomeActionData | undefined;
+  csrfToken: string;
+  date: string;
+  food: CatalogFood;
+  idempotencyKey: string;
+}) {
+  const [quantity, setQuantity] = useState("1");
+  const quantityMicrounits = quantityMicrounitsFromDecimal(quantity);
+  const multiplier =
+    quantityMicrounits === undefined ? 0 : quantityMicrounits / 1_000_000;
   const displayName =
     food.name === "Unnamed product" && food.barcode
       ? `Unnamed product · ${food.barcode}`
@@ -2487,47 +2527,72 @@ function BarcodeFoodDetail({ food }: { food: CatalogFood }) {
       <div className={styles.snapshotNote}>
         <span aria-hidden="true">◇</span>
         <p>
-          <strong>Review only</strong>
-          This lookup does not create a Food Entry. Nutrition is shown only
-          when Open Food Facts reports it per serving.
+          <strong>Saved as a Nutrition Snapshot</strong>
+          Confirm to keep these serving values and source details locally if
+          Open Food Facts later changes or is unavailable.
         </p>
       </div>
-      <div className={styles.foodDetailGrid}>
-        <div className={styles.stackedField}>
-          <span>Measurement</span>
-          <strong>1 serving</strong>
+      <Form className={styles.logFoodForm} method="post">
+        <input name="csrfToken" type="hidden" value={csrfToken} />
+        <input name="date" type="hidden" value={date} />
+        <input name="idempotencyKey" type="hidden" value={idempotencyKey} />
+        <input name="intent" type="hidden" value="log-food" />
+        <input name="provider" type="hidden" value={food.provider} />
+        <input
+          name="providerFoodId"
+          type="hidden"
+          value={food.providerFoodId}
+        />
+        <input
+          name="selectedMeasurementId"
+          type="hidden"
+          value={food.measurements[0]?.id ?? ""}
+        />
+        <div className={styles.foodDetailGrid}>
+          <div className={styles.stackedField}>
+            <span>Measurement</span>
+            <strong>1 serving</strong>
+            <small>Serving values are used directly; no weight conversion.</small>
+          </div>
+          <label className={styles.stackedField}>
+            <span>Quantity</span>
+            <input
+              inputMode="decimal"
+              max="99"
+              min="0.000001"
+              name="quantity"
+              onChange={(event) => setQuantity(event.currentTarget.value)}
+              required
+              step="0.000001"
+              type="number"
+              value={quantity}
+            />
+          </label>
         </div>
-      </div>
-      <dl className={styles.nutritionPreview}>
-        <div>
-          <dt>Calories</dt>
-          <dd>
-            {preview(food.nutritionPerAuthoritativeBase.energyMilliKcal, 1_000, "kcal")}
-          </dd>
+        <CatalogNutritionPreview
+          carbohydrateLabel="Carbohydrates"
+          food={food}
+          includeAdditional
+          multiplier={multiplier}
+        />
+        {actionData?.message ? (
+          <p className={styles.catalogError} role="alert">
+            {actionData.message}
+          </p>
+        ) : null}
+        <div className={styles.dialogActions}>
+          <Link className={styles.secondaryButton} to={foodLogHref(date)}>
+            Cancel
+          </Link>
+          <button
+            className={styles.primaryButton}
+            disabled={quantityMicrounits === undefined}
+            type="submit"
+          >
+            Add to Food Log
+          </button>
         </div>
-        <div>
-          <dt>Protein</dt>
-          <dd>
-            {preview(food.nutritionPerAuthoritativeBase.proteinMilligrams, 1_000, "g")}
-          </dd>
-        </div>
-        <div>
-          <dt>Carbohydrates</dt>
-          <dd>
-            {preview(
-              food.nutritionPerAuthoritativeBase.carbohydrateMilligrams,
-              1_000,
-              "g",
-            )}
-          </dd>
-        </div>
-        <div>
-          <dt>Fat</dt>
-          <dd>
-            {preview(food.nutritionPerAuthoritativeBase.fatMilligrams, 1_000, "g")}
-          </dd>
-        </div>
-      </dl>
+      </Form>
       <p className={styles.providerAttribution}>
         Food data from{" "}
         <a
@@ -2543,14 +2608,18 @@ function BarcodeFoodDetail({ food }: { food: CatalogFood }) {
 }
 
 function BarcodeCatalogStage({
+  actionData,
   catalog,
+  csrfToken,
   date,
   pending,
 }: {
+  actionData: HomeActionData | undefined;
   catalog: Extract<
     NonNullable<Route.ComponentProps["loaderData"]["catalog"]>,
     { mode: "barcode" }
   >;
+  csrfToken: string;
   date: string;
   pending: boolean;
 }) {
@@ -2622,7 +2691,13 @@ function BarcodeCatalogStage({
           <p>{catalog.message}</p>
         </div>
       ) : catalog.food ? (
-        <BarcodeFoodDetail food={catalog.food} />
+        <BarcodeFoodDetail
+          actionData={actionData}
+          csrfToken={csrfToken}
+          date={date}
+          food={catalog.food}
+          idempotencyKey={catalog.idempotencyKey}
+        />
       ) : (
         <div className={styles.catalogState}>
           <h3>Scan barcode</h3>
@@ -2710,7 +2785,9 @@ function CatalogDialog({
           <CatalogChoiceStage date={date} />
         ) : catalog.mode === "barcode" ? (
           <BarcodeCatalogStage
+            actionData={actionData}
             catalog={catalog}
+            csrfToken={csrfToken}
             date={date}
             pending={barcodePending}
           />
@@ -2898,9 +2975,12 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
     : waterDialog;
   const navigation = useNavigation();
   const foodLogPending = navigation.formData?.get("intent") === "log-food";
-  const pendingFoodName = String(
-    navigation.formData?.get("pendingFoodName") ?? "Selected food",
-  );
+  const pendingFoodName =
+    catalog?.mode === "detail"
+      ? catalog.food.name
+      : catalog?.mode === "barcode" && catalog.food
+        ? catalog.food.name
+        : "Selected food";
   const visibleCatalog = foodLogPending ? undefined : catalog;
 
   return (
@@ -3066,7 +3146,9 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
                             <span className={styles.foodEntryContent}>
                               <strong>{entry.name}</strong>
                               <small>
-                                USDA FoodData Central · {entry.dataType}
+                                {entry.provider === "open-food-facts"
+                                  ? "Open Food Facts"
+                                  : `USDA FoodData Central · ${entry.dataType}`}
                               </small>
                               <small>
                                 {entry.selectedMeasurementLabel} ×{" "}

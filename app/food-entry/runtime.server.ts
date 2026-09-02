@@ -1,4 +1,4 @@
-import { getFoodCatalogProvider } from "../catalog/runtime.server";
+import { getFoodCatalog } from "../catalog/runtime.server";
 import { getApplicationDatabase } from "../database/runtime.server";
 import { FoodEntryService } from "./food-entry.server";
 
@@ -19,13 +19,13 @@ export function getFoodEntryService(now?: Date): FoodEntryService {
   if (now) {
     return new FoodEntryService(
       getApplicationDatabase().getClient(),
-      getFoodCatalogProvider(),
+      getFoodCatalog(),
       () => new Date(now),
     );
   }
   foodEntryService ??= new FoodEntryService(
     getApplicationDatabase().getClient(),
-    getFoodCatalogProvider(),
+    getFoodCatalog(),
     foodEntryClock(),
   );
   return foodEntryService;

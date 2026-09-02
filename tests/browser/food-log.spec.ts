@@ -719,7 +719,7 @@ test("authenticated USDA search and idempotent logging preserve a local Nutritio
   expect(accessibilityScan.violations).toEqual([]);
 });
 
-test("authenticated manual barcode lookup reviews Open Food Facts without logging", async ({
+test("authenticated manual barcode confirmation creates one attributed serving snapshot", async ({
   context,
   page,
 }) => {
@@ -748,16 +748,31 @@ test("authenticated manual barcode lookup reviews Open Food Facts without loggin
   await expect(page.getByText("180 kcal")).toBeVisible();
   await expect(page.getByText("24 g")).toBeVisible();
   await expect(page.getByText("0 g", { exact: true })).toBeVisible();
-  await expect(page.getByText("Not reported")).toBeVisible();
+  await expect(page.getByText("Not reported").first()).toBeVisible();
   await expect(
     page.getByRole("link", { name: "Open Food Facts" }),
   ).toBeVisible();
   await expect(page.locator("img")).toHaveCount(0);
   await expect(barcodeInput).toBeVisible();
-  await expect(page.getByRole("button", { name: "Add to Food Log" }))
-    .toHaveCount(0);
+  const quantity = page.getByLabel("Quantity");
+  await expect(quantity).toHaveValue("1");
+  await quantity.fill("0.5");
+  await expect(page.getByText("90 kcal")).toBeVisible();
+  await expect(page.getByText("12 g")).toBeVisible();
   await expect(page.getByText("No entries for this day")).toBeVisible();
   await expectCatalogResponsive(page);
+
+  await page.getByRole("button", { name: "Add to Food Log" }).click();
+  await expect(page).toHaveURL("/?date=2026-08-29");
+  const savedEntry = page.getByRole("article").filter({
+    hasText: "Example cereal",
+  });
+  await expect(savedEntry).toHaveCount(1);
+  await expect(savedEntry).toContainText("Open Food Facts");
+  await expect(savedEntry).toContainText("1 serving × 0.5");
+  await expect(savedEntry).toContainText("90 kcal");
+  await expect(page.getByText("Incomplete", { exact: true }).first()).toBeVisible();
+  await expect(page.locator("img")).toHaveCount(0);
 
   for (const [barcode, status, title] of [
     ["0000000000000", 503, "Open Food Facts is not configured"],

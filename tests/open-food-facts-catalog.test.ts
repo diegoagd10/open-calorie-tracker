@@ -23,6 +23,7 @@ function product(change: Record<string, unknown> = {}) {
       brands: "Example Foods",
       code: "0034000470693",
       countries: "United States",
+      last_modified_t: 1_777_425_300,
       nutriments: {
         carbohydrates_100g: 99,
         carbohydrates_serving: 24,
@@ -107,7 +108,7 @@ describe("Open Food Facts barcode lookup", () => {
       originalName: "Example cereal",
       provider: "open-food-facts",
       providerFoodId: "0034000470693",
-      providerModifiedDate: null,
+      providerModifiedDate: "2026-04-29T01:15:00.000Z",
       providerPublishedDate: null,
     });
 
@@ -118,7 +119,7 @@ describe("Open Food Facts barcode lookup", () => {
       "https://example.test/api/v3/product/034000470693",
     );
     expect(url.searchParams.get("fields")).toBe(
-      "code,product_name,brands,countries,nutriments",
+      "code,product_name,brands,countries,last_modified_t,nutriments",
     );
     expect(init).toMatchObject({ method: "GET" });
     expect(new Headers(init?.headers).get("User-Agent")).toBe(
@@ -144,6 +145,40 @@ describe("Open Food Facts barcode lookup", () => {
       },
     });
   });
+
+  test("detail refetch bypasses the reviewed preview cache", async () => {
+    const fetchImplementation = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(response(product()))
+      .mockResolvedValueOnce(response({}, 404));
+    const provider = adapter(fetchImplementation);
+
+    await expect(
+      provider.lookupBarcode("0034000470693"),
+    ).resolves.toMatchObject({ providerFoodId: "0034000470693" });
+    await expect(provider.getFood("0034000470693")).rejects.toBeInstanceOf(
+      CatalogFoodNotFoundError,
+    );
+    expect(fetchImplementation).toHaveBeenCalledTimes(2);
+  });
+
+  test.each([null, -1, 1.5, Number.POSITIVE_INFINITY, "1777425300"])(
+    "rejects malformed product revision %j",
+    async (lastModified) => {
+      const provider = adapter(
+        vi.fn<typeof fetch>().mockResolvedValue(
+          {
+            json: async () => product({ last_modified_t: lastModified }),
+            ok: true,
+            status: 200,
+          } as Response,
+        ),
+      );
+
+      await expect(provider.lookupBarcode("034000470693")).rejects
+        .toBeInstanceOf(CatalogInvalidResponseError);
+    },
+  );
 
   test("keeps explicit zero and ignores absent, negative, non-finite, and malformed values", async () => {
     const provider = adapter(

@@ -25,6 +25,7 @@ const REQUEST_FIELDS = [
   "product_name",
   "brands",
   "countries",
+  "last_modified_t",
   "nutriments",
 ] as const;
 
@@ -34,6 +35,12 @@ const productSchema = z.object({
   brands: z.unknown().optional(),
   code: barcodeSchema,
   countries: z.unknown().optional(),
+  last_modified_t: z
+    .number()
+    .int()
+    .nonnegative()
+    .max(8_640_000_000_000)
+    .optional(),
   nutriments: z.record(z.string(), z.unknown()),
   product_name: z.unknown().optional(),
 });
@@ -111,6 +118,12 @@ function optionalText(value: unknown): string | null {
   return trimmed ? trimmed.normalize("NFC") : null;
 }
 
+function providerModifiedDate(timestamp: number | undefined): string | null {
+  return timestamp === undefined
+    ? null
+    : new Date(timestamp * 1_000).toISOString();
+}
+
 function nutrient(
   nutriments: Record<string, unknown>,
   field: string,
@@ -175,7 +188,7 @@ function normalizeProduct(value: unknown): CatalogFood {
     originalName: name,
     provider: "open-food-facts",
     providerFoodId: product.code,
-    providerModifiedDate: null,
+    providerModifiedDate: providerModifiedDate(product.last_modified_t),
     providerPublishedDate: null,
   };
 }
@@ -215,25 +228,22 @@ export class OpenFoodFactsAdapter implements BarcodeFoodCatalogProvider {
   }
 
   async getFood(providerFoodId: string): Promise<CatalogFood> {
-    return await this.lookupBarcode(providerFoodId);
+    return await this.#lookup(this.#requestedBarcode(providerFoodId));
   }
 
   async lookupBarcode(barcode: string): Promise<CatalogFood> {
-    const parsedBarcode = barcodeSchema.safeParse(barcode);
-    if (!parsedBarcode.success) throw new CatalogFoodNotFoundError();
-    if (!this.#contactEmail) throw new CatalogConfigurationError();
-
-    const cached = this.#cache.get(parsedBarcode.data);
+    const requestedBarcode = this.#requestedBarcode(barcode);
+    const cached = this.#cache.get(requestedBarcode);
     if (cached && cached.expiresAt > Date.now()) {
-      this.#cache.delete(parsedBarcode.data);
-      this.#cache.set(parsedBarcode.data, cached);
+      this.#cache.delete(requestedBarcode);
+      this.#cache.set(requestedBarcode, cached);
       return cached.food;
     }
-    const existing = this.#inFlight.get(parsedBarcode.data);
+    const existing = this.#inFlight.get(requestedBarcode);
     if (existing) return await existing;
 
-    const request = this.#lookup(parsedBarcode.data).then((food) => {
-      this.#cache.set(parsedBarcode.data, {
+    const request = this.#lookup(requestedBarcode).then((food) => {
+      this.#cache.set(requestedBarcode, {
         expiresAt: Date.now() + this.#cacheTtlMs,
         food,
       });
@@ -243,12 +253,19 @@ export class OpenFoodFactsAdapter implements BarcodeFoodCatalogProvider {
       }
       return food;
     });
-    this.#inFlight.set(parsedBarcode.data, request);
+    this.#inFlight.set(requestedBarcode, request);
     try {
       return await request;
     } finally {
-      this.#inFlight.delete(parsedBarcode.data);
+      this.#inFlight.delete(requestedBarcode);
     }
+  }
+
+  #requestedBarcode(barcode: string): string {
+    const parsedBarcode = barcodeSchema.safeParse(barcode);
+    if (!parsedBarcode.success) throw new CatalogFoodNotFoundError();
+    if (!this.#contactEmail) throw new CatalogConfigurationError();
+    return parsedBarcode.data;
   }
 
   async #lookup(barcode: string): Promise<CatalogFood> {

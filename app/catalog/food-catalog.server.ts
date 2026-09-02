@@ -84,6 +84,14 @@ export interface BarcodeFoodCatalogProvider extends FoodCatalogProvider {
   ): Promise<CatalogFood>;
 }
 
+export interface FoodCatalogReader {
+  getFood(
+    provider: string,
+    providerFoodId: string,
+    context?: CatalogOperationContext,
+  ): Promise<CatalogFood>;
+}
+
 export class CatalogConfigurationError extends Error {
   constructor() {
     super("The food catalog is not configured");
@@ -171,7 +179,7 @@ type RegisteredProvider = {
   service: FoodCatalogProvider;
 };
 
-export class FoodCatalog {
+export class FoodCatalog implements FoodCatalogReader {
   readonly #providers = new Map<CatalogProviderId, RegisteredProvider>();
 
   constructor(registrations: FoodCatalogRegistration[]) {

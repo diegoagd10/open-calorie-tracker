@@ -4,19 +4,19 @@ exports[`Add Food offers search and barcode paths before either provider runs 1`
 
 exports[`barcode mode keeps manual entry visible across detail and recoverable errors 1`] = `"4f5267351aedb55d74c1427e9b61f654711c714de04ef7ab0fc196bcba428a16"`;
 
-exports[`barcode mode keeps manual entry visible across detail and recoverable errors 2`] = `"ec2ddfd37306e259478a290d599fefe89a79e2d7e5aa21cb6ad1c671865d3765"`;
+exports[`barcode mode keeps manual entry visible across detail and recoverable errors 2`] = `"77e322ea7c52520268056d85d68eec66c8f2d8fdd717b4e42fb26eb818c8c940"`;
 
 exports[`barcode mode keeps manual entry visible across detail and recoverable errors 3`] = `"eb9959e4a2eb3f10b0027a6acb118ecdad09a2e0418b91000e5cfb8326b2ec6f"`;
 
-exports[`barcode mode keeps manual entry visible across detail and recoverable errors 4`] = `"ec2ddfd37306e259478a290d599fefe89a79e2d7e5aa21cb6ad1c671865d3765"`;
+exports[`barcode mode keeps manual entry visible across detail and recoverable errors 4`] = `"5d3051de28512d9ee2c97ceb5e2d9d58d9b8933162c74bdcd6023a99b9cce449"`;
 
-exports[`barcode mode keeps manual entry visible across detail and recoverable errors 5`] = `"52bd2b85fbf20615d03daf2788c35d8ab4052517f057f758fc155377dff91371"`;
+exports[`barcode mode keeps manual entry visible across detail and recoverable errors 5`] = `"55bd5ee5166ee4ca3408fbe82a1213f84c05d6c247264fb59b3fb29b6cab7132"`;
 
-exports[`home catalog detail recalculates previews and exposes the log contract 1`] = `"868dd995cdd548a97263bd0b9e9dbc6f464d05614c56f32c16b3dd7783d2c83a"`;
+exports[`home catalog detail recalculates previews and exposes the log contract 1`] = `"a79a6c3b56746c7fec850c12f2c237c024634d617e95a252adc85d0efebbe5e3"`;
 
-exports[`home catalog detail recalculates previews and exposes the log contract 2`] = `"7616f0fca6eb0443f8477b5d969050fc0ed419fa1ecc67833a8c7a49b49616b7"`;
+exports[`home catalog detail recalculates previews and exposes the log contract 2`] = `"61dd0ba2b0bc87f6e2d2f24d817a2aacd3c6ba42f0f06fe50041e73305ec1d83"`;
 
-exports[`home catalog detail recalculates previews and exposes the log contract 3`] = `"63b50f858813509538ef25a163e85e83aa1de58cda13f22ddbead8191145270d"`;
+exports[`home catalog detail recalculates previews and exposes the log contract 3`] = `"3fe3d69cd46095fa565cd89bf6971740f2e01bee43999cb121dedaad44e67b03"`;
 
 exports[`home catalog renders initial, empty, failure, and selectable result states 1`] = `"c2eb468e150d7f7dd86854f23c4493f517eba3461f124b2e2d979f2483d51ba0"`;
 
@@ -42,9 +42,9 @@ exports[`home renders calendar navigation, selected dates, and future days 1`] =
 
 exports[`home renders calendar navigation, selected dates, and future days 2`] = `"cb4660b0bfbc9b99793db63add91fd606054a09310dfcb32f9a1bd21fae3a6eb"`;
 
-exports[`home renders food and water timeline entries with factual units 1`] = `"1825078a2f226e0166890ab0ccd20e081694b7eb652f436d4fcd906c2fcda730"`;
+exports[`home renders food and water timeline entries with factual units 1`] = `"9fd96290e325b1f810c8687534b59668ff653b9f0645fa81a0109ce18badce32"`;
 
-exports[`home renders submission and navigation pending states 1`] = `"d483d8b020d4fc64b6bf00754d9ad79ba726c9b44a93f52057fd578760577e3e"`;
+exports[`home renders submission and navigation pending states 1`] = `"3a456340633d188ebc18d9a900319d7e941da5b126a5456a1201c87d18ea7f8d"`;
 
 exports[`home renders submission and navigation pending states 2`] = `"dab69f5312837bbbfc1ef33834346e09678aba6418819a7eaa58188c04f5df8b"`;
 

@@ -10,6 +10,7 @@ import {
   type ApplicationDatabaseClient,
 } from "../app/database/database.server";
 import { TestFoodCatalogProvider } from "../app/catalog/test-fixture.server";
+import { FoodCatalog } from "../app/catalog/food-catalog.server";
 import {
   goalVersions,
   userPreferences,
@@ -347,7 +348,18 @@ test("retroactive food and water actions share one newest-first clock", async ()
   const userId = insertConfiguredUser(client, "water.mixed.order");
   const now = () => new Date("2026-08-29T18:45:30.000Z");
   const water = new WaterEventService(client, now);
-  const food = new FoodEntryService(client, new TestFoodCatalogProvider(), now);
+  const foodProvider = new TestFoodCatalogProvider();
+  const food = new FoodEntryService(
+    client,
+    new FoodCatalog([
+      {
+        capability: "search",
+        provider: "usda-fdc",
+        service: foodProvider,
+      },
+    ]),
+    now,
+  );
 
   const firstWater = water.create(userId, {
     foodLogDate: "2026-08-28",
@@ -356,6 +368,7 @@ test("retroactive food and water actions share one newest-first clock", async ()
   const nextFood = await food.log(userId, {
     foodLogDate: "2026-08-28",
     idempotencyKey: "mixed-food-event",
+    provider: "usda-fdc",
     providerFoodId: "1001",
     quantity: "1",
     selectedMeasurementId: "serving:g:170000000",

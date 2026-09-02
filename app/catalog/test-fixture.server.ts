@@ -174,6 +174,8 @@ export class TestOpenFoodFactsProvider implements BarcodeFoodCatalogProvider {
         throw new CatalogInvalidResponseError();
       case "0000000000006":
         return barcodeProduct(barcode, true);
+      case "0000000000007":
+        throw new CatalogUnsafeMeasurementError();
       default:
         return barcodeProduct(
           barcode.length === 12 ? barcode.padStart(13, "0") : barcode,

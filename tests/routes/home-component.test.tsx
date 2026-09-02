@@ -541,6 +541,7 @@ test("home renders food and water timeline entries with factual units", async ()
     kind: "food" as const,
     localEventTime: "00:05:00",
     name: "Timeline yogurt",
+    provider: "open-food-facts",
     quantityMicrounits: 1_500_000,
     selectedMeasurementLabel: "100 g",
   };
@@ -578,6 +579,7 @@ test("home renders food and water timeline entries with factual units", async ()
   expect(allText(renderer)).toContain("12:05 AM");
   expect(allText(renderer)).toContain("1:07 PM");
   expect(allText(renderer)).toContain("Timeline yogurt");
+  expect(allText(renderer)).toContain("Open Food Facts");
   expect(allText(renderer)).toContain("100 g × 1.5");
   expect(allText(renderer)).toContain("59 kcal");
   expect(allText(renderer)).toContain("16 fl oz");
@@ -705,10 +707,10 @@ const barcodeFood = {
     carbohydrateMilligrams: { amount: 24, fixedPointMultiplier: 1_000 },
     energyMilliKcal: { amount: 180, fixedPointMultiplier: 1_000 },
     fatMilligrams: { amount: 0, fixedPointMultiplier: 1_000 },
-    fiberMilligrams: null,
+    fiberMilligrams: { amount: 2, fixedPointMultiplier: 1_000 },
     proteinMilligrams: null,
-    sodiumMilligrams: null,
-    sugarMilligrams: null,
+    sodiumMilligrams: { amount: 150, fixedPointMultiplier: 1 },
+    sugarMilligrams: { amount: 5, fixedPointMultiplier: 1_000 },
   },
   originalName: "Example cereal",
   provider: "open-food-facts",
@@ -738,6 +740,7 @@ test("barcode mode keeps manual entry visible across detail and recoverable erro
     {
       barcode: "034000470693",
       food: barcodeFood,
+      idempotencyKey: "off-detail-loop",
       mode: "barcode",
       query: "",
     },
@@ -764,6 +767,7 @@ test("barcode mode keeps manual entry visible across detail and recoverable erro
     catalog: {
       barcode: "034000470693",
       food: barcodeFood,
+      idempotencyKey: "off-detail",
       mode: "barcode",
       query: "",
     },
@@ -778,7 +782,58 @@ test("barcode mode keeps manual entry visible across detail and recoverable erro
   expect(text).toContain("24 g");
   expect(text).toContain("0 g");
   expect(text).toContain("Not reported");
-  expect(text).not.toContain("Log Food");
+  expect(text).toContain("Fiber2 g");
+  expect(text).toContain("Sugar5 g");
+  expect(text).toContain("Sodium150 mg");
+  expect(text).toContain("Add to Food Log");
+  expect(input(detail, "idempotencyKey").props.value).toBe("off-detail");
+  expect(input(detail, "provider").props.value).toBe("open-food-facts");
+  expect(input(detail, "providerFoodId").props.value).toBe("0034000470693");
+  expect(input(detail, "selectedMeasurementId").props.value).toBe("serving");
+  expect(input(detail, "quantity").props.value).toBe("1");
+  const confirmationForm = detail.root.findAllByType("form").find(
+    (form) =>
+      form.findAllByProps({ name: "intent" })[0]?.props.value === "log-food",
+  )!;
+  expect(
+    confirmationForm
+      .findAllByType("input")
+      .map((field) => field.props.name)
+      .sort(),
+  ).toEqual([
+    "csrfToken",
+    "date",
+    "idempotencyKey",
+    "intent",
+    "provider",
+    "providerFoodId",
+    "quantity",
+    "selectedMeasurementId",
+  ]);
+  await act(async () =>
+    input(detail, "quantity").props.onChange({
+      currentTarget: { value: "0.5" },
+    }),
+  );
+  expect(nodeText(detail.root.findByType("dl"))).toContain("90 kcal");
+  expect(nodeText(detail.root.findByType("dl"))).toContain("12 g");
+  expect(nodeText(detail.root.findByType("dl"))).toContain("75 mg");
+  await act(async () =>
+    input(detail, "quantity").props.onChange({
+      currentTarget: { value: "2" },
+    }),
+  );
+  expect(nodeText(detail.root.findByType("dl"))).toContain("360 kcal");
+  expect(nodeText(detail.root.findByType("dl"))).toContain("48 g");
+  await act(async () =>
+    input(detail, "quantity").props.onChange({ currentTarget: { value: "" } }),
+  );
+  expect(
+    detail.root.findAllByType("button").find(
+      (button) => nodeText(button) === "Add to Food Log",
+    )!.props.disabled,
+  ).toBe(true);
+  expect(nodeText(detail.root.findByType("dl"))).toContain("0 kcal");
   await act(async () => detail.unmount());
 
   const unnamed = await renderHome({
@@ -795,6 +850,7 @@ test("barcode mode keeps manual entry visible across detail and recoverable erro
         originalName: "Unnamed product",
         providerFoodId: "0000000000006",
       },
+      idempotencyKey: "off-unnamed",
       mode: "barcode",
       query: "",
     },
@@ -803,6 +859,39 @@ test("barcode mode keeps manual entry visible across detail and recoverable erro
   expect(allText(unnamed)).toContain("Unnamed product · 0000000000006");
   expect(allText(unnamed)).toContain("6 g");
   await act(async () => unnamed.unmount());
+
+  const failedConfirmation = await renderHome(
+    {
+      catalog: {
+        barcode: "034000470693",
+        food: barcodeFood,
+        idempotencyKey: "off-error",
+        mode: "barcode",
+        query: "",
+      },
+    },
+    {
+      message: "Open Food Facts is unavailable right now. Retry in a moment.",
+      tone: "error",
+    },
+  );
+  expect(failedConfirmation.root.findByProps({ role: "alert" })).toBeDefined();
+  expect(allText(failedConfirmation)).toContain(
+    "Open Food Facts is unavailable right now. Retry in a moment.",
+  );
+  await act(async () => failedConfirmation.unmount());
+
+  const missingMeasurement = await renderHome({
+    catalog: {
+      barcode: "034000470693",
+      food: { ...barcodeFood, measurements: [] },
+      idempotencyKey: "off-no-measurement",
+      mode: "barcode",
+      query: "",
+    },
+  });
+  expect(input(missingMeasurement, "selectedMeasurementId").props.value).toBe("");
+  await act(async () => missingMeasurement.unmount());
 });
 
 test("barcode entry validates client-side and exposes only matching navigation as pending", async () => {
@@ -1031,6 +1120,8 @@ test("home catalog detail recalculates previews and exposes the log contract", a
   );
   expect(allText(renderer)).toContain("Saved as a Nutrition Snapshot");
   expect(input(renderer, "idempotencyKey").props.value).toBe("detail-idempotency");
+  expect(input(renderer, "provider").props.value).toBe("usda-fdc");
+  expect(renderer.root.findAllByProps({ name: "pendingFoodName" })).toHaveLength(0);
   expect(input(renderer, "providerFoodId").props.value).toBe("1001");
   expect(input(renderer, "quantity").props.value).toBe("1");
   expect(allText(renderer)).toContain("100.3 kcal");
@@ -1323,7 +1414,6 @@ test("home water dialogs cover create, presets, exact values, edit, and deletion
 test("home renders submission and navigation pending states", async () => {
   const logFood = new FormData();
   logFood.set("intent", "log-food");
-  logFood.set("pendingFoodName", "Pending yogurt");
   const pendingFood = await renderPendingHome(
     {
       catalog: {
@@ -1350,12 +1440,27 @@ test("home renders submission and navigation pending states", async () => {
     { formData: logFood, to: "/" },
   );
   expect(semanticDom(pendingFood)).toMatchSnapshot();
-  expect(allText(pendingFood)).toContain("Pending yogurt");
+  expect(allText(pendingFood)).toContain("Plain Greek yogurt");
   expect(pendingFood.root.findByProps({
     "aria-label": "Adding food to Daily log",
   })).toBeDefined();
   expect(pendingFood.root.findAllByProps({ role: "dialog" })).toHaveLength(0);
   await act(async () => pendingFood.unmount());
+
+  const openFoodFactsPending = await renderPendingHome(
+    {
+      catalog: {
+        barcode: "034000470693",
+        food: barcodeFood,
+        idempotencyKey: "off-pending",
+        mode: "barcode",
+        query: "",
+      },
+    },
+    { formData: logFood, to: "/" },
+  );
+  expect(allText(openFoodFactsPending)).toContain("Example cereal");
+  await act(async () => openFoodFactsPending.unmount());
 
   const unnamedLogFood = new FormData();
   unnamedLogFood.set("intent", "log-food");
