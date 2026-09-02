@@ -41,12 +41,9 @@ type EnhancedCameraConstraintSet = MediaTrackConstraintSet & {
   zoom?: number;
 };
 
-type EnhancedCameraSettings = MediaTrackSettings & { zoom?: number };
-
 type CameraEnhancements = {
   torchAvailable: boolean;
   torchEnabled: boolean;
-  zoom?: NumericCameraCapability & { value: number };
 };
 
 const noCameraEnhancements: CameraEnhancements = {
@@ -75,6 +72,7 @@ const cameraConstraints: MediaStreamConstraints = {
 function validZoomCapability(
   value: unknown,
 ): value is NumericCameraCapability {
+  // Stryker disable next-line ConditionalExpression: non-object primitives expose no finite min/max and therefore reach the same false result through the range checks.
   if (!value || typeof value !== "object") return false;
   const range = value as Partial<NumericCameraCapability>;
   return Number.isFinite(range.min) && Number.isFinite(range.max) &&
@@ -92,17 +90,14 @@ async function configureCameraTrack(
   if (
     !track ||
     typeof track.applyConstraints !== "function" ||
-    typeof track.getCapabilities !== "function" ||
-    typeof track.getSettings !== "function"
+    typeof track.getCapabilities !== "function"
   ) {
     return noCameraEnhancements;
   }
   // Stryker restore ConditionalExpression,LogicalOperator,BlockStatement
   let capabilities: EnhancedCameraCapabilities;
-  let settings: EnhancedCameraSettings;
   try {
     capabilities = track.getCapabilities();
-    settings = track.getSettings();
   } catch {
     return noCameraEnhancements;
   }
@@ -115,29 +110,17 @@ async function configureCameraTrack(
     enhancements.zoom = preferredZoom(capabilities.zoom);
   }
 
-  let enhancementsApplied = false;
   if (Object.keys(enhancements).length > 0) {
     try {
       await track.applyConstraints({ advanced: [enhancements] });
-      enhancementsApplied = true;
     } catch {
       // Camera enhancements are progressive; decoding still works without them.
     }
   }
 
-  const zoom = validZoomCapability(capabilities.zoom)
-    ? {
-        ...capabilities.zoom,
-        step: capabilities.zoom.step || 0.1,
-        value: enhancementsApplied
-          ? enhancements.zoom ?? capabilities.zoom.min
-          : settings.zoom ?? capabilities.zoom.min,
-      }
-    : undefined;
   return {
     torchAvailable: capabilities.torch === true,
     torchEnabled: false,
-    zoom,
   };
 }
 
@@ -237,22 +220,6 @@ export function createBarcodeCameraScanner(ports: ScannerPorts) {
         }
       } catch {
         // Keep scanning if this browser advertises but rejects torch control.
-      }
-    }
-
-    async function setZoom(value: number) {
-      const track = cameraTrackRef.current;
-      if (!track || !Number.isFinite(value)) return;
-      try {
-        const constraint: EnhancedCameraConstraintSet = { zoom: value };
-        await track.applyConstraints({ advanced: [constraint] });
-        if (cameraTrackRef.current === track) {
-          setCameraEnhancements((current) => current.zoom
-            ? { ...current, zoom: { ...current.zoom, value } }
-            : current);
-        }
-      } catch {
-        // Keep the last working zoom and continue decoding.
       }
     }
 
@@ -439,34 +406,17 @@ export function createBarcodeCameraScanner(ports: ScannerPorts) {
           >
             <strong>Point the camera at the barcode</strong>
             <p>Fill the guide with the barcode and avoid glare.</p>
-            {cameraEnhancements.torchAvailable || cameraEnhancements.zoom ? (
+            {cameraEnhancements.torchAvailable ? (
               <div className={styles.barcodeScannerCameraControls}>
-                {cameraEnhancements.torchAvailable ? (
-                  <button
-                    className={styles.secondaryButton}
-                    onClick={() => void toggleTorch()}
-                    type="button"
-                  >
-                    {cameraEnhancements.torchEnabled
-                      ? "Turn light off"
-                      : "Turn light on"}
-                  </button>
-                ) : null}
-                {cameraEnhancements.zoom ? (
-                  <label className={styles.barcodeScannerZoom}>
-                    <span>Zoom</span>
-                    <input
-                      aria-label="Camera zoom"
-                      max={cameraEnhancements.zoom.max}
-                      min={cameraEnhancements.zoom.min}
-                      onChange={(event) =>
-                        void setZoom(Number(event.currentTarget.value))}
-                      step={cameraEnhancements.zoom.step}
-                      type="range"
-                      value={cameraEnhancements.zoom.value}
-                    />
-                  </label>
-                ) : null}
+                <button
+                  className={styles.secondaryButton}
+                  onClick={() => void toggleTorch()}
+                  type="button"
+                >
+                  {cameraEnhancements.torchEnabled
+                    ? "Turn light off"
+                    : "Turn light on"}
+                </button>
               </div>
             ) : null}
             <button

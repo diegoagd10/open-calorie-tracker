@@ -164,7 +164,7 @@ test("one checksum-valid local read delivers a barcode and stops every resource"
   await act(async () => harness.renderer.unmount());
 });
 
-test("supported cameras receive continuous focus and moderate zoom with user controls", async () => {
+test("supported cameras receive continuous focus, automatic zoom, and torch control", async () => {
   const harness = scannerHarness({
     trackCapabilities: {
       focusMode: ["manual", "continuous"],
@@ -180,29 +180,15 @@ test("supported cameras receive continuous focus and moderate zoom with user con
     advanced: [{ focusMode: "continuous", zoom: 1.5 }],
   });
   expect(button(harness.renderer, "Turn light on")).toBeTruthy();
-  const zoom = harness.renderer.root.findByProps({
+  expect(harness.renderer.root.findAllByProps({
     "aria-label": "Camera zoom",
-  });
-  expect(zoom.props).toMatchObject({
-    max: 4,
-    min: 1,
-    step: 0.25,
-    value: 1.5,
-  });
+  })).toHaveLength(0);
 
   await act(async () => button(harness.renderer, "Turn light on").props.onClick());
   expect(harness.track.applyConstraints).toHaveBeenLastCalledWith({
     advanced: [{ torch: true }],
   });
   expect(button(harness.renderer, "Turn light off")).toBeTruthy();
-
-  await act(async () => zoom.props.onChange({ currentTarget: { value: "2.4" } }));
-  expect(harness.track.applyConstraints).toHaveBeenLastCalledWith({
-    advanced: [{ zoom: 2.4 }],
-  });
-  expect(harness.renderer.root.findByProps({
-    "aria-label": "Camera zoom",
-  }).props.value).toBe(2.4);
   await act(async () => harness.renderer.unmount());
 });
 
@@ -217,9 +203,6 @@ test("preferred zoom is clamped to each camera's advertised range", async () => 
   expect(lowMaximum.track.applyConstraints).toHaveBeenCalledWith({
     advanced: [{ zoom: 1.25 }],
   });
-  expect(lowMaximum.renderer.root.findByProps({
-    "aria-label": "Camera zoom",
-  }).props.value).toBe(1.25);
   await act(async () => lowMaximum.renderer.unmount());
 
   const highMinimum = scannerHarness({
@@ -232,9 +215,6 @@ test("preferred zoom is clamped to each camera's advertised range", async () => 
   expect(highMinimum.track.applyConstraints).toHaveBeenCalledWith({
     advanced: [{ zoom: 2 }],
   });
-  expect(highMinimum.renderer.root.findByProps({
-    "aria-label": "Camera zoom",
-  }).props.value).toBe(2);
   await act(async () => highMinimum.renderer.unmount());
 
   const fixedZoom = scannerHarness({
@@ -244,9 +224,6 @@ test("preferred zoom is clamped to each camera's advertised range", async () => 
   expect(fixedZoom.track.applyConstraints).toHaveBeenCalledWith({
     advanced: [{ zoom: 2 }],
   });
-  expect(fixedZoom.renderer.root.findByProps({
-    "aria-label": "Camera zoom",
-  }).props.value).toBe(2);
   await act(async () => fixedZoom.renderer.unmount());
 });
 
@@ -277,7 +254,6 @@ test("camera capability APIs can be absent or throw without blocking scanning", 
   for (const method of [
     "applyConstraints",
     "getCapabilities",
-    "getSettings",
   ] as const) {
     const harness = scannerHarness();
     Object.defineProperty(harness.track, method, { value: undefined });
@@ -318,7 +294,6 @@ test("unsupported or rejected camera enhancements do not prevent scanning", asyn
       focusMode: ["continuous"],
       zoom: { max: 3, min: 1, step: 0.25 },
     },
-    trackSettings: { zoom: 2.25 },
   });
   rejected.track.applyConstraints.mockRejectedValueOnce(
     new DOMException("unsupported", "OverconstrainedError"),
@@ -326,9 +301,9 @@ test("unsupported or rejected camera enhancements do not prevent scanning", asyn
   await act(async () => button(rejected.renderer, "Use camera").props.onClick());
   expect(text(rejected.renderer.root)).toContain("Point the camera at the barcode");
   expect(rejected.decoder.start).toHaveBeenCalledOnce();
-  expect(rejected.renderer.root.findByProps({
+  expect(rejected.renderer.root.findAllByProps({
     "aria-label": "Camera zoom",
-  }).props).toMatchObject({ step: 0.25, value: 2.25 });
+  })).toHaveLength(0);
   await act(async () => rejected.renderer.unmount());
 });
 
@@ -354,7 +329,7 @@ test("cancellation during camera configuration closes the stream before decoding
   await act(async () => harness.renderer.unmount());
 });
 
-test("rejected torch and zoom changes retain the last working controls", async () => {
+test("a rejected torch change retains the last working control", async () => {
   const harness = scannerHarness({
     trackCapabilities: {
       torch: true,
@@ -368,18 +343,6 @@ test("rejected torch and zoom changes retain the last working controls", async (
 
   await act(async () => button(harness.renderer, "Turn light on").props.onClick());
   expect(button(harness.renderer, "Turn light on")).toBeTruthy();
-
-  const zoom = harness.renderer.root.findByProps({
-    "aria-label": "Camera zoom",
-  });
-  await act(async () => zoom.props.onChange({ currentTarget: { value: "2.5" } }));
-  expect(harness.renderer.root.findByProps({
-    "aria-label": "Camera zoom",
-  }).props.value).toBe(1.5);
-
-  const calls = harness.track.applyConstraints.mock.calls.length;
-  await act(async () => zoom.props.onChange({ currentTarget: { value: "invalid" } }));
-  expect(harness.track.applyConstraints).toHaveBeenCalledTimes(calls);
   await act(async () => harness.renderer.unmount());
 });
 
@@ -392,14 +355,10 @@ test("camera controls cannot update state after cancellation", async () => {
   });
   await act(async () => button(harness.renderer, "Use camera").props.onClick());
   const torchClick = button(harness.renderer, "Turn light on").props.onClick;
-  const zoomChange = harness.renderer.root.findByProps({
-    "aria-label": "Camera zoom",
-  }).props.onChange;
   await act(async () => button(harness.renderer, "Cancel camera").props.onClick());
 
   const calls = harness.track.applyConstraints.mock.calls.length;
   await act(async () => torchClick());
-  await act(async () => zoomChange({ currentTarget: { value: "2" } }));
   expect(harness.track.applyConstraints).toHaveBeenCalledTimes(calls);
   expect(text(harness.renderer.root)).toContain("Use camera");
   await act(async () => harness.renderer.unmount());

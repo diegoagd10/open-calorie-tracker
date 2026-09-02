@@ -896,7 +896,7 @@ test("@camera-matrix simulated scan stays local and follows review before one sn
     },
   });
   await expect(page.getByRole("button", { name: "Turn light on" })).toBeVisible();
-  await expect(page.getByRole("slider", { name: "Camera zoom" })).toHaveValue("1.5");
+  await expect(page.getByRole("slider", { name: "Camera zoom" })).toHaveCount(0);
   expect(await page.evaluate(() => (
     window as typeof window & {
       __scannerState: { appliedConstraints: MediaTrackConstraints[] };
