@@ -52,17 +52,25 @@ export function getClientIp(request: Request): string {
   return request.headers.get("X-Open-Calory-Client-IP") ?? "unknown";
 }
 
-export async function getAuthenticatedSession(
+async function authenticateRequest(
   request: Request,
-  options: { allowPasswordChangeRequired?: boolean } = {},
 ): Promise<AuthenticatedSession | undefined> {
-  const session = await getAuthenticationService().authenticate(
+  return getAuthenticationService().authenticate(
     getSessionToken(request),
   );
-  if (
-    session?.user.passwordChangeRequired &&
-    !options.allowPasswordChangeRequired
-  ) {
+}
+
+export function getSessionForAccountAccess(
+  request: Request,
+): Promise<AuthenticatedSession | undefined> {
+  return authenticateRequest(request);
+}
+
+export async function getSessionForApplicationAccess(
+  request: Request,
+): Promise<AuthenticatedSession | undefined> {
+  const session = await authenticateRequest(request);
+  if (session?.user.passwordChangeRequired) {
     throw redirect("/account/password");
   }
   return session;
@@ -71,7 +79,7 @@ export async function getAuthenticatedSession(
 export async function requireAdministratorSession(
   request: Request,
 ): Promise<AuthenticatedSession> {
-  const session = await getAuthenticatedSession(request);
+  const session = await getSessionForApplicationAccess(request);
   if (!session) throw redirect("/login");
   if (session.user.role !== "admin") {
     throw new Response("Not Found", { status: 404 });

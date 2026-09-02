@@ -3,7 +3,7 @@ import { data, Form, Link, redirect } from "react-router";
 import type { Route } from "./+types/account.password";
 import styles from "../account.module.css";
 import {
-  getAuthenticatedSession,
+  getSessionForAccountAccess,
   requireValidOrigin,
   serializeClearedSessionCookie,
   serializeSessionCookie,
@@ -28,9 +28,7 @@ export function headers() {
 }
 
 export async function loader({ request }: Route.LoaderArgs) {
-  const session = await getAuthenticatedSession(request, {
-    allowPasswordChangeRequired: true,
-  });
+  const session = await getSessionForAccountAccess(request);
   if (!session) return redirect("/login");
 
   return {
@@ -42,9 +40,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 
 export async function action({ request }: Route.ActionArgs) {
   requireValidOrigin(request);
-  const session = await getAuthenticatedSession(request, {
-    allowPasswordChangeRequired: true,
-  });
+  const session = await getSessionForAccountAccess(request);
   if (!session) {
     return redirect("/login", {
       headers: { "Set-Cookie": serializeClearedSessionCookie() },

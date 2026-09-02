@@ -5,7 +5,7 @@ import type { Route } from "./+types/settings.goals";
 import { AppNavigation } from "../app-navigation";
 import { SettingsDestinations } from "../settings-destinations";
 import {
-  getAuthenticatedSession,
+  getSessionForApplicationAccess,
   requireValidOrigin,
   serializeClearedSessionCookie,
 } from "../auth/http.server";
@@ -80,7 +80,7 @@ export function headers() {
 }
 
 export async function loader({ request }: Route.LoaderArgs) {
-  const session = await getAuthenticatedSession(request);
+  const session = await getSessionForApplicationAccess(request);
   if (!session) return redirect("/login");
 
   const service = getGoalVersionService();
@@ -118,7 +118,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 
 export async function action({ request }: Route.ActionArgs) {
   requireValidOrigin(request);
-  const session = await getAuthenticatedSession(request);
+  const session = await getSessionForApplicationAccess(request);
   if (!session) {
     return redirect("/login", {
       headers: { "Set-Cookie": serializeClearedSessionCookie() },

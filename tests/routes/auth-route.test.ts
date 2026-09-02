@@ -6,10 +6,8 @@ import { RouterContextProvider } from "react-router";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 
 import { PersistentRateLimiter } from "../../app/auth/rate-limiter.server";
-import {
-  serializeSessionCookie,
-  type getAuthenticatedSession,
-} from "../../app/auth/http.server";
+import type { AuthenticatedSession } from "../../app/auth/authentication.server";
+import { serializeSessionCookie } from "../../app/auth/http.server";
 import { getAuthenticationService } from "../../app/auth/runtime.server";
 import {
   getApplicationDatabase,
@@ -30,9 +28,7 @@ import {
 } from "../../app/routes/logout";
 import { seedAuthenticatedAccount } from "../support/authentication";
 
-type Session = NonNullable<Awaited<ReturnType<typeof getAuthenticatedSession>>> & {
-  absoluteExpiresAt: Date;
-};
+type Session = AuthenticatedSession;
 
 const origin = "http://localhost:3000";
 const password = "correct horse battery staple";

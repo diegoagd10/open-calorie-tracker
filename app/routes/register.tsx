@@ -6,7 +6,7 @@ import { AuthShell } from "../auth/auth-shell";
 import {
   authenticatedSessionHeaders,
   getClientIp,
-  getAuthenticatedSession,
+  getSessionForApplicationAccess,
   loadPreAuthenticationCsrf,
   requirePreAuthenticationCsrf,
   requireValidOrigin,
@@ -32,7 +32,7 @@ export function headers() {
 }
 
 async function registrationAccess(request: Request) {
-  if (await getAuthenticatedSession(request)) {
+  if (await getSessionForApplicationAccess(request)) {
     logBootstrapRejected("authenticated-request");
     throw new Response("Not Found", { status: 404 });
   }

@@ -6,7 +6,7 @@ import { AuthShell } from "../auth/auth-shell";
 import {
   authenticatedSessionHeaders,
   getClientIp,
-  getAuthenticatedSession,
+  getSessionForAccountAccess,
   loadPreAuthenticationCsrf,
   requirePreAuthenticationCsrf,
   requireValidOrigin,
@@ -33,9 +33,7 @@ export function headers() {
 }
 
 export async function loader({ request }: Route.LoaderArgs) {
-  const session = await getAuthenticatedSession(request, {
-    allowPasswordChangeRequired: true,
-  });
+  const session = await getSessionForAccountAccess(request);
   if (session) {
     return redirect(
       session.user.passwordChangeRequired ? "/account/password" : "/",

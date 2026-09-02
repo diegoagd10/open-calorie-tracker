@@ -3,10 +3,8 @@ import { randomBytes } from "node:crypto";
 import { asc, eq } from "drizzle-orm";
 
 import type { ApplicationDatabaseClient } from "../database/database.server";
-import {
-  createMemberAccount,
-  replacePasswordAndSessions,
-} from "../database/member-accounts.server";
+import { replacePasswordAndSessions } from "../database/credential-sessions.server";
+import { createMemberAccount } from "../database/member-accounts.server";
 import {
   passwordCredentials,
   sessions,
