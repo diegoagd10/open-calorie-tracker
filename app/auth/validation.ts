@@ -22,6 +22,22 @@ export const passwordChangeSchema = z.object({
   newPassword: passwordSchema,
 });
 
+export const memberPasswordResetSchema = z
+  .object({
+    confirmPassword: z.string(),
+    newPassword: passwordSchema,
+    targetUsername: usernameSchema,
+  })
+  .superRefine((reset, context) => {
+    if (reset.newPassword !== reset.confirmPassword) {
+      context.addIssue({
+        code: "custom",
+        message: "passwords do not match",
+        path: ["confirmPassword"],
+      });
+    }
+  });
+
 export const registrationSchema = z
   .object({
     confirmPassword: z.string(),

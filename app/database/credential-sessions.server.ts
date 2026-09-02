@@ -11,6 +11,12 @@ export type PasswordAndSessionReplacement = {
   userId: number;
 };
 
+export type MemberPasswordReset = {
+  nextPasswordHash: string;
+  targetUsername: string;
+  updatedAt: string;
+};
+
 export type ActiveSessionRecord = Pick<
   typeof sessions.$inferSelect,
   "absoluteExpiresAt" | "idleExpiresAt" | "userId"
@@ -113,4 +119,46 @@ export function replacePasswordAndSessions(
     transaction.insert(sessions).values(replacement.nextSession).run();
     return true;
   });
+}
+
+export function resetMemberPasswordAndSessions(
+  database: ApplicationDatabaseClient,
+  reset: MemberPasswordReset,
+): boolean {
+  return database.transaction(
+    (transaction) => {
+      const target = transaction
+        .select({ id: users.id })
+        .from(users)
+        .innerJoin(
+          passwordCredentials,
+          eq(passwordCredentials.userId, users.id),
+        )
+        .where(
+          and(
+            eq(users.role, "member"),
+            eq(users.usernameNormalized, reset.targetUsername),
+          ),
+        )
+        .get();
+      if (!target) return false;
+
+      transaction
+        .update(passwordCredentials)
+        .set({
+          passwordHash: reset.nextPasswordHash,
+          updatedAt: reset.updatedAt,
+        })
+        .where(eq(passwordCredentials.userId, target.id))
+        .run();
+      transaction
+        .update(users)
+        .set({ passwordChangeRequired: true })
+        .where(eq(users.id, target.id))
+        .run();
+      transaction.delete(sessions).where(eq(sessions.userId, target.id)).run();
+      return true;
+    },
+    { behavior: "immediate" },
+  );
 }

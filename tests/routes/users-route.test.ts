@@ -491,3 +491,171 @@ test("administrator disables and reactivates a member through confirmed safe rou
     session: { user: { passwordChangeRequired: true } },
   });
 });
+
+test("administrator resets a listed member password and revokes every open session", async () => {
+  const authentication = getAuthenticationService();
+  const administrator = await authentication.authenticate(
+    administratorCookie.split("=", 2)[1],
+  );
+  if (!administrator) throw new Error("administrator session unavailable");
+  const originalPassword = "original route member passphrase";
+  const temporaryPassword = "temporary route reset passphrase";
+  const firstDevice = await seedAuthenticatedAccount(
+    authentication,
+    getApplicationDatabase().getClient(),
+    "route.reset",
+    originalPassword,
+    "203.0.113.191",
+  );
+  const secondDevice = await authentication.login(
+    "route.reset",
+    originalPassword,
+    "203.0.113.192",
+  );
+  if (!secondDevice.ok) throw new Error("second member login failed");
+
+  const reset = await usersAction(
+    routeArgs(post({
+      confirmPassword: temporaryPassword,
+      csrfToken: administrator.csrfToken,
+      intent: "reset-member-password",
+      newPassword: temporaryPassword,
+      targetUsername: "route.reset",
+    })),
+  );
+
+  expect(reset).toMatchObject({
+    data: { passwordResetUsername: "route.reset" },
+    init: { status: 200 },
+  });
+  await expect(authentication.authenticate(firstDevice.token))
+    .resolves.toBeUndefined();
+  await expect(authentication.authenticate(secondDevice.session.token))
+    .resolves.toBeUndefined();
+  await expect(
+    authentication.login(
+      "route.reset",
+      originalPassword,
+      "203.0.113.193",
+    ),
+  ).resolves.toEqual({ error: "invalid-credentials", ok: false });
+  await expect(
+    authentication.login(
+      "route.reset",
+      temporaryPassword,
+      "203.0.113.194",
+    ),
+  ).resolves.toMatchObject({
+    ok: true,
+    session: { user: { passwordChangeRequired: true } },
+  });
+  expect(authentication.listManageableMembers()).toContainEqual({
+    accessState: "active",
+    createdAt: "2026-08-29T11:00:00.000Z",
+    passwordChangeRequired: true,
+    username: "route.reset",
+  });
+  expect(JSON.stringify(reset)).not.toContain(temporaryPassword);
+});
+
+test("invalid password-reset requests preserve credentials and sessions", async () => {
+  const authentication = getAuthenticationService();
+  const administrator = await authentication.authenticate(
+    administratorCookie.split("=", 2)[1],
+  );
+  const ordinaryMember = await authentication.authenticate(
+    memberCookie.split("=", 2)[1],
+  );
+  if (!administrator || !ordinaryMember) {
+    throw new Error("route sessions unavailable");
+  }
+  const target = await seedAuthenticatedAccount(
+    authentication,
+    getApplicationDatabase().getClient(),
+    "protected.reset",
+    "protected original passphrase",
+    "203.0.113.197",
+  );
+  const credentialBefore = getApplicationDatabase()
+    .getClient()
+    .select({
+      passwordChangeRequired: users.passwordChangeRequired,
+      passwordHash: passwordCredentials.passwordHash,
+    })
+    .from(users)
+    .innerJoin(passwordCredentials, eq(passwordCredentials.userId, users.id))
+    .where(eq(users.usernameNormalized, "protected.reset"))
+    .get();
+  const resetFields = {
+    confirmPassword: "replacement protected passphrase",
+    csrfToken: administrator.csrfToken,
+    intent: "reset-member-password",
+    newPassword: "replacement protected passphrase",
+    targetUsername: "protected.reset",
+  };
+
+  const shortPassword = await usersAction(routeArgs(post({
+    ...resetFields,
+    confirmPassword: "too short",
+    newPassword: "too short",
+  })));
+  expect(shortPassword).toMatchObject({ init: { status: 400 } });
+
+  const mismatch = await usersAction(routeArgs(post({
+    ...resetFields,
+    confirmPassword: "different protected passphrase",
+  })));
+  expect(mismatch).toMatchObject({
+    data: { passwordResetError: "Passwords do not match." },
+    init: { status: 400 },
+  });
+
+  const malformedTarget = await usersAction(routeArgs(post({
+    ...resetFields,
+    targetUsername: "Protected.Reset",
+  })));
+  expect(malformedTarget).toMatchObject({ init: { status: 409 } });
+
+  const staleTarget = await usersAction(routeArgs(post({
+    ...resetFields,
+    targetUsername: "missing.reset",
+  })));
+  expect(staleTarget).toMatchObject({ init: { status: 409 } });
+
+  const invalidCsrf = await usersAction(
+    routeArgs(post({ ...resetFields, csrfToken: "invalid" })) as never,
+  ).catch((error: unknown) => error);
+  expect(invalidCsrf).toBeInstanceOf(Response);
+  expect((invalidCsrf as Response).status).toBe(403);
+
+  const invalidOriginRequest = post(resetFields);
+  invalidOriginRequest.headers.set("Origin", "https://attacker.example");
+  const invalidOrigin = await usersAction(
+    routeArgs(invalidOriginRequest) as never,
+  ).catch((error: unknown) => error);
+  expect(invalidOrigin).toBeInstanceOf(Response);
+  expect((invalidOrigin as Response).status).toBe(403);
+
+  const unauthorized = await usersAction(
+    routeArgs(post(
+      { ...resetFields, csrfToken: ordinaryMember.csrfToken },
+      memberCookie,
+    )) as never,
+  ).catch((error: unknown) => error);
+  expect(unauthorized).toBeInstanceOf(Response);
+  expect((unauthorized as Response).status).toBe(404);
+
+  expect(
+    getApplicationDatabase()
+      .getClient()
+      .select({
+        passwordChangeRequired: users.passwordChangeRequired,
+        passwordHash: passwordCredentials.passwordHash,
+      })
+      .from(users)
+      .innerJoin(passwordCredentials, eq(passwordCredentials.userId, users.id))
+      .where(eq(users.usernameNormalized, "protected.reset"))
+      .get(),
+  ).toEqual(credentialBefore);
+  await expect(authentication.authenticate(target.token)).resolves.toBeDefined();
+});

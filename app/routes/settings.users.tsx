@@ -8,7 +8,11 @@ import {
   requireValidOrigin,
 } from "../auth/http.server";
 import { getAuthenticationService } from "../auth/runtime.server";
-import { registrationSchema, usernameSchema } from "../auth/validation";
+import {
+  memberPasswordResetSchema,
+  registrationSchema,
+  usernameSchema,
+} from "../auth/validation";
 import { formatLocalDate } from "../food-log/date";
 import shellStyles from "../food-log.module.css";
 import { SettingsDestinations } from "../settings-destinations";
@@ -22,13 +26,16 @@ type UsersActionData = {
   accessError?: string;
   createdUsername?: string;
   error?: string;
+  passwordResetError?: string;
+  passwordResetUsername?: string;
   username?: string;
 };
 
 type UsersActionIntent =
   | "create-member"
   | "disable-member"
-  | "reactivate-member";
+  | "reactivate-member"
+  | "reset-member-password";
 
 function parseUsersActionIntent(
   value: FormDataEntryValue | null,
@@ -38,6 +45,7 @@ function parseUsersActionIntent(
     case "create-member":
     case "disable-member":
     case "reactivate-member":
+    case "reset-member-password":
       return value;
     default:
       return undefined;
@@ -132,6 +140,66 @@ export async function action({ request }: Route.ActionArgs) {
       { status: 200 },
     );
   }
+  if (intent === "reset-member-password") {
+    const fields = {
+      confirmPassword: String(formData.get("confirmPassword") ?? ""),
+      newPassword: String(formData.get("newPassword") ?? ""),
+      targetUsername: String(formData.get("targetUsername") ?? ""),
+    };
+    const parsed = memberPasswordResetSchema.safeParse(fields);
+    if (!parsed.success) {
+      const field = parsed.error.issues[0].path[0];
+      if (
+        field === "targetUsername" ||
+        usernameSchema.safeParse(fields.targetUsername).data !==
+          fields.targetUsername
+      ) {
+        return data<UsersActionData>(
+          {
+            passwordResetError:
+              "Member is no longer available. Refresh and try again.",
+          },
+          { status: 409 },
+        );
+      }
+      return data<UsersActionData>(
+        {
+          passwordResetError: field === "newPassword"
+            ? "Password must contain 12–128 characters."
+            : "Passwords do not match.",
+        },
+        { status: 400 },
+      );
+    }
+    if (parsed.data.targetUsername !== fields.targetUsername) {
+      return data<UsersActionData>(
+        {
+          passwordResetError:
+            "Member is no longer available. Refresh and try again.",
+        },
+        { status: 409 },
+      );
+    }
+
+    const result = await authentication.resetMemberPassword(
+      session.user,
+      parsed.data.targetUsername,
+      parsed.data.newPassword,
+    );
+    if (!result.ok) {
+      return data<UsersActionData>(
+        {
+          passwordResetError:
+            "Member is no longer available. Refresh and try again.",
+        },
+        { status: 409 },
+      );
+    }
+    return data<UsersActionData>(
+      { passwordResetUsername: parsed.data.targetUsername },
+      { status: 200 },
+    );
+  }
 
   const fields = {
     confirmPassword: String(formData.get("confirmPassword") ?? ""),
@@ -175,8 +243,12 @@ export async function action({ request }: Route.ActionArgs) {
 
 export default function Users({ actionData, loaderData }: Route.ComponentProps) {
   const [confirmingUsername, setConfirmingUsername] = useState<string>();
+  const [resettingUsername, setResettingUsername] = useState<string>();
   const confirmationDialog = useRef<HTMLDialogElement | null>(null);
+  const passwordResetDialog = useRef<HTMLDialogElement | null>(null);
   const disableTrigger = useRef<HTMLButtonElement | null>(null);
+  const passwordResetTrigger = useRef<HTMLButtonElement | null>(null);
+  const passwordResetSubmissionPending = useRef(false);
 
   useEffect(() => {
     if (confirmingUsername && !confirmationDialog.current?.open) {
@@ -184,9 +256,31 @@ export default function Users({ actionData, loaderData }: Route.ComponentProps) 
     }
   }, [confirmingUsername]);
 
+  useEffect(() => {
+    if (resettingUsername && !passwordResetDialog.current?.open) {
+      passwordResetDialog.current?.showModal();
+    }
+  }, [resettingUsername]);
+
+  useEffect(() => {
+    if (!passwordResetSubmissionPending.current) return;
+    passwordResetSubmissionPending.current = false;
+    if (
+      actionData?.passwordResetUsername &&
+      actionData.passwordResetUsername === resettingUsername
+    ) {
+      setResettingUsername(undefined);
+    }
+  }, [actionData, resettingUsername]);
+
   function cancelDisable() {
     setConfirmingUsername(undefined);
     queueMicrotask(() => disableTrigger.current?.focus());
+  }
+
+  function cancelPasswordReset() {
+    setResettingUsername(undefined);
+    queueMicrotask(() => passwordResetTrigger.current?.focus());
   }
 
   return (
@@ -315,6 +409,12 @@ export default function Users({ actionData, loaderData }: Route.ComponentProps) 
               <strong>{actionData.accessChanged.username}</strong> was {actionData.accessChanged.action}.
             </p>
           ) : null}
+          {actionData?.passwordResetUsername ? (
+            <p className={styles.directoryMessageSuccess} role="status">
+              <strong>{actionData.passwordResetUsername}</strong> password was
+              reset. Deliver the temporary password outside this application.
+            </p>
+          ) : null}
           {loaderData.members.length === 0 ? (
             <p className={styles.empty}>No member accounts yet.</p>
           ) : (
@@ -347,45 +447,58 @@ export default function Users({ actionData, loaderData }: Route.ComponentProps) 
                       >
                         {member.accessState === "active" ? "Active" : "Disabled"}
                       </span>
-                    </span>
-                    {member.accessState === "active" ? (
+                      </span>
+                    <span className={styles.memberActions}>
                       <button
-                        aria-label={`Disable ${member.username}`}
-                        className={styles.disableButton}
+                        aria-label={`Reset password for ${member.username}`}
+                        className={styles.resetButton}
                         onClick={(event) => {
-                          disableTrigger.current = event.currentTarget;
-                          setConfirmingUsername(member.username);
+                          passwordResetTrigger.current = event.currentTarget;
+                          setResettingUsername(member.username);
                         }}
                         type="button"
                       >
-                        Disable
+                        Reset password
                       </button>
-                    ) : (
-                      <Form method="post">
-                        <input
-                          name="csrfToken"
-                          type="hidden"
-                          value={loaderData.csrfToken}
-                        />
-                        <input
-                          name="intent"
-                          type="hidden"
-                          value="reactivate-member"
-                        />
-                        <input
-                          name="targetUsername"
-                          type="hidden"
-                          value={member.username}
-                        />
+                      {member.accessState === "active" ? (
                         <button
-                          aria-label={`Reactivate ${member.username}`}
-                          className={styles.reactivateButton}
-                          type="submit"
+                          aria-label={`Disable ${member.username}`}
+                          className={styles.disableButton}
+                          onClick={(event) => {
+                            disableTrigger.current = event.currentTarget;
+                            setConfirmingUsername(member.username);
+                          }}
+                          type="button"
                         >
-                          Reactivate
+                          Disable
                         </button>
-                      </Form>
-                    )}
+                      ) : (
+                        <Form method="post">
+                          <input
+                            name="csrfToken"
+                            type="hidden"
+                            value={loaderData.csrfToken}
+                          />
+                          <input
+                            name="intent"
+                            type="hidden"
+                            value="reactivate-member"
+                          />
+                          <input
+                            name="targetUsername"
+                            type="hidden"
+                            value={member.username}
+                          />
+                          <button
+                            aria-label={`Reactivate ${member.username}`}
+                            className={styles.reactivateButton}
+                            type="submit"
+                          >
+                            Reactivate
+                          </button>
+                        </Form>
+                      )}
+                    </span>
                   </span>
                 </li>
               ))}
@@ -440,6 +553,93 @@ export default function Users({ actionData, loaderData }: Route.ComponentProps) 
                 <button onClick={cancelDisable} type="button">Cancel</button>
                 <button className={styles.confirmDisableButton} type="submit">
                   Disable member
+                </button>
+              </div>
+            </Form>
+          </dialog>
+        ) : null}
+        {resettingUsername ? (
+          <dialog
+            aria-labelledby="reset-member-password-heading"
+            aria-modal="true"
+            className={styles.confirmationDialog}
+            onCancel={(event) => {
+              event.preventDefault();
+              cancelPasswordReset();
+            }}
+            ref={passwordResetDialog}
+          >
+            <h2 id="reset-member-password-heading">
+              Reset password for {resettingUsername}
+            </h2>
+            <p>
+              Set a temporary password and share it outside this application.
+              The application will not deliver it. Every open member session
+              will be signed out, and account access will not change.
+            </p>
+            <Form
+              className={styles.confirmationForm}
+              method="post"
+              noValidate
+              onSubmit={() => {
+                passwordResetSubmissionPending.current = true;
+              }}
+            >
+              <input
+                name="csrfToken"
+                type="hidden"
+                value={loaderData.csrfToken}
+              />
+              <input
+                name="intent"
+                type="hidden"
+                value="reset-member-password"
+              />
+              <input
+                name="targetUsername"
+                type="hidden"
+                value={resettingUsername}
+              />
+              <input
+                autoComplete="username"
+                name="username"
+                type="hidden"
+                value={resettingUsername}
+              />
+              <label>
+                <span>New temporary password</span>
+                <input
+                  aria-describedby="reset-password-help"
+                  autoComplete="new-password"
+                  autoFocus
+                  name="newPassword"
+                  required
+                  type="password"
+                />
+                <small id="reset-password-help">
+                  12–128 characters; never stored or shown after reset.
+                </small>
+              </label>
+              <label>
+                <span>Confirm temporary password</span>
+                <input
+                  autoComplete="new-password"
+                  name="confirmPassword"
+                  required
+                  type="password"
+                />
+              </label>
+              {actionData?.passwordResetError ? (
+                <p className={styles.error} role="alert">
+                  {actionData.passwordResetError}
+                </p>
+              ) : null}
+              <div className={styles.confirmationActions}>
+                <button onClick={cancelPasswordReset} type="button">
+                  Cancel
+                </button>
+                <button className={styles.confirmResetButton} type="submit">
+                  Reset password
                 </button>
               </div>
             </Form>
