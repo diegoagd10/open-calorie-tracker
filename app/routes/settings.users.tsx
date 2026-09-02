@@ -25,6 +25,8 @@ type UsersActionData = {
   };
   accessError?: string;
   createdUsername?: string;
+  deletedUsername?: string;
+  deletionError?: string;
   error?: string;
   passwordResetError?: string;
   passwordResetUsername?: string;
@@ -33,6 +35,7 @@ type UsersActionData = {
 
 const usersActionIntents = {
   "create-member": true,
+  "delete-member": true,
   "disable-member": true,
   "reactivate-member": true,
   "reset-member-password": true,
@@ -48,29 +51,31 @@ function parseUsersActionIntent(
     : undefined;
 }
 
+type MemberDialogTarget = { id: number; username: string };
+
 function useMemberDialog() {
-  const [username, setUsername] = useState<string>();
+  const [target, setTarget] = useState<MemberDialogTarget>();
   const dialog = useRef<HTMLDialogElement | null>(null);
   const trigger = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
-    if (username && !dialog.current?.open) dialog.current?.showModal();
-  }, [username]);
+    if (target && !dialog.current?.open) dialog.current?.showModal();
+  }, [target]);
 
-  const dismiss = useCallback(() => setUsername(undefined), []);
+  const dismiss = useCallback(() => setTarget(undefined), []);
   const cancel = useCallback(() => {
-    setUsername(undefined);
+    setTarget(undefined);
     queueMicrotask(() => trigger.current?.focus());
   }, []);
   const open = useCallback(
-    (nextUsername: string, nextTrigger: HTMLButtonElement) => {
+    (nextTarget: MemberDialogTarget, nextTrigger: HTMLButtonElement) => {
       trigger.current = nextTrigger;
-      setUsername(nextUsername);
+      setTarget(nextTarget);
     },
     [],
   );
 
-  return { cancel, dialog, dismiss, open, username };
+  return { cancel, dialog, dismiss, open, target };
 }
 
 export function meta() {
@@ -118,13 +123,53 @@ export async function action({ request }: Route.ActionArgs) {
       { status: 400 },
     );
   }
-  if (intent === "disable-member" || intent === "reactivate-member") {
+  if (intent !== "create-member" && intent !== "reset-member-password") {
     const targetUsername = String(formData.get("targetUsername") ?? "");
     const parsedTarget = usernameSchema.safeParse(targetUsername);
     if (!parsedTarget.success || parsedTarget.data !== targetUsername) {
       return data<UsersActionData>(
-        { accessError: "Member is no longer available. Refresh and try again." },
+        intent === "delete-member"
+          ? {
+              deletionError:
+                "Member is no longer available. Refresh and try again.",
+            }
+          : {
+              accessError:
+                "Member is no longer available. Refresh and try again.",
+            },
         { status: 409 },
+      );
+    }
+
+    if (intent === "delete-member") {
+      const targetUserId = Number(formData.get("targetUserId"));
+      if (!Number.isSafeInteger(targetUserId) || targetUserId <= 0) {
+        return data<UsersActionData>(
+          {
+            deletionError:
+              "Member is no longer available. Refresh and try again.",
+          },
+          { status: 409 },
+        );
+      }
+      const result = await authentication.deleteMember(
+        session.user,
+        { id: targetUserId, username: targetUsername },
+        String(formData.get("confirmationUsername") ?? ""),
+      );
+      if (!result.ok) {
+        return data<UsersActionData>(
+          {
+            deletionError: result.error === "confirmation-mismatch"
+              ? `Enter ${targetUsername} exactly to confirm permanent deletion.`
+              : "Member is no longer available. Refresh and try again.",
+          },
+          { status: result.error === "confirmation-mismatch" ? 400 : 409 },
+        );
+      }
+      return data<UsersActionData>(
+        { deletedUsername: targetUsername },
+        { status: 200 },
       );
     }
 
@@ -264,10 +309,11 @@ export async function action({ request }: Route.ActionArgs) {
 
 export default function Users({ actionData, loaderData }: Route.ComponentProps) {
   const disableDialog = useMemberDialog();
+  const deletionDialog = useMemberDialog();
   const passwordResetDialog = useMemberDialog();
   const passwordResetSubmissionPending = useRef(false);
   const dismissPasswordReset = passwordResetDialog.dismiss;
-  const resettingUsername = passwordResetDialog.username;
+  const resettingUsername = passwordResetDialog.target?.username;
 
   useEffect(() => {
     if (!passwordResetSubmissionPending.current) return;
@@ -412,6 +458,17 @@ export default function Users({ actionData, loaderData }: Route.ComponentProps) 
               reset. Deliver the temporary password outside this application.
             </p>
           ) : null}
+          {actionData?.deletionError ? (
+            <p className={styles.directoryMessageError} role="alert">
+              {actionData.deletionError}
+            </p>
+          ) : null}
+          {actionData?.deletedUsername ? (
+            <p className={styles.directoryMessageSuccess} role="status">
+              <strong>{actionData.deletedUsername}</strong> was permanently
+              deleted.
+            </p>
+          ) : null}
           {loaderData.members.length === 0 ? (
             <p className={styles.empty}>No member accounts yet.</p>
           ) : (
@@ -444,14 +501,14 @@ export default function Users({ actionData, loaderData }: Route.ComponentProps) 
                       >
                         {member.accessState === "active" ? "Active" : "Disabled"}
                       </span>
-                      </span>
-                    <span className={styles.memberActions}>
+                    </span>
+                    <span className={styles.memberControls}>
                       <button
                         aria-label={`Reset password for ${member.username}`}
                         className={styles.resetButton}
                         onClick={(event) => {
                           passwordResetDialog.open(
-                            member.username,
+                            member,
                             event.currentTarget,
                           );
                         }}
@@ -465,7 +522,7 @@ export default function Users({ actionData, loaderData }: Route.ComponentProps) 
                           className={styles.disableButton}
                           onClick={(event) => {
                             disableDialog.open(
-                              member.username,
+                              member,
                               event.currentTarget,
                             );
                           }}
@@ -499,6 +556,19 @@ export default function Users({ actionData, loaderData }: Route.ComponentProps) 
                           </button>
                         </Form>
                       )}
+                      <button
+                        aria-label={`Delete ${member.username}`}
+                        className={styles.deleteButton}
+                        onClick={(event) => {
+                          deletionDialog.open(
+                            member,
+                            event.currentTarget,
+                          );
+                        }}
+                        type="button"
+                      >
+                        Delete
+                      </button>
                     </span>
                   </span>
                 </li>
@@ -506,7 +576,7 @@ export default function Users({ actionData, loaderData }: Route.ComponentProps) 
             </ul>
           )}
         </section>
-        {disableDialog.username ? (
+        {disableDialog.target ? (
           <dialog
             aria-labelledby="disable-member-heading"
             aria-modal="true"
@@ -518,11 +588,13 @@ export default function Users({ actionData, loaderData }: Route.ComponentProps) 
             ref={disableDialog.dialog}
           >
             <h2 id="disable-member-heading">
-              Disable {disableDialog.username}
+              Disable {disableDialog.target.username}
             </h2>
             <p>
               This immediately signs the member out on every device. Enter the
-              complete normalized username <strong>{disableDialog.username}</strong>
+              complete normalized username <strong>
+                {disableDialog.target.username}
+              </strong>
               {" "}to confirm.
             </p>
             <Form
@@ -539,7 +611,7 @@ export default function Users({ actionData, loaderData }: Route.ComponentProps) 
               <input
                 name="targetUsername"
                 type="hidden"
-                value={disableDialog.username}
+                value={disableDialog.target.username}
               />
               <label>
                 <span>Normalized username</span>
@@ -643,6 +715,71 @@ export default function Users({ actionData, loaderData }: Route.ComponentProps) 
                 </button>
                 <button className={styles.confirmResetButton} type="submit">
                   Reset password
+                </button>
+              </div>
+            </Form>
+          </dialog>
+        ) : null}
+        {deletionDialog.target ? (
+          <dialog
+            aria-labelledby="delete-member-heading"
+            aria-modal="true"
+            className={styles.confirmationDialog}
+            onCancel={(event) => {
+              event.preventDefault();
+              deletionDialog.cancel();
+            }}
+            ref={deletionDialog.dialog}
+          >
+            <h2 id="delete-member-heading">
+              Delete {deletionDialog.target.username}
+            </h2>
+            <p>
+              This permanently removes the account and nutrition data,
+              including preferences, Goal Versions, Food Entries, and Water
+              Events. It cannot be recovered in this application.
+            </p>
+            <p>
+              Enter the complete displayed username <strong>
+                {deletionDialog.target.username}
+              </strong> to confirm.
+            </p>
+            <Form
+              className={styles.confirmationForm}
+              method="post"
+              onSubmit={deletionDialog.dismiss}
+            >
+              <input
+                name="csrfToken"
+                type="hidden"
+                value={loaderData.csrfToken}
+              />
+              <input name="intent" type="hidden" value="delete-member" />
+              <input
+                name="targetUserId"
+                type="hidden"
+                value={deletionDialog.target.id}
+              />
+              <input
+                name="targetUsername"
+                type="hidden"
+                value={deletionDialog.target.username}
+              />
+              <label>
+                <span>Complete username</span>
+                <input
+                  autoComplete="off"
+                  autoFocus
+                  name="confirmationUsername"
+                  required
+                />
+              </label>
+              <div className={styles.confirmationActions}>
+                <button onClick={deletionDialog.cancel} type="button">
+                  Cancel
+                </button>
+                <button className={styles.confirmDeleteButton} type="submit">
+                  Permanently delete member
                 </button>
               </div>
             </Form>

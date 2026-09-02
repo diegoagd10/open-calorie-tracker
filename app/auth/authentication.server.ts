@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 
-import { asc, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 
 import type { ApplicationDatabaseClient } from "../database/database.server";
 import {
@@ -11,8 +11,13 @@ import {
   resetMemberPasswordAndSessions,
   type CredentialRecord,
 } from "../database/credential-sessions.server";
-import { createMemberAccount } from "../database/member-accounts.server";
+import {
+  createMemberAccount,
+  listMemberAccounts,
+  type MemberAccountDirectoryEntry,
+} from "../database/member-accounts.server";
 import { transitionMemberAccess } from "../database/member-access.server";
+import { deleteMemberAccount } from "../database/member-deletion.server";
 import {
   passwordCredentials,
   sessions,
@@ -32,6 +37,7 @@ import {
 } from "./bootstrap-events.server";
 import {
   logMemberAccessChanged,
+  logMemberDeleted,
   logMemberPasswordReset,
   logMemberProvisioned,
 } from "./member-events.server";
@@ -53,7 +59,7 @@ function registrationWindowMs(): number {
 export type CredentialUser = CredentialRecord;
 
 export type UserRole = (typeof users.$inferSelect)["role"];
-export type AccountAccessState = (typeof users.$inferSelect)["accessState"];
+type AccountAccessState = (typeof users.$inferSelect)["accessState"];
 type MemberAccessAction = "disable" | "reactivate";
 type MemberAccessStaleError = "already-active" | "already-disabled";
 
@@ -89,16 +95,11 @@ export type AuthenticatedSession = {
   };
 };
 
-export type ManageableMember = {
-  accessState: AccountAccessState;
-  createdAt: string;
-  passwordChangeRequired: boolean;
-  username: string;
-};
+export type ManageableMember = MemberAccountDirectoryEntry;
 
 export type ProvisionMemberResult =
   | { error: "duplicate-username"; ok: false }
-  | { member: ManageableMember; ok: true };
+  | { member: Omit<ManageableMember, "id">; ok: true };
 
 export type MemberAccessChangeResult =
   | {
@@ -113,6 +114,10 @@ export type MemberAccessChangeResult =
 
 export type MemberPasswordResetResult =
   | { error: "not-found"; ok: false }
+  | { ok: true };
+
+export type MemberDeletionResult =
+  | { error: "confirmation-mismatch" | "not-found"; ok: false }
   | { ok: true };
 
 export type IssuedSession = AuthenticatedSession;
@@ -534,6 +539,36 @@ export class AuthenticationService {
     }
   }
 
+  async deleteMember(
+    actor: AuthenticatedSession["user"],
+    target: Pick<ManageableMember, "id" | "username">,
+    confirmationUsername: string,
+  ): Promise<MemberDeletionResult> {
+    if (actor.role !== "admin") {
+      logMemberDeleted(actor, target.username, "not-found");
+      return { error: "not-found", ok: false };
+    }
+    if (confirmationUsername !== target.username) {
+      logMemberDeleted(actor, target.username, "confirmation-mismatch");
+      return { error: "confirmation-mismatch", ok: false };
+    }
+
+    try {
+      if (!deleteMemberAccount(this.#database, {
+        id: target.id,
+        usernameNormalized: target.username,
+      })) {
+        logMemberDeleted(actor, target.username, "not-found");
+        return { error: "not-found", ok: false };
+      }
+      logMemberDeleted(actor, target.username, "succeeded");
+      return { ok: true };
+    } catch (error) {
+      logMemberDeleted(actor, target.username, "failed");
+      throw error;
+    }
+  }
+
   #changeMemberAccess(
     actor: AuthenticatedSession["user"],
     targetUsername: string,
@@ -564,16 +599,6 @@ export class AuthenticationService {
   }
 
   listManageableMembers(): ManageableMember[] {
-    return this.#database
-      .select({
-        accessState: users.accessState,
-        createdAt: users.createdAt,
-        passwordChangeRequired: users.passwordChangeRequired,
-        username: users.usernameNormalized,
-      })
-      .from(users)
-      .where(eq(users.role, "member"))
-      .orderBy(asc(users.usernameNormalized))
-      .all();
+    return listMemberAccounts(this.#database);
   }
 }

@@ -1,3 +1,5 @@
+import { asc, eq } from "drizzle-orm";
+
 import type { ApplicationDatabaseClient } from "./database.server";
 import { passwordCredentials, users } from "./schema.server";
 
@@ -6,6 +8,31 @@ export type NewMemberAccount = {
   passwordHash: string;
   usernameNormalized: string;
 };
+
+export type MemberAccountDirectoryEntry = {
+  accessState: (typeof users.$inferSelect)["accessState"];
+  createdAt: string;
+  id: number;
+  passwordChangeRequired: boolean;
+  username: string;
+};
+
+export function listMemberAccounts(
+  database: ApplicationDatabaseClient,
+): MemberAccountDirectoryEntry[] {
+  return database
+    .select({
+      accessState: users.accessState,
+      createdAt: users.createdAt,
+      id: users.id,
+      passwordChangeRequired: users.passwordChangeRequired,
+      username: users.usernameNormalized,
+    })
+    .from(users)
+    .where(eq(users.role, "member"))
+    .orderBy(asc(users.usernameNormalized))
+    .all();
+}
 
 export function createMemberAccount(
   database: ApplicationDatabaseClient,
