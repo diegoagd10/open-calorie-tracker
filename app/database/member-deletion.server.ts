@@ -5,26 +5,20 @@ import { users } from "./schema.server";
 
 export function deleteMemberAccount(
   database: ApplicationDatabaseClient,
-  usernameNormalized: string,
+  target: { id: number; usernameNormalized: string },
 ): boolean {
   return database.transaction(
     (transaction) => {
-      const target = transaction
-        .select({ id: users.id })
-        .from(users)
-        .where(
-          and(
-            eq(users.role, "member"),
-            eq(users.usernameNormalized, usernameNormalized),
-          ),
-        )
-        .get();
-      if (!target) return false;
-
       return Boolean(
         transaction
           .delete(users)
-          .where(and(eq(users.id, target.id), eq(users.role, "member")))
+          .where(
+            and(
+              eq(users.id, target.id),
+              eq(users.role, "member"),
+              eq(users.usernameNormalized, target.usernameNormalized),
+            ),
+          )
           .returning({ id: users.id })
           .get(),
       );

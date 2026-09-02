@@ -91,13 +91,14 @@ export type AuthenticatedSession = {
 export type ManageableMember = {
   accessState: AccountAccessState;
   createdAt: string;
+  id: number;
   passwordChangeRequired: boolean;
   username: string;
 };
 
 export type ProvisionMemberResult =
   | { error: "duplicate-username"; ok: false }
-  | { member: ManageableMember; ok: true };
+  | { member: Omit<ManageableMember, "id">; ok: true };
 
 export type MemberAccessChangeResult =
   | {
@@ -514,27 +515,30 @@ export class AuthenticationService {
 
   async deleteMember(
     actor: AuthenticatedSession["user"],
-    targetUsername: string,
+    target: Pick<ManageableMember, "id" | "username">,
     confirmationUsername: string,
   ): Promise<MemberDeletionResult> {
     if (actor.role !== "admin") {
-      logMemberDeleted(actor, targetUsername, "not-found");
+      logMemberDeleted(actor, target.username, "not-found");
       return { error: "not-found", ok: false };
     }
-    if (confirmationUsername !== targetUsername) {
-      logMemberDeleted(actor, targetUsername, "confirmation-mismatch");
+    if (confirmationUsername !== target.username) {
+      logMemberDeleted(actor, target.username, "confirmation-mismatch");
       return { error: "confirmation-mismatch", ok: false };
     }
 
     try {
-      if (!deleteMemberAccount(this.#database, targetUsername)) {
-        logMemberDeleted(actor, targetUsername, "not-found");
+      if (!deleteMemberAccount(this.#database, {
+        id: target.id,
+        usernameNormalized: target.username,
+      })) {
+        logMemberDeleted(actor, target.username, "not-found");
         return { error: "not-found", ok: false };
       }
-      logMemberDeleted(actor, targetUsername, "succeeded");
+      logMemberDeleted(actor, target.username, "succeeded");
       return { ok: true };
     } catch (error) {
-      logMemberDeleted(actor, targetUsername, "failed");
+      logMemberDeleted(actor, target.username, "failed");
       throw error;
     }
   }
@@ -573,6 +577,7 @@ export class AuthenticationService {
       .select({
         accessState: users.accessState,
         createdAt: users.createdAt,
+        id: users.id,
         passwordChangeRequired: users.passwordChangeRequired,
         username: users.usernameNormalized,
       })

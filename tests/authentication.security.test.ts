@@ -67,6 +67,14 @@ async function createFixture() {
   };
 }
 
+function memberTarget(service: AuthenticationService, username: string) {
+  const target = service.listManageableMembers().find(
+    (member) => member.username === username,
+  );
+  if (!target) throw new Error(`${username} is not manageable`);
+  return target;
+}
+
 test("an administrator-provisioned member is active and restricted without retaining the initial password", async () => {
   const fixture = await createFixture();
   const initialPassword = "temporary member passphrase";
@@ -86,7 +94,7 @@ test("an administrator-provisioned member is active and restricted without retai
     },
     ok: true,
   });
-  expect(fixture.service.listManageableMembers()).toEqual([
+  expect(fixture.service.listManageableMembers()).toMatchObject([
     provisioned.ok ? provisioned.member : undefined,
   ]);
   const persisted = fixture.database
@@ -236,12 +244,12 @@ test("member access suspension revokes every target session and reactivation pre
       "access.member",
     ),
   ).resolves.toEqual({ ok: true });
-  expect(fixture.service.listManageableMembers()).toContainEqual({
+  expect(fixture.service.listManageableMembers()).toContainEqual(expect.objectContaining({
     accessState: "disabled",
     createdAt: "2026-08-29T12:00:00.000Z",
     passwordChangeRequired: true,
     username: "access.member",
-  });
+  }));
   await expect(fixture.service.authenticate(firstDevice.session.token))
     .resolves.toBeUndefined();
   await expect(fixture.service.authenticate(secondDevice.session.token))
@@ -336,12 +344,12 @@ test("member access transitions reject stale targets and roll back failed sessio
       "transition.member",
     ),
   ).rejects.toThrow("simulated session revocation failure");
-  expect(fixture.service.listManageableMembers()).toContainEqual({
+  expect(fixture.service.listManageableMembers()).toContainEqual(expect.objectContaining({
     accessState: "active",
     createdAt: "2026-08-29T11:00:00.000Z",
     passwordChangeRequired: false,
     username: "transition.member",
-  });
+  }));
   await expect(fixture.service.authenticate(target.token)).resolves.toBeDefined();
   expect(JSON.parse(String(errorOutput.mock.calls.at(-1)?.[0])))
     .toMatchObject({
@@ -419,11 +427,12 @@ test("administrator deletion removes an active member identity and permits unrel
     password,
     "203.0.113.217",
   );
+  const originalTarget = memberTarget(fixture.service, "deleted.member");
 
   await expect(
     fixture.service.deleteMember(
       administrator.session.user,
-      "deleted.member",
+      originalTarget,
       "deleted.member",
     ),
   ).resolves.toEqual({ ok: true });
@@ -504,6 +513,7 @@ test("administrator deletion removes a disabled member's owned nutrition history
     selection: "8",
   });
   expect(goals.read(member.user.id)?.goal).toBeDefined();
+  const deletionTarget = memberTarget(fixture.service, "history.member");
 
   await expect(
     fixture.service.disableMemberAccess(
@@ -515,7 +525,7 @@ test("administrator deletion removes a disabled member's owned nutrition history
   await expect(
     fixture.service.deleteMember(
       administrator.session.user,
-      "history.member",
+      deletionTarget,
       "history.member",
     ),
   ).resolves.toEqual({ ok: true });
@@ -567,18 +577,19 @@ test("member deletion rejects self-service and never exposes the administrator a
     password,
     "203.0.113.224",
   );
+  const selfTarget = memberTarget(fixture.service, "self.member");
 
   await expect(
     fixture.service.deleteMember(
       member.user,
-      "self.member",
+      selfTarget,
       "self.member",
     ),
   ).resolves.toEqual({ error: "not-found", ok: false });
   await expect(
     fixture.service.deleteMember(
       administrator.session.user,
-      "protected.admin",
+      { id: administrator.session.user.id, username: "protected.admin" },
       "protected.admin",
     ),
   ).resolves.toEqual({ error: "not-found", ok: false });
@@ -604,6 +615,7 @@ test("member deletion rolls back a failed cascade and emits only redacted outcom
     password,
     "203.0.113.226",
   );
+  const rollbackTarget = memberTarget(fixture.service, "rollback.member");
   const output = vi.spyOn(console, "log").mockImplementation(() => {});
   const errorOutput = vi.spyOn(console, "error").mockImplementation(() => {});
   fixture.database.$client.exec(`
@@ -618,7 +630,7 @@ test("member deletion rolls back a failed cascade and emits only redacted outcom
   await expect(
     fixture.service.deleteMember(
       administrator.session.user,
-      "rollback.member",
+      rollbackTarget,
       "rollback.member",
     ),
   ).rejects.toThrow("simulated member deletion failure");
@@ -639,21 +651,21 @@ test("member deletion rolls back a failed cascade and emits only redacted outcom
   await expect(
     fixture.service.deleteMember(
       administrator.session.user,
-      "rollback.member",
+      rollbackTarget,
       "wrong.member",
     ),
   ).resolves.toEqual({ error: "confirmation-mismatch", ok: false });
   await expect(
     fixture.service.deleteMember(
       administrator.session.user,
-      "missing.member",
+      { id: 999_999, username: "missing.member" },
       "missing.member",
     ),
   ).resolves.toEqual({ error: "not-found", ok: false });
   await expect(
     fixture.service.deleteMember(
       administrator.session.user,
-      "rollback.member",
+      rollbackTarget,
       "rollback.member",
     ),
   ).resolves.toEqual({ ok: true });

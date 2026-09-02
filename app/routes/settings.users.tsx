@@ -27,25 +27,50 @@ type UsersActionData = {
   username?: string;
 };
 
-type UsersActionIntent =
-  | "create-member"
-  | "delete-member"
-  | "disable-member"
-  | "reactivate-member";
+const usersActionIntents = {
+  "create-member": true,
+  "delete-member": true,
+  "disable-member": true,
+  "reactivate-member": true,
+} as const;
+
+type UsersActionIntent = keyof typeof usersActionIntents;
 
 function parseUsersActionIntent(
   value: FormDataEntryValue | null,
 ): UsersActionIntent | undefined {
   if (typeof value !== "string") return undefined;
-  switch (value) {
-    case "create-member":
-    case "delete-member":
-    case "disable-member":
-    case "reactivate-member":
-      return value;
-    default:
-      return undefined;
+  return Object.hasOwn(usersActionIntents, value)
+    ? value as UsersActionIntent
+    : undefined;
+}
+
+type MemberDialogTarget = { id: number; username: string };
+
+function useMemberDialog() {
+  const [target, setTarget] = useState<MemberDialogTarget>();
+  const dialog = useRef<HTMLDialogElement | null>(null);
+  const trigger = useRef<HTMLButtonElement | null>(null);
+
+  useEffect(() => {
+    if (target && !dialog.current?.open) dialog.current?.showModal();
+  }, [target]);
+
+  function dismiss() {
+    setTarget(undefined);
   }
+
+  function cancel() {
+    dismiss();
+    queueMicrotask(() => trigger.current?.focus());
+  }
+
+  function open(nextTarget: MemberDialogTarget, nextTrigger: HTMLButtonElement) {
+    trigger.current = nextTrigger;
+    setTarget(nextTarget);
+  }
+
+  return { cancel, dialog, dismiss, open, target };
 }
 
 export function meta() {
@@ -112,9 +137,19 @@ export async function action({ request }: Route.ActionArgs) {
     }
 
     if (intent === "delete-member") {
+      const targetUserId = Number(formData.get("targetUserId"));
+      if (!Number.isSafeInteger(targetUserId) || targetUserId <= 0) {
+        return data<UsersActionData>(
+          {
+            deletionError:
+              "Member is no longer available. Refresh and try again.",
+          },
+          { status: 409 },
+        );
+      }
       const result = await authentication.deleteMember(
         session.user,
-        targetUsername,
+        { id: targetUserId, username: targetUsername },
         String(formData.get("confirmationUsername") ?? ""),
       );
       if (!result.ok) {
@@ -208,34 +243,8 @@ export async function action({ request }: Route.ActionArgs) {
 }
 
 export default function Users({ actionData, loaderData }: Route.ComponentProps) {
-  const [confirmingUsername, setConfirmingUsername] = useState<string>();
-  const [deletingUsername, setDeletingUsername] = useState<string>();
-  const confirmationDialog = useRef<HTMLDialogElement | null>(null);
-  const deletionDialog = useRef<HTMLDialogElement | null>(null);
-  const disableTrigger = useRef<HTMLButtonElement | null>(null);
-  const deleteTrigger = useRef<HTMLButtonElement | null>(null);
-
-  useEffect(() => {
-    if (confirmingUsername && !confirmationDialog.current?.open) {
-      confirmationDialog.current?.showModal();
-    }
-  }, [confirmingUsername]);
-
-  useEffect(() => {
-    if (deletingUsername && !deletionDialog.current?.open) {
-      deletionDialog.current?.showModal();
-    }
-  }, [deletingUsername]);
-
-  function cancelDisable() {
-    setConfirmingUsername(undefined);
-    queueMicrotask(() => disableTrigger.current?.focus());
-  }
-
-  function cancelDelete() {
-    setDeletingUsername(undefined);
-    queueMicrotask(() => deleteTrigger.current?.focus());
-  }
+  const disableDialog = useMemberDialog();
+  const deletionDialog = useMemberDialog();
 
   return (
     <div className={shellStyles.shell}>
@@ -413,8 +422,10 @@ export default function Users({ actionData, loaderData }: Route.ComponentProps) 
                           aria-label={`Disable ${member.username}`}
                           className={styles.disableButton}
                           onClick={(event) => {
-                            disableTrigger.current = event.currentTarget;
-                            setConfirmingUsername(member.username);
+                            disableDialog.open(
+                              member,
+                              event.currentTarget,
+                            );
                           }}
                           type="button"
                         >
@@ -450,8 +461,10 @@ export default function Users({ actionData, loaderData }: Route.ComponentProps) 
                         aria-label={`Delete ${member.username}`}
                         className={styles.deleteButton}
                         onClick={(event) => {
-                          deleteTrigger.current = event.currentTarget;
-                          setDeletingUsername(member.username);
+                          deletionDialog.open(
+                            member,
+                            event.currentTarget,
+                          );
                         }}
                         type="button"
                       >
@@ -464,29 +477,31 @@ export default function Users({ actionData, loaderData }: Route.ComponentProps) 
             </ul>
           )}
         </section>
-        {confirmingUsername ? (
+        {disableDialog.target ? (
           <dialog
             aria-labelledby="disable-member-heading"
             aria-modal="true"
             className={styles.confirmationDialog}
             onCancel={(event) => {
               event.preventDefault();
-              cancelDisable();
+              disableDialog.cancel();
             }}
-            ref={confirmationDialog}
+            ref={disableDialog.dialog}
           >
             <h2 id="disable-member-heading">
-              Disable {confirmingUsername}
+              Disable {disableDialog.target.username}
             </h2>
             <p>
               This immediately signs the member out on every device. Enter the
-              complete normalized username <strong>{confirmingUsername}</strong>
+              complete normalized username <strong>
+                {disableDialog.target.username}
+              </strong>
               {" "}to confirm.
             </p>
             <Form
               className={styles.confirmationForm}
               method="post"
-              onSubmit={() => setConfirmingUsername(undefined)}
+              onSubmit={disableDialog.dismiss}
             >
               <input
                 name="csrfToken"
@@ -497,7 +512,7 @@ export default function Users({ actionData, loaderData }: Route.ComponentProps) 
               <input
                 name="targetUsername"
                 type="hidden"
-                value={confirmingUsername}
+                value={disableDialog.target.username}
               />
               <label>
                 <span>Normalized username</span>
@@ -509,7 +524,9 @@ export default function Users({ actionData, loaderData }: Route.ComponentProps) 
                 />
               </label>
               <div className={styles.confirmationActions}>
-                <button onClick={cancelDisable} type="button">Cancel</button>
+                <button onClick={disableDialog.cancel} type="button">
+                  Cancel
+                </button>
                 <button className={styles.confirmDisableButton} type="submit">
                   Disable member
                 </button>
@@ -517,18 +534,20 @@ export default function Users({ actionData, loaderData }: Route.ComponentProps) 
             </Form>
           </dialog>
         ) : null}
-        {deletingUsername ? (
+        {deletionDialog.target ? (
           <dialog
             aria-labelledby="delete-member-heading"
             aria-modal="true"
             className={styles.confirmationDialog}
             onCancel={(event) => {
               event.preventDefault();
-              cancelDelete();
+              deletionDialog.cancel();
             }}
-            ref={deletionDialog}
+            ref={deletionDialog.dialog}
           >
-            <h2 id="delete-member-heading">Delete {deletingUsername}</h2>
+            <h2 id="delete-member-heading">
+              Delete {deletionDialog.target.username}
+            </h2>
             <p>
               This permanently removes the account and nutrition data,
               including preferences, Goal Versions, Food Entries, and Water
@@ -536,13 +555,13 @@ export default function Users({ actionData, loaderData }: Route.ComponentProps) 
             </p>
             <p>
               Enter the complete displayed username <strong>
-                {deletingUsername}
+                {deletionDialog.target.username}
               </strong> to confirm.
             </p>
             <Form
               className={styles.confirmationForm}
               method="post"
-              onSubmit={() => setDeletingUsername(undefined)}
+              onSubmit={deletionDialog.dismiss}
             >
               <input
                 name="csrfToken"
@@ -551,9 +570,14 @@ export default function Users({ actionData, loaderData }: Route.ComponentProps) 
               />
               <input name="intent" type="hidden" value="delete-member" />
               <input
+                name="targetUserId"
+                type="hidden"
+                value={deletionDialog.target.id}
+              />
+              <input
                 name="targetUsername"
                 type="hidden"
-                value={deletingUsername}
+                value={deletionDialog.target.username}
               />
               <label>
                 <span>Complete username</span>
@@ -565,7 +589,9 @@ export default function Users({ actionData, loaderData }: Route.ComponentProps) 
                 />
               </label>
               <div className={styles.confirmationActions}>
-                <button onClick={cancelDelete} type="button">Cancel</button>
+                <button onClick={deletionDialog.cancel} type="button">
+                  Cancel
+                </button>
                 <button className={styles.confirmDeleteButton} type="submit">
                   Permanently delete member
                 </button>
