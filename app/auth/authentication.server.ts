@@ -4,10 +4,14 @@ import { asc, eq } from "drizzle-orm";
 
 import type { ApplicationDatabaseClient } from "../database/database.server";
 import {
+  findActiveSessionByTokenHash,
+  findCredentialByUsername,
   issueSessionForVerifiedCredential,
   replacePasswordAndSessions,
+  type CredentialRecord,
 } from "../database/credential-sessions.server";
 import { createMemberAccount } from "../database/member-accounts.server";
+import { transitionMemberAccess } from "../database/member-access.server";
 import {
   passwordCredentials,
   sessions,
@@ -25,7 +29,10 @@ import {
   logBootstrapRejected,
   logBootstrapSucceeded,
 } from "./bootstrap-events.server";
-import { logMemberProvisioned } from "./member-events.server";
+import {
+  logMemberAccessChanged,
+  logMemberProvisioned,
+} from "./member-events.server";
 
 const IDLE_SESSION_MS = 5 * 24 * 60 * 60 * 1_000;
 const ABSOLUTE_SESSION_MS = 90 * 24 * 60 * 60 * 1_000;
@@ -41,14 +48,32 @@ function registrationWindowMs(): number {
   return 60 * 60 * 1_000;
 }
 
-export type CredentialUser = Pick<
-  typeof users.$inferSelect,
-  "id" | "passwordChangeRequired" | "role" | "usernameNormalized"
-> &
-  Pick<typeof passwordCredentials.$inferSelect, "passwordHash">;
+export type CredentialUser = CredentialRecord;
 
 export type UserRole = (typeof users.$inferSelect)["role"];
 export type AccountAccessState = (typeof users.$inferSelect)["accessState"];
+type MemberAccessAction = "disable" | "reactivate";
+type MemberAccessStaleError = "already-active" | "already-disabled";
+
+const memberAccessTransitions = {
+  disable: {
+    expectedState: "active",
+    nextState: "disabled",
+    staleError: "already-disabled",
+  },
+  reactivate: {
+    expectedState: "disabled",
+    nextState: "active",
+    staleError: "already-active",
+  },
+} as const satisfies Record<
+  MemberAccessAction,
+  {
+    expectedState: AccountAccessState;
+    nextState: AccountAccessState;
+    staleError: MemberAccessStaleError;
+  }
+>;
 
 export type AuthenticatedSession = {
   absoluteExpiresAt: Date;
@@ -72,6 +97,17 @@ export type ManageableMember = {
 export type ProvisionMemberResult =
   | { error: "duplicate-username"; ok: false }
   | { member: ManageableMember; ok: true };
+
+export type MemberAccessChangeResult =
+  | {
+      error:
+        | "already-active"
+        | "already-disabled"
+        | "confirmation-mismatch"
+        | "not-found";
+      ok: false;
+    }
+  | { ok: true };
 
 export type IssuedSession = AuthenticatedSession;
 
@@ -251,20 +287,7 @@ export class AuthenticationService {
     }
 
     const tokenHash = hashOpaqueToken(token);
-    const session = this.#database
-      .select({
-        absoluteExpiresAt: sessions.absoluteExpiresAt,
-        idleExpiresAt: sessions.idleExpiresAt,
-        passwordChangeRequired: users.passwordChangeRequired,
-        tokenHash: sessions.tokenHash,
-        userId: sessions.userId,
-        role: users.role,
-        usernameNormalized: users.usernameNormalized,
-      })
-      .from(sessions)
-      .innerJoin(users, eq(users.id, sessions.userId))
-      .where(eq(sessions.tokenHash, tokenHash))
-      .get();
+    const session = findActiveSessionByTokenHash(this.#database, tokenHash);
 
     if (!session) {
       return undefined;
@@ -388,7 +411,11 @@ export class AuthenticationService {
       password,
     );
 
-    if (!verification.matches || !verification.user) {
+    if (
+      !verification.matches ||
+      !verification.user ||
+      verification.user.accessState !== "active"
+    ) {
       return { error: "invalid-credentials", ok: false };
     }
 
@@ -438,21 +465,10 @@ export class AuthenticationService {
     needsRehash: boolean;
     user?: CredentialUser;
   }> {
-    const user = this.#database
-      .select({
-        id: users.id,
-        passwordHash: passwordCredentials.passwordHash,
-        passwordChangeRequired: users.passwordChangeRequired,
-        role: users.role,
-        usernameNormalized: users.usernameNormalized,
-      })
-      .from(users)
-      .innerJoin(
-        passwordCredentials,
-        eq(passwordCredentials.userId, users.id),
-      )
-      .where(eq(users.usernameNormalized, usernameNormalized))
-      .get();
+    const user = findCredentialByUsername(
+      this.#database,
+      usernameNormalized,
+    );
     const credential = user?.passwordHash ?? createDummyPasswordHash();
     const verification = await this.#passwordVerifier(password, credential);
 
@@ -461,6 +477,59 @@ export class AuthenticationService {
       needsRehash: verification.needsRehash,
       user,
     };
+  }
+
+  async disableMemberAccess(
+    actor: AuthenticatedSession["user"],
+    targetUsername: string,
+    confirmationUsername: string,
+  ): Promise<MemberAccessChangeResult> {
+    if (confirmationUsername !== targetUsername) {
+      logMemberAccessChanged(
+        "disable",
+        actor,
+        targetUsername,
+        "confirmation-mismatch",
+      );
+      return { error: "confirmation-mismatch", ok: false };
+    }
+    return this.#changeMemberAccess(actor, targetUsername, "disable");
+  }
+
+  async reactivateMemberAccess(
+    actor: AuthenticatedSession["user"],
+    targetUsername: string,
+  ): Promise<MemberAccessChangeResult> {
+    return this.#changeMemberAccess(actor, targetUsername, "reactivate");
+  }
+
+  #changeMemberAccess(
+    actor: AuthenticatedSession["user"],
+    targetUsername: string,
+    action: MemberAccessAction,
+  ): MemberAccessChangeResult {
+    try {
+      const transition = memberAccessTransitions[action];
+      const result = transitionMemberAccess(
+        this.#database,
+        targetUsername,
+        transition.expectedState,
+        transition.nextState,
+      );
+      if (result === "changed") {
+        logMemberAccessChanged(action, actor, targetUsername, "succeeded");
+        return { ok: true };
+      }
+
+      const error = result === "not-found"
+        ? "not-found"
+        : transition.staleError;
+      logMemberAccessChanged(action, actor, targetUsername, error);
+      return { error, ok: false };
+    } catch (error) {
+      logMemberAccessChanged(action, actor, targetUsername, "failed");
+      throw error;
+    }
   }
 
   listManageableMembers(): ManageableMember[] {

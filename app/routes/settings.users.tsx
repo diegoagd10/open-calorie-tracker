@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from "react";
 import { data, Form } from "react-router";
 
 import { AppNavigation } from "../app-navigation";
@@ -7,17 +8,41 @@ import {
   requireValidOrigin,
 } from "../auth/http.server";
 import { getAuthenticationService } from "../auth/runtime.server";
-import { registrationSchema } from "../auth/validation";
+import { registrationSchema, usernameSchema } from "../auth/validation";
 import { formatLocalDate } from "../food-log/date";
 import shellStyles from "../food-log.module.css";
 import { SettingsDestinations } from "../settings-destinations";
 import styles from "../users.module.css";
 
 type UsersActionData = {
+  accessChanged?: {
+    action: "disabled" | "reactivated";
+    username: string;
+  };
+  accessError?: string;
   createdUsername?: string;
   error?: string;
   username?: string;
 };
+
+type UsersActionIntent =
+  | "create-member"
+  | "disable-member"
+  | "reactivate-member";
+
+function parseUsersActionIntent(
+  value: FormDataEntryValue | null,
+): UsersActionIntent | undefined {
+  if (typeof value !== "string") return undefined;
+  switch (value) {
+    case "create-member":
+    case "disable-member":
+    case "reactivate-member":
+      return value;
+    default:
+      return undefined;
+  }
+}
 
 export function meta() {
   return [
@@ -55,6 +80,57 @@ export async function action({ request }: Route.ActionArgs) {
     )
   ) {
     throw new Response("CSRF token rejected.", { status: 403 });
+  }
+
+  const intent = parseUsersActionIntent(formData.get("intent"));
+  if (!intent) {
+    return data<UsersActionData>(
+      { error: "Unsupported action." },
+      { status: 400 },
+    );
+  }
+  if (intent === "disable-member" || intent === "reactivate-member") {
+    const targetUsername = String(formData.get("targetUsername") ?? "");
+    const parsedTarget = usernameSchema.safeParse(targetUsername);
+    if (!parsedTarget.success || parsedTarget.data !== targetUsername) {
+      return data<UsersActionData>(
+        { accessError: "Member is no longer available. Refresh and try again." },
+        { status: 409 },
+      );
+    }
+
+    const result = intent === "disable-member"
+      ? await authentication.disableMemberAccess(
+        session.user,
+        targetUsername,
+        String(formData.get("confirmationUsername") ?? ""),
+      )
+      : await authentication.reactivateMemberAccess(
+        session.user,
+        targetUsername,
+      );
+    if (!result.ok) {
+      if (result.error === "confirmation-mismatch") {
+        return data<UsersActionData>(
+          { accessError: `Enter ${targetUsername} exactly to confirm.` },
+          { status: 400 },
+        );
+      }
+      return data<UsersActionData>(
+        { accessError: "Member access has changed. Refresh and try again." },
+        { status: 409 },
+      );
+    }
+
+    return data<UsersActionData>(
+      {
+        accessChanged: {
+          action: intent === "disable-member" ? "disabled" : "reactivated",
+          username: targetUsername,
+        },
+      },
+      { status: 200 },
+    );
   }
 
   const fields = {
@@ -98,6 +174,21 @@ export async function action({ request }: Route.ActionArgs) {
 }
 
 export default function Users({ actionData, loaderData }: Route.ComponentProps) {
+  const [confirmingUsername, setConfirmingUsername] = useState<string>();
+  const confirmationDialog = useRef<HTMLDialogElement | null>(null);
+  const disableTrigger = useRef<HTMLButtonElement | null>(null);
+
+  useEffect(() => {
+    if (confirmingUsername && !confirmationDialog.current?.open) {
+      confirmationDialog.current?.showModal();
+    }
+  }, [confirmingUsername]);
+
+  function cancelDisable() {
+    setConfirmingUsername(undefined);
+    queueMicrotask(() => disableTrigger.current?.focus());
+  }
+
   return (
     <div className={shellStyles.shell}>
       <a className={shellStyles.skipLink} href="#member-directory-content">
@@ -153,6 +244,7 @@ export default function Users({ actionData, loaderData }: Route.ComponentProps) 
               type="hidden"
               value={loaderData.csrfToken}
             />
+            <input name="intent" type="hidden" value="create-member" />
             <label>
               <span>Username</span>
               <input
@@ -213,13 +305,23 @@ export default function Users({ actionData, loaderData }: Route.ComponentProps) 
             </div>
             <strong>{loaderData.members.length}</strong>
           </div>
+          {actionData?.accessError ? (
+            <p className={styles.directoryMessageError} role="alert">
+              {actionData.accessError}
+            </p>
+          ) : null}
+          {actionData?.accessChanged ? (
+            <p className={styles.directoryMessageSuccess} role="status">
+              <strong>{actionData.accessChanged.username}</strong> was {actionData.accessChanged.action}.
+            </p>
+          ) : null}
           {loaderData.members.length === 0 ? (
             <p className={styles.empty}>No member accounts yet.</p>
           ) : (
             <ul className={styles.memberList}>
               {loaderData.members.map((member) => (
                 <li key={member.username}>
-                  <span>
+                  <span className={styles.memberIdentity}>
                     <strong>{member.username}</strong>
                     <small>
                       Created {formatLocalDate(member.createdAt.slice(0, 10), {
@@ -229,27 +331,120 @@ export default function Users({ actionData, loaderData }: Route.ComponentProps) 
                       })}
                     </small>
                   </span>
-                  <span className={styles.memberStates}>
-                    {member.passwordChangeRequired ? (
-                      <span className={styles.onboardingState}>
-                        Password change required
+                  <span className={styles.memberAccess}>
+                    <span className={styles.memberStates}>
+                      {member.passwordChangeRequired ? (
+                        <span className={styles.onboardingState}>
+                          Password change required
+                        </span>
+                      ) : null}
+                      <span
+                        className={
+                          member.accessState === "active"
+                            ? styles.activeState
+                            : styles.disabledState
+                        }
+                      >
+                        {member.accessState === "active" ? "Active" : "Disabled"}
                       </span>
-                    ) : null}
-                    <span
-                      className={
-                        member.accessState === "active"
-                          ? styles.activeState
-                          : styles.disabledState
-                      }
-                    >
-                      {member.accessState === "active" ? "Active" : "Disabled"}
                     </span>
+                    {member.accessState === "active" ? (
+                      <button
+                        aria-label={`Disable ${member.username}`}
+                        className={styles.disableButton}
+                        onClick={(event) => {
+                          disableTrigger.current = event.currentTarget;
+                          setConfirmingUsername(member.username);
+                        }}
+                        type="button"
+                      >
+                        Disable
+                      </button>
+                    ) : (
+                      <Form method="post">
+                        <input
+                          name="csrfToken"
+                          type="hidden"
+                          value={loaderData.csrfToken}
+                        />
+                        <input
+                          name="intent"
+                          type="hidden"
+                          value="reactivate-member"
+                        />
+                        <input
+                          name="targetUsername"
+                          type="hidden"
+                          value={member.username}
+                        />
+                        <button
+                          aria-label={`Reactivate ${member.username}`}
+                          className={styles.reactivateButton}
+                          type="submit"
+                        >
+                          Reactivate
+                        </button>
+                      </Form>
+                    )}
                   </span>
                 </li>
               ))}
             </ul>
           )}
         </section>
+        {confirmingUsername ? (
+          <dialog
+            aria-labelledby="disable-member-heading"
+            aria-modal="true"
+            className={styles.confirmationDialog}
+            onCancel={(event) => {
+              event.preventDefault();
+              cancelDisable();
+            }}
+            ref={confirmationDialog}
+          >
+            <h2 id="disable-member-heading">
+              Disable {confirmingUsername}
+            </h2>
+            <p>
+              This immediately signs the member out on every device. Enter the
+              complete normalized username <strong>{confirmingUsername}</strong>
+              {" "}to confirm.
+            </p>
+            <Form
+              className={styles.confirmationForm}
+              method="post"
+              onSubmit={() => setConfirmingUsername(undefined)}
+            >
+              <input
+                name="csrfToken"
+                type="hidden"
+                value={loaderData.csrfToken}
+              />
+              <input name="intent" type="hidden" value="disable-member" />
+              <input
+                name="targetUsername"
+                type="hidden"
+                value={confirmingUsername}
+              />
+              <label>
+                <span>Normalized username</span>
+                <input
+                  autoComplete="off"
+                  autoFocus
+                  name="confirmationUsername"
+                  required
+                />
+              </label>
+              <div className={styles.confirmationActions}>
+                <button onClick={cancelDisable} type="button">Cancel</button>
+                <button className={styles.confirmDisableButton} type="submit">
+                  Disable member
+                </button>
+              </div>
+            </Form>
+          </dialog>
+        ) : null}
       </main>
       <aside
         className={shellStyles.desktopContext}

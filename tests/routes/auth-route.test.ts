@@ -190,6 +190,49 @@ describe("login route", () => {
       .toContain("__Host-calorie_session=");
   });
 
+  test("disabled, missing, and wrong-password accounts share the public login failure", async () => {
+    const authentication = getAuthenticationService();
+    await expect(
+      authentication.provisionMember("disabled.login", password),
+    ).resolves.toMatchObject({ ok: true });
+    await expect(
+      authentication.disableMemberAccess(
+        sessions.get("login.owner")!.user,
+        "disabled.login",
+        "disabled.login",
+      ),
+    ).resolves.toEqual({ ok: true });
+
+    const attempts = [
+      { password, username: "disabled.login" },
+      { password: "incorrect password value", username: "disabled.login" },
+      { password, username: "missing.login" },
+    ];
+    const failures = [];
+    for (const attempt of attempts) {
+      const csrf = await issuePreAuthentication(loginLoader, "/login");
+      failures.push(await loginAction(
+        routeArgs(
+          post(
+            "/login",
+            new URLSearchParams({ ...attempt, csrfToken: csrf.csrfToken }),
+            csrf.cookie,
+          ),
+          "/login",
+        ),
+      ));
+    }
+
+    for (const [index, failure] of failures.entries()) {
+      expect(failure).toMatchObject({
+        data: { error: "The username or password is incorrect." },
+        init: { status: 401 },
+      });
+      expect((failure as { data: { username: string } }).data.username)
+        .toBe(attempts[index]?.username);
+    }
+  });
+
   test.each([
     [{ password }, "", 400],
     [{ username: "login.owner" }, "login.owner", 400],

@@ -152,6 +152,10 @@
   min-width: 0;
 }
 
+.memberIdentity {
+  flex: 1;
+}
+
 .memberList li > span:first-child {
   overflow: hidden;
 }
@@ -185,6 +189,121 @@
   align-items: flex-end;
   gap: 0.3rem;
   flex-direction: column;
+}
+
+.memberAccess {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.memberAccess form {
+  margin: 0;
+}
+
+.disableButton,
+.reactivateButton,
+.confirmationActions button {
+  min-height: 2.25rem;
+  padding: 0.45rem 0.7rem;
+  border: 1px solid var(--rule);
+  border-radius: 0.55rem;
+  background: var(--surface);
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.disableButton,
+.confirmDisableButton {
+  color: #8a1c14;
+}
+
+.reactivateButton {
+  color: var(--green-dark);
+}
+
+.directoryMessageError,
+.directoryMessageSuccess {
+  margin: 0;
+  padding: 0.75rem 1.25rem;
+  border-bottom: 1px solid var(--rule);
+  font-size: 0.78rem;
+}
+
+.directoryMessageError {
+  color: #8a1c14;
+  background: #fff1f0;
+}
+
+.directoryMessageSuccess {
+  color: var(--green-dark);
+  background: #edf7ee;
+}
+
+.confirmationDialog {
+  position: fixed;
+  z-index: 100;
+  inset: 0;
+  width: min(28rem, calc(100% - 2rem));
+  max-height: calc(100dvh - 2rem);
+  padding: 1.25rem;
+  border: 1px solid var(--rule);
+  border-radius: 1rem;
+  box-shadow: 0 18px 55px rgb(15 29 45 / 24%);
+}
+
+.confirmationDialog::backdrop {
+  background: rgb(15 29 45 / 48%);
+}
+
+.confirmationDialog h2,
+.confirmationDialog p {
+  margin: 0;
+}
+
+.confirmationDialog h2 {
+  font-size: 1.05rem;
+}
+
+.confirmationDialog p {
+  margin-top: 0.5rem;
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+
+.confirmationForm,
+.confirmationForm label {
+  display: grid;
+}
+
+.confirmationForm {
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.confirmationForm label {
+  gap: 0.35rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.confirmationForm input:not([type="hidden"]) {
+  min-height: 2.75rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--rule);
+  border-radius: 0.6rem;
+  font: inherit;
+  font-weight: 400;
+}
+
+.confirmationActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.65rem;
 }
 
 .activeState {
@@ -226,5 +345,11 @@
 
   .memberStates {
     align-items: flex-start;
+  }
+
+  .memberAccess {
+    width: 100%;
+    align-items: flex-start;
+    justify-content: space-between;
   }
 }

@@ -178,3 +178,105 @@ test("administrator provisions a member through mandatory password onboarding an
   const directUsersResponse = await page.goto("/settings/users");
   expect(directUsersResponse?.status()).toBe(404);
 });
+
+test("administrator confirms suspension, signs out another device, and reactivates the member", async ({
+  browser,
+  context,
+  page,
+}) => {
+  await context.setExtraHTTPHeaders({ "X-Test-Client-IP": "203.0.113.188" });
+  await bootstrapOrSignInBrowserTestUser(
+    page,
+    "access.admin",
+    validPassword,
+  );
+  await finishSetup(page);
+  await provisionBrowserTestMember("suspended.member", validPassword);
+
+  const memberContext = await browser.newContext({
+    baseURL: "http://127.0.0.1:4173",
+    extraHTTPHeaders: { "X-Test-Client-IP": "203.0.113.189" },
+  });
+  const memberPage = await memberContext.newPage();
+  await memberPage.goto("/login");
+  await memberPage.getByLabel("Username").fill("suspended.member");
+  await memberPage.getByLabel("Password", { exact: true }).fill(validPassword);
+  await memberPage.getByRole("button", { name: "Sign in" }).click();
+  await expect(memberPage).toHaveURL("/setup");
+  await finishSetup(memberPage);
+
+  const otherMemberContext = await browser.newContext({
+    baseURL: "http://127.0.0.1:4173",
+    extraHTTPHeaders: { "X-Test-Client-IP": "203.0.113.190" },
+  });
+  const otherMemberPage = await otherMemberContext.newPage();
+  await otherMemberPage.goto("/login");
+  await otherMemberPage.getByLabel("Username").fill("suspended.member");
+  await otherMemberPage.getByLabel("Password", { exact: true })
+    .fill(validPassword);
+  await otherMemberPage.getByRole("button", { name: "Sign in" }).click();
+  await expect(otherMemberPage).toHaveURL("/");
+
+  await page.goto("/settings/users");
+  const memberRow = page.getByRole("listitem").filter({
+    hasText: "suspended.member",
+  });
+  const disableButton = memberRow.getByRole("button", {
+    name: "Disable suspended.member",
+  });
+  await disableButton.click();
+  const dialog = page.getByRole("dialog", {
+    name: "Disable suspended.member",
+  });
+  await expect(dialog).toContainText(
+    "Enter the complete normalized username suspended.member",
+  );
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+  await expect(disableButton).toBeFocused();
+
+  await disableButton.click();
+  await dialog.getByLabel("Normalized username").fill("Suspended.Member");
+  await dialog.getByRole("button", { name: "Disable member" }).click();
+  await expect(page.getByRole("alert")).toContainText(
+    "Enter suspended.member exactly to confirm.",
+  );
+  await expect(memberRow).toContainText("Active");
+  await otherMemberPage.reload();
+  await expect(otherMemberPage).toHaveURL("/");
+
+  await disableButton.click();
+  await page.setViewportSize({ height: 844, width: 320 });
+  await dialog.getByLabel("Normalized username").fill("suspended.member");
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+  await dialog.getByRole("button", { name: "Disable member" }).click();
+  await expect(page.getByRole("status")).toContainText(
+    "suspended.member was disabled",
+  );
+  await expect(memberRow).toContainText("Disabled");
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+
+  await memberPage.reload();
+  await expect(memberPage).toHaveURL("/login");
+  await otherMemberPage.reload();
+  await expect(otherMemberPage).toHaveURL("/login");
+  await memberRow.getByRole("button", {
+    name: "Reactivate suspended.member",
+  }).click();
+  await expect(page.getByRole("status")).toContainText(
+    "suspended.member was reactivated",
+  );
+  await expect(memberRow).toContainText("Active");
+
+  await otherMemberPage.getByLabel("Username").fill("suspended.member");
+  await otherMemberPage.getByLabel("Password", { exact: true })
+    .fill(validPassword);
+  await otherMemberPage.getByRole("button", { name: "Sign in" }).click();
+  await expect(otherMemberPage).toHaveURL("/");
+
+  await memberContext.close();
+  await otherMemberContext.close();
+});
