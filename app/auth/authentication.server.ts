@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 
-import { asc, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 
 import type { ApplicationDatabaseClient } from "../database/database.server";
 import {
@@ -9,7 +9,11 @@ import {
   replacePasswordAndSessions,
   type CredentialRecord,
 } from "../database/credential-sessions.server";
-import { createMemberAccount } from "../database/member-accounts.server";
+import {
+  createMemberAccount,
+  listMemberAccounts,
+  type MemberAccountDirectoryEntry,
+} from "../database/member-accounts.server";
 import { transitionMemberAccess } from "../database/member-access.server";
 import { deleteMemberAccount } from "../database/member-deletion.server";
 import {
@@ -88,13 +92,7 @@ export type AuthenticatedSession = {
   };
 };
 
-export type ManageableMember = {
-  accessState: AccountAccessState;
-  createdAt: string;
-  id: number;
-  passwordChangeRequired: boolean;
-  username: string;
-};
+export type ManageableMember = MemberAccountDirectoryEntry;
 
 export type ProvisionMemberResult =
   | { error: "duplicate-username"; ok: false }
@@ -573,17 +571,6 @@ export class AuthenticationService {
   }
 
   listManageableMembers(): ManageableMember[] {
-    return this.#database
-      .select({
-        accessState: users.accessState,
-        createdAt: users.createdAt,
-        id: users.id,
-        passwordChangeRequired: users.passwordChangeRequired,
-        username: users.usernameNormalized,
-      })
-      .from(users)
-      .where(eq(users.role, "member"))
-      .orderBy(asc(users.usernameNormalized))
-      .all();
+    return listMemberAccounts(this.#database);
   }
 }
