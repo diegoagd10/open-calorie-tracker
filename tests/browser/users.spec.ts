@@ -72,7 +72,7 @@ test("administrator opens the safe member directory from Settings", async ({
   await expect(memberRows.nth(1)).toContainText("Disabled");
   await expect(page.getByText("directory.admin")).toHaveCount(1);
   await expect(page.getByRole("searchbox")).toHaveCount(0);
-  await expect(page.getByRole("button")).toHaveCount(1);
+  await expect(page.getByRole("button", { name: "Create member" })).toBeVisible();
 
   await page.setViewportSize({ height: 844, width: 320 });
   expect(
@@ -107,4 +107,74 @@ test("member cannot discover or directly open the member directory", async ({
   expect(response?.status()).toBe(404);
   await expect(page.getByRole("heading", { name: "Page not found" }))
     .toBeVisible();
+});
+
+test("administrator provisions a member through mandatory password onboarding and setup", async ({
+  context,
+  page,
+}) => {
+  await context.setExtraHTTPHeaders({ "X-Test-Client-IP": "203.0.113.184" });
+  await bootstrapOrSignInBrowserTestUser(
+    page,
+    "provisioning.admin",
+    validPassword,
+  );
+  await finishSetup(page);
+  await page.goto("/settings/users");
+
+  const username = page.getByLabel("Username");
+  await page.locator("body").press("Home");
+  await tabTo(page, username);
+  await username.fill("Invited.Member");
+  await page.keyboard.press("Tab");
+  await page.keyboard.type("temporary member passphrase");
+  await page.keyboard.press("Tab");
+  await page.keyboard.type("temporary member passphrase");
+  await page.keyboard.press("Tab");
+  await page.keyboard.press("Enter");
+
+  await expect(page.getByRole("status")).toContainText(
+    "invited.member was created",
+  );
+  await expect(page.locator('input[name="password"]')).toHaveValue("");
+  await expect(page.locator('input[name="confirmPassword"]')).toHaveValue("");
+  const invitedMember = page.getByRole("listitem").filter({
+    hasText: "invited.member",
+  });
+  await expect(invitedMember).toContainText("Password change required");
+  await expect(invitedMember).toContainText("Active");
+
+  await context.clearCookies();
+  await page.goto("/login");
+  await page.getByLabel("Username").fill("invited.member");
+  await page.getByLabel("Password", { exact: true }).fill(
+    "temporary member passphrase",
+  );
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await expect(page).toHaveURL("/account/password");
+  await expect(page.getByRole("heading", { name: "Set your private password" }))
+    .toBeVisible();
+  await expect(page.getByLabel("Current password")).toBeFocused();
+
+  await page.setViewportSize({ height: 844, width: 320 });
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+
+  await page.getByLabel("Current password").fill(
+    "temporary member passphrase",
+  );
+  await page.keyboard.press("Tab");
+  await page.keyboard.type("private replacement passphrase");
+  await page.keyboard.press("Tab");
+  await page.keyboard.press("Enter");
+  await expect(page).toHaveURL("/setup");
+
+  await finishSetup(page);
+  await expect(page.getByRole("heading", { name: "Food Log" })).toBeVisible();
+  const directUsersResponse = await page.goto("/settings/users");
+  expect(directUsersResponse?.status()).toBe(404);
 });

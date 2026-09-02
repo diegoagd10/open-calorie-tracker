@@ -20,6 +20,7 @@ import {
   logBootstrapRejected,
   logBootstrapSucceeded,
 } from "./bootstrap-events.server";
+import { logMemberProvisioned } from "./member-events.server";
 
 const IDLE_SESSION_MS = 5 * 24 * 60 * 60 * 1_000;
 const ABSOLUTE_SESSION_MS = 90 * 24 * 60 * 60 * 1_000;
@@ -37,7 +38,7 @@ function registrationWindowMs(): number {
 
 export type CredentialUser = Pick<
   typeof users.$inferSelect,
-  "id" | "role" | "usernameNormalized"
+  "id" | "passwordChangeRequired" | "role" | "usernameNormalized"
 > &
   Pick<typeof passwordCredentials.$inferSelect, "passwordHash">;
 
@@ -50,6 +51,7 @@ export type AuthenticatedSession = {
   token: string;
   user: {
     id: number;
+    passwordChangeRequired: boolean;
     role: UserRole;
     username: string;
   };
@@ -58,8 +60,13 @@ export type AuthenticatedSession = {
 export type ManageableMember = {
   accessState: AccountAccessState;
   createdAt: string;
+  passwordChangeRequired: boolean;
   username: string;
 };
+
+export type ProvisionMemberResult =
+  | { error: "duplicate-username"; ok: false }
+  | { member: ManageableMember; ok: true };
 
 export type IssuedSession = AuthenticatedSession;
 
@@ -174,6 +181,7 @@ export class AuthenticationService {
 
           const issued = prepareIssuedSession(this.#now(), {
             id: user.id,
+            passwordChangeRequired: false,
             role: "admin",
             username: usernameNormalized,
           });
@@ -201,6 +209,51 @@ export class AuthenticationService {
       undefined;
   }
 
+  async provisionMember(
+    usernameNormalized: string,
+    initialPassword: string,
+  ): Promise<ProvisionMemberResult> {
+    const passwordHash = await hashPassword(initialPassword);
+    const createdAt = this.#now().toISOString();
+    const member = this.#database.transaction(
+      (transaction) => {
+        const user = transaction
+          .insert(users)
+          .values({
+            accessState: "active",
+            createdAt,
+            passwordChangeRequired: true,
+            role: "member",
+            usernameNormalized,
+          })
+          .onConflictDoNothing()
+          .returning({ id: users.id })
+          .get();
+        if (!user) return undefined;
+
+        transaction.insert(passwordCredentials).values({
+          passwordHash,
+          updatedAt: createdAt,
+          userId: user.id,
+        }).run();
+        return {
+          id: user.id,
+          member: {
+            accessState: "active" as const,
+            createdAt,
+            passwordChangeRequired: true,
+            username: usernameNormalized,
+          },
+        };
+      },
+      { behavior: "immediate" },
+    );
+
+    if (!member) return { error: "duplicate-username", ok: false };
+    logMemberProvisioned(member.id, usernameNormalized);
+    return { member: member.member, ok: true };
+  }
+
   async authenticate(
     token: string | undefined,
   ): Promise<AuthenticatedSession | undefined> {
@@ -213,6 +266,7 @@ export class AuthenticationService {
       .select({
         absoluteExpiresAt: sessions.absoluteExpiresAt,
         idleExpiresAt: sessions.idleExpiresAt,
+        passwordChangeRequired: users.passwordChangeRequired,
         tokenHash: sessions.tokenHash,
         userId: sessions.userId,
         role: users.role,
@@ -257,6 +311,7 @@ export class AuthenticationService {
       token,
       user: {
         id: session.userId,
+        passwordChangeRequired: session.passwordChangeRequired,
         role: session.role,
         username: session.usernameNormalized,
       },
@@ -295,7 +350,7 @@ export class AuthenticationService {
     const nextPasswordHash = await hashPassword(nextPassword);
     const nextSession = prepareIssuedSession(
       now,
-      currentSession.user,
+      { ...currentSession.user, passwordChangeRequired: false },
       currentSession.absoluteExpiresAt,
     );
     const currentTokenHash = hashOpaqueToken(currentSession.token);
@@ -320,6 +375,11 @@ export class AuthenticationService {
           updatedAt: now.toISOString(),
         })
         .where(eq(passwordCredentials.userId, currentSession.user.id))
+        .run();
+      transaction
+        .update(users)
+        .set({ passwordChangeRequired: false })
+        .where(eq(users.id, currentSession.user.id))
         .run();
       transaction
         .delete(sessions)
@@ -384,6 +444,7 @@ export class AuthenticationService {
       ok: true,
       session: this.#issueSession(
         verification.user.id,
+        verification.user.passwordChangeRequired,
         verification.user.role,
         verification.user.usernameNormalized,
       ),
@@ -403,11 +464,13 @@ export class AuthenticationService {
 
   #issueSession(
     userId: number,
+    passwordChangeRequired: boolean,
     role: UserRole,
     usernameNormalized: string,
   ): IssuedSession {
     const issued = prepareIssuedSession(this.#now(), {
       id: userId,
+      passwordChangeRequired,
       role,
       username: usernameNormalized,
     });
@@ -430,6 +493,7 @@ export class AuthenticationService {
       .select({
         id: users.id,
         passwordHash: passwordCredentials.passwordHash,
+        passwordChangeRequired: users.passwordChangeRequired,
         role: users.role,
         usernameNormalized: users.usernameNormalized,
       })
@@ -455,6 +519,7 @@ export class AuthenticationService {
       .select({
         accessState: users.accessState,
         createdAt: users.createdAt,
+        passwordChangeRequired: users.passwordChangeRequired,
         username: users.usernameNormalized,
       })
       .from(users)

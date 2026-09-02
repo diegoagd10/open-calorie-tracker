@@ -33,6 +33,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   return {
     csrfToken: session.csrfToken,
+    passwordChangeRequired: session.user.passwordChangeRequired,
     username: session.user.username,
   };
 }
@@ -89,6 +90,12 @@ export async function action({ request }: Route.ActionArgs) {
     );
   }
 
+  if (session.user.passwordChangeRequired) {
+    return redirect("/setup", {
+      headers: { "Set-Cookie": serializeSessionCookie(result.session) },
+    });
+  }
+
   return data<PasswordChangeActionData>(
     { changed: true },
     { headers: { "Set-Cookie": serializeSessionCookie(result.session) } },
@@ -104,15 +111,21 @@ export default function ChangePassword({
   return (
     <main className={styles.shell}>
       <section className={styles.panel} aria-labelledby="password-heading">
-        <Link className={styles.backLink} to="/">
-          ← Back to account
-        </Link>
+        {!loaderData.passwordChangeRequired ? (
+          <Link className={styles.backLink} to="/">
+            ← Back to account
+          </Link>
+        ) : null}
         <header className={styles.header}>
           <h1 className={styles.heading} id="password-heading">
-            Account security
+            {loaderData.passwordChangeRequired
+              ? "Set your private password"
+              : "Account security"}
           </h1>
           <p className={styles.summary}>
-            Changing the password revokes other sessions and rotates this one.
+            {loaderData.passwordChangeRequired
+              ? "Replace the temporary password before setting up your Food Log."
+              : "Changing the password revokes other sessions and rotates this one."}
           </p>
         </header>
 
@@ -133,6 +146,7 @@ export default function ChangePassword({
             <label htmlFor="current-password">Current password</label>
             <input
               autoComplete="current-password"
+              autoFocus={loaderData.passwordChangeRequired}
               id="current-password"
               name="currentPassword"
               required
@@ -165,9 +179,21 @@ export default function ChangePassword({
           ) : null}
 
           <button className={styles.submit} type="submit">
-            Change password
+            {loaderData.passwordChangeRequired
+              ? "Set password and continue"
+              : "Change password"}
           </button>
         </Form>
+        {loaderData.passwordChangeRequired ? (
+          <Form action="/logout" className={styles.signOutForm} method="post">
+            <input
+              name="csrfToken"
+              type="hidden"
+              value={loaderData.csrfToken}
+            />
+            <button type="submit">Sign out</button>
+          </Form>
+        ) : null}
       </section>
     </main>
   );

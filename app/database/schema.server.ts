@@ -24,6 +24,11 @@ export const users = sqliteTable(
     accessState: text("access_state", { enum: ["active", "disabled"] })
       .notNull()
       .default("active"),
+    passwordChangeRequired: integer("password_change_required", {
+      mode: "boolean",
+    })
+      .notNull()
+      .default(false),
     createdAt: text("created_at").notNull(),
   },
   (table) => [

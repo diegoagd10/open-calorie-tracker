@@ -16,6 +16,7 @@
     "authenticate",
     "isComplete",
     "login",
+    "provisionMember",
     "register",
     "revoke",
     "revokeSession",

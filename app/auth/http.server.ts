@@ -63,10 +63,19 @@ export async function requireAdministratorSession(
 ): Promise<AuthenticatedSession> {
   const session = await getAuthenticatedSession(request);
   if (!session) throw redirect("/login");
+  requireCompletedPasswordOnboarding(session);
   if (session.user.role !== "admin") {
     throw new Response("Not Found", { status: 404 });
   }
   return session;
+}
+
+export function requireCompletedPasswordOnboarding(
+  session: AuthenticatedSession,
+): void {
+  if (session.user.passwordChangeRequired) {
+    throw redirect("/account/password");
+  }
 }
 
 export function serializeSessionCookie(session: IssuedSession): string {

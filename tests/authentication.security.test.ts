@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 
 import { eq } from "drizzle-orm";
-import { afterEach, expect, test } from "vitest";
+import { afterEach, expect, test, vi } from "vitest";
 
 import { AuthenticationService } from "../app/auth/authentication.server";
 import { hashPassword } from "../app/auth/password.server";
@@ -15,6 +15,7 @@ import {
   preAuthenticationCsrfSessions,
   rateLimitCounters,
   sessions,
+  users,
 } from "../app/database/schema.server";
 import {
   seedAccount,
@@ -54,6 +55,127 @@ async function createFixture() {
     },
   };
 }
+
+test("an administrator-provisioned member is active and restricted without retaining the initial password", async () => {
+  const fixture = await createFixture();
+  const initialPassword = "temporary member passphrase";
+  const output = vi.spyOn(console, "log").mockImplementation(() => {});
+
+  const provisioned = await fixture.service.provisionMember(
+    "new.member",
+    initialPassword,
+  );
+
+  expect(provisioned).toEqual({
+    member: {
+      accessState: "active",
+      createdAt: "2026-08-29T12:00:00.000Z",
+      passwordChangeRequired: true,
+      username: "new.member",
+    },
+    ok: true,
+  });
+  expect(fixture.service.listManageableMembers()).toEqual([
+    provisioned.ok ? provisioned.member : undefined,
+  ]);
+  const persisted = fixture.database
+    .select({
+      passwordChangeRequired: users.passwordChangeRequired,
+      passwordHash: passwordCredentials.passwordHash,
+    })
+    .from(users)
+    .innerJoin(passwordCredentials, eq(passwordCredentials.userId, users.id))
+    .get();
+  expect(persisted?.passwordChangeRequired).toBe(true);
+  expect(persisted?.passwordHash).toMatch(/^argon2id\$v=1\$/);
+  expect(persisted?.passwordHash).not.toContain(initialPassword);
+
+  const login = await fixture.service.login(
+    "new.member",
+    initialPassword,
+    "203.0.113.201",
+  );
+  expect(login).toMatchObject({
+    ok: true,
+    session: { user: { passwordChangeRequired: true } },
+  });
+  const logRecord = JSON.parse(String(output.mock.calls.at(-1)?.[0])) as Record<
+    string,
+    unknown
+  >;
+  expect(logRecord).toMatchObject({
+    event: "member_provisioning",
+    outcome: "succeeded",
+    username: "new.member",
+  });
+  expect(JSON.stringify(logRecord)).not.toContain(initialPassword);
+
+  output.mockRestore();
+  fixture.applicationDatabase.close();
+});
+
+test("mandatory password replacement clears the restriction and rotates every session", async () => {
+  const fixture = await createFixture();
+  const initialPassword = "temporary member passphrase";
+  const nextPassword = "private replacement passphrase";
+  expect(await fixture.service.provisionMember("onboarding.member", initialPassword))
+    .toMatchObject({ ok: true });
+  const current = await fixture.service.login(
+    "onboarding.member",
+    initialPassword,
+    "203.0.113.202",
+  );
+  const other = await fixture.service.login(
+    "onboarding.member",
+    initialPassword,
+    "203.0.113.203",
+  );
+  if (!current.ok || !other.ok) throw new Error("member login failed");
+
+  const changed = await fixture.service.changePassword(
+    current.session,
+    initialPassword,
+    nextPassword,
+  );
+
+  expect(changed).toMatchObject({
+    ok: true,
+    session: { user: { passwordChangeRequired: false } },
+  });
+  if (!changed.ok) throw new Error("mandatory password replacement failed");
+  await expect(fixture.service.authenticate(current.session.token))
+    .resolves.toBeUndefined();
+  await expect(fixture.service.authenticate(other.session.token))
+    .resolves.toBeUndefined();
+  await expect(fixture.service.authenticate(changed.session.token))
+    .resolves.toMatchObject({ user: { passwordChangeRequired: false } });
+  expect(
+    fixture.database
+      .select({ required: users.passwordChangeRequired })
+      .from(users)
+      .where(eq(users.usernameNormalized, "onboarding.member"))
+      .get(),
+  ).toEqual({ required: false });
+  await expect(
+    fixture.service.login(
+      "onboarding.member",
+      initialPassword,
+      "203.0.113.204",
+    ),
+  ).resolves.toEqual({ error: "invalid-credentials", ok: false });
+  await expect(
+    fixture.service.login(
+      "onboarding.member",
+      nextPassword,
+      "203.0.113.205",
+    ),
+  ).resolves.toMatchObject({
+    ok: true,
+    session: { user: { passwordChangeRequired: false } },
+  });
+
+  fixture.applicationDatabase.close();
+});
 
 test("bootstrap distinguishes a claimed instance from unexpected database failures", async () => {
   const duplicateFixture = await createFixture();

@@ -1,3 +1,4 @@
+.provisioning,
 .directory {
   max-width: 44rem;
   overflow: hidden;
@@ -5,6 +6,89 @@
   border-radius: 1rem;
   background: var(--surface);
   box-shadow: 0 8px 24px rgb(15 29 45 / 5%);
+}
+
+.provisioning {
+  margin-bottom: 1rem;
+  padding: 1.25rem;
+}
+
+.provisioning header h2,
+.provisioning header p {
+  margin: 0;
+}
+
+.provisioning header h2 {
+  font-size: 1rem;
+}
+
+.provisioning header p,
+.provisioningForm small {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.provisioning header p {
+  margin-top: 0.25rem;
+}
+
+.provisioningForm,
+.provisioningForm label {
+  display: grid;
+}
+
+.provisioningForm {
+  gap: 0.8rem;
+  margin-top: 1rem;
+}
+
+.provisioningForm label {
+  gap: 0.35rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.provisioningForm input:not([type="hidden"]) {
+  min-height: 2.75rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--rule);
+  border-radius: 0.6rem;
+  font: inherit;
+  font-weight: 400;
+}
+
+.provisioningForm button {
+  min-height: 2.75rem;
+  border: 0;
+  border-radius: 0.65rem;
+  color: white;
+  background: #126c24;
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.provisioningForm button:hover {
+  background: #105f1e;
+}
+
+.error,
+.success {
+  margin: 0;
+  padding: 0.75rem;
+  border-radius: 0.6rem;
+  font-size: 0.78rem;
+}
+
+.error {
+  color: #8a1c14;
+  background: #fff1f0;
+}
+
+.success {
+  color: var(--green-dark);
+  background: #edf7ee;
 }
 
 .directoryHeading {
@@ -86,12 +170,21 @@
 }
 
 .activeState,
-.disabledState {
+.disabledState,
+.onboardingState {
   flex: none;
   padding: 0.32rem 0.6rem;
   border-radius: 999px;
   font-size: 0.65rem;
   font-weight: 750;
+}
+
+.memberStates {
+  display: flex;
+  flex: none;
+  align-items: flex-end;
+  gap: 0.3rem;
+  flex-direction: column;
 }
 
 .activeState {
@@ -102,6 +195,11 @@
 .disabledState {
   color: #8a1c14;
   background: #fff1f0;
+}
+
+.onboardingState {
+  color: #744210;
+  background: #fff8db;
 }
 
 .empty {
@@ -115,5 +213,18 @@
   .directoryHeading,
   .memberList li {
     padding-inline: 0.9rem;
+  }
+
+  .provisioning {
+    padding-inline: 0.9rem;
+  }
+
+  .memberList li {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .memberStates {
+    align-items: flex-start;
   }
 }

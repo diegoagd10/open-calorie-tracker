@@ -51,13 +51,13 @@ test("startup applies the initial migration and configures writable SQLite stora
   });
 
   expect(database.getStatus()).toEqual({
-    appliedMigrations: 11,
-    availableMigrations: 11,
+    appliedMigrations: 12,
+    availableMigrations: 12,
     busyTimeoutMs: 5_000,
     foreignKeysEnabled: true,
     journalMode: "wal",
     migrationsCurrent: true,
-    schemaVersion: "10",
+    schemaVersion: "11",
     writable: true,
   });
 
@@ -73,13 +73,13 @@ test("starting twice preserves the applied migration state", async () => {
   };
 
   const firstStartup = openApplicationDatabase(options);
-  expect(firstStartup.getStatus().appliedMigrations).toBe(11);
+  expect(firstStartup.getStatus().appliedMigrations).toBe(12);
   firstStartup.close();
 
   const replacementStartup = openApplicationDatabase(options);
   expect(replacementStartup.getStatus()).toMatchObject({
-    appliedMigrations: 11,
-    schemaVersion: "10",
+    appliedMigrations: 12,
+    schemaVersion: "11",
     writable: true,
   });
   replacementStartup.close();
@@ -262,10 +262,10 @@ test("the production migration preserves every representative field from the pri
   });
 
   expect(upgraded.getStatus()).toMatchObject({
-    appliedMigrations: 11,
-    availableMigrations: 11,
+    appliedMigrations: 12,
+    availableMigrations: 12,
     migrationsCurrent: true,
-    schemaVersion: "10",
+    schemaVersion: "11",
     writable: true,
   });
   expect(isDatabaseReady(upgraded.getStatus())).toBe(true);
@@ -279,6 +279,52 @@ test("the production migration preserves every representative field from the pri
       .from(schema.users)
       .get(),
   ).toEqual({ accessState: "active", role: "admin" });
+  upgraded.close();
+});
+
+test("the password-onboarding migration leaves existing credentials unrestricted", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "calory-password-onboarding-upgrade-"));
+  temporaryDirectories.push(directory);
+  const databasePath = path.join(directory, "application.sqlite");
+  const previousMigrations = await createMigrationFolder(
+    path.join(directory, "previous-migrations"),
+    { throughTag: "0010_happy_silver_samurai" },
+  );
+  const previousRelease = openApplicationDatabase({
+    databasePath,
+    migrationsFolder: previousMigrations,
+  });
+  previousRelease.getClient().run(sql`
+    INSERT INTO users (username_normalized, role, created_at)
+    VALUES ('existing.member', 'member', '2026-09-01T12:00:00.000Z')
+  `);
+  previousRelease.getClient().run(sql`
+    INSERT INTO password_credentials (user_id, password_hash, updated_at)
+    SELECT id, 'argon2id:existing-credential', '2026-09-01T12:00:00.000Z'
+    FROM users WHERE username_normalized = 'existing.member'
+  `);
+  previousRelease.close();
+
+  const upgraded = openApplicationDatabase({
+    databasePath,
+    migrationsFolder: path.resolve("drizzle"),
+  });
+  expect(
+    upgraded.getClient().get<{
+      passwordChangeRequired: number;
+      passwordHash: string;
+    }>(sql`
+      SELECT u.password_change_required AS passwordChangeRequired,
+        p.password_hash AS passwordHash
+      FROM users u
+      INNER JOIN password_credentials p ON p.user_id = u.id
+      WHERE u.username_normalized = 'existing.member'
+    `),
+  ).toEqual({
+    passwordChangeRequired: 0,
+    passwordHash: "argon2id:existing-credential",
+  });
+  expect(upgraded.getStatus().schemaVersion).toBe("11");
   upgraded.close();
 });
 
@@ -325,7 +371,7 @@ THIS IS NOT VALID SQL;\n`,
   ).toEqual([]);
   expect(recovered.getClient().select().from(schema.users).all()).toEqual([]);
   expect(recovered.getStatus()).toMatchObject({
-    appliedMigrations: 11,
+    appliedMigrations: 12,
     migrationsCurrent: true,
   });
   recovered.close();
@@ -351,13 +397,13 @@ test("read-only application storage prevents startup", async () => {
 
 test("readiness requires every database invariant", () => {
   const readyStatus: DatabaseStatus = {
-    appliedMigrations: 11,
-    availableMigrations: 11,
+    appliedMigrations: 12,
+    availableMigrations: 12,
     busyTimeoutMs: 5_000,
     foreignKeysEnabled: true,
     journalMode: "wal",
     migrationsCurrent: true,
-    schemaVersion: "10",
+    schemaVersion: "11",
     writable: true,
   };
 
@@ -407,8 +453,8 @@ test("status detects tampered migration history, metadata, and pragmas", async (
   client.run(sql`DELETE FROM __drizzle_migrations
     WHERE created_at = (SELECT MAX(created_at) FROM __drizzle_migrations)`);
   expect(database.getStatus()).toMatchObject({
-    appliedMigrations: 10,
-    availableMigrations: 11,
+    appliedMigrations: 11,
+    availableMigrations: 12,
     migrationsCurrent: false,
   });
   client.delete(schema.applicationMetadata)

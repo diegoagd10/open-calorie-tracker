@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import type { Route } from "./+types/setup";
 import {
   getAuthenticatedSession,
+  requireCompletedPasswordOnboarding,
   requireValidOrigin,
   serializeClearedSessionCookie,
 } from "../auth/http.server";
@@ -40,6 +41,7 @@ export function headers() {
 export async function loader({ request }: Route.LoaderArgs) {
   const session = await getAuthenticatedSession(request);
   if (!session) return redirect("/login");
+  requireCompletedPasswordOnboarding(session);
   if (getGoalSetupService().isComplete(session.user.id)) return redirect("/");
 
   return { csrfToken: session.csrfToken };
@@ -53,6 +55,7 @@ export async function action({ request }: Route.ActionArgs) {
       headers: { "Set-Cookie": serializeClearedSessionCookie() },
     });
   }
+  requireCompletedPasswordOnboarding(session);
   if (getGoalSetupService().isComplete(session.user.id)) return redirect("/");
 
   const formData = await request.formData();

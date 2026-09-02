@@ -282,6 +282,7 @@ describe("password route", () => {
     );
     expect(loaded).toEqual({
       csrfToken: session.csrfToken,
+      passwordChangeRequired: false,
       username: "password.owner",
     });
 
@@ -478,6 +479,87 @@ describe("password route", () => {
       data: { error: "New password must contain 12–128 characters." },
       init: { status: 400 },
     });
+  });
+
+  test("restricted login requires the temporary password and continues to setup with a rotated session", async () => {
+    const authentication = getAuthenticationService();
+    const initialPassword = "temporary member passphrase";
+    const nextPassword = "private replacement passphrase";
+    expect(await authentication.provisionMember("invited.member", initialPassword))
+      .toMatchObject({ ok: true });
+    const preAuthentication = await issuePreAuthentication(loginLoader, "/login");
+    const login = await loginAction(
+      routeArgs(
+        post(
+          "/login",
+          new URLSearchParams({
+            csrfToken: preAuthentication.csrfToken,
+            password: initialPassword,
+            username: "invited.member",
+          }),
+          preAuthentication.cookie,
+        ),
+        "/login",
+      ),
+    );
+    expect(login).toBeInstanceOf(Response);
+    expect((login as Response).headers.get("Location"))
+      .toBe("/account/password");
+    const loginCookie = (login as Response).headers.get("Set-Cookie")
+      ?.split(",", 1)[0]
+      .split(";", 1)[0];
+    if (!loginCookie) throw new Error("restricted session cookie missing");
+    const loginToken = decodeURIComponent(
+      loginCookie.split("=").slice(1).join("="),
+    );
+    const restrictedSession = await authentication.authenticate(loginToken);
+    if (!restrictedSession) throw new Error("restricted session unavailable");
+    expect(restrictedSession.user.passwordChangeRequired).toBe(true);
+
+    const incorrect = await passwordAction(
+      routeArgs(
+        post(
+          "/account/password",
+          new URLSearchParams({
+            csrfToken: restrictedSession.csrfToken,
+            currentPassword: "incorrect temporary password",
+            newPassword: nextPassword,
+          }),
+          loginCookie,
+        ),
+        "/account/password",
+      ),
+    );
+    expect(incorrect).toMatchObject({
+      data: { error: "The current password is incorrect." },
+      init: { status: 400 },
+    });
+
+    const changed = await passwordAction(
+      routeArgs(
+        post(
+          "/account/password",
+          new URLSearchParams({
+            csrfToken: restrictedSession.csrfToken,
+            currentPassword: initialPassword,
+            newPassword: nextPassword,
+          }),
+          loginCookie,
+        ),
+        "/account/password",
+      ),
+    );
+    expect(changed).toBeInstanceOf(Response);
+    expect((changed as Response).headers.get("Location")).toBe("/setup");
+    const replacementCookie = (changed as Response).headers.get("Set-Cookie");
+    expect(replacementCookie).toContain("__Host-calorie_session=");
+    expect(replacementCookie).not.toContain(loginToken);
+    await expect(authentication.authenticate(loginToken)).resolves.toBeUndefined();
+    const replacementToken = decodeURIComponent(
+      replacementCookie!.split(";", 1)[0].split("=").slice(1).join("="),
+    );
+    await expect(authentication.authenticate(replacementToken)).resolves
+      .toMatchObject({ user: { passwordChangeRequired: false } });
   });
 });
 

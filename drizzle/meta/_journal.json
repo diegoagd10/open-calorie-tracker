@@ -78,6 +78,13 @@
       "when": 1788305603072,
       "tag": "0010_happy_silver_samurai",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1788345765954,
+      "tag": "0011_clever_may_parker",
+      "breakpoints": true
     }
   ]
 }

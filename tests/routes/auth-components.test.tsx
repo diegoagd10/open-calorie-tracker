@@ -213,7 +213,11 @@ describe("password component", () => {
       const renderer = await renderRoute(
         ChangePassword,
         "/account/password",
-        { csrfToken: "password-csrf", username: "account.owner" },
+        {
+          csrfToken: "password-csrf",
+          passwordChangeRequired: false,
+          username: "account.owner",
+        },
         actionData,
       );
       expect(input(renderer, "csrfToken").props.value).toBe("password-csrf");
@@ -250,4 +254,30 @@ describe("password component", () => {
       renderer.unmount();
     },
   );
+
+  test("mandatory password onboarding exposes only replacement and logout", async () => {
+    const renderer = await renderRoute(
+      ChangePassword,
+      "/account/password",
+      {
+        csrfToken: "restricted-csrf",
+        passwordChangeRequired: true,
+        username: "invited.member",
+      },
+    );
+    expect(text(renderer)).toContain("Set your private password");
+    expect(text(renderer)).toContain(
+      "Replace the temporary password before setting up your Food Log.",
+    );
+    expect(input(renderer, "currentPassword").props.autoFocus).toBe(true);
+    expect(
+      renderer.root.findAllByProps({ href: "/" }),
+    ).toHaveLength(0);
+    const forms = renderer.root.findAllByType("form");
+    expect(forms).toHaveLength(2);
+    expect(forms.at(-1)?.props).toMatchObject({ action: "/logout" });
+    expect(text(renderer)).toContain("Sign out");
+    expect(text(renderer)).not.toContain("temporary member passphrase");
+    renderer.unmount();
+  });
 });

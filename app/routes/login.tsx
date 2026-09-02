@@ -33,8 +33,11 @@ export function headers() {
 }
 
 export async function loader({ request }: Route.LoaderArgs) {
-  if (await getAuthenticatedSession(request)) {
-    return redirect("/");
+  const session = await getAuthenticatedSession(request);
+  if (session) {
+    return redirect(
+      session.user.passwordChangeRequired ? "/account/password" : "/",
+    );
   }
 
   const csrf = loadPreAuthenticationCsrf(request);
@@ -91,9 +94,12 @@ export async function action({ request }: Route.ActionArgs) {
     );
   }
 
-  return redirect("/", {
+  return redirect(
+    result.session.user.passwordChangeRequired ? "/account/password" : "/",
+    {
     headers: authenticatedSessionHeaders(request, result.session),
-  });
+    },
+  );
 }
 
 export default function Login({ actionData, loaderData }: Route.ComponentProps) {

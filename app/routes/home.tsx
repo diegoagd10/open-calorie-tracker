@@ -22,6 +22,7 @@ import {
 
 import {
   getAuthenticatedSession,
+  requireCompletedPasswordOnboarding,
   requireValidOrigin,
   serializeClearedSessionCookie,
 } from "../auth/http.server";
@@ -258,6 +259,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       getAuthenticationService().isRegistrationOpen() ? "/register" : "/login",
     );
   }
+  requireCompletedPasswordOnboarding(session);
 
   const url = new URL(request.url);
   const catalogContext = catalogOperationContext(request);
@@ -509,6 +511,7 @@ export async function action({ request }: Route.ActionArgs) {
       headers: { "Set-Cookie": serializeClearedSessionCookie() },
     });
   }
+  requireCompletedPasswordOnboarding(session);
   const catalogContext = catalogOperationContext(request);
 
   const formData = await request.formData();

@@ -111,6 +111,26 @@
   background: var(--color-background);
 }
 
+.signOutForm {
+  margin-top: 0.75rem;
+}
+
+.signOutForm button {
+  min-height: 2.75rem;
+  width: 100%;
+  border: 0;
+  color: var(--color-text-muted);
+  background: transparent;
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.signOutForm button:hover {
+  color: var(--color-text);
+}
+
 @media (max-width: 420px) {
   .shell {
     align-items: start;
