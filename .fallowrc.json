@@ -4,7 +4,10 @@
     "gate": "new-only",
     "typeAware": true
   },
-  "dynamicallyLoaded": ["server/app.ts"],
+  "dynamicallyLoaded": [
+    "server/playwright-https.js",
+    "server/app.ts"
+  ],
   "ignorePatterns": ["docs/mocks/**"],
   "ignoreDependencies": ["@react-router/dev", "isbot", "react-dom"],
   "typeAware": {

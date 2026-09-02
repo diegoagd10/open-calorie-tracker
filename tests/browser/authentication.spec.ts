@@ -4,7 +4,7 @@ import { expect, test } from "./reset-database";
 
 const validPassword = "correct horse 🔐 battery";
 const replacementPassword = "replacement passphrase 🔐";
-const applicationOrigin = "http://127.0.0.1:4173";
+const applicationOrigin = "https://localhost:4173";
 const administrator = "alice.user";
 
 test.describe.configure({ mode: "serial" });

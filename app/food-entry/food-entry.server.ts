@@ -4,9 +4,12 @@ import { z } from "zod";
 import {
   CatalogInvalidResponseError,
   CatalogUnsafeMeasurementError,
+  type CatalogFood,
+  type CatalogMeasurement,
   type CatalogOperationContext,
-  type FoodCatalogProvider,
+  type FoodCatalogReader,
 } from "../catalog/food-catalog.server";
+import { isSupportedCommercialBarcode } from "../catalog/barcode";
 import type { ApplicationDatabaseClient } from "../database/database.server";
 import { foodEntries, userPreferences } from "../database/schema.server";
 import { localDateAt, parseIsoLocalDate } from "../food-log/date";
@@ -35,10 +38,19 @@ function logFoodInputSchema() {
       .min(8)
       .max(128)
       .refine((value) => /^[A-Za-z0-9._:-]+$/.test(value)),
-    providerFoodId: z.string().refine((value) => /^[1-9]\d*$/.test(value)),
+    provider: z.string().min(1).max(64),
+    providerFoodId: z.string().min(1).max(128),
     quantity: z.string().min(1).max(32),
     selectedMeasurementId: z.string().min(1).max(128),
   });
+}
+
+function validProviderFoodIdentity(provider: string, providerFoodId: string) {
+  if (provider === "usda-fdc") return /^[1-9]\d*$/.test(providerFoodId);
+  if (provider === "open-food-facts") {
+    return isSupportedCommercialBarcode(providerFoodId);
+  }
+  return true;
 }
 
 function updateFoodInputSchema() {
@@ -84,6 +96,101 @@ export class StaleFoodEntryError extends Error {
   }
 }
 
+function selectedCatalogMeasurement(
+  food: CatalogFood,
+  provider: string,
+  providerFoodId: string,
+  selectedMeasurementId: string,
+): CatalogMeasurement {
+  if (
+    food.providerFoodId !== providerFoodId ||
+    (provider === "open-food-facts" && food.barcode !== providerFoodId)
+  ) {
+    throw new CatalogInvalidResponseError();
+  }
+  const measurement = food.measurements.find(
+    (candidate) => candidate.id === selectedMeasurementId,
+  );
+  if (!measurement || measurement.unit !== food.authoritativeBaseUnit) {
+    throw new CatalogUnsafeMeasurementError();
+  }
+  if (
+    provider === "open-food-facts" &&
+    (food.dataType !== "Open Food Facts" ||
+      food.authoritativeBaseUnit !== "serving" ||
+      food.authoritativeBaseQuantityMicrounits !== 1_000_000 ||
+      measurement.id !== "serving" ||
+      measurement.baseQuantityMicrounits !== 1_000_000)
+  ) {
+    throw new CatalogUnsafeMeasurementError();
+  }
+  return measurement;
+}
+
+function scaledCatalogNutrition(
+  food: CatalogFood,
+  measurement: CatalogMeasurement,
+  quantity: number,
+) {
+  const scale = (value: Parameters<typeof scaleCatalogNutrient>[0]) =>
+    scaleCatalogNutrient(
+      value,
+      measurement.baseQuantityMicrounits,
+      quantity,
+      food.authoritativeBaseQuantityMicrounits,
+    );
+  return {
+    carbohydrateMilligrams: scale(
+      food.nutritionPerAuthoritativeBase.carbohydrateMilligrams,
+    ),
+    energyMilliKcal: scale(
+      food.nutritionPerAuthoritativeBase.energyMilliKcal,
+    ),
+    fatMilligrams: scale(food.nutritionPerAuthoritativeBase.fatMilligrams),
+    fiberMilligrams: scale(food.nutritionPerAuthoritativeBase.fiberMilligrams),
+    proteinMilligrams: scale(
+      food.nutritionPerAuthoritativeBase.proteinMilligrams,
+    ),
+    sodiumMilligrams: scale(
+      food.nutritionPerAuthoritativeBase.sodiumMilligrams,
+    ),
+    sugarMilligrams: scale(food.nutritionPerAuthoritativeBase.sugarMilligrams),
+  };
+}
+
+function catalogSnapshotSource(
+  food: CatalogFood,
+  measurement: CatalogMeasurement,
+) {
+  return {
+    authoritativeBaseQuantityMicrounits:
+      food.authoritativeBaseQuantityMicrounits,
+    authoritativeBaseUnit: food.authoritativeBaseUnit,
+    authoritativeNutrition: serializeCatalogNutrition(
+      food.nutritionPerAuthoritativeBase,
+    ),
+    barcode: food.barcode,
+    brand: food.brand,
+    marketCountry: food.marketCountry,
+    originalName: food.originalName,
+    provider: food.provider,
+    providerFoodId: food.providerFoodId,
+    providerModifiedDate: food.providerModifiedDate,
+    providerPublishedDate: food.providerPublishedDate,
+    selectedMeasurementBaseQuantityMicrounits:
+      measurement.baseQuantityMicrounits,
+    selectedMeasurementId: measurement.id,
+    selectedMeasurementLabel: measurement.label,
+    selectedMeasurementUnit: measurement.unit,
+    sourceDataType: food.dataType,
+    supportedMeasurements: serializeCatalogMeasurements(
+      food.measurements.filter(
+        (candidate) => candidate.unit === food.authoritativeBaseUnit,
+      ),
+    ),
+  };
+}
+
 function quantityMicrounits(value: string): number {
   const result = quantityMicrounitsFromDecimal(value);
   if (result === undefined) throw new InvalidFoodEntryInputError();
@@ -112,15 +219,15 @@ function nullableNutrient(
 export class FoodEntryService {
   readonly #database: ApplicationDatabaseClient;
   readonly #now: () => Date;
-  readonly #provider: FoodCatalogProvider;
+  readonly #catalog: FoodCatalogReader;
 
   constructor(
     database: ApplicationDatabaseClient,
-    provider: FoodCatalogProvider,
+    catalog: FoodCatalogReader,
     now: () => Date = () => new Date(),
   ) {
     this.#database = database;
-    this.#provider = provider;
+    this.#catalog = catalog;
     this.#now = now;
   }
 
@@ -131,6 +238,14 @@ export class FoodEntryService {
   ) {
     const parsed = logFoodInputSchema().safeParse(input);
     if (!parsed.success) throw new InvalidFoodEntryInputError();
+    if (
+      !validProviderFoodIdentity(
+        parsed.data.provider,
+        parsed.data.providerFoodId,
+      )
+    ) {
+      throw new InvalidFoodEntryInputError();
+    }
     const quantity = quantityMicrounits(parsed.data.quantity);
 
     const existing = this.#database
@@ -146,29 +261,20 @@ export class FoodEntryService {
     if (existing) return foodEntrySnapshot(existing);
 
     this.#requireWritableDate(userId, parsed.data.foodLogDate);
-    const food = await this.#provider.getFood(
+    const food = await this.#catalog.getFood(
+      parsed.data.provider,
       parsed.data.providerFoodId,
       context,
     );
-    if (food.providerFoodId !== parsed.data.providerFoodId) {
-      throw new CatalogInvalidResponseError();
-    }
-    const measurement = food.measurements.find(
-      (candidate) => candidate.id === parsed.data.selectedMeasurementId,
+    const measurement = selectedCatalogMeasurement(
+      food,
+      parsed.data.provider,
+      parsed.data.providerFoodId,
+      parsed.data.selectedMeasurementId,
     );
-    if (!measurement || measurement.unit !== food.authoritativeBaseUnit) {
-      throw new CatalogUnsafeMeasurementError();
-    }
 
     const instant = this.#now();
     const createdAt = instant.toISOString();
-    const scale = (value: Parameters<typeof scaleCatalogNutrient>[0]) =>
-      scaleCatalogNutrient(
-        value,
-        measurement.baseQuantityMicrounits,
-        quantity,
-        food.authoritativeBaseQuantityMicrounits,
-      );
     return this.#database.transaction((transaction) => {
       const repeated = transaction
         .select()
@@ -203,57 +309,13 @@ export class FoodEntryService {
       const row = transaction
         .insert(foodEntries)
         .values({
-          authoritativeBaseQuantityMicrounits:
-            food.authoritativeBaseQuantityMicrounits,
-          authoritativeBaseUnit: food.authoritativeBaseUnit,
-          authoritativeNutrition: serializeCatalogNutrition(
-            food.nutritionPerAuthoritativeBase,
-          ),
-          carbohydrateMilligrams: scale(
-            food.nutritionPerAuthoritativeBase.carbohydrateMilligrams,
-          ),
-          energyMilliKcal: scale(
-            food.nutritionPerAuthoritativeBase.energyMilliKcal,
-          ),
-          fatMilligrams: scale(
-            food.nutritionPerAuthoritativeBase.fatMilligrams,
-          ),
-          fiberMilligrams: scale(
-            food.nutritionPerAuthoritativeBase.fiberMilligrams,
-          ),
-          proteinMilligrams: scale(
-            food.nutritionPerAuthoritativeBase.proteinMilligrams,
-          ),
-          sodiumMilligrams: scale(
-            food.nutritionPerAuthoritativeBase.sodiumMilligrams,
-          ),
-          sugarMilligrams: scale(
-            food.nutritionPerAuthoritativeBase.sugarMilligrams,
-          ),
-          barcode: food.barcode,
-          brand: food.brand,
+          ...catalogSnapshotSource(food, measurement),
+          ...scaledCatalogNutrition(food, measurement, quantity),
           createdAt,
           foodLogDate: parsed.data.foodLogDate,
           idempotencyKey: parsed.data.idempotencyKey,
           localEventTime,
-          marketCountry: food.marketCountry,
-          originalName: food.originalName,
-          provider: food.provider,
-          providerFoodId: food.providerFoodId,
-          providerModifiedDate: food.providerModifiedDate,
-          providerPublishedDate: food.providerPublishedDate,
           quantityMicrounits: quantity,
-          selectedMeasurementBaseQuantityMicrounits:
-            measurement.baseQuantityMicrounits,
-          selectedMeasurementId: measurement.id,
-          selectedMeasurementLabel: measurement.label,
-          selectedMeasurementUnit: measurement.unit,
-          supportedMeasurements: serializeCatalogMeasurements(
-            food.measurements.filter(
-              (candidate) => candidate.unit === food.authoritativeBaseUnit,
-            ),
-          ),
-          sourceDataType: food.dataType,
           updatedAt: createdAt,
           userId,
         })

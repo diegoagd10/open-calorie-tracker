@@ -28,19 +28,28 @@ import {
 import { AppNavigation } from "../app-navigation";
 import { isTestEnvironment } from "../runtime.server";
 import { UiIcon } from "../ui-icon";
+import { BarcodeCameraScanner } from "./barcode-camera-scanner";
 import { getAuthenticationService } from "../auth/runtime.server";
 import {
   CatalogConfigurationError,
   CatalogCredentialsError,
   CatalogFoodNotFoundError,
   CatalogInvalidResponseError,
+  CatalogNutritionUnavailableError,
   CatalogRateLimitError,
+  CatalogUnknownProviderError,
   CatalogUnavailableError,
   CatalogUnsafeMeasurementError,
   type CatalogOperationContext,
+  type CatalogFood,
+  type CatalogNutrientValue,
   type CatalogSearchResult,
 } from "../catalog/food-catalog.server";
-import { getFoodCatalogProvider } from "../catalog/runtime.server";
+import { isSupportedCommercialBarcode } from "../catalog/barcode";
+import {
+  getFoodCatalog,
+  getFoodCatalogProvider,
+} from "../catalog/runtime.server";
 import {
   addLocalDays,
   buildCalendarMonth,
@@ -79,6 +88,11 @@ function catalogQuery(value: string): string | undefined {
   return query.length >= 2 && query.length <= 100 ? query : undefined;
 }
 
+function catalogBarcode(value: string): string | undefined {
+  const barcode = value.trim();
+  return isSupportedCommercialBarcode(barcode) ? barcode : undefined;
+}
+
 function foodLogIntentSchema() {
   return z.discriminatedUnion("intent", [
     z.object({ date: z.string(), intent: z.literal("add-food") }),
@@ -109,6 +123,7 @@ function foodLogIntentSchema() {
       date: z.string(),
       idempotencyKey: z.string(),
       intent: z.literal("log-food"),
+      provider: z.string().min(1),
       providerFoodId: z.string(),
       quantity: z.string(),
       selectedMeasurementId: z.string(),
@@ -229,6 +244,64 @@ function catalogFailure(
   return undefined;
 }
 
+function barcodeCatalogFailure(
+  error: unknown,
+): { message: string; status: number; title: string } | undefined {
+  if (error instanceof CatalogConfigurationError) {
+    return {
+      message:
+        "Open Food Facts needs a valid contact email before barcode lookup can be used. USDA search and saved Food Entries remain available.",
+      status: 503,
+      title: "Open Food Facts is not configured",
+    };
+  }
+  if (error instanceof CatalogFoodNotFoundError) {
+    return {
+      message: "Product not found. Check the barcode or enter another code.",
+      status: 404,
+      title: "Product not found",
+    };
+  }
+  if (error instanceof CatalogNutritionUnavailableError) {
+    return {
+      message:
+        "This product does not report usable nutrition per serving. Values per 100 g or 100 ml are not converted.",
+      status: 422,
+      title: "Nutrition per serving unavailable",
+    };
+  }
+  if (error instanceof CatalogUnsafeMeasurementError) {
+    return {
+      message:
+        "This product no longer has the same usable 1 serving measurement. Your Food Log was not changed.",
+      status: 422,
+      title: "Serving unavailable",
+    };
+  }
+  if (error instanceof CatalogRateLimitError) {
+    return {
+      message: "Open Food Facts rate limit reached. Wait a moment before retrying.",
+      status: 429,
+      title: "Open Food Facts rate limit reached",
+    };
+  }
+  if (error instanceof CatalogInvalidResponseError) {
+    return {
+      message: "Open Food Facts returned product data that could not be used safely.",
+      status: 502,
+      title: "Open Food Facts response could not be used",
+    };
+  }
+  if (error instanceof CatalogUnavailableError) {
+    return {
+      message: "Open Food Facts is unavailable right now. Retry in a moment.",
+      status: 503,
+      title: "Open Food Facts is unavailable",
+    };
+  }
+  return undefined;
+}
+
 export function meta() {
   return [
     { title: "Open Calory Tracker · Private application" },
@@ -343,6 +416,28 @@ export async function loader({ request }: Route.LoaderArgs) {
   let responseStatus = 200;
   let catalog:
     | {
+        mode: "choose";
+        query: string;
+      }
+    | {
+        barcode: string;
+        food: CatalogFood;
+        idempotencyKey: string;
+        message?: never;
+        mode: "barcode";
+        query: string;
+        title?: never;
+      }
+    | {
+        barcode: string;
+        food?: undefined;
+        idempotencyKey?: undefined;
+        message?: string;
+        mode: "barcode";
+        query: string;
+        title?: string;
+      }
+    | {
         mode: "search";
         query: string;
         results: Awaited<
@@ -361,7 +456,51 @@ export async function loader({ request }: Route.LoaderArgs) {
       }
     | undefined;
   if (foodStage && !foodLog.isFuture) {
-    if (foodStage.mode === "search") {
+    if (foodStage.mode === "choose") {
+      catalog = { mode: "choose", query: "" };
+    } else if (foodStage.mode === "barcode") {
+      const requestedBarcode = url.searchParams.get("barcode") ?? "";
+      if (!requestedBarcode) {
+        catalog = { barcode: "", mode: "barcode", query: "" };
+      } else {
+        const parsedBarcode = catalogBarcode(requestedBarcode);
+        if (parsedBarcode === undefined) {
+          responseStatus = 400;
+          catalog = {
+            barcode: requestedBarcode,
+            message: "Enter a supported 7, 8, 12, 13, or 14 digit barcode.",
+            mode: "barcode",
+            query: "",
+            title: "Barcode not valid",
+          };
+        } else {
+          try {
+            catalog = {
+              barcode: parsedBarcode,
+              food: await getFoodCatalog().lookupBarcode(
+                "open-food-facts",
+                parsedBarcode,
+                catalogContext,
+              ),
+              idempotencyKey: randomUUID(),
+              mode: "barcode",
+              query: "",
+            };
+          } catch (error) {
+            const failure = barcodeCatalogFailure(error);
+            if (!failure) throw error;
+            responseStatus = failure.status;
+            catalog = {
+              barcode: parsedBarcode,
+              message: failure.message,
+              mode: "barcode",
+              query: "",
+              title: failure.title,
+            };
+          }
+        }
+      }
+    } else if (foodStage.mode === "search") {
       const parsedQuery = catalogQuery(requestedQuery);
       if (!requestedQuery) {
         catalog = { mode: "search", query: "", results: [] };
@@ -474,6 +613,8 @@ function noticeMessage(value: string | null): string | undefined {
 }
 
 type CatalogRouteState =
+  | { mode: "barcode" }
+  | { mode: "choose" }
   | { mode: "detail"; providerFoodId: string }
   | { mode: "search" };
 
@@ -488,6 +629,8 @@ function catalogRouteState(
   value: string | null,
 ): CatalogRouteState | undefined {
   if (value === "search") return { mode: "search" };
+  if (value === "choose") return { mode: "choose" };
+  if (value === "barcode") return { mode: "barcode" };
   const providerFoodId = positiveIntegerId(value);
   if (providerFoodId !== undefined) {
     return { mode: "detail", providerFoodId: String(providerFoodId) };
@@ -536,6 +679,7 @@ export async function action({ request }: Route.ActionArgs) {
     name: formString(formData, "name"),
     proteinGrams: formString(formData, "proteinGrams"),
     providerFoodId: formString(formData, "providerFoodId"),
+    provider: formString(formData, "provider"),
     quantity: formString(formData, "quantity"),
     selectedMeasurementId: formString(formData, "selectedMeasurementId"),
     sodiumMilligrams: formString(formData, "sodiumMilligrams"),
@@ -567,7 +711,7 @@ export async function action({ request }: Route.ActionArgs) {
   }
 
   if (parsed.data.intent === "add-food") {
-    return redirect(`${foodLogHref(parsed.data.date)}&food=search`);
+    return redirect(`${foodLogHref(parsed.data.date)}&food=choose`);
   }
   if (parsed.data.intent === "add-water") {
     return redirect(`${foodLogHref(parsed.data.date)}&water=new`);
@@ -712,6 +856,7 @@ export async function action({ request }: Route.ActionArgs) {
       {
         foodLogDate: parsed.data.date,
         idempotencyKey: parsed.data.idempotencyKey,
+        provider: parsed.data.provider,
         providerFoodId: parsed.data.providerFoodId,
         quantity: parsed.data.quantity,
         selectedMeasurementId: parsed.data.selectedMeasurementId,
@@ -726,7 +871,19 @@ export async function action({ request }: Route.ActionArgs) {
         { status: 400 },
       );
     }
-    const failure = catalogFailure(error);
+    if (error instanceof CatalogUnknownProviderError) {
+      return data<HomeActionData>(
+        {
+          message: "The selected Food Catalog provider is unavailable.",
+          tone: "error",
+        },
+        { status: 400 },
+      );
+    }
+    const failure =
+      parsed.data.provider === "open-food-facts"
+        ? barcodeCatalogFailure(error)
+        : catalogFailure(error);
     if (failure) {
       return data<HomeActionData>(
         { message: failure.message, tone: "error" },
@@ -951,6 +1108,13 @@ function catalogHref(date: string, food: string, query?: string): string {
   return `/?${parameters}`;
 }
 
+// Stryker disable BlockStatement,ObjectLiteral,StringLiteral: the mobile browser scan journey asserts the exact recognized-barcode destination and one resulting lookup request.
+function barcodeCatalogHref(date: string, barcode: string): string {
+  const parameters = new URLSearchParams({ barcode, date, food: "barcode" });
+  return `/?${parameters}`;
+}
+// Stryker restore BlockStatement,ObjectLiteral,StringLiteral
+
 function formatEnergy(value: number | null): string {
   if (value === null) return "—";
   return new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 }).format(
@@ -1108,6 +1272,7 @@ function DailySummary({
       Math.abs(horizontalDistance) >= Math.min(64, swipe.width * 0.2);
     if (shouldChangePage) {
       setNutrientPage((page) =>
+        // Stryker disable next-line EqualityOperator: shouldChangePage proves the distance is nonzero because its threshold is positive.
         horizontalDistance < 0
           ? Math.min(page + 1, metricPages.length - 1)
           : Math.max(page - 1, 0),
@@ -1495,6 +1660,54 @@ function FoodDetailSkeleton() {
   );
 }
 
+function CatalogNutritionPreview({
+  carbohydrateLabel = "Carbohydrate",
+  food,
+  includeAdditional = false,
+  multiplier,
+}: {
+  carbohydrateLabel?: string;
+  food: CatalogFood;
+  includeAdditional?: boolean;
+  multiplier: number;
+}) {
+  const nutrition = food.nutritionPerAuthoritativeBase;
+  const fields: Array<
+    [string, CatalogNutrientValue | null, number, string]
+  > = [
+    ["Calories", nutrition.energyMilliKcal, 1_000, "kcal"],
+    ["Protein", nutrition.proteinMilligrams, 1_000, "g"],
+    [carbohydrateLabel, nutrition.carbohydrateMilligrams, 1_000, "g"],
+    ["Fat", nutrition.fatMilligrams, 1_000, "g"],
+  ];
+  if (includeAdditional) {
+    fields.push(
+      ["Fiber", nutrition.fiberMilligrams, 1_000, "g"],
+      ["Sugar", nutrition.sugarMilligrams, 1_000, "g"],
+      ["Sodium", nutrition.sodiumMilligrams, 1, "mg"],
+    );
+  }
+  return (
+    <dl className={styles.nutritionPreview}>
+      {fields.map(([label, value, divisor, unit]) => (
+        <div key={label}>
+          <dt>{label}</dt>
+          <dd>
+            {value === null
+              ? "Not reported"
+              : `${new Intl.NumberFormat("en-US", {
+                  maximumFractionDigits: 1,
+                }).format(
+                  (value.amount * value.fixedPointMultiplier * multiplier) /
+                    divisor,
+                )} ${unit}`}
+          </dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
 function FoodDetailStage({
   actionData,
   catalog,
@@ -1525,15 +1738,6 @@ function FoodDetailStage({
           food.authoritativeBaseQuantityMicrounits) *
         numericQuantity
       : 0;
-  const preview = (
-    value: (typeof food.nutritionPerAuthoritativeBase)["energyMilliKcal"],
-    divisor: number,
-    unit: string,
-  ) =>
-    value === null
-      ? "Not reported"
-      : `${new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 }).format((value.amount * value.fixedPointMultiplier * multiplier) / divisor)} ${unit}`;
-
   return (
     <>
       <Link
@@ -1567,7 +1771,7 @@ function FoodDetailStage({
           value={catalog.idempotencyKey}
         />
         <input name="intent" type="hidden" value="log-food" />
-        <input name="pendingFoodName" type="hidden" value={food.name} />
+        <input name="provider" type="hidden" value={food.provider} />
         <input
           name="providerFoodId"
           type="hidden"
@@ -1604,48 +1808,7 @@ function FoodDetailStage({
             />
           </label>
         </div>
-        <dl className={styles.nutritionPreview}>
-          <div>
-            <dt>Calories</dt>
-            <dd>
-              {preview(
-                food.nutritionPerAuthoritativeBase.energyMilliKcal,
-                1_000,
-                "kcal",
-              )}
-            </dd>
-          </div>
-          <div>
-            <dt>Protein</dt>
-            <dd>
-              {preview(
-                food.nutritionPerAuthoritativeBase.proteinMilligrams,
-                1_000,
-                "g",
-              )}
-            </dd>
-          </div>
-          <div>
-            <dt>Carbohydrate</dt>
-            <dd>
-              {preview(
-                food.nutritionPerAuthoritativeBase.carbohydrateMilligrams,
-                1_000,
-                "g",
-              )}
-            </dd>
-          </div>
-          <div>
-            <dt>Fat</dt>
-            <dd>
-              {preview(
-                food.nutritionPerAuthoritativeBase.fatMilligrams,
-                1_000,
-                "g",
-              )}
-            </dd>
-          </div>
-        </dl>
+        <CatalogNutritionPreview food={food} multiplier={multiplier} />
         {actionData?.message ? (
           <p className={styles.catalogError} role="alert">
             {actionData.message}
@@ -2321,6 +2484,268 @@ function WaterEventDialog({
   );
 }
 
+function CatalogChoiceStage({ date }: { date: string }) {
+  return (
+    <div className={styles.catalogResults} aria-label="Add Food methods">
+      <Link to={catalogHref(date, "search")}>
+        <span>
+          <strong>Search for food</strong>
+          <small>Search United States foods with USDA FoodData Central.</small>
+        </span>
+        <small>Choose ›</small>
+      </Link>
+      <Link to={catalogHref(date, "barcode")}>
+        <span>
+          <strong>Scan barcode</strong>
+          <small>Enter a commercial barcode to review Open Food Facts data.</small>
+        </span>
+        <small>Choose ›</small>
+      </Link>
+    </div>
+  );
+}
+
+function BarcodeFoodDetail({
+  actionData,
+  csrfToken,
+  date,
+  food,
+  idempotencyKey,
+}: {
+  actionData: HomeActionData | undefined;
+  csrfToken: string;
+  date: string;
+  food: CatalogFood;
+  idempotencyKey: string;
+}) {
+  const [quantity, setQuantity] = useState("1");
+  const quantityMicrounits = quantityMicrounitsFromDecimal(quantity);
+  const multiplier =
+    quantityMicrounits === undefined ? 0 : quantityMicrounits / 1_000_000;
+  const displayName =
+    food.name === "Unnamed product" && food.barcode
+      ? `Unnamed product · ${food.barcode}`
+      : food.name;
+
+  return (
+    <section aria-labelledby="barcode-product-title">
+      <Link
+        className={styles.backToResults}
+        to={catalogHref(date, "barcode")}
+      >
+        ‹ Back to scanner
+      </Link>
+      <div className={styles.foodIdentity}>
+        <span className={styles.catalogType}>Open Food Facts</span>
+        <h3 id="barcode-product-title">{displayName}</h3>
+        <p>Barcode {food.barcode}</p>
+      </div>
+      <div className={styles.snapshotNote}>
+        <span aria-hidden="true">◇</span>
+        <p>
+          <strong>Saved as a Nutrition Snapshot</strong>
+          Confirm to keep these serving values and source details locally if
+          Open Food Facts later changes or is unavailable.
+        </p>
+      </div>
+      <Form className={styles.logFoodForm} method="post">
+        <input name="csrfToken" type="hidden" value={csrfToken} />
+        <input name="date" type="hidden" value={date} />
+        <input name="idempotencyKey" type="hidden" value={idempotencyKey} />
+        <input name="intent" type="hidden" value="log-food" />
+        <input name="provider" type="hidden" value={food.provider} />
+        <input
+          name="providerFoodId"
+          type="hidden"
+          value={food.providerFoodId}
+        />
+        <input
+          name="selectedMeasurementId"
+          type="hidden"
+          value={food.measurements[0]?.id ?? ""}
+        />
+        <div className={styles.foodDetailGrid}>
+          <div className={styles.stackedField}>
+            <span>Measurement</span>
+            <strong>1 serving</strong>
+            <small>Serving values are used directly; no weight conversion.</small>
+          </div>
+          <label className={styles.stackedField}>
+            <span>Quantity</span>
+            <input
+              inputMode="decimal"
+              max="99"
+              min="0.000001"
+              name="quantity"
+              onChange={(event) => setQuantity(event.currentTarget.value)}
+              required
+              step="0.000001"
+              type="number"
+              value={quantity}
+            />
+          </label>
+        </div>
+        <CatalogNutritionPreview
+          carbohydrateLabel="Carbohydrates"
+          food={food}
+          includeAdditional
+          multiplier={multiplier}
+        />
+        {actionData?.message ? (
+          <p className={styles.catalogError} role="alert">
+            {actionData.message}
+          </p>
+        ) : null}
+        <div className={styles.dialogActions}>
+          <Link className={styles.secondaryButton} to={foodLogHref(date)}>
+            Cancel
+          </Link>
+          <button
+            className={styles.primaryButton}
+            disabled={quantityMicrounits === undefined}
+            type="submit"
+          >
+            Add to Food Log
+          </button>
+        </div>
+      </Form>
+      <p className={styles.providerAttribution}>
+        Food data from{" "}
+        <a
+          href="https://world.openfoodfacts.org/"
+          rel="noreferrer"
+          target="_blank"
+        >
+          Open Food Facts
+        </a>
+      </p>
+    </section>
+  );
+}
+
+function BarcodeCatalogStage({
+  actionData,
+  catalog,
+  csrfToken,
+  date,
+  navigationPending,
+  pending,
+}: {
+  actionData: HomeActionData | undefined;
+  catalog: Extract<
+    NonNullable<Route.ComponentProps["loaderData"]["catalog"]>,
+    { mode: "barcode" }
+  >;
+  csrfToken: string;
+  date: string;
+  navigationPending: boolean;
+  pending: boolean;
+}) {
+  const navigate = useNavigate();
+  const [barcode, setBarcode] = useState(catalog.barcode);
+  const [clientMessage, setClientMessage] = useState<string>();
+  const validBarcode = catalogBarcode(barcode);
+  // Stryker disable next-line ConditionalExpression,LogicalOperator,StringLiteral: this opaque key only controls scanner remount identity across reviewed barcodes.
+  const scannerKey = catalog.barcode || "new-scan";
+
+  if (catalog.food && !catalog.message && !pending) {
+    return (
+      <BarcodeFoodDetail
+        actionData={actionData}
+        csrfToken={csrfToken}
+        date={date}
+        food={catalog.food}
+        idempotencyKey={catalog.idempotencyKey}
+      />
+    );
+  }
+
+  return (
+    <>
+      <div className={styles.dialogActions}>
+        <Link className={styles.backToResults} to={catalogHref(date, "search")}>
+          Search for food
+        </Link>
+      </div>
+      <Form
+        className={styles.searchForm}
+        method="get"
+        noValidate
+        onSubmit={(event) => {
+          if (validBarcode === undefined) {
+            event.preventDefault();
+            setClientMessage(
+              "Enter a supported 7, 8, 12, 13, or 14 digit barcode.",
+            );
+          }
+        }}
+      >
+        <input name="date" type="hidden" value={date} />
+        <input name="food" type="hidden" value="barcode" />
+        <label htmlFor="food-barcode">Enter barcode</label>
+        <div className={styles.searchControl}>
+          <input
+            aria-describedby={clientMessage ? "barcode-input-error" : undefined}
+            aria-invalid={clientMessage ? true : undefined}
+            autoComplete="off"
+            autoFocus
+            id="food-barcode"
+            inputMode="numeric"
+            maxLength={14}
+            name="barcode"
+            onChange={(event) => {
+              setBarcode(event.currentTarget.value);
+              setClientMessage(undefined);
+            }}
+            pattern="[0-9]*"
+            placeholder="034000470693"
+            required
+            type="text"
+            value={barcode}
+          />
+          <button className={styles.primaryButton} type="submit">
+            {catalog.message && validBarcode ? "Retry" : "Look up"}
+          </button>
+        </div>
+      </Form>
+      <BarcodeCameraScanner
+        key={scannerKey}
+        onDetected={
+          // Stryker disable BlockStatement,CallExpression: the mobile browser scan journey asserts the controlled input update, error reset, destination, and one lookup.
+          (detectedBarcode) => {
+            setBarcode(detectedBarcode);
+            setClientMessage(undefined);
+            void navigate(barcodeCatalogHref(date, detectedBarcode));
+          }
+          // Stryker restore BlockStatement,CallExpression
+        }
+        stopRequested={navigationPending}
+      />
+      {pending ? (
+        <div className={styles.catalogState} role="status">
+          <h3>Checking Open Food Facts</h3>
+          <p>Reviewing the entered barcode without changing your Food Log.</p>
+        </div>
+      ) : clientMessage ? (
+        <div className={styles.catalogState} id="barcode-input-error" role="alert">
+          <h3>Barcode not valid</h3>
+          <p>{clientMessage}</p>
+        </div>
+      ) : catalog.message ? (
+        <div className={styles.catalogState} role="alert">
+          <h3>{catalog.title}</h3>
+          <p>{catalog.message}</p>
+        </div>
+      ) : (
+        <div className={styles.catalogState}>
+          <h3>Scan barcode</h3>
+          <p>Type the digits printed below a commercial barcode to review it.</p>
+        </div>
+      )}
+    </>
+  );
+}
+
 function CatalogDialog({
   actionData,
   catalog,
@@ -2341,7 +2766,12 @@ function CatalogDialog({
   const detailPending =
     catalog.mode === "search" &&
     pendingFoodStage?.mode === "detail";
-  const searchPending = navigation.state !== "idle" && !detailPending;
+  const searchPending =
+    navigation.state !== "idle" &&
+    !detailPending;
+  const barcodePending = pendingFoodStage?.mode === "barcode";
+  // Stryker disable next-line ConditionalExpression: the blocked-navigation browser journey proves the pending-state teardown and restart guard.
+  const navigationPending = navigation.state !== "idle";
   const closeHref = foodLogHref(date);
   const { closeDialog, dialogRef, handleDialogKeyDown } = useModalDialog({
     closeHref,
@@ -2363,10 +2793,15 @@ function CatalogDialog({
         <div className={styles.dialogHead}>
           <div>
             <h2 id="food-dialog-title">Add Food</h2>
-            <span className={styles.dialogChip}>USDA catalog</span>
+            <span className={styles.dialogChip}>
+              {catalog.mode === "search" || catalog.mode === "detail"
+                ? "USDA catalog"
+                : catalog.mode === "barcode"
+                  ? "Open Food Facts"
+                  : "Choose a method"}
+            </span>
             <p>
-              Search is deliberate. Nothing is logged until you confirm a
-              measurement and quantity.
+              Nothing changes in your Food Log until a later confirmation step.
             </p>
           </div>
           <Link
@@ -2386,13 +2821,23 @@ function CatalogDialog({
             csrfToken={csrfToken}
             date={date}
           />
+        ) : catalog.mode === "choose" ? (
+          <CatalogChoiceStage date={date} />
+        ) : catalog.mode === "barcode" ? (
+          <BarcodeCatalogStage
+            actionData={actionData}
+            catalog={catalog}
+            csrfToken={csrfToken}
+            date={date}
+            navigationPending={navigationPending}
+            pending={barcodePending}
+          />
         ) : (
           <>
             <Form
               className={styles.searchForm}
               method="get"
               noValidate
-              reloadDocument
               onSubmit={(event) => {
                 if (catalogQuery(searchQuery) === undefined) {
                   event.preventDefault();
@@ -2571,9 +3016,12 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
     : waterDialog;
   const navigation = useNavigation();
   const foodLogPending = navigation.formData?.get("intent") === "log-food";
-  const pendingFoodName = String(
-    navigation.formData?.get("pendingFoodName") ?? "Selected food",
-  );
+  const pendingFoodName =
+    catalog?.mode === "detail"
+      ? catalog.food.name
+      : catalog?.mode === "barcode" && catalog.food
+        ? catalog.food.name
+        : "Selected food";
   const visibleCatalog = foodLogPending ? undefined : catalog;
 
   return (
@@ -2739,7 +3187,9 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
                             <span className={styles.foodEntryContent}>
                               <strong>{entry.name}</strong>
                               <small>
-                                USDA FoodData Central · {entry.dataType}
+                                {entry.provider === "open-food-facts"
+                                  ? "Open Food Facts"
+                                  : `USDA FoodData Central · ${entry.dataType}`}
                               </small>
                               <small>
                                 {entry.selectedMeasurementLabel} ×{" "}

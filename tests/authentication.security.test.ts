@@ -9,6 +9,7 @@ import { afterEach, expect, test, vi } from "vitest";
 import { AuthenticationService } from "../app/auth/authentication.server";
 import { hashPassword } from "../app/auth/password.server";
 import { PreAuthenticationCsrfService } from "../app/auth/pre-authentication-csrf.server";
+import { FoodCatalog } from "../app/catalog/food-catalog.server";
 import { TestFoodCatalogProvider } from "../app/catalog/test-fixture.server";
 import { openApplicationDatabase } from "../app/database/database.server";
 import {
@@ -711,9 +712,16 @@ test("administrator deletion removes a disabled member's owned nutrition history
   const now = () => new Date("2026-08-29T18:00:00.000Z");
   const setup = new GoalSetupService(fixture.database, now);
   const goals = new GoalVersionService(fixture.database, now);
+  const foodProvider = new TestFoodCatalogProvider();
   const foodEntries = new FoodEntryService(
     fixture.database,
-    new TestFoodCatalogProvider(),
+    new FoodCatalog([
+      {
+        capability: "search",
+        provider: "usda-fdc",
+        service: foodProvider,
+      },
+    ]),
     now,
   );
   const waterEvents = new WaterEventService(fixture.database, now);
@@ -734,6 +742,7 @@ test("administrator deletion removes a disabled member's owned nutrition history
   const foodEntry = await foodEntries.log(member.user.id, {
     foodLogDate: "2026-08-29",
     idempotencyKey: "deleted-owned-food-entry",
+    provider: "usda-fdc",
     providerFoodId: "1001",
     quantity: "1",
     selectedMeasurementId: "serving:g:170000000",

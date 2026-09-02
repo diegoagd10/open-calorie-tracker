@@ -30,6 +30,10 @@ async function completeSetupForTestUser(
   await expect(page).toHaveURL("/");
 }
 
+async function openUsdaSearch(page: Page) {
+  await page.getByRole("button", { name: "Add Food" }).click();
+  await page.getByRole("link", { name: /Search for food/ }).click();
+}
 async function csrfTokenFor(page: Page, buttonName: "Add Food" | "Add Water") {
   return page
     .locator("form")
@@ -151,7 +155,7 @@ test("one mobile Chromium journey verifies the complete private MVP", async ({
   await page.getByRole("link", { name: "Sat 29" }).click();
   await expect(page).toHaveURL("/?date=2026-08-29");
 
-  await page.getByRole("button", { name: "Add Food" }).click();
+  await openUsdaSearch(page);
   await page
     .getByRole("searchbox", { name: "Search United States foods" })
     .fill("yogurt");
@@ -181,7 +185,7 @@ test("one mobile Chromium journey verifies the complete private MVP", async ({
     "0s",
   );
 
-  await page.getByRole("button", { name: "Add Food" }).click();
+  await openUsdaSearch(page);
   await page
     .getByRole("searchbox", { name: "Search United States foods" })
     .fill("timeout");
@@ -280,7 +284,7 @@ test("a second user cannot list, read, edit, or delete another user's records", 
   await context.setExtraHTTPHeaders({ "X-Test-Client-IP": "203.0.113.111" });
   await completeSetupForTestUser(page, "release.isolation.owner");
 
-  await page.getByRole("button", { name: "Add Food" }).click();
+  await openUsdaSearch(page);
   await page
     .getByRole("searchbox", { name: "Search United States foods" })
     .fill("yogurt");
@@ -327,7 +331,8 @@ test("a second user cannot list, read, edit, or delete another user's records", 
   database.close();
 
   const otherContext = await browser.newContext({
-    baseURL: "http://127.0.0.1:4173",
+    baseURL: "https://localhost:4173",
+    ignoreHTTPSErrors: true,
     extraHTTPHeaders: { "X-Test-Client-IP": "203.0.113.112" },
   });
   const otherPage = await otherContext.newPage();
@@ -519,6 +524,9 @@ test("the critical mobile experience is operable with only a keyboard", async ({
   await expect(
     page.getByRole("link", { name: "Close food search" }),
   ).toBeFocused();
+  const searchForFood = page.getByRole("link", { name: /Search for food/ });
+  await tabTo(page, searchForFood);
+  await page.keyboard.press("Enter");
   const searchbox = page.getByRole("searchbox", {
     name: "Search United States foods",
   });

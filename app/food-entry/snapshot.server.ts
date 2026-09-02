@@ -28,7 +28,7 @@ function catalogMeasurementSchema() {
     baseQuantityMicrounits: z.number().int().positive(),
     id: z.string().min(1).max(128),
     label: z.string().min(1).max(200),
-    unit: z.enum(["g", "ml"]),
+    unit: z.enum(["g", "ml", "serving"]),
   });
 }
 
@@ -61,7 +61,7 @@ function parseCatalogMeasurements(row: FoodEntryRow): CatalogMeasurement[] {
       baseQuantityMicrounits: row.selectedMeasurementBaseQuantityMicrounits,
       id: row.selectedMeasurementId,
       label: row.selectedMeasurementLabel,
-      unit: row.selectedMeasurementUnit as "g" | "ml",
+      unit: row.selectedMeasurementUnit as "g" | "ml" | "serving",
     },
   ];
   const baseId = `base:${row.authoritativeBaseUnit}:${row.authoritativeBaseQuantityMicrounits}`;
@@ -70,7 +70,7 @@ function parseCatalogMeasurements(row: FoodEntryRow): CatalogMeasurement[] {
       baseQuantityMicrounits: row.authoritativeBaseQuantityMicrounits,
       id: baseId,
       label: `${row.authoritativeBaseQuantityMicrounits / 1_000_000} ${row.authoritativeBaseUnit}`,
-      unit: row.authoritativeBaseUnit as "g" | "ml",
+      unit: row.authoritativeBaseUnit as "g" | "ml" | "serving",
     });
   }
   return measurements;

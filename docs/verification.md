@@ -34,9 +34,14 @@ Oxlint pass would create a second, weaker contract.
 ## Deep gate
 
 ```sh
-pnpm exec playwright install chromium # once per machine
+pnpm exec playwright install chromium webkit # once per machine
 pnpm verify:deep
 ```
+
+The camera scanner journey always runs with mobile Chromium. CI and supported
+local hosts also run that same tagged journey with the iPhone WebKit profile.
+Playwright's WebKit binary is skipped only on Arch-derived hosts, which its
+published Linux binary does not support.
 
 Use the deep gate before a release and after broad production, architecture,
 testing, or tooling changes. It first runs the complete fast gate, then adds:

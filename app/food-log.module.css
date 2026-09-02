@@ -933,6 +933,75 @@
   margin: 0;
 }
 
+.barcodeScanner {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 1rem;
+  padding: 0.85rem;
+  overflow: hidden;
+  border: 1px solid var(--rule);
+  border-radius: 1rem;
+  background: var(--surface-soft);
+}
+
+.barcodeScannerIntro h3,
+.barcodeScannerIntro p,
+.barcodeScannerStatus p {
+  margin: 0;
+}
+
+.barcodeScannerIntro h3 {
+  font-size: 0.9rem;
+}
+
+.barcodeScannerIntro p,
+.barcodeScannerStatus p {
+  margin-top: 0.3rem;
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1.45;
+}
+
+.barcodeScannerPreview {
+  display: block;
+  width: 100%;
+  max-height: min(42dvh, 22rem);
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  border-radius: 0.75rem;
+  background: #101820;
+}
+
+.barcodeScannerPreview[hidden] {
+  display: none;
+}
+
+.barcodeScannerStatus {
+  min-width: 0;
+}
+
+.barcodeScannerStatus > button {
+  margin-top: 0.65rem;
+}
+
+.barcodeScannerActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.65rem;
+}
+
+.cameraButton {
+  min-height: 2.75rem;
+  padding: 0.65rem 0.9rem;
+  border: 0;
+  border-radius: 0.7rem;
+  color: white;
+  background: var(--green-dark);
+  font: inherit;
+  font-weight: 750;
+}
+
 .catalogState p {
   margin-top: 0.35rem;
   color: var(--muted);

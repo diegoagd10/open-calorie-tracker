@@ -27,7 +27,7 @@ jobs:
           cache: true
           install: false
       - run: pnpm install --frozen-lockfile
-      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm exec playwright install --with-deps chromium webkit
       - run: mkdir -p reports/ci
       - name: Run the local deep gate
         run: pnpm verify:deep 2>&1 | tee reports/ci/deep-verification.log

@@ -7,6 +7,7 @@ import { afterEach, expect, test } from "vitest";
 
 import type {
   CatalogFood,
+  FoodCatalogReader,
   CatalogSearchResult,
   FoodCatalogProvider,
 } from "../app/catalog/food-catalog.server";
@@ -157,6 +158,7 @@ function validLogInput() {
   return {
     foodLogDate: "2026-08-29",
     idempotencyKey: "boundary-log-entry",
+    provider: "usda-fdc",
     providerFoodId: "200",
     quantity: "1",
     selectedMeasurementId: "portion:7",
@@ -174,6 +176,7 @@ test("a provider-backed fractional portion becomes an immutable Food Entry snaps
   const created = await service.log(userId, {
     foodLogDate: "2026-08-28",
     idempotencyKey: "0198f7e2-5aab-7000-8000-000000000001",
+    provider: "usda-fdc",
     providerFoodId: "200",
     quantity: "1.5",
     selectedMeasurementId: "portion:7",
@@ -237,6 +240,7 @@ test("nutrients scale from the unrounded provider amount and round once at snaps
   ).log(userId, {
     foodLogDate: "2026-08-29",
     idempotencyKey: "0198f7e2-5aab-7000-8000-000000000002",
+    provider: "usda-fdc",
     providerFoodId: "200",
     quantity: "1",
     selectedMeasurementId: "portion:double",
@@ -275,6 +279,7 @@ test("an idempotency key returns one entry while distinct submissions remain val
   const firstInput = {
     foodLogDate: "2026-08-28",
     idempotencyKey: "0198f7e2-5aab-7000-8000-000000000010",
+    provider: "usda-fdc",
     providerFoodId: "200",
     quantity: "0.5",
     selectedMeasurementId: "portion:7",
@@ -310,6 +315,7 @@ test("today uses current local time and past entries retain deterministic ties a
   const todayEntry = await service.log(userId, {
     foodLogDate: "2026-08-29",
     idempotencyKey: "0198f7e2-5aab-7000-8000-000000000020",
+    provider: "usda-fdc",
     providerFoodId: "200",
     quantity: "1",
     selectedMeasurementId: "base:g:100000000",
@@ -350,6 +356,7 @@ test("today uses current local time and past entries retain deterministic ties a
   const tied = await service.log(userId, {
     foodLogDate: "2026-08-28",
     idempotencyKey: "0198f7e2-5aab-7000-8000-000000000021",
+    provider: "usda-fdc",
     providerFoodId: "200",
     quantity: "1",
     selectedMeasurementId: "base:g:100000000",
@@ -371,6 +378,7 @@ test("authorization, future dates, unsafe measurements, provider failures, and t
   const input = {
     foodLogDate: "2026-08-28",
     idempotencyKey: "0198f7e2-5aab-7000-8000-000000000030",
+    provider: "usda-fdc",
     providerFoodId: "200",
     quantity: "1",
     selectedMeasurementId: "portion:7",
@@ -403,12 +411,9 @@ test("authorization, future dates, unsafe measurements, provider failures, and t
     new CatalogUnavailableError(),
   ];
   for (const [index, providerFailure] of providerFailures.entries()) {
-    const failingProvider: FoodCatalogProvider = {
+    const failingProvider: FoodCatalogReader = {
       async getFood() {
         throw providerFailure;
-      },
-      async search() {
-        return [];
       },
     };
     await expect(
@@ -450,6 +455,7 @@ test("a Food Entry edit recalculates from its authoritative snapshot without acc
   const created = await service.log(userId, {
     foodLogDate: "2026-08-29",
     idempotencyKey: "edit-rounding-create",
+    provider: "usda-fdc",
     providerFoodId: "200",
     quantity: "1",
     selectedMeasurementId: "portion:7",
@@ -496,6 +502,7 @@ test("Food Entry corrections and deletion are isolated, concurrency-safe, and pr
   const first = await service.log(userId, {
     foodLogDate: "2026-08-28",
     idempotencyKey: "edit-isolation-first",
+    provider: "usda-fdc",
     providerFoodId: "200",
     quantity: "1",
     selectedMeasurementId: "portion:7",
@@ -503,6 +510,7 @@ test("Food Entry corrections and deletion are isolated, concurrency-safe, and pr
   const second = await service.log(userId, {
     foodLogDate: "2026-08-28",
     idempotencyKey: "edit-isolation-second",
+    provider: "usda-fdc",
     providerFoodId: "200",
     quantity: "1",
     selectedMeasurementId: "portion:7",

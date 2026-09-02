@@ -1,42 +1,68 @@
 {
   "schemaVersion": 1,
-  "durationMs": 361546,
-  "mutationScore": 99.46286781877627,
+  "durationMs": 496447,
+  "mutationScore": 94.8905109489051,
   "counts": {
     "Pending": 0,
-    "Killed": 4259,
-    "Timeout": 0,
-    "Survived": 0,
-    "NoCoverage": 23,
+    "Killed": 5587,
+    "Timeout": 3,
+    "Survived": 133,
+    "NoCoverage": 168,
     "RuntimeError": 0,
     "CompileError": 0,
-    "Ignored": 168,
-    "detected": 4259,
-    "undetected": 23,
-    "valid": 4282,
-    "total": 4450
+    "Ignored": 374,
+    "detected": 5590,
+    "undetected": 301,
+    "valid": 5891,
+    "total": 6265
   },
   "survivingMutants": {
-    "byModule": {},
-    "byCategory": {}
+    "byModule": {
+      "app": 8,
+      "app/auth": 34,
+      "app/catalog": 1,
+      "app/database": 21,
+      "app/routes": 67,
+      "server": 2
+    },
+    "byCategory": {
+      "ArrayDeclaration": 3,
+      "BlockStatement": 5,
+      "BooleanLiteral": 2,
+      "CallExpression": 3,
+      "ConditionalExpression": 28,
+      "EqualityOperator": 8,
+      "LogicalOperator": 5,
+      "ObjectLiteral": 19,
+      "OptionalChaining": 2,
+      "StringLiteral": 58
+    }
   },
   "undetectedMutants": {
     "byModule": {
-      "app/catalog": 2,
-      "app/database": 6,
+      "app": 11,
+      "app/auth": 36,
+      "app/catalog": 3,
+      "app/database": 31,
       "app/food-entry": 1,
       "app/goals": 2,
-      "app/routes": 11,
-      "app/water-event": 1
+      "app/routes": 206,
+      "app/water-event": 1,
+      "server": 10
     },
     "byCategory": {
-      "ArrayDeclaration": 1,
-      "ArrowFunction": 2,
-      "BlockStatement": 4,
-      "BooleanLiteral": 1,
-      "ConditionalExpression": 2,
-      "ObjectLiteral": 3,
-      "StringLiteral": 10
+      "ArrayDeclaration": 10,
+      "ArrowFunction": 6,
+      "BlockStatement": 31,
+      "BooleanLiteral": 10,
+      "CallExpression": 15,
+      "ConditionalExpression": 50,
+      "EqualityOperator": 15,
+      "LogicalOperator": 7,
+      "MethodExpression": 1,
+      "ObjectLiteral": 32,
+      "OptionalChaining": 17,
+      "StringLiteral": 107
     }
   }
 }

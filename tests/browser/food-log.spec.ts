@@ -20,6 +20,13 @@ async function completeSetupForTestUser(
   await expect(page).toHaveURL("/");
 }
 
+async function openUsdaSearch(page: Page) {
+  await page.getByRole("button", { name: "Add Food" }).click();
+  await page.getByRole("link", { name: /Search for food/ }).click();
+  await expect(
+    page.getByRole("searchbox", { name: "Search United States foods" }),
+  ).toBeVisible();
+}
 async function expectCatalogResponsive(page: Page) {
   for (const viewport of [
     { height: 844, width: 390 },
@@ -71,6 +78,56 @@ async function expectFoodEntryStatusResponsive(page: Page, message: string) {
     ).toBe(true);
   }
   await page.setViewportSize({ height: 720, width: 1_280 });
+}
+
+async function installSimulatedBarcodeCamera(page: Page) {
+  await page.addInitScript(() => {
+    const scannerState = {
+      barcode: "034000470693",
+      cameraStarts: 0,
+      constraints: undefined as MediaStreamConstraints | undefined,
+      emit: false,
+      trackStops: 0,
+    };
+    const browserWindow = window as typeof window & {
+      BarcodeDetector?: unknown;
+      __scannerState: typeof scannerState;
+    };
+    browserWindow.__scannerState = scannerState;
+
+    class SimulatedBarcodeDetector {
+      static async getSupportedFormats() {
+        return ["ean_8", "ean_13", "itf", "upc_a", "upc_e"];
+      }
+
+      async detect() {
+        return scannerState.emit ? [{ rawValue: scannerState.barcode }] : [];
+      }
+    }
+    Object.defineProperty(browserWindow, "BarcodeDetector", {
+      configurable: true,
+      value: SimulatedBarcodeDetector,
+    });
+
+    const stream = new MediaStream();
+    Object.defineProperty(stream, "getTracks", {
+      value: () => [{ stop: () => { scannerState.trackStops += 1; } }],
+    });
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: {
+        getUserMedia: async (constraints: MediaStreamConstraints) => {
+          scannerState.cameraStarts += 1;
+          scannerState.constraints = constraints;
+          return stream;
+        },
+      },
+    });
+    Object.defineProperty(HTMLMediaElement.prototype, "play", {
+      configurable: true,
+      value: async () => undefined,
+    });
+  });
 }
 
 test("today, historical navigation, calendar access, travel, and future rejection", async ({
@@ -264,7 +321,7 @@ test("daily calorie and nutrient progress is factual, responsive, and accessible
       .locator(".."),
   ).toHaveAttribute("aria-hidden", "true");
 
-  await page.getByRole("button", { name: "Add Food" }).click();
+  await openUsdaSearch(page);
   await page
     .getByRole("searchbox", { name: "Search United States foods" })
     .fill("yogurt");
@@ -492,14 +549,22 @@ test("authenticated USDA search and idempotent logging preserve a local Nutritio
   await completeSetupForTestUser(page, "catalog.search");
 
   await page.getByRole("button", { name: "Add Food" }).click();
+  await expect(page).toHaveURL(/food=choose/);
+  await expect(page.getByRole("link", { name: /Search for food/ })).toBeVisible();
+  await expect(page.getByRole("link", { name: /Scan barcode/ })).toBeVisible();
+  await page.getByRole("link", { name: /Search for food/ }).click();
   await expect(page).toHaveURL(/food=search/);
   await expect(page.getByRole("dialog", { name: "Add Food" })).toBeVisible();
-  await expect(page.getByText("Search is deliberate.")).toBeVisible();
+  await expect(
+    page.getByText("Nothing changes in your Food Log until a later confirmation step."),
+  ).toBeVisible();
   await expect(page.locator("body")).toHaveCSS("overflow", "hidden");
   const closeFoodSearch = page.getByRole("link", {
     name: "Close food search",
   });
-  await expect(closeFoodSearch).toBeFocused();
+  await expect(
+    page.getByRole("searchbox", { name: "Search United States foods" }),
+  ).toBeFocused();
   const providerLink = page.getByRole("link", {
     name: "USDA FoodData Central",
   });
@@ -689,6 +754,267 @@ test("authenticated USDA search and idempotent logging preserve a local Nutritio
   expect(accessibilityScan.violations).toEqual([]);
 });
 
+test("authenticated manual barcode confirmation creates one attributed serving snapshot", async ({
+  context,
+  page,
+}) => {
+  await context.setExtraHTTPHeaders({ "X-Test-Client-IP": "203.0.113.93" });
+  await completeSetupForTestUser(page, "catalog.barcode");
+
+  await page.getByRole("button", { name: "Add Food" }).click();
+  await page.getByRole("link", { name: /Scan barcode/ }).click();
+  const barcodeInput = page.getByLabel("Enter barcode");
+  await expect(barcodeInput).toBeVisible();
+  await expect(barcodeInput).toBeFocused();
+  await expect(page.getByRole("link", { name: "Search for food" })).toBeVisible();
+  await expectCatalogResponsive(page);
+
+  await barcodeInput.fill("123");
+  await page.getByRole("button", { name: "Look up" }).click();
+  await expect(page.getByRole("alert")).toContainText(
+    "Enter a supported 7, 8, 12, 13, or 14 digit barcode.",
+  );
+
+  await barcodeInput.fill("034000470693");
+  await page.getByRole("button", { name: "Look up" }).click();
+  await expect(page.getByRole("heading", { name: "Example cereal" })).toBeVisible();
+  await expect(barcodeInput).toBeHidden();
+  await expect(page.getByRole("link", { name: "Back to scanner" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Search for food" })).toHaveCount(0);
+  await expect(page.getByText("Barcode 0034000470693")).toBeVisible();
+  await expect(page.getByText("1 serving", { exact: true })).toBeVisible();
+  await expect(page.getByText("180 kcal")).toBeVisible();
+  await expect(page.getByText("24 g")).toBeVisible();
+  await expect(page.getByText("0 g", { exact: true })).toBeVisible();
+  await expect(page.getByText("Not reported").first()).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "Open Food Facts" }),
+  ).toBeVisible();
+  await expect(page.locator("img")).toHaveCount(0);
+  await expect(barcodeInput).toBeHidden();
+  const quantity = page.getByLabel("Quantity");
+  await expect(quantity).toHaveValue("1");
+  await quantity.fill("0.5");
+  await expect(page.getByText("90 kcal")).toBeVisible();
+  await expect(page.getByText("12 g")).toBeVisible();
+  await expect(page.getByText("No entries for this day")).toBeVisible();
+  await expectCatalogResponsive(page);
+
+  await page.getByRole("button", { name: "Add to Food Log" }).click();
+  await expect(page).toHaveURL("/?date=2026-08-29");
+  const savedEntry = page.getByRole("article").filter({
+    hasText: "Example cereal",
+  });
+  await expect(savedEntry).toHaveCount(1);
+  await expect(savedEntry).toContainText("Open Food Facts");
+  await expect(savedEntry).toContainText("1 serving × 0.5");
+  await expect(savedEntry).toContainText("90 kcal");
+  await expect(page.getByText("Incomplete", { exact: true }).first()).toBeVisible();
+  await expect(page.locator("img")).toHaveCount(0);
+
+  for (const [barcode, status, title] of [
+    ["0000000000000", 503, "Open Food Facts is not configured"],
+    ["0000000000001", 404, "Product not found"],
+    ["0000000000002", 422, "Nutrition per serving unavailable"],
+    ["0000000000003", 429, "Open Food Facts rate limit reached"],
+    ["0000000000004", 503, "Open Food Facts is unavailable"],
+    ["0000000000005", 502, "Open Food Facts response could not be used"],
+  ] as const) {
+    const lookup = await page.goto(
+      `/?date=2026-08-29&food=barcode&barcode=${barcode}`,
+    );
+    expect(lookup?.status()).toBe(status);
+    await expect(page.getByRole("heading", { name: title })).toBeVisible();
+    await expect(page.getByLabel("Enter barcode")).toBeVisible();
+    await expect(page.getByRole("link", { name: "Search for food" })).toBeVisible();
+  }
+
+  await page.goto("/?date=2026-08-29&food=barcode&barcode=0000000000006");
+  await expect(
+    page.getByRole("heading", { name: "Unnamed product · 0000000000006" }),
+  ).toBeVisible();
+  await page.getByRole("link", { name: "Back to scanner" }).click();
+  await expect(page.getByLabel("Enter barcode")).toBeFocused();
+  await page.getByRole("link", { name: "Search for food" }).click();
+  await expect(
+    page.getByRole("searchbox", { name: "Search United States foods" }),
+  ).toBeVisible();
+
+  const accessibilityScan = await new AxeBuilder({ page }).analyze();
+  expect(accessibilityScan.violations).toEqual([]);
+});
+
+test("@camera-matrix simulated scan stays local and follows review before one snapshot", async ({
+  context,
+  page,
+}, testInfo) => {
+  await context.setExtraHTTPHeaders({ "X-Test-Client-IP": "203.0.113.94" });
+  await installSimulatedBarcodeCamera(page);
+  await completeSetupForTestUser(page, `camera.${testInfo.project.name}`);
+
+  const transmittedPayloads: string[] = [];
+  page.on("request", (request) => {
+    const body = request.postData();
+    if (body) transmittedPayloads.push(body);
+  });
+
+  await page.getByRole("button", { name: "Add Food" }).click();
+  await page.getByRole("link", { name: /Scan barcode/ }).click();
+  const barcodeInput = page.getByLabel("Enter barcode");
+  await expect(barcodeInput).toBeVisible();
+  await page.getByRole("button", { name: "Use camera" }).click();
+  await expect(page.getByText("Point the camera at the barcode")).toBeVisible();
+  await expect(page.getByLabel("Live barcode camera preview")).toBeVisible();
+  await expect(barcodeInput).toBeVisible();
+  expect(await page.evaluate(() => (
+    window as typeof window & {
+      __scannerState: { constraints?: MediaStreamConstraints };
+    }
+  ).__scannerState.constraints)).toEqual({
+    audio: false,
+    video: { facingMode: { ideal: "environment" } },
+  });
+  await expectCatalogResponsive(page);
+  const activeCameraAxe = await new AxeBuilder({ page }).analyze();
+  expect(activeCameraAxe.violations).toEqual([]);
+
+  let releaseLookup!: () => void;
+  const lookupGate = new Promise<void>((resolve) => {
+    releaseLookup = resolve;
+  });
+  let lookupRequests = 0;
+  await page.route(/(?=.*[?&]food=barcode)(?=.*[?&]barcode=034000470693)/, async (route) => {
+    lookupRequests += 1;
+    await lookupGate;
+    await route.continue();
+  }, { times: 1 });
+
+  await page.evaluate(() => {
+    (
+      window as typeof window & { __scannerState: { emit: boolean } }
+    ).__scannerState.emit = true;
+  });
+  await expect(page.getByText("Recognized 034000470693")).toBeVisible();
+  await expect(barcodeInput).toHaveValue("034000470693");
+  await expect(page.getByLabel("Live barcode camera preview")).toBeHidden();
+  await expect.poll(() => page.evaluate(() => (
+    window as typeof window & {
+      __scannerState: { trackStops: number };
+    }
+  ).__scannerState.trackStops)).toBe(1);
+  expect(lookupRequests).toBe(1);
+  releaseLookup();
+
+  await expect(page.getByRole("heading", { name: "Example cereal" })).toBeVisible();
+  await expect(barcodeInput).toBeHidden();
+  await expect(page.getByRole("link", { name: "Back to scanner" })).toBeVisible();
+  await expect(page.getByText("Barcode 0034000470693")).toBeVisible();
+  await expect(page.getByText("1 serving", { exact: true })).toBeVisible();
+  await expect(page.getByText("180 kcal")).toBeVisible();
+  await expect(page.getByText("24 g")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Open Food Facts" })).toBeVisible();
+  const quantity = page.getByLabel("Quantity");
+  await quantity.fill("0.5");
+  await expect(page.getByText("90 kcal")).toBeVisible();
+  await expect(page.getByText("12 g")).toBeVisible();
+  await expect(page.getByText("No entries for this day")).toBeVisible();
+
+  await page.getByRole("button", { name: "Add to Food Log" }).click();
+  const savedEntry = page.getByRole("article").filter({ hasText: "Example cereal" });
+  await expect(savedEntry).toHaveCount(1);
+  await expect(savedEntry).toContainText("Open Food Facts");
+  await expect(savedEntry).toContainText("1 serving × 0.5");
+  await expect(savedEntry).toContainText("90 kcal");
+  expect(transmittedPayloads.join("\n")).not.toMatch(
+    /(?:blob:|data:image|frame|photograph|photo=)/i,
+  );
+  await expect(page.locator("img")).toHaveCount(0);
+
+  await page.evaluate(() => {
+    (
+      window as typeof window & {
+        __scannerState: { barcode: string; emit: boolean };
+      }
+    ).__scannerState.barcode = "0000000000004";
+    (
+      window as typeof window & { __scannerState: { emit: boolean } }
+    ).__scannerState.emit = false;
+  });
+  await page.getByRole("button", { name: "Add Food" }).click();
+  await page.getByRole("link", { name: /Scan barcode/ }).click();
+  await page.getByRole("button", { name: "Use camera" }).click();
+  await expect(page.getByText("Point the camera at the barcode")).toBeVisible();
+  await page.evaluate(() => {
+    (
+      window as typeof window & { __scannerState: { emit: boolean } }
+    ).__scannerState.emit = true;
+  });
+  await expect(
+    page.getByRole("heading", { name: "Open Food Facts is unavailable" }),
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "Retry" })).toBeVisible();
+  await expect(page.getByLabel("Enter barcode")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Search for food" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Use camera" })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => (
+    window as typeof window & {
+      __scannerState: { trackStops: number };
+    }
+  ).__scannerState.trackStops)).toBe(2);
+
+  await page.evaluate(() => {
+    (
+      window as typeof window & { __scannerState: { emit: boolean } }
+    ).__scannerState.emit = false;
+  });
+  await page.getByRole("button", { name: "Use camera" }).click();
+  await expect(page.getByText("Point the camera at the barcode")).toBeVisible();
+  let releaseSearch!: () => void;
+  const searchGate = new Promise<void>((resolve) => {
+    releaseSearch = resolve;
+  });
+  await page.route(/(?=.*[?&]food=search)/, async (route) => {
+    await searchGate;
+    await route.continue();
+  }, { times: 1 });
+  await page.getByRole("link", { name: "Search for food" }).click();
+  await expect.poll(() => page.evaluate(() => (
+    window as typeof window & {
+      __scannerState: { trackStops: number };
+    }
+  ).__scannerState.trackStops)).toBe(3);
+  const blockedCameraButton = page.getByRole("button", { name: "Use camera" });
+  await expect(blockedCameraButton).toBeDisabled();
+  await blockedCameraButton.evaluate((button) => {
+    button.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  });
+  expect(await page.evaluate(() => (
+    window as typeof window & {
+      __scannerState: { cameraStarts: number };
+    }
+  ).__scannerState.cameraStarts)).toBe(3);
+  releaseSearch();
+  await expect(
+    page.getByRole("searchbox", { name: "Search United States foods" }),
+  ).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog", { name: "Add Food" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Add Food" })).toBeFocused();
+
+  await page.getByRole("button", { name: "Add Food" }).click();
+  await page.getByRole("link", { name: /Scan barcode/ }).click();
+  await page.getByRole("button", { name: "Use camera" }).click();
+  await expect(page.getByText("Point the camera at the barcode")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog", { name: "Add Food" })).toHaveCount(0);
+  await expect.poll(() => page.evaluate(() => (
+    window as typeof window & {
+      __scannerState: { trackStops: number };
+    }
+  ).__scannerState.trackStops)).toBe(4);
+  await expect(page.getByRole("button", { name: "Add Food" })).toBeFocused();
+});
+
 test("food selection immediately reveals the pending detail destination", async ({
   context,
   page,
@@ -696,7 +1022,7 @@ test("food selection immediately reveals the pending detail destination", async 
   await context.setExtraHTTPHeaders({ "X-Test-Client-IP": "203.0.113.91" });
   await completeSetupForTestUser(page, "catalog.pending-destinations");
 
-  await page.getByRole("button", { name: "Add Food" }).click();
+  await openUsdaSearch(page);
   await page
     .getByRole("searchbox", { name: "Search United States foods" })
     .fill("yogurt");
@@ -761,7 +1087,7 @@ test("food logging immediately reveals a pending Daily log row", async ({
   await context.setExtraHTTPHeaders({ "X-Test-Client-IP": "203.0.113.92" });
   await completeSetupForTestUser(page, "catalog.pending-log");
 
-  await page.getByRole("button", { name: "Add Food" }).click();
+  await openUsdaSearch(page);
   await page
     .getByRole("searchbox", { name: "Search United States foods" })
     .fill("yogurt");
@@ -861,7 +1187,7 @@ test("an authenticated user can correct and delete one Food Entry", async ({
 }) => {
   await context.setExtraHTTPHeaders({ "X-Test-Client-IP": "203.0.113.83" });
   await completeSetupForTestUser(page, "food.entry.edit");
-  await page.getByRole("button", { name: "Add Food" }).click();
+  await openUsdaSearch(page);
   await page
     .getByRole("searchbox", { name: "Search United States foods" })
     .fill("yogurt");
@@ -1068,7 +1394,7 @@ test("a stale Food Entry editor refreshes to the current occurrence and can retr
 }) => {
   await context.setExtraHTTPHeaders({ "X-Test-Client-IP": "203.0.113.85" });
   await completeSetupForTestUser(page, "food.entry.stale-recovery");
-  await page.getByRole("button", { name: "Add Food" }).click();
+  await openUsdaSearch(page);
   await page
     .getByRole("searchbox", { name: "Search United States foods" })
     .fill("yogurt");
@@ -1117,7 +1443,7 @@ test("delete pending state names only the destructive mutation", async ({
 }) => {
   await context.setExtraHTTPHeaders({ "X-Test-Client-IP": "203.0.113.86" });
   await completeSetupForTestUser(page, "food.entry.delete-pending");
-  await page.getByRole("button", { name: "Add Food" }).click();
+  await openUsdaSearch(page);
   await page
     .getByRole("searchbox", { name: "Search United States foods" })
     .fill("yogurt");

@@ -27,10 +27,24 @@ Optional variables:
 | --- | --- | --- |
 | `FDC_API_KEY` | unset | USDA FoodData Central key. Store it as a secret value. Food search reports that it is unconfigured when omitted. |
 | `FDC_TIMEOUT_MS` | `5000` | USDA request timeout in milliseconds; accepted range is 100 through 20000. |
+| `OPEN_FOOD_FACTS_CONTACT_EMAIL` | unset | Contact email included in the required Open Food Facts `User-Agent`. Barcode lookup reports that it is unconfigured when this is omitted or blank; startup, USDA search, and saved Food Entries remain available. |
 | `PORT` | `3000` | Internal application port. Keep the default unless Traefik and the published port mapping are updated with it. |
 
 The image owns `NODE_ENV`, `DATABASE_PATH`, and the migrations path. Leave them
 unset in Portainer.
+
+Open Food Facts product reads leave only from the application server. They use
+the read-only v3 API with the identifying `User-Agent`; no Open Food Facts login,
+access token, or browser-side provider request is used. The server must have
+outbound HTTPS access to `world.openfoodfacts.org`. Open Food Facts currently
+limits product reads to 15 requests per minute per IP and can also return global
+503 responses, so lookup availability is not guaranteed. The application
+coalesces repeated concurrent lookups and keeps only a small in-memory cache.
+
+Keep `APPLICATION_URL` on HTTPS in production. Barcode camera work requires a
+browser secure context; the manual barcode field remains available without a
+camera. This release provides manual entry and product review only and does not
+upload or download product images.
 
 ## Set `TRUST_PROXY` exactly
 

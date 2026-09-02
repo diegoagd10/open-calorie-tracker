@@ -1,5 +1,5 @@
 function sensitiveEnvironmentName(value) {
-  return /(api.?key|authorization|cookie|credential|csrf|password|secret|session|token)/i.test(
+  return /(api.?key|authorization|contact.?email|cookie|credential|csrf|password|secret|session|token)/i.test(
     value,
   );
 }

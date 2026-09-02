@@ -85,6 +85,13 @@
       "when": 1788345765954,
       "tag": "0011_clever_may_parker",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1788368704576,
+      "tag": "0012_typical_metal_master",
+      "breakpoints": true
     }
   ]
 }
