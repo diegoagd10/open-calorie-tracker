@@ -6,9 +6,9 @@
       "symbol-use",
       "api-surface"
     ],
-    "project_config_hash": "deferred:no-semantic-queries",
+    "project_config_hash": "sha256:780c9c21b1456907b5e6846ad1271ffd8fd0dad9be84eaededcbc91de466c7db",
     "backend_family": "typescript-go",
-    "completeness": "complete"
+    "completeness": "partial"
   },
   "unused_files": [],
   "unused_exports": [],
