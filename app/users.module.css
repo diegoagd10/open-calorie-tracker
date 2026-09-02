@@ -202,8 +202,16 @@
   margin: 0;
 }
 
+.memberActions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.45rem;
+}
+
 .disableButton,
 .reactivateButton,
+.resetButton,
 .confirmationActions button {
   min-height: 2.25rem;
   padding: 0.45rem 0.7rem;
@@ -223,6 +231,11 @@
 
 .reactivateButton {
   color: var(--green-dark);
+}
+
+.resetButton,
+.confirmResetButton {
+  color: var(--ink-2);
 }
 
 .directoryMessageError,
@@ -351,5 +364,10 @@
     width: 100%;
     align-items: flex-start;
     justify-content: space-between;
+  }
+
+  .memberActions {
+    align-items: stretch;
+    flex-direction: column;
   }
 }

@@ -28,3 +28,16 @@ export function logMemberAccessChanged(
     targetUsername,
   });
 }
+
+export function logMemberPasswordReset(
+  actor: { id: number; username: string },
+  targetUsername: string,
+  outcome: "failed" | "not-found" | "succeeded",
+): void {
+  operationalLog(outcome === "failed" ? "error" : "info", "member_password_reset", {
+    actorId: actor.id,
+    actorUsername: actor.username,
+    outcome,
+    targetUsername,
+  });
+}

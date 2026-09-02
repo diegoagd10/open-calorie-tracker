@@ -8,6 +8,7 @@ import {
   findCredentialByUsername,
   issueSessionForVerifiedCredential,
   replacePasswordAndSessions,
+  resetMemberPasswordAndSessions,
   type CredentialRecord,
 } from "../database/credential-sessions.server";
 import { createMemberAccount } from "../database/member-accounts.server";
@@ -31,6 +32,7 @@ import {
 } from "./bootstrap-events.server";
 import {
   logMemberAccessChanged,
+  logMemberPasswordReset,
   logMemberProvisioned,
 } from "./member-events.server";
 
@@ -107,6 +109,10 @@ export type MemberAccessChangeResult =
         | "not-found";
       ok: false;
     }
+  | { ok: true };
+
+export type MemberPasswordResetResult =
+  | { error: "not-found"; ok: false }
   | { ok: true };
 
 export type IssuedSession = AuthenticatedSession;
@@ -501,6 +507,31 @@ export class AuthenticationService {
     targetUsername: string,
   ): Promise<MemberAccessChangeResult> {
     return this.#changeMemberAccess(actor, targetUsername, "reactivate");
+  }
+
+  async resetMemberPassword(
+    actor: AuthenticatedSession["user"],
+    targetUsername: string,
+    temporaryPassword: string,
+  ): Promise<MemberPasswordResetResult> {
+    const nextPasswordHash = await hashPassword(temporaryPassword);
+    try {
+      const changed = resetMemberPasswordAndSessions(this.#database, {
+        nextPasswordHash,
+        targetUsername,
+        updatedAt: this.#now().toISOString(),
+      });
+      if (!changed) {
+        logMemberPasswordReset(actor, targetUsername, "not-found");
+        return { error: "not-found", ok: false };
+      }
+
+      logMemberPasswordReset(actor, targetUsername, "succeeded");
+      return { ok: true };
+    } catch (error) {
+      logMemberPasswordReset(actor, targetUsername, "failed");
+      throw error;
+    }
   }
 
   #changeMemberAccess(

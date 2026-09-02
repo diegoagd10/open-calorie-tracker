@@ -177,6 +177,236 @@ test("mandatory password replacement clears the restriction and rotates every se
   fixture.applicationDatabase.close();
 });
 
+test("administrator reset replaces an active member password and revokes every target session", async () => {
+  const fixture = await createFixture();
+  const administrator = await fixture.service.register(
+    "reset.admin",
+    password,
+    "203.0.113.216",
+  );
+  if (!administrator.ok) throw new Error("administrator registration failed");
+  const originalPassword = "forgotten private passphrase";
+  const temporaryPassword = "replacement temporary passphrase";
+  const firstDevice = await seedAuthenticatedAccount(
+    fixture.service,
+    fixture.database,
+    "reset.member",
+    originalPassword,
+    "203.0.113.217",
+  );
+  const secondDevice = await fixture.service.login(
+    "reset.member",
+    originalPassword,
+    "203.0.113.218",
+  );
+  if (!secondDevice.ok) throw new Error("second member login failed");
+  const output = vi.spyOn(console, "log").mockImplementation(() => {});
+
+  await expect(
+    fixture.service.resetMemberPassword(
+      administrator.session.user,
+      "reset.member",
+      temporaryPassword,
+    ),
+  ).resolves.toEqual({ ok: true });
+
+  expect(fixture.service.listManageableMembers()).toContainEqual({
+    accessState: "active",
+    createdAt: "2026-08-29T11:00:00.000Z",
+    passwordChangeRequired: true,
+    username: "reset.member",
+  });
+  await expect(fixture.service.authenticate(firstDevice.token))
+    .resolves.toBeUndefined();
+  await expect(fixture.service.authenticate(secondDevice.session.token))
+    .resolves.toBeUndefined();
+  await expect(
+    fixture.service.login(
+      "reset.member",
+      originalPassword,
+      "203.0.113.219",
+    ),
+  ).resolves.toEqual({ error: "invalid-credentials", ok: false });
+  await expect(
+    fixture.service.login(
+      "reset.member",
+      temporaryPassword,
+      "203.0.113.220",
+    ),
+  ).resolves.toMatchObject({
+    ok: true,
+    session: { user: { passwordChangeRequired: true } },
+  });
+  const logRecord = JSON.parse(String(output.mock.calls.at(-1)?.[0])) as Record<
+    string,
+    unknown
+  >;
+  expect(logRecord).toMatchObject({
+    actorId: administrator.session.user.id,
+    actorUsername: "reset.admin",
+    event: "member_password_reset",
+    outcome: "succeeded",
+    targetUsername: "reset.member",
+  });
+  expect(JSON.stringify(logRecord)).not.toContain(temporaryPassword);
+
+  output.mockRestore();
+  fixture.applicationDatabase.close();
+});
+
+test("repeated resets preserve disabled access and only the latest temporary password", async () => {
+  const fixture = await createFixture();
+  const administrator = await fixture.service.register(
+    "disabled.reset.admin",
+    password,
+    "203.0.113.221",
+  );
+  if (!administrator.ok) throw new Error("administrator registration failed");
+  await expect(
+    fixture.service.provisionMember(
+      "disabled.reset.member",
+      "original disabled passphrase",
+    ),
+  ).resolves.toMatchObject({ ok: true });
+  await expect(
+    fixture.service.disableMemberAccess(
+      administrator.session.user,
+      "disabled.reset.member",
+      "disabled.reset.member",
+    ),
+  ).resolves.toEqual({ ok: true });
+
+  await expect(
+    fixture.service.resetMemberPassword(
+      administrator.session.user,
+      "disabled.reset.member",
+      "first temporary passphrase",
+    ),
+  ).resolves.toEqual({ ok: true });
+  await expect(
+    fixture.service.login(
+      "disabled.reset.member",
+      "first temporary passphrase",
+      "203.0.113.222",
+    ),
+  ).resolves.toEqual({ error: "invalid-credentials", ok: false });
+  expect(fixture.service.listManageableMembers()).toContainEqual({
+    accessState: "disabled",
+    createdAt: "2026-08-29T12:00:00.000Z",
+    passwordChangeRequired: true,
+    username: "disabled.reset.member",
+  });
+
+  await expect(
+    fixture.service.resetMemberPassword(
+      administrator.session.user,
+      "disabled.reset.member",
+      "second temporary passphrase",
+    ),
+  ).resolves.toEqual({ ok: true });
+  await expect(
+    fixture.service.reactivateMemberAccess(
+      administrator.session.user,
+      "disabled.reset.member",
+    ),
+  ).resolves.toEqual({ ok: true });
+  await expect(
+    fixture.service.login(
+      "disabled.reset.member",
+      "first temporary passphrase",
+      "203.0.113.223",
+    ),
+  ).resolves.toEqual({ error: "invalid-credentials", ok: false });
+  await expect(
+    fixture.service.login(
+      "disabled.reset.member",
+      "second temporary passphrase",
+      "203.0.113.224",
+    ),
+  ).resolves.toMatchObject({
+    ok: true,
+    session: { user: { passwordChangeRequired: true } },
+  });
+
+  fixture.applicationDatabase.close();
+});
+
+test("password reset rolls back credentials and sessions when revocation fails", async () => {
+  const fixture = await createFixture();
+  const administrator = await fixture.service.register(
+    "rollback.reset.admin",
+    password,
+    "203.0.113.225",
+  );
+  if (!administrator.ok) throw new Error("administrator registration failed");
+  const originalPassword = "rollback original passphrase";
+  const temporaryPassword = "rollback temporary passphrase";
+  const member = await seedAuthenticatedAccount(
+    fixture.service,
+    fixture.database,
+    "rollback.reset.member",
+    originalPassword,
+    "203.0.113.226",
+  );
+  const credentialBefore = fixture.database
+    .select({
+      passwordChangeRequired: users.passwordChangeRequired,
+      passwordHash: passwordCredentials.passwordHash,
+    })
+    .from(users)
+    .innerJoin(passwordCredentials, eq(passwordCredentials.userId, users.id))
+    .where(eq(users.usernameNormalized, "rollback.reset.member"))
+    .get();
+  const errorOutput = vi.spyOn(console, "error").mockImplementation(() => {});
+  fixture.database.$client.exec(`
+    CREATE TRIGGER reject_reset_session_delete
+    BEFORE DELETE ON sessions
+    WHEN OLD.user_id = ${member.user.id}
+    BEGIN
+      SELECT RAISE(ABORT, 'simulated reset revocation failure');
+    END;
+  `);
+
+  await expect(
+    fixture.service.resetMemberPassword(
+      administrator.session.user,
+      "rollback.reset.member",
+      temporaryPassword,
+    ),
+  ).rejects.toThrow("simulated reset revocation failure");
+  expect(
+    fixture.database
+      .select({
+        passwordChangeRequired: users.passwordChangeRequired,
+        passwordHash: passwordCredentials.passwordHash,
+      })
+      .from(users)
+      .innerJoin(passwordCredentials, eq(passwordCredentials.userId, users.id))
+      .where(eq(users.usernameNormalized, "rollback.reset.member"))
+      .get(),
+  ).toEqual(credentialBefore);
+  await expect(fixture.service.authenticate(member.token)).resolves.toBeDefined();
+  await expect(
+    fixture.service.login(
+      "rollback.reset.member",
+      originalPassword,
+      "203.0.113.227",
+    ),
+  ).resolves.toMatchObject({ ok: true });
+  const logRecord = JSON.parse(String(errorOutput.mock.calls.at(-1)?.[0])) as
+    Record<string, unknown>;
+  expect(logRecord).toMatchObject({
+    actorUsername: "rollback.reset.admin",
+    event: "member_password_reset",
+    outcome: "failed",
+    targetUsername: "rollback.reset.member",
+  });
+  expect(JSON.stringify(logRecord)).not.toContain(temporaryPassword);
+
+  errorOutput.mockRestore();
+  fixture.applicationDatabase.close();
+});
+
 test("member access suspension revokes every target session and reactivation preserves onboarding", async () => {
   const fixture = await createFixture();
   const administrator = await fixture.service.register(

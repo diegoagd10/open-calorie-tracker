@@ -280,3 +280,100 @@ test("administrator confirms suspension, signs out another device, and reactivat
   await memberContext.close();
   await otherMemberContext.close();
 });
+
+test("administrator resets a member password and the member completes private onboarding", async ({
+  browser,
+  context,
+  page,
+}) => {
+  const originalPassword = "forgotten browser passphrase";
+  const temporaryPassword = "temporary browser reset passphrase";
+  const privatePassword = "private browser replacement passphrase";
+  await context.setExtraHTTPHeaders({ "X-Test-Client-IP": "203.0.113.195" });
+  await bootstrapOrSignInBrowserTestUser(
+    page,
+    "reset.admin",
+    validPassword,
+  );
+  await finishSetup(page);
+
+  const memberContext = await browser.newContext({
+    baseURL: "http://127.0.0.1:4173",
+    extraHTTPHeaders: { "X-Test-Client-IP": "203.0.113.196" },
+  });
+  const memberPage = await memberContext.newPage();
+  await signInProvisionedMember(
+    memberPage,
+    "forgotten.member",
+    originalPassword,
+  );
+  await finishSetup(memberPage);
+
+  await page.goto("/settings/users");
+  const memberRow = page.getByRole("listitem").filter({
+    hasText: "forgotten.member",
+  });
+  await memberRow.getByRole("button", {
+    name: "Reset password for forgotten.member",
+  }).click();
+  const dialog = page.getByRole("dialog", {
+    name: "Reset password for forgotten.member",
+  });
+  await expect(dialog).toContainText("The application will not deliver it");
+  await expect(dialog.getByLabel("New temporary password"))
+    .toHaveAttribute("autocomplete", "new-password");
+  await expect(dialog.locator('input[autocomplete="username"]'))
+    .toHaveValue("forgotten.member");
+  await dialog.getByLabel("New temporary password").fill(temporaryPassword);
+  await dialog.getByLabel("Confirm temporary password").fill(
+    "different temporary passphrase",
+  );
+  await dialog.getByRole("button", { name: "Reset password" }).click();
+  await expect(dialog.getByRole("alert")).toContainText(
+    "Passwords do not match.",
+  );
+  await memberPage.reload();
+  await expect(memberPage).toHaveURL("/");
+
+  await page.setViewportSize({ height: 844, width: 320 });
+  await dialog.getByLabel("Confirm temporary password").fill(temporaryPassword);
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+  await dialog.getByRole("button", { name: "Reset password" }).click();
+  await expect(page.getByRole("status")).toContainText(
+    "forgotten.member password was reset",
+  );
+  await expect(memberRow).toContainText("Password change required");
+
+  await memberPage.reload();
+  await expect(memberPage).toHaveURL("/login");
+  await memberPage.getByLabel("Username").fill("forgotten.member");
+  await memberPage.getByLabel("Password", { exact: true }).fill(
+    originalPassword,
+  );
+  await memberPage.getByRole("button", { name: "Sign in" }).click();
+  await expect(memberPage.getByRole("alert")).toContainText(
+    "username or password is incorrect",
+  );
+  await memberPage.getByLabel("Password", { exact: true }).fill(
+    temporaryPassword,
+  );
+  await memberPage.getByRole("button", { name: "Sign in" }).click();
+  await expect(memberPage).toHaveURL("/account/password");
+  await memberPage.goto("/");
+  await expect(memberPage).toHaveURL("/account/password");
+  await memberPage.getByLabel("Current password").fill(temporaryPassword);
+  await memberPage.getByLabel("New password").fill(privatePassword);
+  await memberPage.getByRole("button", {
+    name: "Set password and continue",
+  }).click();
+  await expect(memberPage).toHaveURL("/");
+  await expect(memberPage.getByRole("heading", { name: "Food Log" }))
+    .toBeVisible();
+
+  await memberContext.close();
+});
