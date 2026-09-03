@@ -104,6 +104,10 @@ test("mobile metadata supports adding the app to an iPhone Home Screen", async (
     "href",
     "/manifest.webmanifest",
   );
+  await expect(page.locator('link[rel="icon"]')).toHaveAttribute(
+    "href",
+    "/favicon.png",
+  );
   await expect(page.locator('link[rel="apple-touch-icon"]')).toHaveAttribute(
     "href",
     "/apple-touch-icon.png",
@@ -118,14 +122,35 @@ test("mobile metadata supports adding the app to an iPhone Home Screen", async (
   const manifestResponse = await request.get("/manifest.webmanifest");
   expect(manifestResponse.status()).toBe(200);
   await expect(manifestResponse.json()).resolves.toMatchObject({
+    icons: [
+      {
+        purpose: "any",
+        sizes: "192x192",
+        src: "/icons/app-icon-192.png",
+        type: "image/png",
+      },
+      {
+        purpose: "any",
+        sizes: "512x512",
+        src: "/icons/app-icon-512.png",
+        type: "image/png",
+      },
+    ],
     id: "/",
     scope: "/",
     start_url: "/",
   });
 
-  const touchIconResponse = await request.get("/apple-touch-icon.png");
-  expect(touchIconResponse.status()).toBe(200);
-  expect(touchIconResponse.headers()["content-type"]).toContain("image/png");
+  for (const iconPath of [
+    "/favicon.png",
+    "/apple-touch-icon.png",
+    "/icons/app-icon-192.png",
+    "/icons/app-icon-512.png",
+  ]) {
+    const iconResponse = await request.get(iconPath);
+    expect(iconResponse.status()).toBe(200);
+    expect(iconResponse.headers()["content-type"]).toContain("image/png");
+  }
 });
 
 test("one mobile Chromium journey verifies the complete private MVP", async ({
