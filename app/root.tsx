@@ -12,7 +12,7 @@ import readinessStyles from "./readiness.module.css";
 
 export const links = () => [
   { rel: "stylesheet", href: stylesheet },
-  { rel: "icon", href: "/favicon.svg", type: "image/svg+xml" },
+  { rel: "icon", href: "/favicon.png", sizes: "64x64", type: "image/png" },
   {
     rel: "apple-touch-icon",
     href: "/apple-touch-icon.png",

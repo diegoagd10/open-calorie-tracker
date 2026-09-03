@@ -29,7 +29,12 @@ async function renderInRoute(children: ReactNode): Promise<ReactTestRenderer> {
 test("root publishes the complete installable-app link contract", () => {
   expect(links()).toEqual([
     { href: "", rel: "stylesheet" },
-    { href: "/favicon.svg", rel: "icon", type: "image/svg+xml" },
+    {
+      href: "/favicon.png",
+      rel: "icon",
+      sizes: "64x64",
+      type: "image/png",
+    },
     {
       href: "/apple-touch-icon.png",
       rel: "apple-touch-icon",
