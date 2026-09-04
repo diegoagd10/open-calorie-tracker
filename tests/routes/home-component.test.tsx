@@ -109,6 +109,7 @@ const baseFoodLog = {
 const baseLoaderData = {
   calendar: undefined,
   catalog: undefined,
+  copyIdempotencyKeys: {},
   csrfToken: "home-component-csrf",
   foodEntryEditor: undefined,
   foodLog: baseFoodLog,
@@ -653,6 +654,117 @@ test("home renders food and water timeline entries with factual units", async ()
       style: { "--progress": "50%" },
     });
   await act(async () => singular.unmount());
+});
+
+test("historical Food Entries expose a copy menu without changing card editing", async () => {
+  const historicalFood = {
+    amountMicroliters: undefined,
+    dataType: "Branded",
+    energyMilliKcal: 59_000,
+    foodLogDate: "2026-08-29",
+    id: 91,
+    kind: "food" as const,
+    localEventTime: "08:05:00",
+    name: "Historical yogurt",
+    provider: "usda-fdc",
+    quantityMicrounits: 1_000_000,
+    selectedMeasurementLabel: "100 g",
+  };
+  const waterEvent = {
+    amountMicroliters: 236_588,
+    foodLogDate: "2026-08-29",
+    id: 92,
+    kind: "water" as const,
+    localEventTime: "08:10:00",
+  };
+  const historical = await renderHome({
+    copyIdempotencyKeys: { [historicalFood.id]: "copy:historical-key" },
+    foodLog: {
+      ...baseFoodLog,
+      entries: [historicalFood],
+      events: [historicalFood, waterEvent],
+      selectedDate: "2026-08-29",
+    },
+  });
+
+  expect(
+    historical.root.findByProps({
+      "aria-label": "More actions for Historical yogurt",
+    }).type,
+  ).toBe("button");
+  await act(async () =>
+    historical.root
+      .findByProps({ "aria-label": "More actions for Historical yogurt" })
+      .props.onClick(),
+  );
+  expect(
+    historical.root.findByProps({ "data-entry-editor-trigger": true }).props.to,
+  ).toBe("/?date=2026-08-29&entry=91");
+  expect(input(historical, "entryId").props.value).toBe(91);
+  expect(input(historical, "idempotencyKey").props.value).toBe(
+    "copy:historical-key",
+  );
+  expect(
+    historical.root.findAllByType("button").find(
+      (button) => nodeText(button) === "Copy to today",
+    )?.props,
+  ).toMatchObject({
+    disabled: false,
+    name: "intent",
+    value: "copy-food-to-today",
+  });
+  expect(
+    historical.root.findAll(
+      (node) =>
+        typeof node.props["aria-label"] === "string" &&
+        node.props["aria-label"].startsWith("More actions for"),
+    ),
+  ).toHaveLength(1);
+  await act(async () => historical.unmount());
+
+  const today = await renderHome({
+    copyIdempotencyKeys: {},
+    foodLog: {
+      ...baseFoodLog,
+      entries: [{ ...historicalFood, foodLogDate: "2026-08-31" }],
+      events: [{ ...historicalFood, foodLogDate: "2026-08-31" }, waterEvent],
+    },
+  });
+  expect(
+    today.root.findAll(
+      (node) =>
+        typeof node.props["aria-label"] === "string" &&
+        node.props["aria-label"].startsWith("More actions for"),
+    ),
+  ).toHaveLength(0);
+  await act(async () => today.unmount());
+
+  const copyForm = new FormData();
+  copyForm.set("entryId", "91");
+  copyForm.set("intent", "copy-food-to-today");
+  const pending = await renderPendingHome(
+    {
+      copyIdempotencyKeys: { [historicalFood.id]: "copy:historical-key" },
+      foodLog: {
+        ...baseFoodLog,
+        entries: [historicalFood],
+        events: [historicalFood],
+        selectedDate: "2026-08-29",
+      },
+    },
+    { formData: copyForm, to: "/" },
+  );
+  await act(async () =>
+    pending.root
+      .findByProps({ "aria-label": "More actions for Historical yogurt" })
+      .props.onClick(),
+  );
+  expect(
+    pending.root.findAllByType("button").find(
+      (button) => nodeText(button) === "Copying…",
+    )?.props.disabled,
+  ).toBe(true);
+  await act(async () => pending.unmount());
 });
 
 const catalogFood = {

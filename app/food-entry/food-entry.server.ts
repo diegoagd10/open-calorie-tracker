@@ -27,21 +27,41 @@ import {
   scaleCatalogNutrient,
   serializeCatalogMeasurements,
   serializeCatalogNutrition,
+  type FoodEntryRow,
 } from "./snapshot.server";
 import { quantityMicrounitsFromDecimal } from "./nutrition";
+
+const idempotencyKeySchema = z
+  .string()
+  .min(8)
+  .max(128)
+  .refine((value) => /^[A-Za-z0-9._:-]+$/.test(value));
+
+export const copyFoodEntryIdempotencyKeySchema = idempotencyKeySchema.refine(
+  (value) => value.startsWith("copy:"),
+);
+
+export function createCopyFoodEntryIdempotencyKey(nonce: string): string {
+  return copyFoodEntryIdempotencyKeySchema.parse(`copy:${nonce}`);
+}
 
 function logFoodInputSchema() {
   return z.object({
     foodLogDate: z.string(),
-    idempotencyKey: z
-      .string()
-      .min(8)
-      .max(128)
-      .refine((value) => /^[A-Za-z0-9._:-]+$/.test(value)),
+    idempotencyKey: idempotencyKeySchema.refine(
+      (value) => !value.startsWith("copy:"),
+    ),
     provider: z.string().min(1).max(64),
     providerFoodId: z.string().min(1).max(128),
     quantity: z.string().min(1).max(32),
     selectedMeasurementId: z.string().min(1).max(128),
+  });
+}
+
+function copyFoodEntryInputSchema() {
+  return z.object({
+    foodLogDate: z.string(),
+    idempotencyKey: copyFoodEntryIdempotencyKeySchema,
   });
 }
 
@@ -71,6 +91,9 @@ function updateFoodInputSchema() {
 }
 
 export type LogFoodInput = z.input<ReturnType<typeof logFoodInputSchema>>;
+export type CopyFoodEntryInput = z.input<
+  ReturnType<typeof copyFoodEntryInputSchema>
+>;
 export type UpdateFoodInput = z.input<ReturnType<typeof updateFoodInputSchema>>;
 
 export class InvalidFoodEntryInputError extends Error {
@@ -216,6 +239,39 @@ function nullableNutrient(
   return Number(result);
 }
 
+function savedNutritionSnapshotValues(source: FoodEntryRow) {
+  return {
+    authoritativeBaseQuantityMicrounits:
+      source.authoritativeBaseQuantityMicrounits,
+    authoritativeBaseUnit: source.authoritativeBaseUnit,
+    authoritativeNutrition: source.authoritativeNutrition,
+    barcode: source.barcode,
+    brand: source.brand,
+    carbohydrateMilligrams: source.carbohydrateMilligrams,
+    editedName: source.editedName,
+    energyMilliKcal: source.energyMilliKcal,
+    fatMilligrams: source.fatMilligrams,
+    fiberMilligrams: source.fiberMilligrams,
+    marketCountry: source.marketCountry,
+    originalName: source.originalName,
+    proteinMilligrams: source.proteinMilligrams,
+    provider: source.provider,
+    providerFoodId: source.providerFoodId,
+    providerModifiedDate: source.providerModifiedDate,
+    providerPublishedDate: source.providerPublishedDate,
+    quantityMicrounits: source.quantityMicrounits,
+    selectedMeasurementBaseQuantityMicrounits:
+      source.selectedMeasurementBaseQuantityMicrounits,
+    selectedMeasurementId: source.selectedMeasurementId,
+    selectedMeasurementLabel: source.selectedMeasurementLabel,
+    selectedMeasurementUnit: source.selectedMeasurementUnit,
+    sodiumMilligrams: source.sodiumMilligrams,
+    sourceDataType: source.sourceDataType,
+    sugarMilligrams: source.sugarMilligrams,
+    supportedMeasurements: source.supportedMeasurements,
+  };
+}
+
 export class FoodEntryService {
   readonly #database: ApplicationDatabaseClient;
   readonly #now: () => Date;
@@ -316,6 +372,85 @@ export class FoodEntryService {
           idempotencyKey: parsed.data.idempotencyKey,
           localEventTime,
           quantityMicrounits: quantity,
+          updatedAt: createdAt,
+          userId,
+        })
+        .returning()
+        .get();
+      return foodEntrySnapshot(row);
+    });
+  }
+
+  copyToToday(
+    userId: number,
+    entryId: number,
+    input: CopyFoodEntryInput,
+  ) {
+    const parsed = copyFoodEntryInputSchema().safeParse(input);
+    const parsedId = z.number().int().positive().safeParse(entryId);
+    if (
+      !parsed.success ||
+      !parsedId.success ||
+      !parseIsoLocalDate(parsed.data.foodLogDate)
+    ) {
+      throw new InvalidFoodEntryInputError();
+    }
+
+    const instant = this.#now();
+    const createdAt = instant.toISOString();
+    return this.#database.transaction((transaction) => {
+      const source = transaction
+        .select()
+        .from(foodEntries)
+        .where(
+          and(
+            eq(foodEntries.userId, userId),
+            eq(foodEntries.id, parsedId.data),
+          ),
+        )
+        .get();
+      const preference = transaction
+        .select({ timeZone: userPreferences.timeZone })
+        .from(userPreferences)
+        .where(eq(userPreferences.userId, userId))
+        .get();
+      if (!preference) throw new InvalidFoodLogDateError();
+      const today = localDateAt(instant, preference.timeZone);
+      if (
+        !source ||
+        source.foodLogDate !== parsed.data.foodLogDate ||
+        source.foodLogDate >= today
+      ) {
+        throw new FoodEntryUnavailableError();
+      }
+
+      const repeated = transaction
+        .select()
+        .from(foodEntries)
+        .where(
+          and(
+            eq(foodEntries.userId, userId),
+            eq(foodEntries.idempotencyKey, parsed.data.idempotencyKey),
+          ),
+        )
+        .get();
+      if (repeated) return foodEntrySnapshot(repeated);
+
+      const row = transaction
+        .insert(foodEntries)
+        .values({
+          ...savedNutritionSnapshotValues(source),
+          createdAt,
+          foodLogDate: today,
+          idempotencyKey: parsed.data.idempotencyKey,
+          localEventTime: localEventTimeForNewFoodLogEvent(
+            transaction,
+            userId,
+            today,
+            today,
+            instant,
+            preference.timeZone,
+          ),
           updatedAt: createdAt,
           userId,
         })

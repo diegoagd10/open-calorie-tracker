@@ -594,6 +594,10 @@
   z-index: 1;
 }
 
+.timeline > article:has(.foodEntryMenuTrigger[aria-expanded="true"]) {
+  z-index: 4;
+}
+
 .foodEntryCard {
   display: grid;
   grid-template-columns: 4.75rem 2.75rem minmax(0, 1fr) auto 1.25rem;
@@ -713,6 +717,84 @@
 .foodEntryCard:focus-visible::after {
   border-color: var(--rule-strong);
   background: #fbfcfd;
+}
+
+.foodEntryCardWithMenu {
+  grid-template-columns: 4.75rem 2.75rem minmax(0, 1fr) auto 2.75rem;
+}
+
+.foodEntryCardWithMenu::after {
+  color: transparent;
+  content: "";
+}
+
+.foodEntryMenu {
+  position: absolute;
+  z-index: 3;
+  top: 50%;
+  right: 0.3rem;
+  transform: translateY(-50%);
+}
+
+.foodEntryMenuTrigger {
+  display: grid;
+  width: 2.25rem;
+  height: 2.25rem;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+}
+
+.foodEntryMenuTrigger:hover,
+.foodEntryMenuTrigger:focus-visible,
+.foodEntryMenuTrigger[aria-expanded="true"] {
+  color: var(--ink);
+  background: var(--surface-soft);
+}
+
+.foodEntryMenuTrigger:focus-visible {
+  outline: 2px solid var(--green-dark);
+  outline-offset: 2px;
+}
+
+.foodEntryMenuPopover {
+  position: absolute;
+  top: calc(100% + 0.35rem);
+  right: 0;
+  min-width: 10rem;
+  padding: 0.35rem;
+  border: 1px solid var(--rule-strong);
+  border-radius: 0.65rem;
+  background: var(--surface);
+  box-shadow: 0 0.75rem 2rem rgb(31 42 55 / 16%);
+}
+
+.foodEntryMenuPopover button {
+  width: 100%;
+  padding: 0.65rem 0.75rem;
+  border: 0;
+  border-radius: 0.45rem;
+  color: var(--green-dark);
+  background: transparent;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 750;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.foodEntryMenuPopover button:hover,
+.foodEntryMenuPopover button:focus-visible {
+  background: var(--surface-soft);
+}
+
+.foodEntryMenuPopover button:disabled {
+  color: var(--muted);
+  cursor: progress;
 }
 
 .pendingFoodEntryCard {
@@ -1967,6 +2049,10 @@
   .foodEntryCard {
     grid-template-columns: 2.625rem minmax(0, 1fr) auto 1.125rem;
     grid-template-rows: auto minmax(4.5rem, auto);
+  }
+
+  .foodEntryCardWithMenu {
+    grid-template-columns: 2.625rem minmax(0, 1fr) auto 2.5rem;
   }
 
   .foodEntryCard time,

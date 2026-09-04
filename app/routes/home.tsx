@@ -55,6 +55,7 @@ import {
   buildCalendarMonth,
   formatLocalDate,
   getNearbyLocalDates,
+  parseIsoLocalDate,
 } from "../food-log/date";
 import {
   FutureFoodLogDateError,
@@ -62,6 +63,8 @@ import {
 } from "../food-log/food-log.server";
 import { getFoodLogService } from "../food-log/runtime.server";
 import {
+  copyFoodEntryIdempotencyKeySchema,
+  createCopyFoodEntryIdempotencyKey,
   FoodEntryUnavailableError,
   InvalidFoodEntryInputError,
   StaleFoodEntryError,
@@ -127,6 +130,12 @@ function foodLogIntentSchema() {
       providerFoodId: z.string(),
       quantity: z.string(),
       selectedMeasurementId: z.string(),
+    }),
+    z.object({
+      date: z.string().refine((value) => parseIsoLocalDate(value) !== undefined),
+      entryId: z.string().refine((value) => positiveIntegerId(value) !== undefined),
+      idempotencyKey: copyFoodEntryIdempotencyKeySchema,
+      intent: z.literal("copy-food-to-today"),
     }),
     z.object({
       carbohydrateGrams: z.string(),
@@ -347,6 +356,37 @@ export async function loader({ request }: Route.LoaderArgs) {
     throw error;
   }
   if (!foodLog) return redirect("/setup");
+
+  const copyIdempotencyKeys =
+    foodLog.selectedDate < foodLog.today
+      ? Object.fromEntries(
+          foodLog.events
+            .filter((entry) => entry.kind === "food")
+            .map((entry) => [
+              entry.id,
+              createCopyFoodEntryIdempotencyKey(randomUUID()),
+            ]),
+        )
+      : {};
+  const noticeKind = url.searchParams.get("notice");
+  const copiedEntryId =
+    noticeKind === "copied"
+      ? positiveIntegerId(url.searchParams.get("copied"))
+      : undefined;
+  let copiedFoodName: string | undefined;
+  if (copiedEntryId !== undefined) {
+    try {
+      const copiedEntry = getFoodEntryService(testRequestInstant(request)).read(
+        session.user.id,
+        copiedEntryId,
+      );
+      if (copiedEntry.foodLogDate === foodLog.today) {
+        copiedFoodName = copiedEntry.name;
+      }
+    } catch (error) {
+      if (!(error instanceof FoodEntryUnavailableError)) throw error;
+    }
+  }
 
   const nearbyDates = getNearbyLocalDates(foodLog.selectedDate, foodLog.today);
   const requestedCalendar = url.searchParams.get("calendar");
@@ -581,11 +621,12 @@ export async function loader({ request }: Route.LoaderArgs) {
     {
       calendar,
       catalog,
+      copyIdempotencyKeys,
       csrfToken: session.csrfToken,
       foodEntryEditor,
       foodLog,
       nearbyDates,
-      notice: noticeMessage(url.searchParams.get("notice")),
+      notice: noticeMessage(noticeKind, copiedFoodName),
       username: session.user.username,
       waterDialog,
     },
@@ -593,7 +634,13 @@ export async function loader({ request }: Route.LoaderArgs) {
   );
 }
 
-function noticeMessage(value: string | null): string | undefined {
+function noticeMessage(
+  value: string | null,
+  copiedFoodName: string | undefined,
+): string | undefined {
+  if (value === "copied" && copiedFoodName) {
+    return `Copied ${copiedFoodName} to today's Food Log.`;
+  }
   if (value === "updated") {
     return "Food Entry updated. Daily totals refreshed.";
   }
@@ -690,7 +737,7 @@ export async function action({ request }: Route.ActionArgs) {
   });
   if (!parsed.success) {
     return data<HomeActionData>(
-      { message: "The Food Log request was invalid." },
+      { message: "The Food Log request was invalid.", tone: "error" },
       { status: 400 },
     );
   }
@@ -847,6 +894,52 @@ export async function action({ request }: Route.ActionArgs) {
         );
       }
       throw error;
+    }
+  }
+
+  if (parsed.data.intent === "copy-food-to-today") {
+    const entryId = positiveIntegerId(parsed.data.entryId);
+    if (entryId === undefined) {
+      return data<HomeActionData>(
+        { message: "The Food Entry request is invalid", tone: "error" },
+        { status: 400 },
+      );
+    }
+    try {
+      const copied = getFoodEntryService(testRequestInstant(request)).copyToToday(
+        session.user.id,
+        entryId,
+        {
+          foodLogDate: parsed.data.date,
+          idempotencyKey: parsed.data.idempotencyKey,
+        },
+      );
+      const parameters = new URLSearchParams({
+        date: parsed.data.date,
+        notice: "copied",
+        copied: String(copied.id),
+      });
+      return redirect(`/?${parameters}`);
+    } catch (error) {
+      if (error instanceof FoodEntryUnavailableError) {
+        return data<HomeActionData>(
+          { message: error.message, tone: "error" },
+          { status: 404 },
+        );
+      }
+      if (error instanceof InvalidFoodEntryInputError) {
+        return data<HomeActionData>(
+          { message: error.message, tone: "error" },
+          { status: 400 },
+        );
+      }
+      return data<HomeActionData>(
+        {
+          message: "The Food Entry could not be copied. Try again.",
+          tone: "error",
+        },
+        { status: 500 },
+      );
     }
   }
 
@@ -2996,10 +3089,66 @@ function PendingFoodEntry({ name }: { name: string }) {
   );
 }
 
+function FoodEntryCopyMenu({
+  csrfToken,
+  entry,
+  idempotencyKey,
+}: {
+  csrfToken: string;
+  entry: Extract<
+    Route.ComponentProps["loaderData"]["foodLog"]["events"][number],
+    { kind: "food" }
+  >;
+  idempotencyKey: string;
+}) {
+  const navigation = useNavigation();
+  const [open, setOpen] = useState(false);
+  const pending =
+    navigation.formData?.get("intent") === "copy-food-to-today" &&
+    navigation.formData.get("entryId") === String(entry.id);
+
+  return (
+    <div className={styles.foodEntryMenu}>
+      <button
+        aria-expanded={open}
+        aria-label={`More actions for ${entry.name}`}
+        className={styles.foodEntryMenuTrigger}
+        onClick={() => setOpen((current) => !current)}
+        type="button"
+      >
+        <span aria-hidden="true">•••</span>
+      </button>
+      {open ? (
+        <div className={styles.foodEntryMenuPopover}>
+          <Form method="post">
+            <input name="csrfToken" type="hidden" value={csrfToken} />
+            <input name="date" type="hidden" value={entry.foodLogDate} />
+            <input name="entryId" type="hidden" value={entry.id} />
+            <input
+              name="idempotencyKey"
+              type="hidden"
+              value={idempotencyKey}
+            />
+            <button
+              disabled={pending}
+              name="intent"
+              type="submit"
+              value="copy-food-to-today"
+            >
+              {pending ? "Copying…" : "Copy to today"}
+            </button>
+          </Form>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export default function Home({ actionData, loaderData }: Route.ComponentProps) {
   const {
     calendar,
     catalog,
+    copyIdempotencyKeys,
     csrfToken,
     foodEntryEditor,
     foodLog,
@@ -3169,7 +3318,11 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
                         // Stryker disable next-line StringLiteral: a single-prefix mutation preserves key uniqueness against the water prefix.
                         <article key={`food-${entry.id}`}>
                           <Link
-                            className={styles.foodEntryCard}
+                            className={
+                              copyIdempotencyKeys[entry.id]
+                                ? `${styles.foodEntryCard} ${styles.foodEntryCardWithMenu}`
+                                : styles.foodEntryCard
+                            }
                             data-entry-editor-trigger
                             to={`${foodLogHref(entry.foodLogDate)}&entry=${entry.id}`}
                           >
@@ -3201,6 +3354,14 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
                               <small>kcal</small>
                             </span>
                           </Link>
+                          {copyIdempotencyKeys[entry.id] ? (
+                            <FoodEntryCopyMenu
+                              csrfToken={csrfToken}
+                              entry={entry}
+                              idempotencyKey={copyIdempotencyKeys[entry.id]}
+                              key={copyIdempotencyKeys[entry.id]}
+                            />
+                          ) : null}
                         </article>
                       ) : (
                         // Stryker disable next-line StringLiteral: a single-prefix mutation preserves key uniqueness against the food prefix.

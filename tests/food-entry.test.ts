@@ -216,6 +216,212 @@ test("a provider-backed fractional portion becomes an immutable Food Entry snaps
   database.close();
 });
 
+test("a historical Food Entry snapshot can be copied independently to today without consulting the catalog", async () => {
+  const database = await setupDatabase();
+  const client = database.getClient();
+  const userId = insertConfiguredUser(client, "copy.snapshot.user");
+  const provider = new FakeCatalogProvider();
+  const now = () => new Date("2026-08-31T16:23:45.000Z");
+  const service = new FoodEntryService(client, provider, now);
+  const source = await service.log(userId, {
+    foodLogDate: "2026-08-29",
+    idempotencyKey: "copy-source-entry",
+    provider: "usda-fdc",
+    providerFoodId: "200",
+    quantity: "1.5",
+    selectedMeasurementId: "portion:7",
+  });
+  const corrected = service.update(userId, source.id, {
+    carbohydrateGrams: "12.345",
+    energyKcal: "123.456",
+    expectedUpdatedAt: source.updatedAt,
+    fatGrams: "4.567",
+    fiberGrams: "2.345",
+    foodLogDate: source.foodLogDate,
+    name: "Corrected bread",
+    proteinGrams: "6.789",
+    quantity: "2.25",
+    selectedMeasurementId: "portion:7",
+    sodiumMilligrams: "321",
+    sugarGrams: "1.234",
+  });
+  const catalogCallsBeforeCopy = provider.getFoodCalls;
+
+  const copied = service.copyToToday(userId, source.id, {
+    foodLogDate: source.foodLogDate,
+    idempotencyKey: "copy:to-today-key",
+  });
+
+  expect(copied).toMatchObject({
+    ...corrected,
+    createdAt: "2026-08-31T16:23:45.000Z",
+    foodLogDate: "2026-08-31",
+    id: copied.id,
+    localEventTime: "12:23:45",
+    updatedAt: "2026-08-31T16:23:45.000Z",
+  });
+  expect(copied.id).not.toBe(corrected.id);
+  expect(provider.getFoodCalls).toBe(catalogCallsBeforeCopy);
+
+  const sourceLog = new FoodLogService(client, now).read(userId, "2026-08-29")!;
+  const todayLog = new FoodLogService(client, now).read(userId, "2026-08-31")!;
+  expect(sourceLog.entries).toEqual([corrected]);
+  expect(sourceLog.nutritionTotals.energyMilliKcal.known).toBe(123_456);
+  expect(todayLog.entries).toEqual([copied]);
+  expect(todayLog.nutritionTotals.energyMilliKcal.known).toBe(123_456);
+
+  service.delete(userId, corrected.id, {
+    expectedUpdatedAt: corrected.updatedAt,
+    foodLogDate: corrected.foodLogDate,
+  });
+  expect(service.read(userId, copied.id)).toEqual(copied);
+  database.close();
+});
+
+test("copying accepts only the user's historical occurrence and is idempotent per deliberate action", async () => {
+  const database = await setupDatabase();
+  const client = database.getClient();
+  const userId = insertConfiguredUser(client, "copy.boundaries.user");
+  const otherUserId = insertConfiguredUser(client, "copy.boundaries.other");
+  const provider = new FakeCatalogProvider();
+  const now = () => new Date("2026-08-31T16:00:00.000Z");
+  const service = new FoodEntryService(client, provider, now);
+  const historical = await service.log(userId, {
+    ...validLogInput(),
+    foodLogDate: "2026-08-30",
+    idempotencyKey: "copy-boundary-source",
+  });
+  const today = await service.log(userId, {
+    ...validLogInput(),
+    foodLogDate: "2026-08-31",
+    idempotencyKey: "copy-boundary-today",
+  });
+  const input = {
+    foodLogDate: historical.foodLogDate,
+    idempotencyKey: "copy:boundary-action",
+  };
+
+  expect(() => service.copyToToday(otherUserId, historical.id, input)).toThrow(
+    FoodEntryUnavailableError,
+  );
+  expect(() =>
+    service.copyToToday(userId, historical.id, {
+      ...input,
+      foodLogDate: "2026-08-29",
+    }),
+  ).toThrow(FoodEntryUnavailableError);
+  expect(() =>
+    service.copyToToday(userId, today.id, {
+      ...input,
+      foodLogDate: today.foodLogDate,
+    }),
+  ).toThrow(FoodEntryUnavailableError);
+  for (const invalidInput of [
+    { ...input, foodLogDate: "2026-02-29" },
+    { ...input, idempotencyKey: "short" },
+    { ...input, idempotencyKey: "invalid key" },
+  ]) {
+    expect(() =>
+      service.copyToToday(userId, historical.id, invalidInput),
+    ).toThrow(InvalidFoodEntryInputError);
+  }
+  for (const invalidId of [0, -1, 1.5, Number.NaN]) {
+    expect(() => service.copyToToday(userId, invalidId, input)).toThrow(
+      InvalidFoodEntryInputError,
+    );
+  }
+
+  const first = service.copyToToday(userId, historical.id, input);
+  const retry = service.copyToToday(userId, historical.id, input);
+  const deliberateLaterCopy = service.copyToToday(userId, historical.id, {
+    ...input,
+    idempotencyKey: "copy:boundary-action-later",
+  });
+  expect(retry.id).toBe(first.id);
+  expect(deliberateLaterCopy.id).not.toBe(first.id);
+  expect(() =>
+    service.copyToToday(userId, today.id, {
+      ...input,
+      foodLogDate: today.foodLogDate,
+    }),
+  ).toThrow(FoodEntryUnavailableError);
+  expect(() =>
+    service.copyToToday(userId, historical.id, {
+      ...input,
+      foodLogDate: "2026-08-29",
+    }),
+  ).toThrow(FoodEntryUnavailableError);
+  await expect(
+    service.log(userId, {
+      ...validLogInput(),
+      idempotencyKey: "copy:reserved-for-copy-actions",
+    }),
+  ).rejects.toBeInstanceOf(InvalidFoodEntryInputError);
+  expect(
+    new FoodLogService(client, now).read(userId, "2026-08-31")?.entries,
+  ).toHaveLength(3);
+  database.close();
+});
+
+test("a failed copy transaction creates no occurrence", async () => {
+  const database = await setupDatabase();
+  const client = database.getClient();
+  const userId = insertConfiguredUser(client, "copy.transaction.user");
+  const provider = new FakeCatalogProvider();
+  const now = () => new Date("2026-08-31T16:00:00.000Z");
+  const service = new FoodEntryService(client, provider, now);
+  const source = await service.log(userId, {
+    ...validLogInput(),
+    foodLogDate: "2026-08-30",
+    idempotencyKey: "copy-transaction-source",
+  });
+  client.run(sql.raw(`CREATE TRIGGER fail_food_entry_copy
+    BEFORE INSERT ON food_entries
+    WHEN NEW.idempotency_key = 'copy:transaction-failure'
+    BEGIN
+      SELECT RAISE(ABORT, 'simulated copy failure');
+    END`));
+
+  expect(() =>
+    service.copyToToday(userId, source.id, {
+      foodLogDate: source.foodLogDate,
+      idempotencyKey: "copy:transaction-failure",
+    }),
+  ).toThrow("simulated copy failure");
+  expect(client.select().from(foodEntries).all()).toHaveLength(1);
+  database.close();
+});
+
+test("copying resolves today's date and event time in the user's configured time zone", async () => {
+  const database = await setupDatabase();
+  const client = database.getClient();
+  const userId = insertConfiguredUser(client, "copy.time-zone.user");
+  client
+    .update(userPreferences)
+    .set({ timeZone: "Pacific/Kiritimati" })
+    .where(eq(userPreferences.userId, userId))
+    .run();
+  const provider = new FakeCatalogProvider();
+  const now = () => new Date("2026-01-01T10:30:45.000Z");
+  const service = new FoodEntryService(client, provider, now);
+  const source = await service.log(userId, {
+    ...validLogInput(),
+    foodLogDate: "2025-12-31",
+    idempotencyKey: "copy-zone-source",
+  });
+
+  const copied = service.copyToToday(userId, source.id, {
+    foodLogDate: source.foodLogDate,
+    idempotencyKey: "copy:zone-action",
+  });
+
+  expect(copied).toMatchObject({
+    foodLogDate: "2026-01-02",
+    localEventTime: "00:30:45",
+  });
+  database.close();
+});
+
 test("nutrients scale from the unrounded provider amount and round once at snapshot creation", async () => {
   const database = await setupDatabase();
   const client = database.getClient();

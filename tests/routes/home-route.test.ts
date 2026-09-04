@@ -2,6 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
+import { sql } from "drizzle-orm";
 import { RouterContextProvider } from "react-router";
 import { afterAll, beforeAll, expect, test } from "vitest";
 
@@ -40,6 +41,7 @@ let temporaryDirectory: string;
 let cookie: string;
 let csrfToken: string;
 let incompleteCookie: string;
+let userId: number;
 
 function routeArgs(request: Request) {
   return {
@@ -120,6 +122,7 @@ beforeAll(async () => {
   if (!account.ok) throw new Error("home route account was not created");
   cookie = serializeSessionCookie(account.session).split(";", 1)[0];
   csrfToken = account.session.csrfToken;
+  userId = account.session.user.id;
   const setup = validateSetupFields({
     calories: "2050",
     carbohydrate: "230",
@@ -1138,4 +1141,102 @@ test("home food actions log, edit, detect conflicts, delete, and map catalog fai
     ),
   );
   expectRedirect(deleted, "/?date=2026-08-31&notice=deleted");
+});
+
+test("home copies a historical Food Entry to today and returns to the source log with a notice", async () => {
+  const source = await getFoodEntryService(new Date(instant)).log(
+    userId,
+    {
+      foodLogDate: "2026-08-29",
+      idempotencyKey: "route-copy-source",
+      provider: "usda-fdc",
+      providerFoodId: "1001",
+      quantity: "1",
+      selectedMeasurementId: "base:g:100000000",
+    },
+  );
+  const copyFields = {
+    date: source.foodLogDate,
+    entryId: String(source.id),
+    idempotencyKey: "copy:route-action",
+    intent: "copy-food-to-today",
+  };
+
+  const copied = await homeAction(routeArgs(post(copyFields)));
+  expect(copied).toBeInstanceOf(Response);
+  const destination = (copied as Response).headers.get("Location")!;
+  const destinationUrl = new URL(destination, origin);
+  expect(destinationUrl.searchParams.get("date")).toBe(source.foodLogDate);
+  expect(destinationUrl.searchParams.get("notice")).toBe("copied");
+  expect(destinationUrl.searchParams.get("copied")).toMatch(/^[1-9]\d*$/);
+  expectRedirect(copied, destination);
+  const repeated = await homeAction(routeArgs(post(copyFields)));
+  expectRedirect(repeated, destination);
+
+  const sourcePage = await load(destination);
+  expect(sourcePage.data.notice).toBe(
+    `Copied ${source.name} to today's Food Log.`,
+  );
+  expect(sourcePage.data.foodLog.entries).toHaveLength(1);
+  const todayPage = await load();
+  expect(
+    todayPage.data.foodLog.entries.filter(
+      (entry) => entry.name === source.name && entry.foodLogDate === today,
+    ),
+  ).toHaveLength(1);
+
+  for (const [entryId, status] of [
+    ["invalid", 400],
+    ["999999", 404],
+  ] as const) {
+    const failure = await homeAction(
+      routeArgs(
+        post({
+          ...copyFields,
+          entryId,
+          idempotencyKey: `copy:failure-${entryId}`,
+        }),
+      ),
+    );
+    expect(failure).toMatchObject({
+      data: { tone: "error" },
+      init: { status },
+    });
+    expect((failure as { data: { message: string } }).data.message).not.toContain(
+      "Copied",
+    );
+  }
+
+  const fabricatedNotice = await load(
+    "/?date=2026-08-29&notice=copied&copied=999999",
+  );
+  expect(fabricatedNotice.data.notice).toBeUndefined();
+
+  const client = getApplicationDatabase().getClient();
+  client.run(sql.raw(`CREATE TRIGGER fail_route_food_entry_copy
+    BEFORE INSERT ON food_entries
+    WHEN NEW.idempotency_key = 'copy:route-transaction-failure'
+    BEGIN
+      SELECT RAISE(ABORT, 'simulated route copy failure');
+    END`));
+  try {
+    const transactionFailure = await homeAction(
+      routeArgs(
+        post({
+          ...copyFields,
+          idempotencyKey: "copy:route-transaction-failure",
+        }),
+      ),
+    );
+    expect(transactionFailure).toMatchObject({
+      data: {
+        message: "The Food Entry could not be copied. Try again.",
+        tone: "error",
+      },
+      init: { status: 500 },
+    });
+  } finally {
+    client.run(sql.raw("DROP TRIGGER fail_route_food_entry_copy"));
+  }
+  expect((await load("/?date=2026-08-29")).data.foodLog.entries).toHaveLength(1);
 });

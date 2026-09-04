@@ -1,5 +1,5 @@
 import AxeBuilder from "@axe-core/playwright";
-import type { Page } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 import {
   bootstrapOrSignInBrowserTestUser,
   expect,
@@ -78,6 +78,17 @@ async function expectFoodEntryStatusResponsive(page: Page, message: string) {
     ).toBe(true);
   }
   await page.setViewportSize({ height: 720, width: 1_280 });
+}
+
+async function copyActionIdempotencyKey(
+  page: Page,
+  submitButton: Locator,
+): Promise<string> {
+  return page
+    .locator("form")
+    .filter({ has: submitButton })
+    .locator('input[name="idempotencyKey"]')
+    .inputValue();
 }
 
 async function installSimulatedBarcodeCamera(page: Page) {
@@ -1415,6 +1426,185 @@ test("an authenticated user can correct and delete one Food Entry", async ({
     "Food Entry deleted. Daily totals updated.",
   );
   await expect(page.getByText("No entries for this day")).toBeVisible();
+
+  const accessibilityScan = await new AxeBuilder({ page }).analyze();
+  expect(accessibilityScan.violations).toEqual([]);
+});
+
+test("an authenticated user can copy a historical Food Entry to today", async ({
+  context,
+  page,
+}) => {
+  await context.setExtraHTTPHeaders({ "X-Test-Client-IP": "203.0.113.89" });
+  await completeSetupForTestUser(page, "food.entry.copy");
+  await page.goto("/?date=2026-08-28");
+  await openUsdaSearch(page);
+  await page
+    .getByRole("searchbox", { name: "Search United States foods" })
+    .fill("yogurt");
+  await page.getByRole("button", { name: "Search" }).click();
+  await page.getByRole("link", { name: /Plain nonfat Greek yogurt/ }).click();
+  await page.getByRole("button", { name: "Add to Food Log" }).click();
+
+  await page.getByRole("button", { name: "Add Water" }).click();
+  const waterDialog = page.getByRole("dialog", { name: "Add Water" });
+  await waterDialog.getByRole("button", { name: /8 fl oz.*Glass/ }).click();
+  await waterDialog.getByRole("button", { name: "Add 8 fl oz" }).click();
+
+  const sourceCard = page.getByRole("link", {
+    name: /Plain nonfat Greek yogurt.*100\.3 kcal/,
+  });
+  await sourceCard.click();
+  const sourceEditor = page.getByRole("dialog", { name: "Edit Food Entry" });
+  await expect(sourceEditor).toBeVisible();
+  await expect(sourceEditor.getByLabel("Food name")).toHaveValue(
+    "Plain nonfat Greek yogurt",
+  );
+  await expect(sourceEditor.getByLabel("Quantity")).toHaveValue("1");
+  await expect(sourceEditor.getByLabel("Calories (kcal)")).toHaveValue("100.3");
+  const sourceMeasurements = await sourceEditor
+    .getByLabel("Measurement")
+    .locator("option")
+    .evaluateAll((options) =>
+      options.map((option) => ({
+        label: option.textContent,
+        value: (option as HTMLOptionElement).value,
+      })),
+    );
+  await sourceEditor.getByLabel("Food name").fill("Reusable yogurt");
+  await sourceEditor.getByLabel("Quantity").fill("1.25");
+  await sourceEditor.getByLabel("Calories (kcal)").fill("111.111");
+  await sourceEditor.getByLabel("Protein (g)").fill("22.222");
+  await sourceEditor.getByLabel("Carbohydrate (g)").fill("33.333");
+  await sourceEditor.getByLabel("Fat (g)").fill("4.444");
+  await sourceEditor.getByLabel("Fiber (g)").fill("");
+  await sourceEditor.getByLabel("Sugar (g)").fill("5.555");
+  await sourceEditor.getByLabel("Sodium (mg)").fill("666");
+  await sourceEditor.getByRole("button", { name: "Save changes" }).click();
+  const correctedSourceCard = page.getByRole("link", {
+    name: /Reusable yogurt.*USDA FoodData Central · Branded.*111\.1 kcal/,
+  });
+  await expect(correctedSourceCard).toBeVisible();
+
+  const menuTrigger = page.getByRole("button", {
+    name: "More actions for Reusable yogurt",
+  });
+  await expect(menuTrigger).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: /More actions for/ }),
+  ).toHaveCount(1);
+  await menuTrigger.click();
+  const copyButton = page.getByRole("button", { name: "Copy to today" });
+  await expect(copyButton).toBeVisible();
+  const firstIdempotencyKey = await copyActionIdempotencyKey(page, copyButton);
+  const openMenuAccessibility = await new AxeBuilder({ page }).analyze();
+  expect(openMenuAccessibility.violations).toEqual([]);
+
+  let releaseCopy!: () => void;
+  let signalCopyStarted!: () => void;
+  const copyGate = new Promise<void>((resolve) => {
+    releaseCopy = resolve;
+  });
+  const copyStarted = new Promise<void>((resolve) => {
+    signalCopyStarted = resolve;
+  });
+  await page.route("**/*", async (route) => {
+    if (
+      route.request().method() === "POST" &&
+      route.request().postData()?.includes("intent=copy-food-to-today")
+    ) {
+      signalCopyStarted();
+      await copyGate;
+    }
+    await route.continue();
+  });
+  const submission = copyButton.click();
+  await copyStarted;
+  await expect(page.getByRole("button", { name: "Copying…" })).toBeDisabled();
+  await expect(page).toHaveURL(/date=2026-08-28/);
+  releaseCopy();
+  await submission;
+  await page.unroute("**/*");
+
+  await expect(page).toHaveURL(
+    /date=2026-08-28&notice=copied&copied=[1-9]\d*/,
+  );
+  await expect(page.getByRole("status")).toContainText(
+    "Copied Reusable yogurt to today's Food Log.",
+  );
+  await expect(correctedSourceCard).toBeVisible();
+  await expect(
+    page.locator("[data-water-editor-trigger]").filter({ hasText: "8 fl oz" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("progressbar", { name: "Calorie progress" }),
+  ).toHaveAttribute("aria-valuetext", /111\.1 of 2,050 kcal target/);
+
+  const reopenedMenu = page.getByRole("button", {
+    name: "More actions for Reusable yogurt",
+  });
+  await reopenedMenu.click();
+  const laterCopyButton = page.getByRole("button", { name: "Copy to today" });
+  const laterIdempotencyKey = await copyActionIdempotencyKey(
+    page,
+    laterCopyButton,
+  );
+  expect(laterIdempotencyKey).not.toBe(firstIdempotencyKey);
+
+  await page.goto("/");
+  const copiedCard = page.getByRole("link", {
+    name: /Reusable yogurt.*USDA FoodData Central · Branded.*111\.1 kcal/,
+  });
+  await expect(copiedCard).toBeVisible();
+  await expect(
+    page.getByRole("progressbar", { name: "Calorie progress" }),
+  ).toHaveAttribute("aria-valuetext", /111\.1 of 2,050 kcal target/);
+  await expect(
+    page.getByRole("button", { name: /More actions for/ }),
+  ).toHaveCount(0);
+  await copiedCard.click();
+  const copiedEditor = page.getByRole("dialog", { name: "Edit Food Entry" });
+  await expect(copiedEditor.getByLabel("Food name")).toHaveValue(
+    "Reusable yogurt",
+  );
+  await expect(copiedEditor.getByLabel("Measurement")).toHaveValue(
+    "serving:g:170000000",
+  );
+  await expect(copiedEditor.getByLabel("Quantity")).toHaveValue("1.25");
+  await expect(copiedEditor.getByLabel("Calories (kcal)")).toHaveValue(
+    "111.111",
+  );
+  await expect(copiedEditor.getByLabel("Protein (g)")).toHaveValue("22.222");
+  await expect(copiedEditor.getByLabel("Carbohydrate (g)")).toHaveValue(
+    "33.333",
+  );
+  await expect(copiedEditor.getByLabel("Fat (g)")).toHaveValue("4.444");
+  await expect(copiedEditor.getByLabel("Fiber (g)")).toHaveValue("");
+  await expect(copiedEditor.getByLabel("Sugar (g)")).toHaveValue("5.555");
+  await expect(copiedEditor.getByLabel("Sodium (mg)")).toHaveValue("666");
+  expect(
+    await copiedEditor
+      .getByLabel("Measurement")
+      .locator("option")
+      .evaluateAll((options) =>
+        options.map((option) => ({
+          label: option.textContent,
+          value: (option as HTMLOptionElement).value,
+        })),
+      ),
+  ).toEqual(sourceMeasurements);
+  await expect(copiedEditor.getByRole("button", { name: "Delete entry" }))
+    .toBeVisible();
+  await copiedEditor.getByLabel("Food name").fill("Independent copied yogurt");
+  await copiedEditor.getByRole("button", { name: "Save changes" }).click();
+  await expect(
+    page.getByText("Independent copied yogurt", { exact: true }),
+  ).toBeVisible();
+  await page.goto("/?date=2026-08-28");
+  await expect(correctedSourceCard).toBeVisible();
+  await expect(
+    page.getByText("Independent copied yogurt", { exact: true }),
+  ).toHaveCount(0);
 
   const accessibilityScan = await new AxeBuilder({ page }).analyze();
   expect(accessibilityScan.violations).toEqual([]);
