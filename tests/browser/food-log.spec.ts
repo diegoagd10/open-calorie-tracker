@@ -860,6 +860,72 @@ test("authenticated manual barcode confirmation creates one attributed serving s
   expect(accessibilityScan.violations).toEqual([]);
 });
 
+test("an authenticated user can add, reset, and later rescale a manual Food Entry", async ({
+  context,
+  page,
+}) => {
+  await context.setExtraHTTPHeaders({ "X-Test-Client-IP": "203.0.113.96" });
+  await completeSetupForTestUser(page, "food.entry.manual");
+  await page.goto("/?date=2026-08-28");
+
+  await page.getByRole("button", { name: "Add Food" }).click();
+  await page.getByRole("link", { name: /Manual/ }).click();
+  const dialog = page.getByRole("dialog", { name: "Add Food" });
+  await expect(dialog.getByRole("heading", { name: "Add food manually" }))
+    .toBeVisible();
+  await expect(dialog.getByText("1 serving", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Quantity")).toHaveValue("1");
+
+  await page.getByLabel("Food name").fill("Discarded tortilla");
+  await page.getByLabel("Calories (kcal)").fill("60");
+  await dialog.getByRole("link", { name: "Back to methods" }).click();
+  await page.getByRole("link", { name: /Manual/ }).click();
+  await expect(page.getByLabel("Food name")).toHaveValue("");
+  await expect(page.getByLabel("Calories (kcal)")).toHaveValue("");
+
+  await page.getByLabel("Food name").fill("Cancelled tortilla");
+  await page.getByLabel("Calories (kcal)").fill("60");
+  await dialog.getByRole("link", { name: "Cancel" }).click();
+  await page.getByRole("button", { name: "Add Food" }).click();
+  await page.getByRole("link", { name: /Manual/ }).click();
+  await expect(page.getByLabel("Food name")).toHaveValue("");
+  await expect(page.getByLabel("Calories (kcal)")).toHaveValue("");
+  await expect(page.getByLabel("Quantity")).toHaveValue("1");
+
+  await page.getByLabel("Food name").fill("Tortillas");
+  await page.getByLabel("Quantity").fill("3");
+  await dialog.getByRole("button", { name: "Add to Food Log" }).click();
+  await expect(dialog.getByRole("alert")).toContainText("calories");
+  await expect(page.getByLabel("Food name")).toHaveValue("Tortillas");
+  await expect(page.getByLabel("Quantity")).toHaveValue("3");
+
+  await page.getByLabel("Calories (kcal)").fill("180");
+  await page.getByLabel("Protein (g)").fill("6");
+  await page.getByLabel("Carbohydrate (g)").fill("36");
+  await page.getByLabel("Fat (g)").fill("3");
+  await page.getByLabel("Fiber (g)").fill("4");
+  await page.getByLabel("Sugar (g)").fill("1");
+  await page.getByLabel("Sodium (mg)").fill("30");
+  await page.getByLabel("Quantity").fill("4");
+  await expect(page.getByLabel("Calories (kcal)")).toHaveValue("180");
+  await expect(page.getByLabel("Protein (g)")).toHaveValue("6");
+  await page.getByLabel("Quantity").fill("3");
+
+  const accessibilityScan = await new AxeBuilder({ page }).analyze();
+  expect(accessibilityScan.violations).toEqual([]);
+  await dialog.getByRole("button", { name: "Add to Food Log" }).click();
+  await expect(page).toHaveURL("/?date=2026-08-28");
+  const saved = page.getByRole("article").filter({ hasText: "Tortillas" });
+  await expect(saved).toContainText("Manual");
+  await expect(saved).toContainText("1 serving × 3");
+  await expect(saved).toContainText("180 kcal");
+
+  await saved.getByRole("link").click();
+  await page.getByLabel("Quantity").fill("4");
+  await expect(page.getByLabel("Calories (kcal)")).toHaveValue("240");
+  await expect(page.getByLabel("Protein (g)")).toHaveValue("8");
+});
+
 test("@camera-matrix simulated scan stays local and follows review before one snapshot", async ({
   context,
   page,

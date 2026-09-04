@@ -92,6 +92,13 @@
       "when": 1788368704576,
       "tag": "0012_typical_metal_master",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "6",
+      "when": 1788562060655,
+      "tag": "0013_manual_food_entries",
+      "breakpoints": true
     }
   ]
 }

@@ -279,6 +279,13 @@ test("food snapshots accept coherent providers and reject mixed provider semanti
       .not.toThrow();
     expect(() =>
       insert({
+        idempotencyKey: "valid-manual",
+        provider: "manual",
+        sourceDataType: "User entered",
+      }),
+    ).not.toThrow();
+    expect(() =>
+      insert({
         authoritativeBaseUnit: "g",
         idempotencyKey: "mixed-open-food-facts-unit",
         selectedMeasurementUnit: "g",
