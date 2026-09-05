@@ -1870,59 +1870,64 @@ test("an authenticated user can review and copy a Food Entry to another eligible
   expect(accessibilityScan.violations).toEqual([]);
 });
 
-test("a historical Food Entry copy menu remains fully actionable above mobile navigation", async ({
-  context,
-  page,
-}) => {
-  await context.setExtraHTTPHeaders({ "X-Test-Client-IP": "203.0.113.91" });
-  await page.setViewportSize({ height: 844, width: 390 });
-  await completeSetupForTestUser(page, "food.entry.copy-menu-mobile");
-  await page.goto("/?date=2026-08-28");
-  await openUsdaSearch(page);
-  await page
-    .getByRole("searchbox", { name: "Search United States foods" })
-    .fill("yogurt");
-  await page.getByRole("button", { name: "Search" }).click();
-  await page.getByRole("link", { name: /Plain nonfat Greek yogurt/ }).click();
-  await page.getByRole("button", { name: "Add to Food Log" }).click();
+for (const width of [390, 430]) {
+  test(`a historical Food Entry copy menu remains fully actionable above mobile navigation at ${width}×844`, async ({
+    context,
+    page,
+  }) => {
+    await context.setExtraHTTPHeaders({ "X-Test-Client-IP": "203.0.113.91" });
+    await page.setViewportSize({ height: 844, width });
+    await completeSetupForTestUser(
+      page,
+      `food.entry.copy-menu-mobile.${width}`,
+    );
+    await page.goto("/?date=2026-08-28");
+    await openUsdaSearch(page);
+    await page
+      .getByRole("searchbox", { name: "Search United States foods" })
+      .fill("yogurt");
+    await page.getByRole("button", { name: "Search" }).click();
+    await page.getByRole("link", { name: /Plain nonfat Greek yogurt/ }).click();
+    await page.getByRole("button", { name: "Add to Food Log" }).click();
 
-  await page
-    .getByRole("button", {
-      name: "More actions for Plain nonfat Greek yogurt",
-    })
-    .click();
-  const copyToDate = page.getByRole("link", {
-    name: "Copy to another date…",
-  });
-  const mobileNavigation = page.getByRole("navigation", {
-    name: "Primary navigation",
-  });
-  await expect(copyToDate).toBeVisible();
-  await expect(mobileNavigation).toBeVisible();
-  const copyBounds = await copyToDate.boundingBox();
-  const navigationBounds = await mobileNavigation.boundingBox();
-  expect(copyBounds).not.toBeNull();
-  expect(navigationBounds).not.toBeNull();
-  expect(copyBounds!.y + copyBounds!.height).toBeLessThanOrEqual(
-    navigationBounds!.y,
-  );
-  expect(
-    await copyToDate.evaluate((element) => {
-      const bounds = element.getBoundingClientRect();
-      const hit = document.elementFromPoint(
-        bounds.left + bounds.width / 2,
-        bounds.bottom - 2,
-      );
-      return hit === element || element.contains(hit);
-    }),
-  ).toBe(true);
+    await page
+      .getByRole("button", {
+        name: "More actions for Plain nonfat Greek yogurt",
+      })
+      .click();
+    const copyToDate = page.getByRole("link", {
+      name: "Copy to another date…",
+    });
+    const mobileNavigation = page.getByRole("navigation", {
+      name: "Primary navigation",
+    });
+    await expect(copyToDate).toBeVisible();
+    await expect(mobileNavigation).toBeVisible();
+    const copyBounds = await copyToDate.boundingBox();
+    const navigationBounds = await mobileNavigation.boundingBox();
+    expect(copyBounds).not.toBeNull();
+    expect(navigationBounds).not.toBeNull();
+    expect(copyBounds!.y + copyBounds!.height).toBeLessThanOrEqual(
+      navigationBounds!.y,
+    );
+    expect(
+      await copyToDate.evaluate((element) => {
+        const bounds = element.getBoundingClientRect();
+        const hit = document.elementFromPoint(
+          bounds.left + bounds.width / 2,
+          bounds.bottom - 2,
+        );
+        return hit === element || element.contains(hit);
+      }),
+    ).toBe(true);
 
-  await copyToDate.click();
-  await expect(
-    page.getByRole("dialog", { name: "Copy Plain nonfat Greek yogurt" }),
-  ).toBeVisible();
-  await expect(page).not.toHaveURL(/\/settings\/goals/);
-});
+    await copyToDate.click();
+    await expect(
+      page.getByRole("dialog", { name: "Copy Plain nonfat Greek yogurt" }),
+    ).toBeVisible();
+    await expect(page).not.toHaveURL(/\/settings\/goals/);
+  });
+}
 
 test("a stale Food Entry editor refreshes to the current occurrence and can retry", async ({
   context,
