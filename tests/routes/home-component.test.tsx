@@ -13,6 +13,7 @@ import { expect, test } from "vitest";
 
 import { buildCalendarMonth } from "../../app/food-log/date";
 import Home from "../../app/routes/home";
+import styles from "../../app/food-log.module.css";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean })
   .IS_REACT_ACT_ENVIRONMENT = true;
@@ -958,6 +959,21 @@ test("manual Food Entry form keeps entered totals when quantity changes and rest
   expect(input(renderer, "energyKcal").props.required).toBe(true);
   expect(input(renderer, "proteinGrams").props.required).toBe(false);
   expect(input(renderer, "quantity").props.value).toBe("1");
+  for (const name of ["name", "energyKcal", "proteinGrams", "carbohydrateGrams", "fatGrams", "fiberGrams", "sugarGrams", "sodiumMilligrams"]) {
+    expect(input(renderer, name).props.value).toBe("");
+  }
+  expect(renderer.root.findByProps({ className: styles.backToResults }).props.to).toBe("/?date=2026-08-31&food=choose");
+  expect(renderer.root.findByType("fieldset").props.disabled).toBe(false);
+  expect(allText(renderer)).toContain("Add to Food Log");
+  for (const name of ["energyKcal", "proteinGrams", "carbohydrateGrams", "fatGrams", "fiberGrams", "sugarGrams", "sodiumMilligrams"]) {
+    expect(input(renderer, name).props).toMatchObject({
+      max: name === "sodiumMilligrams" ? "9999999" : "999999.999",
+      step: name === "sodiumMilligrams" ? "1" : "0.001",
+    });
+  }
+  await act(async () => input(renderer, "name").props.onChange({ target: { value: "Tortilla" } }));
+  expect(input(renderer, "name").props.value).toBe("Tortilla");
+
   expect(input(renderer, "idempotencyKey").props.value).toBe("manual-form-key");
   expect(input(renderer, "intent").props.value).toBe("log-manual-food");
 
@@ -976,36 +992,42 @@ test("manual Food Entry form keeps entered totals when quantity changes and rest
       target: { value: "3" },
     }),
   );
+  expect(input(renderer, "quantity").props.value).toBe("3");
+  expect(input(renderer, "name").props.value).toBe("Tortilla");
   expect(input(renderer, "energyKcal").props.value).toBe("180");
   expect(input(renderer, "proteinGrams").props.value).toBe("6");
   await act(async () => renderer.unmount());
 
   const draft = {
-    carbohydrateGrams: "",
+    carbohydrateGrams: "20.1",
     date: "2026-08-31",
-    energyKcal: "",
-    fatGrams: "",
-    fiberGrams: "",
+    energyKcal: "-180",
+    fatGrams: "4",
+    fiberGrams: "2",
     idempotencyKey: "manual-draft-key",
     intent: "log-manual-food",
     name: "Incomplete tortilla",
-    proteinGrams: "",
+    proteinGrams: "6",
     quantity: "3",
-    sodiumMilligrams: "",
-    sugarGrams: "",
+    sodiumMilligrams: "100",
+    sugarGrams: "1.5",
   };
   const invalid = await renderHome(
     { catalog },
     {
       manualFoodDraft: draft,
-      message: "Enter calories before adding this Food Entry.",
+      message: "The Food Entry request is invalid.",
       tone: "error",
     },
   );
   expect(input(invalid, "name").props.value).toBe("Incomplete tortilla");
+  for (const name of ["energyKcal", "proteinGrams", "carbohydrateGrams", "fatGrams", "fiberGrams", "sugarGrams", "sodiumMilligrams"] as const) {
+    expect(input(invalid, name).props.value).toBe(draft[name]);
+  }
+
   expect(input(invalid, "quantity").props.value).toBe("3");
   expect(input(invalid, "idempotencyKey").props.value).toBe("manual-draft-key");
-  expect(allText(invalid)).toContain("Enter calories before adding");
+  expect(allText(invalid)).toContain("The Food Entry request is invalid.");
   await act(async () => invalid.unmount());
 });
 
@@ -2012,4 +2034,83 @@ test("home modal closes only from a direct backdrop click", async () => {
   expect(renderer.root.findAllByProps({ role: "dialog" })).toHaveLength(0);
   expect(globalThis.document.activeElement).toBe(connectedPreviousFocus);
   await act(async () => renderer.unmount());
+});
+
+test("copy calendar links preserve the source and destination, highlight dates and restore focus", async () => {
+  queriedSelectors.length = 0;
+  documentSelectors.length = 0;
+  const originalFocus = new TestElement();
+  originalFocus.focus();
+  const entry = { foodLogDate: "2026-08-28", id: 93, name: "Historical yogurt" };
+  const calendar = buildCalendarMonth("2026-08", "2026-09-05", "2026-08-29");
+  const renderer = await renderHome({
+    copyDialog: {
+      calendar: { ...calendar, days: calendar.days.map((day) => ({ ...day, isSource: day.date === entry.foodLogDate })) },
+      destinationDate: "2026-08-29", entry, idempotencyKey: "copy:93:calendar",
+    },
+  }, { tone: "error", message: "The copy could not be saved. Try again." });
+  expect(queriedSelectors).toContain("[data-copy-calendar-day]");
+  const dialog = renderer.root.findByProps({ role: "dialog" });
+  expect(dialog.props.className).toBe(`${styles.foodDialog} ${styles.copyFoodDialog}`);
+  expect(nodeText(dialog.findByProps({ role: "alert" }))).toBe("The copy could not be saved. Try again.");
+  expect(dialog.findByProps({ "aria-label": "Previous month" }).props.to).toBe("/?date=2026-08-28&copy=93&copyDate=2026-08-29&copyMonth=2026-07");
+  expect(dialog.findByProps({ "aria-label": "Next month" }).props.to).toBe("/?date=2026-08-28&copy=93&copyDate=2026-08-29&copyMonth=2026-09");
+  const grid = dialog.findByProps({ "aria-label": "August 2026 destination calendar" });
+  expect(grid.findAllByProps({ className: styles.weekday }).map(nodeText)).toEqual(["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]);
+  expect(grid.findAllByProps({ "aria-hidden": "true" })).toHaveLength(6);
+  const selected = grid.findByProps({ "aria-label": "Saturday, August 29" });
+  expect(selected.props).toMatchObject({
+    "aria-current": "date", className: `${styles.calendarDay} ${styles.calendarSelected}`,
+    to: "/?date=2026-08-28&copy=93&copyDate=2026-08-29&copyMonth=2026-08",
+  });
+  expect(grid.findByProps({ "aria-label": "Sunday, August 30" }).props).toMatchObject({
+    "aria-current": undefined, className: styles.calendarDay,
+    to: "/?date=2026-08-28&copy=93&copyDate=2026-08-30&copyMonth=2026-08",
+  });
+  expect(grid.findByProps({ "aria-label": "Friday, August 28" }).props).toMatchObject({ disabled: true, className: styles.calendarFuture });
+  originalFocus.isConnected = false;
+  await act(async () => renderer.unmount());
+  expect(documentSelectors).toContain('[data-copy-date-trigger="93"]');
+  originalFocus.isConnected = true;
+});
+
+test("copy confirmation needs a destination and locks only while submitting this entry", async () => {
+  const entry = { foodLogDate: "2026-08-28", id: 93, name: "Historical yogurt" };
+  const calendar = buildCalendarMonth("2026-08", "2026-08-30", "2026-08-30");
+  const copyDialog = {
+    calendar: { ...calendar, days: calendar.days.map((day) => ({ ...day, isSource: day.date === entry.foodLogDate })) },
+    destinationDate: undefined as string | undefined, entry, idempotencyKey: "copy:93:pending",
+  };
+  const empty = await renderHome({ copyDialog });
+  const confirm = (renderer: ReactTestRenderer) => renderer.root.findAllByType("button").find((button) => button.props.value === "copy-food-to-date")!;
+  expect(allText(empty)).toContain("Choose an eligible date");
+  expect(input(empty, "destinationDate").props.value).toBe("");
+  expect(confirm(empty).props.disabled).toBe(true);
+  expect(nodeText(confirm(empty))).toBe("Copy");
+  expect(empty.root.findByProps({ "aria-label": "Sunday, August 30" }).props.className).toBe(`${styles.calendarDay} ${styles.calendarToday} ${styles.calendarSelected}`);
+  await act(async () => empty.unmount());
+  for (const [intent, entryId, pending] of [
+    ["copy-food-to-date", "93", true],
+    ["copy-food-to-date", "94", false],
+    ["copy-food-to-today", "93", false],
+  ] as const) {
+    const formData = new FormData();
+    formData.set("intent", intent);
+    formData.set("entryId", entryId);
+    const renderer = await renderPendingHome({ copyDialog: { ...copyDialog, destinationDate: "2026-08-30" } }, { formData, to: "/" });
+    expect(confirm(renderer).props.disabled).toBe(pending);
+    expect(nodeText(confirm(renderer))).toBe(pending ? "Copying…" : "Copy");
+    await act(async () => renderer.unmount());
+  }
+});
+
+test("manual entry submission disables editing only for the manual action", async () => {
+  for (const intent of ["log-manual-food", "copy-food-to-today"]) {
+    const formData = new FormData();
+    formData.set("intent", intent);
+    const renderer = await renderPendingHome({ catalog: { mode: "manual", query: "", idempotencyKey: "manual-pending" } }, { formData, to: "/" });
+    expect(renderer.root.findByType("fieldset").props.disabled).toBe(intent === "log-manual-food");
+    expect(allText(renderer)).toContain(intent === "log-manual-food" ? "Adding…" : "Add to Food Log");
+    await act(async () => renderer.unmount());
+  }
 });

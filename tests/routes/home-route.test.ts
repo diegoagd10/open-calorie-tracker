@@ -1398,3 +1398,41 @@ test("home creates manual Food Entries on the selected date and preserves invali
     init: { status: 422 },
   });
 });
+
+test("copy loader restricts source actions and validates every calendar selection", async () => {
+  const service = getFoodEntryService(new Date(instant));
+  const source = await service.log(userId, {
+    foodLogDate: "2026-08-23", idempotencyKey: "copy-loader-boundary-source",
+    provider: "usda-fdc", providerFoodId: "1001", quantity: "1", selectedMeasurementId: "base:g:100000000",
+  });
+  await homeAction(routeArgs(post({ date: source.foodLogDate, intent: "create-water", waterSelection: "8" })));
+  const historical = await load(`/?date=${source.foodLogDate}`);
+  expect(Object.keys(historical.data.copyIdempotencyKeys)).toEqual([String(source.id)]);
+  expect(historical.data.copyIdempotencyKeys[source.id]).toMatch(new RegExp(`^copy:${source.id}:`));
+  expect(historical.data.copyDialog).toBeUndefined();
+  expect(historical.data.copyError).toBeUndefined();
+  for (const date of [today, "2026-09-01"]) {
+    const current = await load(`/?date=${date}&copy=${source.id}`);
+    expect(current.data.copyIdempotencyKeys).toEqual({});
+    expect(current.data.copyDialog).toBeUndefined();
+    expect(current.data.copyError).toBeUndefined();
+  }
+  for (const query of ["copy=invalid", "copy=0", `copy=${source.id}&date=2026-08-22`]) {
+    const result = await load(`/?${query}${query.includes("date=") ? "" : `&date=${source.foodLogDate}`}`);
+    expect(result.data).toMatchObject({ copyDialog: undefined, copyError: "That Food Entry is unavailable. Choose another entry." });
+  }
+  for (const copyDate of ["", "invalid", "2026-02-30", source.foodLogDate, "2026-09-01"]) {
+    const result = await load(`/?date=${source.foodLogDate}&copy=${source.id}&copyDate=${copyDate}`);
+    expect(result.data.copyDialog?.destinationDate).toBeUndefined();
+    expect(result.data.copyDialog?.calendar.month).toBe("2026-08");
+    expect(result.data.copyDialog?.calendar.days.some((day) => day.isSelected)).toBe(false);
+  }
+  const selected = await load(`/?date=${source.foodLogDate}&copy=${source.id}&copyDate=${today}`);
+  expect(selected.data.copyDialog?.destinationDate).toBe(today);
+  expect(selected.data.copyDialog?.calendar.days.filter((day) => day.isSource).map((day) => day.date)).toEqual([source.foodLogDate]);
+  expect(selected.data.copyDialog?.calendar.days.filter((day) => day.isSelected).map((day) => day.date)).toEqual([today]);
+  expect(selected.data.copyDialog?.calendar.days).toHaveLength(31);
+  const previous = await load(`/?date=${source.foodLogDate}&copy=${source.id}&copyMonth=2026-07&copyDate=2026-07-15`);
+  expect(previous.data.copyDialog?.calendar.month).toBe("2026-07");
+  expect(previous.data.copyDialog?.calendar.days.filter((day) => day.isSelected).map((day) => day.date)).toEqual(["2026-07-15"]);
+});
