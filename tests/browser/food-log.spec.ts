@@ -287,6 +287,104 @@ test("today, historical navigation, calendar access, travel, and future rejectio
   expect(accessibleNameScan.violations).toEqual([]);
 });
 
+test("date strip stays put and supports mobile swipes across weeks", async ({
+  browser,
+  context,
+  page,
+}) => {
+  await context.setExtraHTTPHeaders({
+    "X-Test-Client-IP": "203.0.113.89",
+    "X-Test-Food-Log-Now": "2026-09-05T18:00:00.000Z",
+  });
+  await completeSetupForTestUser(page, "food.log.date.swipes");
+  const rail = page.getByLabel("Nearby dates");
+  const week = (await rail.textContent())!;
+  await page.getByRole("link", { name: "Fri 4", exact: true }).click();
+  await expect(page).toHaveURL("/?date=2026-09-04");
+  await expect(rail).toHaveText(week);
+  await expect(page.getByRole("link", { name: "Sat 5", exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Browse past dates" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Open calendar" })).toBeVisible();
+  await page.getByRole("link", { name: "Browse past dates" }).click();
+  await expect(page).toHaveURL("/?date=2026-08-28");
+
+  const touchContext = await browser.newContext({
+    extraHTTPHeaders: { "X-Test-Food-Log-Now": "2026-09-05T18:00:00.000Z" },
+    hasTouch: true,
+    isMobile: true,
+    storageState: await context.storageState(),
+    viewport: { height: 844, width: 390 },
+  });
+  const mobile = await touchContext.newPage();
+  await mobile.goto("/");
+  const mobileRail = mobile.getByLabel("Nearby dates");
+  for (const width of [320, 390, 800]) {
+    await mobile.setViewportSize({ height: 844, width });
+    await expect(mobile.getByRole("link", { name: "Browse past dates" })).toBeHidden();
+    await expect(mobile.getByRole("link", { name: "Open calendar" })).toBeHidden();
+    const bounds = await mobileRail.boundingBox();
+    for (const day of await mobileRail.locator(":scope > *").all()) {
+      await expect(day).toBeVisible();
+      const box = await day.boundingBox();
+      expect(box!.x).toBeGreaterThanOrEqual(bounds!.x);
+      expect(box!.x + box!.width).toBeLessThanOrEqual(bounds!.x + bounds!.width + 1);
+    }
+    expect(await mobile.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  }
+  await mobile.setViewportSize({ height: 844, width: 390 });
+  const saturday = mobile.getByRole("link", { name: "Sat 5", exact: true });
+  const saturdayPosition = await saturday.boundingBox();
+  await mobile.getByRole("link", { name: "Fri 4", exact: true }).tap();
+  await expect(mobile).toHaveURL("/?date=2026-09-04");
+  expect(await saturday.boundingBox()).toEqual(saturdayPosition);
+  await saturday.tap();
+  await expect(mobile).toHaveURL("/?date=2026-09-05");
+
+  const client = await touchContext.newCDPSession(mobile);
+  async function swipe(dx: number, dy = 0, cancel = false) {
+    const box = (await mobileRail.boundingBox())!;
+    const x = box.x + box.width / 2;
+    const y = box.y + box.height / 2;
+    await client.send("Input.dispatchTouchEvent", {
+      touchPoints: [{ x, y }], type: "touchStart",
+    });
+    for (const progress of [0.25, 0.5, 0.75, 1]) {
+      await client.send("Input.dispatchTouchEvent", {
+        touchPoints: [{ x: x + dx * progress, y: y + dy * progress }],
+        type: "touchMove",
+      });
+    }
+    await client.send("Input.dispatchTouchEvent", {
+      touchPoints: [], type: cancel ? "touchCancel" : "touchEnd",
+    });
+  }
+  await swipe(100);
+  await expect(mobile).toHaveURL("/?date=2026-09-04");
+  expect(await saturday.boundingBox()).toEqual(saturdayPosition);
+  await swipe(-100);
+  await expect(mobile).toHaveURL("/?date=2026-09-05");
+  await swipe(-100);
+  await expect(mobile).toHaveURL("/?date=2026-09-05");
+  await swipe(20);
+  await expect(mobile).toHaveURL("/?date=2026-09-05");
+  await swipe(5, -70);
+  await expect(mobile).toHaveURL("/?date=2026-09-05");
+  await mobileRail.scrollIntoViewIfNeeded();
+  await swipe(100, 0, true);
+  await expect(mobile).toHaveURL("/?date=2026-09-05");
+  await mobile.getByRole("link", { name: "Mon 31", exact: true }).tap();
+  await expect(mobile).toHaveURL("/?date=2026-08-31");
+  await swipe(100);
+  await expect(mobile).toHaveURL("/?date=2026-08-30");
+  await expect(mobile.getByRole("link", { name: "Sun 30", exact: true })).toHaveAttribute("aria-current", "date");
+  await swipe(-100);
+  await expect(mobile).toHaveURL("/?date=2026-08-31");
+  await mobile.getByRole("link", { name: "Sat 5", exact: true }).focus();
+  await mobile.keyboard.press("Enter");
+  await expect(mobile).toHaveURL("/?date=2026-09-05");
+  await touchContext.close();
+});
+
 test("the full stack resolves UTC boundaries and both DST transitions", async ({
   context,
   page,
