@@ -60,6 +60,21 @@ or longer. Chromium must already be installed; no browser download is hidden
 inside the gate. Like the fast gate, the sequence stops on the first failure
 and preserves the failing exit status.
 
+`pnpm mutation:test` reuses the latest completed report in
+`reports/stryker-incremental.json`, including measurements rejected by the score
+gate. Stryker compares production source and test changes; a companion context
+fingerprint forces a full measurement after changes to Node, dependencies,
+configuration, fixtures, migrations, or runtime wiring. Without a local cache,
+the versioned report seeds the first run. The score still has to meet both the
+configured threshold and `mutation-testing/baseline-summary.json`.
+
+The mutation workflow restores and saves this cache within GitHub's branch/PR
+cache scope, and cancels obsolete runs when another commit arrives on the same
+PR or branch. The first uncached run still pays the full incremental workload;
+subsequent runs reuse completed results instead of starting from the old seed.
+`pnpm mutation:baseline` always forces a fresh measurement and remains the
+explicit baseline review operation.
+
 ## GitHub Actions
 
 GitHub runs the same package scripts on the supported Node 24 line with the

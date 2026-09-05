@@ -1,6 +1,16 @@
 import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import { constants } from "node:fs";
-import { access, copyFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  access,
+  copyFile,
+  glob,
+  mkdir,
+  readFile,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import { performance } from "node:perf_hooks";
 
 import {
@@ -17,6 +27,7 @@ const baselineSummaryPath = `${baselineDirectory}/baseline-summary.json`;
 const reportDirectory = "reports/mutation";
 const currentReportPath = `${reportDirectory}/mutation.json`;
 const incrementalReportPath = "reports/stryker-incremental.json";
+const incrementalContextPath = "reports/stryker-context.txt";
 const mutationScoreThreshold =
   process.env.MUTATION_SCORE_THRESHOLD === undefined
     ? undefined
@@ -29,6 +40,34 @@ async function exists(path) {
   } catch {
     return false;
   }
+}
+
+async function incrementalContext() {
+  // Stryker compares mutated source and test cases itself. Invalidate reuse for
+  // inputs outside that comparison, including fixtures, migrations and wiring.
+  const files = [];
+  for await (const file of glob([
+    "*.{json,yaml,js,mjs,ts}",
+    "scripts/**",
+    "drizzle/**",
+    "tests/**",
+    "public/**",
+    "app/**/*.{css,json,svg}",
+    "app/**/runtime.server.ts",
+    "server/**",
+    "mutation-testing/**",
+  ], {
+    exclude: ["tests/**/*.test.ts", "tests/**/*.test.tsx", "tests/browser/**"],
+  })) {
+    if ((await stat(file)).isFile()) files.push(file);
+  }
+  const hash = createHash("sha256").update(
+    JSON.stringify([process.version, process.platform, process.arch]),
+  );
+  for (const file of files.sort()) {
+    hash.update(JSON.stringify([file, await readFile(file, "utf8")]));
+  }
+  return hash.digest("hex");
 }
 
 async function runStryker(args) {
@@ -51,6 +90,11 @@ async function runStryker(args) {
 }
 
 await mkdir(reportDirectory, { recursive: true });
+const context = await incrementalContext();
+const hasCachedContext = await exists(incrementalContextPath);
+const contextMatches = hasCachedContext &&
+  (await readFile(incrementalContextPath, "utf8")) === context;
+let force = recordBaseline;
 
 if (recordBaseline) {
   await rm(incrementalReportPath, { force: true });
@@ -60,15 +104,31 @@ if (recordBaseline) {
       "Mutation baseline is missing. Run `pnpm mutation:baseline` once and commit mutation-testing/.",
     );
   }
-  await copyFile(baselineReportPath, incrementalReportPath);
+  if (contextMatches && await exists(incrementalReportPath)) {
+    console.log("Reusing the latest completed incremental mutation report.");
+  } else if (hasCachedContext || await exists(incrementalReportPath)) {
+    // A dependency/helper/config change may affect unchanged source and tests.
+    // Neither the cached report nor the older versioned seed is safe to reuse.
+    force = true;
+    // Keep the untrusted report until Stryker replaces it. If Stryker crashes,
+    // a report without its completion marker must also force the next run.
+    console.log("Mutation inputs changed; forcing a complete measurement.");
+  } else {
+    await copyFile(baselineReportPath, incrementalReportPath);
+    console.log("Seeding incremental mutation testing from the versioned report.");
+  }
 }
 
+// Only publish cache eligibility after Stryker produces a complete report.
+await rm(incrementalContextPath, { force: true });
+await rm(currentReportPath, { force: true });
 const startedAt = performance.now();
-await runStryker(recordBaseline ? ["--force"] : []);
+await runStryker(force ? ["--force"] : []);
 const durationMs = performance.now() - startedAt;
 
 const currentReport = JSON.parse(await readFile(currentReportPath, "utf8"));
 const currentSummary = summarizeMutationReport(currentReport, durationMs);
+await writeFile(incrementalContextPath, context);
 
 if (
   mutationScoreThreshold !== undefined &&
