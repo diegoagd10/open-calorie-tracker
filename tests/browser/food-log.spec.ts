@@ -1301,6 +1301,38 @@ test("food logging immediately reveals a pending Daily log row", async ({
   ).toHaveCount(0);
 });
 
+test("Food Entry deletion reveals its confirmation on narrow displays", async ({
+  context,
+  page,
+}) => {
+  await context.setExtraHTTPHeaders({ "X-Test-Client-IP": "203.0.113.97" });
+  await completeSetupForTestUser(page, "food.entry.mobile-delete");
+  await openUsdaSearch(page);
+  await page
+    .getByRole("searchbox", { name: "Search United States foods" })
+    .fill("yogurt");
+  await page.getByRole("button", { name: "Search" }).click();
+  await page.getByRole("link", { name: /Plain nonfat Greek yogurt/ }).click();
+  await page.getByRole("button", { name: "Add to Food Log" }).click();
+
+  await page.setViewportSize({ height: 844, width: 390 });
+  await page
+    .getByRole("link", { name: /Plain nonfat Greek yogurt.*100\.3 kcal/ })
+    .click();
+  const editor = page.getByRole("dialog", { name: "Edit Food Entry" });
+  await editor.getByRole("button", { name: "Delete entry" }).click();
+
+  const confirmDelete = editor.getByRole("button", {
+    name: "Delete",
+    exact: true,
+  });
+  await expect(confirmDelete).toBeInViewport();
+  await expect(confirmDelete).toBeFocused();
+  await confirmDelete.click();
+  await expect(page).toHaveURL(/date=2026-08-29&notice=deleted/);
+  await expect(page.getByText("No entries for this day")).toBeVisible();
+});
+
 test("an authenticated user can correct and delete one Food Entry", async ({
   context,
   page,
