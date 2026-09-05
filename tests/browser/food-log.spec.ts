@@ -866,13 +866,19 @@ test("an authenticated user can add, reset, and later rescale a manual Food Entr
 }) => {
   await context.setExtraHTTPHeaders({ "X-Test-Client-IP": "203.0.113.96" });
   await completeSetupForTestUser(page, "food.entry.manual");
-  await page.goto("/?date=2026-08-28");
+  await page.goto("/?date=2026-08-28&food=manual");
+
+  let dialog = page.getByRole("dialog", { name: "Add Food" });
+  await expect(page.getByLabel("Food name")).toBeFocused();
+  await dialog.getByRole("link", { name: "Cancel" }).click();
+  await expect(page.getByRole("button", { name: "Add Food" })).toBeFocused();
 
   await page.getByRole("button", { name: "Add Food" }).click();
   await page.getByRole("link", { name: /Manual/ }).click();
-  const dialog = page.getByRole("dialog", { name: "Add Food" });
+  dialog = page.getByRole("dialog", { name: "Add Food" });
   await expect(dialog.getByRole("heading", { name: "Add food manually" }))
     .toBeVisible();
+  await expect(page.getByLabel("Food name")).toBeFocused();
   await expect(dialog.getByText("1 serving", { exact: true })).toBeVisible();
   await expect(page.getByLabel("Quantity")).toHaveValue("1");
 
@@ -880,6 +886,7 @@ test("an authenticated user can add, reset, and later rescale a manual Food Entr
   await page.getByLabel("Calories (kcal)").fill("60");
   await dialog.getByRole("link", { name: "Back to methods" }).click();
   await page.getByRole("link", { name: /Manual/ }).click();
+  await expect(page.getByLabel("Food name")).toBeFocused();
   await expect(page.getByLabel("Food name")).toHaveValue("");
   await expect(page.getByLabel("Calories (kcal)")).toHaveValue("");
 
@@ -894,8 +901,12 @@ test("an authenticated user can add, reset, and later rescale a manual Food Entr
 
   await page.getByLabel("Food name").fill("Tortillas");
   await page.getByLabel("Quantity").fill("3");
-  await dialog.getByRole("button", { name: "Add to Food Log" }).click();
+  const addManualFood = dialog.getByRole("button", {
+    name: "Add to Food Log",
+  });
+  await addManualFood.click();
   await expect(dialog.getByRole("alert")).toContainText("calories");
+  await expect(page.getByLabel("Food name")).not.toBeFocused();
   await expect(page.getByLabel("Food name")).toHaveValue("Tortillas");
   await expect(page.getByLabel("Quantity")).toHaveValue("3");
 

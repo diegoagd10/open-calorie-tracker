@@ -3006,10 +3006,13 @@ function CatalogDialog({
   // Stryker disable next-line ConditionalExpression: the blocked-navigation browser journey proves the pending-state teardown and restart guard.
   const navigationPending = navigation.state !== "idle";
   const closeHref = foodLogHref(date);
+  const initialFocusSelector =
+    catalog.mode === "manual"
+      ? 'input[name="name"]:not([disabled])'
+      : 'input:not([type="hidden"]):not([disabled]), button:not([disabled]), select:not([disabled]), a[href]';
   const { closeDialog, dialogRef, handleDialogKeyDown } = useModalDialog({
     closeHref,
-    initialFocusSelector:
-      'input:not([type="hidden"]):not([disabled]), button:not([disabled]), select:not([disabled]), a[href]',
+    initialFocusSelector,
     restoreFocusSelector: "[data-food-dialog-trigger]",
   });
 
