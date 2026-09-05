@@ -1158,7 +1158,7 @@ test("home copies a historical Food Entry to today and returns to the source log
   const copyFields = {
     date: source.foodLogDate,
     entryId: String(source.id),
-    idempotencyKey: "copy:route-action",
+    idempotencyKey: `copy:${source.id}:route-action`,
     intent: "copy-food-to-today",
   };
 
@@ -1194,7 +1194,7 @@ test("home copies a historical Food Entry to today and returns to the source log
         post({
           ...copyFields,
           entryId,
-          idempotencyKey: `copy:failure-${entryId}`,
+          idempotencyKey: `copy:${entryId}:failure`,
         }),
       ),
     );
@@ -1211,11 +1211,16 @@ test("home copies a historical Food Entry to today and returns to the source log
     "/?date=2026-08-29&notice=copied&copied=999999",
   );
   expect(fabricatedNotice.data.notice).toBeUndefined();
+  const fabricatedOwnedNotice = await load(
+    `/?date=2026-08-29&notice=copied&copied=${source.id}`,
+  );
+  expect(fabricatedOwnedNotice.data.notice).toBeUndefined();
 
   const client = getApplicationDatabase().getClient();
+  const failureKey = `copy:${source.id}:route-transaction-failure`;
   client.run(sql.raw(`CREATE TRIGGER fail_route_food_entry_copy
     BEFORE INSERT ON food_entries
-    WHEN NEW.idempotency_key = 'copy:route-transaction-failure'
+    WHEN NEW.idempotency_key = '${failureKey}'
     BEGIN
       SELECT RAISE(ABORT, 'simulated route copy failure');
     END`));
@@ -1224,7 +1229,7 @@ test("home copies a historical Food Entry to today and returns to the source log
       routeArgs(
         post({
           ...copyFields,
-          idempotencyKey: "copy:route-transaction-failure",
+          idempotencyKey: failureKey,
         }),
       ),
     );
@@ -1239,4 +1244,74 @@ test("home copies a historical Food Entry to today and returns to the source log
     client.run(sql.raw("DROP TRIGGER fail_route_food_entry_copy"));
   }
   expect((await load("/?date=2026-08-29")).data.foodLog.entries).toHaveLength(1);
+});
+
+test("home opens a copy-date calendar and confirms one copy while staying on the source log", async () => {
+  const source = await getFoodEntryService(new Date(instant)).log(userId, {
+    foodLogDate: "2026-08-26",
+    idempotencyKey: "route-copy-date-source",
+    provider: "usda-fdc",
+    providerFoodId: "1001",
+    quantity: "1",
+    selectedMeasurementId: "base:g:100000000",
+  });
+
+  const opened = await load(`/?date=${source.foodLogDate}&copy=${source.id}`);
+  expect(opened.data.copyDialog).toMatchObject({
+    destinationDate: undefined,
+    entry: { id: source.id, name: source.name },
+  });
+  const unavailableDialog = await load(
+    `/?date=${source.foodLogDate}&copy=999999`,
+  );
+  expect(unavailableDialog.data).toMatchObject({
+    copyDialog: undefined,
+    copyError: "That Food Entry is unavailable. Choose another entry.",
+  });
+
+  const selected = await load(
+    `/?date=${source.foodLogDate}&copy=${source.id}&copyDate=2026-08-27`,
+  );
+  expect(selected.data.copyDialog?.destinationDate).toBe("2026-08-27");
+  const copyFields = {
+    date: source.foodLogDate,
+    destinationDate: "2026-08-27",
+    entryId: String(source.id),
+    idempotencyKey: selected.data.copyDialog!.idempotencyKey,
+    intent: "copy-food-to-date",
+  };
+
+  const copied = await homeAction(routeArgs(post(copyFields)));
+  const destination = (copied as Response).headers.get("Location")!;
+  expectRedirect(copied, destination);
+  expect(new URL(destination, origin).searchParams.get("date")).toBe(
+    source.foodLogDate,
+  );
+  const sourcePage = await load(destination);
+  expect(sourcePage.data.notice).toBe(
+    `Copied ${source.name} to Thursday, August 27, 2026.`,
+  );
+  expect(sourcePage.data.foodLog.entries).toContainEqual(source);
+  const destinationPage = await load("/?date=2026-08-27");
+  expect(destinationPage.data.foodLog.entries).toContainEqual(
+    expect.objectContaining({
+      foodLogDate: "2026-08-27",
+      localEventTime: "12:00:00",
+      name: source.name,
+    }),
+  );
+
+  for (const destinationDate of [source.foodLogDate, "2026-09-01", "invalid"]) {
+    const failure = await homeAction(
+      routeArgs(post({
+        ...copyFields,
+        destinationDate,
+        idempotencyKey: `copy:${source.id}:route-date-failure-${destinationDate}`,
+      })),
+    );
+    expect(failure).toMatchObject({ data: { tone: "error" } });
+    expect((failure as { data: { message: string } }).data.message).not.toContain(
+      "Copied",
+    );
+  }
 });

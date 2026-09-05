@@ -11,6 +11,7 @@ import {
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { expect, test } from "vitest";
 
+import { buildCalendarMonth } from "../../app/food-log/date";
 import Home from "../../app/routes/home";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean })
@@ -109,6 +110,8 @@ const baseFoodLog = {
 const baseLoaderData = {
   calendar: undefined,
   catalog: undefined,
+  copyDialog: undefined,
+  copyError: undefined,
   copyIdempotencyKeys: {},
   csrfToken: "home-component-csrf",
   foodEntryEditor: undefined,
@@ -714,6 +717,18 @@ test("historical Food Entries expose a copy menu without changing card editing",
     value: "copy-food-to-today",
   });
   expect(
+    historical.root.findAllByType("a").find(
+      (link) => nodeText(link) === "Copy to another date…",
+    )?.props,
+  ).toMatchObject({
+    href: "/?date=2026-08-29&copy=91",
+  });
+  expect(
+    historical.root.findByProps({
+      "aria-label": "More actions for Historical yogurt",
+    }).props["data-copy-date-trigger"],
+  ).toBe(91);
+  expect(
     historical.root.findAll(
       (node) =>
         typeof node.props["aria-label"] === "string" &&
@@ -765,6 +780,59 @@ test("historical Food Entries expose a copy menu without changing card editing",
     )?.props.disabled,
   ).toBe(true);
   await act(async () => pending.unmount());
+});
+
+test("copy-date dialog exposes eligible calendar days and requires confirmation", async () => {
+  const entry = {
+    foodLogDate: "2026-08-28",
+    id: 93,
+    name: "Historical yogurt",
+  };
+  const calendar = buildCalendarMonth("2026-08", "2026-08-30", "2026-08-29");
+  const renderer = await renderHome(
+    {
+      copyDialog: {
+        calendar: {
+          ...calendar,
+          days: calendar.days.map((day) => ({
+            ...day,
+            isSource: day.date === entry.foodLogDate,
+          })),
+        },
+        destinationDate: "2026-08-29",
+        entry,
+        idempotencyKey: `copy:${entry.id}:dialog-action`,
+      },
+      foodLog: {
+        ...baseFoodLog,
+        selectedDate: entry.foodLogDate,
+        today: "2026-08-30",
+      },
+    },
+    undefined,
+    `/?date=${entry.foodLogDate}&copy=${entry.id}&copyDate=2026-08-29`,
+  );
+
+  expect(renderer.root.findByProps({ role: "dialog" }).props).toMatchObject({
+    "aria-labelledby": "copy-food-entry-title",
+    "aria-modal": "true",
+  });
+  expect(allText(renderer)).toContain("Copy Historical yogurt");
+  expect(allText(renderer)).toContain("Saturday, August 29, 2026");
+  expect(
+    renderer.root.findByProps({ "aria-label": "Friday, August 28" }).props,
+  ).toMatchObject({ disabled: true });
+  expect(
+    renderer.root.findByProps({ "aria-label": "Monday, August 31" }).props,
+  ).toMatchObject({ disabled: true });
+  expect(input(renderer, "destinationDate").props.value).toBe("2026-08-29");
+  expect(
+    renderer.root.findAllByType("button").find(
+      (button) => button.props.value === "copy-food-to-date",
+    )?.props.disabled,
+  ).toBe(false);
+  expect(allText(renderer)).toContain("Cancel");
+  await act(async () => renderer.unmount());
 });
 
 const catalogFood = {

@@ -29,6 +29,7 @@ import {
   goalVersions,
   userPreferences,
   users,
+  waterEvents,
 } from "../app/database/schema.server";
 import {
   FoodEntryService,
@@ -249,7 +250,7 @@ test("a historical Food Entry snapshot can be copied independently to today with
 
   const copied = service.copyToToday(userId, source.id, {
     foodLogDate: source.foodLogDate,
-    idempotencyKey: "copy:to-today-key",
+    idempotencyKey: `copy:${source.id}:to-today-key`,
   });
 
   expect(copied).toMatchObject({
@@ -298,7 +299,7 @@ test("copying accepts only the user's historical occurrence and is idempotent pe
   });
   const input = {
     foodLogDate: historical.foodLogDate,
-    idempotencyKey: "copy:boundary-action",
+    idempotencyKey: `copy:${historical.id}:boundary-action`,
   };
 
   expect(() => service.copyToToday(otherUserId, historical.id, input)).toThrow(
@@ -314,6 +315,7 @@ test("copying accepts only the user's historical occurrence and is idempotent pe
     service.copyToToday(userId, today.id, {
       ...input,
       foodLogDate: today.foodLogDate,
+      idempotencyKey: `copy:${today.id}:today-source`,
     }),
   ).toThrow(FoodEntryUnavailableError);
   for (const invalidInput of [
@@ -335,7 +337,7 @@ test("copying accepts only the user's historical occurrence and is idempotent pe
   const retry = service.copyToToday(userId, historical.id, input);
   const deliberateLaterCopy = service.copyToToday(userId, historical.id, {
     ...input,
-    idempotencyKey: "copy:boundary-action-later",
+    idempotencyKey: `copy:${historical.id}:boundary-action-later`,
   });
   expect(retry.id).toBe(first.id);
   expect(deliberateLaterCopy.id).not.toBe(first.id);
@@ -343,6 +345,7 @@ test("copying accepts only the user's historical occurrence and is idempotent pe
     service.copyToToday(userId, today.id, {
       ...input,
       foodLogDate: today.foodLogDate,
+      idempotencyKey: `copy:${today.id}:today-source-after-copy`,
     }),
   ).toThrow(FoodEntryUnavailableError);
   expect(() =>
@@ -375,9 +378,10 @@ test("a failed copy transaction creates no occurrence", async () => {
     foodLogDate: "2026-08-30",
     idempotencyKey: "copy-transaction-source",
   });
+  const failureKey = `copy:${source.id}:transaction-failure`;
   client.run(sql.raw(`CREATE TRIGGER fail_food_entry_copy
     BEFORE INSERT ON food_entries
-    WHEN NEW.idempotency_key = 'copy:transaction-failure'
+    WHEN NEW.idempotency_key = '${failureKey}'
     BEGIN
       SELECT RAISE(ABORT, 'simulated copy failure');
     END`));
@@ -385,7 +389,7 @@ test("a failed copy transaction creates no occurrence", async () => {
   expect(() =>
     service.copyToToday(userId, source.id, {
       foodLogDate: source.foodLogDate,
-      idempotencyKey: "copy:transaction-failure",
+      idempotencyKey: failureKey,
     }),
   ).toThrow("simulated copy failure");
   expect(client.select().from(foodEntries).all()).toHaveLength(1);
@@ -412,13 +416,163 @@ test("copying resolves today's date and event time in the user's configured time
 
   const copied = service.copyToToday(userId, source.id, {
     foodLogDate: source.foodLogDate,
-    idempotencyKey: "copy:zone-action",
+    idempotencyKey: `copy:${source.id}:zone-action`,
   });
 
   expect(copied).toMatchObject({
     foodLogDate: "2026-01-02",
     localEventTime: "00:30:45",
   });
+  database.close();
+});
+
+test("copying to a past date uses food-only placement and preserves an independent snapshot", async () => {
+  const database = await setupDatabase();
+  const client = database.getClient();
+  const userId = insertConfiguredUser(client, "copy.to-date.user");
+  const provider = new FakeCatalogProvider();
+  const now = () => new Date("2026-08-31T16:23:45.000Z");
+  const service = new FoodEntryService(client, provider, now);
+  const source = await service.log(userId, {
+    ...validLogInput(),
+    foodLogDate: "2026-08-29",
+    idempotencyKey: "copy-to-date-source",
+  });
+  client
+    .insert(waterEvents)
+    .values({
+      amountMicroliters: 250_000,
+      createdAt: "2026-08-30T20:00:00.000Z",
+      foodLogDate: "2026-08-30",
+      localEventTime: "20:00:00",
+      updatedAt: "2026-08-30T20:00:00.000Z",
+      userId,
+    })
+    .run();
+  const catalogCallsBeforeCopy = provider.getFoodCalls;
+
+  const first = service.copyToDate(userId, source.id, {
+    destinationFoodLogDate: "2026-08-30",
+    foodLogDate: source.foodLogDate,
+    idempotencyKey: `copy:${source.id}:to-date-first`,
+  });
+  const second = service.copyToDate(userId, source.id, {
+    destinationFoodLogDate: "2026-08-30",
+    foodLogDate: source.foodLogDate,
+    idempotencyKey: `copy:${source.id}:to-date-second`,
+  });
+
+  expect(first).toMatchObject({
+    ...source,
+    foodLogDate: "2026-08-30",
+    id: first.id,
+    localEventTime: "12:00:00",
+  });
+  expect(second.localEventTime).toBe("12:01:00");
+  expect(provider.getFoodCalls).toBe(catalogCallsBeforeCopy);
+  expect(
+    new FoodLogService(client, now).read(userId, "2026-08-30")?.entries.map(
+      (entry) => entry.id,
+    ),
+  ).toEqual([second.id, first.id]);
+
+  service.delete(userId, source.id, {
+    expectedUpdatedAt: source.updatedAt,
+    foodLogDate: source.foodLogDate,
+  });
+  expect(service.read(userId, first.id).foodLogDate).toBe("2026-08-30");
+  database.close();
+});
+
+test("copying to another date rejects ineligible destinations and keeps end-of-day ties deterministic", async () => {
+  const database = await setupDatabase();
+  const client = database.getClient();
+  const userId = insertConfiguredUser(client, "copy.to-date.boundaries");
+  const otherUserId = insertConfiguredUser(client, "copy.to-date.other");
+  const provider = new FakeCatalogProvider();
+  const now = () => new Date("2026-08-31T16:23:45.000Z");
+  const service = new FoodEntryService(client, provider, now);
+  const source = await service.log(userId, {
+    ...validLogInput(),
+    foodLogDate: "2026-08-28",
+    idempotencyKey: "copy-to-date-boundary-source",
+  });
+  const otherSource = await service.log(userId, {
+    ...validLogInput(),
+    foodLogDate: "2026-08-28",
+    idempotencyKey: "copy-to-date-other-source",
+  });
+  const sourceRow = client
+    .select()
+    .from(foodEntries)
+    .where(eq(foodEntries.id, source.id))
+    .get()!;
+  client
+    .insert(foodEntries)
+    .values({
+      ...sourceRow,
+      createdAt: "2026-08-29T23:59:30.000Z",
+      foodLogDate: "2026-08-29",
+      id: undefined,
+      idempotencyKey: "copy-to-date-day-end",
+      localEventTime: "23:59:30",
+      updatedAt: "2026-08-29T23:59:30.000Z",
+      userId,
+    })
+    .run();
+  const input = {
+    destinationFoodLogDate: "2026-08-29",
+    foodLogDate: source.foodLogDate,
+    idempotencyKey: `copy:${source.id}:to-date-boundary`,
+  };
+
+  for (const destinationFoodLogDate of [source.foodLogDate, "2026-09-01"]) {
+    expect(() =>
+      service.copyToDate(userId, source.id, {
+        ...input,
+        destinationFoodLogDate,
+      }),
+    ).toThrow(FoodEntryUnavailableError);
+  }
+  expect(() => service.copyToDate(otherUserId, source.id, input)).toThrow(
+    FoodEntryUnavailableError,
+  );
+  expect(() =>
+    service.copyToDate(userId, source.id, {
+      ...input,
+      destinationFoodLogDate: "invalid",
+    }),
+  ).toThrow(InvalidFoodEntryInputError);
+
+  const todayCopy = service.copyToDate(userId, source.id, {
+    ...input,
+    destinationFoodLogDate: "2026-08-31",
+    idempotencyKey: `copy:${source.id}:to-date-today`,
+  });
+  expect(todayCopy).toMatchObject({
+    foodLogDate: "2026-08-31",
+    localEventTime: "12:23:45",
+  });
+
+  const copied = service.copyToDate(userId, source.id, input);
+  const retry = service.copyToDate(userId, source.id, input);
+  expect(copied.localEventTime).toBe("23:59:30");
+  expect(retry.id).toBe(copied.id);
+  expect(() =>
+    service.copyToDate(userId, otherSource.id, {
+      ...input,
+      foodLogDate: otherSource.foodLogDate,
+    }),
+  ).toThrow(InvalidFoodEntryInputError);
+  expect(
+    new FoodLogService(client, now).read(userId, "2026-08-29")?.entries[0]?.id,
+  ).toBe(copied.id);
+  expect(() =>
+    service.copyToDate(userId, source.id, {
+      ...input,
+      destinationFoodLogDate: "2026-08-30",
+    }),
+  ).toThrow(InvalidFoodEntryInputError);
   database.close();
 });
 

@@ -772,7 +772,9 @@
   box-shadow: 0 0.75rem 2rem rgb(31 42 55 / 16%);
 }
 
-.foodEntryMenuPopover button {
+.foodEntryMenuPopover button,
+.foodEntryMenuPopover a {
+  display: block;
   width: 100%;
   padding: 0.65rem 0.75rem;
   border: 0;
@@ -783,18 +785,63 @@
   font-size: 0.78rem;
   font-weight: 750;
   text-align: left;
+  text-decoration: none;
   white-space: nowrap;
   cursor: pointer;
 }
 
 .foodEntryMenuPopover button:hover,
-.foodEntryMenuPopover button:focus-visible {
+.foodEntryMenuPopover button:focus-visible,
+.foodEntryMenuPopover a:hover,
+.foodEntryMenuPopover a:focus-visible {
   background: var(--surface-soft);
 }
 
 .foodEntryMenuPopover button:disabled {
   color: var(--muted);
   cursor: progress;
+}
+
+.copyFoodDialog {
+  width: min(100%, 34rem);
+}
+
+.copyCalendar {
+  margin-top: 1rem;
+  overflow: hidden;
+  border: 1px solid var(--rule);
+  border-radius: 1rem;
+}
+
+.copyDestination {
+  display: grid;
+  gap: 0.2rem;
+  margin-top: 1rem;
+  padding: 0.8rem;
+  border-radius: 0.75rem;
+  background: var(--surface-soft);
+}
+
+.copyDestination span {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 750;
+  text-transform: uppercase;
+}
+
+.copyDestination strong {
+  font-size: 0.9rem;
+}
+
+.copyActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.6rem;
+  margin-top: 1rem;
+}
+
+.copyActions a {
+  text-decoration: none;
 }
 
 .pendingFoodEntryCard {

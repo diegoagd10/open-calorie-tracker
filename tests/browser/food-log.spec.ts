@@ -1610,6 +1610,189 @@ test("an authenticated user can copy a historical Food Entry to today", async ({
   expect(accessibilityScan.violations).toEqual([]);
 });
 
+test("an authenticated user can review and copy a Food Entry to another eligible date", async ({
+  context,
+  page,
+}) => {
+  await context.setExtraHTTPHeaders({ "X-Test-Client-IP": "203.0.113.90" });
+  await completeSetupForTestUser(page, "food.entry.copy-date");
+
+  await page.goto("/?date=2026-08-27");
+  await page.getByRole("button", { name: "Add Water" }).click();
+  const waterDialog = page.getByRole("dialog", { name: "Add Water" });
+  await waterDialog.getByRole("button", { name: /8 fl oz.*Glass/ }).click();
+  await waterDialog.getByRole("button", { name: "Add 8 fl oz" }).click();
+
+  await page.goto("/?date=2026-08-26");
+  await openUsdaSearch(page);
+  await page
+    .getByRole("searchbox", { name: "Search United States foods" })
+    .fill("yogurt");
+  await page.getByRole("button", { name: "Search" }).click();
+  await page.getByRole("link", { name: /Plain nonfat Greek yogurt/ }).click();
+  await page.getByRole("button", { name: "Add to Food Log" }).click();
+
+  const menuTrigger = page.getByRole("button", {
+    name: "More actions for Plain nonfat Greek yogurt",
+  });
+  await menuTrigger.click();
+  await expect(page.getByRole("button", { name: "Copy to today" })).toBeVisible();
+  const copyToDateLink = page.getByRole("link", {
+    name: "Copy to another date…",
+  });
+  await expect(copyToDateLink).toBeVisible();
+  await copyToDateLink.click();
+
+  let dialog = page.getByRole("dialog", {
+    name: "Copy Plain nonfat Greek yogurt",
+  });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Copy", exact: true }))
+    .toBeDisabled();
+  await expect(dialog.getByRole("button", { name: "Wednesday, August 26" }))
+    .toBeDisabled();
+  await expect(dialog.getByRole("button", { name: "Sunday, August 30" }))
+    .toBeDisabled();
+  await expect(dialog.getByRole("link", { name: "Saturday, August 29" }))
+    .toBeVisible();
+  for (const viewport of [
+    { height: 844, width: 390 },
+    { height: 900, width: 800 },
+    { height: 900, width: 1_120 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await expect(dialog).toBeVisible();
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= window.innerWidth,
+      ),
+    ).toBe(true);
+  }
+  await page.setViewportSize({ height: 720, width: 1_280 });
+  const openDialogAccessibility = await new AxeBuilder({ page }).analyze();
+  expect(openDialogAccessibility.violations).toEqual([]);
+
+  await dialog.getByRole("link", { name: "Cancel" }).click();
+  await expect(page).toHaveURL("/?date=2026-08-26");
+  await expect(menuTrigger).toBeFocused();
+  await expect(
+    page.getByRole("link", { name: /Plain nonfat Greek yogurt.*100\.3 kcal/ }),
+  ).toHaveCount(1);
+
+  await menuTrigger.click();
+  await page.getByRole("link", { name: "Copy to another date…" }).click();
+  dialog = page.getByRole("dialog", {
+    name: "Copy Plain nonfat Greek yogurt",
+  });
+  await dialog.getByRole("link", { name: "Thursday, August 27" }).click();
+  await expect(dialog.getByText("Thursday, August 27, 2026", { exact: true }))
+    .toBeVisible();
+
+  const destinationPreview = await context.newPage();
+  await destinationPreview.goto("/?date=2026-08-27");
+  await expect(
+    destinationPreview.getByRole("link", {
+      name: /Plain nonfat Greek yogurt.*100\.3 kcal/,
+    }),
+  ).toHaveCount(0);
+  await destinationPreview.close();
+
+  let releaseCopy!: () => void;
+  let signalCopyStarted!: () => void;
+  const copyGate = new Promise<void>((resolve) => {
+    releaseCopy = resolve;
+  });
+  const copyStarted = new Promise<void>((resolve) => {
+    signalCopyStarted = resolve;
+  });
+  await page.route("**/*", async (route) => {
+    if (
+      route.request().method() === "POST" &&
+      route.request().postData()?.includes("intent=copy-food-to-date")
+    ) {
+      signalCopyStarted();
+      await copyGate;
+    }
+    await route.continue();
+  });
+  const copyButton = dialog.getByRole("button", { name: "Copy", exact: true });
+  const submission = copyButton.click();
+  await copyStarted;
+  await expect(dialog.getByRole("button", { name: "Copying…" })).toBeDisabled();
+  releaseCopy();
+  await submission;
+  await page.unroute("**/*");
+
+  await expect(page).toHaveURL(
+    /date=2026-08-26&notice=copied&copied=[1-9]\d*/,
+  );
+  await expect(page.getByRole("status")).toContainText(
+    "Copied Plain nonfat Greek yogurt to Thursday, August 27, 2026.",
+  );
+  await expect(
+    page.getByRole("link", { name: /Plain nonfat Greek yogurt.*100\.3 kcal/ }),
+  ).toHaveCount(1);
+
+  await page.goto("/?date=2026-08-27");
+  let copiedCards = page.getByRole("link", {
+    name: /Plain nonfat Greek yogurt.*100\.3 kcal/,
+  });
+  await expect(copiedCards).toHaveCount(1);
+  await expect(copiedCards.locator("time")).toHaveText("12:00 PM");
+  await expect(
+    page.locator("[data-water-editor-trigger]").filter({ hasText: "8 fl oz" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("progressbar", { name: "Calorie progress" }),
+  ).toHaveAttribute("aria-valuetext", /100\.3 of 2,050 kcal target/);
+
+  await page.goto("/?date=2026-08-26");
+  await page
+    .getByRole("button", { name: "More actions for Plain nonfat Greek yogurt" })
+    .click();
+  await page.getByRole("link", { name: "Copy to another date…" }).click();
+  dialog = page.getByRole("dialog", {
+    name: "Copy Plain nonfat Greek yogurt",
+  });
+  await dialog.getByRole("link", { name: "Thursday, August 27" }).click();
+  await dialog.getByRole("button", { name: "Copy", exact: true }).click();
+  await expect(page.getByRole("status")).toContainText(
+    "Copied Plain nonfat Greek yogurt to Thursday, August 27, 2026.",
+  );
+  await page.goto("/?date=2026-08-27");
+  copiedCards = page.getByRole("link", {
+    name: /Plain nonfat Greek yogurt.*100\.3 kcal/,
+  });
+  await expect(copiedCards).toHaveCount(2);
+  await expect(copiedCards.nth(0).locator("time")).toHaveText("12:01 PM");
+  await expect(copiedCards.nth(1).locator("time")).toHaveText("12:00 PM");
+  await expect(
+    page.getByRole("progressbar", { name: "Calorie progress" }),
+  ).toHaveAttribute("aria-valuetext", /200\.6 of 2,050 kcal target/);
+
+  await page.goto("/?date=2026-08-26");
+  await page
+    .getByRole("button", { name: "More actions for Plain nonfat Greek yogurt" })
+    .click();
+  await page.getByRole("link", { name: "Copy to another date…" }).click();
+  dialog = page.getByRole("dialog", {
+    name: "Copy Plain nonfat Greek yogurt",
+  });
+  await dialog.getByRole("link", { name: "Saturday, August 29" }).click();
+  await dialog.getByRole("button", { name: "Copy", exact: true }).click();
+  await expect(page.getByRole("status")).toContainText(
+    "Copied Plain nonfat Greek yogurt to today's Food Log.",
+  );
+  await page.goto("/");
+  const todayCopy = page.getByRole("link", {
+    name: /Plain nonfat Greek yogurt.*100\.3 kcal/,
+  });
+  await expect(todayCopy).toHaveCount(1);
+  await expect(todayCopy.locator("time")).toHaveText("2:00 PM");
+  const accessibilityScan = await new AxeBuilder({ page }).analyze();
+  expect(accessibilityScan.violations).toEqual([]);
+});
+
 test("a stale Food Entry editor refreshes to the current occurrence and can retry", async ({
   context,
   page,
