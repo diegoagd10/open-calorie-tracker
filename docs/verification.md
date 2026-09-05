@@ -68,12 +68,28 @@ configuration, fixtures, migrations, or runtime wiring. Without a local cache,
 the versioned report seeds the first run. The score still has to meet both the
 configured threshold and `mutation-testing/baseline-summary.json`.
 
-The mutation workflow restores and saves this cache within GitHub's branch/PR
-cache scope, and cancels obsolete runs when another commit arrives on the same
-PR or branch. The first uncached run still pays the full incremental workload;
-subsequent runs reuse completed results instead of starting from the old seed.
-`pnpm mutation:baseline` always forces a fresh measurement and remains the
-explicit baseline review operation.
+The mutation workflow runs eight independent shards on standard runners, with
+at most one Stryker worker per available CPU (capped at four). Statements are
+balanced by syntax-tree size, so large files such as `home.tsx` are distributed
+without cutting through a function or dropping a mutation across a line boundary.
+Each shard has its own cache and 30-minute limit. A change to production source
+forces fresh shard reports because it can move statements between shards; test
+case changes still use Stryker's incremental comparison. Shards never seed from
+the full versioned report, which could retain results outside the shard's scope.
+
+The required check waits for **all eight shards**, rejects missing, duplicate,
+stale, incomplete, or incorrectly assigned reports, and applies the unchanged
+threshold and baseline regression gate to the combined score. Scores from
+individual shards are not averaged or gated separately. Shard HTML reports and
+the combined JSON report are uploaded as artifacts. Obsolete PR/branch runs
+are canceled when a new commit arrives.
+
+`pnpm mutation:test` remains the unsharded local command. To reproduce one CI
+shard, run `MUTATION_SHARD=1/8 pnpm mutation:test`. After collecting the shard
+artifacts under one directory, combine and check them with
+`node scripts/merge-mutation-shards.mjs <artifact-directory> 8`.
+`pnpm mutation:baseline` always forces a complete unsharded measurement and
+remains the explicit baseline review operation.
 
 ## GitHub Actions
 

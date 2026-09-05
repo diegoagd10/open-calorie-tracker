@@ -107,6 +107,8 @@
           "scripts/calibrate-argon2.mjs",
           "scripts/check-codeql-results.mjs",
           "scripts/mutation-report.mjs",
+          "scripts/mutation-shards.mjs",
+          "scripts/merge-mutation-shards.mjs",
           "scripts/run-mutation-testing.mjs",
           "stryker.config.mjs"
         ]

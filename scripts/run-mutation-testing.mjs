@@ -20,7 +20,11 @@ import {
   validateMutationScoreThreshold,
 } from "./mutation-report.mjs";
 
+import { mutationSourceHash, parseMutationShard } from "./mutation-shards.mjs";
+
+const shard = parseMutationShard(process.env.MUTATION_SHARD);
 const recordBaseline = process.argv.includes("--record-baseline");
+if (recordBaseline && shard) throw new Error("Record mutation baselines without MUTATION_SHARD");
 const baselineDirectory = "mutation-testing";
 const baselineReportPath = `${baselineDirectory}/stryker-incremental.json`;
 const baselineSummaryPath = `${baselineDirectory}/baseline-summary.json`;
@@ -56,13 +60,14 @@ async function incrementalContext() {
     "app/**/runtime.server.ts",
     "server/**",
     "mutation-testing/**",
+    ...(shard ? ["app/**"] : []),
   ], {
     exclude: ["tests/**/*.test.ts", "tests/**/*.test.tsx", "tests/browser/**"],
   })) {
     if ((await stat(file)).isFile()) files.push(file);
   }
   const hash = createHash("sha256").update(
-    JSON.stringify([process.version, process.platform, process.arch]),
+    JSON.stringify([process.version, process.platform, process.arch, shard]),
   );
   for (const file of files.sort()) {
     hash.update(JSON.stringify([file, await readFile(file, "utf8")]));
@@ -106,6 +111,12 @@ if (recordBaseline) {
   }
   if (contextMatches && await exists(incrementalReportPath)) {
     console.log("Reusing the latest completed incremental mutation report.");
+  } else if (shard) {
+    // Source changes can move statements between shards. Start these shards
+    // fresh instead of retaining Stryker results outside their current scope.
+    force = true;
+    await rm(incrementalReportPath, { force: true });
+    console.log(`Measuring mutation shard ${shard.index}/${shard.total} without a compatible cache.`);
   } else if (hasCachedContext || await exists(incrementalReportPath)) {
     // A dependency/helper/config change may affect unchanged source and tests.
     // Neither the cached report nor the older versioned seed is safe to reuse.
@@ -122,55 +133,68 @@ if (recordBaseline) {
 // Only publish cache eligibility after Stryker produces a complete report.
 await rm(incrementalContextPath, { force: true });
 await rm(currentReportPath, { force: true });
+await rm(`${reportDirectory}/shard.json`, { force: true });
 const startedAt = performance.now();
 await runStryker(force ? ["--force"] : []);
 const durationMs = performance.now() - startedAt;
 
 const currentReport = JSON.parse(await readFile(currentReportPath, "utf8"));
 const currentSummary = summarizeMutationReport(currentReport, durationMs);
+if (shard && (currentSummary.counts.Pending || currentSummary.counts.total === 0)) {
+  throw new Error("Mutation shard is incomplete or empty");
+}
 await writeFile(incrementalContextPath, context);
 
-if (
-  mutationScoreThreshold !== undefined &&
-  isBelowMutationScoreThreshold(currentSummary, mutationScoreThreshold)
-) {
-  throw new Error(
-    `Mutation score ${currentSummary.mutationScore.toFixed(2)}% is below the required ${mutationScoreThreshold.toFixed(2)}%.`,
-  );
-}
-if (mutationScoreThreshold !== undefined) {
-  console.log(
-    `Mutation score ${currentSummary.mutationScore.toFixed(2)}% meets the required ${mutationScoreThreshold.toFixed(2)}%.`,
-  );
-}
-
-if (recordBaseline) {
-  await mkdir(baselineDirectory, { recursive: true });
-  const incrementalReport = JSON.parse(
-    await readFile(incrementalReportPath, "utf8"),
-  );
-  // Stryker only needs relative file keys for incremental reuse. Avoid checking
-  // the baseline author's workstation path into the portable seed.
-  incrementalReport.projectRoot = ".";
-  await writeFile(baselineReportPath, JSON.stringify(incrementalReport));
-  await writeFile(
-    baselineSummaryPath,
-    `${JSON.stringify(currentSummary, null, 2)}\n`,
-  );
-  console.log(
-    `Recorded mutation baseline: ${currentSummary.mutationScore.toFixed(2)}% in ${(durationMs / 1000).toFixed(1)}s.`,
-  );
+if (shard) {
+  const { mutationSources } = await import("../stryker.config.mjs");
+  await writeFile(`${reportDirectory}/shard.json`, JSON.stringify({
+    ...shard, sourceHash: mutationSourceHash(mutationSources), durationMs,
+    mutantCount: currentSummary.counts.total,
+  }));
+  console.log(`Completed mutation shard ${shard.index}/${shard.total}; the combined report enforces the score gate.`);
 } else {
-  const baselineSummary = JSON.parse(
-    await readFile(baselineSummaryPath, "utf8"),
-  );
-  const comparison = compareWithBaseline(currentSummary, baselineSummary);
-  console.log(
-    `Mutation score ${currentSummary.mutationScore.toFixed(2)}%; baseline ${baselineSummary.mutationScore.toFixed(2)}% (${comparison.difference >= 0 ? "+" : ""}${comparison.difference.toFixed(2)} points).`,
-  );
-  if (comparison.regressed) {
+  if (
+    mutationScoreThreshold !== undefined &&
+    isBelowMutationScoreThreshold(currentSummary, mutationScoreThreshold)
+  ) {
     throw new Error(
-      "Mutation score regressed below the measured baseline. Improve the tests or explicitly review and record a new baseline.",
+      `Mutation score ${currentSummary.mutationScore.toFixed(2)}% is below the required ${mutationScoreThreshold.toFixed(2)}%.`,
     );
+  }
+  if (mutationScoreThreshold !== undefined) {
+    console.log(
+      `Mutation score ${currentSummary.mutationScore.toFixed(2)}% meets the required ${mutationScoreThreshold.toFixed(2)}%.`,
+    );
+  }
+
+  if (recordBaseline) {
+    await mkdir(baselineDirectory, { recursive: true });
+    const incrementalReport = JSON.parse(
+      await readFile(incrementalReportPath, "utf8"),
+    );
+    // Stryker only needs relative file keys for incremental reuse. Avoid checking
+    // the baseline author's workstation path into the portable seed.
+    incrementalReport.projectRoot = ".";
+    await writeFile(baselineReportPath, JSON.stringify(incrementalReport));
+    await writeFile(
+      baselineSummaryPath,
+      `${JSON.stringify(currentSummary, null, 2)}\n`,
+    );
+    console.log(
+      `Recorded mutation baseline: ${currentSummary.mutationScore.toFixed(2)}% in ${(durationMs / 1000).toFixed(1)}s.`,
+    );
+  } else {
+    const baselineSummary = JSON.parse(
+      await readFile(baselineSummaryPath, "utf8"),
+    );
+    const comparison = compareWithBaseline(currentSummary, baselineSummary);
+    console.log(
+      `Mutation score ${currentSummary.mutationScore.toFixed(2)}%; baseline ${baselineSummary.mutationScore.toFixed(2)}% (${comparison.difference >= 0 ? "+" : ""}${comparison.difference.toFixed(2)} points).`,
+    );
+    if (comparison.regressed) {
+      throw new Error(
+        "Mutation score regressed below the measured baseline. Improve the tests or explicitly review and record a new baseline.",
+      );
+    }
   }
 }

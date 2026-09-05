@@ -34,7 +34,7 @@ writeFileSync('reports/mutation/mutation.json', JSON.stringify(report));
     run(args = [], environment = {}) {
       return spawnSync(process.execPath, [runner, ...args], {
         cwd: directory,
-        env: { ...process.env, MUTATION_SCORE_THRESHOLD: "94.8", PATH: `${directory}/bin:${process.env.PATH}`, ...environment },
+        env: { ...process.env, MUTATION_SHARD: undefined, MUTATION_SCORE_THRESHOLD: "94.8", PATH: `${directory}/bin:${process.env.PATH}`, ...environment },
         encoding: "utf8",
       });
     },
@@ -131,4 +131,28 @@ test("browser-only changes do not invalidate Vitest mutation results", async (t)
   await writeFile(path.join(f.directory, "tests/browser/journey.spec.ts"), "test('browser change', () => {});");
   f.run();
   assert.equal((await f.invocation()).args.includes("--force"), false);
+});
+
+test("shards finish below the global threshold and never inherit out-of-scope seed results", async (t) => {
+  const f = await fixture(t);
+  await mkdir(path.join(f.directory, "app"));
+  await writeFile(path.join(f.directory, "app/example.ts"), "export const a = true; export const b = false;");
+  const environment = { MUTATION_SHARD: "1/2" };
+  assert.equal(f.run([], environment).status, 0);
+  assert.equal((await f.invocation()).seed, null);
+  assert.ok((await f.invocation()).args.includes("--force"));
+  const metadata = JSON.parse(await readFile(path.join(f.directory, "reports/mutation/shard.json")));
+  assert.equal(metadata.index, 1);
+  assert.equal(metadata.total, 2);
+  assert.equal(f.run([], environment).status, 0);
+  assert.equal((await f.invocation()).args.includes("--force"), false);
+  await writeFile(path.join(f.directory, "app/example.ts"), "export const a = false; export const b = true;");
+  assert.equal(f.run([], environment).status, 0);
+  assert.equal((await f.invocation()).seed, null);
+  assert.ok((await f.invocation()).args.includes("--force"));
+});
+
+test("shards cannot overwrite the reviewed baseline", async (t) => {
+  const f = await fixture(t);
+  assert.match(f.run(["--record-baseline"], { MUTATION_SHARD: "1/2" }).stderr, /without MUTATION_SHARD/);
 });
