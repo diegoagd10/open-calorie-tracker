@@ -2,6 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
+import { sql } from "drizzle-orm";
 import { RouterContextProvider } from "react-router";
 import { afterAll, beforeAll, expect, test } from "vitest";
 
@@ -40,6 +41,7 @@ let temporaryDirectory: string;
 let cookie: string;
 let csrfToken: string;
 let incompleteCookie: string;
+let userId: number;
 
 function routeArgs(request: Request) {
   return {
@@ -120,6 +122,7 @@ beforeAll(async () => {
   if (!account.ok) throw new Error("home route account was not created");
   cookie = serializeSessionCookie(account.session).split(";", 1)[0];
   csrfToken = account.session.csrfToken;
+  userId = account.session.user.id;
   const setup = validateSetupFields({
     calories: "2050",
     carbohydrate: "230",
@@ -1156,6 +1159,179 @@ test("home food actions log, edit, detect conflicts, delete, and map catalog fai
   expectRedirect(deleted, "/?date=2026-08-31&notice=deleted");
 });
 
+test("home copies a historical Food Entry to today and returns to the source log with a notice", async () => {
+  const source = await getFoodEntryService(new Date(instant)).log(
+    userId,
+    {
+      foodLogDate: "2026-08-29",
+      idempotencyKey: "route-copy-source",
+      provider: "usda-fdc",
+      providerFoodId: "1001",
+      quantity: "1",
+      selectedMeasurementId: "base:g:100000000",
+    },
+  );
+  const copyFields = {
+    date: source.foodLogDate,
+    entryId: String(source.id),
+    idempotencyKey: `copy:${source.id}:route-action`,
+    intent: "copy-food-to-today",
+  };
+
+  const copied = await homeAction(routeArgs(post(copyFields)));
+  expect(copied).toBeInstanceOf(Response);
+  const destination = (copied as Response).headers.get("Location")!;
+  const destinationUrl = new URL(destination, origin);
+  expect(destinationUrl.searchParams.get("date")).toBe(source.foodLogDate);
+  expect(destinationUrl.searchParams.get("notice")).toBe("copied");
+  expect(destinationUrl.searchParams.get("copied")).toMatch(/^[1-9]\d*$/);
+  expectRedirect(copied, destination);
+  const repeated = await homeAction(routeArgs(post(copyFields)));
+  expectRedirect(repeated, destination);
+
+  const sourcePage = await load(destination);
+  expect(sourcePage.data.notice).toBe(
+    `Copied ${source.name} to today's Food Log.`,
+  );
+  expect(sourcePage.data.foodLog.entries).toHaveLength(1);
+  const todayPage = await load();
+  expect(
+    todayPage.data.foodLog.entries.filter(
+      (entry) => entry.name === source.name && entry.foodLogDate === today,
+    ),
+  ).toHaveLength(1);
+
+  for (const [entryId, status] of [
+    ["invalid", 400],
+    ["999999", 404],
+  ] as const) {
+    const failure = await homeAction(
+      routeArgs(
+        post({
+          ...copyFields,
+          entryId,
+          idempotencyKey: `copy:${entryId}:failure`,
+        }),
+      ),
+    );
+    expect(failure).toMatchObject({
+      data: { tone: "error" },
+      init: { status },
+    });
+    expect((failure as { data: { message: string } }).data.message).not.toContain(
+      "Copied",
+    );
+  }
+
+  const fabricatedNotice = await load(
+    "/?date=2026-08-29&notice=copied&copied=999999",
+  );
+  expect(fabricatedNotice.data.notice).toBeUndefined();
+  const fabricatedOwnedNotice = await load(
+    `/?date=2026-08-29&notice=copied&copied=${source.id}`,
+  );
+  expect(fabricatedOwnedNotice.data.notice).toBeUndefined();
+
+  const client = getApplicationDatabase().getClient();
+  const failureKey = `copy:${source.id}:route-transaction-failure`;
+  client.run(sql.raw(`CREATE TRIGGER fail_route_food_entry_copy
+    BEFORE INSERT ON food_entries
+    WHEN NEW.idempotency_key = '${failureKey}'
+    BEGIN
+      SELECT RAISE(ABORT, 'simulated route copy failure');
+    END`));
+  try {
+    const transactionFailure = await homeAction(
+      routeArgs(
+        post({
+          ...copyFields,
+          idempotencyKey: failureKey,
+        }),
+      ),
+    );
+    expect(transactionFailure).toMatchObject({
+      data: {
+        message: "The Food Entry could not be copied. Try again.",
+        tone: "error",
+      },
+      init: { status: 500 },
+    });
+  } finally {
+    client.run(sql.raw("DROP TRIGGER fail_route_food_entry_copy"));
+  }
+  expect((await load("/?date=2026-08-29")).data.foodLog.entries).toHaveLength(1);
+});
+
+test("home opens a copy-date calendar and confirms one copy while staying on the source log", async () => {
+  const source = await getFoodEntryService(new Date(instant)).log(userId, {
+    foodLogDate: "2026-08-26",
+    idempotencyKey: "route-copy-date-source",
+    provider: "usda-fdc",
+    providerFoodId: "1001",
+    quantity: "1",
+    selectedMeasurementId: "base:g:100000000",
+  });
+
+  const opened = await load(`/?date=${source.foodLogDate}&copy=${source.id}`);
+  expect(opened.data.copyDialog).toMatchObject({
+    destinationDate: undefined,
+    entry: { id: source.id, name: source.name },
+  });
+  const unavailableDialog = await load(
+    `/?date=${source.foodLogDate}&copy=999999`,
+  );
+  expect(unavailableDialog.data).toMatchObject({
+    copyDialog: undefined,
+    copyError: "That Food Entry is unavailable. Choose another entry.",
+  });
+
+  const selected = await load(
+    `/?date=${source.foodLogDate}&copy=${source.id}&copyDate=2026-08-27`,
+  );
+  expect(selected.data.copyDialog?.destinationDate).toBe("2026-08-27");
+  const copyFields = {
+    date: source.foodLogDate,
+    destinationDate: "2026-08-27",
+    entryId: String(source.id),
+    idempotencyKey: selected.data.copyDialog!.idempotencyKey,
+    intent: "copy-food-to-date",
+  };
+
+  const copied = await homeAction(routeArgs(post(copyFields)));
+  const destination = (copied as Response).headers.get("Location")!;
+  expectRedirect(copied, destination);
+  expect(new URL(destination, origin).searchParams.get("date")).toBe(
+    source.foodLogDate,
+  );
+  const sourcePage = await load(destination);
+  expect(sourcePage.data.notice).toBe(
+    `Copied ${source.name} to Thursday, August 27, 2026.`,
+  );
+  expect(sourcePage.data.foodLog.entries).toContainEqual(source);
+  const destinationPage = await load("/?date=2026-08-27");
+  expect(destinationPage.data.foodLog.entries).toContainEqual(
+    expect.objectContaining({
+      foodLogDate: "2026-08-27",
+      localEventTime: "12:00:00",
+      name: source.name,
+    }),
+  );
+
+  for (const destinationDate of [source.foodLogDate, "2026-09-01", "invalid"]) {
+    const failure = await homeAction(
+      routeArgs(post({
+        ...copyFields,
+        destinationDate,
+        idempotencyKey: `copy:${source.id}:route-date-failure-${destinationDate}`,
+      })),
+    );
+    expect(failure).toMatchObject({ data: { tone: "error" } });
+    expect((failure as { data: { message: string } }).data.message).not.toContain(
+      "Copied",
+    );
+  }
+});
+
 test("home creates manual Food Entries on the selected date and preserves invalid drafts", async () => {
   const fields = {
     carbohydrateGrams: "36",
@@ -1221,4 +1397,42 @@ test("home creates manual Food Entries on the selected date and preserves invali
     },
     init: { status: 422 },
   });
+});
+
+test("copy loader restricts source actions and validates every calendar selection", async () => {
+  const service = getFoodEntryService(new Date(instant));
+  const source = await service.log(userId, {
+    foodLogDate: "2026-08-23", idempotencyKey: "copy-loader-boundary-source",
+    provider: "usda-fdc", providerFoodId: "1001", quantity: "1", selectedMeasurementId: "base:g:100000000",
+  });
+  await homeAction(routeArgs(post({ date: source.foodLogDate, intent: "create-water", waterSelection: "8" })));
+  const historical = await load(`/?date=${source.foodLogDate}`);
+  expect(Object.keys(historical.data.copyIdempotencyKeys)).toEqual([String(source.id)]);
+  expect(historical.data.copyIdempotencyKeys[source.id]).toMatch(new RegExp(`^copy:${source.id}:`));
+  expect(historical.data.copyDialog).toBeUndefined();
+  expect(historical.data.copyError).toBeUndefined();
+  for (const date of [today, "2026-09-01"]) {
+    const current = await load(`/?date=${date}&copy=${source.id}`);
+    expect(current.data.copyIdempotencyKeys).toEqual({});
+    expect(current.data.copyDialog).toBeUndefined();
+    expect(current.data.copyError).toBeUndefined();
+  }
+  for (const query of ["copy=invalid", "copy=0", `copy=${source.id}&date=2026-08-22`]) {
+    const result = await load(`/?${query}${query.includes("date=") ? "" : `&date=${source.foodLogDate}`}`);
+    expect(result.data).toMatchObject({ copyDialog: undefined, copyError: "That Food Entry is unavailable. Choose another entry." });
+  }
+  for (const copyDate of ["", "invalid", "2026-02-30", source.foodLogDate, "2026-09-01"]) {
+    const result = await load(`/?date=${source.foodLogDate}&copy=${source.id}&copyDate=${copyDate}`);
+    expect(result.data.copyDialog?.destinationDate).toBeUndefined();
+    expect(result.data.copyDialog?.calendar.month).toBe("2026-08");
+    expect(result.data.copyDialog?.calendar.days.some((day) => day.isSelected)).toBe(false);
+  }
+  const selected = await load(`/?date=${source.foodLogDate}&copy=${source.id}&copyDate=${today}`);
+  expect(selected.data.copyDialog?.destinationDate).toBe(today);
+  expect(selected.data.copyDialog?.calendar.days.filter((day) => day.isSource).map((day) => day.date)).toEqual([source.foodLogDate]);
+  expect(selected.data.copyDialog?.calendar.days.filter((day) => day.isSelected).map((day) => day.date)).toEqual([today]);
+  expect(selected.data.copyDialog?.calendar.days).toHaveLength(31);
+  const previous = await load(`/?date=${source.foodLogDate}&copy=${source.id}&copyMonth=2026-07&copyDate=2026-07-15`);
+  expect(previous.data.copyDialog?.calendar.month).toBe("2026-07");
+  expect(previous.data.copyDialog?.calendar.days.filter((day) => day.isSelected).map((day) => day.date)).toEqual(["2026-07-15"]);
 });

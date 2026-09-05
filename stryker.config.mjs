@@ -1,3 +1,6 @@
+import { availableParallelism } from "node:os";
+import { readMutationShard, planMutationShards, readMutationSources } from "./scripts/mutation-shards.mjs";
+
 /** @type {import('@stryker-mutator/api/core').PartialStrykerOptions} */
 const config = {
   plugins: ["@stryker-mutator/vitest-runner"],
@@ -27,7 +30,7 @@ const config = {
     "!**/*.d.ts",
     "!**/*.d.mts",
   ],
-  concurrency: 4,
+  concurrency: Math.min(4, availableParallelism()),
   coverageAnalysis: "perTest",
   ignoreStatic: true,
   incremental: true,
@@ -40,5 +43,12 @@ const config = {
     fileName: "reports/mutation/mutation.json",
   },
 };
+
+export const mutationShard = readMutationShard();
+export const mutationSources = await readMutationSources(config.mutate);
+if (mutationShard) {
+  config.mutate = planMutationShards(mutationSources, mutationShard.total)[mutationShard.index - 1].mutate;
+  if (config.mutate.length === 0) throw new Error("Mutation shard has no source statements");
+}
 
 export default config;

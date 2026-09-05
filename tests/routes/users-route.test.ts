@@ -857,3 +857,42 @@ test("a stale deletion form cannot delete a replacement account reusing the user
     expect.objectContaining({ username: "stale.reused" }),
   );
 });
+
+test("member form validation returns actionable errors without changing the directory", async () => {
+  const authentication = getAuthenticationService();
+  const administrator = await authentication.authenticate(administratorCookie.split("=", 2)[1]);
+  if (!administrator) throw new Error("administrator session unavailable");
+  const csrfToken = administrator.csrfToken;
+  const before = authentication.listManageableMembers();
+  const unavailable = "Member is no longer available. Refresh and try again.";
+  for (const [fields, error, status] of [
+    [{ username: "a", password, confirmPassword: password }, "Use 3–30 ASCII letters, digits, dot, hyphen, or underscore.", 400],
+    [{ username: "new.validation", password: "short", confirmPassword: "short" }, "Password must contain 12–128 characters.", 400],
+    [{ username: "new.validation", password, confirmPassword: "a different passphrase" }, "Passwords do not match.", 400],
+  ] as const) {
+    expect(await usersAction(routeArgs(post({ ...fields, csrfToken })))).toMatchObject({ data: { error, username: fields.username }, init: { status } });
+  }
+  for (const intent of ["disable-member", "reactivate-member", "delete-member"]) {
+    const field = intent === "delete-member" ? "deletionError" : "accessError";
+    for (const targetUsername of ["not a username", "Regular.Member", ""]) {
+      expect(await usersAction(routeArgs(post({ csrfToken, intent, targetUsername })))).toMatchObject({ data: { [field]: unavailable }, init: { status: 409 } });
+    }
+  }
+  for (const targetUserId of ["0", "-1", "1.5", "9007199254740992", "invalid"]) {
+    expect(await usersAction(routeArgs(post({ csrfToken, intent: "delete-member", targetUserId, targetUsername: "regular.member" })))).toMatchObject({ data: { deletionError: unavailable }, init: { status: 409 } });
+  }
+  for (const fields of [
+    { targetUsername: "not a username", newPassword: password, confirmPassword: password },
+    { targetUsername: "Regular.Member", newPassword: "short", confirmPassword: "short" },
+    { targetUsername: "Regular.Member", newPassword: password, confirmPassword: password },
+    { targetUsername: "missing.reset", newPassword: password, confirmPassword: password },
+  ]) {
+    expect(await usersAction(routeArgs(post({ ...fields, csrfToken, intent: "reset-member-password" })))).toMatchObject({ data: { passwordResetError: unavailable }, init: { status: 409 } });
+  }
+  expect(await usersAction(routeArgs(post({ csrfToken, intent: "reset-member-password", targetUsername: "regular.member", newPassword: "short", confirmPassword: "short" })))).toMatchObject({ data: { passwordResetError: "Password must contain 12–128 characters." }, init: { status: 400 } });
+  const member = before.find((member) => member.username === "regular.member")!;
+  expect(await usersAction(routeArgs(post({ csrfToken, intent: "delete-member", targetUserId: String(member.id), targetUsername: member.username, confirmationUsername: "wrong.member" })))).toMatchObject({ data: { deletionError: "Enter regular.member exactly to confirm permanent deletion." }, init: { status: 400 } });
+  expect(await usersAction(routeArgs(post({ csrfToken, intent: "delete-member", targetUserId: "999999", targetUsername: "missing.member", confirmationUsername: "missing.member" })))).toMatchObject({ data: { deletionError: unavailable }, init: { status: 409 } });
+  expect(await usersAction(routeArgs(post({ csrfToken, intent: "disable-member", targetUsername: "missing.member", confirmationUsername: "missing.member" })))).toMatchObject({ data: { accessError: "Member access has changed. Refresh and try again." }, init: { status: 409 } });
+  expect(authentication.listManageableMembers()).toEqual(before);
+});

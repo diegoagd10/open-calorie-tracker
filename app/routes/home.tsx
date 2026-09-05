@@ -55,6 +55,7 @@ import {
   buildCalendarMonth,
   formatLocalDate,
   getNearbyLocalDates,
+  parseIsoLocalDate,
 } from "../food-log/date";
 import {
   FutureFoodLogDateError,
@@ -62,6 +63,8 @@ import {
 } from "../food-log/food-log.server";
 import { getFoodLogService } from "../food-log/runtime.server";
 import {
+  copyFoodEntryIdempotencyKeySchema,
+  createCopyFoodEntryIdempotencyKey,
   FoodEntryUnavailableError,
   InvalidFoodEntryInputError,
   StaleFoodEntryError,
@@ -127,6 +130,21 @@ function foodLogIntentSchema() {
       providerFoodId: z.string(),
       quantity: z.string(),
       selectedMeasurementId: z.string(),
+    }),
+    z.object({
+      date: z.string().refine((value) => parseIsoLocalDate(value) !== undefined),
+      entryId: z.string().refine((value) => positiveIntegerId(value) !== undefined),
+      idempotencyKey: copyFoodEntryIdempotencyKeySchema,
+      intent: z.literal("copy-food-to-today"),
+    }),
+    z.object({
+      date: z.string().refine((value) => parseIsoLocalDate(value) !== undefined),
+      destinationDate: z.string().refine(
+        (value) => parseIsoLocalDate(value) !== undefined,
+      ),
+      entryId: z.string().refine((value) => positiveIntegerId(value) !== undefined),
+      idempotencyKey: copyFoodEntryIdempotencyKeySchema,
+      intent: z.literal("copy-food-to-date"),
     }),
     z.object({
       carbohydrateGrams: z.string(),
@@ -367,6 +385,39 @@ export async function loader({ request }: Route.LoaderArgs) {
   }
   if (!foodLog) return redirect("/setup");
 
+  const copyIdempotencyKeys =
+    foodLog.selectedDate < foodLog.today
+      ? Object.fromEntries(
+          foodLog.events
+            .filter((entry) => entry.kind === "food")
+            .map((entry) => [
+              entry.id,
+              createCopyFoodEntryIdempotencyKey(entry.id, randomUUID()),
+            ]),
+        )
+      : {};
+  const noticeKind = url.searchParams.get("notice");
+  const copiedEntryId =
+    noticeKind === "copied"
+      ? positiveIntegerId(url.searchParams.get("copied"))
+      : undefined;
+  let copiedFood:
+    | { destinationDate: string; name: string }
+    | undefined;
+  if (copiedEntryId !== undefined) {
+    try {
+      const copiedEntry = getFoodEntryService(
+        testRequestInstant(request),
+      ).readCopied(session.user.id, copiedEntryId);
+      copiedFood = {
+        destinationDate: copiedEntry.foodLogDate,
+        name: copiedEntry.name,
+      };
+    } catch (error) {
+      if (!(error instanceof FoodEntryUnavailableError)) throw error;
+    }
+  }
+
   const nearbyDates = getNearbyLocalDates(foodLog.selectedDate, foodLog.today);
   const requestedCalendar = url.searchParams.get("calendar");
   const calendar = requestedCalendar
@@ -393,6 +444,60 @@ export async function loader({ request }: Route.LoaderArgs) {
         throw new Response(error.message, { status: 404 });
       }
       throw error;
+    }
+  }
+
+  const requestedCopy = url.searchParams.get("copy");
+  let copyDialog;
+  let copyError: string | undefined;
+  if (requestedCopy !== null && foodLog.selectedDate < foodLog.today) {
+    const entryId = positiveIntegerId(requestedCopy);
+    if (entryId === undefined) {
+      copyError = "That Food Entry is unavailable. Choose another entry.";
+    } else {
+      try {
+        const entry = getFoodEntryService(testRequestInstant(request)).read(
+          session.user.id,
+          entryId,
+        );
+        if (entry.foodLogDate !== foodLog.selectedDate) {
+          throw new FoodEntryUnavailableError();
+        }
+        const requestedDestination = url.searchParams.get("copyDate");
+        const destinationDate =
+          requestedDestination &&
+          parseIsoLocalDate(requestedDestination) &&
+          requestedDestination <= foodLog.today &&
+          requestedDestination !== entry.foodLogDate
+            ? requestedDestination
+            : undefined;
+        const calendar = buildCalendarMonth(
+          url.searchParams.get("copyMonth") ?? entry.foodLogDate.slice(0, 7),
+          foodLog.today,
+          destinationDate ?? "",
+        );
+        copyDialog = {
+          calendar: {
+            ...calendar,
+            days: calendar.days.map((day) => ({
+              ...day,
+              isSource: day.date === entry.foodLogDate,
+            })),
+          },
+          destinationDate,
+          entry,
+          idempotencyKey: createCopyFoodEntryIdempotencyKey(
+            entry.id,
+            randomUUID(),
+          ),
+        };
+      } catch (error) {
+        if (error instanceof FoodEntryUnavailableError) {
+          copyError = "That Food Entry is unavailable. Choose another entry.";
+        } else {
+          throw error;
+        }
+      }
     }
   }
 
@@ -607,11 +712,14 @@ export async function loader({ request }: Route.LoaderArgs) {
     {
       calendar,
       catalog,
+      copyDialog,
+      copyError,
+      copyIdempotencyKeys,
       csrfToken: session.csrfToken,
       foodEntryEditor,
       foodLog,
       nearbyDates,
-      notice: noticeMessage(url.searchParams.get("notice")),
+      notice: noticeMessage(noticeKind, copiedFood, foodLog.today),
       username: session.user.username,
       waterDialog,
     },
@@ -619,7 +727,16 @@ export async function loader({ request }: Route.LoaderArgs) {
   );
 }
 
-function noticeMessage(value: string | null): string | undefined {
+function noticeMessage(
+  value: string | null,
+  copiedFood: { destinationDate: string; name: string } | undefined,
+  today: string,
+): string | undefined {
+  if (value === "copied" && copiedFood) {
+    return copiedFood.destinationDate === today
+      ? `Copied ${copiedFood.name} to today's Food Log.`
+      : `Copied ${copiedFood.name} to ${fullDate(copiedFood.destinationDate)}.`;
+  }
   if (value === "updated") {
     return "Food Entry updated. Daily totals refreshed.";
   }
@@ -696,6 +813,7 @@ export async function action({ request }: Route.ActionArgs) {
   const parsed = foodLogIntentSchema().safeParse({
     carbohydrateGrams: formString(formData, "carbohydrateGrams"),
     date: formString(formData, "date"),
+    destinationDate: formString(formData, "destinationDate"),
     energyKcal: formString(formData, "energyKcal"),
     entryId: formString(formData, "entryId"),
     eventId: formString(formData, "eventId"),
@@ -718,7 +836,7 @@ export async function action({ request }: Route.ActionArgs) {
   });
   if (!parsed.success) {
     return data<HomeActionData>(
-      { message: "The Food Log request was invalid." },
+      { message: "The Food Log request was invalid.", tone: "error" },
       { status: 400 },
     );
   }
@@ -933,6 +1051,59 @@ export async function action({ request }: Route.ActionArgs) {
     }
   }
 
+  if (
+    parsed.data.intent === "copy-food-to-today" ||
+    parsed.data.intent === "copy-food-to-date"
+  ) {
+    const entryId = positiveIntegerId(parsed.data.entryId);
+    if (entryId === undefined) {
+      return data<HomeActionData>(
+        { message: "The Food Entry request is invalid", tone: "error" },
+        { status: 400 },
+      );
+    }
+    try {
+      const foodEntryService = getFoodEntryService(testRequestInstant(request));
+      const copyInput = {
+        foodLogDate: parsed.data.date,
+        idempotencyKey: parsed.data.idempotencyKey,
+      };
+      const copied =
+        parsed.data.intent === "copy-food-to-today"
+          ? foodEntryService.copyToToday(session.user.id, entryId, copyInput)
+          : foodEntryService.copyToDate(session.user.id, entryId, {
+              ...copyInput,
+              destinationFoodLogDate: parsed.data.destinationDate,
+            });
+      const parameters = new URLSearchParams({
+        date: parsed.data.date,
+        notice: "copied",
+        copied: String(copied.id),
+      });
+      return redirect(`/?${parameters}`);
+    } catch (error) {
+      if (error instanceof FoodEntryUnavailableError) {
+        return data<HomeActionData>(
+          { message: error.message, tone: "error" },
+          { status: 404 },
+        );
+      }
+      if (error instanceof InvalidFoodEntryInputError) {
+        return data<HomeActionData>(
+          { message: error.message, tone: "error" },
+          { status: 400 },
+        );
+      }
+      return data<HomeActionData>(
+        {
+          message: "The Food Entry could not be copied. Try again.",
+          tone: "error",
+        },
+        { status: 500 },
+      );
+    }
+  }
+
   try {
     await getFoodEntryService(testRequestInstant(request)).log(
       session.user.id,
@@ -980,6 +1151,22 @@ export async function action({ request }: Route.ActionArgs) {
 function foodLogHref(date: string, calendar?: string): string {
   const parameters = new URLSearchParams({ date });
   if (calendar) parameters.set("calendar", calendar);
+  return `/?${parameters}`;
+}
+
+function copyFoodEntryHref(
+  sourceDate: string,
+  entryId: number,
+  options: { destinationDate?: string; month?: string } = {},
+): string {
+  const parameters = new URLSearchParams({
+    date: sourceDate,
+    copy: String(entryId),
+  });
+  if (options.destinationDate) {
+    parameters.set("copyDate", options.destinationDate);
+  }
+  if (options.month) parameters.set("copyMonth", options.month);
   return `/?${parameters}`;
 }
 
@@ -3241,10 +3428,271 @@ function PendingFoodEntry({ name }: { name: string }) {
   );
 }
 
+function FoodEntryCopyMenu({
+  csrfToken,
+  entry,
+  idempotencyKey,
+}: {
+  csrfToken: string;
+  entry: Extract<
+    Route.ComponentProps["loaderData"]["foodLog"]["events"][number],
+    { kind: "food" }
+  >;
+  idempotencyKey: string;
+}) {
+  const navigation = useNavigation();
+  const [open, setOpen] = useState(false);
+  const pending =
+    navigation.formData?.get("intent") === "copy-food-to-today" &&
+    navigation.formData.get("entryId") === String(entry.id);
+
+  return (
+    <div className={styles.foodEntryMenu}>
+      <button
+        aria-expanded={open}
+        aria-label={`More actions for ${entry.name}`}
+        className={styles.foodEntryMenuTrigger}
+        data-copy-date-trigger={entry.id}
+        onClick={() => setOpen((current) => !current)}
+        type="button"
+      >
+        <span aria-hidden="true">•••</span>
+      </button>
+      {open ? (
+        <div className={styles.foodEntryMenuPopover}>
+          <Form method="post">
+            <input name="csrfToken" type="hidden" value={csrfToken} />
+            <input name="date" type="hidden" value={entry.foodLogDate} />
+            <input name="entryId" type="hidden" value={entry.id} />
+            <input
+              name="idempotencyKey"
+              type="hidden"
+              value={idempotencyKey}
+            />
+            <button
+              disabled={pending}
+              name="intent"
+              type="submit"
+              value="copy-food-to-today"
+            >
+              {pending ? "Copying…" : "Copy to today"}
+            </button>
+          </Form>
+          <Link
+            to={copyFoodEntryHref(entry.foodLogDate, entry.id)}
+          >
+            Copy to another date…
+          </Link>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+type CopyDialogData = NonNullable<
+  Route.ComponentProps["loaderData"]["copyDialog"]
+>;
+
+function CopyFoodEntryDialog({
+  actionData,
+  csrfToken,
+  dialog,
+}: {
+  actionData: HomeActionData | undefined;
+  csrfToken: string;
+  dialog: CopyDialogData;
+}) {
+  const navigation = useNavigation();
+  const closeHref = foodLogHref(dialog.entry.foodLogDate);
+  const { closeDialog, dialogRef, handleDialogKeyDown } = useModalDialog({
+    closeHref,
+    initialFocusSelector: "[data-copy-calendar-day]",
+    restoreFocusSelector: `[data-copy-date-trigger="${dialog.entry.id}"]`,
+  });
+  const pending =
+    navigation.formData?.get("intent") === "copy-food-to-date" &&
+    navigation.formData.get("entryId") === String(dialog.entry.id);
+
+  const calendarHref = (month: string) =>
+    copyFoodEntryHref(dialog.entry.foodLogDate, dialog.entry.id, {
+      destinationDate: dialog.destinationDate,
+      month,
+    });
+
+  return (
+    <DialogBackdrop onClose={closeDialog}>
+      <section
+        aria-labelledby="copy-food-entry-title"
+        aria-modal="true"
+        className={`${styles.foodDialog} ${styles.copyFoodDialog}`}
+        onKeyDown={handleDialogKeyDown}
+        ref={dialogRef}
+        role="dialog"
+      >
+        <div className={styles.dialogHead}>
+          <div>
+            <h2 id="copy-food-entry-title">Copy {dialog.entry.name}</h2>
+            <p>Choose a destination and review it before creating the copy.</p>
+          </div>
+          <Link
+            aria-label="Close copy dialog"
+            className={styles.dialogClose}
+            to={closeHref}
+          >
+            ×
+          </Link>
+        </div>
+        <div className={styles.copyCalendar}>
+          <div className={styles.calendarHead}>
+            <Link
+              aria-label="Previous month"
+              className={styles.calendarNav}
+              to={calendarHref(dialog.calendar.previousMonth)}
+            >
+              ‹
+            </Link>
+            <strong>{dialog.calendar.label}</strong>
+            {dialog.calendar.nextMonth ? (
+              <Link
+                aria-label="Next month"
+                className={styles.calendarNav}
+                to={calendarHref(dialog.calendar.nextMonth)}
+              >
+                ›
+              </Link>
+            ) : (
+              <button
+                aria-label="Next month"
+                className={styles.calendarNavDisabled}
+                disabled
+                type="button"
+              >
+                ›
+              </button>
+            )}
+          </div>
+          <div
+            aria-label={`${dialog.calendar.label} destination calendar`}
+            className={styles.calendarGrid}
+          >
+            {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map(
+              (day) => (
+                <span className={styles.weekday} key={day}>
+                  {day}
+                </span>
+              ),
+            )}
+            {Array.from(
+              { length: dialog.calendar.leadingEmptyDays },
+              (_, index) => (
+                <span aria-hidden="true" key={`copy-empty-${index}`} />
+              ),
+            )}
+            {dialog.calendar.days.map((day) => {
+              const label = formatLocalDate(day.date, {
+                day: "numeric",
+                month: "long",
+                weekday: "long",
+              });
+              const disabled = day.isFuture || day.isSource;
+              const className = [
+                disabled ? styles.calendarFuture : styles.calendarDay,
+                day.isToday ? styles.calendarToday : "",
+                day.isSelected ? styles.calendarSelected : "",
+              ]
+                .filter(Boolean)
+                .join(" ");
+              return disabled ? (
+                <button
+                  aria-label={label}
+                  className={className}
+                  disabled
+                  key={day.date}
+                  type="button"
+                >
+                  {day.day}
+                </button>
+              ) : (
+                <Link
+                  aria-current={day.isSelected ? "date" : undefined}
+                  aria-label={label}
+                  className={className}
+                  data-copy-calendar-day
+                  key={day.date}
+                  to={copyFoodEntryHref(
+                    dialog.entry.foodLogDate,
+                    dialog.entry.id,
+                    {
+                      destinationDate: day.date,
+                      month: dialog.calendar.month,
+                    },
+                  )}
+                >
+                  {day.day}
+                </Link>
+              );
+            })}
+          </div>
+        </div>
+        <div className={styles.copyDestination} aria-live="polite">
+          <span>Destination</span>
+          <strong>
+            {dialog.destinationDate
+              ? fullDate(dialog.destinationDate)
+              : "Choose an eligible date"}
+          </strong>
+        </div>
+        {actionData?.tone === "error" ? (
+          <p className={styles.catalogError} role="alert">
+            {actionData.message}
+          </p>
+        ) : null}
+        <Form className={styles.copyActions} method="post">
+          <input name="csrfToken" type="hidden" value={csrfToken} />
+          <input
+            name="date"
+            type="hidden"
+            value={dialog.entry.foodLogDate}
+          />
+          <input name="entryId" type="hidden" value={dialog.entry.id} />
+          <input
+            name="destinationDate"
+            type="hidden"
+            value={dialog.destinationDate ?? ""}
+          />
+          <input
+            name="idempotencyKey"
+            type="hidden"
+            value={dialog.idempotencyKey}
+          />
+          <Link
+            className={styles.secondaryButton}
+            to={closeHref}
+          >
+            Cancel
+          </Link>
+          <button
+            className={styles.primaryButton}
+            disabled={!dialog.destinationDate || pending}
+            name="intent"
+            type="submit"
+            value="copy-food-to-date"
+          >
+            {pending ? "Copying…" : "Copy"}
+          </button>
+        </Form>
+      </section>
+    </DialogBackdrop>
+  );
+}
+
 export default function Home({ actionData, loaderData }: Route.ComponentProps) {
   const {
     calendar,
     catalog,
+    copyDialog,
+    copyError,
+    copyIdempotencyKeys,
     csrfToken,
     foodEntryEditor,
     foodLog,
@@ -3274,7 +3722,7 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
       <div
         className={styles.shell}
         inert={
-          visibleCatalog || activeFoodEntryEditor || activeWaterDialog
+          visibleCatalog || activeFoodEntryEditor || activeWaterDialog || copyDialog
             ? true
             : undefined
         }
@@ -3385,6 +3833,11 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
                     {notice}
                   </p>
                 ) : null}
+                {copyError ? (
+                  <p className={styles.catalogError} role="alert">
+                    {copyError}
+                  </p>
+                ) : null}
                 {foodLog.isFuture ? (
                   <div className={styles.futureDay}>
                     <span className={styles.emptyIcon} aria-hidden="true">
@@ -3414,7 +3867,11 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
                         // Stryker disable next-line StringLiteral: a single-prefix mutation preserves key uniqueness against the water prefix.
                         <article key={`food-${entry.id}`}>
                           <Link
-                            className={styles.foodEntryCard}
+                            className={
+                              copyIdempotencyKeys[entry.id]
+                                ? `${styles.foodEntryCard} ${styles.foodEntryCardWithMenu}`
+                                : styles.foodEntryCard
+                            }
                             data-entry-editor-trigger
                             to={`${foodLogHref(entry.foodLogDate)}&entry=${entry.id}`}
                           >
@@ -3448,6 +3905,14 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
                               <small>kcal</small>
                             </span>
                           </Link>
+                          {copyIdempotencyKeys[entry.id] ? (
+                            <FoodEntryCopyMenu
+                              csrfToken={csrfToken}
+                              entry={entry}
+                              idempotencyKey={copyIdempotencyKeys[entry.id]}
+                              key={copyIdempotencyKeys[entry.id]}
+                            />
+                          ) : null}
                         </article>
                       ) : (
                         // Stryker disable next-line StringLiteral: a single-prefix mutation preserves key uniqueness against the food prefix.
@@ -3546,7 +4011,7 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
         <DesktopDayContext
           foodLog={foodLog}
           isObscured={Boolean(
-            visibleCatalog || activeFoodEntryEditor || activeWaterDialog,
+            visibleCatalog || activeFoodEntryEditor || activeWaterDialog || copyDialog,
           )}
         />
       </div>
@@ -3581,6 +4046,13 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
           }
         />
         // Stryker restore ConditionalExpression,StringLiteral
+      ) : null}
+      {copyDialog ? (
+        <CopyFoodEntryDialog
+          actionData={actionData}
+          csrfToken={csrfToken}
+          dialog={copyDialog}
+        />
       ) : null}
     </>
   );

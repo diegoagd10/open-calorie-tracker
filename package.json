@@ -35,7 +35,7 @@
     "lint:policy": "node --test scripts/eslint-policy.test.mjs",
     "mutation:test": "node scripts/run-mutation-testing.mjs",
     "mutation:baseline": "node scripts/run-mutation-testing.mjs --record-baseline",
-    "mutation:policy": "node --test scripts/mutation-report.test.mjs",
+    "mutation:policy": "node --test scripts/mutation-report.test.mjs scripts/run-mutation-testing.test.mjs scripts/mutation-shards.test.mjs",
     "start": "NODE_ENV=production node server.js",
     "test": "vitest run",
     "test:browser": "playwright test",

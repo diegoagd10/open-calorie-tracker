@@ -52,6 +52,23 @@ export function localEventTimeForNewFoodLogEvent(
   return nextRetroactiveTime(latest?.localEventTime ?? null);
 }
 
+export function localEventTimeForCopiedFoodEntry(
+  database: EventTimeDatabase,
+  userId: number,
+  foodLogDate: string,
+  today: string,
+  instant: Date,
+  timeZone: string,
+): string {
+  if (foodLogDate === today) return localTimeAt(instant, timeZone);
+  const latest = database.get<{ localEventTime: string | null }>(sql`
+    SELECT MAX(local_event_time) AS localEventTime
+    FROM food_entries
+    WHERE user_id = ${userId} AND food_log_date = ${foodLogDate}
+  `);
+  return nextRetroactiveTime(latest?.localEventTime ?? null);
+}
+
 export function nextUpdatedAt(now: Date, previous: string): string {
   const candidate = now.toISOString();
   if (candidate > previous) return candidate;
