@@ -78,8 +78,13 @@ export function addLocalDays(localDate: string, amount: number): string {
 }
 
 export function getNearbyLocalDates(selectedDate: string, today: string) {
+  const daysSinceMonday = (utcDateFromLocalDate(selectedDate).getUTCDay() + 6) % 7;
   return Array.from({ length: 7 }, (_, index) =>
-    localDayState(addLocalDays(selectedDate, index - 5), today, selectedDate),
+    localDayState(
+      addLocalDays(selectedDate, index - daysSinceMonday),
+      today,
+      selectedDate,
+    ),
   );
 }
 

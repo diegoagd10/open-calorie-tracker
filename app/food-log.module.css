@@ -95,6 +95,7 @@
   grid-template-columns: repeat(7, minmax(2.65rem, 1fr));
   gap: 0.2rem;
   overflow: hidden;
+  touch-action: pan-y pinch-zoom;
 }
 
 .dateArrow {
@@ -2045,6 +2046,18 @@
 }
 
 @media (max-width: 1119px) {
+  .dateRailWrap {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .dateArrow {
+    display: none;
+  }
+
+  .dateRail {
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+  }
+
   .foodEntryMenuPopover {
     top: auto;
     bottom: calc(100% + 0.35rem);
@@ -2062,12 +2075,7 @@
   }
 
   .dateRail {
-    grid-template-columns: repeat(6, minmax(2.65rem, 1fr));
     gap: 0;
-  }
-
-  .dateRail > :first-child {
-    display: none;
   }
 
   .timeline::before {

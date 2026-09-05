@@ -185,17 +185,25 @@ test("ISO local dates reject normalization and impossible calendar dates", () =>
   expect(parseIsoLocalDate(" 2026-02-03 ")).toBeUndefined();
 });
 
+test("selecting Friday keeps Saturday and the rest of the visible week in place", () => {
+  const saturday = getNearbyLocalDates("2026-09-05", "2026-09-05");
+  const friday = getNearbyLocalDates("2026-09-04", "2026-09-05");
+  expect(friday.map((day) => day.date)).toEqual(saturday.map((day) => day.date));
+  expect(friday.find((day) => day.isToday)?.date).toBe("2026-09-05");
+  expect(friday.find((day) => day.isSelected)?.date).toBe("2026-09-04");
+});
+
 test("nearby dates and calendar months use civil-date arithmetic", () => {
   expect(
     getNearbyLocalDates("2026-03-01", "2026-03-02").map((item) => item.date),
   ).toEqual([
+    "2026-02-23",
     "2026-02-24",
     "2026-02-25",
     "2026-02-26",
     "2026-02-27",
     "2026-02-28",
     "2026-03-01",
-    "2026-03-02",
   ]);
 
   const calendar = buildCalendarMonth("2024-02", "2024-02-29", "2024-02-28");

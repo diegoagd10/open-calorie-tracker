@@ -3695,6 +3695,130 @@ function CopyFoodEntryDialog({
   );
 }
 
+function DateRail({
+  nearbyDates,
+  selectedDate,
+  today,
+}: {
+  nearbyDates: Route.ComponentProps["loaderData"]["nearbyDates"];
+  selectedDate: string;
+  today: string;
+}) {
+  const navigate = useNavigate();
+  const swipe = useRef<{
+    pointerId: number;
+    x: number;
+    y: number;
+  } | null>(null);
+  const swiped = useRef(false);
+
+  function startSwipe(event: ReactPointerEvent<HTMLDivElement>) {
+    swiped.current = false;
+    if (event.pointerType !== "touch" || !event.isPrimary) {
+      swipe.current = null;
+      return;
+    }
+    swipe.current = {
+      pointerId: event.pointerId,
+      x: event.clientX,
+      y: event.clientY,
+    };
+  }
+
+  function moveSwipe(event: ReactPointerEvent<HTMLDivElement>) {
+    const start = swipe.current;
+    if (!start || start.pointerId !== event.pointerId) return;
+    const dx = Math.abs(event.clientX - start.x);
+    const dy = Math.abs(event.clientY - start.y);
+    if (dx < 8 && dy < 8) return;
+    if (!swiped.current && dy >= dx) {
+      swipe.current = null;
+      return;
+    }
+    swiped.current = true;
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function endSwipe(event: ReactPointerEvent<HTMLDivElement>) {
+    const start = swipe.current;
+    swipe.current = null;
+    if (!start || start.pointerId !== event.pointerId) return;
+    const dx = event.clientX - start.x;
+    if (
+      Math.abs(dx) < 40 ||
+      Math.abs(dx) <= Math.abs(event.clientY - start.y)
+    ) return;
+    swiped.current = true;
+    const nextDate = addLocalDays(selectedDate, dx < 0 ? 1 : -1);
+    if (nextDate <= today) {
+      void navigate(foodLogHref(nextDate), { preventScrollReset: true });
+    }
+  }
+
+  return (
+    <div className={styles.dateRailWrap}>
+      <Link
+        aria-label="Browse past dates"
+        className={styles.dateArrow}
+        to={foodLogHref(addLocalDays(selectedDate, -7))}
+      >
+        ‹
+      </Link>
+      <div
+        className={styles.dateRail}
+        aria-label="Nearby dates"
+        onClickCapture={(event) => {
+          if (swiped.current && event.detail !== 0) event.preventDefault();
+        }}
+        onPointerDown={startSwipe}
+        onPointerMove={moveSwipe}
+        onPointerUp={endSwipe}
+        onPointerCancel={() => { swipe.current = null; }}
+      >
+        {nearbyDates.map((day) => {
+          const weekday = formatLocalDate(day.date, {
+            weekday: "short",
+          });
+          const dateNumber = formatLocalDate(day.date, {
+            day: "numeric",
+          });
+          return day.isFuture ? (
+            <button
+              className={styles.futureDate}
+              disabled
+              key={day.date}
+              type="button"
+            >
+              <small>{weekday}</small>
+              <strong>{dateNumber}</strong>
+            </button>
+          ) : (
+            <Link
+              aria-current={day.isSelected ? "date" : undefined}
+              className={`${styles.dateButton} ${day.isSelected ? styles.selectedDate : ""}`}
+              key={day.date}
+              to={foodLogHref(day.date)}
+            >
+              <small>{weekday}</small>
+              <strong>{dateNumber}</strong>
+            </Link>
+          );
+        })}
+      </div>
+      <Link
+        aria-label="Open calendar"
+        className={styles.dateArrow}
+        to={foodLogHref(
+          selectedDate,
+          selectedDate.slice(0, 7),
+        )}
+      >
+        ›
+      </Link>
+    </div>
+  );
+}
+
 export default function Home({ actionData, loaderData }: Route.ComponentProps) {
   const {
     calendar,
@@ -3776,56 +3900,11 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
             />
           ) : (
             <section aria-label="Food Log">
-              <div className={styles.dateRailWrap}>
-                <Link
-                  aria-label="Browse past dates"
-                  className={styles.dateArrow}
-                  to={foodLogHref(addLocalDays(foodLog.selectedDate, -7))}
-                >
-                  ‹
-                </Link>
-                <div className={styles.dateRail} aria-label="Nearby dates">
-                  {nearbyDates.map((day) => {
-                    const weekday = formatLocalDate(day.date, {
-                      weekday: "short",
-                    });
-                    const dateNumber = formatLocalDate(day.date, {
-                      day: "numeric",
-                    });
-                    return day.isFuture ? (
-                      <button
-                        className={styles.futureDate}
-                        disabled
-                        key={day.date}
-                        type="button"
-                      >
-                        <small>{weekday}</small>
-                        <strong>{dateNumber}</strong>
-                      </button>
-                    ) : (
-                      <Link
-                        aria-current={day.isSelected ? "date" : undefined}
-                        className={`${styles.dateButton} ${day.isSelected ? styles.selectedDate : ""}`}
-                        key={day.date}
-                        to={foodLogHref(day.date)}
-                      >
-                        <small>{weekday}</small>
-                        <strong>{dateNumber}</strong>
-                      </Link>
-                    );
-                  })}
-                </div>
-                <Link
-                  aria-label="Open calendar"
-                  className={styles.dateArrow}
-                  to={foodLogHref(
-                    foodLog.selectedDate,
-                    foodLog.selectedDate.slice(0, 7),
-                  )}
-                >
-                  ›
-                </Link>
-              </div>
+              <DateRail
+                nearbyDates={nearbyDates}
+                selectedDate={foodLog.selectedDate}
+                today={foodLog.today}
+              />
 
               <DailySummary foodLog={foodLog} />
 
