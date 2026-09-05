@@ -2102,6 +2102,12 @@
     grid-template-columns: 2.625rem minmax(0, 1fr) auto 2.5rem;
   }
 
+  .foodEntryMenuPopover {
+    top: auto;
+    bottom: calc(100% + 0.35rem);
+    box-shadow: 0 -0.75rem 2rem rgb(31 42 55 / 16%);
+  }
+
   .foodEntryCard time,
   .pendingTime {
     grid-column: 2 / -1;
