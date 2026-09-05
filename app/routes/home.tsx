@@ -132,6 +132,20 @@ function foodLogIntentSchema() {
       carbohydrateGrams: z.string(),
       date: z.string(),
       energyKcal: z.string(),
+      fatGrams: z.string(),
+      fiberGrams: z.string(),
+      idempotencyKey: z.string(),
+      intent: z.literal("log-manual-food"),
+      name: z.string(),
+      proteinGrams: z.string(),
+      quantity: z.string(),
+      sodiumMilligrams: z.string(),
+      sugarGrams: z.string(),
+    }),
+    z.object({
+      carbohydrateGrams: z.string(),
+      date: z.string(),
+      energyKcal: z.string(),
       entryId: z.string(),
       expectedUpdatedAt: z.string(),
       fatGrams: z.string(),
@@ -156,9 +170,14 @@ function foodLogIntentSchema() {
 type CurrentFoodEntry = ReturnType<
   ReturnType<typeof getFoodEntryService>["read"]
 >;
+type ManualFoodDraft = Extract<
+  z.output<ReturnType<typeof foodLogIntentSchema>>,
+  { intent: "log-manual-food" }
+>;
 
 type HomeActionData = {
   foodEntryEditor?: CurrentFoodEntry;
+  manualFoodDraft?: ManualFoodDraft;
   message: string;
   tone?: "error" | "status";
   waterEventEditor?: ReturnType<
@@ -420,6 +439,11 @@ export async function loader({ request }: Route.LoaderArgs) {
         query: string;
       }
     | {
+        idempotencyKey: string;
+        mode: "manual";
+        query: string;
+      }
+    | {
         barcode: string;
         food: CatalogFood;
         idempotencyKey: string;
@@ -458,6 +482,8 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (foodStage && !foodLog.isFuture) {
     if (foodStage.mode === "choose") {
       catalog = { mode: "choose", query: "" };
+    } else if (foodStage.mode === "manual") {
+      catalog = { idempotencyKey: randomUUID(), mode: "manual", query: "" };
     } else if (foodStage.mode === "barcode") {
       const requestedBarcode = url.searchParams.get("barcode") ?? "";
       if (!requestedBarcode) {
@@ -616,6 +642,7 @@ type CatalogRouteState =
   | { mode: "barcode" }
   | { mode: "choose" }
   | { mode: "detail"; providerFoodId: string }
+  | { mode: "manual" }
   | { mode: "search" };
 
 function positiveIntegerId(value: string | null): number | undefined {
@@ -631,6 +658,7 @@ function catalogRouteState(
   if (value === "search") return { mode: "search" };
   if (value === "choose") return { mode: "choose" };
   if (value === "barcode") return { mode: "barcode" };
+  if (value === "manual") return { mode: "manual" };
   const providerFoodId = positiveIntegerId(value);
   if (providerFoodId !== undefined) {
     return { mode: "detail", providerFoodId: String(providerFoodId) };
@@ -702,9 +730,29 @@ export async function action({ request }: Route.ActionArgs) {
     );
   } catch (error) {
     if (error instanceof FutureFoodLogDateError) {
+      if (parsed.data.intent === "log-manual-food") {
+        return data<HomeActionData>(
+          {
+            manualFoodDraft: parsed.data,
+            message: error.message,
+            tone: "error",
+          },
+          { status: 422 },
+        );
+      }
       return data<HomeActionData>({ message: error.message }, { status: 422 });
     }
     if (error instanceof InvalidFoodLogDateError) {
+      if (parsed.data.intent === "log-manual-food") {
+        return data<HomeActionData>(
+          {
+            manualFoodDraft: parsed.data,
+            message: error.message,
+            tone: "error",
+          },
+          { status: 400 },
+        );
+      }
       return data<HomeActionData>({ message: error.message }, { status: 400 });
     }
     throw error;
@@ -715,6 +763,41 @@ export async function action({ request }: Route.ActionArgs) {
   }
   if (parsed.data.intent === "add-water") {
     return redirect(`${foodLogHref(parsed.data.date)}&water=new`);
+  }
+
+  if (parsed.data.intent === "log-manual-food") {
+    try {
+      getFoodEntryService(testRequestInstant(request)).logManual(
+        session.user.id,
+        {
+          carbohydrateGrams: parsed.data.carbohydrateGrams,
+          energyKcal: parsed.data.energyKcal,
+          fatGrams: parsed.data.fatGrams,
+          fiberGrams: parsed.data.fiberGrams,
+          foodLogDate: parsed.data.date,
+          idempotencyKey: parsed.data.idempotencyKey,
+          name: parsed.data.name,
+          proteinGrams: parsed.data.proteinGrams,
+          quantity: parsed.data.quantity,
+          sodiumMilligrams: parsed.data.sodiumMilligrams,
+          sugarGrams: parsed.data.sugarGrams,
+        },
+      );
+      return redirect(foodLogHref(parsed.data.date));
+    } catch (error) {
+      if (error instanceof InvalidFoodEntryInputError) {
+        return data<HomeActionData>(
+          {
+            manualFoodDraft: parsed.data,
+            message:
+              "Enter a food name, valid quantity, and calories before adding this Food Entry.",
+            tone: "error",
+          },
+          { status: 400 },
+        );
+      }
+      throw error;
+    }
   }
 
   if (
@@ -1844,6 +1927,16 @@ type FoodEntryFields = {
   sugarGrams: string;
 };
 
+const FOOD_NUTRIENT_FIELDS = [
+  ["energyKcal", "Calories (kcal)"],
+  ["proteinGrams", "Protein (g)"],
+  ["carbohydrateGrams", "Carbohydrate (g)"],
+  ["fatGrams", "Fat (g)"],
+  ["fiberGrams", "Fiber (g)"],
+  ["sugarGrams", "Sugar (g)"],
+  ["sodiumMilligrams", "Sodium (mg)"],
+] as const;
+
 function storedNutrientInput(
   value: number | null,
   integerMilligrams = false,
@@ -2060,16 +2153,6 @@ function FoodEntryEditorDialog({
     }));
   }
 
-  const nutrientFields = [
-    ["energyKcal", "Calories (kcal)"],
-    ["proteinGrams", "Protein (g)"],
-    ["carbohydrateGrams", "Carbohydrate (g)"],
-    ["fatGrams", "Fat (g)"],
-    ["fiberGrams", "Fiber (g)"],
-    ["sugarGrams", "Sugar (g)"],
-    ["sodiumMilligrams", "Sodium (mg)"],
-  ] as const;
-
   return (
     <DialogBackdrop onClose={closeDialog}>
       <section
@@ -2154,7 +2237,7 @@ function FoodEntryEditorDialog({
               </label>
             </div>
             <div className={styles.editNutritionGrid}>
-              {nutrientFields.map(([name, label]) => (
+              {FOOD_NUTRIENT_FIELDS.map(([name, label]) => (
                 <label className={styles.stackedField} key={name}>
                   <span>{label}</span>
                   <input
@@ -2167,6 +2250,11 @@ function FoodEntryEditorDialog({
                         ...current,
                         [name]: event.target.value,
                       }))
+                    }
+                    required={
+                      entry.provider === "manual" && name === "energyKcal"
+                        ? true
+                        : undefined
                     }
                     step={name === "sodiumMilligrams" ? "1" : "0.001"}
                     type="number"
@@ -2501,7 +2589,152 @@ function CatalogChoiceStage({ date }: { date: string }) {
         </span>
         <small>Choose ›</small>
       </Link>
+      <Link to={catalogHref(date, "manual")}>
+        <span>
+          <strong>Manual</strong>
+          <small>Enter a serving and its nutrition yourself.</small>
+        </span>
+        <small>Choose ›</small>
+      </Link>
     </div>
+  );
+}
+
+function ManualFoodStage({
+  actionData,
+  catalog,
+  csrfToken,
+  date,
+}: {
+  actionData: HomeActionData | undefined;
+  catalog: Extract<
+    NonNullable<Route.ComponentProps["loaderData"]["catalog"]>,
+    { mode: "manual" }
+  >;
+  csrfToken: string;
+  date: string;
+}) {
+  const navigation = useNavigation();
+  const draft = actionData?.manualFoodDraft;
+  const [fields, setFields] = useState<FoodEntryFields>(() => ({
+    carbohydrateGrams: draft?.carbohydrateGrams ?? "",
+    energyKcal: draft?.energyKcal ?? "",
+    fatGrams: draft?.fatGrams ?? "",
+    fiberGrams: draft?.fiberGrams ?? "",
+    name: draft?.name ?? "",
+    proteinGrams: draft?.proteinGrams ?? "",
+    quantity: draft?.quantity ?? "1",
+    selectedMeasurementId: "serving",
+    sodiumMilligrams: draft?.sodiumMilligrams ?? "",
+    sugarGrams: draft?.sugarGrams ?? "",
+  }));
+  const pending =
+    navigation.formData?.get("intent") === "log-manual-food";
+
+  return (
+    <section aria-labelledby="manual-food-title">
+      <Link className={styles.backToResults} to={catalogHref(date, "choose")}>
+        ‹ Back to methods
+      </Link>
+      <div className={styles.foodIdentity}>
+        <span className={styles.catalogType}>Manual</span>
+        <h3 id="manual-food-title">Add food manually</h3>
+        <p>Enter the total nutrition for the quantity you ate.</p>
+      </div>
+      <Form className={styles.editFoodForm} method="post" noValidate>
+        <input name="csrfToken" type="hidden" value={csrfToken} />
+        <input name="date" type="hidden" value={date} />
+        <input
+          name="idempotencyKey"
+          type="hidden"
+          value={draft?.idempotencyKey ?? catalog.idempotencyKey}
+        />
+        <input name="intent" type="hidden" value="log-manual-food" />
+        <fieldset disabled={pending}>
+          <label className={styles.stackedField}>
+            <span>Food name</span>
+            <input
+              maxLength={200}
+              name="name"
+              onChange={(event) =>
+                setFields((current) => ({
+                  ...current,
+                  name: event.target.value,
+                }))
+              }
+              required
+              value={fields.name}
+            />
+          </label>
+          <div className={styles.foodDetailGrid}>
+            <div className={styles.stackedField}>
+              <span>Measurement</span>
+              <strong>1 serving</strong>
+              <small>Serving values are used without weight conversion.</small>
+            </div>
+            <label className={styles.stackedField}>
+              <span>Quantity</span>
+              <input
+                inputMode="decimal"
+                max="99"
+                min="0.000001"
+                name="quantity"
+                onChange={(event) =>
+                  setFields((current) => ({
+                    ...current,
+                    quantity: event.target.value,
+                  }))
+                }
+                required
+                step="0.000001"
+                type="number"
+                value={fields.quantity}
+              />
+            </label>
+          </div>
+          <div className={styles.editNutritionGrid}>
+            {FOOD_NUTRIENT_FIELDS.map(([name, label]) => (
+              <label className={styles.stackedField} key={name}>
+                <span>{label}</span>
+                <input
+                  inputMode="decimal"
+                  max={name === "sodiumMilligrams" ? "9999999" : "999999.999"}
+                  min="0"
+                  name={name}
+                  onChange={(event) =>
+                    setFields((current) => ({
+                      ...current,
+                      [name]: event.target.value,
+                    }))
+                  }
+                  required={name === "energyKcal"}
+                  step={name === "sodiumMilligrams" ? "1" : "0.001"}
+                  type="number"
+                  value={fields[name]}
+                />
+              </label>
+            ))}
+          </div>
+          <p className={styles.authoritativeNote}>
+            Nutrition is the total for this quantity. Changing quantity here
+            does not change the values you entered.
+          </p>
+          {actionData?.message ? (
+            <p className={styles.catalogError} role="alert">
+              {actionData.message}
+            </p>
+          ) : null}
+          <div className={styles.dialogActions}>
+            <Link className={styles.secondaryButton} to={foodLogHref(date)}>
+              Cancel
+            </Link>
+            <button className={styles.primaryButton} type="submit">
+              {pending ? "Adding…" : "Add to Food Log"}
+            </button>
+          </div>
+        </fieldset>
+      </Form>
+    </section>
   );
 }
 
@@ -2773,10 +3006,13 @@ function CatalogDialog({
   // Stryker disable next-line ConditionalExpression: the blocked-navigation browser journey proves the pending-state teardown and restart guard.
   const navigationPending = navigation.state !== "idle";
   const closeHref = foodLogHref(date);
+  const initialFocusSelector =
+    catalog.mode === "manual"
+      ? 'input[name="name"]:not([disabled])'
+      : 'input:not([type="hidden"]):not([disabled]), button:not([disabled]), select:not([disabled]), a[href]';
   const { closeDialog, dialogRef, handleDialogKeyDown } = useModalDialog({
     closeHref,
-    initialFocusSelector:
-      'input:not([type="hidden"]):not([disabled]), button:not([disabled]), select:not([disabled]), a[href]',
+    initialFocusSelector,
     restoreFocusSelector: "[data-food-dialog-trigger]",
   });
 
@@ -2798,6 +3034,8 @@ function CatalogDialog({
                 ? "USDA catalog"
                 : catalog.mode === "barcode"
                   ? "Open Food Facts"
+                  : catalog.mode === "manual"
+                    ? "Manual"
                   : "Choose a method"}
             </span>
             <p>
@@ -2823,6 +3061,13 @@ function CatalogDialog({
           />
         ) : catalog.mode === "choose" ? (
           <CatalogChoiceStage date={date} />
+        ) : catalog.mode === "manual" ? (
+          <ManualFoodStage
+            actionData={actionData}
+            catalog={catalog}
+            csrfToken={csrfToken}
+            date={date}
+          />
         ) : catalog.mode === "barcode" ? (
           <BarcodeCatalogStage
             actionData={actionData}
@@ -3189,6 +3434,8 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
                               <small>
                                 {entry.provider === "open-food-facts"
                                   ? "Open Food Facts"
+                                  : entry.provider === "manual"
+                                    ? "Manual"
                                   : `USDA FoodData Central · ${entry.dataType}`}
                               </small>
                               <small>

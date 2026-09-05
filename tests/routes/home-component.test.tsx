@@ -655,6 +655,32 @@ test("home renders food and water timeline entries with factual units", async ()
   await act(async () => singular.unmount());
 });
 
+test("home labels user-entered Food Entries as Manual", async () => {
+  const manualEntry = {
+    dataType: "User entered",
+    energyMilliKcal: 180_000,
+    foodLogDate: "2026-08-31",
+    id: 19,
+    kind: "food" as const,
+    localEventTime: "12:00:00",
+    name: "Tortillas",
+    provider: "manual",
+    quantityMicrounits: 3_000_000,
+    selectedMeasurementLabel: "1 serving",
+  };
+  const renderer = await renderHome({
+    foodLog: {
+      ...baseFoodLog,
+      entries: [manualEntry],
+      events: [manualEntry],
+    },
+  });
+
+  expect(allText(renderer)).toContain("TortillasManual1 serving × 3");
+  expect(allText(renderer)).not.toContain("USDA FoodData Central · User entered");
+  await act(async () => renderer.unmount());
+});
+
 const catalogFood = {
   authoritativeBaseQuantityMicrounits: 100_000_000,
   authoritativeBaseUnit: "g",
@@ -719,19 +745,88 @@ const barcodeFood = {
   providerPublishedDate: null,
 };
 
-test("Add Food offers search and barcode paths before either provider runs", async () => {
+test("Add Food offers search, barcode, and manual paths before any provider runs", async () => {
   const renderer = await renderHome({ catalog: { mode: "choose", query: "" } });
   expect(semanticDom(renderer)).toMatchSnapshot();
   expect(allText(renderer)).toContain("Search for food");
   expect(allText(renderer)).toContain("Scan barcode");
+  expect(allText(renderer)).toContain("Manual");
   expect(renderer.root.findByProps({
     href: "/?date=2026-08-31&food=search",
   })).toBeDefined();
   expect(renderer.root.findByProps({
     href: "/?date=2026-08-31&food=barcode",
   })).toBeDefined();
+  expect(renderer.root.findByProps({
+    href: "/?date=2026-08-31&food=manual",
+  })).toBeDefined();
   expect(renderer.root.findAllByType("img")).toHaveLength(0);
   await act(async () => renderer.unmount());
+});
+
+test("manual Food Entry form keeps entered totals when quantity changes and restores invalid drafts", async () => {
+  const catalog = {
+    idempotencyKey: "manual-form-key",
+    mode: "manual" as const,
+    query: "",
+  };
+  const renderer = await renderHome({ catalog });
+
+  expect(allText(renderer)).toContain("Add food manually");
+  expect(allText(renderer)).toContain("1 serving");
+  expect(input(renderer, "name").props.required).toBe(true);
+  expect(input(renderer, "energyKcal").props.required).toBe(true);
+  expect(input(renderer, "proteinGrams").props.required).toBe(false);
+  expect(input(renderer, "quantity").props.value).toBe("1");
+  expect(input(renderer, "idempotencyKey").props.value).toBe("manual-form-key");
+  expect(input(renderer, "intent").props.value).toBe("log-manual-food");
+
+  await act(async () =>
+    input(renderer, "energyKcal").props.onChange({
+      target: { value: "180" },
+    }),
+  );
+  await act(async () =>
+    input(renderer, "proteinGrams").props.onChange({
+      target: { value: "6" },
+    }),
+  );
+  await act(async () =>
+    input(renderer, "quantity").props.onChange({
+      target: { value: "3" },
+    }),
+  );
+  expect(input(renderer, "energyKcal").props.value).toBe("180");
+  expect(input(renderer, "proteinGrams").props.value).toBe("6");
+  await act(async () => renderer.unmount());
+
+  const draft = {
+    carbohydrateGrams: "",
+    date: "2026-08-31",
+    energyKcal: "",
+    fatGrams: "",
+    fiberGrams: "",
+    idempotencyKey: "manual-draft-key",
+    intent: "log-manual-food",
+    name: "Incomplete tortilla",
+    proteinGrams: "",
+    quantity: "3",
+    sodiumMilligrams: "",
+    sugarGrams: "",
+  };
+  const invalid = await renderHome(
+    { catalog },
+    {
+      manualFoodDraft: draft,
+      message: "Enter calories before adding this Food Entry.",
+      tone: "error",
+    },
+  );
+  expect(input(invalid, "name").props.value).toBe("Incomplete tortilla");
+  expect(input(invalid, "quantity").props.value).toBe("3");
+  expect(input(invalid, "idempotencyKey").props.value).toBe("manual-draft-key");
+  expect(allText(invalid)).toContain("Enter calories before adding");
+  await act(async () => invalid.unmount());
 });
 
 test("barcode mode separates confirmation from scanning while keeping errors recoverable", async () => {
@@ -1262,6 +1357,16 @@ test("home food editor exposes saved fields, recalculation, and delete confirmat
   )!;
   await act(async () => keepButton.props.onClick());
   expect(allText(renderer)).not.toContain("Delete this Food Entry?");
+  await act(async () => renderer.unmount());
+});
+
+test("manual Food Entry editor keeps calories required", async () => {
+  const renderer = await renderHome({
+    foodEntryEditor: { ...editableEntry, provider: "manual" },
+  });
+
+  expect(input(renderer, "energyKcal").props.required).toBe(true);
+  expect(input(renderer, "proteinGrams").props.required).toBeUndefined();
   await act(async () => renderer.unmount());
 });
 

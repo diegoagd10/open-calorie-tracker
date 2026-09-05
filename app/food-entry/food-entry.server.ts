@@ -70,8 +70,45 @@ function updateFoodInputSchema() {
   });
 }
 
+function logManualFoodInputSchema() {
+  return z.object({
+    carbohydrateGrams: z.string().max(32).optional(),
+    energyKcal: z.string().trim().min(1).max(32),
+    fatGrams: z.string().max(32).optional(),
+    fiberGrams: z.string().max(32).optional(),
+    foodLogDate: z.string(),
+    idempotencyKey: z
+      .string()
+      .min(8)
+      .max(128)
+      .refine((value) => /^[A-Za-z0-9._:-]+$/.test(value)),
+    name: z.string().trim().min(1).max(200),
+    proteinGrams: z.string().max(32).optional(),
+    quantity: z.string().min(1).max(32),
+    sodiumMilligrams: z.string().max(32).optional(),
+    sugarGrams: z.string().max(32).optional(),
+  });
+}
+
 export type LogFoodInput = z.input<ReturnType<typeof logFoodInputSchema>>;
+export type LogManualFoodInput = z.input<
+  ReturnType<typeof logManualFoodInputSchema>
+>;
 export type UpdateFoodInput = z.input<ReturnType<typeof updateFoodInputSchema>>;
+type ParsedLogManualFoodInput = z.output<
+  ReturnType<typeof logManualFoodInputSchema>
+>;
+type ParsedUpdateFoodInput = z.output<ReturnType<typeof updateFoodInputSchema>>;
+type FoodEntryInsertSource = Omit<
+  typeof foodEntries.$inferInsert,
+  | "createdAt"
+  | "foodLogDate"
+  | "id"
+  | "idempotencyKey"
+  | "localEventTime"
+  | "updatedAt"
+  | "userId"
+>;
 
 export class InvalidFoodEntryInputError extends Error {
   constructor() {
@@ -216,6 +253,174 @@ function nullableNutrient(
   return Number(result);
 }
 
+function manualAuthoritativeNutrient(
+  total: number | null,
+  fixedPointMultiplier: number,
+  quantity: number,
+) {
+  return total === null
+    ? null
+    : {
+        amount: total / fixedPointMultiplier / (quantity / 1_000_000),
+        fixedPointMultiplier,
+      };
+}
+
+const manualMeasurement: CatalogMeasurement = {
+  baseQuantityMicrounits: 1_000_000,
+  id: "serving",
+  label: "1 serving",
+  unit: "serving",
+};
+
+function manualFoodEntrySource(
+  input: ParsedLogManualFoodInput,
+  quantity: number,
+): FoodEntryInsertSource {
+  const energyMilliKcal = nullableNutrient(input.energyKcal, false);
+  if (energyMilliKcal === null || energyMilliKcal === undefined) {
+    throw new InvalidFoodEntryInputError();
+  }
+  const totals = {
+    carbohydrateMilligrams:
+      nullableNutrient(input.carbohydrateGrams, false) ?? null,
+    energyMilliKcal,
+    fatMilligrams: nullableNutrient(input.fatGrams, false) ?? null,
+    fiberMilligrams: nullableNutrient(input.fiberGrams, false) ?? null,
+    proteinMilligrams: nullableNutrient(input.proteinGrams, false) ?? null,
+    sodiumMilligrams: nullableNutrient(input.sodiumMilligrams, true) ?? null,
+    sugarMilligrams: nullableNutrient(input.sugarGrams, false) ?? null,
+  };
+  const perServing = (total: number | null, integerMilligrams = false) =>
+    manualAuthoritativeNutrient(
+      total,
+      integerMilligrams ? 1 : 1_000,
+      quantity,
+    );
+  return {
+    ...totals,
+    authoritativeBaseQuantityMicrounits: 1_000_000,
+    authoritativeBaseUnit: "serving",
+    authoritativeNutrition: serializeCatalogNutrition({
+      carbohydrateMilligrams: perServing(totals.carbohydrateMilligrams),
+      energyMilliKcal: perServing(totals.energyMilliKcal),
+      fatMilligrams: perServing(totals.fatMilligrams),
+      fiberMilligrams: perServing(totals.fiberMilligrams),
+      proteinMilligrams: perServing(totals.proteinMilligrams),
+      sodiumMilligrams: perServing(totals.sodiumMilligrams, true),
+      sugarMilligrams: perServing(totals.sugarMilligrams),
+    }),
+    barcode: null,
+    brand: null,
+    marketCountry: null,
+    originalName: input.name,
+    provider: "manual",
+    providerFoodId: input.idempotencyKey,
+    providerModifiedDate: null,
+    providerPublishedDate: null,
+    quantityMicrounits: quantity,
+    selectedMeasurementBaseQuantityMicrounits:
+      manualMeasurement.baseQuantityMicrounits,
+    selectedMeasurementId: manualMeasurement.id,
+    selectedMeasurementLabel: manualMeasurement.label,
+    selectedMeasurementUnit: manualMeasurement.unit,
+    sourceDataType: "User entered",
+    supportedMeasurements: serializeCatalogMeasurements([manualMeasurement]),
+  };
+}
+
+function manualNutritionAfterUpdate(
+  input: ParsedUpdateFoodInput,
+  nutrition: ReturnType<typeof parseCatalogNutrition>,
+  quantity: number,
+  scale: (value: Parameters<typeof scaleCatalogNutrient>[0]) => number | null,
+) {
+  const afterEdit = (
+    inputValue: string | undefined,
+    integerMilligrams: boolean,
+    authoritativeValue: Parameters<typeof scaleCatalogNutrient>[0],
+  ) => {
+    const edited = nullableNutrient(inputValue, integerMilligrams);
+    if (edited === undefined || edited === scale(authoritativeValue)) {
+      return authoritativeValue;
+    }
+    return manualAuthoritativeNutrient(
+      edited,
+      integerMilligrams ? 1 : 1_000,
+      quantity,
+    );
+  };
+  return {
+    carbohydrateMilligrams: afterEdit(
+      input.carbohydrateGrams,
+      false,
+      nutrition.carbohydrateMilligrams,
+    ),
+    energyMilliKcal: afterEdit(
+      input.energyKcal,
+      false,
+      nutrition.energyMilliKcal,
+    ),
+    fatMilligrams: afterEdit(input.fatGrams, false, nutrition.fatMilligrams),
+    fiberMilligrams: afterEdit(
+      input.fiberGrams,
+      false,
+      nutrition.fiberMilligrams,
+    ),
+    proteinMilligrams: afterEdit(
+      input.proteinGrams,
+      false,
+      nutrition.proteinMilligrams,
+    ),
+    sodiumMilligrams: afterEdit(
+      input.sodiumMilligrams,
+      true,
+      nutrition.sodiumMilligrams,
+    ),
+    sugarMilligrams: afterEdit(
+      input.sugarGrams,
+      false,
+      nutrition.sugarMilligrams,
+    ),
+  };
+}
+
+function nutritionValuesAfterUpdate(
+  input: ParsedUpdateFoodInput,
+  nutrition: ReturnType<typeof parseCatalogNutrition>,
+  scale: (value: Parameters<typeof scaleCatalogNutrient>[0]) => number | null,
+) {
+  const value = (
+    inputValue: string | undefined,
+    integerMilligrams: boolean,
+    authoritativeValue: Parameters<typeof scaleCatalogNutrient>[0],
+  ) => {
+    const edited = nullableNutrient(inputValue, integerMilligrams);
+    return edited === undefined ? scale(authoritativeValue) : edited;
+  };
+  return {
+    carbohydrateMilligrams: value(
+      input.carbohydrateGrams,
+      false,
+      nutrition.carbohydrateMilligrams,
+    ),
+    energyMilliKcal: value(input.energyKcal, false, nutrition.energyMilliKcal),
+    fatMilligrams: value(input.fatGrams, false, nutrition.fatMilligrams),
+    fiberMilligrams: value(input.fiberGrams, false, nutrition.fiberMilligrams),
+    proteinMilligrams: value(
+      input.proteinGrams,
+      false,
+      nutrition.proteinMilligrams,
+    ),
+    sodiumMilligrams: value(
+      input.sodiumMilligrams,
+      true,
+      nutrition.sodiumMilligrams,
+    ),
+    sugarMilligrams: value(input.sugarGrams, false, nutrition.sugarMilligrams),
+  };
+}
+
 export class FoodEntryService {
   readonly #database: ApplicationDatabaseClient;
   readonly #now: () => Date;
@@ -248,17 +453,11 @@ export class FoodEntryService {
     }
     const quantity = quantityMicrounits(parsed.data.quantity);
 
-    const existing = this.#database
-      .select()
-      .from(foodEntries)
-      .where(
-        and(
-          eq(foodEntries.userId, userId),
-          eq(foodEntries.idempotencyKey, parsed.data.idempotencyKey),
-        ),
-      )
-      .get();
-    if (existing) return foodEntrySnapshot(existing);
+    const existing = this.#findIdempotentEntry(
+      userId,
+      parsed.data.idempotencyKey,
+    );
+    if (existing) return existing;
 
     this.#requireWritableDate(userId, parsed.data.foodLogDate);
     const food = await this.#catalog.getFood(
@@ -273,56 +472,37 @@ export class FoodEntryService {
       parsed.data.selectedMeasurementId,
     );
 
-    const instant = this.#now();
-    const createdAt = instant.toISOString();
-    return this.#database.transaction((transaction) => {
-      const repeated = transaction
-        .select()
-        .from(foodEntries)
-        .where(
-          and(
-            eq(foodEntries.userId, userId),
-            eq(foodEntries.idempotencyKey, parsed.data.idempotencyKey),
-          ),
-        )
-        .get();
-      if (repeated) return foodEntrySnapshot(repeated);
+    return this.#insertSnapshot(
+      userId,
+      parsed.data.foodLogDate,
+      parsed.data.idempotencyKey,
+      {
+        ...catalogSnapshotSource(food, measurement),
+        ...scaledCatalogNutrition(food, measurement, quantity),
+        quantityMicrounits: quantity,
+      },
+      this.#now(),
+    );
+  }
 
-      const preference = transaction
-        .select({ timeZone: userPreferences.timeZone })
-        .from(userPreferences)
-        .where(eq(userPreferences.userId, userId))
-        .get();
-      if (!preference) throw new InvalidFoodLogDateError();
-      const today = localDateAt(instant, preference.timeZone);
-      if (parsed.data.foodLogDate > today) throw new FutureFoodLogDateError();
+  logManual(userId: number, input: LogManualFoodInput) {
+    const parsed = logManualFoodInputSchema().safeParse(input);
+    if (!parsed.success) throw new InvalidFoodEntryInputError();
+    const quantity = quantityMicrounits(parsed.data.quantity);
+    const existing = this.#findIdempotentEntry(
+      userId,
+      parsed.data.idempotencyKey,
+    );
+    if (existing) return existing;
 
-      const localEventTime = localEventTimeForNewFoodLogEvent(
-        transaction,
-        userId,
-        parsed.data.foodLogDate,
-        today,
-        instant,
-        preference.timeZone,
-      );
-
-      const row = transaction
-        .insert(foodEntries)
-        .values({
-          ...catalogSnapshotSource(food, measurement),
-          ...scaledCatalogNutrition(food, measurement, quantity),
-          createdAt,
-          foodLogDate: parsed.data.foodLogDate,
-          idempotencyKey: parsed.data.idempotencyKey,
-          localEventTime,
-          quantityMicrounits: quantity,
-          updatedAt: createdAt,
-          userId,
-        })
-        .returning()
-        .get();
-      return foodEntrySnapshot(row);
-    });
+    this.#requireWritableDate(userId, parsed.data.foodLogDate);
+    return this.#insertSnapshot(
+      userId,
+      parsed.data.foodLogDate,
+      parsed.data.idempotencyKey,
+      manualFoodEntrySource(parsed.data, quantity),
+      this.#now(),
+    );
   }
 
   read(userId: number, entryId: number) {
@@ -345,28 +525,13 @@ export class FoodEntryService {
 
   update(userId: number, entryId: number, input: UpdateFoodInput) {
     const parsed = updateFoodInputSchema().safeParse(input);
-    const parsedId = z.number().int().positive().safeParse(entryId);
-    if (!parsed.success || !parsedId.success) {
-      throw new InvalidFoodEntryInputError();
-    }
+    if (!parsed.success) throw new InvalidFoodEntryInputError();
     const quantity = quantityMicrounits(parsed.data.quantity);
-    const existing = this.#database
-      .select()
-      .from(foodEntries)
-      .where(
-        and(eq(foodEntries.userId, userId), eq(foodEntries.id, parsedId.data)),
-      )
-      .get();
-    if (!existing || existing.foodLogDate !== parsed.data.foodLogDate) {
-      throw new FoodEntryUnavailableError();
-    }
-    const snapshot = foodEntrySnapshot(existing);
-    const measurement = snapshot.supportedMeasurements.find(
-      (candidate) => candidate.id === parsed.data.selectedMeasurementId,
+    const { existing, measurement } = this.#entryForUpdate(
+      userId,
+      entryId,
+      parsed.data,
     );
-    if (!measurement || measurement.unit !== existing.authoritativeBaseUnit) {
-      throw new InvalidFoodEntryInputError();
-    }
     const nutrition = parseCatalogNutrition(existing.authoritativeNutrition);
     const scale = (value: Parameters<typeof scaleCatalogNutrient>[0]) =>
       scaleCatalogNutrient(
@@ -375,65 +540,40 @@ export class FoodEntryService {
         quantity,
         existing.authoritativeBaseQuantityMicrounits,
       );
-    const editedOrScaled = (
-      inputValue: string | undefined,
-      integerMilligrams: boolean,
-      authoritativeValue: Parameters<typeof scaleCatalogNutrient>[0],
-    ) => {
-      const edited = nullableNutrient(inputValue, integerMilligrams);
-      return edited === undefined ? scale(authoritativeValue) : edited;
-    };
+    const nutritionValues = nutritionValuesAfterUpdate(
+      parsed.data,
+      nutrition,
+      scale,
+    );
+    const authoritativeNutrition =
+      existing.provider === "manual"
+        ? serializeCatalogNutrition(
+            manualNutritionAfterUpdate(
+              parsed.data,
+              nutrition,
+              quantity,
+              scale,
+            ),
+          )
+        : existing.authoritativeNutrition;
     const updated = this.#database
       .update(foodEntries)
       .set({
-        carbohydrateMilligrams: editedOrScaled(
-          parsed.data.carbohydrateGrams,
-          false,
-          nutrition.carbohydrateMilligrams,
-        ),
+        ...nutritionValues,
+        authoritativeNutrition,
         editedName: parsed.data.name,
-        energyMilliKcal: editedOrScaled(
-          parsed.data.energyKcal,
-          false,
-          nutrition.energyMilliKcal,
-        ),
-        fatMilligrams: editedOrScaled(
-          parsed.data.fatGrams,
-          false,
-          nutrition.fatMilligrams,
-        ),
-        fiberMilligrams: editedOrScaled(
-          parsed.data.fiberGrams,
-          false,
-          nutrition.fiberMilligrams,
-        ),
-        proteinMilligrams: editedOrScaled(
-          parsed.data.proteinGrams,
-          false,
-          nutrition.proteinMilligrams,
-        ),
         quantityMicrounits: quantity,
         selectedMeasurementBaseQuantityMicrounits:
           measurement.baseQuantityMicrounits,
         selectedMeasurementId: measurement.id,
         selectedMeasurementLabel: measurement.label,
         selectedMeasurementUnit: measurement.unit,
-        sodiumMilligrams: editedOrScaled(
-          parsed.data.sodiumMilligrams,
-          true,
-          nutrition.sodiumMilligrams,
-        ),
-        sugarMilligrams: editedOrScaled(
-          parsed.data.sugarGrams,
-          false,
-          nutrition.sugarMilligrams,
-        ),
         updatedAt: nextUpdatedAt(this.#now(), existing.updatedAt),
       })
       .where(
         and(
           eq(foodEntries.userId, userId),
-          eq(foodEntries.id, parsedId.data),
+          eq(foodEntries.id, entryId),
           eq(foodEntries.updatedAt, parsed.data.expectedUpdatedAt),
         ),
       )
@@ -441,6 +581,39 @@ export class FoodEntryService {
       .get();
     if (!updated) throw new StaleFoodEntryError();
     return foodEntrySnapshot(updated);
+  }
+
+  #entryForUpdate(
+    userId: number,
+    entryId: number,
+    input: ParsedUpdateFoodInput,
+  ) {
+    const parsedId = z.number().int().positive().safeParse(entryId);
+    if (!parsedId.success) throw new InvalidFoodEntryInputError();
+    const existing = this.#database
+      .select()
+      .from(foodEntries)
+      .where(
+        and(eq(foodEntries.userId, userId), eq(foodEntries.id, parsedId.data)),
+      )
+      .get();
+    if (!existing || existing.foodLogDate !== input.foodLogDate) {
+      throw new FoodEntryUnavailableError();
+    }
+    if (
+      existing.provider === "manual" &&
+      nullableNutrient(input.energyKcal, false) === null
+    ) {
+      throw new InvalidFoodEntryInputError();
+    }
+    const snapshot = foodEntrySnapshot(existing);
+    const measurement = snapshot.supportedMeasurements.find(
+      (candidate) => candidate.id === input.selectedMeasurementId,
+    );
+    if (!measurement || measurement.unit !== existing.authoritativeBaseUnit) {
+      throw new InvalidFoodEntryInputError();
+    }
+    return { existing, measurement };
   }
 
   delete(
@@ -482,6 +655,74 @@ export class FoodEntryService {
       .get();
     if (!deleted) throw new StaleFoodEntryError();
     return deleted;
+  }
+
+  #findIdempotentEntry(userId: number, idempotencyKey: string) {
+    const row = this.#database
+      .select()
+      .from(foodEntries)
+      .where(
+        and(
+          eq(foodEntries.userId, userId),
+          eq(foodEntries.idempotencyKey, idempotencyKey),
+        ),
+      )
+      .get();
+    return row ? foodEntrySnapshot(row) : undefined;
+  }
+
+  #insertSnapshot(
+    userId: number,
+    foodLogDate: string,
+    idempotencyKey: string,
+    source: FoodEntryInsertSource,
+    instant: Date,
+  ) {
+    const createdAt = instant.toISOString();
+    return this.#database.transaction((transaction) => {
+      const repeated = transaction
+        .select()
+        .from(foodEntries)
+        .where(
+          and(
+            eq(foodEntries.userId, userId),
+            eq(foodEntries.idempotencyKey, idempotencyKey),
+          ),
+        )
+        .get();
+      if (repeated) return foodEntrySnapshot(repeated);
+
+      const preference = transaction
+        .select({ timeZone: userPreferences.timeZone })
+        .from(userPreferences)
+        .where(eq(userPreferences.userId, userId))
+        .get();
+      if (!preference) throw new InvalidFoodLogDateError();
+      const today = localDateAt(instant, preference.timeZone);
+      if (foodLogDate > today) throw new FutureFoodLogDateError();
+      const localEventTime = localEventTimeForNewFoodLogEvent(
+        transaction,
+        userId,
+        foodLogDate,
+        today,
+        instant,
+        preference.timeZone,
+      );
+      const row = transaction
+        .insert(foodEntries)
+        .values({
+          ...source,
+          createdAt,
+          foodLogDate,
+          idempotencyKey,
+          localEventTime,
+          updatedAt: createdAt,
+          userId,
+        })
+        .returning()
+        .get();
+      return foodEntrySnapshot(row);
+    });
   }
 
   #requireWritableDate(userId: number, value: string): void {
