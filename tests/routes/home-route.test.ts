@@ -481,6 +481,22 @@ test("home loader exposes barcode lookup without creating a Food Entry", async (
   }
 });
 
+test("home loader exposes a fresh manual Food Entry form without changing the log", async () => {
+  const manual = await load("/?date=2026-08-30&food=manual");
+
+  expect(manual.data.catalog).toMatchObject({
+    mode: "manual",
+    query: "",
+  });
+  if (manual.data.catalog?.mode !== "manual") {
+    throw new Error("Expected manual Food Entry form");
+  }
+  expect(manual.data.catalog.idempotencyKey).toMatch(/^[0-9a-f-]{36}$/);
+  expect(getFoodLogService().read(1, "2026-08-30")?.entries).toHaveLength(0);
+  expect((await load("/?date=2026-09-01&food=manual")).data.catalog)
+    .toBeUndefined();
+});
+
 test("home passes request correlation to the catalog and propagates unknown failures", async () => {
   const contexts: string[] = [];
   const unexpected = new Error("unexpected catalog adapter failure");
@@ -1314,4 +1330,71 @@ test("home opens a copy-date calendar and confirms one copy while staying on the
       "Copied",
     );
   }
+});
+
+test("home creates manual Food Entries on the selected date and preserves invalid drafts", async () => {
+  const fields = {
+    carbohydrateGrams: "36",
+    energyKcal: "180",
+    fatGrams: "3",
+    fiberGrams: "4",
+    idempotencyKey: "manual-route-success",
+    intent: "log-manual-food",
+    name: "Tortillas",
+    proteinGrams: "6",
+    quantity: "3",
+    sodiumMilligrams: "30",
+    sugarGrams: "1",
+  };
+  const created = await homeAction(
+    routeArgs(post({ ...fields, date: "2026-08-30" })),
+  );
+
+  expectRedirect(created, "/?date=2026-08-30");
+  expect((await load("/?date=2026-08-30")).data.foodLog.entries[0])
+    .toMatchObject({
+      energyMilliKcal: 180_000,
+      name: "Tortillas",
+      provider: "manual",
+      quantityMicrounits: 3_000_000,
+    });
+
+  const invalidFields = {
+    ...fields,
+    energyKcal: "",
+    idempotencyKey: "manual-route-invalid",
+    name: "Incomplete tortilla",
+  };
+  const invalid = await homeAction(routeArgs(post(invalidFields)));
+  expect(invalid).toMatchObject({
+    data: {
+      manualFoodDraft: invalidFields,
+      tone: "error",
+    },
+    init: { status: 400 },
+  });
+  if (invalid instanceof Response) throw new Error("Expected action data");
+  expect(invalid.data.message).toContain("calories");
+  expect((await load()).data.foodLog.entries.some(
+    (entry) => entry.providerFoodId === "manual-route-invalid",
+  )).toBe(false);
+
+  const future = await homeAction(
+    routeArgs(post({
+      ...fields,
+      date: "2026-09-01",
+      idempotencyKey: "manual-route-future",
+    })),
+  );
+  expect(future).toMatchObject({
+    data: {
+      manualFoodDraft: {
+        ...fields,
+        date: "2026-09-01",
+        idempotencyKey: "manual-route-future",
+      },
+      tone: "error",
+    },
+    init: { status: 422 },
+  });
 });

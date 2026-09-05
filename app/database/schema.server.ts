@@ -215,11 +215,11 @@ export const foodEntries = sqliteTable(
     ),
     check(
       "food_entries_provider_check",
-      sql`${table.provider} IN ('usda-fdc', 'open-food-facts')`,
+      sql`${table.provider} IN ('usda-fdc', 'open-food-facts', 'manual')`,
     ),
     check(
       "food_entries_data_type_check",
-      sql`${table.sourceDataType} IN ('Branded', 'Survey (FNDDS)', 'Foundation', 'Open Food Facts')`,
+      sql`${table.sourceDataType} IN ('Branded', 'Survey (FNDDS)', 'Foundation', 'Open Food Facts', 'User entered')`,
     ),
     check(
       "food_entries_units_check",
@@ -234,6 +234,10 @@ export const foodEntries = sqliteTable(
           AND ${table.selectedMeasurementUnit} IN ('g', 'ml'))
         OR (${table.provider} = 'open-food-facts'
           AND ${table.sourceDataType} = 'Open Food Facts'
+          AND ${table.authoritativeBaseUnit} = 'serving'
+          AND ${table.selectedMeasurementUnit} = 'serving')
+        OR (${table.provider} = 'manual'
+          AND ${table.sourceDataType} = 'User entered'
           AND ${table.authoritativeBaseUnit} = 'serving'
           AND ${table.selectedMeasurementUnit} = 'serving')`,
     ),

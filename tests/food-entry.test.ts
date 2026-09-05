@@ -576,6 +576,163 @@ test("copying to another date rejects ineligible destinations and keeps end-of-d
   database.close();
 });
 
+test("a manual Food Entry stores entered totals and scales later edits from one serving", async () => {
+  const database = await setupDatabase();
+  const client = database.getClient();
+  const userId = insertConfiguredUser(client, "manual.entry");
+  const service = new FoodEntryService(
+    client,
+    new FakeCatalogProvider(),
+    () => new Date("2026-08-29T18:00:00.000Z"),
+  );
+
+  const created = service.logManual(userId, {
+    carbohydrateGrams: "36",
+    energyKcal: "180",
+    fatGrams: "3",
+    fiberGrams: "",
+    foodLogDate: "2026-08-28",
+    idempotencyKey: "manual-tortillas",
+    name: "Tortillas",
+    proteinGrams: "6",
+    quantity: "3",
+    sodiumMilligrams: "30",
+    sugarGrams: "0",
+  });
+
+  expect(created).toMatchObject({
+    authoritativeBaseQuantityMicrounits: 1_000_000,
+    authoritativeBaseUnit: "serving",
+    authoritativeNutrition: {
+      carbohydrateMilligrams: { amount: 12, fixedPointMultiplier: 1_000 },
+      energyMilliKcal: { amount: 60, fixedPointMultiplier: 1_000 },
+      fatMilligrams: { amount: 1, fixedPointMultiplier: 1_000 },
+      fiberMilligrams: null,
+      proteinMilligrams: { amount: 2, fixedPointMultiplier: 1_000 },
+      sodiumMilligrams: { amount: 10, fixedPointMultiplier: 1 },
+      sugarMilligrams: { amount: 0, fixedPointMultiplier: 1_000 },
+    },
+    carbohydrateMilligrams: 36_000,
+    dataType: "User entered",
+    energyMilliKcal: 180_000,
+    foodLogDate: "2026-08-28",
+    name: "Tortillas",
+    provider: "manual",
+    quantityMicrounits: 3_000_000,
+    selectedMeasurementId: "serving",
+    selectedMeasurementLabel: "1 serving",
+  });
+
+  const scaled = service.update(userId, created.id, {
+    expectedUpdatedAt: created.updatedAt,
+    foodLogDate: created.foodLogDate,
+    name: created.name,
+    quantity: "4",
+    selectedMeasurementId: "serving",
+  });
+  expect(scaled).toMatchObject({
+    carbohydrateMilligrams: 48_000,
+    energyMilliKcal: 240_000,
+    proteinMilligrams: 8_000,
+    quantityMicrounits: 4_000_000,
+  });
+  database.close();
+});
+
+test("correcting manual nutrition redefines the serving base for later quantity changes", async () => {
+  const database = await setupDatabase();
+  const client = database.getClient();
+  const userId = insertConfiguredUser(client, "manual.correction");
+  const service = new FoodEntryService(
+    client,
+    new FakeCatalogProvider(),
+    () => new Date("2026-08-29T18:00:00.000Z"),
+  );
+  const created = service.logManual(userId, {
+    energyKcal: "180",
+    foodLogDate: "2026-08-29",
+    idempotencyKey: "manual-correction",
+    name: "Tortillas",
+    quantity: "3",
+  });
+
+  const corrected = service.update(userId, created.id, {
+    energyKcal: "210",
+    expectedUpdatedAt: created.updatedAt,
+    foodLogDate: created.foodLogDate,
+    name: created.name,
+    quantity: "3",
+    selectedMeasurementId: "serving",
+  });
+  expect(corrected.authoritativeNutrition.energyMilliKcal).toEqual({
+    amount: 70,
+    fixedPointMultiplier: 1_000,
+  });
+
+  const rescaled = service.update(userId, created.id, {
+    expectedUpdatedAt: corrected.updatedAt,
+    foodLogDate: corrected.foodLogDate,
+    name: corrected.name,
+    quantity: "4",
+    selectedMeasurementId: "serving",
+  });
+  expect(rescaled.energyMilliKcal).toBe(280_000);
+  expect(() =>
+    service.update(userId, created.id, {
+      energyKcal: "",
+      expectedUpdatedAt: rescaled.updatedAt,
+      foodLogDate: rescaled.foodLogDate,
+      name: rescaled.name,
+      quantity: "4",
+      selectedMeasurementId: "serving",
+    }),
+  ).toThrow(InvalidFoodEntryInputError);
+  database.close();
+});
+
+test("manual Food Entries require calories but accept zero and unknown optional nutrients", async () => {
+  const database = await setupDatabase();
+  const client = database.getClient();
+  const userId = insertConfiguredUser(client, "manual.zero");
+  const service = new FoodEntryService(
+    client,
+    new FakeCatalogProvider(),
+    () => new Date("2026-08-29T18:00:00.000Z"),
+  );
+  const input = {
+    energyKcal: "0",
+    foodLogDate: "2026-08-29",
+    idempotencyKey: "manual-zero-calories",
+    name: "Zero-calorie drink",
+    quantity: "1",
+  };
+
+  const created = service.logManual(userId, input);
+  expect(created).toMatchObject({
+    carbohydrateMilligrams: null,
+    energyMilliKcal: 0,
+    fatMilligrams: null,
+    fiberMilligrams: null,
+    proteinMilligrams: null,
+    sodiumMilligrams: null,
+    sugarMilligrams: null,
+  });
+  expect(service.logManual(userId, input).id).toBe(created.id);
+  expect(() =>
+    service.logManual(userId, {
+      ...input,
+      energyKcal: "",
+      idempotencyKey: "manual-missing-calories",
+    }),
+  ).toThrow(InvalidFoodEntryInputError);
+  expect(
+    new FoodLogService(client, () =>
+      new Date("2026-08-29T18:00:00.000Z"),
+    ).read(userId, "2026-08-29")?.entries,
+  ).toHaveLength(1);
+  database.close();
+});
+
 test("nutrients scale from the unrounded provider amount and round once at snapshot creation", async () => {
   const database = await setupDatabase();
   const client = database.getClient();
