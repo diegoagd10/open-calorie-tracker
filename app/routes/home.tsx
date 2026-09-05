@@ -25,6 +25,8 @@ import {
   requireValidOrigin,
   serializeClearedSessionCookie,
 } from "../auth/http.server";
+import { getPhotoAnalysisService } from "../photo-analysis/runtime.server";
+import { PhotoMeals, PhotoCorrection } from "./photo-meals";
 import { AppNavigation } from "../app-navigation";
 import { isTestEnvironment } from "../runtime.server";
 import { UiIcon } from "../ui-icon";
@@ -384,6 +386,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     throw error;
   }
   if (!foodLog) return redirect("/setup");
+  const photoMeals = getPhotoAnalysisService().list(session.user.id, foodLog.selectedDate);
 
   const copyIdempotencyKeys =
     foodLog.selectedDate < foodLog.today
@@ -431,6 +434,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     if (entryId === undefined) {
       throw new Response("Food Entry is unavailable.", { status: 404 });
     }
+    if (photoMeals.some((meal) => meal.entryId === entryId && meal.status === "active")) return redirect(foodLogHref(foodLog.selectedDate));
     try {
       foodEntryEditor = getFoodEntryService(testRequestInstant(request)).read(
         session.user.id,
@@ -717,6 +721,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       copyIdempotencyKeys,
       csrfToken: session.csrfToken,
       foodEntryEditor,
+      photoMeals,
       foodLog,
       nearbyDates,
       notice: noticeMessage(noticeKind, copiedFood, foodLog.today),
@@ -2312,9 +2317,11 @@ function FoodEntryEditorDialog({
   actionData,
   csrfToken,
   entry,
+  photoMeal,
 }: {
   actionData: HomeActionData | undefined;
   csrfToken: string;
+  photoMeal?: Route.ComponentProps["loaderData"]["photoMeals"][number];
   entry: EditableFoodEntry;
 }) {
   const navigation = useNavigation();
@@ -2373,6 +2380,7 @@ function FoodEntryEditorDialog({
             ×
           </Link>
         </div>
+        {photoMeal ? <PhotoCorrection meal={photoMeal} csrfToken={csrfToken} /> : null}
         <Form className={styles.editFoodForm} method="post" noValidate>
           <input name="csrfToken" type="hidden" value={csrfToken} />
           <input name="date" type="hidden" value={entry.foodLogDate} />
@@ -3829,6 +3837,7 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
     csrfToken,
     foodEntryEditor,
     foodLog,
+    photoMeals = [],
     nearbyDates,
     notice,
     username,
@@ -3926,6 +3935,7 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
                     {copyError}
                   </p>
                 ) : null}
+                {!foodLog.isFuture ? <PhotoMeals meals={photoMeals} date={foodLog.selectedDate} csrfToken={csrfToken} /> : null}
                 {foodLog.isFuture ? (
                   <div className={styles.futureDay}>
                     <span className={styles.emptyIcon} aria-hidden="true">
@@ -3937,7 +3947,7 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
                       recorded today or in the past.
                     </p>
                   </div>
-                ) : foodLog.events.length || foodLogPending ? (
+                ) : foodLog.events.length || foodLogPending || photoMeals.length ? (
                   <div className={styles.timeline}>
                     <EmptyActionForm
                       className={styles.timelineAddFood}
@@ -3950,7 +3960,7 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
                     {foodLogPending ? (
                       <PendingFoodEntry name={pendingFoodName} />
                     ) : null}
-                    {foodLog.events.map((entry) =>
+                    {foodLog.events.filter((entry) => entry.kind !== "food" || !photoMeals.some((meal) => meal.entryId === entry.id)).map((entry) =>
                       entry.kind === "food" ? (
                         // Stryker disable next-line StringLiteral: a single-prefix mutation preserves key uniqueness against the water prefix.
                         <article key={`food-${entry.id}`}>
@@ -3981,6 +3991,7 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
                                   ? "Open Food Facts"
                                   : entry.provider === "manual"
                                     ? "Manual"
+                                  : entry.provider === "ai-photo" ? "AI photo estimate"
                                   : `USDA FoodData Central · ${entry.dataType}`}
                               </small>
                               <small>
@@ -4116,6 +4127,7 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
           actionData={actionData}
           csrfToken={csrfToken}
           entry={activeFoodEntryEditor}
+          photoMeal={photoMeals.find((meal) => meal.entryId === activeFoodEntryEditor.id)}
           key={activeFoodEntryEditor.updatedAt}
         />
       ) : null}

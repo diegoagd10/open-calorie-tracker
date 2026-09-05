@@ -51,13 +51,13 @@ test("startup applies the initial migration and configures writable SQLite stora
   });
 
   expect(database.getStatus()).toEqual({
-    appliedMigrations: 14,
-    availableMigrations: 14,
+    appliedMigrations: 15,
+    availableMigrations: 15,
     busyTimeoutMs: 5_000,
     foreignKeysEnabled: true,
     journalMode: "wal",
     migrationsCurrent: true,
-    schemaVersion: "13",
+    schemaVersion: "14",
     writable: true,
   });
 
@@ -73,13 +73,13 @@ test("starting twice preserves the applied migration state", async () => {
   };
 
   const firstStartup = openApplicationDatabase(options);
-  expect(firstStartup.getStatus().appliedMigrations).toBe(14);
+  expect(firstStartup.getStatus().appliedMigrations).toBe(15);
   firstStartup.close();
 
   const replacementStartup = openApplicationDatabase(options);
   expect(replacementStartup.getStatus()).toMatchObject({
-    appliedMigrations: 14,
-    schemaVersion: "13",
+    appliedMigrations: 15,
+    schemaVersion: "14",
     writable: true,
   });
   replacementStartup.close();
@@ -262,10 +262,10 @@ test("the production migration preserves every representative field from the pri
   });
 
   expect(upgraded.getStatus()).toMatchObject({
-    appliedMigrations: 14,
-    availableMigrations: 14,
+    appliedMigrations: 15,
+    availableMigrations: 15,
     migrationsCurrent: true,
-    schemaVersion: "13",
+    schemaVersion: "14",
     writable: true,
   });
   expect(isDatabaseReady(upgraded.getStatus())).toBe(true);
@@ -324,7 +324,7 @@ test("the password-onboarding migration leaves existing credentials unrestricted
     passwordChangeRequired: 0,
     passwordHash: "argon2id:existing-credential",
   });
-  expect(upgraded.getStatus().schemaVersion).toBe("13");
+  expect(upgraded.getStatus().schemaVersion).toBe("14");
   upgraded.close();
 });
 
@@ -371,7 +371,7 @@ THIS IS NOT VALID SQL;\n`,
   ).toEqual([]);
   expect(recovered.getClient().select().from(schema.users).all()).toEqual([]);
   expect(recovered.getStatus()).toMatchObject({
-    appliedMigrations: 14,
+    appliedMigrations: 15,
     migrationsCurrent: true,
   });
   recovered.close();
@@ -397,13 +397,13 @@ test("read-only application storage prevents startup", async () => {
 
 test("readiness requires every database invariant", () => {
   const readyStatus: DatabaseStatus = {
-    appliedMigrations: 14,
-    availableMigrations: 14,
+    appliedMigrations: 15,
+    availableMigrations: 15,
     busyTimeoutMs: 5_000,
     foreignKeysEnabled: true,
     journalMode: "wal",
     migrationsCurrent: true,
-    schemaVersion: "13",
+    schemaVersion: "14",
     writable: true,
   };
 
@@ -453,8 +453,8 @@ test("status detects tampered migration history, metadata, and pragmas", async (
   client.run(sql`DELETE FROM __drizzle_migrations
     WHERE created_at = (SELECT MAX(created_at) FROM __drizzle_migrations)`);
   expect(database.getStatus()).toMatchObject({
-    appliedMigrations: 13,
-    availableMigrations: 14,
+    appliedMigrations: 14,
+    availableMigrations: 15,
     migrationsCurrent: false,
   });
   client.delete(schema.applicationMetadata)

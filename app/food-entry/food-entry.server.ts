@@ -11,6 +11,7 @@ import {
 } from "../catalog/food-catalog.server";
 import { isSupportedCommercialBarcode } from "../catalog/barcode";
 import type { ApplicationDatabaseClient } from "../database/database.server";
+import { isPhotoEntryProcessing } from "../database/photo-analysis.server";
 import { foodEntries, userPreferences } from "../database/schema.server";
 import { localDateAt, parseIsoLocalDate } from "../food-log/date";
 import {
@@ -659,6 +660,7 @@ export class FoodEntryService {
     instant: Date,
     requestedDestination?: string,
   ) {
+    this.#requireNotProcessing(userId, entryId);
     const createdAt = instant.toISOString();
     return this.#database.transaction((transaction) => {
       const source = transaction
@@ -737,7 +739,12 @@ export class FoodEntryService {
     return foodEntrySnapshot(row);
   }
 
+  #requireNotProcessing(userId: number, entryId: number) {
+    if (isPhotoEntryProcessing(this.#database, userId, entryId)) throw new FoodEntryUnavailableError();
+  }
+
   #readOwnedRow(userId: number, entryId: number) {
+    this.#requireNotProcessing(userId, entryId);
     const parsedId = z.number().int().positive().safeParse(entryId);
     const row = parsedId.success
       ? this.#database
@@ -756,6 +763,7 @@ export class FoodEntryService {
   }
 
   update(userId: number, entryId: number, input: UpdateFoodInput) {
+    this.#requireNotProcessing(userId, entryId);
     const parsed = updateFoodInputSchema().safeParse(input);
     if (!parsed.success) throw new InvalidFoodEntryInputError();
     const quantity = quantityMicrounits(parsed.data.quantity);
@@ -853,6 +861,7 @@ export class FoodEntryService {
     entryId: number,
     input: { expectedUpdatedAt: string; foodLogDate: string },
   ) {
+    this.#requireNotProcessing(userId, entryId);
     const expectedUpdatedAt = z.iso.datetime({ offset: true }).safeParse(
       input.expectedUpdatedAt,
     );

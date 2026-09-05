@@ -1,8 +1,16 @@
 allowBuilds:
+  '@google/genai': false
   better-sqlite3: true
   esbuild: true
+  protobufjs: false
 minimumReleaseAgeExclude:
   - zod@4.5.2
+  - '@earendil-works/chord@0.85.1'
+  - '@earendil-works/pi-agent-core@0.85.1'
+  - '@earendil-works/pi-ai@0.85.1'
+  - '@earendil-works/pi-coding-agent@0.85.1'
+  - '@earendil-works/pi-telemetry@0.85.1'
+  - '@earendil-works/pi-tui@0.85.1'
 # Keep every direct and transitive consumer on the patched qs release.
 overrides:
   qs: 6.16.0

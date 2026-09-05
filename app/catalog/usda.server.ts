@@ -413,6 +413,12 @@ export type UsdaAdapterOptions = {
   timeoutMs?: number;
 };
 
+export type UsdaEvidence = { record: Record<string, unknown>; food: CatalogFood };
+export type UsdaAnalysisReader = {
+  searchEvidence(query: string, page: number, signal: AbortSignal): Promise<UsdaEvidence[]>;
+  getEvidence(id: string, signal: AbortSignal): Promise<UsdaEvidence>;
+};
+
 export class UsdaFoodDataCentralAdapter implements SearchFoodCatalogProvider {
   readonly #apiKey: string | undefined;
   readonly #baseUrl: string;
@@ -509,6 +515,26 @@ export class UsdaFoodDataCentralAdapter implements SearchFoodCatalogProvider {
     );
   }
 
+  async searchEvidence(query: string, page: number, signal: AbortSignal): Promise<UsdaEvidence[]> {
+    const response = await this.#request("foods/search", {
+      method: "POST", signal, headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query: querySchema.parse(query), pageNumber: z.number().int().min(1).max(3).parse(page), pageSize: 5,
+        dataType: ["Foundation", "Survey (FNDDS)", "Branded"] }),
+    });
+    const candidates = searchResponseSchema.parse(response).foods.slice(0, 5);
+    return Promise.all(candidates.map((food) => this.getEvidence(String(food.fdcId), signal)));
+  }
+
+  async getEvidence(id: string, signal: AbortSignal): Promise<UsdaEvidence> {
+    const parsedId = providerFoodIdSchema.parse(id);
+    const response = await this.#request(`food/${parsedId}`, { method: "GET", signal });
+    if (JSON.stringify(response).length > 150000) throw new CatalogInvalidResponseError();
+    const record = z.record(z.string(), z.unknown()).parse(response);
+    const parsed = detailFoodSchema.parse(record);
+    if (String(parsed.fdcId) !== parsedId) throw new CatalogInvalidResponseError();
+    return { record, food: normalizeDetailFood(parsed, (diagnostic) => this.#onDiagnostic(diagnostic, randomUUID())) };
+  }
+
   async #request(path: string, init: RequestInit): Promise<unknown> {
     if (!this.#apiKey) throw new CatalogConfigurationError();
     const url = new URL(`${this.#baseUrl}/${path}`);
@@ -519,7 +545,7 @@ export class UsdaFoodDataCentralAdapter implements SearchFoodCatalogProvider {
     try {
       const response = await this.#fetch(url, {
         ...init,
-        signal: controller.signal,
+        signal: init.signal ? AbortSignal.any([controller.signal, init.signal]) : controller.signal,
       });
       if (response.status === 403) throw new CatalogCredentialsError();
       if (response.status === 404) throw new CatalogFoodNotFoundError();

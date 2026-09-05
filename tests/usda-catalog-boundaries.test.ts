@@ -785,3 +785,16 @@ describe("USDA adapter request boundaries", () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 });
+
+test("photo analysis receives complete USDA candidates including Survey, preparation, brand, portions and nutrients", async () => {
+  const record = foundationFood({ dataType: "Survey (FNDDS)", description: "Rice, cooked in butter", brandOwner: "Example brand", foodPortions: [{ id: 9, gramWeight: 160, amount: 1, modifier: "cup" }], foodNutrients: [{ amount: 130, nutrient: { id: 1008, unitName: "kcal", name: "Energy" } }], additionalEvidence: "Retained detail" });
+  const requests: unknown[] = [];
+  const provider = new UsdaFoodDataCentralAdapter({ apiKey: "test-key", fetchImplementation: async (_url, init) => {
+    if (init?.body) requests.push(JSON.parse(String(init.body)) as unknown);
+    return jsonResponse(init?.method === "POST" ? { foods: [record] } : record);
+  } });
+  const evidence = await provider.searchEvidence("rice butter", 2, new AbortController().signal);
+  expect(requests).toEqual([{ query: "rice butter", pageNumber: 2, pageSize: 5, dataType: ["Foundation", "Survey (FNDDS)", "Branded"] }]);
+  expect(evidence[0].record).toEqual(record);
+  expect(evidence[0].food).toMatchObject({ dataType: "Survey (FNDDS)", authoritativeBaseUnit: "g", providerFoodId: "700" });
+});

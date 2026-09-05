@@ -1,67 +1,67 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
-exports[`Add Food offers search, barcode, and manual paths before any provider runs 1`] = `"83b7366306d2424312e2804fbb2f225d11b506d7f308a9269fd139845e3cf503"`;
+exports[`Add Food offers search, barcode, and manual paths before any provider runs 1`] = `"ca43a138c2f24aebd5868533356b3ca6e2e7eae40e9f53c82e842bfa3f5dae10"`;
 
-exports[`barcode mode separates confirmation from scanning while keeping errors recoverable 1`] = `"76946bfeef20a05b3a9bc38f381a8fd9eee33fe910ba71059de060f1828b961b"`;
+exports[`barcode mode separates confirmation from scanning while keeping errors recoverable 1`] = `"b5c7c3e2753793d8bb5c78e30fef347056d37523ab963f84be34b006ed1f7370"`;
 
-exports[`barcode mode separates confirmation from scanning while keeping errors recoverable 2`] = `"7e56d8d5f45e0b6baad523d184b9d1815746a9d907966d840f78205ee650dc4b"`;
+exports[`barcode mode separates confirmation from scanning while keeping errors recoverable 2`] = `"0689af76760145848b3f5be9faa2cbdfb3f710133409baae1d7d2530eba850e5"`;
 
-exports[`barcode mode separates confirmation from scanning while keeping errors recoverable 3`] = `"7a7b835b740727984258773327b422c2f75116870ccad92df4b9e0a2143eff55"`;
+exports[`barcode mode separates confirmation from scanning while keeping errors recoverable 3`] = `"c1b2ccaa94e96726da0412378c86fd339b38309ff4b41fa96cd9c753a3fdc755"`;
 
-exports[`barcode mode separates confirmation from scanning while keeping errors recoverable 4`] = `"4d9073c150cf530e97d81333e6edb3dbfad14ec47a1c19852b313036a5180e67"`;
+exports[`barcode mode separates confirmation from scanning while keeping errors recoverable 4`] = `"d4f5cde6f315a65ca6d64e9be2d21edf4a76c5d206d262599af189e6c4faaac4"`;
 
-exports[`home catalog detail recalculates previews and exposes the log contract 1`] = `"a79a6c3b56746c7fec850c12f2c237c024634d617e95a252adc85d0efebbe5e3"`;
+exports[`home catalog detail recalculates previews and exposes the log contract 1`] = `"606825d241a24278cf08c70cb036734ee821c0794450d75e4769c350cbc39463"`;
 
-exports[`home catalog detail recalculates previews and exposes the log contract 2`] = `"61dd0ba2b0bc87f6e2d2f24d817a2aacd3c6ba42f0f06fe50041e73305ec1d83"`;
+exports[`home catalog detail recalculates previews and exposes the log contract 2`] = `"d37fcebfd665189c6a5db40ba1663867b0cc9f6be839e89fb89ff78482e3b387"`;
 
-exports[`home catalog detail recalculates previews and exposes the log contract 3`] = `"3fe3d69cd46095fa565cd89bf6971740f2e01bee43999cb121dedaad44e67b03"`;
+exports[`home catalog detail recalculates previews and exposes the log contract 3`] = `"38a484c6ac68bdecbdbcd52b19ca54790e0f0040ba8088ad4d0db17ff4c2b7ab"`;
 
-exports[`home catalog renders initial, empty, failure, and selectable result states 1`] = `"c2eb468e150d7f7dd86854f23c4493f517eba3461f124b2e2d979f2483d51ba0"`;
+exports[`home catalog renders initial, empty, failure, and selectable result states 1`] = `"1a440fdc0a14c670239b2dc63dce68f758d0dc60fcbf6e5aa3af19720c2f13db"`;
 
-exports[`home catalog renders initial, empty, failure, and selectable result states 2`] = `"dc8ccfb17a6569e4af26b008977d6faf8bce72aa8898de77cd8e8ee94d6e14da"`;
+exports[`home catalog renders initial, empty, failure, and selectable result states 2`] = `"3e9fed86afb829aa8c9229fcc947bed658d930c74855e6ca3b8ef9d5eeea850a"`;
 
-exports[`home catalog renders initial, empty, failure, and selectable result states 3`] = `"6224be13eaa7861153887794ce3273c9fdd3b2fa216ec7828cfa822b777cde7f"`;
+exports[`home catalog renders initial, empty, failure, and selectable result states 3`] = `"88c6a2f2ea0f476f483df5ce4d594e36ee18da58da3d7371a6507740535b03f6"`;
 
-exports[`home catalog renders initial, empty, failure, and selectable result states 4`] = `"ad7b52360b87f345515a648f983f869947ee0520de8990c4459f35bd7384fddc"`;
+exports[`home catalog renders initial, empty, failure, and selectable result states 4`] = `"33983a9e123a043bde13e69118f264989711566a696c2f1d3770333b996be366"`;
 
-exports[`home catalog renders initial, empty, failure, and selectable result states 5`] = `"19d5f68d69d98045042684f50ac7765cc9e02a39b3d8c7ae1f8ab77ee43e8585"`;
+exports[`home catalog renders initial, empty, failure, and selectable result states 5`] = `"671b84ad0cbb19a041c156bfa83e970238eb93224ffe4fab47e4e676472a20a5"`;
 
-exports[`home distinguishes past, future, no-goal, and incomplete summaries 1`] = `"d28b9f0a13cf96b764a63db229d346267e149bb9719192fd5390180689df290b"`;
+exports[`home distinguishes past, future, no-goal, and incomplete summaries 1`] = `"3f715f763100eb9c52c56250eee37b175ae81a8aa6a17f68a7d7880c504b2e4a"`;
 
 exports[`home distinguishes past, future, no-goal, and incomplete summaries 2`] = `"ff4dd57bc179c931a01949a7843f229d0ba2ccfaa4b6b93a92420718dd044f0b"`;
 
-exports[`home food editor exposes saved fields, recalculation, and delete confirmation 1`] = `"ae7fe00bac4293f8dc3f30f6eee3f2ba1898955e0ac057e8307e4a9d1c2595d0"`;
+exports[`home food editor exposes saved fields, recalculation, and delete confirmation 1`] = `"90e15cd36640ff385fbf943b8a1e4e655bdad394c50fd436ba3579f9eb4ba348"`;
 
-exports[`home food editor exposes saved fields, recalculation, and delete confirmation 2`] = `"bf50592d76ac1c27069c77330d1e5c304a09944d93eb2c0ee78c13f8006d5199"`;
+exports[`home food editor exposes saved fields, recalculation, and delete confirmation 2`] = `"723506631eb67649a10c9064a1a4672d5b83a45175a4760b918e127b6c06e0bd"`;
 
-exports[`home food editor exposes saved fields, recalculation, and delete confirmation 3`] = `"0d822835dd29ae0826b7df6111979fb7f96cd352fc1d3f8fc40fd5d50607a42f"`;
+exports[`home food editor exposes saved fields, recalculation, and delete confirmation 3`] = `"73230f1dbbc6d9dc4714a7bf9d743c817833ffc5a0442c9fb27cd4b0328af080"`;
 
 exports[`home renders calendar navigation, selected dates, and future days 1`] = `"f7df6bda4e3444d119b4420f86cd7be0801eaab4889446d109bc727a7f2721d6"`;
 
 exports[`home renders calendar navigation, selected dates, and future days 2`] = `"cb4660b0bfbc9b99793db63add91fd606054a09310dfcb32f9a1bd21fae3a6eb"`;
 
-exports[`home renders food and water timeline entries with factual units 1`] = `"9fd96290e325b1f810c8687534b59668ff653b9f0645fa81a0109ce18badce32"`;
+exports[`home renders food and water timeline entries with factual units 1`] = `"0237da903162eeaa1a211c769892ef2301d39e016bbb7e0208bf345f65efc16f"`;
 
-exports[`home renders submission and navigation pending states 1`] = `"3a456340633d188ebc18d9a900319d7e941da5b126a5456a1201c87d18ea7f8d"`;
+exports[`home renders submission and navigation pending states 1`] = `"c56380d81030b83b4ea4dcf64facf1d328005039370a15c7eab3e2d0b56e6b24"`;
 
-exports[`home renders submission and navigation pending states 2`] = `"dab69f5312837bbbfc1ef33834346e09678aba6418819a7eaa58188c04f5df8b"`;
+exports[`home renders submission and navigation pending states 2`] = `"acbf29e19c64b7462abec8bcd7551292f2c8c6f66623176cb115783c2c51f9d6"`;
 
-exports[`home renders submission and navigation pending states 3`] = `"e4561f42d9734d1579289527ac80e8043a98793d66be1a552070c4fef34a0902"`;
+exports[`home renders submission and navigation pending states 3`] = `"6d8f20d5e8ee4e355c8f6f186ac1ddd52c477c1c95b9213049b8da13f54c9d8d"`;
 
-exports[`home renders submission and navigation pending states 4`] = `"dc6f3dbf3a9031cf4a64355e8874bc9eaf13caa690bf8ac303ca1165449c88e6"`;
+exports[`home renders submission and navigation pending states 4`] = `"9b239bb46ff8cce0ec0a0567f873b86d4ea99e36cf374a3acbdc7cba74b0ed74"`;
 
-exports[`home renders submission and navigation pending states 5`] = `"bad517b53205679adb880a5de620c3e2802f7604014e787652bfdfff01b4d589"`;
+exports[`home renders submission and navigation pending states 5`] = `"ab0bcbaee671242b99ab13aee3aa1f9df7235ef0bcc4785d04e1bf4e0fc65e62"`;
 
-exports[`home renders today's empty log and all goal progress contracts 1`] = `"0c07567701067a575405b55c1d0b59166e661694d6f2a36ddf413098d7b23212"`;
+exports[`home renders today's empty log and all goal progress contracts 1`] = `"111feb6ea81897a8ff8c4f400478975faf4d8cc749b659cb0d5b33232abe792a"`;
 
-exports[`home renders today's empty log and all goal progress contracts 2`] = `"fcdf37339079274c361e6cd3f5975fe340afcbff9e76c67cde452ea6e2ec4663"`;
+exports[`home renders today's empty log and all goal progress contracts 2`] = `"fe021b727ebdb073e1410a913384db88a7dc3608b5e9b4c4be4e97565995b068"`;
 
-exports[`home water dialogs cover create, presets, exact values, edit, and deletion 1`] = `"25de29ad37bdaaf9fe353b59d52d01843ae139fc8599647ab95f5b330c340856"`;
+exports[`home water dialogs cover create, presets, exact values, edit, and deletion 1`] = `"b99b8392e3b29fc52743e01b4407b211e17797d50380df4c6be102626b57911f"`;
 
-exports[`home water dialogs cover create, presets, exact values, edit, and deletion 2`] = `"e94ef25ae611b1001a6ef71a09fd449351b20227c2f26f5c14a368b0be367ae2"`;
+exports[`home water dialogs cover create, presets, exact values, edit, and deletion 2`] = `"a578bdedb5b8c75fdf674752868facb4feeb63eeb0ec16cf8bdbb30edc1f70d8"`;
 
-exports[`home water dialogs cover create, presets, exact values, edit, and deletion 3`] = `"611d2489c9cfe76a3843de4aa4c5d9d8a6a66721cd9ed32e90ca3b519e98c877"`;
+exports[`home water dialogs cover create, presets, exact values, edit, and deletion 3`] = `"1b46a52651ca93acdb321a4588b1af3f453aea05f2936a5e2d5200d42299f48c"`;
 
-exports[`home water dialogs cover create, presets, exact values, edit, and deletion 4`] = `"9cf978577ed4a2c851b6f14b9b2d364c1627ee059d8152b8c334f79b4c140cad"`;
+exports[`home water dialogs cover create, presets, exact values, edit, and deletion 4`] = `"fb373bb0bf09d913f341d3dcc63e767be80ad739503968406b569aaee1e22776"`;
 
-exports[`home water dialogs cover create, presets, exact values, edit, and deletion 5`] = `"50814a4ab866031bd36ca8d04cfd84e9c1b38910c31e92d9ac7c7cd3c446d3fa"`;
+exports[`home water dialogs cover create, presets, exact values, edit, and deletion 5`] = `"a0328d8b3c1df4c2f03c6ef4d41ea3fa2b9b14ea1b9c584350a05df5dc488e28"`;

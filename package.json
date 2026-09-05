@@ -47,9 +47,11 @@
     "typecheck:usda": "tsc -p tsconfig.usda.json",
     "typecheck": "react-router typegen && tsc -b",
     "verify": "pnpm typecheck && pnpm lint:check && pnpm test && pnpm fallow:audit && pnpm audit:prod",
-    "verify:deep": "pnpm verify && pnpm test:coverage && pnpm fallow:full && pnpm architecture:test && pnpm health:test && pnpm test:browser && pnpm test:properties:deep && pnpm mutation:policy && pnpm mutation:test && pnpm audit:policy && pnpm audit:full && pnpm codeql:policy"
+    "verify:deep": "pnpm verify && pnpm test:coverage && pnpm fallow:full && pnpm architecture:test && pnpm health:test && pnpm test:browser && pnpm test:properties:deep && pnpm mutation:policy && pnpm mutation:test && pnpm audit:policy && pnpm audit:full && pnpm codeql:policy",
+    "test:photo-live": "PHOTO_ANALYSIS_LIVE=1 vitest run tests/photo-analysis.live.test.ts"
   },
   "dependencies": {
+    "@earendil-works/pi-coding-agent": "0.85.1",
     "@react-router/express": "8.3.1",
     "@react-router/node": "8.3.1",
     "@zxing/browser": "0.2.1",

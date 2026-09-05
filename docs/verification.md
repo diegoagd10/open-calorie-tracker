@@ -128,6 +128,7 @@ Docker, live network access, and credentials remain outside both gates:
 
 ```sh
 pnpm test:deployment
+pnpm test:photo-live # requires private PHOTO_PILOT_DATASET and PHOTO_AI_AUTH_PATH
 FDC_API_KEY=... pnpm test:usda-live
 ```
 
