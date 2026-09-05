@@ -2331,6 +2331,15 @@ function FoodEntryEditorDialog({
     ? navigation.formData!.get("intent")
     : undefined;
 
+  useEffect(() => {
+    if (!confirmingDelete) return;
+    const confirmDeleteButton = dialogRef.current?.querySelector<HTMLButtonElement>(
+      'button[name="intent"][value="delete-food"]',
+    );
+    confirmDeleteButton?.focus({ preventScroll: true });
+    confirmDeleteButton?.scrollIntoView?.({ block: "nearest" });
+  }, [confirmingDelete, dialogRef]);
+
   function changeScale(selectedMeasurementId: string, quantity: string) {
     setFields((current) => ({
       ...current,
