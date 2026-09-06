@@ -224,10 +224,13 @@ test("new pending and unsuccessful cards display no nutrition and expose recover
   expect(actions.every((button) => button.props.disabled === true)).toBe(true);
 });
 
-test("capture uploads the selected date and CSRF once, previews progress, and retries the identical request", async () => {
+test.each([
+  { url: "blob:photo-preview", src: "blob:photo-preview" },
+  { url: 'blob:photo-preview<"&>', src: "blob:photo-preview%3C%22&%3E" },
+])("capture uploads once, renders the encoded preview $src, and retries the identical request", async ({ url, src }) => {
   const createUrl = vi
     .spyOn(URL, "createObjectURL")
-    .mockReturnValue("blob:photo-preview");
+    .mockReturnValue(url);
   const revokeUrl = vi
     .spyOn(URL, "revokeObjectURL")
     .mockImplementation(() => {});
@@ -275,7 +278,7 @@ test("capture uploads the selected date and CSRF once, previews progress, and re
       .disabled,
   ).toBe(true);
   expect(renderer.root.findByType("img").props).toMatchObject({
-    src: "blob:photo-preview",
+    src,
     alt: "Plate being uploaded",
   });
   expect(renderer.root.findByType("progress").props["aria-label"]).toBe(
@@ -298,7 +301,7 @@ test("capture uploads the selected date and CSRF once, previews progress, and re
   await act(() => renderer.root.findByType("button").props.onClick());
   expect(state.fetcher.submit.mock.calls[1]).toEqual([body, options]);
   await act(() => renderer.unmount());
-  expect(revokeUrl).toHaveBeenCalledWith("blob:photo-preview");
+  expect(revokeUrl).toHaveBeenCalledWith(url);
 });
 
 test.each([

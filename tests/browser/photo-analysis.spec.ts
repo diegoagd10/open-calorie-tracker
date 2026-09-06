@@ -26,8 +26,25 @@ test("plate capture returns to Daily Log, survives reload, and supports correcti
   await page.getByRole("button", { name: "Finish setup" }).click();
   await expect(page).toHaveURL("/");
   await page.goto("/?date=2026-08-28");
-  await page.getByLabel("Take plate photo").setInputFiles(photo);
   const meals = page.getByRole("region", { name: "Photo meals", exact: true });
+  let resumeUpload!: () => void;
+  const uploadReleased = new Promise<void>((resolve) => {
+    resumeUpload = resolve;
+  });
+  await page.route("**/photo-analysis.data", async (route) => {
+    await uploadReleased;
+    await route.continue();
+  }, { times: 1 });
+  try {
+    await page.getByLabel("Take plate photo").setInputFiles(photo);
+    const preview = meals.getByRole("img", { name: "Plate being uploaded" });
+    await expect(preview).toBeVisible();
+    await expect(preview).toHaveAttribute("src", /^blob:https:\/\/localhost:4173\//);
+    await expect.poll(() => preview.evaluate((image: HTMLImageElement) => image.naturalWidth)).toBe(16);
+    await expect(meals.getByRole("progressbar", { name: "Uploading photo", exact: true })).toBeVisible();
+  } finally {
+    resumeUpload();
+  }
   await expect(
     meals.getByRole("progressbar", { name: "Analyzing photo" }),
   ).toBeVisible();

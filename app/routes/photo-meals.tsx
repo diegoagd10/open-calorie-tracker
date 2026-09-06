@@ -83,7 +83,7 @@ export function PhotoMeals({
       {upload.state !== "idle" ? (
         <article className={styles.card}>
           {preview && preview.startsWith("blob:") ? (
-            <img src={preview} alt="Plate being uploaded" />
+            <img src={encodeURI(preview)} alt="Plate being uploaded" />
           ) : null}
           <div>
             <strong role="status">Uploading photo…</strong>
