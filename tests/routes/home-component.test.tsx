@@ -7,6 +7,7 @@ import {
   createMemoryRouter,
   createRoutesStub,
   RouterProvider,
+  useLoaderData,
 } from "react-router";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { expect, test } from "vitest";
@@ -2158,6 +2159,76 @@ test("photo meals share the food and water timeline in event order and expose co
   expect(allText(pending)).toContain("Cancel analysis");
   expect(nodeText(pending.root.findByProps({ className: styles.timeline }))).toContain("Cancel analysis");
   await act(async () => pending.unmount());
+  for (const status of ["active", "failed", "canceled", "succeeded"]) {
+    const active = status === "active";
+    const terminalError = status === "failed" || status === "canceled";
+    const state = await renderHome({
+      photoMeals: [{ ...photoMeal, status, error: terminalError ? "Correction stopped" : null }],
+      copyIdempotencyKeys: { [food.id]: "copy-photo" },
+      foodLog: { ...baseFoodLog, entries: [food, copiedFood], events: [copiedFood, food, water] },
+    });
+    const log = state.root.findByProps({ className: styles.timeline });
+    const rows = log.findAllByType("article");
+    expect(rows).toHaveLength(3);
+    const row = rows.find(node => nodeText(node).includes("Photo dinner"))!;
+    expect(row.props["aria-busy"]).toBe(active || undefined);
+    expect(row.findAllByType("a")).toHaveLength(active ? 0 : 1);
+    expect(row.findAllByType("progress")).toHaveLength(active ? 1 : 0);
+    expect(row.findAllByType("strong").map(nodeText)).toEqual(["Photo dinner"]);
+    expect(nodeText(row.findByProps({ className: styles.foodEntryEnergy }))).toBe("59 kcal");
+    const buttons = row.findAllByType("button").map(nodeText);
+    expect(buttons).toEqual(active ? ["Cancel analysis"] : terminalError ? ["•••", "Retry analysis", "Delete photo meal"] : ["•••"]);
+    if (active) {
+      expect(nodeText(row.findByProps({ className: styles.foodEntryContent }))).toContain("Updating this meal with AI");
+      expect(nodeText(row)).toContain("Previous nutrition retained");
+    } else {
+      expect(row.findByType("a").props.className).toBe(`${styles.foodEntryCard} ${styles.foodEntryCardWithMenu}`);
+      expect(nodeText(row).includes("Correction stopped")).toBe(terminalError);
+    }
+    expect(log.findAllByType("a").some(node => nodeText(node).includes("Copied photo"))).toBe(true);
+    expect(log.findAllByType("a").some(node => node.props.href === "/?date=2026-08-31&water=41")).toBe(true);
+    await act(async () => state.unmount());
+  }
+  const data = { ...baseLoaderData, photoMeals: [photoMeal], copyIdempotencyKeys: { [food.id]: "copy-photo" }, foodLog: { ...baseFoodLog, entries: [food, copiedFood], events: [copiedFood, food] } };
+  let finishRequest!: (value: Response) => void;
+  let finishNavigation!: (value: typeof data) => void;
+  const response = new Promise<Response>(resolve => { finishRequest = resolve; });
+  const navigation = new Promise<typeof data>(resolve => { finishNavigation = resolve; });
+  const router = createMemoryRouter([
+    { id: "home", path: "/", Component: () => Home({ loaderData: useLoaderData(), actionData: undefined } as never), loader: () => navigation },
+    { path: "/photo-analysis", action: () => response },
+  ], { initialEntries: ["/?date=2026-08-31&entry=41"], hydrationData: { loaderData: { home: { ...data, foodEntryEditor: editableEntry } } } });
+  let requestView!: ReactTestRenderer;
+  await act(() => { requestView = create(createElement(RouterProvider, { router }), { createNodeMock: () => new TestElement() }); });
+  await act(() => requestView.root.findAllByType("button").find(node => nodeText(node) === "Correct with AI")!.props.onClick());
+  const form = requestView.root.findAll(node => node.props.action === "/photo-analysis" && typeof node.props.fetcherKey === "string")[0];
+  const formData = new FormData();
+  formData.set("intent", "correct");
+  formData.set("entryId", "41");
+  formData.set("correction", "Diet soda");
+  let submission!: Promise<void>;
+  await act(() => {
+    form.props.onSubmit();
+    submission = router.fetch(form.props.fetcherKey, "home", "/photo-analysis", { formData, formMethod: "post" });
+  });
+  expect(requestView.root.findByType("fieldset").props.disabled).toBe(true);
+  expect(requestView.root.findByType("textarea").props.disabled).toBe(true);
+  await act(async () => { finishNavigation(data); await Promise.resolve(); });
+  expect(requestView.root.findAllByProps({ role: "dialog" })).toHaveLength(0);
+  const busyLog = requestView.root.findByProps({ className: styles.timeline });
+  expect(busyLog.findAllByType("article")).toHaveLength(2);
+  const busyRow = busyLog.findByProps({ "aria-busy": true });
+  expect(nodeText(busyRow)).toContain("Starting correction. Previous nutrition retained.");
+  expect(busyRow.findByType("progress").props["aria-label"]).toBe("Starting correction");
+  expect(busyRow.findAllByType("a")).toHaveLength(0);
+  expect(busyRow.findAllByType("button")).toHaveLength(0);
+  expect(busyLog.findByType("a").props.href).toBe("/?date=2026-08-31&entry=77");
+  await act(async () => { finishRequest(Response.json({ error: "Request rejected" }, { status: 400 })); await submission; });
+  expect(nodeText(busyLog.findByProps({ role: "alert" }))).toContain("Correction could not start: Request rejected");
+  expect(busyLog.findAllByType("a")).toHaveLength(2);
+  expect(busyLog.findAllByType("progress")).toHaveLength(0);
+  await act(() => requestView.unmount());
+  router.dispose();
 });
 
 test("touch date navigation distinguishes taps, vertical scrolling, cancellation and horizontal swipes", async () => {

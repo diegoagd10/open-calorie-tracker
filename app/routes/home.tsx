@@ -4088,11 +4088,8 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
                       </PhotoTimelineEntry>
                     ))}
                     {foodLog.events.map((entry) => {
-                      const photoMeal = entry.kind === "food"
-                        ? photoMeals.find((meal) => meal.entryId === entry.id)
-                        : undefined;
                       return entry.kind === "food" ? (
-                        <FoodTimelineEntry key={`food-${entry.id}`} entry={entry} photoMeal={photoMeal} csrfToken={csrfToken} copyKey={copyIdempotencyKeys[entry.id]} />
+                        <FoodTimelineEntry key={`food-${entry.id}`} entry={entry} photoMeal={photoMeals.find((meal) => meal.entryId === entry.id)} csrfToken={csrfToken} copyKey={copyIdempotencyKeys[entry.id]} />
                       ) : (
                         // Stryker disable next-line StringLiteral: a single-prefix mutation preserves key uniqueness against the food prefix.
                         <article key={`water-${entry.id}`}>
