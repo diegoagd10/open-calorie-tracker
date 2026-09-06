@@ -16,7 +16,7 @@ const photo = {
 
 test("plate capture returns to Daily Log, survives reload, and supports correction and cancellation @camera-matrix", async ({
   page,
-}) => {
+}, testInfo) => {
   await bootstrapOrSignInBrowserTestUser(
     page,
     "photo.browser",
@@ -29,7 +29,7 @@ test("plate capture returns to Daily Log, survives reload, and supports correcti
   await expect(page.getByLabel("Take photo · AI calories")).toHaveCount(0);
   await page.getByRole("button", { name: "Add Food", exact: true }).click();
   await expect(page.getByRole("dialog").getByLabel("Take photo · AI calories")).toBeVisible();
-  const meals = page.getByRole("region", { name: "Photo meals", exact: true });
+  const meals = page.getByRole("region", { name: "Daily log entries", exact: true });
   let resumeUpload!: () => void;
   const uploadReleased = new Promise<void>((resolve) => {
     resumeUpload = resolve;
@@ -59,6 +59,20 @@ test("plate capture returns to Daily Log, survives reload, and supports correcti
     meals.getByRole("link", { name: "Photo rice plate" }),
   ).toBeVisible();
   await expect(meals).toContainText("250 kcal");
+  await page.getByRole("button", { name: "Add Food", exact: true }).click();
+  await page.getByRole("link", { name: /Manual/ }).click();
+  await page.getByLabel("Food name").fill("Timeline egg");
+  await page.getByLabel("Calories (kcal)").fill("50");
+  await page.getByRole("button", { name: "Add to Food Log", exact: true }).click();
+  await expect(meals.getByRole("link", { name: /Timeline egg/ })).toBeVisible();
+  await expect(meals.getByRole("link")).toHaveCount(2);
+  const order = await meals.locator("a, button").allTextContents();
+  expect(order[0]).toContain("Add Food");
+  expect(order.at(-1)).toContain("Add Water");
+  const photoCard = meals.getByRole("article", { name: "Photo rice plate", exact: true });
+  await expect(photoCard).toBeVisible();
+  await page.getByRole("button", { name: "Add Water", exact: true }).scrollIntoViewIfNeeded();
+  await page.screenshot({ path: testInfo.outputPath("unified-timeline-mobile.png") });
   await meals.getByRole("link", { name: "Photo rice plate" }).click();
   await page.getByRole("button", { name: "Correct with AI" }).click();
   await page
@@ -67,7 +81,7 @@ test("plate capture returns to Daily Log, survives reload, and supports correcti
   await page.getByRole("button", { name: "Apply correction" }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(meals.getByRole("progressbar")).toBeVisible();
-  await expect(meals.getByRole("link")).toHaveCount(0);
+  await expect(meals.getByRole("link", { name: "Photo rice plate" })).toHaveCount(0);
   await expect(meals).toContainText("250 kcal");
   await expect(
     page.getByRole("button", { name: "Add Food", exact: true }),
@@ -102,7 +116,7 @@ test("non-food photos show a persistent failure and rejected uploads explain the
   await page.getByLabel("Take photo · AI calories").setInputFiles({
     ...photo, buffer: Buffer.concat([photo.buffer, Buffer.from("no-food")]),
   });
-  const meals = page.getByRole("region", { name: "Photo meals", exact: true });
+  const meals = page.getByRole("region", { name: "Daily log entries", exact: true });
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(meals.getByRole("progressbar", { name: "Analyzing photo" })).toBeVisible();
   await expect(meals).toContainText("No food or drink detected");

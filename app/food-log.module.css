@@ -2301,3 +2301,28 @@
     display: none;
   }
 }
+
+.photoTimelineEntry::after {
+  content: none;
+}
+
+.photoTimelineContent {
+  grid-column: 3 / -1;
+  min-width: 0;
+}
+
+.photoTimelineContent > article {
+  margin: 0;
+}
+
+.photoTimelineContent a {
+  color: var(--ink);
+  text-decoration: none;
+}
+
+@media (max-width: 420px) {
+  .photoTimelineContent {
+    grid-column: 2 / -1;
+    grid-row: 2;
+  }
+}

@@ -3434,6 +3434,24 @@ function CatalogDialog({
   );
 }
 
+function PhotoTimelineEntry({ children, date, localEventTime }: {
+  children: ReactNode;
+  date: string;
+  localEventTime?: string;
+}) {
+  return (
+    <article className={`${styles.foodEntryCard} ${styles.photoTimelineEntry}`}>
+      <time dateTime={localEventTime ? `${date}T${localEventTime}` : undefined}>
+        {localEventTime ? formatEventTime(localEventTime) : null}
+      </time>
+      <span className={styles.foodEntryMarker} aria-hidden="true">
+        <UiIcon name="utensils" />
+      </span>
+      <div className={styles.photoTimelineContent}>{children}</div>
+    </article>
+  );
+}
+
 function PendingFoodEntry({ name }: { name: string }) {
   return (
     <article>
@@ -3947,12 +3965,6 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
                     {copyError}
                   </p>
                 ) : null}
-                {!foodLog.isFuture ? (
-                  <section aria-label="Photo meals">
-                    {photoUpload.feedback}
-                    <PhotoMeals meals={photoMeals} csrfToken={csrfToken} />
-                  </section>
-                ) : null}
                 {foodLog.isFuture ? (
                   <div className={styles.futureDay}>
                     <span className={styles.emptyIcon} aria-hidden="true">
@@ -3964,8 +3976,8 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
                       recorded today or in the past.
                     </p>
                   </div>
-                ) : foodLog.events.length || foodLogPending || photoUpload.pending || photoMeals.length ? (
-                  <div className={styles.timeline}>
+                ) : foodLog.events.length || foodLogPending || photoUpload.feedback || photoMeals.length ? (
+                  <section className={styles.timeline} aria-label="Daily log entries">
                     <EmptyActionForm
                       className={styles.timelineAddFood}
                       csrfToken={csrfToken}
@@ -3977,8 +3989,25 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
                     {foodLogPending ? (
                       <PendingFoodEntry name={pendingFoodName} />
                     ) : null}
-                    {foodLog.events.filter((entry) => entry.kind !== "food" || !photoMeals.some((meal) => meal.entryId === entry.id)).map((entry) =>
-                      entry.kind === "food" ? (
+                    {photoUpload.feedback ? (
+                      <PhotoTimelineEntry date={foodLog.selectedDate}>
+                        {photoUpload.feedback}
+                      </PhotoTimelineEntry>
+                    ) : null}
+                    {photoMeals.filter((meal) => meal.entryId === null).map((meal) => (
+                      <PhotoTimelineEntry key={meal.id} date={foodLog.selectedDate}>
+                        <PhotoMeals meals={[meal]} csrfToken={csrfToken} />
+                      </PhotoTimelineEntry>
+                    ))}
+                    {foodLog.events.map((entry) => {
+                      const photoMeal = entry.kind === "food"
+                        ? photoMeals.find((meal) => meal.entryId === entry.id)
+                        : undefined;
+                      return photoMeal ? (
+                        <PhotoTimelineEntry key={photoMeal.id} date={entry.foodLogDate} localEventTime={entry.localEventTime}>
+                          <PhotoMeals meals={[photoMeal]} csrfToken={csrfToken} />
+                        </PhotoTimelineEntry>
+                      ) : entry.kind === "food" ? (
                         // Stryker disable next-line StringLiteral: a single-prefix mutation preserves key uniqueness against the water prefix.
                         <article key={`food-${entry.id}`}>
                           <Link
@@ -4066,8 +4095,8 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
                             </span>
                           </Link>
                         </article>
-                      ),
-                    )}
+                      );
+                    })}
                     <EmptyActionForm
                       className={styles.timelineAddWater}
                       csrfToken={csrfToken}
@@ -4081,7 +4110,7 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
                         {actionData.message}
                       </p>
                     ) : null}
-                  </div>
+                  </section>
                 ) : (
                   <div className={styles.emptyDay}>
                     <span className={styles.emptyIcon} aria-hidden="true">

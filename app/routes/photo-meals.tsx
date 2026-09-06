@@ -66,7 +66,7 @@ export function usePhotoUpload(date: string, csrfToken: string) {
         />
       </label>
     ),
-    feedback: (
+    feedback: pending || error || upload.data?.error ? (
       <>
         {pending ? (
           <article className={styles.card}>
@@ -96,7 +96,7 @@ export function usePhotoUpload(date: string, csrfToken: string) {
           </article>
         ) : null}
       </>
-    ),
+    ) : null,
   };
 }
 

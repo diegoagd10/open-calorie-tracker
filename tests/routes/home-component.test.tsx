@@ -2121,7 +2121,7 @@ test("manual entry submission disables editing only for the manual action", asyn
   }
 });
 
-test("photo meals appear once beside independent food and water events and expose correction details", async () => {
+test("photo meals share the food and water timeline in event order and expose correction details", async () => {
   const photoMeal = {
     id: "photo-home", name: "Photo dinner", entryId: editableEntry.id, foodLogDate: "2026-08-31", status: "succeeded", stage: "Preparing result", attemptId: "photo-attempt", startedAt: "2026-08-31T12:00:00.000Z", finishedAt: "2026-08-31T12:00:05.000Z", error: null, energyMilliKcal: 59000,
     result: { name: "Original dinner", consumedFraction: 1, components: [], assumptions: [] },
@@ -2129,8 +2129,15 @@ test("photo meals appear once beside independent food and water events and expos
   const food = { ...editableEntry, kind: "food", provider: "ai-photo", selectedMeasurementLabel: "Analyzed plate" };
   const copiedFood = { ...food, id: 77, name: "Copied photo" };
   const water = { id: editableEntry.id, kind: "water", amountMicroliters: 237000, foodLogDate: "2026-08-31", localEventTime: "12:05:00" };
-  const renderer = await renderHome({ photoMeals: [photoMeal], foodLog: { ...baseFoodLog, entries: [food, copiedFood], events: [food, copiedFood, water] }, foodEntryEditor: editableEntry });
+  const renderer = await renderHome({ photoMeals: [photoMeal], foodLog: { ...baseFoodLog, entries: [food, copiedFood], events: [copiedFood, food, water] }, foodEntryEditor: editableEntry });
   expect(renderer.root.findAllByType("a").filter(node => node.props.href === "/?date=2026-08-31&entry=41")).toHaveLength(1);
+  const timeline = renderer.root.findByProps({ className: styles.timeline });
+  const actionsAndEntries = timeline.findAll(node => node.type === "button" || node.type === "a");
+  expect(actionsAndEntries.map(node => nodeText(node))).toEqual([
+    expect.stringContaining("Add Food"), expect.stringContaining("Copied photo"),
+    "Photo dinner", expect.stringContaining("Water"), expect.stringContaining("Add Water"),
+  ]);
+  expect(timeline.findByProps({ "aria-label": "Photo dinner" })).toBeDefined();
   expect(allText(renderer)).toContain("Copied photo");
   expect(allText(renderer)).toContain("AI photo estimate");
   expect(allText(renderer)).toContain("Correct with AI");
@@ -2140,6 +2147,7 @@ test("photo meals appear once beside independent food and water events and expos
   const pending = await renderHome({ photoMeals: [{ ...photoMeal, status: "active", entryId: null, name: null, result: null, energyMilliKcal: null }] });
   expect(allText(pending)).not.toContain("No entries for this day");
   expect(allText(pending)).toContain("Cancel analysis");
+  expect(nodeText(pending.root.findByProps({ className: styles.timeline }))).toContain("Cancel analysis");
   await act(async () => pending.unmount());
 });
 
