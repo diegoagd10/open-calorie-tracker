@@ -2778,6 +2778,7 @@ function WaterEventDialog({
 
 function CatalogChoiceStage({ date, photoCapture }: { date: string; photoCapture: ReactNode }) {
   return (
+    <>
     <div className={styles.catalogResults} aria-label="Add Food methods">
       {photoCapture}
       <Link to={catalogHref(date, "search")}>
@@ -2802,6 +2803,11 @@ function CatalogChoiceStage({ date, photoCapture }: { date: string; photoCapture
         <small>Choose ›</small>
       </Link>
     </div>
+    <details className={styles.providerAttribution}>
+      <summary>Photo privacy</summary>
+      <p>Deleting a photo meal removes its photo and history from this app. It does not delete data retained by your AI provider.</p>
+    </details>
+    </>
   );
 }
 

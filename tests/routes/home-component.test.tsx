@@ -935,6 +935,8 @@ test("Add Food offers search, barcode, and manual paths before any provider runs
   const methods = renderer.root.findByProps({ "aria-label": "Add Food methods" });
   expect(methods.findByProps({ "aria-label": "Take photo · AI calories" })).toBeDefined();
   expect(allText(renderer)).toContain("AI estimates calories and saves to your log");
+  expect(allText(renderer)).toContain("Photo privacy");
+  expect(allText(renderer)).toContain("It does not delete data retained by your AI provider.");
   expect(allText(renderer)).not.toContain("Nothing changes in your Food Log until a later confirmation step.");
   expect(renderer.root.findByProps({
     href: "/?date=2026-08-31&food=search",
