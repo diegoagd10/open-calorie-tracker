@@ -2164,9 +2164,11 @@ test("photo meals share the food and water timeline in event order and expose co
     const terminalError = status === "failed" || status === "canceled";
     const state = await renderHome({
       photoMeals: [{ ...photoMeal, status, error: terminalError ? "Correction stopped" : null }],
+      foodEntryEditor: editableEntry,
       copyIdempotencyKeys: { [food.id]: "copy-photo" },
       foodLog: { ...baseFoodLog, entries: [food, copiedFood], events: [copiedFood, food, water] },
     });
+    expect(state.root.findByType("fieldset").props.disabled).toBe(active);
     const log = state.root.findByProps({ className: styles.timeline });
     const rows = log.findAllByType("article");
     expect(rows).toHaveLength(3);
@@ -2179,6 +2181,7 @@ test("photo meals share the food and water timeline in event order and expose co
     const buttons = row.findAllByType("button").map(nodeText);
     expect(buttons).toEqual(active ? ["Cancel analysis"] : terminalError ? ["•••", "Retry analysis", "Delete photo meal"] : ["•••"]);
     if (active) {
+      expect(row.findByProps({ className: styles.foodEntryContent }).type).toBe("div");
       expect(nodeText(row.findByProps({ className: styles.foodEntryContent }))).toContain("Updating this meal with AI");
       expect(nodeText(row)).toContain("Previous nutrition retained");
     } else {

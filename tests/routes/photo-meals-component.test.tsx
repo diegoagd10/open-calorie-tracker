@@ -413,6 +413,7 @@ test("correction details retain provenance and the repeatable form submits the o
   ).toMatch(/^[a-f0-9-]{36}$/);
   expect(renderer.root.findByType("textarea").props).toMatchObject({
     name: "correction",
+    disabled: false,
     required: true,
     maxLength: 2000,
     autoFocus: true,
