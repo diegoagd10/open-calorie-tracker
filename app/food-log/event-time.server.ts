@@ -47,6 +47,10 @@ export function localEventTimeForNewFoodLogEvent(
       SELECT local_event_time
       FROM water_events
       WHERE user_id = ${userId} AND food_log_date = ${foodLogDate}
+      UNION ALL
+      SELECT local_event_time
+      FROM photo_meals
+      WHERE user_id = ${userId} AND food_log_date = ${foodLogDate}
     )
   `);
   return nextRetroactiveTime(latest?.localEventTime ?? null);

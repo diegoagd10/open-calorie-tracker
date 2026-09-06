@@ -46,9 +46,9 @@ export function validateServerConfiguration(environment) {
   }
   if (environment.NODE_ENV === "production") {
     const trustProxy = environment.TRUST_PROXY;
-    if (!trustProxy || !privateDockerNetworkCidr(trustProxy)) {
+    if (!trustProxy || (trustProxy !== "127.0.0.1/32" && !privateDockerNetworkCidr(trustProxy))) {
       throw new Error(
-        "TRUST_PROXY must be one private IPv4 Docker network CIDR with a prefix from 16 through 32",
+        "TRUST_PROXY must be one private IPv4 Docker network CIDR with a prefix from 16 through 32, or 127.0.0.1/32 for a local proxy",
       );
     }
   }

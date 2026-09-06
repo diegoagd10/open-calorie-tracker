@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
+  blob,
   check,
   index,
   integer,
@@ -215,11 +216,11 @@ export const foodEntries = sqliteTable(
     ),
     check(
       "food_entries_provider_check",
-      sql`${table.provider} IN ('usda-fdc', 'open-food-facts', 'manual')`,
+      sql`${table.provider} IN ('usda-fdc', 'open-food-facts', 'manual', 'ai-photo')`,
     ),
     check(
       "food_entries_data_type_check",
-      sql`${table.sourceDataType} IN ('Branded', 'Survey (FNDDS)', 'Foundation', 'Open Food Facts', 'User entered')`,
+      sql`${table.sourceDataType} IN ('Branded', 'Survey (FNDDS)', 'Foundation', 'Open Food Facts', 'User entered', 'AI analysis')`,
     ),
     check(
       "food_entries_units_check",
@@ -238,6 +239,10 @@ export const foodEntries = sqliteTable(
           AND ${table.selectedMeasurementUnit} = 'serving')
         OR (${table.provider} = 'manual'
           AND ${table.sourceDataType} = 'User entered'
+          AND ${table.authoritativeBaseUnit} = 'serving'
+          AND ${table.selectedMeasurementUnit} = 'serving')
+        OR (${table.provider} = 'ai-photo'
+          AND ${table.sourceDataType} = 'AI analysis'
           AND ${table.authoritativeBaseUnit} = 'serving'
           AND ${table.selectedMeasurementUnit} = 'serving')`,
     ),
@@ -277,3 +282,38 @@ export const waterEvents = sqliteTable(
     ),
   ],
 );
+
+export const photoMeals = sqliteTable("photo_meals", {
+  id: text().primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  entryId: integer("entry_id").unique().references(() => foodEntries.id, { onDelete: "cascade" }),
+  foodLogDate: text("food_log_date").notNull(),
+  localEventTime: text("local_event_time").notNull(),
+  photo: blob({ mode: "buffer" }).notNull(),
+  mimeType: text("mime_type").notNull(),
+  createdAt: text("created_at").notNull(),
+}, (table) => [
+  index("photo_meals_user_date").on(table.userId, table.foodLogDate),
+  check("photo_meals_mime", sql`${table.mimeType} IN ('image/jpeg', 'image/png', 'image/webp')`),
+  check("photo_meals_size", sql`length(${table.photo}) BETWEEN 12 AND 8388608`),
+]);
+
+export const photoAttempts = sqliteTable("photo_attempts", {
+  id: text().primaryKey(),
+  mealId: text("meal_id").notNull().references(() => photoMeals.id, { onDelete: "cascade" }),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  idempotencyKey: text("idempotency_key").notNull(),
+  status: text({ enum: ["active", "succeeded", "failed", "canceled", "interrupted"] }).notNull(),
+  stage: text({ enum: ["Analyzing photo", "Consulting USDA", "Preparing result"] }).notNull(),
+  correction: text(),
+  evidence: text().notNull().default("[]"),
+  result: text(),
+  error: text(),
+  startedAt: text("started_at").notNull(),
+  finishedAt: text("finished_at"),
+}, (table) => [
+  uniqueIndex("photo_attempts_idempotency").on(table.userId, table.idempotencyKey),
+  uniqueIndex("photo_attempts_one_active").on(table.mealId).where(sql`${table.status} = 'active'`),
+  check("photo_attempts_status", sql`${table.status} IN ('active', 'succeeded', 'failed', 'canceled', 'interrupted')`),
+  check("photo_attempts_terminal", sql`(${table.status} = 'active' AND ${table.finishedAt} IS NULL) OR (${table.status} != 'active' AND ${table.finishedAt} IS NOT NULL)`),
+]);

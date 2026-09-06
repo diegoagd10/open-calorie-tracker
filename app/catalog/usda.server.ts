@@ -413,6 +413,12 @@ export type UsdaAdapterOptions = {
   timeoutMs?: number;
 };
 
+export type UsdaEvidence = { record: Record<string, unknown>; food: CatalogFood };
+export type UsdaAnalysisReader = {
+  searchEvidence(query: string, page: number, signal: AbortSignal): Promise<UsdaEvidence[]>;
+  getEvidence(id: string, signal: AbortSignal): Promise<UsdaEvidence>;
+};
+
 export class UsdaFoodDataCentralAdapter implements SearchFoodCatalogProvider {
   readonly #apiKey: string | undefined;
   readonly #baseUrl: string;
@@ -500,13 +506,32 @@ export class UsdaFoodDataCentralAdapter implements SearchFoodCatalogProvider {
       const abridged = abridgedDetailFoodSchema.safeParse(response);
       if (abridged.success) food = expandAbridgedDetailFood(abridged.data);
     }
-    if (!food || String(food.fdcId) !== parsedId.data) {
-      throw new CatalogInvalidResponseError();
-    }
-    const requestId = context?.requestId ?? randomUUID();
-    return normalizeDetailFood(food, (diagnostic) =>
-      this.#onDiagnostic(diagnostic, requestId),
-    );
+    return this.#normalizeDetail(food, parsedId.data, context?.requestId);
+  }
+
+  async searchEvidence(query: string, page: number, signal: AbortSignal): Promise<UsdaEvidence[]> {
+    const response = await this.#request("foods/search", {
+      method: "POST", signal, headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query: querySchema.parse(query), pageNumber: z.number().int().min(1).max(3).parse(page), pageSize: 5,
+        dataType: ["Foundation", "Survey (FNDDS)", "Branded"] }),
+    });
+    const candidates = searchResponseSchema.parse(response).foods.slice(0, 5);
+    return Promise.all(candidates.map((food) => this.getEvidence(String(food.fdcId), signal)));
+  }
+
+  async getEvidence(id: string, signal: AbortSignal): Promise<UsdaEvidence> {
+    const parsedId = providerFoodIdSchema.parse(id);
+    const response = await this.#request(`food/${parsedId}`, { method: "GET", signal });
+    if (JSON.stringify(response).length > 150000) throw new CatalogInvalidResponseError();
+    const record = z.record(z.string(), z.unknown()).parse(response);
+    // Photo evidence requires full records; abridged fallback belongs to the compact catalog flow.
+    const parsed = detailFoodSchema.parse(record);
+    return { record, food: this.#normalizeDetail(parsed, parsedId) };
+  }
+
+  #normalizeDetail(food: DetailFood | undefined, id: string, requestId: string = randomUUID()) {
+    if (!food || String(food.fdcId) !== id) throw new CatalogInvalidResponseError();
+    return normalizeDetailFood(food, (diagnostic) => this.#onDiagnostic(diagnostic, requestId));
   }
 
   async #request(path: string, init: RequestInit): Promise<unknown> {
@@ -519,7 +544,7 @@ export class UsdaFoodDataCentralAdapter implements SearchFoodCatalogProvider {
     try {
       const response = await this.#fetch(url, {
         ...init,
-        signal: controller.signal,
+        signal: init.signal ? AbortSignal.any([controller.signal, init.signal]) : controller.signal,
       });
       if (response.status === 403) throw new CatalogCredentialsError();
       if (response.status === 404) throw new CatalogFoodNotFoundError();

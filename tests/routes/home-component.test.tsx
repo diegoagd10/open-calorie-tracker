@@ -7,6 +7,7 @@ import {
   createMemoryRouter,
   createRoutesStub,
   RouterProvider,
+  useLoaderData,
 } from "react-router";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { expect, test } from "vitest";
@@ -932,6 +933,12 @@ test("Add Food offers search, barcode, and manual paths before any provider runs
   expect(allText(renderer)).toContain("Search for food");
   expect(allText(renderer)).toContain("Scan barcode");
   expect(allText(renderer)).toContain("Manual");
+  const methods = renderer.root.findByProps({ "aria-label": "Add Food methods" });
+  expect(methods.findByProps({ "aria-label": "Take photo · AI calories" })).toBeDefined();
+  expect(allText(renderer)).toContain("AI estimates calories and saves to your log");
+  expect(allText(renderer)).toContain("Photo privacy");
+  expect(allText(renderer)).toContain("It does not delete data retained by your AI provider.");
+  expect(allText(renderer)).not.toContain("Nothing changes in your Food Log until a later confirmation step.");
   expect(renderer.root.findByProps({
     href: "/?date=2026-08-31&food=search",
   })).toBeDefined();
@@ -2113,4 +2120,163 @@ test("manual entry submission disables editing only for the manual action", asyn
     expect(allText(renderer)).toContain(intent === "log-manual-food" ? "Adding…" : "Add to Food Log");
     await act(async () => renderer.unmount());
   }
+});
+
+test("photo meals share the food and water timeline in event order and expose correction details", async () => {
+  const photoMeal = {
+    id: "photo-home", name: "Photo dinner", entryId: editableEntry.id, foodLogDate: "2026-08-31", status: "succeeded", stage: "Preparing result", attemptId: "photo-attempt", startedAt: "2026-08-31T12:00:00.000Z", finishedAt: "2026-08-31T12:00:05.000Z", error: null, energyMilliKcal: 59000,
+    result: { name: "Original dinner", consumedFraction: 1, components: [], assumptions: [] },
+  };
+  const food = { ...editableEntry, name: "Photo dinner", kind: "food", provider: "ai-photo", selectedMeasurementLabel: "Analyzed plate" };
+  const copiedFood = { ...food, id: 77, name: "Copied photo" };
+  const water = { id: editableEntry.id, kind: "water", amountMicroliters: 237000, foodLogDate: "2026-08-31", localEventTime: "12:05:00" };
+  const renderer = await renderHome({ photoMeals: [photoMeal], foodLog: { ...baseFoodLog, entries: [food, copiedFood], events: [copiedFood, food, water] }, foodEntryEditor: editableEntry });
+  expect(renderer.root.findAllByType("a").filter(node => node.props.href === "/?date=2026-08-31&entry=41")).toHaveLength(1);
+  const timeline = renderer.root.findByProps({ className: styles.timeline });
+  const actionsAndEntries = timeline.findAll(node => node.type === "button" || node.type === "a");
+  expect(actionsAndEntries.map(node => nodeText(node))).toEqual([
+    expect.stringContaining("Add Food"), expect.stringContaining("Copied photo"),
+    expect.stringContaining("Photo dinner"), expect.stringContaining("Water"), expect.stringContaining("Add Water"),
+  ]);
+  const photoLink = timeline.findAllByType("a").find(node => node.props.href === "/?date=2026-08-31&entry=41")!;
+  expect(photoLink.props.className).toBe(styles.foodEntryCard);
+  expect(nodeText(photoLink.findByProps({ className: styles.foodEntryContent }))).toBe("Photo dinnerAI photo estimateAnalyzed plate × 1");
+  expect(nodeText(photoLink.findByProps({ className: styles.foodEntryEnergy }))).toBe("59 kcal");
+  expect(timeline.findAllByType("img")).toHaveLength(0);
+  expect(timeline.findAllByType("time").map(node => [node.props.dateTime, nodeText(node)])).toEqual([
+    ["2026-08-31T12:00:00", "12:00 PM"],
+    ["2026-08-31T12:00:00", "12:00 PM"],
+    ["2026-08-31T12:05:00", "12:05 PM"],
+  ]);
+  expect(allText(renderer)).toContain("Copied photo");
+  expect(allText(renderer)).toContain("AI photo estimate");
+  expect(allText(renderer)).toContain("Correct with AI");
+  expect(allText(renderer)).toContain("Water");
+  expect(renderer.root.findByProps({ "aria-label": "Photo analysis details" })).toBeDefined();
+  await act(async () => renderer.unmount());
+  const pending = await renderHome({ photoMeals: [{ ...photoMeal, status: "active", entryId: null, name: null, result: null, energyMilliKcal: null }] });
+  expect(allText(pending)).not.toContain("No entries for this day");
+  expect(allText(pending)).toContain("Cancel analysis");
+  expect(nodeText(pending.root.findByProps({ className: styles.timeline }))).toContain("Cancel analysis");
+  await act(async () => pending.unmount());
+  for (const status of ["active", "failed", "canceled", "succeeded"]) {
+    const active = status === "active";
+    const terminalError = status === "failed" || status === "canceled";
+    const state = await renderHome({
+      photoMeals: [{ ...photoMeal, status, error: terminalError ? "Correction stopped" : null }],
+      foodEntryEditor: editableEntry,
+      copyIdempotencyKeys: { [food.id]: "copy-photo" },
+      foodLog: { ...baseFoodLog, entries: [food, copiedFood], events: [copiedFood, food, water] },
+    });
+    expect(state.root.findByType("fieldset").props.disabled).toBe(active);
+    const log = state.root.findByProps({ className: styles.timeline });
+    const rows = log.findAllByType("article");
+    expect(rows).toHaveLength(3);
+    const row = rows.find(node => nodeText(node).includes("Photo dinner"))!;
+    expect(row.props["aria-busy"]).toBe(active || undefined);
+    expect(row.findAllByType("a")).toHaveLength(active ? 0 : 1);
+    expect(row.findAllByType("progress")).toHaveLength(active ? 1 : 0);
+    expect(row.findAllByType("strong").map(nodeText)).toEqual(["Photo dinner"]);
+    expect(nodeText(row.findByProps({ className: styles.foodEntryEnergy }))).toBe("59 kcal");
+    const buttons = row.findAllByType("button").map(nodeText);
+    expect(buttons).toEqual(active ? ["Cancel analysis"] : terminalError ? ["•••", "Retry analysis", "Delete photo meal"] : ["•••"]);
+    if (active) {
+      expect(row.findByProps({ className: styles.foodEntryContent }).type).toBe("div");
+      expect(nodeText(row.findByProps({ className: styles.foodEntryContent }))).toContain("Updating this meal with AI");
+      expect(nodeText(row)).toContain("Previous nutrition retained");
+    } else {
+      expect(row.findByType("a").props.className).toBe(`${styles.foodEntryCard} ${styles.foodEntryCardWithMenu}`);
+      expect(nodeText(row).includes("Correction stopped")).toBe(terminalError);
+    }
+    expect(log.findAllByType("a").some(node => nodeText(node).includes("Copied photo"))).toBe(true);
+    expect(log.findAllByType("a").some(node => node.props.href === "/?date=2026-08-31&water=41")).toBe(true);
+    await act(async () => state.unmount());
+  }
+  const data = { ...baseLoaderData, photoMeals: [photoMeal], copyIdempotencyKeys: { [food.id]: "copy-photo" }, foodLog: { ...baseFoodLog, entries: [food, copiedFood], events: [copiedFood, food] } };
+  let finishRequest!: (value: Response) => void;
+  let finishNavigation!: (value: typeof data) => void;
+  const response = new Promise<Response>(resolve => { finishRequest = resolve; });
+  const navigation = new Promise<typeof data>(resolve => { finishNavigation = resolve; });
+  const router = createMemoryRouter([
+    { id: "home", path: "/", Component: () => Home({ loaderData: useLoaderData(), actionData: undefined } as never), loader: () => navigation },
+    { path: "/photo-analysis", action: () => response },
+  ], { initialEntries: ["/?date=2026-08-31&entry=41"], hydrationData: { loaderData: { home: { ...data, foodEntryEditor: editableEntry } } } });
+  let requestView!: ReactTestRenderer;
+  await act(() => { requestView = create(createElement(RouterProvider, { router }), { createNodeMock: () => new TestElement() }); });
+  await act(() => requestView.root.findAllByType("button").find(node => nodeText(node) === "Correct with AI")!.props.onClick());
+  const form = requestView.root.findAll(node => node.props.action === "/photo-analysis" && typeof node.props.fetcherKey === "string")[0];
+  const formData = new FormData();
+  formData.set("intent", "correct");
+  formData.set("entryId", "41");
+  formData.set("correction", "Diet soda");
+  let submission!: Promise<void>;
+  await act(() => {
+    form.props.onSubmit();
+    submission = router.fetch(form.props.fetcherKey, "home", "/photo-analysis", { formData, formMethod: "post" });
+  });
+  expect(requestView.root.findByType("fieldset").props.disabled).toBe(true);
+  expect(requestView.root.findByType("textarea").props.disabled).toBe(true);
+  await act(async () => { finishNavigation(data); await Promise.resolve(); });
+  expect(requestView.root.findAllByProps({ role: "dialog" })).toHaveLength(0);
+  const busyLog = requestView.root.findByProps({ className: styles.timeline });
+  expect(busyLog.findAllByType("article")).toHaveLength(2);
+  const busyRow = busyLog.findByProps({ "aria-busy": true });
+  expect(nodeText(busyRow)).toContain("Starting correction. Previous nutrition retained.");
+  expect(busyRow.findByType("progress").props["aria-label"]).toBe("Starting correction");
+  expect(busyRow.findAllByType("a")).toHaveLength(0);
+  expect(busyRow.findAllByType("button")).toHaveLength(0);
+  expect(busyLog.findByType("a").props.href).toBe("/?date=2026-08-31&entry=77");
+  await act(async () => { finishRequest(Response.json({ error: "Request rejected" }, { status: 400 })); await submission; });
+  expect(nodeText(busyLog.findByProps({ role: "alert" }))).toContain("Correction could not start: Request rejected");
+  expect(busyLog.findAllByType("a")).toHaveLength(2);
+  expect(busyLog.findAllByType("progress")).toHaveLength(0);
+  await act(() => requestView.unmount());
+  router.dispose();
+});
+
+test("touch date navigation distinguishes taps, vertical scrolling, cancellation and horizontal swipes", async () => {
+  const loaderData = { ...baseLoaderData, foodLog: { ...baseFoodLog, selectedDate: "2026-08-30" } };
+  const router = createMemoryRouter([{ path: "/", Component: () => Home({ loaderData, actionData: undefined } as never), loader: () => loaderData }], { hydrationData: { loaderData: { "0": loaderData } }, initialEntries: ["/?date=2026-08-30"] });
+  let renderer!: ReactTestRenderer;
+  await act(() => { renderer = create(createElement(RouterProvider, { router })); });
+  const rail = () => renderer.root.findByProps({ "aria-label": "Nearby dates" });
+  let captured: number[] = [];
+  const event = (overrides: Record<string, unknown> = {}) => ({ pointerType: "touch", isPrimary: true, pointerId: 1, clientX: 100, clientY: 100, currentTarget: { setPointerCapture: (id: number) => captured.push(id) }, ...overrides });
+  const tapPrevented = () => {
+    let prevented = false;
+    rail().props.onClickCapture({ detail: 1, preventDefault: () => { prevented = true; } });
+    return prevented;
+  };
+  expect(tapPrevented()).toBe(false);
+  for (const begin of [{ pointerType: "mouse" }, { isPrimary: false }]) {
+    await act(() => { rail().props.onPointerDown(event(begin)); rail().props.onPointerMove(event({ clientX: 160 })); rail().props.onPointerUp(event({ clientX: 160 })); });
+    expect(router.state.location.search).toBe("?date=2026-08-30"); expect(captured).toEqual([]);
+  }
+  await act(() => { rail().props.onPointerDown(event()); rail().props.onPointerMove(event({ pointerId: 2, clientX: 160 })); rail().props.onPointerUp(event({ pointerId: 2, clientX: 160 })); });
+  expect(captured).toEqual([]); expect(router.state.location.search).toBe("?date=2026-08-30");
+  await act(() => { rail().props.onPointerDown(event()); rail().props.onPointerMove(event({ clientX: 107, clientY: 107 })); });
+  expect(captured).toEqual([]); expect(tapPrevented()).toBe(false);
+  await act(() => { rail().props.onPointerMove(event({ clientX: 108, clientY: 107 })); });
+  expect(captured).toEqual([1]); expect(tapPrevented()).toBe(true);
+  let keyboardPrevented = false;
+  rail().props.onClickCapture({ detail: 0, preventDefault: () => { keyboardPrevented = true; } });
+  expect(keyboardPrevented).toBe(false);
+  await act(() => { rail().props.onPointerMove(event({ clientX: 108, clientY: 200 })); });
+  expect(captured).toEqual([1, 1]);
+  await act(() => { rail().props.onPointerCancel(); rail().props.onPointerUp(event({ clientX: 160 })); });
+  expect(router.state.location.search).toBe("?date=2026-08-30");
+  for (const [x, y] of [[107, 108], [108, 108], [105, 140]]) {
+    captured = [];
+    await act(() => { rail().props.onPointerDown(event()); rail().props.onPointerMove(event({ clientX: x, clientY: y })); rail().props.onPointerUp(event({ clientX: 160 })); });
+    expect(captured).toEqual([]); expect(router.state.location.search).toBe("?date=2026-08-30"); expect(tapPrevented()).toBe(false);
+  }
+  for (const [x, y] of [[139, 100], [140, 140], [140, 150]]) {
+    await act(() => { rail().props.onPointerDown(event()); rail().props.onPointerUp(event({ clientX: x, clientY: y })); });
+    expect(router.state.location.search).toBe("?date=2026-08-30");
+  }
+  await act(() => { rail().props.onPointerDown(event()); rail().props.onPointerUp(event({ clientX: 140 })); });
+  expect(router.state.location.search).toBe("?date=2026-08-29"); expect(router.state.preventScrollReset).toBe(true); expect(tapPrevented()).toBe(true);
+  await act(() => { rail().props.onPointerDown(event()); rail().props.onPointerUp(event({ clientX: 60 })); });
+  expect(router.state.location.search).toBe("?date=2026-08-31");
+  await act(() => renderer.unmount()); router.dispose();
 });

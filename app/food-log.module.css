@@ -2301,3 +2301,67 @@
     display: none;
   }
 }
+
+.photoTimelineEntry::after {
+  content: none;
+}
+
+.photoTimelineContent {
+  grid-column: 3 / -1;
+  min-width: 0;
+}
+
+.photoTimelineContent > article {
+  margin: 0;
+}
+
+.photoTimelineContent a {
+  color: var(--ink);
+  text-decoration: none;
+}
+
+@media (max-width: 420px) {
+  .photoTimelineContent {
+    grid-column: 2 / -1;
+    grid-row: 2;
+  }
+}
+
+.photoEntryStatus {
+  margin: 0 0 0.75rem 7.5rem;
+  padding: 0.65rem 0.85rem;
+  border: 1px solid var(--rule);
+  border-radius: 0.7rem;
+  background: var(--surface);
+  font-size: 0.8rem;
+}
+
+@media (max-width: 420px) {
+  .photoEntryStatus {
+    margin-left: 2.625rem;
+  }
+}
+
+.photoCorrectionProgress {
+  margin-top: 0.5rem;
+  font-size: 0.75rem;
+}
+
+.photoCorrectionProgress p {
+  margin-block: 0.35rem;
+}
+
+.photoCorrectionProgress small {
+  overflow: visible;
+  white-space: normal;
+}
+
+.photoCorrectionProgress progress {
+  display: block;
+  width: 100%;
+  accent-color: var(--green);
+}
+
+.timeline article[aria-busy="true"] .foodEntryCard::after {
+  content: "";
+}

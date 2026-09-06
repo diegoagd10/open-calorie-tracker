@@ -18,6 +18,7 @@ import {
   redirect,
   useNavigate,
   useNavigation,
+  useFetcher,
 } from "react-router";
 
 import {
@@ -25,6 +26,8 @@ import {
   requireValidOrigin,
   serializeClearedSessionCookie,
 } from "../auth/http.server";
+import { getPhotoAnalysisService } from "../photo-analysis/runtime.server";
+import { PhotoMealCard, PhotoMealStatus, PhotoCorrection, usePhotoMealPolling, usePhotoUpload } from "./photo-meals";
 import { AppNavigation } from "../app-navigation";
 import { isTestEnvironment } from "../runtime.server";
 import { UiIcon } from "../ui-icon";
@@ -384,6 +387,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     throw error;
   }
   if (!foodLog) return redirect("/setup");
+  const photoMeals = getPhotoAnalysisService().list(session.user.id, foodLog.selectedDate);
 
   const copyIdempotencyKeys =
     foodLog.selectedDate < foodLog.today
@@ -431,6 +435,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     if (entryId === undefined) {
       throw new Response("Food Entry is unavailable.", { status: 404 });
     }
+    if (photoMeals.some((meal) => meal.entryId === entryId && meal.status === "active")) return redirect(foodLogHref(foodLog.selectedDate));
     try {
       foodEntryEditor = getFoodEntryService(testRequestInstant(request)).read(
         session.user.id,
@@ -717,6 +722,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       copyIdempotencyKeys,
       csrfToken: session.csrfToken,
       foodEntryEditor,
+      photoMeals,
       foodLog,
       nearbyDates,
       notice: noticeMessage(noticeKind, copiedFood, foodLog.today),
@@ -2312,9 +2318,11 @@ function FoodEntryEditorDialog({
   actionData,
   csrfToken,
   entry,
+  photoMeal,
 }: {
   actionData: HomeActionData | undefined;
   csrfToken: string;
+  photoMeal?: Route.ComponentProps["loaderData"]["photoMeals"][number];
   entry: EditableFoodEntry;
 }) {
   const navigation = useNavigation();
@@ -2326,8 +2334,10 @@ function FoodEntryEditorDialog({
     initialFocusSelector: "input:not([disabled])",
     restoreFocusSelector: "[data-entry-editor-trigger]",
   });
-  const pending = navigation.formData?.get("entryId") === String(entry.id);
-  const pendingIntent = pending
+  const correction = useFetcher({ key: photoMeal ? `photo-correction:${photoMeal.id}` : undefined });
+  const navigationPending = navigation.formData?.get("entryId") === String(entry.id);
+  const pending = navigationPending || correction.state !== "idle" || photoMeal?.status === "active";
+  const pendingIntent = navigationPending
     ? navigation.formData!.get("intent")
     : undefined;
 
@@ -2373,6 +2383,7 @@ function FoodEntryEditorDialog({
             ×
           </Link>
         </div>
+        {photoMeal ? <PhotoCorrection meal={photoMeal} csrfToken={csrfToken} /> : null}
         <Form className={styles.editFoodForm} method="post" noValidate>
           <input name="csrfToken" type="hidden" value={csrfToken} />
           <input name="date" type="hidden" value={entry.foodLogDate} />
@@ -2768,9 +2779,11 @@ function WaterEventDialog({
   );
 }
 
-function CatalogChoiceStage({ date }: { date: string }) {
+function CatalogChoiceStage({ date, photoCapture }: { date: string; photoCapture: ReactNode }) {
   return (
+    <>
     <div className={styles.catalogResults} aria-label="Add Food methods">
+      {photoCapture}
       <Link to={catalogHref(date, "search")}>
         <span>
           <strong>Search for food</strong>
@@ -2793,6 +2806,11 @@ function CatalogChoiceStage({ date }: { date: string }) {
         <small>Choose ›</small>
       </Link>
     </div>
+    <details className={styles.providerAttribution}>
+      <summary>Photo privacy</summary>
+      <p>Deleting a photo meal removes its photo and history from this app. It does not delete data retained by your AI provider.</p>
+    </details>
+    </>
   );
 }
 
@@ -3176,12 +3194,14 @@ function BarcodeCatalogStage({
 }
 
 function CatalogDialog({
+  photoCapture,
   actionData,
   catalog,
   csrfToken,
   date,
 }: {
   actionData: HomeActionData | undefined;
+  photoCapture: ReactNode;
   catalog: NonNullable<Route.ComponentProps["loaderData"]["catalog"]>;
   csrfToken: string;
   date: string;
@@ -3235,7 +3255,9 @@ function CatalogDialog({
                   : "Choose a method"}
             </span>
             <p>
-              Nothing changes in your Food Log until a later confirmation step.
+              {catalog.mode === "choose"
+                ? "Choose how to add food. Photo estimates save automatically; other methods let you review first."
+                : "Nothing changes in your Food Log until a later confirmation step."}
             </p>
           </div>
           <Link
@@ -3256,7 +3278,7 @@ function CatalogDialog({
             date={date}
           />
         ) : catalog.mode === "choose" ? (
-          <CatalogChoiceStage date={date} />
+          <CatalogChoiceStage date={date} photoCapture={photoCapture} />
         ) : catalog.mode === "manual" ? (
           <ManualFoodStage
             actionData={actionData}
@@ -3412,6 +3434,108 @@ function CatalogDialog({
         )}
       </section>
     </DialogBackdrop>
+  );
+}
+
+function FoodTimelineEntry({ entry, photoMeal, csrfToken, copyKey }: {
+  entry: Extract<Route.ComponentProps["loaderData"]["foodLog"]["events"][number], { kind: "food" }>;
+  photoMeal?: Route.ComponentProps["loaderData"]["photoMeals"][number];
+  csrfToken: string;
+  copyKey?: string;
+}) {
+  const correction = useFetcher<{ error?: string }>({
+    key: photoMeal ? `photo-correction:${photoMeal.id}` : undefined,
+  });
+  const startingCorrection = correction.state !== "idle";
+  const active = startingCorrection || photoMeal?.status === "active";
+  const ContentElement = active ? "div" : "span";
+  const className = copyKey && !active
+    ? `${styles.foodEntryCard} ${styles.foodEntryCardWithMenu}`
+    : styles.foodEntryCard;
+  const content = (
+    <>
+      <time
+        dateTime={`${entry.foodLogDate}T${entry.localEventTime}`}
+      >
+        {formatEventTime(entry.localEventTime)}
+      </time>
+      <span
+        className={styles.foodEntryMarker}
+        aria-hidden="true"
+      >
+        <UiIcon name="utensils" />
+      </span>
+      <ContentElement className={styles.foodEntryContent}>
+        <strong>{entry.name}</strong>
+        <small>
+          {entry.provider === "open-food-facts"
+            ? "Open Food Facts"
+            : entry.provider === "manual"
+              ? "Manual"
+            : entry.provider === "ai-photo" ? "AI photo estimate"
+            : `USDA FoodData Central · ${entry.dataType}`}
+        </small>
+        <small>
+          {entry.selectedMeasurementLabel} ×{" "}
+          {entry.quantityMicrounits / 1_000_000}
+        </small>
+        {active ? (
+          <div className={styles.photoCorrectionProgress}>
+            <p role="status">Updating this meal with AI…</p>
+            {photoMeal?.status === "active" ? (
+              <PhotoMealStatus meal={photoMeal} csrfToken={csrfToken} />
+            ) : (
+              <>
+                <progress aria-label="Starting correction" />
+                <p>Starting correction. Previous nutrition retained.</p>
+              </>
+            )}
+          </div>
+        ) : null}
+      </ContentElement>
+      <span className={styles.foodEntryEnergy}>
+        {formatEnergy(entry.energyMilliKcal)}{" "}
+        <small>kcal</small>
+      </span>
+    </>
+  );
+  return (
+    <article aria-busy={active || undefined}>
+      {active ? (
+        <div className={className}>{content}</div>
+      ) : (
+        <Link className={className} data-entry-editor-trigger to={`${foodLogHref(entry.foodLogDate)}&entry=${entry.id}`}>
+          {content}
+        </Link>
+      )}
+      {copyKey && !active ? (
+        <FoodEntryCopyMenu csrfToken={csrfToken} entry={entry} idempotencyKey={copyKey} key={copyKey} />
+      ) : null}
+      {!active && correction.data?.error ? (
+        <p className={styles.catalogError} role="alert">
+          Correction could not start: {correction.data.error} Open this meal to try again.
+        </p>
+      ) : null}
+      {!active && photoMeal && photoMeal.status !== "succeeded" ? (
+        <div className={styles.photoEntryStatus}>
+          <PhotoMealStatus meal={photoMeal} csrfToken={csrfToken} />
+        </div>
+      ) : null}
+    </article>
+  );
+}
+
+function PhotoTimelineEntry({ children }: {
+  children: ReactNode;
+}) {
+  return (
+    <article className={`${styles.foodEntryCard} ${styles.photoTimelineEntry}`}>
+      <span className={styles.pendingTime} />
+      <span className={styles.foodEntryMarker} aria-hidden="true">
+        <UiIcon name="utensils" />
+      </span>
+      <div className={styles.photoTimelineContent}>{children}</div>
+    </article>
   );
 }
 
@@ -3829,11 +3953,14 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
     csrfToken,
     foodEntryEditor,
     foodLog,
+    photoMeals = [],
     nearbyDates,
     notice,
     username,
     waterDialog,
   } = loaderData;
+  const photoUpload = usePhotoUpload(foodLog.selectedDate, csrfToken);
+  usePhotoMealPolling(photoMeals);
   const activeFoodEntryEditor =
     actionData?.foodEntryEditor ?? foodEntryEditor;
   const selectedLabel = fullDate(foodLog.selectedDate);
@@ -3937,8 +4064,8 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
                       recorded today or in the past.
                     </p>
                   </div>
-                ) : foodLog.events.length || foodLogPending ? (
-                  <div className={styles.timeline}>
+                ) : foodLog.events.length || foodLogPending || photoUpload.feedback || photoMeals.length ? (
+                  <section className={styles.timeline} aria-label="Daily log entries">
                     <EmptyActionForm
                       className={styles.timelineAddFood}
                       csrfToken={csrfToken}
@@ -3950,58 +4077,19 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
                     {foodLogPending ? (
                       <PendingFoodEntry name={pendingFoodName} />
                     ) : null}
-                    {foodLog.events.map((entry) =>
-                      entry.kind === "food" ? (
-                        // Stryker disable next-line StringLiteral: a single-prefix mutation preserves key uniqueness against the water prefix.
-                        <article key={`food-${entry.id}`}>
-                          <Link
-                            className={
-                              copyIdempotencyKeys[entry.id]
-                                ? `${styles.foodEntryCard} ${styles.foodEntryCardWithMenu}`
-                                : styles.foodEntryCard
-                            }
-                            data-entry-editor-trigger
-                            to={`${foodLogHref(entry.foodLogDate)}&entry=${entry.id}`}
-                          >
-                            <time
-                              dateTime={`${entry.foodLogDate}T${entry.localEventTime}`}
-                            >
-                              {formatEventTime(entry.localEventTime)}
-                            </time>
-                            <span
-                              className={styles.foodEntryMarker}
-                              aria-hidden="true"
-                            >
-                              <UiIcon name="utensils" />
-                            </span>
-                            <span className={styles.foodEntryContent}>
-                              <strong>{entry.name}</strong>
-                              <small>
-                                {entry.provider === "open-food-facts"
-                                  ? "Open Food Facts"
-                                  : entry.provider === "manual"
-                                    ? "Manual"
-                                  : `USDA FoodData Central · ${entry.dataType}`}
-                              </small>
-                              <small>
-                                {entry.selectedMeasurementLabel} ×{" "}
-                                {entry.quantityMicrounits / 1_000_000}
-                              </small>
-                            </span>
-                            <span className={styles.foodEntryEnergy}>
-                              {formatEnergy(entry.energyMilliKcal)}{" "}
-                              <small>kcal</small>
-                            </span>
-                          </Link>
-                          {copyIdempotencyKeys[entry.id] ? (
-                            <FoodEntryCopyMenu
-                              csrfToken={csrfToken}
-                              entry={entry}
-                              idempotencyKey={copyIdempotencyKeys[entry.id]}
-                              key={copyIdempotencyKeys[entry.id]}
-                            />
-                          ) : null}
-                        </article>
+                    {photoUpload.feedback ? (
+                      <PhotoTimelineEntry>
+                        {photoUpload.feedback}
+                      </PhotoTimelineEntry>
+                    ) : null}
+                    {photoMeals.filter((meal) => meal.entryId === null).map((meal) => (
+                      <PhotoTimelineEntry key={meal.id}>
+                        <PhotoMealCard meal={meal} csrfToken={csrfToken} />
+                      </PhotoTimelineEntry>
+                    ))}
+                    {foodLog.events.map((entry) => {
+                      return entry.kind === "food" ? (
+                        <FoodTimelineEntry key={`food-${entry.id}`} entry={entry} photoMeal={photoMeals.find((meal) => meal.entryId === entry.id)} csrfToken={csrfToken} copyKey={copyIdempotencyKeys[entry.id]} />
                       ) : (
                         // Stryker disable next-line StringLiteral: a single-prefix mutation preserves key uniqueness against the food prefix.
                         <article key={`water-${entry.id}`}>
@@ -4038,8 +4126,8 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
                             </span>
                           </Link>
                         </article>
-                      ),
-                    )}
+                      );
+                    })}
                     <EmptyActionForm
                       className={styles.timelineAddWater}
                       csrfToken={csrfToken}
@@ -4053,7 +4141,7 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
                         {actionData.message}
                       </p>
                     ) : null}
-                  </div>
+                  </section>
                 ) : (
                   <div className={styles.emptyDay}>
                     <span className={styles.emptyIcon} aria-hidden="true">
@@ -4105,6 +4193,7 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
       </div>
       {visibleCatalog ? (
         <CatalogDialog
+          photoCapture={photoUpload.capture}
           actionData={actionData}
           catalog={visibleCatalog}
           csrfToken={csrfToken}
@@ -4116,6 +4205,7 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
           actionData={actionData}
           csrfToken={csrfToken}
           entry={activeFoodEntryEditor}
+          photoMeal={photoMeals.find((meal) => meal.entryId === activeFoodEntryEditor.id)}
           key={activeFoodEntryEditor.updatedAt}
         />
       ) : null}

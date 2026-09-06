@@ -4,9 +4,12 @@ import express from "express";
 import { initializeApplicationDatabase } from "../app/database/runtime.server";
 import { resolveClientIp } from "./client-ip";
 
-export { shutdownApplicationDatabase as shutdown } from "../app/database/runtime.server";
+import { shutdownApplicationDatabase } from "../app/database/runtime.server";
+import { getPhotoAnalysisService, shutdownPhotoAnalysis } from "../app/photo-analysis/runtime.server";
+export function shutdown() { shutdownPhotoAnalysis(); shutdownApplicationDatabase(); }
 
 initializeApplicationDatabase();
+getPhotoAnalysisService();
 
 export const app = express();
 

@@ -1,0 +1,119 @@
+.capture {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  min-height: 5rem;
+  padding: 0.75rem;
+  border-bottom: 1px solid #d9e1da;
+  cursor: pointer;
+}
+.capture input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+.capture:focus-within {
+  outline: 3px solid #5586c8;
+  outline-offset: 3px;
+}
+.card {
+  display: flex;
+  gap: 1rem;
+  padding: 1rem;
+  margin-block: 0.75rem;
+  border: 1px solid #d9e1da;
+  border-radius: 1rem;
+  background: #fff;
+}
+.card > img {
+  width: 88px;
+  height: 88px;
+  border-radius: 0.65rem;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+.content {
+  min-width: 0;
+  flex: 1;
+  overflow-wrap: anywhere;
+}
+.content > small {
+  display: block;
+  margin-block: 0.35rem;
+}
+.content p {
+  margin-block: 0.5rem;
+}
+.status progress,
+.card progress {
+  display: block;
+  width: 100%;
+  max-width: 240px;
+  accent-color: #27644b;
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.actions:empty {
+  display: none;
+}
+.status button,
+.card button,
+.correction button {
+  background: #edf3ee;
+  color: #244b39;
+  border: 1px solid #bdd0c2;
+  padding: 0.55rem 0.75rem;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  min-height: 44px;
+}
+.correction {
+  display: grid;
+  gap: 0.8rem;
+  margin-block: 1rem;
+}
+.correction form,
+.correction label {
+  display: grid;
+  gap: 0.5rem;
+}
+.correction textarea {
+  width: 100%;
+  min-height: 90px;
+  padding: 0.75rem;
+  border: 1px solid #a9bcb0;
+  border-radius: 0.5rem;
+  box-sizing: border-box;
+  font: inherit;
+}
+.detailPhoto {
+  width: 100%;
+  max-height: 200px;
+  object-fit: contain;
+  border-radius: 0.75rem;
+}
+@media (max-width: 420px) {
+  .card {
+    padding: 0.75rem;
+    gap: 0.7rem;
+  }
+  .card > img {
+    width: 64px;
+    height: 64px;
+  }
+}
+
+.status > small {
+  display: block;
+  margin-block: 0.35rem;
+}
+.status p {
+  margin-block: 0.5rem;
+}

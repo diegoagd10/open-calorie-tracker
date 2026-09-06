@@ -1,6 +1,8 @@
 import { chmod, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { getTableName } from "drizzle-orm";
+import { getTableConfig, SQLiteSyncDialect } from "drizzle-orm/sqlite-core";
 import { eq, sql } from "drizzle-orm";
 import { afterEach, expect, test } from "vitest";
 
@@ -51,13 +53,13 @@ test("startup applies the initial migration and configures writable SQLite stora
   });
 
   expect(database.getStatus()).toEqual({
-    appliedMigrations: 14,
-    availableMigrations: 14,
+    appliedMigrations: 15,
+    availableMigrations: 15,
     busyTimeoutMs: 5_000,
     foreignKeysEnabled: true,
     journalMode: "wal",
     migrationsCurrent: true,
-    schemaVersion: "13",
+    schemaVersion: "14",
     writable: true,
   });
 
@@ -73,13 +75,13 @@ test("starting twice preserves the applied migration state", async () => {
   };
 
   const firstStartup = openApplicationDatabase(options);
-  expect(firstStartup.getStatus().appliedMigrations).toBe(14);
+  expect(firstStartup.getStatus().appliedMigrations).toBe(15);
   firstStartup.close();
 
   const replacementStartup = openApplicationDatabase(options);
   expect(replacementStartup.getStatus()).toMatchObject({
-    appliedMigrations: 14,
-    schemaVersion: "13",
+    appliedMigrations: 15,
+    schemaVersion: "14",
     writable: true,
   });
   replacementStartup.close();
@@ -262,10 +264,10 @@ test("the production migration preserves every representative field from the pri
   });
 
   expect(upgraded.getStatus()).toMatchObject({
-    appliedMigrations: 14,
-    availableMigrations: 14,
+    appliedMigrations: 15,
+    availableMigrations: 15,
     migrationsCurrent: true,
-    schemaVersion: "13",
+    schemaVersion: "14",
     writable: true,
   });
   expect(isDatabaseReady(upgraded.getStatus())).toBe(true);
@@ -324,7 +326,7 @@ test("the password-onboarding migration leaves existing credentials unrestricted
     passwordChangeRequired: 0,
     passwordHash: "argon2id:existing-credential",
   });
-  expect(upgraded.getStatus().schemaVersion).toBe("13");
+  expect(upgraded.getStatus().schemaVersion).toBe("14");
   upgraded.close();
 });
 
@@ -371,7 +373,7 @@ THIS IS NOT VALID SQL;\n`,
   ).toEqual([]);
   expect(recovered.getClient().select().from(schema.users).all()).toEqual([]);
   expect(recovered.getStatus()).toMatchObject({
-    appliedMigrations: 14,
+    appliedMigrations: 15,
     migrationsCurrent: true,
   });
   recovered.close();
@@ -397,13 +399,13 @@ test("read-only application storage prevents startup", async () => {
 
 test("readiness requires every database invariant", () => {
   const readyStatus: DatabaseStatus = {
-    appliedMigrations: 14,
-    availableMigrations: 14,
+    appliedMigrations: 15,
+    availableMigrations: 15,
     busyTimeoutMs: 5_000,
     foreignKeysEnabled: true,
     journalMode: "wal",
     migrationsCurrent: true,
-    schemaVersion: "13",
+    schemaVersion: "14",
     writable: true,
   };
 
@@ -453,8 +455,8 @@ test("status detects tampered migration history, metadata, and pragmas", async (
   client.run(sql`DELETE FROM __drizzle_migrations
     WHERE created_at = (SELECT MAX(created_at) FROM __drizzle_migrations)`);
   expect(database.getStatus()).toMatchObject({
-    appliedMigrations: 13,
-    availableMigrations: 14,
+    appliedMigrations: 14,
+    availableMigrations: 15,
     migrationsCurrent: false,
   });
   client.delete(schema.applicationMetadata)
@@ -465,4 +467,44 @@ test("status detects tampered migration history, metadata, and pragmas", async (
   expect(database.getStatus().foreignKeysEnabled).toBe(false);
   database.close();
   expect(() => client.run(sql`SELECT 1`)).toThrow();
+});
+
+test("photo schema declarations match migrated columns, ownership cascades, indexes and lifecycle checks", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "photo-schema-parity-")); temporaryDirectories.push(directory);
+  const database = openApplicationDatabase({ databasePath: path.join(directory, "db.sqlite"), migrationsFolder: path.resolve("drizzle") });
+  const client = database.getClient();
+  const dialect = new SQLiteSyncDialect();
+  const normalize = (text: string) => text.replace(/["`]/g, "").replace(/\s+/g, " ");
+  for (const table of [schema.photoMeals, schema.photoAttempts]) {
+    const config = getTableConfig(table);
+    const columns = client.all<{ name: string; type: string; notnull: number }>(sql.raw(`PRAGMA table_info(${config.name})`));
+    expect(config.columns.map(column => ({ name: column.name, type: column.getSQLType().toUpperCase(), notnull: Number(column.notNull) }))).toEqual(columns.map(({ name, type, notnull }) => ({ name, type, notnull })));
+    const actualFks = client.all<{ from: string; table: string; to: string; on_delete: string }>(sql.raw(`PRAGMA foreign_key_list(${config.name})`));
+    const declaredFks = config.foreignKeys.map(foreignKey => {
+      const reference = foreignKey.reference();
+      return { from: reference.columns[0].name, table: getTableName(reference.foreignTable), to: reference.foreignColumns[0].name, on_delete: foreignKey.onDelete?.toUpperCase() };
+    });
+    expect(declaredFks.sort((a,b) => a.from.localeCompare(b.from))).toEqual(actualFks.map(({ from, table, to, on_delete }) => ({ from, table, to, on_delete })).sort((a,b) => a.from.localeCompare(b.from)));
+    const ddl = client.get<{ sql: string }>(sql`SELECT sql FROM sqlite_master WHERE name = ${config.name}`).sql;
+    expect(config.checks).toHaveLength(2);
+    for (const check of config.checks) {
+      expect(normalize(ddl)).toContain(`CONSTRAINT ${check.name} CHECK(${normalize(dialect.sqlToQuery(check.value).sql)})`);
+    }
+    expect([...config.indexes.map(index => index.config.name), ...config.columns.filter(column => column.isUnique).map(column => column.uniqueName)].sort()).toEqual(client.all<{ name: string; origin: string }>(sql.raw(`PRAGMA index_list(${config.name})`)).filter(index => index.origin === "c").map(index => index.name).sort());
+    for (const index of config.indexes) {
+      const actual = client.get<{ sql: string }>(sql`SELECT sql FROM sqlite_master WHERE name = ${index.config.name}`);
+      expect(actual).toBeDefined();
+      expect(normalize(actual.sql)).toContain(index.config.name);
+      expect(client.all<{ name: string }>(sql.raw(`PRAGMA index_info(${index.config.name})`)).map(item => item.name)).toEqual(index.config.columns.map(column => "name" in column ? column.name : undefined));
+    }
+  }
+  expect(schema.photoAttempts.status.enumValues).toEqual(["active", "succeeded", "failed", "canceled", "interrupted"]);
+  expect(schema.photoAttempts.stage.enumValues).toEqual(["Analyzing photo", "Consulting USDA", "Preparing result"]);
+  expect(schema.photoMeals.entryId.isUnique).toBe(true);
+  expect(schema.photoAttempts.evidence.default).toBe("[]");
+  const active = getTableConfig(schema.photoAttempts).indexes.find(index => index.config.name === "photo_attempts_one_active")!;
+  expect(active.config.unique).toBe(true);
+  expect(normalize(dialect.sqlToQuery(active.config.where!).sql)).toBe("photo_attempts.status = 'active'");
+  expect(schema.photoMeals.photo.mapFromDriverValue(Buffer.from("photo"))).toEqual(Buffer.from("photo"));
+  database.close();
 });

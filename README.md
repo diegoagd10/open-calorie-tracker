@@ -22,3 +22,5 @@ For production configuration, deployment, updates, and backups, follow the
 
 Camera barcode scanning requirements and privacy behavior are documented in
 [the camera scanning guide](docs/barcode-scanning.md).
+
+Plate photos: see [capture, corrections, operator OAuth provisioning, and live pilot](docs/photo-analysis.md).

@@ -1,6 +1,6 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
-exports[`Add Food offers search, barcode, and manual paths before any provider runs 1`] = `"83b7366306d2424312e2804fbb2f225d11b506d7f308a9269fd139845e3cf503"`;
+exports[`Add Food offers search, barcode, and manual paths before any provider runs 1`] = `"57d037f27c13f4730b166683db36f7fb042040c1cc139a16475ef4e11f839013"`;
 
 exports[`barcode mode separates confirmation from scanning while keeping errors recoverable 1`] = `"76946bfeef20a05b3a9bc38f381a8fd9eee33fe910ba71059de060f1828b961b"`;
 
@@ -40,9 +40,9 @@ exports[`home renders calendar navigation, selected dates, and future days 1`] =
 
 exports[`home renders calendar navigation, selected dates, and future days 2`] = `"cb4660b0bfbc9b99793db63add91fd606054a09310dfcb32f9a1bd21fae3a6eb"`;
 
-exports[`home renders food and water timeline entries with factual units 1`] = `"9fd96290e325b1f810c8687534b59668ff653b9f0645fa81a0109ce18badce32"`;
+exports[`home renders food and water timeline entries with factual units 1`] = `"535de930f31d0d5c9d9f84df1c6df83be3a3b4fb63493866e034c30d5f1a6510"`;
 
-exports[`home renders submission and navigation pending states 1`] = `"3a456340633d188ebc18d9a900319d7e941da5b126a5456a1201c87d18ea7f8d"`;
+exports[`home renders submission and navigation pending states 1`] = `"b1c0dac24480cbd3d4344914a822cec5d9f66fd72bb947a68fc28a4e7a49faf4"`;
 
 exports[`home renders submission and navigation pending states 2`] = `"dab69f5312837bbbfc1ef33834346e09678aba6418819a7eaa58188c04f5df8b"`;
 

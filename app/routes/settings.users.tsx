@@ -183,13 +183,13 @@ export async function action({ request }: Route.ActionArgs) {
         session.user,
         targetUsername,
       );
+    if (!result.ok && result.error === "confirmation-mismatch") {
+      return data<UsersActionData>(
+        { accessError: `Enter ${targetUsername} exactly to confirm.` },
+        { status: 400 },
+      );
+    }
     if (!result.ok) {
-      if (result.error === "confirmation-mismatch") {
-        return data<UsersActionData>(
-          { accessError: `Enter ${targetUsername} exactly to confirm.` },
-          { status: 400 },
-        );
-      }
       return data<UsersActionData>(
         { accessError: "Member access has changed. Refresh and try again." },
         { status: 409 },
