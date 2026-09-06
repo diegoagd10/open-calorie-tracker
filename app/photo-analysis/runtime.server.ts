@@ -5,6 +5,7 @@ import type { ApplicationDatabaseClient } from "../database/database.server";
 import { UsdaFoodDataCentralAdapter } from "../catalog/usda.server";
 import { PhotoAnalysisService } from "./photo-analysis.server";
 import { PiPhotoAnalyzer, piCompletion } from "./pi.server";
+import { PiConnectionService } from "./pi-connection.server";
 import { TestPhotoAnalyzer } from "./test-fixture.server";
 
 const environmentSchema = z.object({
@@ -60,7 +61,21 @@ export function getPhotoAnalysisService() {
   return service;
 }
 
+let connection: { key: string; service: PiConnectionService } | undefined;
+
+export function getPiConnectionService() {
+  const config = environmentSchema.parse(process.env);
+  const key = JSON.stringify([config.PHOTO_AI_AUTH_PATH, config.PHOTO_AI_PROVIDER]);
+  if (connection?.key !== key) {
+    connection?.service.shutdown();
+    connection = { key, service: new PiConnectionService(config.PHOTO_AI_AUTH_PATH, config.PHOTO_AI_PROVIDER) };
+  }
+  return connection.service;
+}
+
 export function shutdownPhotoAnalysis() {
+  connection?.service.shutdown();
+  connection = undefined;
   current?.service.shutdown();
   current = undefined;
 }

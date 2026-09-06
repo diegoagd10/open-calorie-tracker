@@ -26,33 +26,37 @@ The default subscription path is Pi's `openai-codex` provider, model
 `gpt-5.6-luna`, reasoning `low`. An `OPENAI_API_KEY` is a separately billed API
 credential and does not authenticate a Codex subscription.
 
-Install the pinned dependencies on Node 24, then provision Pi interactively as
-the application service user:
+After deploying, sign in as the application administrator and open **Settings →
+AI photo estimates → Connect OpenAI**. The application displays a short-lived
+code and a **Continue to OpenAI** link. Open the link (including from a phone),
+sign in to OpenAI, enter the code, and approve. Return to Settings; it updates
+automatically when Pi saves the connection. No terminal, callback port, file
+transfer, or container restart is required.
 
-```sh
-mkdir -p data/pi
-chmod 700 data/pi
-PI_CODING_AGENT_DIR="$PWD/data/pi" pnpm exec pi
-# In Pi: /login, select OpenAI Codex, and complete the account's OAuth login.
-chmod 600 data/pi/auth.json
-```
+OpenAI may require enabling device code login in ChatGPT security settings or
+workspace permissions. See the [official authentication guide](https://learn.chatgpt.com/docs/auth#preferred-device-code-authentication-beta).
+Settings supports the default `openai-codex` provider. Other providers retain
+the existing operator-managed Pi credential path.
 
-Pi stores renewable credentials in `auth.json`. Keep that file and its directory
-writable by the service user so refresh can persist credentials. Do not copy a
-personal account's credentials into a public image or commit them. For headless
-login, follow Pi's interactive instructions on a trusted terminal and paste the
-OAuth redirect when prompted. No end-user account management is exposed by this
-application.
+The connection serves this entire installation. Only the application administrator
+can read or change it; a pending code is visible only in the session that started
+it. A single sign-in can run at a time. Cancel or expiration clears the pending
+code while retaining any previously saved connection. Restarting the application
+interrupts pending sign-ins; request a new code. Completed credentials persist.
 
-For the container, `/app/data` is the existing persistent volume and the default
-auth file is `/app/data/pi/auth.json`. With Compose, run the same pinned Pi CLI
-inside a one-off service container:
+Use **Reconnect OpenAI** to replace the saved account and **Disconnect** to remove
+its local credentials. Disconnect does not delete meals, revoke provider-side
+access, or cancel an already dispatched photo request. Settings reports saved
+connection status; a revoked subscription or provider outage can still make an
+analysis fail. Provider errors and access/refresh tokens are never returned to
+the Settings page.
 
-```sh
-docker compose run --rm -it -e PI_CODING_AGENT_DIR=/app/data/pi \
-  application node node_modules/@earendil-works/pi-coding-agent/dist/cli.js
-# /login, then select OpenAI Codex
-```
+Pi stores renewable credentials in `auth.json` and refreshes them during model
+requests. In Docker the default path is `/app/data/pi/auth.json`, inside the
+existing persistent volume. Pi creates the directory and file with private
+permissions. Keep them writable by the service user. Do not bake credentials into
+an image or commit them. An existing operator-provisioned auth file continues to
+work; `PHOTO_AI_AUTH_PATH` still overrides its location.
 
 The mounted data directory must be writable by container UID 1000; provision it
 using the ownership instructions in [deployment.md](deployment.md). Persist the

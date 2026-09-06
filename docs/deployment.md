@@ -193,6 +193,20 @@ administrator access. If the current private password is still known, use the
 authenticated password-change page in Settings instead of this recovery
 command.
 
+## Connect AI from Settings
+
+After deployment, sign in as the administrator and open **Settings → AI photo
+estimates → Connect OpenAI**. Follow the OpenAI link, enter the displayed code,
+and approve. Settings detects completion automatically. This works from a phone
+without opening a container console or exposing an OAuth callback port.
+
+The default Compose configuration persists the connection at
+`DATA_PATH/pi/auth.json` on the host. Preserve the existing `DATA_PATH` when
+updating. No extra AI variables are required for the default provider and model;
+`FDC_API_KEY` remains the optional operator-supplied key for USDA lookup.
+See [photo-analysis.md](photo-analysis.md#operator-setup) for reconnect,
+disconnect, and provider prerequisites.
+
 ## Updates and backups
 
 Use a short maintenance window:

@@ -3,7 +3,7 @@ import { Form, Link } from "react-router";
 import styles from "./goals.module.css";
 
 export type SettingsDestinationsProps = {
-  active: "goals" | "users";
+  active: "goals" | "users" | "ai";
   csrfToken: string;
   isAdministrator: boolean;
 };
@@ -24,6 +24,16 @@ export function SettingsDestinations({
             <span>
               <strong>Display and goals</strong>
               <small>Manage units and effective-dated nutrition goals.</small>
+            </span>
+            <span aria-hidden="true">›</span>
+          </Link>
+        ) : null}
+        {isAdministrator && active !== "ai" ? (
+          <Link className={styles.accountAccessRow} to="/settings/ai">
+            <span className={styles.accountAccessIcon} aria-hidden="true">✧</span>
+            <span>
+              <strong>AI photo estimates</strong>
+              <small>Connect your account to estimate calories from photos.</small>
             </span>
             <span aria-hidden="true">›</span>
           </Link>
