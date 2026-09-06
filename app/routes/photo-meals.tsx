@@ -119,23 +119,7 @@ export function PhotoMealCard({
   meal: PhotoMeal;
   csrfToken: string;
 }) {
-  const action = useFetcher<PhotoAction>();
-  const [elapsed, setElapsed] = useState(0);
   const active = meal.status === "active";
-  useEffect(() => {
-    if (!active) return;
-    const timer = setInterval(
-      () =>
-        setElapsed(
-          Math.max(
-            0,
-            Math.floor((Date.now() - Date.parse(meal.startedAt)) / 1000),
-          ),
-        ),
-      1000,
-    );
-    return () => clearInterval(timer);
-  }, [active, meal.startedAt]);
   const title = meal.name ?? meal.result?.name ?? "Plate photo";
   return (
     <article className={styles.card} aria-label={title}>
@@ -157,60 +141,85 @@ export function PhotoMealCard({
             ? ""
             : ` · ${Math.round(meal.energyMilliKcal / 1000)} kcal`}
         </small>
+        <PhotoMealStatus meal={meal} csrfToken={csrfToken} />
+      </div>
+    </article>
+  );
+}
+
+export function PhotoMealStatus({ meal, csrfToken }: { meal: PhotoMeal; csrfToken: string }) {
+  const action = useFetcher<PhotoAction>();
+  const [elapsed, setElapsed] = useState(0);
+  const active = meal.status === "active";
+  useEffect(() => {
+    if (!active) return;
+    const timer = setInterval(
+      () =>
+        setElapsed(
+          Math.max(
+            0,
+            Math.floor((Date.now() - Date.parse(meal.startedAt)) / 1000),
+          ),
+        ),
+      1000,
+    );
+    return () => clearInterval(timer);
+  }, [active, meal.startedAt]);
+  return (
+    <div className={styles.status}>
+      {active ? (
+        <>
+          <p role="status">{meal.stage}</p>
+          <progress aria-label={meal.stage} />
+          <small>
+            {elapsed} seconds elapsed
+            {meal.entryId ? " · Previous nutrition retained" : ""}
+          </small>
+        </>
+      ) : null}
+      {meal.error ? <p role="status">{meal.error}</p> : null}
+      <action.Form
+        action="/photo-analysis"
+        method="post"
+        className={styles.actions}
+      >
+        <input type="hidden" name="csrfToken" value={csrfToken} />
+        <input type="hidden" name="id" value={meal.id} />
+        <input type="hidden" name="attemptId" value={meal.attemptId} />
+        <input
+          type="hidden"
+          name="idempotencyKey"
+          value={`retry:${meal.attemptId}`}
+        />
         {active ? (
+          <button
+            disabled={action.state !== "idle"}
+            name="intent"
+            value="cancel"
+          >
+            Cancel analysis
+          </button>
+        ) : meal.status !== "succeeded" ? (
           <>
-            <p role="status">{meal.stage}</p>
-            <progress aria-label={meal.stage} />
-            <small>
-              {elapsed} seconds elapsed
-              {meal.entryId ? " · Previous nutrition retained" : ""}
-            </small>
-          </>
-        ) : null}
-        {meal.error ? <p role="status">{meal.error}</p> : null}
-        <action.Form
-          action="/photo-analysis"
-          method="post"
-          className={styles.actions}
-        >
-          <input type="hidden" name="csrfToken" value={csrfToken} />
-          <input type="hidden" name="id" value={meal.id} />
-          <input type="hidden" name="attemptId" value={meal.attemptId} />
-          <input
-            type="hidden"
-            name="idempotencyKey"
-            value={`retry:${meal.attemptId}`}
-          />
-          {active ? (
             <button
               disabled={action.state !== "idle"}
               name="intent"
-              value="cancel"
+              value="retry"
             >
-              Cancel analysis
+              Retry analysis
             </button>
-          ) : meal.status !== "succeeded" ? (
-            <>
-              <button
-                disabled={action.state !== "idle"}
-                name="intent"
-                value="retry"
-              >
-                Retry analysis
-              </button>
-              <button
-                disabled={action.state !== "idle"}
-                name="intent"
-                value="delete"
-              >
-                Delete photo meal
-              </button>
-            </>
-          ) : null}
-        </action.Form>
-        {action.data?.error ? <p role="alert">{action.data.error}</p> : null}
-      </div>
-    </article>
+            <button
+              disabled={action.state !== "idle"}
+              name="intent"
+              value="delete"
+            >
+              Delete photo meal
+            </button>
+          </>
+        ) : null}
+      </action.Form>
+      {action.data?.error ? <p role="alert">{action.data.error}</p> : null}
+    </div>
   );
 }
 

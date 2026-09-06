@@ -54,10 +54,10 @@ test("plate capture returns to Daily Log, survives reload, and supports correcti
   ).toBeVisible();
   await expect(page).toHaveURL(/date=2026-08-28/);
   await page.reload();
-  await expect(meals.getByRole("img", { name: "Your plate" })).toBeVisible();
   await expect(
-    meals.getByRole("link", { name: "Photo rice plate" }),
+    meals.getByRole("link", { name: /Photo rice plate/ }),
   ).toBeVisible();
+  await expect(meals.getByRole("img")).toHaveCount(0);
   await expect(meals).toContainText("250 kcal");
   await page.getByRole("button", { name: "Add Food", exact: true }).click();
   await page.getByRole("link", { name: /Manual/ }).click();
@@ -69,11 +69,18 @@ test("plate capture returns to Daily Log, survives reload, and supports correcti
   const order = await meals.locator("a, button").allTextContents();
   expect(order[0]).toContain("Add Food");
   expect(order.at(-1)).toContain("Add Water");
-  const photoCard = meals.getByRole("article", { name: "Photo rice plate", exact: true });
+  const photoCard = meals.getByRole("link", { name: /Photo rice plate/ });
+  const manualCard = meals.getByRole("link", { name: /Timeline egg/ });
   await expect(photoCard).toBeVisible();
+  const photoBox = await photoCard.boundingBox();
+  const manualBox = await manualCard.boundingBox();
+  expect(photoBox!.x).toBe(manualBox!.x);
+  expect(photoBox!.width).toBe(manualBox!.width);
+  expect(photoBox!.height).toBe(manualBox!.height);
   await page.getByRole("button", { name: "Add Water", exact: true }).scrollIntoViewIfNeeded();
   await page.screenshot({ path: testInfo.outputPath("unified-timeline-mobile.png") });
-  await meals.getByRole("link", { name: "Photo rice plate" }).click();
+  await meals.getByRole("link", { name: /Photo rice plate/ }).click();
+  await expect(page.getByRole("region", { name: "Photo analysis details" }).getByRole("img")).toBeVisible();
   await page.getByRole("button", { name: "Correct with AI" }).click();
   await page
     .getByRole("textbox", { name: "Correction", exact: true })
@@ -81,13 +88,13 @@ test("plate capture returns to Daily Log, survives reload, and supports correcti
   await page.getByRole("button", { name: "Apply correction" }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(meals.getByRole("progressbar")).toBeVisible();
-  await expect(meals.getByRole("link", { name: "Photo rice plate" })).toHaveCount(0);
+  await expect(meals.getByRole("link", { name: /Photo rice plate/ })).toHaveCount(0);
   await expect(meals).toContainText("250 kcal");
   await expect(
     page.getByRole("button", { name: "Add Food", exact: true }),
   ).toBeEnabled();
   await expect(meals).toContainText("350 kcal");
-  await meals.getByRole("link", { name: "Photo rice plate" }).click();
+  await meals.getByRole("link", { name: /Photo rice plate/ }).click();
   await page.getByRole("button", { name: "Correct with AI" }).click();
   await page
     .getByRole("textbox", { name: "Correction", exact: true })

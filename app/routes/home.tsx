@@ -26,7 +26,7 @@ import {
   serializeClearedSessionCookie,
 } from "../auth/http.server";
 import { getPhotoAnalysisService } from "../photo-analysis/runtime.server";
-import { PhotoMealCard, PhotoCorrection, usePhotoMealPolling, usePhotoUpload } from "./photo-meals";
+import { PhotoMealCard, PhotoMealStatus, PhotoCorrection, usePhotoMealPolling, usePhotoUpload } from "./photo-meals";
 import { AppNavigation } from "../app-navigation";
 import { isTestEnvironment } from "../runtime.server";
 import { UiIcon } from "../ui-icon";
@@ -3434,16 +3434,77 @@ function CatalogDialog({
   );
 }
 
-function PhotoTimelineEntry({ children, date, localEventTime }: {
+function FoodTimelineEntry({ entry, photoMeal, csrfToken, copyKey }: {
+  entry: Extract<Route.ComponentProps["loaderData"]["foodLog"]["events"][number], { kind: "food" }>;
+  photoMeal?: Route.ComponentProps["loaderData"]["photoMeals"][number];
+  csrfToken: string;
+  copyKey?: string;
+}) {
+  const active = photoMeal?.status === "active";
+  const className = copyKey && !active
+    ? `${styles.foodEntryCard} ${styles.foodEntryCardWithMenu}`
+    : styles.foodEntryCard;
+  const content = (
+    <>
+      <time
+        dateTime={`${entry.foodLogDate}T${entry.localEventTime}`}
+      >
+        {formatEventTime(entry.localEventTime)}
+      </time>
+      <span
+        className={styles.foodEntryMarker}
+        aria-hidden="true"
+      >
+        <UiIcon name="utensils" />
+      </span>
+      <span className={styles.foodEntryContent}>
+        <strong>{entry.name}</strong>
+        <small>
+          {entry.provider === "open-food-facts"
+            ? "Open Food Facts"
+            : entry.provider === "manual"
+              ? "Manual"
+            : entry.provider === "ai-photo" ? "AI photo estimate"
+            : `USDA FoodData Central · ${entry.dataType}`}
+        </small>
+        <small>
+          {entry.selectedMeasurementLabel} ×{" "}
+          {entry.quantityMicrounits / 1_000_000}
+        </small>
+      </span>
+      <span className={styles.foodEntryEnergy}>
+        {formatEnergy(entry.energyMilliKcal)}{" "}
+        <small>kcal</small>
+      </span>
+    </>
+  );
+  return (
+    <article>
+      {active ? (
+        <div className={className}>{content}</div>
+      ) : (
+        <Link className={className} data-entry-editor-trigger to={`${foodLogHref(entry.foodLogDate)}&entry=${entry.id}`}>
+          {content}
+        </Link>
+      )}
+      {copyKey && !active ? (
+        <FoodEntryCopyMenu csrfToken={csrfToken} entry={entry} idempotencyKey={copyKey} key={copyKey} />
+      ) : null}
+      {photoMeal && photoMeal.status !== "succeeded" ? (
+        <div className={styles.photoEntryStatus}>
+          <PhotoMealStatus meal={photoMeal} csrfToken={csrfToken} />
+        </div>
+      ) : null}
+    </article>
+  );
+}
+
+function PhotoTimelineEntry({ children }: {
   children: ReactNode;
-  date: string;
-  localEventTime?: string;
 }) {
   return (
     <article className={`${styles.foodEntryCard} ${styles.photoTimelineEntry}`}>
-      <time dateTime={localEventTime ? `${date}T${localEventTime}` : undefined}>
-        {localEventTime ? formatEventTime(localEventTime) : null}
-      </time>
+      <span className={styles.pendingTime} />
       <span className={styles.foodEntryMarker} aria-hidden="true">
         <UiIcon name="utensils" />
       </span>
@@ -3991,12 +4052,12 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
                       <PendingFoodEntry name={pendingFoodName} />
                     ) : null}
                     {photoUpload.feedback ? (
-                      <PhotoTimelineEntry date={foodLog.selectedDate}>
+                      <PhotoTimelineEntry>
                         {photoUpload.feedback}
                       </PhotoTimelineEntry>
                     ) : null}
                     {photoMeals.filter((meal) => meal.entryId === null).map((meal) => (
-                      <PhotoTimelineEntry key={meal.id} date={foodLog.selectedDate}>
+                      <PhotoTimelineEntry key={meal.id}>
                         <PhotoMealCard meal={meal} csrfToken={csrfToken} />
                       </PhotoTimelineEntry>
                     ))}
@@ -4004,63 +4065,8 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
                       const photoMeal = entry.kind === "food"
                         ? photoMeals.find((meal) => meal.entryId === entry.id)
                         : undefined;
-                      return photoMeal ? (
-                        <PhotoTimelineEntry key={photoMeal.id} date={entry.foodLogDate} localEventTime={entry.localEventTime}>
-                          <PhotoMealCard meal={photoMeal} csrfToken={csrfToken} />
-                        </PhotoTimelineEntry>
-                      ) : entry.kind === "food" ? (
-                        // Stryker disable next-line StringLiteral: a single-prefix mutation preserves key uniqueness against the water prefix.
-                        <article key={`food-${entry.id}`}>
-                          <Link
-                            className={
-                              copyIdempotencyKeys[entry.id]
-                                ? `${styles.foodEntryCard} ${styles.foodEntryCardWithMenu}`
-                                : styles.foodEntryCard
-                            }
-                            data-entry-editor-trigger
-                            to={`${foodLogHref(entry.foodLogDate)}&entry=${entry.id}`}
-                          >
-                            <time
-                              dateTime={`${entry.foodLogDate}T${entry.localEventTime}`}
-                            >
-                              {formatEventTime(entry.localEventTime)}
-                            </time>
-                            <span
-                              className={styles.foodEntryMarker}
-                              aria-hidden="true"
-                            >
-                              <UiIcon name="utensils" />
-                            </span>
-                            <span className={styles.foodEntryContent}>
-                              <strong>{entry.name}</strong>
-                              <small>
-                                {entry.provider === "open-food-facts"
-                                  ? "Open Food Facts"
-                                  : entry.provider === "manual"
-                                    ? "Manual"
-                                  : entry.provider === "ai-photo" ? "AI photo estimate"
-                                  : `USDA FoodData Central · ${entry.dataType}`}
-                              </small>
-                              <small>
-                                {entry.selectedMeasurementLabel} ×{" "}
-                                {entry.quantityMicrounits / 1_000_000}
-                              </small>
-                            </span>
-                            <span className={styles.foodEntryEnergy}>
-                              {formatEnergy(entry.energyMilliKcal)}{" "}
-                              <small>kcal</small>
-                            </span>
-                          </Link>
-                          {copyIdempotencyKeys[entry.id] ? (
-                            <FoodEntryCopyMenu
-                              csrfToken={csrfToken}
-                              entry={entry}
-                              idempotencyKey={copyIdempotencyKeys[entry.id]}
-                              key={copyIdempotencyKeys[entry.id]}
-                            />
-                          ) : null}
-                        </article>
-                      ) : (
+                      return entry.kind === "food" ? (
+                        <FoodTimelineEntry key={`food-${entry.id}`} entry={entry} photoMeal={photoMeal} csrfToken={csrfToken} copyKey={copyIdempotencyKeys[entry.id]} />                      ) : (
                         // Stryker disable next-line StringLiteral: a single-prefix mutation preserves key uniqueness against the food prefix.
                         <article key={`water-${entry.id}`}>
                           <Link

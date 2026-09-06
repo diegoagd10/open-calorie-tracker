@@ -2326,3 +2326,18 @@
     grid-row: 2;
   }
 }
+
+.photoEntryStatus {
+  margin: 0 0 0.75rem 7.5rem;
+  padding: 0.65rem 0.85rem;
+  border: 1px solid var(--rule);
+  border-radius: 0.7rem;
+  background: var(--surface);
+  font-size: 0.8rem;
+}
+
+@media (max-width: 420px) {
+  .photoEntryStatus {
+    margin-left: 2.625rem;
+  }
+}

@@ -2126,7 +2126,7 @@ test("photo meals share the food and water timeline in event order and expose co
     id: "photo-home", name: "Photo dinner", entryId: editableEntry.id, foodLogDate: "2026-08-31", status: "succeeded", stage: "Preparing result", attemptId: "photo-attempt", startedAt: "2026-08-31T12:00:00.000Z", finishedAt: "2026-08-31T12:00:05.000Z", error: null, energyMilliKcal: 59000,
     result: { name: "Original dinner", consumedFraction: 1, components: [], assumptions: [] },
   };
-  const food = { ...editableEntry, kind: "food", provider: "ai-photo", selectedMeasurementLabel: "Analyzed plate" };
+  const food = { ...editableEntry, name: "Photo dinner", kind: "food", provider: "ai-photo", selectedMeasurementLabel: "Analyzed plate" };
   const copiedFood = { ...food, id: 77, name: "Copied photo" };
   const water = { id: editableEntry.id, kind: "water", amountMicroliters: 237000, foodLogDate: "2026-08-31", localEventTime: "12:05:00" };
   const renderer = await renderHome({ photoMeals: [photoMeal], foodLog: { ...baseFoodLog, entries: [food, copiedFood], events: [copiedFood, food, water] }, foodEntryEditor: editableEntry });
@@ -2135,9 +2135,13 @@ test("photo meals share the food and water timeline in event order and expose co
   const actionsAndEntries = timeline.findAll(node => node.type === "button" || node.type === "a");
   expect(actionsAndEntries.map(node => nodeText(node))).toEqual([
     expect.stringContaining("Add Food"), expect.stringContaining("Copied photo"),
-    "Photo dinner", expect.stringContaining("Water"), expect.stringContaining("Add Water"),
+    expect.stringContaining("Photo dinner"), expect.stringContaining("Water"), expect.stringContaining("Add Water"),
   ]);
-  expect(timeline.findByProps({ "aria-label": "Photo dinner" })).toBeDefined();
+  const photoLink = timeline.findAllByType("a").find(node => node.props.href === "/?date=2026-08-31&entry=41")!;
+  expect(photoLink.props.className).toBe(styles.foodEntryCard);
+  expect(nodeText(photoLink.findByProps({ className: styles.foodEntryContent }))).toBe("Photo dinnerAI photo estimateAnalyzed plate × 1");
+  expect(nodeText(photoLink.findByProps({ className: styles.foodEntryEnergy }))).toBe("59 kcal");
+  expect(timeline.findAllByType("img")).toHaveLength(0);
   expect(timeline.findAllByType("time").map(node => [node.props.dateTime, nodeText(node)])).toEqual([
     ["2026-08-31T12:00:00", "12:00 PM"],
     ["2026-08-31T12:00:00", "12:00 PM"],

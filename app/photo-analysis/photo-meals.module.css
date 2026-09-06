@@ -48,6 +48,7 @@
 .content p {
   margin-block: 0.5rem;
 }
+.status progress,
 .card progress {
   display: block;
   width: 100%;
@@ -62,6 +63,7 @@
 .actions:empty {
   display: none;
 }
+.status button,
 .card button,
 .correction button {
   background: #edf3ee;
@@ -106,4 +108,12 @@
     width: 64px;
     height: 64px;
   }
+}
+
+.status > small {
+  display: block;
+  margin-block: 0.35rem;
+}
+.status p {
+  margin-block: 0.5rem;
 }
