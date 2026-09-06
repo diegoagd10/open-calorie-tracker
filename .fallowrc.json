@@ -40,6 +40,7 @@
           "app/root.tsx",
           "app/routes.ts",
           "app/app-navigation.tsx",
+          "app/date-rail.tsx",
           "app/settings-destinations.tsx",
           "app/ui-icon.tsx",
           "app/account.module.css",

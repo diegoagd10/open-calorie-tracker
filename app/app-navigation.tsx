@@ -8,7 +8,6 @@ export type AppNavigationProps = {
   csrfToken: string;
   selectedDate: string;
   today: string;
-  username: string;
 };
 
 function foodLogHref(date: string, calendar?: string): string {
@@ -22,7 +21,6 @@ export function AppNavigation({
   csrfToken,
   selectedDate,
   today,
-  username,
 }: AppNavigationProps) {
   const historyHref = foodLogHref(selectedDate, selectedDate.slice(0, 7));
 
@@ -36,7 +34,7 @@ export function AppNavigation({
             <span />
           </span>
           <span>
-            <strong>Open Calory</strong>
+            <strong>Open Calorie</strong>
             <small>Private tracker</small>
           </span>
         </div>
@@ -71,10 +69,6 @@ export function AppNavigation({
               <p>Your Food Log is isolated to this account.</p>
             </div>
           </div>
-          <Link className={styles.railAccount} to="/account/password">
-            <strong>Change password</strong>
-            <small>Signed in as {username}</small>
-          </Link>
           <Form action="/logout" method="post">
             <input name="csrfToken" type="hidden" value={csrfToken} />
             <button className={styles.logout} type="submit">

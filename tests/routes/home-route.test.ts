@@ -163,9 +163,9 @@ afterAll(async () => {
 
 test("home publishes metadata and enforces account/setup/date boundaries", async () => {
   expect(meta()).toEqual([
-    { title: "Open Calory Tracker · Private application" },
+    { title: "Open Calorie Tracker · Private application" },
     {
-      content: "Your private Open Calory Tracker application space",
+      content: "Your private Open Calorie Tracker application space",
       name: "description",
     },
   ]);

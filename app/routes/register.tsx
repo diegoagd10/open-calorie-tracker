@@ -22,7 +22,7 @@ type RegistrationActionData = {
 
 export function meta() {
   return [
-    { title: "Register · Open Calory Tracker" },
+    { title: "Register · Open Calorie Tracker" },
     { name: "description", content: "Create a private account" },
   ];
 }

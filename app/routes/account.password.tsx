@@ -18,7 +18,7 @@ type PasswordChangeActionData = {
 
 export function meta() {
   return [
-    { title: "Change password · Open Calory Tracker" },
+    { title: "Change password · Open Calorie Tracker" },
     { name: "description", content: "Change your private account password" },
   ];
 }

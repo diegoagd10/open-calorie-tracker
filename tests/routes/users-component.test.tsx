@@ -64,7 +64,7 @@ async function openDialog(renderer: ReactTestRenderer, label: string) {
 
 test("directory distinguishes active and disabled members and exposes safe account forms", async () => {
   expect(meta()).toEqual([
-    { title: "Users · Open Calory Tracker" },
+    { title: "Users · Open Calorie Tracker" },
     { name: "description", content: "Manage member access without exposing private nutrition data" },
   ]);
   const { renderer } = await renderUsers();

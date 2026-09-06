@@ -90,7 +90,23 @@
   margin: 0 -0.35rem 1rem;
 }
 
+.dateViewport {
+  overflow: hidden;
+  touch-action: pan-y pinch-zoom;
+  user-select: none;
+}
+
+.dateTrack {
+  display: flex;
+}
+
+.dateTrackSettling {
+  transition: transform 220ms ease-out;
+}
+
 .dateRail {
+  flex: 0 0 100%;
+  min-width: 0;
   display: grid;
   grid-template-columns: repeat(7, minmax(2.65rem, 1fr));
   gap: 0.2rem;
@@ -1828,8 +1844,7 @@
   display: block;
 }
 
-.railBrand small,
-.railAccount small {
+.railBrand small {
   margin-top: 0.1rem;
   color: var(--muted);
   font-size: 0.65rem;
@@ -1900,19 +1915,6 @@
   line-height: 1.45;
 }
 
-.railAccount {
-  padding: 0.75rem;
-  border: 1px solid var(--rule);
-  border-radius: 0.7rem;
-  color: var(--ink);
-  text-decoration: none;
-}
-
-.railAccount strong,
-.railAccount small {
-  display: block;
-}
-
 .logout {
   min-height: 2.5rem;
   border: 0;
@@ -1924,126 +1926,6 @@
   cursor: pointer;
 }
 
-.contextHead {
-  padding-bottom: 1rem;
-  border-bottom: 1px solid var(--rule);
-}
-
-.contextHead span,
-.contextHead strong,
-.contextMetric > span,
-.contextMetric strong {
-  display: block;
-}
-
-.contextHead span,
-.contextMetric > span {
-  color: var(--muted);
-  font-size: 0.64rem;
-}
-
-.contextHead span {
-  font-weight: 700;
-  text-transform: uppercase;
-}
-
-.contextHead strong {
-  margin-top: 0.25rem;
-  font-size: 1rem;
-}
-
-.contextTimeZone {
-  display: block;
-  margin-top: 0.35rem;
-  color: var(--muted);
-  font-size: 0.62rem;
-}
-
-.contextMetric {
-  padding: 1rem 0;
-  border-bottom: 1px solid var(--rule);
-}
-
-.contextMetric strong {
-  margin: 0.25rem 0 0.55rem;
-  font-size: 1.2rem;
-  font-variant-numeric: tabular-nums;
-}
-
-.contextMetric small {
-  color: var(--muted);
-  font-size: 0.65rem;
-  font-weight: 500;
-}
-
-.contextGoal::before {
-  content: "/ ";
-}
-
-.contextMetric i {
-  display: block;
-  overflow: hidden;
-  height: 0.45rem;
-  border-radius: 999px;
-  background: #e9edf1;
-}
-
-.contextMetric i span {
-  display: block;
-  width: var(--progress, 0%);
-  height: 100%;
-  border-radius: inherit;
-  background: var(--green);
-}
-
-.waterContext i span {
-  background: var(--blue);
-}
-
-.contextNote {
-  display: grid;
-  grid-template-columns: 1.5rem 1fr;
-  gap: 0.55rem;
-  margin-top: 1rem;
-  padding: 0.8rem;
-  border-radius: 0.7rem;
-  color: var(--green-dark);
-  background: #f2f5f6;
-}
-
-.contextNote > svg {
-  width: 1rem;
-  height: 1rem;
-}
-
-.contextNote p {
-  margin: 0;
-  color: var(--ink-2);
-  font-size: 0.64rem;
-  line-height: 1.45;
-}
-
-.contextNote strong {
-  display: block;
-  margin-bottom: 0.2rem;
-  color: var(--ink);
-  font-size: 0.68rem;
-}
-
-.contextSource {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  margin-top: auto;
-  color: var(--green-dark);
-  font-size: 0.65rem;
-  font-weight: 700;
-}
-
-.contextSource svg {
-  width: 0.85rem;
-  height: 0.85rem;
-}
 
 @media (max-width: 1119px) {
   .dateRailWrap {
@@ -2205,7 +2087,8 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .nutrientTrackSettling {
+  .nutrientTrackSettling,
+  .dateTrackSettling {
     transition: none;
   }
 
@@ -2265,6 +2148,11 @@
     padding: 0;
     background: var(--rule);
     box-shadow: 0 0 70px rgb(15 29 45 / 10%);
+  }
+
+  .foodLogShell {
+    grid-template-columns: 15.5rem minmax(0, 48rem);
+    width: min(63.5rem, 100%);
   }
 
   .desktopRail,

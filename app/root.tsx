@@ -32,7 +32,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <meta name="mobile-web-app-capable" content="yes" />
         <meta
           name="apple-mobile-web-app-title"
-          content="Open Calory Tracker"
+          content="Open Calorie Tracker"
         />
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
         <meta name="format-detection" content="telephone=no" />
@@ -63,13 +63,13 @@ export function ErrorBoundary({ error }: { error: unknown }) {
 
   return (
     <>
-      <title>{`${heading} · Open Calory Tracker`}</title>
+      <title>{`${heading} · Open Calorie Tracker`}</title>
       <main className={readinessStyles.shell}>
         <section
           className={readinessStyles.panel}
           aria-labelledby="error-heading"
         >
-          <p className={readinessStyles.eyebrow}>Open Calory Tracker</p>
+          <p className={readinessStyles.eyebrow}>Open Calorie Tracker</p>
           <h1 className={readinessStyles.heading} id="error-heading">
             {heading}
           </h1>

@@ -64,7 +64,7 @@ test("root layout exposes the document and mobile metadata", () => {
     { content: "#102a43", name: "theme-color" },
     { content: "yes", name: "apple-mobile-web-app-capable" },
     { content: "yes", name: "mobile-web-app-capable" },
-    { content: "Open Calory Tracker", name: "apple-mobile-web-app-title" },
+    { content: "Open Calorie Tracker", name: "apple-mobile-web-app-title" },
     { content: "default", name: "apple-mobile-web-app-status-bar-style" },
     { content: "telephone=no", name: "format-detection" },
   ]));
@@ -117,6 +117,6 @@ test.each([
   expect(renderer.root.findByProps({ id: "error-heading" }).children.join(""))
     .toBe(heading);
   expect(renderer.root.findAllByType("p").map((node) => node.children.join("")))
-    .toEqual(["Open Calory Tracker", message]);
+    .toEqual(["Open Calorie Tracker", message]);
   renderer.unmount();
 });

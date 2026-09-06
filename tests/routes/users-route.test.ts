@@ -130,7 +130,6 @@ test("member directory authorizes anonymous, member, and administrator requests"
     "csrfToken",
     "members",
     "today",
-    "username",
   ]);
   expect(administrator.csrfToken).not.toBe("");
   expect(administrator.members).toEqual([
@@ -157,7 +156,6 @@ test("member directory authorizes anonymous, member, and administrator requests"
     },
   ]);
   expect(administrator.today).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-  expect(administrator.username).toBe("sole.admin");
 });
 
 test("member directory responses are not stored", () => {

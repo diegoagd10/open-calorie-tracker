@@ -117,7 +117,7 @@ test("mobile metadata supports adding the app to an iPhone Home Screen", async (
   ).toHaveAttribute("content", "yes");
   await expect(
     page.locator('meta[name="apple-mobile-web-app-title"]'),
-  ).toHaveAttribute("content", "Open Calory Tracker");
+  ).toHaveAttribute("content", "Open Calorie Tracker");
 
   const manifestResponse = await request.get("/manifest.webmanifest");
   expect(manifestResponse.status()).toBe(200);

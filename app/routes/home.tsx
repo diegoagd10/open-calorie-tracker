@@ -28,6 +28,7 @@ import {
 } from "../auth/http.server";
 import { getPhotoAnalysisService } from "../photo-analysis/runtime.server";
 import { PhotoMealCard, PhotoMealStatus, PhotoCorrection, usePhotoMealPolling, usePhotoUpload } from "./photo-meals";
+import { DateRail } from "../date-rail";
 import { AppNavigation } from "../app-navigation";
 import { isTestEnvironment } from "../runtime.server";
 import { UiIcon } from "../ui-icon";
@@ -54,7 +55,6 @@ import {
   getFoodCatalogProvider,
 } from "../catalog/runtime.server";
 import {
-  addLocalDays,
   buildCalendarMonth,
   formatLocalDate,
   getNearbyLocalDates,
@@ -344,10 +344,10 @@ function barcodeCatalogFailure(
 
 export function meta() {
   return [
-    { title: "Open Calory Tracker · Private application" },
+    { title: "Open Calorie Tracker · Private application" },
     {
       name: "description",
-      content: "Your private Open Calory Tracker application space",
+      content: "Your private Open Calorie Tracker application space",
     },
   ];
 }
@@ -1800,99 +1800,6 @@ function DailySummary({
         ) : null}
       </section>
     </>
-  );
-}
-
-function DesktopDayContext({
-  foodLog,
-  isObscured,
-}: {
-  foodLog: Route.ComponentProps["loaderData"]["foodLog"];
-  isObscured: boolean;
-}) {
-  const goal = foodLog.goal;
-  const calorieTotal = foodLog.nutritionTotals.energyMilliKcal;
-  const calorieGoal = goal?.calorieTargetMilliKcal ?? null;
-  const goals = goal
-    ? waterGoalValues(goal.waterTargetMicroliters, foodLog.displayUnits)
-    : undefined;
-  const waterTotal = foodLog.waterTotalMicroliters;
-  const waterTotalDisplay = formatWaterAmount(
-    waterTotal,
-    foodLog.displayUnits,
-    3,
-  );
-  const selectedDay = formatLocalDate(foodLog.selectedDate, {
-    day: "numeric",
-    month: "short",
-    weekday: "short",
-  }).replace(",", " ·");
-
-  return (
-    <aside
-      aria-hidden={isObscured || undefined}
-      aria-label="Selected day context"
-      className={styles.desktopContext}
-    >
-      <div className={styles.contextHead}>
-        <span>Selected day</span>
-        <strong>{selectedDay}</strong>
-        <small className={styles.contextTimeZone}>{foodLog.timeZone}</small>
-      </div>
-      <div className={styles.contextMetric}>
-        <span>Calories</span>
-        <strong>
-          {formatEnergy(calorieTotal.known)}{" "}
-          {calorieGoal ? (
-            <small className={styles.contextGoal}>
-              {formatEnergy(calorieGoal)} kcal
-            </small>
-          ) : (
-            <small>No goal</small>
-          )}
-        </strong>
-        {calorieGoal ? (
-          <i style={progressStyle(calorieTotal.known, calorieGoal)}>
-            <span />
-          </i>
-        ) : null}
-      </div>
-      <div className={`${styles.contextMetric} ${styles.waterContext}`}>
-        <span>Water</span>
-        <strong>
-          {waterTotalDisplay}{" "}
-          {goal ? (
-            <small className={styles.contextGoal}>
-              {goals!.water} {goals!.waterUnit}
-            </small>
-          ) : (
-            <small>No goal</small>
-          )}
-        </strong>
-        {goal ? (
-          <i style={progressStyle(waterTotal, goal.waterTargetMicroliters)}>
-            <span />
-          </i>
-        ) : null}
-      </div>
-      <div className={styles.contextNote}>
-        <UiIcon name="info" />
-        <p>
-          <strong>Nutrition Snapshot</strong>
-          Existing Food Entries keep their saved provider values even when
-          USDA changes later.
-        </p>
-      </div>
-      <a
-        aria-label="USDA FoodData Central source"
-        className={styles.contextSource}
-        href="https://fdc.nal.usda.gov/"
-        rel="noreferrer"
-        target="_blank"
-      >
-        USDA FoodData Central <UiIcon name="external" />
-      </a>
-    </aside>
   );
 }
 
@@ -3819,130 +3726,6 @@ function CopyFoodEntryDialog({
   );
 }
 
-function DateRail({
-  nearbyDates,
-  selectedDate,
-  today,
-}: {
-  nearbyDates: Route.ComponentProps["loaderData"]["nearbyDates"];
-  selectedDate: string;
-  today: string;
-}) {
-  const navigate = useNavigate();
-  const swipe = useRef<{
-    pointerId: number;
-    x: number;
-    y: number;
-  } | null>(null);
-  const swiped = useRef(false);
-
-  function startSwipe(event: ReactPointerEvent<HTMLDivElement>) {
-    swiped.current = false;
-    if (event.pointerType !== "touch" || !event.isPrimary) {
-      swipe.current = null;
-      return;
-    }
-    swipe.current = {
-      pointerId: event.pointerId,
-      x: event.clientX,
-      y: event.clientY,
-    };
-  }
-
-  function moveSwipe(event: ReactPointerEvent<HTMLDivElement>) {
-    const start = swipe.current;
-    if (!start || start.pointerId !== event.pointerId) return;
-    const dx = Math.abs(event.clientX - start.x);
-    const dy = Math.abs(event.clientY - start.y);
-    if (dx < 8 && dy < 8) return;
-    if (!swiped.current && dy >= dx) {
-      swipe.current = null;
-      return;
-    }
-    swiped.current = true;
-    event.currentTarget.setPointerCapture(event.pointerId);
-  }
-
-  function endSwipe(event: ReactPointerEvent<HTMLDivElement>) {
-    const start = swipe.current;
-    swipe.current = null;
-    if (!start || start.pointerId !== event.pointerId) return;
-    const dx = event.clientX - start.x;
-    if (
-      Math.abs(dx) < 40 ||
-      Math.abs(dx) <= Math.abs(event.clientY - start.y)
-    ) return;
-    swiped.current = true;
-    const nextDate = addLocalDays(selectedDate, dx < 0 ? 1 : -1);
-    if (nextDate <= today) {
-      void navigate(foodLogHref(nextDate), { preventScrollReset: true });
-    }
-  }
-
-  return (
-    <div className={styles.dateRailWrap}>
-      <Link
-        aria-label="Browse past dates"
-        className={styles.dateArrow}
-        to={foodLogHref(addLocalDays(selectedDate, -7))}
-      >
-        ‹
-      </Link>
-      <div
-        className={styles.dateRail}
-        aria-label="Nearby dates"
-        onClickCapture={(event) => {
-          if (swiped.current && event.detail !== 0) event.preventDefault();
-        }}
-        onPointerDown={startSwipe}
-        onPointerMove={moveSwipe}
-        onPointerUp={endSwipe}
-        onPointerCancel={() => { swipe.current = null; }}
-      >
-        {nearbyDates.map((day) => {
-          const weekday = formatLocalDate(day.date, {
-            weekday: "short",
-          });
-          const dateNumber = formatLocalDate(day.date, {
-            day: "numeric",
-          });
-          return day.isFuture ? (
-            <button
-              className={styles.futureDate}
-              disabled
-              key={day.date}
-              type="button"
-            >
-              <small>{weekday}</small>
-              <strong>{dateNumber}</strong>
-            </button>
-          ) : (
-            <Link
-              aria-current={day.isSelected ? "date" : undefined}
-              className={`${styles.dateButton} ${day.isSelected ? styles.selectedDate : ""}`}
-              key={day.date}
-              to={foodLogHref(day.date)}
-            >
-              <small>{weekday}</small>
-              <strong>{dateNumber}</strong>
-            </Link>
-          );
-        })}
-      </div>
-      <Link
-        aria-label="Open calendar"
-        className={styles.dateArrow}
-        to={foodLogHref(
-          selectedDate,
-          selectedDate.slice(0, 7),
-        )}
-      >
-        ›
-      </Link>
-    </div>
-  );
-}
-
 export default function Home({ actionData, loaderData }: Route.ComponentProps) {
   const {
     calendar,
@@ -3956,7 +3739,6 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
     photoMeals = [],
     nearbyDates,
     notice,
-    username,
     waterDialog,
   } = loaderData;
   const photoUpload = usePhotoUpload(foodLog.selectedDate, csrfToken);
@@ -3980,7 +3762,7 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
   return (
     <>
       <div
-        className={styles.shell}
+        className={`${styles.shell} ${styles.foodLogShell}`}
         inert={
           visibleCatalog || activeFoodEntryEditor || activeWaterDialog || copyDialog
             ? true
@@ -3995,7 +3777,6 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
           csrfToken={csrfToken}
           selectedDate={foodLog.selectedDate}
           today={foodLog.today}
-          username={username}
         />
         <main className={styles.appSurface} id="food-log-content">
           <header className={styles.mobileHeader}>
@@ -4017,7 +3798,6 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
               </h1>
               <span className={styles.privacyCue}>◈ Private</span>
             </div>
-            <p className={styles.selectedDateLabel}>{selectedLabel}</p>
           </header>
 
           {calendar ? (
@@ -4028,6 +3808,7 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
           ) : (
             <section aria-label="Food Log">
               <DateRail
+                key={foodLog.selectedDate}
                 nearbyDates={nearbyDates}
                 selectedDate={foodLog.selectedDate}
                 today={foodLog.today}
@@ -4184,12 +3965,6 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
             </section>
           )}
         </main>
-        <DesktopDayContext
-          foodLog={foodLog}
-          isObscured={Boolean(
-            visibleCatalog || activeFoodEntryEditor || activeWaterDialog || copyDialog,
-          )}
-        />
       </div>
       {visibleCatalog ? (
         <CatalogDialog

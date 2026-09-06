@@ -61,11 +61,11 @@ function text(renderer: ReactTestRenderer): string {
 
 describe("authentication route metadata", () => {
   test.each([
-    [loginMeta, "Sign in · Open Calory Tracker", "Sign in to your private account"],
-    [registerMeta, "Register · Open Calory Tracker", "Create a private account"],
+    [loginMeta, "Sign in · Open Calorie Tracker", "Sign in to your private account"],
+    [registerMeta, "Register · Open Calorie Tracker", "Create a private account"],
     [
       passwordMeta,
-      "Change password · Open Calory Tracker",
+      "Change password · Open Calorie Tracker",
       "Change your private account password",
     ],
   ] as const)("publishes an exact title and description", (meta, title, content) => {

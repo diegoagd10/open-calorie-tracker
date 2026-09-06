@@ -10,9 +10,9 @@ import {
   useLoaderData,
 } from "react-router";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 
-import { buildCalendarMonth } from "../../app/food-log/date";
+import { buildCalendarMonth, getNearbyLocalDates } from "../../app/food-log/date";
 import Home from "../../app/routes/home";
 import styles from "../../app/food-log.module.css";
 
@@ -2234,49 +2234,86 @@ test("photo meals share the food and water timeline in event order and expose co
   router.dispose();
 });
 
-test("touch date navigation distinguishes taps, vertical scrolling, cancellation and horizontal swipes", async () => {
-  const loaderData = { ...baseLoaderData, foodLog: { ...baseFoodLog, selectedDate: "2026-08-30" } };
-  const router = createMemoryRouter([{ path: "/", Component: () => Home({ loaderData, actionData: undefined } as never), loader: () => loaderData }], { hydrationData: { loaderData: { "0": loaderData } }, initialEntries: ["/?date=2026-08-30"] });
+test("touch date navigation follows the finger and settles by week while preserving taps and scrolling", async () => {
+  vi.useFakeTimers();
+  const loadDate = (date: string) => ({
+    ...baseLoaderData,
+    nearbyDates: getNearbyLocalDates(date, "2026-08-31"),
+    foodLog: { ...baseFoodLog, selectedDate: date },
+  });
+  const loaderData = loadDate("2026-08-30");
+  const router = createMemoryRouter([{
+    path: "/",
+    Component: () => Home({ loaderData: useLoaderData(), actionData: undefined } as never),
+    loader: ({ request }) => loadDate(new URL(request.url).searchParams.get("date")!),
+  }], { hydrationData: { loaderData: { "0": loaderData } }, initialEntries: ["/?date=2026-08-30"] });
   let renderer!: ReactTestRenderer;
-  await act(() => { renderer = create(createElement(RouterProvider, { router })); });
-  const rail = () => renderer.root.findByProps({ "aria-label": "Nearby dates" });
-  let captured: number[] = [];
-  const event = (overrides: Record<string, unknown> = {}) => ({ pointerType: "touch", isPrimary: true, pointerId: 1, clientX: 100, clientY: 100, currentTarget: { setPointerCapture: (id: number) => captured.push(id) }, ...overrides });
-  const tapPrevented = () => {
-    let prevented = false;
-    rail().props.onClickCapture({ detail: 1, preventDefault: () => { prevented = true; } });
-    return prevented;
-  };
-  expect(tapPrevented()).toBe(false);
-  for (const begin of [{ pointerType: "mouse" }, { isPrimary: false }]) {
-    await act(() => { rail().props.onPointerDown(event(begin)); rail().props.onPointerMove(event({ clientX: 160 })); rail().props.onPointerUp(event({ clientX: 160 })); });
-    expect(router.state.location.search).toBe("?date=2026-08-30"); expect(captured).toEqual([]);
-  }
-  await act(() => { rail().props.onPointerDown(event()); rail().props.onPointerMove(event({ pointerId: 2, clientX: 160 })); rail().props.onPointerUp(event({ pointerId: 2, clientX: 160 })); });
-  expect(captured).toEqual([]); expect(router.state.location.search).toBe("?date=2026-08-30");
-  await act(() => { rail().props.onPointerDown(event()); rail().props.onPointerMove(event({ clientX: 107, clientY: 107 })); });
-  expect(captured).toEqual([]); expect(tapPrevented()).toBe(false);
-  await act(() => { rail().props.onPointerMove(event({ clientX: 108, clientY: 107 })); });
-  expect(captured).toEqual([1]); expect(tapPrevented()).toBe(true);
-  let keyboardPrevented = false;
-  rail().props.onClickCapture({ detail: 0, preventDefault: () => { keyboardPrevented = true; } });
-  expect(keyboardPrevented).toBe(false);
-  await act(() => { rail().props.onPointerMove(event({ clientX: 108, clientY: 200 })); });
-  expect(captured).toEqual([1, 1]);
-  await act(() => { rail().props.onPointerCancel(); rail().props.onPointerUp(event({ clientX: 160 })); });
-  expect(router.state.location.search).toBe("?date=2026-08-30");
-  for (const [x, y] of [[107, 108], [108, 108], [105, 140]]) {
-    captured = [];
-    await act(() => { rail().props.onPointerDown(event()); rail().props.onPointerMove(event({ clientX: x, clientY: y })); rail().props.onPointerUp(event({ clientX: 160 })); });
-    expect(captured).toEqual([]); expect(router.state.location.search).toBe("?date=2026-08-30"); expect(tapPrevented()).toBe(false);
-  }
-  for (const [x, y] of [[139, 100], [140, 140], [140, 150]]) {
-    await act(() => { rail().props.onPointerDown(event()); rail().props.onPointerUp(event({ clientX: x, clientY: y })); });
+  try {
+    await act(() => { renderer = create(createElement(RouterProvider, { router })); });
+    const rail = () => renderer.root.findByProps({ "aria-label": "Nearby dates" });
+    const track = () => renderer.root.findAllByType("div").find((node) => String(node.props.className).split(" ").includes(styles.dateTrack))!;
+    const captured: number[] = [];
+    const event = (overrides: Record<string, unknown> = {}) => ({
+      pointerType: "touch", isPrimary: true, pointerId: 1, clientX: 150, clientY: 100,
+      currentTarget: { setPointerCapture: (id: number) => captured.push(id), getBoundingClientRect: () => ({ width: 350 }) },
+      ...overrides,
+    });
+    const tapPrevented = (detail = 1) => {
+      let prevented = false;
+      rail().props.onClickCapture({ detail, preventDefault: () => { prevented = true; } });
+      return prevented;
+    };
+    for (const begin of [{ pointerType: "mouse" }, { isPrimary: false }]) {
+      await act(() => { rail().props.onPointerDown(event(begin)); rail().props.onPointerMove(event({ clientX: 50 })); rail().props.onPointerUp(event({ clientX: 50 })); });
+      expect(router.state.location.search).toBe("?date=2026-08-30");
+      expect(captured).toEqual([]);
+    }
+    await act(() => { rail().props.onPointerDown(event()); rail().props.onPointerMove(event({ clientX: 154, clientY: 140 })); rail().props.onPointerUp(event({ clientX: 50 })); });
+    expect(tapPrevented()).toBe(false);
+    expect(track().props.style.transform).toBe("translateX(calc(-100% + 0px))");
+
+    await act(() => { rail().props.onPointerDown(event()); rail().props.onPointerMove(event({ pointerId: 2, clientX: 50 })); rail().props.onPointerUp(event({ pointerId: 2, clientX: 50 })); });
+    expect(captured).toEqual([]);
+    await act(() => rail().props.onPointerMove(event({ clientX: 120 })));
+    expect(track().props.style.transform).toBe("translateX(calc(-100% + -30px))");
+    expect(captured).toEqual([1]);
+    expect(tapPrevented()).toBe(true);
+    expect(tapPrevented(0)).toBe(false);
+    await act(() => rail().props.onPointerCancel(event()));
+    expect(track().props.style.transform).toBe("translateX(calc(-100% + 0px))");
+
+    async function drag(dx: number) {
+      await act(() => { rail().props.onPointerDown(event()); rail().props.onPointerMove(event({ clientX: 150 + dx })); });
+      await act(() => rail().props.onPointerUp(event({ clientX: 150 + dx })));
+    }
+    await drag(-20);
+    expect(track().props.style.transform).toBe("translateX(calc(-100% + 0px))");
+    await act(async () => { await vi.advanceTimersByTimeAsync(220); });
     expect(router.state.location.search).toBe("?date=2026-08-30");
+
+    await drag(100);
+    expect(track().props.style.transform).toBe("translateX(calc(-100% + 350px))");
+    expect(router.state.location.search).toBe("?date=2026-08-30");
+    await act(async () => { await vi.advanceTimersByTimeAsync(220); });
+    expect(router.state.location.search).toBe("?date=2026-08-23");
+    expect(router.state.preventScrollReset).toBe(true);
+    expect(track().props.style.transform).toBe("translateX(calc(-100% + 0px))");
+    await drag(-100);
+    await act(async () => { await vi.advanceTimersByTimeAsync(220); });
+    expect(router.state.location.search).toBe("?date=2026-08-30");
+    await drag(-100);
+    await act(async () => { await vi.advanceTimersByTimeAsync(220); });
+    expect(router.state.location.search).toBe("?date=2026-08-31");
+    await act(() => { rail().props.onPointerDown(event()); rail().props.onPointerMove(event({ clientX: 50 })); });
+    expect(track().props.style.transform).toBe("translateX(calc(-100% + -20px))");
+    await act(() => rail().props.onPointerUp(event({ clientX: 50 })));
+    await act(async () => { await vi.advanceTimersByTimeAsync(220); });
+    expect(router.state.location.search).toBe("?date=2026-08-31");
+    await act(() => { rail().props.onPointerDown(event()); rail().props.onPointerUp(event()); });
+    expect(tapPrevented()).toBe(false);
+  } finally {
+    await act(() => renderer?.unmount());
+    router.dispose();
+    vi.useRealTimers();
   }
-  await act(() => { rail().props.onPointerDown(event()); rail().props.onPointerUp(event({ clientX: 140 })); });
-  expect(router.state.location.search).toBe("?date=2026-08-29"); expect(router.state.preventScrollReset).toBe(true); expect(tapPrevented()).toBe(true);
-  await act(() => { rail().props.onPointerDown(event()); rail().props.onPointerUp(event({ clientX: 60 })); });
-  expect(router.state.location.search).toBe("?date=2026-08-31");
-  await act(() => renderer.unmount()); router.dispose();
 });

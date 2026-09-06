@@ -11,7 +11,7 @@ import shellStyles from "../food-log.module.css";
 import styles from "../photo-analysis/connection.module.css";
 
 export function meta() {
-  return [{ title: "AI photo estimates · Open Calory Tracker" }];
+  return [{ title: "AI photo estimates · Open Calorie Tracker" }];
 }
 export function headers() {
   return { "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" };
@@ -64,7 +64,7 @@ export default function AiSettings({ loaderData, actionData }: Route.ComponentPr
   return (
     <div className={shellStyles.shell}>
       <a className={shellStyles.skipLink} href="#ai-settings">Skip to AI settings</a>
-      <AppNavigation active="settings" csrfToken={loaderData.csrfToken} selectedDate={loaderData.today} today={loaderData.today} username={loaderData.username} />
+      <AppNavigation active="settings" csrfToken={loaderData.csrfToken} selectedDate={loaderData.today} today={loaderData.today} />
       <main className={shellStyles.appSurface} id="ai-settings">
         <header className={shellStyles.mobileHeader}>
           <div className={shellStyles.titleLine}><h1>AI photo estimates</h1></div>

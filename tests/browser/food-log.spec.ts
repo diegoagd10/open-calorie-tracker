@@ -298,10 +298,10 @@ test("date strip stays put and supports mobile swipes across weeks", async ({
   });
   await completeSetupForTestUser(page, "food.log.date.swipes");
   const rail = page.getByLabel("Nearby dates");
-  const week = (await rail.textContent())!;
+  const week = (await rail.locator('div:not([aria-hidden]) > a, div:not([aria-hidden]) > button').allTextContents()).join("");
   await page.getByRole("link", { name: "Fri 4", exact: true }).click();
   await expect(page).toHaveURL("/?date=2026-09-04");
-  await expect(rail).toHaveText(week);
+  expect((await rail.locator('div:not([aria-hidden]) > a, div:not([aria-hidden]) > button').allTextContents()).join("")).toBe(week);
   await expect(page.getByRole("link", { name: "Sat 5", exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: "Browse past dates" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Open calendar" })).toBeVisible();
@@ -323,7 +323,7 @@ test("date strip stays put and supports mobile swipes across weeks", async ({
     await expect(mobile.getByRole("link", { name: "Browse past dates" })).toBeHidden();
     await expect(mobile.getByRole("link", { name: "Open calendar" })).toBeHidden();
     const bounds = await mobileRail.boundingBox();
-    for (const day of await mobileRail.locator(":scope > *").all()) {
+    for (const day of await mobileRail.locator("a, button").all()) {
       await expect(day).toBeVisible();
       const box = await day.boundingBox();
       expect(box!.x).toBeGreaterThanOrEqual(bounds!.x);
@@ -354,18 +354,24 @@ test("date strip stays put and supports mobile swipes across weeks", async ({
         type: "touchMove",
       });
     }
+    if (dx === 100 && dy === 0 && !cancel) {
+      const activeWeek = mobileRail.locator("div:not([aria-hidden]):has(> a[aria-current=\"date\"])");
+      await expect.poll(async () => (await activeWeek.boundingBox())!.x - box.x).toBeGreaterThan(80);
+      await expect.poll(async () => (await activeWeek.boundingBox())!.x - box.x).toBeLessThan(115);
+    }
     await client.send("Input.dispatchTouchEvent", {
       touchPoints: [], type: cancel ? "touchCancel" : "touchEnd",
     });
   }
   await swipe(100);
-  await expect(mobile).toHaveURL("/?date=2026-09-04");
+  await expect(mobile).toHaveURL("/?date=2026-08-29");
+  await expect(mobile.getByRole("link", { name: "Sat 29", exact: true })).toHaveAttribute("aria-current", "date");
+  await swipe(-100);
+  await expect(mobile).toHaveURL("/?date=2026-09-05");
   expect(await saturday.boundingBox()).toEqual(saturdayPosition);
   await swipe(-100);
   await expect(mobile).toHaveURL("/?date=2026-09-05");
-  await swipe(-100);
-  await expect(mobile).toHaveURL("/?date=2026-09-05");
-  await swipe(20);
+  await swipe(-20);
   await expect(mobile).toHaveURL("/?date=2026-09-05");
   await swipe(5, -70);
   await expect(mobile).toHaveURL("/?date=2026-09-05");
@@ -375,8 +381,9 @@ test("date strip stays put and supports mobile swipes across weeks", async ({
   await mobile.getByRole("link", { name: "Mon 31", exact: true }).tap();
   await expect(mobile).toHaveURL("/?date=2026-08-31");
   await swipe(100);
-  await expect(mobile).toHaveURL("/?date=2026-08-30");
-  await expect(mobile.getByRole("link", { name: "Sun 30", exact: true })).toHaveAttribute("aria-current", "date");
+  await expect(mobile).toHaveURL("/?date=2026-08-24");
+  await expect(mobile.getByRole("link", { name: "Mon 24", exact: true })).toHaveAttribute("aria-current", "date");
+  await mobile.emulateMedia({ reducedMotion: "reduce" });
   await swipe(-100);
   await expect(mobile).toHaveURL("/?date=2026-08-31");
   await mobile.getByRole("link", { name: "Sat 5", exact: true }).focus();

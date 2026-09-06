@@ -80,7 +80,7 @@ function useMemberDialog() {
 
 export function meta() {
   return [
-    { title: "Users · Open Calory Tracker" },
+    { title: "Users · Open Calorie Tracker" },
     {
       name: "description",
       content: "Manage member access without exposing private nutrition data",
@@ -98,7 +98,6 @@ export async function loader({ request }: Route.LoaderArgs) {
     csrfToken: session.csrfToken,
     members: getAuthenticationService().listManageableMembers(),
     today: new Date().toISOString().slice(0, 10),
-    username: session.user.username,
   };
 }
 
@@ -336,7 +335,6 @@ export default function Users({ actionData, loaderData }: Route.ComponentProps) 
         csrfToken={loaderData.csrfToken}
         selectedDate={loaderData.today}
         today={loaderData.today}
-        username={loaderData.username}
       />
       <main className={shellStyles.appSurface} id="member-directory-content">
         <header className={shellStyles.mobileHeader}>

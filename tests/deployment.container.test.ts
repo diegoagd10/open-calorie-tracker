@@ -280,7 +280,7 @@ describe.skipIf(!runDeploymentTests)("production container deployment", () => {
     expect(await liveness.json()).toEqual({ status: "live" });
     const page = await fetch(firstUrl);
     expect(page.status).toBe(200);
-    expect(await page.text()).toContain("Open Calory Tracker");
+    expect(await page.text()).toContain("Open Calorie Tracker");
 
     await docker([
       "exec",
