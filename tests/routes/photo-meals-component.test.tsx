@@ -301,6 +301,37 @@ test("capture uploads the selected date and CSRF once, previews progress, and re
   expect(revokeUrl).toHaveBeenCalledWith("blob:photo-preview");
 });
 
+test.each([
+  "javascript:alert(1)",
+  "data:text/html,<script>alert(1)</script>",
+  "https://untrusted.example/plate.png",
+])("upload progress refuses a non-blob preview URL: %s", async (url) => {
+  vi.spyOn(URL, "createObjectURL").mockReturnValue(url);
+  vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+  await render([]);
+  await act(() =>
+    renderer.root
+      .findByProps({ "aria-label": "Take plate photo" })
+      .props.onChange({
+        target: {
+          files: [new File([new Uint8Array(12)], "plate.png", { type: "image/png" })],
+          value: "selected",
+        },
+      }),
+  );
+  state.fetcher.state = "submitting";
+  await act(() =>
+    renderer.update(createElement(PhotoMeals, {
+      meals: [],
+      date: "2026-09-04",
+      csrfToken: "csrf-photo",
+    })),
+  );
+  expect(renderer.root.findAllByType("img")).toHaveLength(0);
+  expect(text()).toContain("Uploading photo…");
+  expect(state.fetcher.submit).toHaveBeenCalledTimes(1);
+});
+
 test("empty capture does nothing and oversized photos explain the limit before uploading", async () => {
   await render([]);
   const change = renderer.root.findByProps({ "aria-label": "Take plate photo" })

@@ -82,7 +82,9 @@ export function PhotoMeals({
       </p>
       {upload.state !== "idle" ? (
         <article className={styles.card}>
-          {preview ? <img src={preview} alt="Plate being uploaded" /> : null}
+          {preview && preview.startsWith("blob:") ? (
+            <img src={preview} alt="Plate being uploaded" />
+          ) : null}
           <div>
             <strong role="status">Uploading photo…</strong>
             <progress aria-label="Uploading photo" />
