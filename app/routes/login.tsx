@@ -23,7 +23,7 @@ const genericLoginError = "The username or password is incorrect.";
 
 export function meta() {
   return [
-    { title: "Sign in · Open Calory Tracker" },
+    { title: "Sign in · Open Calorie Tracker" },
     { name: "description", content: "Sign in to your private account" },
   ];
 }

@@ -25,7 +25,7 @@ type SetupActionData = {
 
 export function meta() {
   return [
-    { title: "Set up your Food Log · Open Calory Tracker" },
+    { title: "Set up your Food Log · Open Calorie Tracker" },
     {
       name: "description",
       content: "Choose display units and set your initial Food Log goals",

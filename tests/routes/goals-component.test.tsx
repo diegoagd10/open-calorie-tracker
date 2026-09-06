@@ -85,7 +85,7 @@ function nodeText(node: ReactTestRenderer["root"]): string {
 
 test("goals route publishes private uncached metadata", () => {
   expect(meta()).toEqual([
-    { title: "Goals · Open Calory Tracker" },
+    { title: "Goals · Open Calorie Tracker" },
     {
       content: "Replace private goals from an effective local date",
       name: "description",

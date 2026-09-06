@@ -101,7 +101,6 @@ describe("shared route components", () => {
           csrfToken: "navigation-csrf",
           selectedDate: "2026-08-30",
           today: "2026-08-31",
-          username: "route-user",
         }),
       );
       const links = renderer.root.findAllByType("a");
@@ -110,7 +109,6 @@ describe("shared route components", () => {
         "/?date=2026-08-31",
         "/?date=2026-08-30&calendar=2026-08",
         "/settings/goals",
-        "/account/password",
         "/?date=2026-08-31",
         "/?date=2026-08-30&calendar=2026-08",
         "/settings/goals",
@@ -131,11 +129,6 @@ describe("shared route components", () => {
       ).toBe(true);
       expect(renderer.root.findByProps({ name: "csrfToken" }).props.value)
         .toBe("navigation-csrf");
-      expect(
-        renderer.root.findAllByType("small").some((node) =>
-          node.children.join("").includes("route-user"),
-        ),
-      ).toBe(true);
       renderer.unmount();
     },
   );

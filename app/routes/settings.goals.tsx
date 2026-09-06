@@ -67,7 +67,7 @@ const goalFields = [
 
 export function meta() {
   return [
-    { title: "Goals · Open Calory Tracker" },
+    { title: "Goals · Open Calorie Tracker" },
     {
       name: "description",
       content: "Replace private goals from an effective local date",
@@ -231,7 +231,6 @@ export default function Goals({ actionData, loaderData }: Route.ComponentProps) 
         csrfToken={loaderData.csrfToken}
         selectedDate={loaderData.today}
         today={loaderData.today}
-        username={loaderData.username}
       />
       <main className={shellStyles.appSurface} id="goal-settings-content">
         <header className={shellStyles.mobileHeader}>
