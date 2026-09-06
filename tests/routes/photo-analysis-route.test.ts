@@ -125,3 +125,168 @@ test("photo upload requires a session, origin and CSRF, and returns an owned pri
   expect(photo.headers.get("Cache-Control")).toBe("private, no-store");
   expect(Buffer.from(await photo.arrayBuffer())).toEqual(bytes);
 });
+
+test("status, correction, cancellation, retry and deletion preserve the authenticated HTTP contract", async () => {
+  const initial = form();
+  initial.set("idempotencyKey", "route-full-workflow");
+  const started = await action(post(initial));
+  const meal = (await started.json()) as {
+    id: string;
+    attemptId: string;
+    entryId: number;
+  };
+  const read = () =>
+    loader(
+      args(
+        new Request(`${origin}/photo-analysis?id=${meal.id}`, {
+          headers: { Cookie: cookie },
+        }),
+      ),
+    );
+  const submit = (intent: string, fields: Record<string, string> = {}) => {
+    const body = new FormData();
+    for (const [key, value] of Object.entries({
+      intent,
+      csrfToken: csrf,
+      id: meal.id,
+      ...fields,
+    }))
+      body.set(key, value);
+    return action(post(body));
+  };
+  await expect
+    .poll(
+      async () => ((await (await read()).json()) as { status: string }).status,
+      { timeout: 4000 },
+    )
+    .toBe("succeeded");
+  const saved = await read();
+  expect(saved.headers.get("Cache-Control")).toBe("private, no-store");
+  const value = (await saved.json()) as { entryId: number; result: unknown };
+  expect(value).toMatchObject({
+    energyMilliKcal: 250000,
+    result: {
+      name: "Photo rice plate",
+      consumedFraction: 1,
+      assumptions: ["Rice portion estimated from the photo"],
+      components: [
+        {
+          id: "rice",
+          name: "Cooked rice",
+          quantity: 200,
+          unit: "g",
+          includes: [],
+          source: { kind: "ai", reason: "Deterministic browser fixture" },
+          nutrition: {
+            energyKcal: 250,
+            proteinGrams: 5,
+            carbohydrateGrams: 50,
+            fatGrams: 2,
+          },
+        },
+      ],
+    },
+  });
+  const correction = await submit("correct", {
+    entryId: String(value.entryId),
+    correction: "Extra butter",
+    idempotencyKey: "route-full-correction",
+  });
+  expect(correction.status).toBe(202);
+  const processing = (await correction.json()) as { attemptId: string };
+  expect(processing).toMatchObject({
+    id: meal.id,
+    status: "active",
+    energyMilliKcal: 250000,
+    entryId: value.entryId,
+  });
+  const canceled = await submit("cancel", { attemptId: processing.attemptId });
+  expect(canceled.status).toBe(200);
+  expect(await canceled.json()).toMatchObject({
+    status: "canceled",
+    energyMilliKcal: 250000,
+  });
+  const retried = await submit("retry", {
+    attemptId: processing.attemptId,
+    idempotencyKey: "route-full-retry",
+  });
+  expect(retried.status).toBe(202);
+  await expect
+    .poll(
+      async () => ((await (await read()).json()) as { status: string }).status,
+      { timeout: 4000 },
+    )
+    .toBe("succeeded");
+  expect(await (await read()).json()).toMatchObject({
+    entryId: value.entryId,
+    energyMilliKcal: 350000,
+  });
+  await submit("correct", {
+    entryId: String(value.entryId),
+    correction: "fail this analysis",
+    idempotencyKey: "route-full-failure",
+  });
+  await expect
+    .poll(
+      async () => ((await (await read()).json()) as { status: string }).status,
+      { timeout: 4000 },
+    )
+    .toBe("failed");
+  expect(await (await read()).json()).toMatchObject({
+    energyMilliKcal: 350000,
+    error: "Analysis failed. Retry or use another food-entry method.",
+  });
+  const deleted = await submit("delete");
+  expect(deleted.status).toBe(200);
+  expect(deleted.headers.get("Cache-Control")).toBe("private, no-store");
+  expect(await deleted.json()).toEqual({ deleted: true });
+  expect(await (await read()).json()).toEqual({
+    error: "Photo meal unavailable",
+  });
+}, 15000);
+
+test("invalid uploads and operations return actionable private errors", async () => {
+  const noSession = await loader(args(new Request(`${origin}/photo-analysis`)));
+  expect(noSession.headers.get("Location")).toBe("/login");
+  expect((await action(post(form(), ""))).headers.get("Location")).toBe(
+    "/login",
+  );
+  const rejected = await action(post(form("bad")));
+  expect(await rejected.json()).toEqual({ error: "CSRF token rejected" });
+  for (const [changes, expected] of [
+    [{ intent: "nonsense" }, "Unknown photo action"],
+    [{ photo: "not a file" }, "Choose a plate photo"],
+    [
+      { intent: "correct", entryId: "wrong" },
+      "Check the photo request and try again",
+    ],
+  ] as const) {
+    const body = form();
+    for (const [key, value] of Object.entries(changes)) body.set(key, value);
+    const response = await action(post(body));
+    expect(response.status).toBe(400);
+    expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+    expect(await response.json()).toEqual({ error: expected });
+  }
+  const empty = await action(
+    args(
+      new Request(`${origin}/photo-analysis`, {
+        method: "POST",
+        headers: { Origin: origin, Cookie: cookie },
+      }),
+    ),
+  );
+  expect(await empty.json()).toEqual({ error: "Upload is empty" });
+  const huge = new Request(`${origin}/photo-analysis`, {
+    method: "POST",
+    body: new Uint8Array(9 * 1024 * 1024 + 1),
+    headers: {
+      Origin: origin,
+      Cookie: cookie,
+      "Content-Type": "application/octet-stream",
+    },
+  });
+  expect(await (await action(args(huge))).json()).toEqual({
+    error: "Choose a photo up to 8 MB",
+  });
+});

@@ -108,9 +108,9 @@ export class PhotoAnalysisService {
   }
 
   status(userId: number, id: string) {
-    const meal = this.store.meal(userId, id);
+    const meal = this.store.metadata(userId, id);
     if (!meal) throw new Error("Photo meal unavailable");
-    const attempt = this.store.history(id).at(-1)!;
+    const attempt = this.store.recent(id)[0];
     return {
       ...attempt,
       id,
@@ -131,9 +131,7 @@ export class PhotoAnalysisService {
       status.entryId === null
         ? undefined
         : this.store.entry(userId, status.entryId);
-    const result = [...this.store.history(id)]
-      .reverse()
-      .find((item) => item.result)?.result;
+    const result = this.store.recent(id, true)[0]?.result;
     return {
       id,
       entryId: status.entryId,
@@ -144,6 +142,7 @@ export class PhotoAnalysisService {
       startedAt: status.startedAt,
       finishedAt: status.finishedAt,
       error: status.error,
+      name: entry?.editedName ?? entry?.originalName ?? null,
       energyMilliKcal: entry?.energyMilliKcal ?? null,
       result: result ? (JSON.parse(result) as PhotoResult) : null,
     };
@@ -287,14 +286,15 @@ export class PhotoAnalysisService {
     let details = 0;
     const retain = (items: UsdaEvidence[]) => {
       signal.throwIfAborted();
-      for (const item of items) evidence.set(item.food.providerFoodId, item);
-      if (JSON.stringify([...evidence.values()]).length > 750000)
+      const next = new Map([
+        ...evidence,
+        ...items.map((item) => [item.food.providerFoodId, item] as const),
+      ]);
+      const encoded = JSON.stringify([...next.values()]);
+      if (encoded.length > 750000)
         throw new Error("USDA context limit reached");
-      this.store.progress(
-        attemptId,
-        "Consulting USDA",
-        JSON.stringify([...evidence.values()]),
-      );
+      for (const [id, item] of next) evidence.set(id, item);
+      this.store.progress(attemptId, "Consulting USDA", encoded);
     };
     return {
       search: async (query: string, page: number) => {
@@ -328,13 +328,19 @@ export class PhotoAnalysisService {
     attemptId: string,
     signal: AbortSignal,
   ) {
-    const history = this.store.history(meal.id);
+    const history = this.store.recent(meal.id, false, 4).reverse();
     const current = history.find((item) => item.id === attemptId)!;
-    const previous = history.filter((item) => item.id !== attemptId);
-    const previousResult = [...previous]
-      .reverse()
-      .find((item) => item.status === "succeeded")?.result;
-    const evidence = this.retainedEvidence(previous);
+    const previous = this.store.recent(meal.id, true, 10).reverse();
+    const successful = previous.at(-1);
+    const previousResult = successful?.result;
+    const evidence = this.retainedEvidence(
+      history.filter((item) => item.id !== attemptId),
+    );
+    // The latest successful result may reference records older than recent failed attempts.
+    for (const item of this.retainedEvidence(
+      successful ? [successful] : [],
+    ).values())
+      evidence.set(item.food.providerFoodId, item);
     const currentEntry =
       meal.entryId === null
         ? undefined
@@ -343,9 +349,9 @@ export class PhotoAnalysisService {
       photo: { bytes: meal.photo, mimeType: meal.mimeType },
       signal,
       correction: current.correction ?? undefined,
-      previousCorrections: previous
-        .slice(-10)
-        .flatMap((item) => (item.correction ? [item.correction] : [])),
+      previousCorrections: previous.flatMap((item) =>
+        item.correction ? [item.correction] : [],
+      ),
       currentEntry,
       currentResult: previousResult
         ? (JSON.parse(previousResult) as unknown)

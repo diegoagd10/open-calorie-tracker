@@ -1,6 +1,8 @@
 import { chmod, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { getTableName } from "drizzle-orm";
+import { getTableConfig, SQLiteSyncDialect } from "drizzle-orm/sqlite-core";
 import { eq, sql } from "drizzle-orm";
 import { afterEach, expect, test } from "vitest";
 
@@ -465,4 +467,45 @@ test("status detects tampered migration history, metadata, and pragmas", async (
   expect(database.getStatus().foreignKeysEnabled).toBe(false);
   database.close();
   expect(() => client.run(sql`SELECT 1`)).toThrow();
+});
+
+test("photo schema declarations match migrated columns, ownership cascades, indexes and lifecycle checks", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "photo-schema-parity-")); temporaryDirectories.push(directory);
+  const database = openApplicationDatabase({ databasePath: path.join(directory, "db.sqlite"), migrationsFolder: path.resolve("drizzle") });
+  const client = database.getClient();
+  const dialect = new SQLiteSyncDialect();
+  const normalize = (text: string) => text.replace(/["`]/g, "").replace(/\s+/g, " ");
+  for (const table of [schema.photoMeals, schema.photoAttempts]) {
+    const config = getTableConfig(table);
+    const columns = client.all<{ name: string; type: string; notnull: number }>(sql.raw(`PRAGMA table_info(${config.name})`));
+    expect(config.columns.map(column => ({ name: column.name, type: column.getSQLType().toUpperCase(), notnull: Number(column.notNull) }))).toEqual(columns.map(({ name, type, notnull }) => ({ name, type, notnull })));
+    const actualFks = client.all<{ from: string; table: string; to: string; on_delete: string }>(sql.raw(`PRAGMA foreign_key_list(${config.name})`));
+    const declaredFks = config.foreignKeys.map(foreignKey => {
+      const reference = foreignKey.reference();
+      return { from: reference.columns[0].name, table: getTableName(reference.foreignTable), to: reference.foreignColumns[0].name, on_delete: foreignKey.onDelete?.toUpperCase() };
+    });
+    expect(declaredFks.sort((a,b) => a.from.localeCompare(b.from))).toEqual(actualFks.map(({ from, table, to, on_delete }) => ({ from, table, to, on_delete })).sort((a,b) => a.from.localeCompare(b.from)));
+    const ddl = client.get<{ sql: string }>(sql`SELECT sql FROM sqlite_master WHERE name = ${config.name}`).sql;
+    expect(config.checks).toHaveLength(2);
+    for (const check of config.checks) {
+      expect(normalize(ddl)).toContain(check.name);
+      expect(normalize(ddl)).toContain(normalize(dialect.sqlToQuery(check.value).sql));
+    }
+    expect([...config.indexes.map(index => index.config.name), ...config.columns.filter(column => column.isUnique).map(column => column.uniqueName)].sort()).toEqual(client.all<{ name: string; origin: string }>(sql.raw(`PRAGMA index_list(${config.name})`)).filter(index => index.origin === "c").map(index => index.name).sort());
+    for (const index of config.indexes) {
+      const actual = client.get<{ sql: string }>(sql`SELECT sql FROM sqlite_master WHERE name = ${index.config.name}`);
+      expect(actual).toBeDefined();
+      expect(normalize(actual.sql)).toContain(index.config.name);
+      expect(client.all<{ name: string }>(sql.raw(`PRAGMA index_info(${index.config.name})`)).map(item => item.name)).toEqual(index.config.columns.map(column => "name" in column ? column.name : undefined));
+    }
+  }
+  expect(schema.photoAttempts.status.enumValues).toEqual(["active", "succeeded", "failed", "canceled", "interrupted"]);
+  expect(schema.photoAttempts.stage.enumValues).toEqual(["Analyzing photo", "Consulting USDA", "Preparing result"]);
+  expect(schema.photoMeals.entryId.isUnique).toBe(true);
+  expect(schema.photoAttempts.evidence.default).toBe("[]");
+  const active = getTableConfig(schema.photoAttempts).indexes.find(index => index.config.name === "photo_attempts_one_active")!;
+  expect(active.config.unique).toBe(true);
+  expect(normalize(dialect.sqlToQuery(active.config.where!).sql)).toBe("photo_attempts.status = 'active'");
+  expect(schema.photoMeals.photo.mapFromDriverValue(Buffer.from("photo"))).toEqual(Buffer.from("photo"));
+  database.close();
 });

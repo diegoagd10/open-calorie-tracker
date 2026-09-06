@@ -506,13 +506,7 @@ export class UsdaFoodDataCentralAdapter implements SearchFoodCatalogProvider {
       const abridged = abridgedDetailFoodSchema.safeParse(response);
       if (abridged.success) food = expandAbridgedDetailFood(abridged.data);
     }
-    if (!food || String(food.fdcId) !== parsedId.data) {
-      throw new CatalogInvalidResponseError();
-    }
-    const requestId = context?.requestId ?? randomUUID();
-    return normalizeDetailFood(food, (diagnostic) =>
-      this.#onDiagnostic(diagnostic, requestId),
-    );
+    return this.#normalizeDetail(food, parsedId.data, context?.requestId);
   }
 
   async searchEvidence(query: string, page: number, signal: AbortSignal): Promise<UsdaEvidence[]> {
@@ -530,9 +524,14 @@ export class UsdaFoodDataCentralAdapter implements SearchFoodCatalogProvider {
     const response = await this.#request(`food/${parsedId}`, { method: "GET", signal });
     if (JSON.stringify(response).length > 150000) throw new CatalogInvalidResponseError();
     const record = z.record(z.string(), z.unknown()).parse(response);
+    // Photo evidence requires full records; abridged fallback belongs to the compact catalog flow.
     const parsed = detailFoodSchema.parse(record);
-    if (String(parsed.fdcId) !== parsedId) throw new CatalogInvalidResponseError();
-    return { record, food: normalizeDetailFood(parsed, (diagnostic) => this.#onDiagnostic(diagnostic, randomUUID())) };
+    return { record, food: this.#normalizeDetail(parsed, parsedId) };
+  }
+
+  #normalizeDetail(food: DetailFood | undefined, id: string, requestId: string = randomUUID()) {
+    if (!food || String(food.fdcId) !== id) throw new CatalogInvalidResponseError();
+    return normalizeDetailFood(food, (diagnostic) => this.#onDiagnostic(diagnostic, requestId));
   }
 
   async #request(path: string, init: RequestInit): Promise<unknown> {

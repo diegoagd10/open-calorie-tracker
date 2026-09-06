@@ -27,6 +27,7 @@ import {
   loader as homeLoader,
   meta,
 } from "../../app/routes/home";
+import { PhotoAnalysisService } from "../../app/photo-analysis/photo-analysis.server";
 import { getFoodEntryService } from "../../app/food-entry/runtime.server";
 import { getFoodLogService } from "../../app/food-log/runtime.server";
 import { getGoalSetupService } from "../../app/setup/runtime.server";
@@ -1435,4 +1436,18 @@ test("copy loader restricts source actions and validates every calendar selectio
   const previous = await load(`/?date=${source.foodLogDate}&copy=${source.id}&copyMonth=2026-07&copyDate=2026-07-15`);
   expect(previous.data.copyDialog?.calendar.month).toBe("2026-07");
   expect(previous.data.copyDialog?.calendar.days.filter((day) => day.isSelected).map((day) => day.date)).toEqual(["2026-07-15"]);
+});
+
+test("home lists accepted photo work and redirects attempts to open a processing entry", async () => {
+  let finish!: (value: unknown) => void;
+  const photoService = new PhotoAnalysisService(getApplicationDatabase().getClient(), { analyze: () => new Promise(resolve => { finish = resolve; }) }, { now: () => new Date(instant) });
+  const photo = photoService.start(userId, { photo: { mimeType: "image/png", bytes: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAAFElEQVR4nGP4TyJgGNUwqmH4agAAr639H708R/EAAAAASUVORK5CYII=", "base64") }, foodLogDate: today, idempotencyKey: "home-photo-lifecycle" });
+  expect((await load()).data.photoMeals).toMatchObject([{ id: photo.id, entryId: null, status: "active" }]);
+  finish({ name: "Home rice", consumedFraction: 1, assumptions: [], components: [{ id: "rice", name: "Rice", quantity: 200, unit: "g", includes: [], source: { kind: "ai", reason: "No reference" }, nutrition: { energyKcal: 250, proteinGrams: 5, carbohydrateGrams: 50, fatGrams: 2 } }] });
+  await expect.poll(() => photoService.status(userId, photo.id).status).toBe("succeeded");
+  const entryId = photoService.status(userId, photo.id).entryId!;
+  expect((await load(`/?date=${today}&entry=${entryId}`)).data.foodEntryEditor?.id).toBe(entryId);
+  photoService.correct(userId, entryId, { correction: "Butter", idempotencyKey: "home-photo-correction" });
+  expectRedirect(await homeLoader(routeArgs(get(`/?date=${today}&entry=${entryId}`))), `/?date=${today}`);
+  photoService.shutdown();
 });

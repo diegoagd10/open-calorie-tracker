@@ -23,43 +23,61 @@ const resultSchema = z.object({
   assumptions: z.array(z.string().min(1).max(500)).max(40),
   components: z
     .array(
-      z.object({
-        id: z.string().min(1).max(100),
-        name: z.string().trim().min(1).max(200),
-        quantity: z.number().min(0.000001).max(10000),
-        unit: z.enum(["g", "ml", "serving"]),
-        includes: z.array(z.string().min(1).max(100)).max(30),
-        source: z.discriminatedUnion("kind", [
-          z.object({
-            kind: z.literal("ai"),
-            reason: z.string().min(1).max(500),
-          }),
-          z.object({
-            kind: z.literal("usda"),
-            fdcId: z.string().regex(/^[1-9]\d*$/),
-          }),
-        ]),
-        supplements: z
-          .array(
+      z
+        .object({
+          id: z.string().min(1).max(100),
+          name: z.string().trim().min(1).max(200),
+          quantity: z.number().min(0.000001).max(10000),
+          unit: z.enum(["g", "ml", "serving"]),
+          includes: z.array(z.string().min(1).max(100)).max(30),
+          source: z.discriminatedUnion("kind", [
             z.object({
-              nutrient: z.enum([
-                "energyKcal",
-                "proteinGrams",
-                "carbohydrateGrams",
-                "fatGrams",
-                "fiberGrams",
-                "sugarGrams",
-                "sodiumMilligrams",
-              ]),
-              amount,
+              kind: z.literal("ai"),
               reason: z.string().min(1).max(500),
             }),
-          )
-          .max(7)
-          .default([]),
-        nutrition: nutritionSchema.optional(),
-      }).refine((component) => component.source.kind === "usda" || component.nutrition !== undefined, "AI estimates require nutrition")
-        .transform((component) => ({ ...component, nutrition: component.nutrition ?? { energyKcal: 0, proteinGrams: 0, carbohydrateGrams: 0, fatGrams: 0, fiberGrams: null, sugarGrams: null, sodiumMilligrams: null } })),
+            z.object({
+              kind: z.literal("usda"),
+              fdcId: z.string().regex(/^[1-9]\d*$/),
+            }),
+          ]),
+          supplements: z
+            .array(
+              z.object({
+                nutrient: z.enum([
+                  "energyKcal",
+                  "proteinGrams",
+                  "carbohydrateGrams",
+                  "fatGrams",
+                  "fiberGrams",
+                  "sugarGrams",
+                  "sodiumMilligrams",
+                ]),
+                amount,
+                reason: z.string().min(1).max(500),
+              }),
+            )
+            .max(7)
+            .default([]),
+          nutrition: nutritionSchema.optional(),
+        })
+        .refine(
+          (component) =>
+            component.source.kind === "usda" ||
+            component.nutrition !== undefined,
+          "AI estimates require nutrition",
+        )
+        .transform((component) => ({
+          ...component,
+          nutrition: component.nutrition ?? {
+            energyKcal: 0,
+            proteinGrams: 0,
+            carbohydrateGrams: 0,
+            fatGrams: 0,
+            fiberGrams: null,
+            sugarGrams: null,
+            sodiumMilligrams: null,
+          },
+        })),
     )
     .min(1)
     .max(30),

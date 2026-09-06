@@ -140,7 +140,7 @@ function PhotoMealCard({
     );
     return () => clearInterval(timer);
   }, [active, meal.startedAt]);
-  const title = meal.result?.name ?? "Plate photo";
+  const title = meal.name ?? meal.result?.name ?? "Plate photo";
   return (
     <article className={styles.card} aria-label={title}>
       <img src={imageUrl(meal.id)} alt="Your plate" />

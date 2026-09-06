@@ -66,10 +66,20 @@ test.skipIf(process.env.PHOTO_ANALYSIS_LIVE !== "1")(
       new PiPhotoAnalyzer(async (context, signal) => {
         const requestStarted = performance.now();
         const result = await complete(context, signal);
-        usage.push({ ...result.usage, elapsedMs: Math.round(performance.now() - requestStarted), stopReason: result.stopReason,
-          toolNames: result.content.filter((part) => part.type === "toolCall").map((part) => part.name),
-          outputCharacters: result.content.filter((part) => part.type === "text").reduce((sum, part) => sum + part.text.length, 0),
-          error: result.errorMessage?.replace(/[A-Za-z0-9_./+=-]{40,}/g, "<REDACTED>").slice(0, 400) });
+        usage.push({
+          ...result.usage,
+          elapsedMs: Math.round(performance.now() - requestStarted),
+          stopReason: result.stopReason,
+          toolNames: result.content
+            .filter((part) => part.type === "toolCall")
+            .map((part) => part.name),
+          outputCharacters: result.content
+            .filter((part) => part.type === "text")
+            .reduce((sum, part) => sum + part.text.length, 0),
+          error: result.errorMessage
+            ?.replace(/[A-Za-z0-9_./+=-]{40,}/g, "<REDACTED>")
+            .slice(0, 400),
+        });
         return result;
       }),
       {
@@ -120,10 +130,15 @@ test.skipIf(process.env.PHOTO_ANALYSIS_LIVE !== "1")(
           });
         }
         const result = first.result;
-        const macroErrorGrams = result && meal.proteinGrams !== undefined && meal.carbohydrateGrams !== undefined && meal.fatGrams !== undefined
-          ? Object.fromEntries(
-              (["proteinGrams", "carbohydrateGrams", "fatGrams"] as const).map(
-                (key) => [
+        const macroErrorGrams =
+          result &&
+          meal.proteinGrams !== undefined &&
+          meal.carbohydrateGrams !== undefined &&
+          meal.fatGrams !== undefined
+            ? Object.fromEntries(
+                (
+                  ["proteinGrams", "carbohydrateGrams", "fatGrams"] as const
+                ).map((key) => [
                   key,
                   result.components.reduce(
                     (sum, component) => sum + component.nutrition[key],
@@ -131,10 +146,9 @@ test.skipIf(process.env.PHOTO_ANALYSIS_LIVE !== "1")(
                   ) *
                     result.consumedFraction -
                     meal[key]!,
-                ],
-              ),
-            )
-          : null;
+                ]),
+              )
+            : null;
         results.push({
           name: meal.name,
           initialLatencyMs,
@@ -167,8 +181,13 @@ test.skipIf(process.env.PHOTO_ANALYSIS_LIVE !== "1")(
           {
             sampleSize: meals.length,
             below20Percent: below20,
-            measuredSampleSize: meals.filter((meal) => meal.energyKcal !== undefined).length,
-          majorityGoalMet: meals.some((meal) => meal.energyKcal !== undefined) ? below20 > meals.filter((meal) => meal.energyKcal !== undefined).length / 2 : null,
+            measuredSampleSize: meals.filter(
+              (meal) => meal.energyKcal !== undefined,
+            ).length,
+            majorityGoalMet: meals.some((meal) => meal.energyKcal !== undefined)
+              ? below20 >
+                meals.filter((meal) => meal.energyKcal !== undefined).length / 2
+              : null,
             usableWithin20Seconds: withinDeadline,
             results,
             usage,

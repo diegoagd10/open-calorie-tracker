@@ -98,8 +98,11 @@ by cyclonebill (CC BY-SA 2.0), the default Luna model, and USDA's public `DEMO_K
 The final implementation saved an initial estimate of 930 kcal in 16.46 seconds.
 A correction specifying five grams of butter replaced the same entry with
 966 kcal in 12.89 seconds. Four model calls reported 18,061 total tokens; these
-counts do not establish billed subscription cost. Earlier trials timed out at
-20 seconds before the prompt was tightened to request compact results.
+counts do not establish billed subscription cost. Three earlier initial trials
+timed out (observed latencies 20.037, 20.029, and 20.016 seconds) before the prompt
+was tightened to request compact results. The first lacked a USDA key; the next
+two used `DEMO_KEY`. These changing configurations are tuning trials, not a
+representative latency distribution.
 
 This is one unweighed photo and one correction, with no reference nutrition.
 The accuracy sample size is zero; the below-20% calorie-error goal remains

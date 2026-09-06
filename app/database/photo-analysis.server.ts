@@ -1,4 +1,4 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import type { ApplicationDatabaseClient } from "./database.server";
 import {
   foodEntries,
@@ -76,6 +76,32 @@ export class PhotoAnalysisStore {
       .from(photoMeals)
       .where(and(eq(photoMeals.userId, userId), eq(photoMeals.id, id)))
       .get();
+  }
+
+  metadata(userId: number, id: string) {
+    return this.db
+      .select({
+        entryId: photoMeals.entryId,
+        foodLogDate: photoMeals.foodLogDate,
+      })
+      .from(photoMeals)
+      .where(and(eq(photoMeals.userId, userId), eq(photoMeals.id, id)))
+      .get();
+  }
+
+  recent(mealId: string, successfulOnly = false, limit = 1) {
+    return this.db
+      .select()
+      .from(photoAttempts)
+      .where(
+        and(
+          eq(photoAttempts.mealId, mealId),
+          successfulOnly ? eq(photoAttempts.status, "succeeded") : undefined,
+        ),
+      )
+      .orderBy(desc(photoAttempts.startedAt), sql`rowid DESC`)
+      .limit(limit)
+      .all();
   }
 
   history(mealId: string) {

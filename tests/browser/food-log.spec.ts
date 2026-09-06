@@ -1830,6 +1830,10 @@ test("an authenticated user can review and copy a Food Entry to another eligible
   await waterDialog.getByRole("button", { name: /8 fl oz.*Glass/ }).click();
   await waterDialog.getByRole("button", { name: "Add 8 fl oz" }).click();
 
+  await expect(
+    page.locator("[data-water-editor-trigger]").filter({ hasText: "8 fl oz" }),
+  ).toBeVisible();
+
   await page.goto("/?date=2026-08-26");
   await openUsdaSearch(page);
   await page

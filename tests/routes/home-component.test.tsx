@@ -2114,3 +2114,72 @@ test("manual entry submission disables editing only for the manual action", asyn
     await act(async () => renderer.unmount());
   }
 });
+
+test("photo meals appear once beside independent food and water events and expose correction details", async () => {
+  const photoMeal = {
+    id: "photo-home", name: "Photo dinner", entryId: editableEntry.id, foodLogDate: "2026-08-31", status: "succeeded", stage: "Preparing result", attemptId: "photo-attempt", startedAt: "2026-08-31T12:00:00.000Z", finishedAt: "2026-08-31T12:00:05.000Z", error: null, energyMilliKcal: 59000,
+    result: { name: "Original dinner", consumedFraction: 1, components: [], assumptions: [] },
+  };
+  const food = { ...editableEntry, kind: "food", provider: "ai-photo", selectedMeasurementLabel: "Analyzed plate" };
+  const copiedFood = { ...food, id: 77, name: "Copied photo" };
+  const water = { id: editableEntry.id, kind: "water", amountMicroliters: 237000, foodLogDate: "2026-08-31", localEventTime: "12:05:00" };
+  const renderer = await renderHome({ photoMeals: [photoMeal], foodLog: { ...baseFoodLog, entries: [food, copiedFood], events: [food, copiedFood, water] }, foodEntryEditor: editableEntry });
+  expect(renderer.root.findAllByType("a").filter(node => node.props.href === "/?date=2026-08-31&entry=41")).toHaveLength(1);
+  expect(allText(renderer)).toContain("Copied photo");
+  expect(allText(renderer)).toContain("AI photo estimate");
+  expect(allText(renderer)).toContain("Correct with AI");
+  expect(allText(renderer)).toContain("Water");
+  expect(renderer.root.findByProps({ "aria-label": "Photo analysis details" })).toBeDefined();
+  await act(async () => renderer.unmount());
+  const pending = await renderHome({ photoMeals: [{ ...photoMeal, status: "active", entryId: null, name: null, result: null, energyMilliKcal: null }] });
+  expect(allText(pending)).not.toContain("No entries for this day");
+  expect(allText(pending)).toContain("Cancel analysis");
+  await act(async () => pending.unmount());
+});
+
+test("touch date navigation distinguishes taps, vertical scrolling, cancellation and horizontal swipes", async () => {
+  const loaderData = { ...baseLoaderData, foodLog: { ...baseFoodLog, selectedDate: "2026-08-30" } };
+  const router = createMemoryRouter([{ path: "/", Component: () => Home({ loaderData, actionData: undefined } as never), loader: () => loaderData }], { hydrationData: { loaderData: { "0": loaderData } }, initialEntries: ["/?date=2026-08-30"] });
+  let renderer!: ReactTestRenderer;
+  await act(() => { renderer = create(createElement(RouterProvider, { router })); });
+  const rail = () => renderer.root.findByProps({ "aria-label": "Nearby dates" });
+  let captured: number[] = [];
+  const event = (overrides: Record<string, unknown> = {}) => ({ pointerType: "touch", isPrimary: true, pointerId: 1, clientX: 100, clientY: 100, currentTarget: { setPointerCapture: (id: number) => captured.push(id) }, ...overrides });
+  const tapPrevented = () => {
+    let prevented = false;
+    rail().props.onClickCapture({ detail: 1, preventDefault: () => { prevented = true; } });
+    return prevented;
+  };
+  expect(tapPrevented()).toBe(false);
+  for (const begin of [{ pointerType: "mouse" }, { isPrimary: false }]) {
+    await act(() => { rail().props.onPointerDown(event(begin)); rail().props.onPointerMove(event({ clientX: 160 })); rail().props.onPointerUp(event({ clientX: 160 })); });
+    expect(router.state.location.search).toBe("?date=2026-08-30"); expect(captured).toEqual([]);
+  }
+  await act(() => { rail().props.onPointerDown(event()); rail().props.onPointerMove(event({ pointerId: 2, clientX: 160 })); rail().props.onPointerUp(event({ pointerId: 2, clientX: 160 })); });
+  expect(captured).toEqual([]); expect(router.state.location.search).toBe("?date=2026-08-30");
+  await act(() => { rail().props.onPointerDown(event()); rail().props.onPointerMove(event({ clientX: 107, clientY: 107 })); });
+  expect(captured).toEqual([]); expect(tapPrevented()).toBe(false);
+  await act(() => { rail().props.onPointerMove(event({ clientX: 108, clientY: 107 })); });
+  expect(captured).toEqual([1]); expect(tapPrevented()).toBe(true);
+  let keyboardPrevented = false;
+  rail().props.onClickCapture({ detail: 0, preventDefault: () => { keyboardPrevented = true; } });
+  expect(keyboardPrevented).toBe(false);
+  await act(() => { rail().props.onPointerMove(event({ clientX: 108, clientY: 200 })); });
+  expect(captured).toEqual([1, 1]);
+  await act(() => { rail().props.onPointerCancel(); rail().props.onPointerUp(event({ clientX: 160 })); });
+  expect(router.state.location.search).toBe("?date=2026-08-30");
+  for (const [x, y] of [[107, 108], [108, 108], [105, 140]]) {
+    captured = [];
+    await act(() => { rail().props.onPointerDown(event()); rail().props.onPointerMove(event({ clientX: x, clientY: y })); rail().props.onPointerUp(event({ clientX: 160 })); });
+    expect(captured).toEqual([]); expect(router.state.location.search).toBe("?date=2026-08-30"); expect(tapPrevented()).toBe(false);
+  }
+  for (const [x, y] of [[139, 100], [140, 140], [140, 150]]) {
+    await act(() => { rail().props.onPointerDown(event()); rail().props.onPointerUp(event({ clientX: x, clientY: y })); });
+    expect(router.state.location.search).toBe("?date=2026-08-30");
+  }
+  await act(() => { rail().props.onPointerDown(event()); rail().props.onPointerUp(event({ clientX: 140 })); });
+  expect(router.state.location.search).toBe("?date=2026-08-29"); expect(router.state.preventScrollReset).toBe(true); expect(tapPrevented()).toBe(true);
+  await act(() => { rail().props.onPointerDown(event()); rail().props.onPointerUp(event({ clientX: 60 })); });
+  expect(router.state.location.search).toBe("?date=2026-08-31");
+  await act(() => renderer.unmount()); router.dispose();
+});
