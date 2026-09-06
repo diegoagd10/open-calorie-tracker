@@ -380,6 +380,7 @@ test("correction details retain provenance and the repeatable form submits the o
     placeholder: "For example: it has butter",
   });
   expect(buttons()).toEqual(["Apply correction"]);
+  expect(renderer.root.findByType("button").props.disabled).toBe(false);
   state.fetcher.state = "submitting";
   state.fetcher.data = { id: meal.id };
   await act(() =>
@@ -408,4 +409,29 @@ test("correction details retain provenance and the repeatable form submits the o
     ),
   );
   expect(state.navigate).toHaveBeenCalledWith("/?date=2026-09-04");
+});
+
+test("recovery controls stay usable when idle and lock while their request submits", async () => {
+  const failed = { ...meal, status: "failed" as const, error: "Retry this analysis" };
+  await render([failed]);
+  expect(renderer.root.findAllByType("button").map(button => button.props.disabled)).toEqual([false, false]);
+  state.fetcher.state = "submitting";
+  await act(() => renderer.update(createElement(PhotoMeals, { meals: [{ ...meal, status: "active" }], date: "2026-09-04", csrfToken: "csrf-photo" })));
+  const cancel = renderer.root.findAllByType("button").find(button => button.props.value === "cancel")!;
+  expect(cancel.props.disabled).toBe(true);
+});
+
+test("polling follows active status changes among multiple meals and stops when they finish", async () => {
+  await render([meal]);
+  expect(vi.getTimerCount()).toBe(0);
+  const pending: Meal = { ...meal, id: "pending-photo", entryId: null, name: null, result: null, energyMilliKcal: null, status: "active", stage: "Analyzing photo", finishedAt: null };
+  await act(() => renderer.update(createElement(PhotoMeals, { meals: [meal, pending], date: "2026-09-04", csrfToken: "csrf-photo" })));
+  const card = renderer.root.findByProps({ "aria-label": "Plate photo" });
+  expect(card.findAllByType("small").map(node => node.children.join(""))).toEqual(["AI photo estimate", "0 seconds elapsed"]);
+  await act(() => { vi.advanceTimersByTime(1000); });
+  expect(state.revalidator.revalidate).toHaveBeenCalledTimes(1);
+  await act(() => renderer.update(createElement(PhotoMeals, { meals: [meal, { ...pending, status: "failed", error: "Try again" }], date: "2026-09-04", csrfToken: "csrf-photo" })));
+  expect(vi.getTimerCount()).toBe(0);
+  await act(() => { vi.advanceTimersByTime(2000); });
+  expect(state.revalidator.revalidate).toHaveBeenCalledTimes(1);
 });

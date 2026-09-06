@@ -488,8 +488,7 @@ test("photo schema declarations match migrated columns, ownership cascades, inde
     const ddl = client.get<{ sql: string }>(sql`SELECT sql FROM sqlite_master WHERE name = ${config.name}`).sql;
     expect(config.checks).toHaveLength(2);
     for (const check of config.checks) {
-      expect(normalize(ddl)).toContain(check.name);
-      expect(normalize(ddl)).toContain(normalize(dialect.sqlToQuery(check.value).sql));
+      expect(normalize(ddl)).toContain(`CONSTRAINT ${check.name} CHECK(${normalize(dialect.sqlToQuery(check.value).sql)})`);
     }
     expect([...config.indexes.map(index => index.config.name), ...config.columns.filter(column => column.isUnique).map(column => column.uniqueName)].sort()).toEqual(client.all<{ name: string; origin: string }>(sql.raw(`PRAGMA index_list(${config.name})`)).filter(index => index.origin === "c").map(index => index.name).sort());
     for (const index of config.indexes) {
