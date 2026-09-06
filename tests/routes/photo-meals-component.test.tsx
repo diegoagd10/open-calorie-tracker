@@ -2,7 +2,7 @@
 import { createElement, type ComponentProps } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import { PhotoCorrection, PhotoMeals as PhotoMealList, usePhotoUpload } from "../../app/routes/photo-meals";
+import { PhotoCorrection, PhotoMealCard, usePhotoMealPolling, usePhotoUpload } from "../../app/routes/photo-meals";
 
 const state = vi.hoisted(() => ({
   fetcher: {
@@ -26,9 +26,10 @@ vi.mock("react-router", () => ({
 (
   globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }
 ).IS_REACT_ACT_ENVIRONMENT = true;
-function PhotoMeals(props: ComponentProps<typeof PhotoMealList> & { date: string }) {
+function PhotoMeals(props: { meals: ComponentProps<typeof PhotoMealCard>["meal"][]; csrfToken: string; date: string }) {
   const upload = usePhotoUpload(props.date, props.csrfToken);
-  return <>{upload.capture}{upload.feedback}<PhotoMealList meals={props.meals} csrfToken={props.csrfToken} /></>;
+  usePhotoMealPolling(props.meals);
+  return <>{upload.capture}{upload.feedback}{props.meals.map(meal => <PhotoMealCard key={meal.id} meal={meal} csrfToken={props.csrfToken} />)}</>;
 }
 type Meal = ComponentProps<typeof PhotoMeals>["meals"][number];
 const meal: Meal = {
@@ -471,5 +472,16 @@ test("polling follows active status changes among multiple meals and stops when 
   await act(() => renderer.update(createElement(PhotoMeals, { meals: [meal, { ...pending, status: "failed", error: "Try again" }], date: "2026-09-04", csrfToken: "csrf-photo" })));
   expect(vi.getTimerCount()).toBe(0);
   await act(() => { vi.advanceTimersByTime(2000); });
+  expect(state.revalidator.revalidate).toHaveBeenCalledTimes(1);
+});
+
+
+test("multiple simultaneous photo analyses share one refresh per second", async () => {
+  await render([
+    { ...meal, status: "active" },
+    { ...meal, id: "second-photo", status: "active" },
+  ]);
+  expect(renderer.root.findAllByType("progress")).toHaveLength(2);
+  await act(() => { vi.advanceTimersByTime(1000); });
   expect(state.revalidator.revalidate).toHaveBeenCalledTimes(1);
 });

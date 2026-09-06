@@ -100,7 +100,7 @@ export function usePhotoUpload(date: string, csrfToken: string) {
   };
 }
 
-export function PhotoMeals({ meals, csrfToken }: { meals: PhotoMeal[]; csrfToken: string }) {
+export function usePhotoMealPolling(meals: PhotoMeal[]) {
   const revalidator = useRevalidator();
   const active = meals.some((meal) => meal.status === "active");
   useEffect(() => {
@@ -110,12 +110,9 @@ export function PhotoMeals({ meals, csrfToken }: { meals: PhotoMeal[]; csrfToken
     }, 1000);
     return () => clearInterval(timer);
   }, [active, revalidator]);
-  return <>{meals.map((meal) => (
-    <PhotoMealCard key={meal.id} meal={meal} csrfToken={csrfToken} />
-  ))}</>;
 }
 
-function PhotoMealCard({
+export function PhotoMealCard({
   meal,
   csrfToken,
 }: {

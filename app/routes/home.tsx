@@ -26,7 +26,7 @@ import {
   serializeClearedSessionCookie,
 } from "../auth/http.server";
 import { getPhotoAnalysisService } from "../photo-analysis/runtime.server";
-import { PhotoMeals, PhotoCorrection, usePhotoUpload } from "./photo-meals";
+import { PhotoMealCard, PhotoCorrection, usePhotoMealPolling, usePhotoUpload } from "./photo-meals";
 import { AppNavigation } from "../app-navigation";
 import { isTestEnvironment } from "../runtime.server";
 import { UiIcon } from "../ui-icon";
@@ -3873,6 +3873,7 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
     waterDialog,
   } = loaderData;
   const photoUpload = usePhotoUpload(foodLog.selectedDate, csrfToken);
+  usePhotoMealPolling(photoMeals);
   const activeFoodEntryEditor =
     actionData?.foodEntryEditor ?? foodEntryEditor;
   const selectedLabel = fullDate(foodLog.selectedDate);
@@ -3996,7 +3997,7 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
                     ) : null}
                     {photoMeals.filter((meal) => meal.entryId === null).map((meal) => (
                       <PhotoTimelineEntry key={meal.id} date={foodLog.selectedDate}>
-                        <PhotoMeals meals={[meal]} csrfToken={csrfToken} />
+                        <PhotoMealCard meal={meal} csrfToken={csrfToken} />
                       </PhotoTimelineEntry>
                     ))}
                     {foodLog.events.map((entry) => {
@@ -4005,7 +4006,7 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
                         : undefined;
                       return photoMeal ? (
                         <PhotoTimelineEntry key={photoMeal.id} date={entry.foodLogDate} localEventTime={entry.localEventTime}>
-                          <PhotoMeals meals={[photoMeal]} csrfToken={csrfToken} />
+                          <PhotoMealCard meal={photoMeal} csrfToken={csrfToken} />
                         </PhotoTimelineEntry>
                       ) : entry.kind === "food" ? (
                         // Stryker disable next-line StringLiteral: a single-prefix mutation preserves key uniqueness against the water prefix.

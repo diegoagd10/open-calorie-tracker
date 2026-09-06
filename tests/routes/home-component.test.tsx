@@ -2138,6 +2138,11 @@ test("photo meals share the food and water timeline in event order and expose co
     "Photo dinner", expect.stringContaining("Water"), expect.stringContaining("Add Water"),
   ]);
   expect(timeline.findByProps({ "aria-label": "Photo dinner" })).toBeDefined();
+  expect(timeline.findAllByType("time").map(node => [node.props.dateTime, nodeText(node)])).toEqual([
+    ["2026-08-31T12:00:00", "12:00 PM"],
+    ["2026-08-31T12:00:00", "12:00 PM"],
+    ["2026-08-31T12:05:00", "12:05 PM"],
+  ]);
   expect(allText(renderer)).toContain("Copied photo");
   expect(allText(renderer)).toContain("AI photo estimate");
   expect(allText(renderer)).toContain("Correct with AI");
