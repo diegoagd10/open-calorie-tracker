@@ -1,7 +1,8 @@
 import { createElement } from "react";
-import { createRoutesStub } from "react-router";
+import { createMemoryRouter, createRoutesStub, RouterProvider, useLoaderData } from "react-router";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { expect, test, vi } from "vitest";
+import { SettingsDestinations } from "../../app/settings-destinations";
 import AiSettings from "../../app/routes/settings.ai";
 import type { PiConnectionService } from "../../app/photo-analysis/pi-connection.server";
 
@@ -37,6 +38,9 @@ test("Settings explains the shared connection, links to the other settings and o
   expect(buttons(renderer)).not.toContain("Disconnect");
   expect(renderer.root.findAllByType("a").map(link => String(link.props.href))).toContain("/settings/goals");
   expect(renderer.root.findAllByType("input").find(input => input.props.name === "csrfToken")?.props.value).toBe("test-csrf");
+  expect(text(renderer.root.findByProps({ role: "status" }))).toBe("");
+  expect(renderer.root.findAllByType("button").find(button => text(button) === "Connect OpenAI")?.props.value).toBe("connect");
+  expect(renderer.root.findAllByType("input").find(input => input.props.name === "attemptId")?.props.value).toBe("");
   await act(() => renderer.unmount());
 });
 
@@ -46,6 +50,7 @@ test("waiting renders the one-time code and external approval link, polls, and o
   try {
     expect(text(renderer.root)).toContain("ABCD-1234");
     expect(buttons(renderer)).toContain("Cancel sign-in");
+    expect(renderer.root.findAllByType("button").find(button => text(button) === "Cancel sign-in")?.props.value).toBe("cancel");
     expect(buttons(renderer)).not.toContain("Connect OpenAI");
     const link = renderer.root.findAllByType("a").find(link => link.props.href === "https://auth.openai.com/codex/device");
     expect(link?.props.target).toBe("_blank");
@@ -53,6 +58,8 @@ test("waiting renders the one-time code and external approval link, polls, and o
     expect(renderer.root.findAllByType("input").find(input => input.props.name === "attemptId")?.props.value).toBe("attempt-1");
     await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
     expect(load).toHaveBeenCalledTimes(2);
+    await act(() => renderer.unmount());
+    expect(vi.getTimerCount()).toBe(0);
   } finally {
     await act(() => renderer.unmount());
     vi.useRealTimers();
@@ -88,4 +95,58 @@ test("action conflicts are visible", async () => {
   const { renderer } = await render(disconnected, "Already in progress.");
   expect(text(renderer.root.findByProps({ role: "alert" }))).toBe("Already in progress.");
   await act(() => renderer.unmount());
+});
+
+
+test.each([
+  ["goals", true, ["/settings/ai", "/settings/users", "/account/password"]],
+  ["users", true, ["/settings/goals", "/settings/ai", "/account/password"]],
+  ["ai", true, ["/settings/goals", "/settings/users", "/account/password"]],
+  ["goals", false, ["/account/password"]],
+] as const)("Settings destinations for %s respect administrator access (%s)", async (active, isAdministrator, expected) => {
+  const Routes = createRoutesStub([{ path: "/", Component: () => <SettingsDestinations active={active} isAdministrator={isAdministrator} csrfToken="nav-csrf" /> }]);
+  let renderer!: ReactTestRenderer;
+  await act(() => { renderer = create(createElement(Routes)); });
+  expect(renderer.root.findAllByType("a").map(link => String(link.props.href))).toEqual(expected);
+  await act(() => renderer.unmount());
+});
+
+test.each([false, true])("connection controls stay disabled until a submitted action settles (waiting=%s)", async waiting => {
+  const connection: Connection = waiting ? { ...disconnected, busy: true, attempt: { id: "pending-id", state: "waiting", userCode: "1234", verificationUri: "https://auth.openai.com/codex/device" } } : { ...disconnected, connected: true };
+  const data = { csrfToken: "test-csrf", username: "admin", today: "2026-09-06", connection };
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const router = createMemoryRouter([{ path: "/settings/ai", id: "ai", Component: () => createElement(AiSettings, { loaderData: useLoaderData(), actionData: undefined } as never), loader: () => data, action: async () => { await gate; return {}; } }], { initialEntries: ["/settings/ai"], hydrationData: { loaderData: { ai: data } } });
+  let renderer!: ReactTestRenderer;
+  await act(() => { renderer = create(createElement(RouterProvider, { router })); });
+  const form = new FormData();
+  form.set("intent", waiting ? "cancel" : "connect");
+  let submitted!: Promise<void>;
+  await act(async () => { submitted = router.navigate("/settings/ai", { formMethod: "post", formData: form }); });
+  const controls = renderer.root.findAllByType("button").filter(button => button.props.name === "intent");
+  expect(controls.length).toBe(waiting ? 1 : 2);
+  for (const button of controls) expect(button.props.disabled).toBe(true);
+  if (!waiting) expect(buttons(renderer)).toContain("Please wait…");
+  await act(async () => { release(); await submitted; });
+  for (const button of renderer.root.findAllByType("button").filter(button => button.props.name === "intent")) expect(button.props.disabled).toBe(false);
+  await act(() => renderer.unmount());
+  router.dispose();
+});
+
+test("non-pending settings do not poll and other-session/disconnecting states offer no cancellation", async () => {
+  vi.useFakeTimers();
+  try {
+    const { renderer, load } = await render(disconnected);
+    await act(async () => { await vi.advanceTimersByTimeAsync(4000); });
+    expect(load).toHaveBeenCalledTimes(1);
+    await act(() => renderer.unmount());
+    for (const attempt of [undefined, { id: "disconnect", state: "disconnecting" as const }]) {
+      const { renderer } = await render({ ...disconnected, busy: true, attempt });
+      expect(buttons(renderer)).not.toContain("Cancel sign-in");
+      expect(buttons(renderer)).not.toContain("Connect OpenAI");
+      const status = text(renderer.root.findByProps({ role: "status" }));
+      expect(status).toBe(attempt ? "Disconnecting…" : "A sign-in is in progress in another session.");
+      await act(() => renderer.unmount());
+    }
+  } finally { vi.useRealTimers(); }
 });

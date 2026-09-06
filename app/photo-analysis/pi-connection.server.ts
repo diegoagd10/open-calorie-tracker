@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { ModelRuntime } from "@earendil-works/pi-coding-agent";
+import { CredentialSynchronizationError, type ModelRuntime } from "@earendil-works/pi-coding-agent";
 
 type ConnectionAttempt = {
   id: string;
@@ -112,7 +112,12 @@ export class PiConnectionService {
         },
       });
       attempt.view = { id: attempt.view.id, state: "connected" };
-    } catch {
+    } catch (error) {
+      if (error instanceof CredentialSynchronizationError) {
+        // Pi committed the credentials before its local availability refresh failed.
+        attempt.view = { id: attempt.view.id, state: "connected" };
+        return;
+      }
       attempt.view = {
         id: attempt.view.id,
         state: controller.signal.aborted && controller.signal.reason !== "expired" ? "cancelled" : "failed",
@@ -146,8 +151,10 @@ export class PiConnectionService {
     try {
       await (await this.getRuntime()).logout(this.provider, { signal: attempt.controller.signal });
       attempt.view = { id: attempt.view.id, state: "cancelled" };
-    } catch {
-      attempt.view = { id: attempt.view.id, state: "failed", error: "Could not remove the saved connection. Try again." };
+    } catch (error) {
+      attempt.view = error instanceof CredentialSynchronizationError
+        ? { id: attempt.view.id, state: "cancelled" }
+        : { id: attempt.view.id, state: "failed", error: "Could not remove the saved connection. Try again." };
     }
   }
 

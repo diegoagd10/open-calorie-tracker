@@ -40,7 +40,7 @@ export async function action({ request }: Route.ActionArgs) {
       case "disconnect": await service.disconnect(session.token); break;
       default: return data({ error: "Unsupported action." }, { status: 400 });
     }
-    return data({ error: undefined });
+    return data<{ error?: string }>({});
   } catch (error) {
     if (error instanceof PiConnectionConflict) return data({ error: error.message }, { status: 409 });
     throw error;
@@ -77,7 +77,7 @@ export default function AiSettings({ loaderData, actionData }: Route.ComponentPr
               {connection.connected ? "Connected" : "Not connected"}
             </span>
           </div>
-          <p>This connection is used for AI photo estimates for everyone on this tracker. Only the administrator can manage it.</p>
+          <p>Shared by everyone on this tracker. Managed by the administrator.</p>
           {error ? <p role="alert" className={styles.error}>{error}</p> : null}
           <div role="status" aria-live="polite">
             {connection.busy && !attempt ? <p>A sign-in is in progress in another session.</p> : null}
@@ -85,10 +85,10 @@ export default function AiSettings({ loaderData, actionData }: Route.ComponentPr
             {attempt?.state === "disconnecting" ? <p>Disconnecting…</p> : null}
             {attempt?.state === "waiting" ? (
               <div className={styles.instructions}>
-                <p>Enter this code on OpenAI to connect your account:</p>
+                <p>Enter this code on OpenAI:</p>
                 <strong className={styles.code} aria-label="Sign-in code">{attempt.userCode}</strong>
                 <a className={styles.primary} href={attempt.verificationUri} target="_blank" rel="noreferrer">Continue to OpenAI ↗</a>
-                <p>Return here after approving. This page updates automatically. The code is valid for up to 15 minutes.</p>
+                <p>Return here after approving; your connection saves automatically. The code is valid for up to 15 minutes.</p>
                 <small>If OpenAI asks, enable device code login in your ChatGPT security settings.</small>
               </div>
             ) : null}
@@ -106,7 +106,7 @@ export default function AiSettings({ loaderData, actionData }: Route.ComponentPr
               </>
             )}
           </Form>
-          <p className={styles.note}>Your connection is saved automatically and kept across application updates. Disconnecting stops future use of this saved connection; it does not delete meals or revoke access in your OpenAI account.</p>
+          <p className={styles.note}>Saved across app updates. Disconnecting keeps your meals.</p>
         </section>
         <SettingsDestinations active="ai" csrfToken={loaderData.csrfToken} isAdministrator />
       </main>

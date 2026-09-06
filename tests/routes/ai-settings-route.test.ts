@@ -63,6 +63,7 @@ test("only administrators can read or mutate the instance connection", async () 
   expect(network).not.toHaveBeenCalled();
   expect(await loader(args(request()))).toMatchObject({ csrfToken, username: "settings.admin", connection: { connected: false, busy: false } });
   expect(headers()).toEqual({ "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" });
+  expect((await loader(args(request()))).today).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   expect(meta()).toEqual([{ title: "AI photo estimates · Open Calory Tracker" }]);
 });
 
