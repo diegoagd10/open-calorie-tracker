@@ -2341,3 +2341,27 @@
     margin-left: 2.625rem;
   }
 }
+
+.photoCorrectionProgress {
+  margin-top: 0.5rem;
+  font-size: 0.75rem;
+}
+
+.photoCorrectionProgress p {
+  margin-block: 0.35rem;
+}
+
+.photoCorrectionProgress small {
+  overflow: visible;
+  white-space: normal;
+}
+
+.photoCorrectionProgress progress {
+  display: block;
+  width: 100%;
+  accent-color: var(--green);
+}
+
+.timeline article[aria-busy="true"] .foodEntryCard::after {
+  content: "";
+}

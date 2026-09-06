@@ -420,6 +420,7 @@ test("correction details retain provenance and the repeatable form submits the o
   });
   expect(buttons()).toEqual(["Apply correction"]);
   expect(renderer.root.findByType("button").props.disabled).toBe(false);
+  await act(() => renderer.root.findByType("form").props.onSubmit());
   state.fetcher.state = "submitting";
   state.fetcher.data = { id: meal.id };
   await act(() =>
@@ -429,7 +430,7 @@ test("correction details retain provenance and the repeatable form submits the o
   );
   expect(buttons()).toEqual(["Starting correction…"]);
   expect(renderer.root.findByType("button").props.disabled).toBe(true);
-  expect(state.navigate).not.toHaveBeenCalled();
+  expect(state.navigate).toHaveBeenCalledTimes(1);
   state.fetcher.state = "idle";
   state.fetcher.data = { error: "Try again" };
   await act(() =>
@@ -440,7 +441,7 @@ test("correction details retain provenance and the repeatable form submits the o
   expect(renderer.root.findByProps({ role: "alert" }).children).toEqual([
     "Try again",
   ]);
-  expect(state.navigate).not.toHaveBeenCalled();
+  expect(state.navigate).toHaveBeenCalledTimes(2);
   state.fetcher.data = { id: meal.id };
   await act(() =>
     renderer.update(
@@ -448,6 +449,11 @@ test("correction details retain provenance and the repeatable form submits the o
     ),
   );
   expect(state.navigate).toHaveBeenCalledWith("/?date=2026-09-04");
+  expect(state.navigate).toHaveBeenCalledTimes(2);
+  await act(() => renderer.unmount());
+  state.navigate.mockClear();
+  await act(() => { renderer = create(createElement(PhotoCorrection, { meal, csrfToken: "csrf-photo" })); });
+  expect(state.navigate).not.toHaveBeenCalled();
 });
 
 test("recovery controls stay usable when idle and lock while their request submits", async () => {

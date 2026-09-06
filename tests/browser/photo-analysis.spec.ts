@@ -58,6 +58,7 @@ test("plate capture returns to Daily Log, survives reload, and supports correcti
     meals.getByRole("link", { name: /Photo rice plate/ }),
   ).toBeVisible();
   await expect(meals.getByRole("img")).toHaveCount(0);
+  const originalEntryHref = await meals.getByRole("link", { name: /Photo rice plate/ }).getAttribute("href");
   await expect(meals).toContainText("250 kcal");
   await page.getByRole("button", { name: "Add Food", exact: true }).click();
   await page.getByRole("link", { name: /Manual/ }).click();
@@ -85,8 +86,29 @@ test("plate capture returns to Daily Log, survives reload, and supports correcti
   await page
     .getByRole("textbox", { name: "Correction", exact: true })
     .fill("It has butter");
-  await page.getByRole("button", { name: "Apply correction" }).click();
-  await expect(page.getByRole("dialog")).toHaveCount(0);
+  let resumeCorrection!: () => void;
+  const correctionReleased = new Promise<void>(resolve => { resumeCorrection = resolve; });
+  await page.route("**/photo-analysis.data", async route => {
+    await correctionReleased;
+    await route.continue();
+  }, { times: 1 });
+  try {
+    await page.getByRole("button", { name: "Apply correction" }).click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(meals.getByRole("link", { name: /Photo rice plate/ })).toHaveCount(0);
+    await expect(meals.getByRole("article")).toHaveCount(2);
+    const updating = meals.getByRole("article").filter({ hasText: "Photo rice plate" });
+    await expect(updating).toHaveAttribute("aria-busy", "true");
+    await expect(updating.getByRole("progressbar")).toBeVisible();
+    await expect(updating).toContainText("Updating this meal");
+    await expect(updating).toContainText("250 kcal");
+    await expect(updating.getByRole("button", { name: /Copy/ })).toHaveCount(0);
+    await expect(meals.getByRole("link", { name: /Timeline egg/ })).toBeEnabled();
+    await meals.getByRole("button", { name: "Add Water", exact: true }).scrollIntoViewIfNeeded();
+    await page.screenshot({ path: testInfo.outputPath("correcting-same-entry.png") });
+  } finally {
+    resumeCorrection();
+  }
   await expect(meals.getByRole("progressbar")).toBeVisible();
   await expect(meals.getByRole("link", { name: /Photo rice plate/ })).toHaveCount(0);
   await expect(meals).toContainText("250 kcal");
@@ -94,6 +116,8 @@ test("plate capture returns to Daily Log, survives reload, and supports correcti
     page.getByRole("button", { name: "Add Food", exact: true }),
   ).toBeEnabled();
   await expect(meals).toContainText("350 kcal");
+  await expect(meals.getByRole("link", { name: /Photo rice plate/ })).toHaveAttribute("href", originalEntryHref!);
+  await expect(meals.getByRole("article")).toHaveCount(2);
   await meals.getByRole("link", { name: /Photo rice plate/ }).click();
   await page.getByRole("button", { name: "Correct with AI" }).click();
   await page
@@ -107,6 +131,21 @@ test("plate capture returns to Daily Log, survives reload, and supports correcti
   await meals.getByRole("button", { name: "Retry analysis" }).click();
   await meals.getByRole("button", { name: "Cancel analysis" }).click();
   await expect(meals).toContainText("Analysis canceled");
+  await expect(meals).toContainText("350 kcal");
+  await meals.getByRole("link", { name: /Photo rice plate/ }).click();
+  await page.getByRole("button", { name: "Correct with AI" }).click();
+  await page.getByRole("textbox", { name: "Correction", exact: true }).fill("Diet soda");
+  await page.route("**/photo-analysis.data", async route => {
+    const form = new URLSearchParams(route.request().postData()!);
+    form.set("correction", "");
+    await route.continue({ postData: form.toString() });
+  }, { times: 1 });
+  await page.getByRole("button", { name: "Apply correction" }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(meals.getByRole("alert")).toContainText("Correction could not start");
+  await expect(meals.getByRole("article")).toHaveCount(2);
+  await expect(meals.getByRole("link", { name: /Photo rice plate/ })).toHaveAttribute("href", originalEntryHref!);
+  await expect(meals.getByRole("progressbar")).toHaveCount(0);
   await expect(meals).toContainText("350 kcal");
   expect(
     await page.evaluate(

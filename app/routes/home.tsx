@@ -18,6 +18,7 @@ import {
   redirect,
   useNavigate,
   useNavigation,
+  useFetcher,
 } from "react-router";
 
 import {
@@ -2333,8 +2334,10 @@ function FoodEntryEditorDialog({
     initialFocusSelector: "input:not([disabled])",
     restoreFocusSelector: "[data-entry-editor-trigger]",
   });
-  const pending = navigation.formData?.get("entryId") === String(entry.id);
-  const pendingIntent = pending
+  const correction = useFetcher({ key: photoMeal ? `photo-correction:${photoMeal.id}` : undefined });
+  const navigationPending = navigation.formData?.get("entryId") === String(entry.id);
+  const pending = navigationPending || correction.state !== "idle" || photoMeal?.status === "active";
+  const pendingIntent = navigationPending
     ? navigation.formData!.get("intent")
     : undefined;
 
@@ -3440,7 +3443,12 @@ function FoodTimelineEntry({ entry, photoMeal, csrfToken, copyKey }: {
   csrfToken: string;
   copyKey?: string;
 }) {
-  const active = photoMeal?.status === "active";
+  const correction = useFetcher<{ error?: string }>({
+    key: photoMeal ? `photo-correction:${photoMeal.id}` : undefined,
+  });
+  const startingCorrection = correction.state !== "idle";
+  const active = startingCorrection || photoMeal?.status === "active";
+  const ContentElement = active ? "div" : "span";
   const className = copyKey && !active
     ? `${styles.foodEntryCard} ${styles.foodEntryCardWithMenu}`
     : styles.foodEntryCard;
@@ -3457,7 +3465,7 @@ function FoodTimelineEntry({ entry, photoMeal, csrfToken, copyKey }: {
       >
         <UiIcon name="utensils" />
       </span>
-      <span className={styles.foodEntryContent}>
+      <ContentElement className={styles.foodEntryContent}>
         <strong>{entry.name}</strong>
         <small>
           {entry.provider === "open-food-facts"
@@ -3471,7 +3479,20 @@ function FoodTimelineEntry({ entry, photoMeal, csrfToken, copyKey }: {
           {entry.selectedMeasurementLabel} ×{" "}
           {entry.quantityMicrounits / 1_000_000}
         </small>
-      </span>
+        {active ? (
+          <div className={styles.photoCorrectionProgress}>
+            <p role="status">Updating this meal with AI…</p>
+            {photoMeal?.status === "active" ? (
+              <PhotoMealStatus meal={photoMeal} csrfToken={csrfToken} />
+            ) : (
+              <>
+                <progress aria-label="Starting correction" />
+                <p>Starting correction. Previous nutrition retained.</p>
+              </>
+            )}
+          </div>
+        ) : null}
+      </ContentElement>
       <span className={styles.foodEntryEnergy}>
         {formatEnergy(entry.energyMilliKcal)}{" "}
         <small>kcal</small>
@@ -3479,7 +3500,7 @@ function FoodTimelineEntry({ entry, photoMeal, csrfToken, copyKey }: {
     </>
   );
   return (
-    <article>
+    <article aria-busy={active || undefined}>
       {active ? (
         <div className={className}>{content}</div>
       ) : (
@@ -3490,7 +3511,12 @@ function FoodTimelineEntry({ entry, photoMeal, csrfToken, copyKey }: {
       {copyKey && !active ? (
         <FoodEntryCopyMenu csrfToken={csrfToken} entry={entry} idempotencyKey={copyKey} key={copyKey} />
       ) : null}
-      {photoMeal && photoMeal.status !== "succeeded" ? (
+      {!active && correction.data?.error ? (
+        <p className={styles.catalogError} role="alert">
+          Correction could not start: {correction.data.error} Open this meal to try again.
+        </p>
+      ) : null}
+      {!active && photoMeal && photoMeal.status !== "succeeded" ? (
         <div className={styles.photoEntryStatus}>
           <PhotoMealStatus meal={photoMeal} csrfToken={csrfToken} />
         </div>
@@ -4066,7 +4092,8 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
                         ? photoMeals.find((meal) => meal.entryId === entry.id)
                         : undefined;
                       return entry.kind === "food" ? (
-                        <FoodTimelineEntry key={`food-${entry.id}`} entry={entry} photoMeal={photoMeal} csrfToken={csrfToken} copyKey={copyIdempotencyKeys[entry.id]} />                      ) : (
+                        <FoodTimelineEntry key={`food-${entry.id}`} entry={entry} photoMeal={photoMeal} csrfToken={csrfToken} copyKey={copyIdempotencyKeys[entry.id]} />
+                      ) : (
                         // Stryker disable next-line StringLiteral: a single-prefix mutation preserves key uniqueness against the food prefix.
                         <article key={`water-${entry.id}`}>
                           <Link

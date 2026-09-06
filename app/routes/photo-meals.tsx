@@ -230,12 +230,15 @@ export function PhotoCorrection({
   meal: PhotoMeal;
   csrfToken: string;
 }) {
-  const action = useFetcher<PhotoAction>();
+  const action = useFetcher<PhotoAction>({ key: `photo-correction:${meal.id}` });
   const navigate = useNavigate();
   const [key, setKey] = useState<string>();
+  const submitted = useRef(false);
   useEffect(() => {
-    if (action.state === "idle" && action.data?.id)
+    if (action.state !== "idle" || (submitted.current && action.data)) {
+      if (action.state === "idle") submitted.current = false;
       void navigate(`/?date=${meal.foodLogDate}`);
+    }
   }, [action.state, action.data, meal.foodLogDate, navigate]);
   return (
     <section className={styles.correction} aria-label="Photo analysis details">
@@ -270,7 +273,7 @@ export function PhotoCorrection({
         </ul>
       </details>
       {key ? (
-        <action.Form action="/photo-analysis" method="post">
+        <action.Form action="/photo-analysis" method="post" onSubmit={() => { submitted.current = true; }}>
           <input name="csrfToken" type="hidden" value={csrfToken} />
           <input name="entryId" type="hidden" value={meal.entryId ?? ""} />
           <input name="idempotencyKey" type="hidden" value={key} />
@@ -279,6 +282,7 @@ export function PhotoCorrection({
             Correction
             <textarea
               name="correction"
+              disabled={action.state !== "idle"}
               required
               maxLength={2000}
               placeholder="For example: it has butter"
