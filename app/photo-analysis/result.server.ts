@@ -8,6 +8,13 @@ import {
 } from "../food-entry/snapshot.server";
 
 const amount = z.number().finite().nonnegative().max(999999.999);
+const noFoodSchema = z.object({ status: z.literal("no_food") }).strict();
+
+export class NoFoodDetectedError extends Error {
+  constructor() {
+    super("No food or drink detected. Try a clear photo of your meal.");
+  }
+}
 const nutritionSchema = z.object({
   energyKcal: amount,
   proteinGrams: amount,
@@ -185,6 +192,7 @@ export function validatePhotoResult(
   mealId: string,
   evidence: UsdaEvidence[],
 ) {
+  if (noFoodSchema.safeParse(value).success) throw new NoFoodDetectedError();
   const result = resultSchema.parse(value);
   validateDistinctComponents(result.components);
   for (const component of result.components)

@@ -849,6 +849,7 @@ test("supported photo signatures and size limits are enforced before acceptance"
   photo.bytes.copy(maximum);
   for (const [index, image] of [
     { mimeType: "image/jpeg", bytes: jpeg },
+    { mimeType: "image/jpeg", bytes: Buffer.concat([jpeg, Buffer.alloc(64)]) },
     { mimeType: "image/webp", bytes: webp },
     { ...photo, bytes: maximum },
   ].entries()) {
@@ -1185,6 +1186,21 @@ test.each(["error", "aborted"] as const)(
     expect(service.view(userId, meal.id).entryId).toBeNull();
   },
 );
+
+test("a non-food photo remains visible as failed without creating a food entry", async () => {
+  const { service, userId } = await setup(new PiPhotoAnalyzer(async () =>
+    piMessage([{ type: "text", text: '{"status":"no_food"}' }]),
+  ));
+  const meal = service.start(userId, {
+    photo, foodLogDate: "2026-09-04", idempotencyKey: "non-food-photo-test",
+  });
+  await expect.poll(() => service.status(userId, meal.id).status).toBe("failed");
+  expect(service.view(userId, meal.id)).toMatchObject({
+    entryId: null,
+    error: "No food or drink detected. Try a clear photo of your meal.",
+  });
+  expect(service.photo(userId, meal.id).bytes).toEqual(photo.bytes);
+});
 
 test("Pi bounds model turns, tools per turn, final output and accumulated evidence", async () => {
   let turns = 0;

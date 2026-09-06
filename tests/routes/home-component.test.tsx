@@ -932,6 +932,10 @@ test("Add Food offers search, barcode, and manual paths before any provider runs
   expect(allText(renderer)).toContain("Search for food");
   expect(allText(renderer)).toContain("Scan barcode");
   expect(allText(renderer)).toContain("Manual");
+  const methods = renderer.root.findByProps({ "aria-label": "Add Food methods" });
+  expect(methods.findByProps({ "aria-label": "Take photo · AI calories" })).toBeDefined();
+  expect(allText(renderer)).toContain("AI estimates calories and saves to your log");
+  expect(allText(renderer)).not.toContain("Nothing changes in your Food Log until a later confirmation step.");
   expect(renderer.root.findByProps({
     href: "/?date=2026-08-31&food=search",
   })).toBeDefined();

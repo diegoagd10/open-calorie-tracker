@@ -15,6 +15,8 @@ export class TestPhotoAnalyzer implements PhotoAnalyzer {
     });
     if (input.correction === "fail this analysis")
       throw new Error("Fixture failure");
+    if (input.photo.bytes.subarray(-7).toString() === "no-food")
+      return { status: "no_food" };
     return {
       name: "Photo rice plate",
       consumedFraction: 1,

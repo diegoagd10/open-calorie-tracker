@@ -10,48 +10,39 @@ function imageUrl(id: string) {
   return `/photo-analysis?id=${encodeURIComponent(id)}&image=1`;
 }
 
-export function PhotoMeals({
-  meals,
-  date,
-  csrfToken,
-}: {
-  meals: PhotoMeal[];
-  date: string;
-  csrfToken: string;
-}) {
+export function usePhotoUpload(date: string, csrfToken: string) {
   const upload = useFetcher<PhotoAction>();
-  const revalidator = useRevalidator();
+  const navigate = useNavigate();
   const [preview, setPreview] = useState<string>();
   const [error, setError] = useState<string>();
   const pendingUpload = useRef<FormData | null>(null);
-  const active = meals.some((meal) => meal.status === "active");
-  useEffect(() => {
-    if (!active) return;
-    const timer = setInterval(() => {
-      if (revalidator.state === "idle") void revalidator.revalidate();
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [active, revalidator]);
   useEffect(
     () => () => {
       if (preview) URL.revokeObjectURL(preview);
     },
     [preview],
   );
-
-  return (
-    <section aria-label="Photo meals" className={styles.section}>
+  const pending = upload.state !== "idle";
+  return {
+    pending,
+    capture: (
       <label className={styles.capture}>
-        Take plate photo
+        <span>
+          <strong>Take photo · AI calories</strong>
+          <small>AI estimates calories and saves to your log. You can correct it.</small>
+          <small>Your photo is shared with the AI provider for analysis.</small>
+        </span>
+        <small>Choose ›</small>
         <input
-          aria-label="Take plate photo"
+          aria-label="Take photo · AI calories"
           type="file"
           accept="image/jpeg,image/png,image/webp"
           capture="environment"
-          disabled={upload.state !== "idle"}
+          disabled={pending}
           onChange={(event) => {
             const file = event.target.files?.[0];
             if (!file) return;
+            void navigate(`/?date=${date}`);
             if (file.size > 8388608) {
               setError("Choose a photo up to 8 MB.");
               return;
@@ -74,48 +65,54 @@ export function PhotoMeals({
           }}
         />
       </label>
-      <p className={styles.privacy}>
-        Photos are sent to the configured AI provider. Estimates save
-        automatically and can be corrected. Photos and history stay private with
-        your meal until you delete it. Local deletion does not delete
-        provider-managed data.
-      </p>
-      {upload.state !== "idle" ? (
-        <article className={styles.card}>
-          {preview && preview.startsWith("blob:") ? (
-            <img src={encodeURI(preview)} alt="Plate being uploaded" />
-          ) : null}
-          <div>
-            <strong role="status">Uploading photo…</strong>
-            <progress aria-label="Uploading photo" />
-            <p>Keep this page open until upload finishes.</p>
-          </div>
-        </article>
-      ) : null}
-      {error || upload.data?.error ? (
-        <div role="alert">
-          <p>{error ?? upload.data?.error}</p>
-          {pendingUpload.current ? (
-            <button
-              type="button"
-              onClick={() => {
-                void upload.submit(pendingUpload.current, {
-                  action: "/photo-analysis",
-                  method: "post",
-                  encType: "multipart/form-data",
-                });
-              }}
-            >
-              Retry upload
-            </button>
-          ) : null}
-        </div>
-      ) : null}
-      {meals.map((meal) => (
-        <PhotoMealCard key={meal.id} meal={meal} csrfToken={csrfToken} />
-      ))}
-    </section>
-  );
+    ),
+    feedback: (
+      <>
+        {pending ? (
+          <article className={styles.card}>
+            {preview && preview.startsWith("blob:") ? (
+              <img src={encodeURI(preview)} alt="Plate being uploaded" />
+            ) : null}
+            <div>
+              <strong role="status">Uploading photo…</strong>
+              <progress aria-label="Uploading photo" />
+              <p>Keep this page open until upload finishes.</p>
+            </div>
+          </article>
+        ) : null}
+        {error || upload.data?.error ? (
+          <article className={styles.card} role="alert">
+            <div>
+              <strong>Photo upload failed</strong>
+              <p>{error ?? upload.data?.error}</p>
+              {pendingUpload.current ? (
+                <button type="button" onClick={() => {
+                  void upload.submit(pendingUpload.current, {
+                    action: "/photo-analysis", method: "post", encType: "multipart/form-data",
+                  });
+                }}>Retry upload</button>
+              ) : null}
+            </div>
+          </article>
+        ) : null}
+      </>
+    ),
+  };
+}
+
+export function PhotoMeals({ meals, csrfToken }: { meals: PhotoMeal[]; csrfToken: string }) {
+  const revalidator = useRevalidator();
+  const active = meals.some((meal) => meal.status === "active");
+  useEffect(() => {
+    if (!active) return;
+    const timer = setInterval(() => {
+      if (revalidator.state === "idle") void revalidator.revalidate();
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [active, revalidator]);
+  return <>{meals.map((meal) => (
+    <PhotoMealCard key={meal.id} meal={meal} csrfToken={csrfToken} />
+  ))}</>;
 }
 
 function PhotoMealCard({

@@ -11,7 +11,7 @@ import {
   localEventTimeForNewFoodLogEvent,
   nextUpdatedAt,
 } from "../food-log/event-time.server";
-import { validatePhotoResult, type PhotoResult } from "./result.server";
+import { NoFoodDetectedError, validatePhotoResult, type PhotoResult } from "./result.server";
 
 export type PlatePhoto = { bytes: Buffer; mimeType: string };
 export type PhotoAnalyzer = {
@@ -421,12 +421,14 @@ export class PhotoAnalysisService {
           [current.startedAt, currentEntry?.updatedAt ?? ""].sort().at(-1)!,
         ),
       );
-    } catch {
+    } catch (error) {
       if (controller.signal.aborted) return;
       this.store.finish(
         attemptId,
         "failed",
-        "Analysis failed. Retry or use another food-entry method.",
+        error instanceof NoFoodDetectedError
+          ? error.message
+          : "Analysis failed. Retry or use another food-entry method.",
         this.now().toISOString(),
       );
     } finally {
@@ -443,9 +445,10 @@ function photoHasSignature(bytes: Buffer, mimeType: string) {
         .subarray(0, 8)
         .equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
     case "image/jpeg":
+      // Camera JPEGs can retain metadata or padding after the end-of-image marker.
       return (
         bytes.subarray(0, 3).equals(Buffer.from([255, 216, 255])) &&
-        bytes.subarray(-2).equals(Buffer.from([255, 217]))
+        bytes.includes(Buffer.from([255, 217]))
       );
     case "image/webp":
       return (

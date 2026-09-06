@@ -48,6 +48,15 @@ upload or download product images.
 
 ## Set `TRUST_PROXY` exactly
 
+When running the compiled application directly on the host behind a local HTTPS
+proxy such as Tailscale Serve, use `TRUST_PROXY=127.0.0.1/32` and set
+`APPLICATION_URL` to the external HTTPS origin. This trusts only the proxy's
+IPv4 loopback connection. Build with `pnpm build` and run with `pnpm start` for
+mobile testing; development dependency URLs can become stale during other builds
+or tests and prevent browser hydration.
+
+For Docker deployments, follow the subnet configuration below.
+
 `TRUST_PROXY` is the subnet of the network attached to the **application**
 container. It is not the application IP, the Traefik container's network, the
 Docker host's LAN IP, or a public IP.

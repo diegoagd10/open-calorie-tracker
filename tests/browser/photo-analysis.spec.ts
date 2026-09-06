@@ -26,6 +26,9 @@ test("plate capture returns to Daily Log, survives reload, and supports correcti
   await page.getByRole("button", { name: "Finish setup" }).click();
   await expect(page).toHaveURL("/");
   await page.goto("/?date=2026-08-28");
+  await expect(page.getByLabel("Take photo · AI calories")).toHaveCount(0);
+  await page.getByRole("button", { name: "Add Food", exact: true }).click();
+  await expect(page.getByRole("dialog").getByLabel("Take photo · AI calories")).toBeVisible();
   const meals = page.getByRole("region", { name: "Photo meals", exact: true });
   let resumeUpload!: () => void;
   const uploadReleased = new Promise<void>((resolve) => {
@@ -36,7 +39,8 @@ test("plate capture returns to Daily Log, survives reload, and supports correcti
     await route.continue();
   }, { times: 1 });
   try {
-    await page.getByLabel("Take plate photo").setInputFiles(photo);
+    await page.getByLabel("Take photo · AI calories").setInputFiles(photo);
+    await expect(page.getByRole("dialog")).toHaveCount(0);
     const preview = meals.getByRole("img", { name: "Plate being uploaded" });
     await expect(preview).toBeVisible();
     await expect(preview).toHaveAttribute("src", /^blob:https:\/\/localhost:4173\//);
@@ -89,4 +93,28 @@ test("plate capture returns to Daily Log, survives reload, and supports correcti
     ),
   ).toBe(true);
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+});
+
+test("non-food photos show a persistent failure and rejected uploads explain the error @camera-matrix", async ({ page }) => {
+  await bootstrapOrSignInBrowserTestUser(page, "photo.failure", "correct horse 🔐 battery");
+  await page.getByRole("button", { name: "Finish setup" }).click();
+  await page.getByRole("button", { name: "Add Food", exact: true }).click();
+  await page.getByLabel("Take photo · AI calories").setInputFiles({
+    ...photo, buffer: Buffer.concat([photo.buffer, Buffer.from("no-food")]),
+  });
+  const meals = page.getByRole("region", { name: "Photo meals", exact: true });
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(meals.getByRole("progressbar", { name: "Analyzing photo" })).toBeVisible();
+  await expect(meals).toContainText("No food or drink detected");
+  await expect(meals.getByRole("button", { name: "Retry analysis" })).toBeVisible();
+  await expect(meals.getByRole("link")).toHaveCount(0);
+  await page.reload();
+  await expect(meals).toContainText("No food or drink detected");
+  await expect(meals.getByRole("img", { name: "Your plate" })).toBeVisible();
+  await page.getByRole("button", { name: "Add Food", exact: true }).click();
+  await page.getByLabel("Take photo · AI calories").setInputFiles({
+    name: "invalid.png", mimeType: "image/png", buffer: Buffer.alloc(32),
+  });
+  await expect(meals.getByRole("alert")).toContainText("Choose a JPEG, PNG, or WebP photo");
+  await expect(meals.getByRole("button", { name: "Retry upload" })).toBeVisible();
 });

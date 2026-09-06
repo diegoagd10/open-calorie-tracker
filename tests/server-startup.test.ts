@@ -49,6 +49,7 @@ describe("server startup configuration", () => {
 
   test.each([
     "10.0.0.0/16",
+    "127.0.0.1/32",
     "10.255.255.255/32",
     "172.16.0.0/16",
     "172.31.255.255/32",
@@ -64,6 +65,9 @@ describe("server startup configuration", () => {
     undefined,
     "",
     "10.0.0.0",
+    "127.0.0.0/8",
+    "127.0.0.1/16",
+    "127.0.0.2/32",
     "10.0.0.0/15",
     "10.0.0.0/33",
     "10.0.0.0/16 trailing",
@@ -82,7 +86,7 @@ describe("server startup configuration", () => {
     expect(() =>
       validateServerConfiguration({ ...productionEnvironment, TRUST_PROXY }),
     ).toThrow(
-      "TRUST_PROXY must be one private IPv4 Docker network CIDR with a prefix from 16 through 32",
+      "TRUST_PROXY must be one private IPv4 Docker network CIDR with a prefix from 16 through 32, or 127.0.0.1/32 for a local proxy",
     );
   });
 

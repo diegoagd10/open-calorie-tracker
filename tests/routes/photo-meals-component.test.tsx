@@ -2,7 +2,7 @@
 import { createElement, type ComponentProps } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import { PhotoCorrection, PhotoMeals } from "../../app/routes/photo-meals";
+import { PhotoCorrection, PhotoMeals as PhotoMealList, usePhotoUpload } from "../../app/routes/photo-meals";
 
 const state = vi.hoisted(() => ({
   fetcher: {
@@ -26,6 +26,10 @@ vi.mock("react-router", () => ({
 (
   globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }
 ).IS_REACT_ACT_ENVIRONMENT = true;
+function PhotoMeals(props: ComponentProps<typeof PhotoMealList> & { date: string }) {
+  const upload = usePhotoUpload(props.date, props.csrfToken);
+  return <>{upload.capture}{upload.feedback}<PhotoMealList meals={props.meals} csrfToken={props.csrfToken} /></>;
+}
 type Meal = ComponentProps<typeof PhotoMeals>["meals"][number];
 const meal: Meal = {
   id: "meal&photo",
@@ -138,7 +142,7 @@ test("completed photo cards use edited names, private image URLs, rounded calori
   });
   expect(state.revalidator.revalidate).not.toHaveBeenCalled();
   expect(
-    renderer.root.findByProps({ "aria-label": "Take plate photo" }).props,
+    renderer.root.findByProps({ "aria-label": "Take photo · AI calories" }).props,
   ).toMatchObject({
     type: "file",
     capture: "environment",
@@ -241,7 +245,7 @@ test.each([
   const target = { files: [file], value: "selected" };
   await act(() =>
     renderer.root
-      .findByProps({ "aria-label": "Take plate photo" })
+      .findByProps({ "aria-label": "Take photo · AI calories" })
       .props.onChange({ target }),
   );
   expect(createUrl).toHaveBeenCalledWith(file);
@@ -274,7 +278,7 @@ test.each([
     ),
   );
   expect(
-    renderer.root.findByProps({ "aria-label": "Take plate photo" }).props
+    renderer.root.findByProps({ "aria-label": "Take photo · AI calories" }).props
       .disabled,
   ).toBe(true);
   expect(renderer.root.findByType("img").props).toMatchObject({
@@ -314,7 +318,7 @@ test.each([
   await render([]);
   await act(() =>
     renderer.root
-      .findByProps({ "aria-label": "Take plate photo" })
+      .findByProps({ "aria-label": "Take photo · AI calories" })
       .props.onChange({
         target: {
           files: [new File([new Uint8Array(12)], "plate.png", { type: "image/png" })],
@@ -337,7 +341,7 @@ test.each([
 
 test("empty capture does nothing and oversized photos explain the limit before uploading", async () => {
   await render([]);
-  const change = renderer.root.findByProps({ "aria-label": "Take plate photo" })
+  const change = renderer.root.findByProps({ "aria-label": "Take photo · AI calories" })
     .props.onChange;
   await act(() => change({ target: { files: undefined } }));
   await act(() => change({ target: { files: [] } }));

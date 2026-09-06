@@ -167,9 +167,9 @@ test("a trusted HTTPS proxy can forward mutation requests", async () => {
   startProductionProcess({
     APPLICATION_URL: "https://calories.example.test",
     DATABASE_PATH: path.join(directory, "application.sqlite"),
-    NODE_ENV: "test",
+    NODE_ENV: "production",
     PORT: String(port),
-    TRUST_PROXY: "loopback",
+    TRUST_PROXY: "127.0.0.1/32",
   });
 
   await waitForHttpResponse(`http://127.0.0.1:${port}/health/live`);

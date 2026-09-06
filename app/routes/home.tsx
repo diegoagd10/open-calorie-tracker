@@ -26,7 +26,7 @@ import {
   serializeClearedSessionCookie,
 } from "../auth/http.server";
 import { getPhotoAnalysisService } from "../photo-analysis/runtime.server";
-import { PhotoMeals, PhotoCorrection } from "./photo-meals";
+import { PhotoMeals, PhotoCorrection, usePhotoUpload } from "./photo-meals";
 import { AppNavigation } from "../app-navigation";
 import { isTestEnvironment } from "../runtime.server";
 import { UiIcon } from "../ui-icon";
@@ -2776,9 +2776,10 @@ function WaterEventDialog({
   );
 }
 
-function CatalogChoiceStage({ date }: { date: string }) {
+function CatalogChoiceStage({ date, photoCapture }: { date: string; photoCapture: ReactNode }) {
   return (
     <div className={styles.catalogResults} aria-label="Add Food methods">
+      {photoCapture}
       <Link to={catalogHref(date, "search")}>
         <span>
           <strong>Search for food</strong>
@@ -3184,12 +3185,14 @@ function BarcodeCatalogStage({
 }
 
 function CatalogDialog({
+  photoCapture,
   actionData,
   catalog,
   csrfToken,
   date,
 }: {
   actionData: HomeActionData | undefined;
+  photoCapture: ReactNode;
   catalog: NonNullable<Route.ComponentProps["loaderData"]["catalog"]>;
   csrfToken: string;
   date: string;
@@ -3243,7 +3246,9 @@ function CatalogDialog({
                   : "Choose a method"}
             </span>
             <p>
-              Nothing changes in your Food Log until a later confirmation step.
+              {catalog.mode === "choose"
+                ? "Choose how to add food. Photo estimates save automatically; other methods let you review first."
+                : "Nothing changes in your Food Log until a later confirmation step."}
             </p>
           </div>
           <Link
@@ -3264,7 +3269,7 @@ function CatalogDialog({
             date={date}
           />
         ) : catalog.mode === "choose" ? (
-          <CatalogChoiceStage date={date} />
+          <CatalogChoiceStage date={date} photoCapture={photoCapture} />
         ) : catalog.mode === "manual" ? (
           <ManualFoodStage
             actionData={actionData}
@@ -3843,6 +3848,7 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
     username,
     waterDialog,
   } = loaderData;
+  const photoUpload = usePhotoUpload(foodLog.selectedDate, csrfToken);
   const activeFoodEntryEditor =
     actionData?.foodEntryEditor ?? foodEntryEditor;
   const selectedLabel = fullDate(foodLog.selectedDate);
@@ -3935,7 +3941,12 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
                     {copyError}
                   </p>
                 ) : null}
-                {!foodLog.isFuture ? <PhotoMeals meals={photoMeals} date={foodLog.selectedDate} csrfToken={csrfToken} /> : null}
+                {!foodLog.isFuture ? (
+                  <section aria-label="Photo meals">
+                    {photoUpload.feedback}
+                    <PhotoMeals meals={photoMeals} csrfToken={csrfToken} />
+                  </section>
+                ) : null}
                 {foodLog.isFuture ? (
                   <div className={styles.futureDay}>
                     <span className={styles.emptyIcon} aria-hidden="true">
@@ -3947,7 +3958,7 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
                       recorded today or in the past.
                     </p>
                   </div>
-                ) : foodLog.events.length || foodLogPending || photoMeals.length ? (
+                ) : foodLog.events.length || foodLogPending || photoUpload.pending || photoMeals.length ? (
                   <div className={styles.timeline}>
                     <EmptyActionForm
                       className={styles.timelineAddFood}
@@ -4116,6 +4127,7 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
       </div>
       {visibleCatalog ? (
         <CatalogDialog
+          photoCapture={photoUpload.capture}
           actionData={actionData}
           catalog={visibleCatalog}
           csrfToken={csrfToken}

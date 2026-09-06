@@ -150,6 +150,26 @@ subscription quota or a billed cost. Publish the actual distribution and sample
 size if evaluating the goal; neither deterministic fixtures nor an unrun pilot
 are evidence that the goal was achieved.
 
+## Mobile feedback verification
+
+Photo capture is available alongside search, barcode, and manual entry in **Add
+Food**, labeled **Take photo · AI calories**. Choosing a photo returns to the
+Daily Log immediately, which shows upload progress, analysis progress, or an
+explicit failure. Non-food results retain the photo and retry controls without
+creating a Food Entry. JPEG signature validation permits trailing camera metadata
+after the end-of-image marker.
+
+A live smoke test on 2026-09-06 used Pi/Codex Luna with the public USDA key and
+two public JPEGs: [a dog portrait by Pittigrilli, CC BY-SA 4.0](https://commons.wikimedia.org/wiki/File:Close-up_portrait_of_dog.jpg)
+was rejected as non-food in 3.13 seconds, while [a Pepsi can](https://commons.wikimedia.org/wiki/File:2019-02-26_12_58_50_A_can_of_Pepsi_in_the_Dulles_section_of_Sterling,_Loudoun_County,_Virginia.jpg)
+was accepted in 17.42 seconds. This checks rejection and successful processing,
+not nutritional accuracy. The photos are not committed to this repository.
+
+For mobile previews, use a compiled release with its own build directory and the
+local HTTPS proxy configuration in [deployment.md](deployment.md). Sharing Vite
+dependency caches with builds or tests caused stale module URLs and prevented
+the browser from hydrating during an earlier development preview.
+
 Primary references: [Pi SDK](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/sdk.md),
 [Pi authentication](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/providers.md),
 [USDA API guide](https://fdc.nal.usda.gov/api-guide/).

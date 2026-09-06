@@ -1,15 +1,12 @@
-.section {
-  margin-block: 1rem;
-}
 .capture {
   position: relative;
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  padding: 0.7rem 1rem;
-  border-radius: 0.75rem;
-  background: #27644b;
-  color: white;
-  font-weight: 650;
+  justify-content: space-between;
+  gap: 1rem;
+  min-height: 5rem;
+  padding: 0.75rem;
+  border-bottom: 1px solid #d9e1da;
   cursor: pointer;
 }
 .capture input {
@@ -22,12 +19,6 @@
 .capture:focus-within {
   outline: 3px solid #5586c8;
   outline-offset: 3px;
-}
-.privacy {
-  font-size: 0.8rem;
-  color: #58645d;
-  line-height: 1.5;
-  max-width: 65ch;
 }
 .card {
   display: flex;
@@ -71,7 +62,7 @@
 .actions:empty {
   display: none;
 }
-.section button,
+.card button,
 .correction button {
   background: #edf3ee;
   color: #244b39;
