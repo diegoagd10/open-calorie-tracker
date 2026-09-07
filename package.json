@@ -47,8 +47,13 @@
     "typecheck:usda": "tsc -p tsconfig.usda.json",
     "typecheck": "react-router typegen && tsc -b",
     "verify": "pnpm typecheck && pnpm lint:check && pnpm test && pnpm fallow:audit && pnpm audit:prod",
-    "verify:deep": "pnpm verify && pnpm test:coverage && pnpm fallow:full && pnpm architecture:test && pnpm health:test && pnpm test:browser && pnpm test:properties:deep && pnpm mutation:policy && pnpm mutation:test && pnpm audit:policy && pnpm audit:full && pnpm codeql:policy",
-    "test:photo-live": "PHOTO_ANALYSIS_LIVE=1 vitest run tests/photo-analysis.live.test.ts"
+    "verify:deep": "pnpm verify && pnpm test:coverage && pnpm fallow:full && pnpm architecture:test && pnpm health:test && pnpm test:browser && pnpm test:properties:deep && pnpm mutation:policy && pnpm mutation:test && pnpm audit:policy && pnpm audit:full && pnpm codeql:policy && pnpm pr:policy",
+    "test:photo-live": "PHOTO_ANALYSIS_LIVE=1 vitest run tests/photo-analysis.live.test.ts",
+    "pr:check": "node scripts/pr.mjs check",
+    "pr:create": "node scripts/pr.mjs create",
+    "pr:policy": "node --test scripts/pr.test.mjs",
+    "mutation:merge": "node scripts/merge-mutation-shards.mjs",
+    "hooks:install": "node scripts/install-git-hooks.mjs"
   },
   "dependencies": {
     "@earendil-works/pi-coding-agent": "0.85.1",

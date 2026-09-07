@@ -789,12 +789,61 @@ describe("USDA adapter request boundaries", () => {
 test("photo analysis receives complete USDA candidates including Survey, preparation, brand, portions and nutrients", async () => {
   const record = foundationFood({ dataType: "Survey (FNDDS)", description: "Rice, cooked in butter", brandOwner: "Example brand", foodPortions: [{ id: 9, gramWeight: 160, amount: 1, modifier: "cup" }], foodNutrients: [{ amount: 130, nutrient: { id: 1008, unitName: "kcal", name: "Energy" } }], additionalEvidence: "Retained detail" });
   const requests: unknown[] = [];
-  const provider = new UsdaFoodDataCentralAdapter({ apiKey: "test-key", fetchImplementation: async (_url, init) => {
+  const fetchImplementation = vi.fn<typeof fetch>(async (_url, init) => {
     if (init?.body) requests.push(JSON.parse(String(init.body)) as unknown);
     return jsonResponse(init?.method === "POST" ? { foods: [record] } : record);
-  } });
+  });
+  const provider = new UsdaFoodDataCentralAdapter({ apiKey: "test-key", fetchImplementation });
   const evidence = await provider.searchEvidence("rice butter", 2, new AbortController().signal);
   expect(requests).toEqual([{ query: "rice butter", pageNumber: 2, pageSize: 5, dataType: ["Foundation", "Survey (FNDDS)", "Branded"] }]);
   expect(evidence[0].record).toEqual(record);
   expect(evidence[0].food).toMatchObject({ dataType: "Survey (FNDDS)", authoritativeBaseUnit: "g", providerFoodId: "700" });
+  expect(fetchImplementation).toHaveBeenCalledTimes(2);
+  const [searchUrl, searchRequest] = fetchImplementation.mock.calls[0];
+  expect(String(searchUrl)).toBe("https://api.nal.usda.gov/fdc/v1/foods/search?api_key=test-key");
+  expect(searchRequest?.method).toBe("POST");
+  expect(new Headers(searchRequest?.headers).get("content-type")).toBe("application/json");
+  const [detailUrl, detailRequest] = fetchImplementation.mock.calls[1];
+  expect(String(detailUrl)).toBe("https://api.nal.usda.gov/fdc/v1/food/700?api_key=test-key");
+  expect(detailRequest?.method).toBe("GET");
+});
+
+test("photo evidence bounds detail requests even if USDA returns more than five candidates", async () => {
+  const records = Array.from({ length: 6 }, (_, index) => foundationFood({ fdcId: 700 + index }));
+  const fetchImplementation = vi.fn<typeof fetch>()
+    .mockResolvedValueOnce(jsonResponse({ foods: records }));
+  for (const record of records) fetchImplementation.mockResolvedValueOnce(jsonResponse(record));
+  const provider = new UsdaFoodDataCentralAdapter({ apiKey: "test-key", fetchImplementation });
+
+  const evidence = await provider.searchEvidence("rice", 1, new AbortController().signal);
+
+  expect(evidence.map((item) => item.food.providerFoodId)).toEqual(["700", "701", "702", "703", "704"]);
+  expect(fetchImplementation).toHaveBeenCalledTimes(6);
+});
+
+test("photo evidence accepts the record size limit and rejects the next character", async () => {
+  const record = { ...foundationFood(), additionalEvidence: "" };
+  record.additionalEvidence = "x".repeat(150000 - JSON.stringify(record).length);
+  const provider = detailProvider(record);
+  const signal = new AbortController().signal;
+
+  await expect(provider.getEvidence("700", signal)).resolves.toMatchObject({ record });
+  const oversized = detailProvider({ ...record, additionalEvidence: `${record.additionalEvidence}x` });
+  await expect(oversized.getEvidence("700", signal)).rejects.toBeInstanceOf(CatalogInvalidResponseError);
+});
+
+test("cancelling photo analysis aborts its pending USDA request", async () => {
+  let resolveResponse: (response: Response) => void = () => undefined;
+  const response = new Promise<Response>((resolve) => { resolveResponse = resolve; });
+  const fetchImplementation = vi.fn<typeof fetch>().mockReturnValue(response);
+  const provider = new UsdaFoodDataCentralAdapter({ apiKey: "test-key", fetchImplementation });
+  const controller = new AbortController();
+  const pending = provider.getEvidence("700", controller.signal);
+  const requestSignal = fetchImplementation.mock.calls[0][1]?.signal;
+
+  controller.abort();
+  resolveResponse(jsonResponse(foundationFood()));
+  await pending;
+
+  expect(requestSignal?.aborted).toBe(true);
 });

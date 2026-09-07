@@ -48,14 +48,11 @@ fixed dependency cannot leave a stale exception unnoticed.
 
 ## CodeQL results
 
-CodeQL runs for pull requests, pushes to `main`, and the weekly schedule. This
-private, user-owned repository does not currently have GitHub Code Security, so
-GitHub rejects uploads to its code-scanning service. The workflow therefore
-keeps `upload: never`, but it does not treat analysis as automatically green:
-`scripts/check-codeql-results.mjs` validates the generated SARIF and fails the
-job for a missing report, an unsuccessful invocation, or any finding. The SARIF
-is retained as a workflow artifact for 14 days, including on failed jobs.
+The GitHub Actions CodeQL scan has been removed along with the other workflows.
+`pnpm verify:deep` still runs `pnpm codeql:policy`, which tests the local SARIF
+validator; these policy tests do not scan the application for vulnerabilities.
 
-If the repository becomes public or GitHub Code Security is enabled, change
-CodeQL's `upload` option to `always`, restore `security-events: write`, and keep
-the local SARIF gate as an independent control.
+For a separately generated CodeQL SARIF report, run
+`node scripts/check-codeql-results.mjs <sarif-directory>`. The validator
+rejects missing reports, unsuccessful invocations, and findings outside the
+versioned policy. There is no automatic scan, upload, or artifact retention.
