@@ -287,8 +287,8 @@ test("home loader maps every catalog search and detail state", async () => {
     [
       "configuration",
       503,
-      "USDA search is not configured",
-      "USDA search is not configured. Your saved Food Entries remain available.",
+      "USDA Foundation is not installed",
+      "USDA Foundation is not installed. Ask your administrator to install it in Food Catalogs Settings. Your saved Food Entries remain available.",
     ],
     [
       "credentials",

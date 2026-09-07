@@ -99,9 +99,10 @@ test("action conflicts are visible", async () => {
 
 
 test.each([
-  ["goals", true, ["/settings/ai", "/settings/users", "/account/password"]],
-  ["users", true, ["/settings/goals", "/settings/ai", "/account/password"]],
-  ["ai", true, ["/settings/goals", "/settings/users", "/account/password"]],
+  ["goals", true, ["/settings/catalogs", "/settings/ai", "/settings/users", "/account/password"]],
+  ["users", true, ["/settings/goals", "/settings/catalogs", "/settings/ai", "/account/password"]],
+  ["ai", true, ["/settings/goals", "/settings/catalogs", "/settings/users", "/account/password"]],
+  ["catalogs", true, ["/settings/goals", "/settings/ai", "/settings/users", "/account/password"]],
   ["goals", false, ["/account/password"]],
 ] as const)("Settings destinations for %s respect administrator access (%s)", async (active, isAdministrator, expected) => {
   const Routes = createRoutesStub([{ path: "/", Component: () => <SettingsDestinations active={active} isAdministrator={isAdministrator} csrfToken="nav-csrf" /> }]);

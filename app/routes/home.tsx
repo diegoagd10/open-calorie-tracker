@@ -36,6 +36,7 @@ import { BarcodeCameraScanner } from "./barcode-camera-scanner";
 import { getAuthenticationService } from "../auth/runtime.server";
 import {
   CatalogConfigurationError,
+  CatalogStaleReviewError,
   CatalogCredentialsError,
   CatalogFoodNotFoundError,
   CatalogInvalidResponseError,
@@ -52,7 +53,6 @@ import {
 import { isSupportedCommercialBarcode } from "../catalog/barcode";
 import {
   getFoodCatalog,
-  getFoodCatalogProvider,
 } from "../catalog/runtime.server";
 import {
   buildCalendarMonth,
@@ -129,6 +129,7 @@ function foodLogIntentSchema() {
       date: z.string(),
       idempotencyKey: z.string(),
       intent: z.literal("log-food"),
+      catalogGeneration: z.string().optional(),
       provider: z.string().min(1),
       providerFoodId: z.string(),
       quantity: z.string(),
@@ -225,15 +226,24 @@ function foodLogServiceForRequest(request: Request) {
   return instant ? getFoodLogService(instant) : getFoodLogService();
 }
 
+function FoodNameField({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  return <label className={styles.stackedField}>
+    <span>Food name</span>
+    <input maxLength={200} name="name" onChange={event => onChange(event.target.value)} required value={value} />
+  </label>;
+}
+
 function catalogFailure(
   error: unknown,
 ): { message: string; status: number; title: string } | undefined {
+  if (error instanceof CatalogStaleReviewError) return { message: error.message, status: 409, title: "Review food again" };
+  if (error instanceof CatalogNutritionUnavailableError) return { message: "This food has no usable calories in the installed catalog.", status: 422, title: "Nutrition unavailable" };
   if (error instanceof CatalogConfigurationError) {
     return {
       message:
-        "USDA search is not configured. Your saved Food Entries remain available.",
+        "USDA Foundation is not installed. Ask your administrator to install it in Food Catalogs Settings. Your saved Food Entries remain available.",
       status: 503,
-      title: "USDA search is not configured",
+      title: "USDA Foundation is not installed",
     };
   }
   if (error instanceof CatalogCredentialsError) {
@@ -574,18 +584,14 @@ export async function loader({ request }: Route.LoaderArgs) {
     | {
         mode: "search";
         query: string;
-        results: Awaited<
-          ReturnType<ReturnType<typeof getFoodCatalogProvider>["search"]>
-        >;
+        results: CatalogSearchResult[];
         message?: string;
         title?: string;
       }
     | {
         mode: "detail";
         query: string;
-        food: Awaited<
-          ReturnType<ReturnType<typeof getFoodCatalogProvider>["getFood"]>
-        >;
+        food: CatalogFood;
         idempotencyKey: string;
       }
     | undefined;
@@ -654,7 +660,8 @@ export async function loader({ request }: Route.LoaderArgs) {
           catalog = {
             mode: "search",
             query: parsedQuery,
-            results: await getFoodCatalogProvider().search(
+            results: await getFoodCatalog().search(
+              "usda-fdc",
               parsedQuery,
               catalogContext,
             ),
@@ -673,10 +680,10 @@ export async function loader({ request }: Route.LoaderArgs) {
         }
       }
     } else {
-      const provider = getFoodCatalogProvider();
+      const provider = getFoodCatalog();
       try {
         catalog = {
-          food: await provider.getFood(foodStage.providerFoodId, catalogContext),
+          food: await provider.getFood("usda-fdc", foodStage.providerFoodId, catalogContext),
           idempotencyKey: randomUUID(),
           mode: "detail",
           query: requestedQuery,
@@ -693,7 +700,7 @@ export async function loader({ request }: Route.LoaderArgs) {
         ) {
           try {
             results = (
-              await provider.search(parsedQuery, catalogContext)
+              await provider.search("usda-fdc", parsedQuery, catalogContext)
             ).filter(
               (result) => result.providerFoodId !== foodStage.providerFoodId,
             );
@@ -816,29 +823,12 @@ export async function action({ request }: Route.ActionArgs) {
     throw new Response("CSRF token rejected.", { status: 403 });
   }
 
+  const formFields = Object.fromEntries([
+    "carbohydrateGrams", "date", "destinationDate", "energyKcal", "entryId", "eventId", "expectedUpdatedAt", "fatGrams", "fiberGrams", "idempotencyKey", "intent", "name", "proteinGrams", "providerFoodId", "provider", "quantity", "selectedMeasurementId", "sodiumMilligrams", "sugarGrams", "waterAmount", "waterEventTime", "waterSelection"
+  ].map(name => [name, formString(formData, name)]));
   const parsed = foodLogIntentSchema().safeParse({
-    carbohydrateGrams: formString(formData, "carbohydrateGrams"),
-    date: formString(formData, "date"),
-    destinationDate: formString(formData, "destinationDate"),
-    energyKcal: formString(formData, "energyKcal"),
-    entryId: formString(formData, "entryId"),
-    eventId: formString(formData, "eventId"),
-    expectedUpdatedAt: formString(formData, "expectedUpdatedAt"),
-    fatGrams: formString(formData, "fatGrams"),
-    fiberGrams: formString(formData, "fiberGrams"),
-    idempotencyKey: formString(formData, "idempotencyKey"),
-    intent: formString(formData, "intent"),
-    name: formString(formData, "name"),
-    proteinGrams: formString(formData, "proteinGrams"),
-    providerFoodId: formString(formData, "providerFoodId"),
-    provider: formString(formData, "provider"),
-    quantity: formString(formData, "quantity"),
-    selectedMeasurementId: formString(formData, "selectedMeasurementId"),
-    sodiumMilligrams: formString(formData, "sodiumMilligrams"),
-    sugarGrams: formString(formData, "sugarGrams"),
-    waterAmount: formString(formData, "waterAmount"),
-    waterEventTime: formString(formData, "waterEventTime"),
-    waterSelection: formString(formData, "waterSelection"),
+    ...formFields,
+    catalogGeneration: formString(formData, "catalogGeneration") || undefined,
   });
   if (!parsed.success) {
     return data<HomeActionData>(
@@ -1117,6 +1107,7 @@ export async function action({ request }: Route.ActionArgs) {
         foodLogDate: parsed.data.date,
         idempotencyKey: parsed.data.idempotencyKey,
         provider: parsed.data.provider,
+        catalogGeneration: parsed.data.catalogGeneration,
         providerFoodId: parsed.data.providerFoodId,
         quantity: parsed.data.quantity,
         selectedMeasurementId: parsed.data.selectedMeasurementId,
@@ -1955,6 +1946,7 @@ function FoodDetailStage({
         />
         <input name="intent" type="hidden" value="log-food" />
         <input name="provider" type="hidden" value={food.provider} />
+        {food.catalogGeneration ? <input name="catalogGeneration" type="hidden" value={food.catalogGeneration} /> : null}
         <input
           name="providerFoodId"
           type="hidden"
@@ -2301,21 +2293,7 @@ function FoodEntryEditorDialog({
             value={entry.updatedAt}
           />
           <fieldset disabled={pending}>
-            <label className={styles.stackedField}>
-              <span>Food name</span>
-              <input
-                maxLength={200}
-                name="name"
-                onChange={(event) =>
-                  setFields((current) => ({
-                    ...current,
-                    name: event.target.value,
-                  }))
-                }
-                required
-                value={fields.name}
-              />
-            </label>
+            <FoodNameField value={fields.name} onChange={name => setFields(current => ({ ...current, name }))} />
             <div className={styles.foodDetailGrid}>
               <label className={styles.stackedField}>
                 <span>Measurement</span>
@@ -2772,21 +2750,7 @@ function ManualFoodStage({
         />
         <input name="intent" type="hidden" value="log-manual-food" />
         <fieldset disabled={pending}>
-          <label className={styles.stackedField}>
-            <span>Food name</span>
-            <input
-              maxLength={200}
-              name="name"
-              onChange={(event) =>
-                setFields((current) => ({
-                  ...current,
-                  name: event.target.value,
-                }))
-              }
-              required
-              value={fields.name}
-            />
-          </label>
+          <FoodNameField value={fields.name} onChange={name => setFields(current => ({ ...current, name }))} />
           <div className={styles.foodDetailGrid}>
             <div className={styles.stackedField}>
               <span>Measurement</span>
@@ -2908,6 +2872,7 @@ function BarcodeFoodDetail({
         <input name="idempotencyKey" type="hidden" value={idempotencyKey} />
         <input name="intent" type="hidden" value="log-food" />
         <input name="provider" type="hidden" value={food.provider} />
+        {food.catalogGeneration ? <input name="catalogGeneration" type="hidden" value={food.catalogGeneration} /> : null}
         <input
           name="providerFoodId"
           type="hidden"
@@ -3282,7 +3247,7 @@ function CatalogDialog({
                           </span>
                           <strong>{result.name}</strong>
                           <small>
-                            {[result.brand, result.measurementSummary]
+                            {[result.brand, result.measurementSummary, result.catalogGeneration ? result.providerPublishedDate : null]
                               .filter(Boolean)
                               .join(" · ")}
                           </small>
@@ -3303,7 +3268,7 @@ function CatalogDialog({
                       ) : (
                         <div aria-disabled="true" key={result.providerFoodId}>
                           {identity}
-                          <small>Hidden in production</small>
+                          <small>{result.catalogGeneration ? "Nutrition unavailable" : "Hidden in production"}</small>
                         </div>
                       );
                     })}
