@@ -245,7 +245,7 @@ test("today, historical navigation, calendar access, travel, and future rejectio
     travelPage.getByText("Friday, August 28, 2026", { exact: true }).first(),
   ).toBeVisible();
   await expect(
-    travelPage.getByText("America/New_York", { exact: true }),
+    travelPage.getByText("Food Log date 2026-08-28 · Time zone America/New_York", { exact: true }),
   ).toBeVisible();
   expect(
     await travelPage.evaluate(

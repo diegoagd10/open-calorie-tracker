@@ -1,6 +1,6 @@
 # Local verification
 
-The repository exposes two stable gates through the package manager pinned in
+The repository exposes fast and deep gates through the package manager pinned in
 `package.json`. Install with `pnpm install --frozen-lockfile` on the supported
 Node 24 line before running either gate.
 
@@ -22,7 +22,7 @@ generated Istanbul report explicitly to Fallow health.
 
 On a warm development machine it should normally finish in under one minute;
 the dependency audit can vary with registry latency. Fallow compares the
-working change with the merge base it discovers from Git. CI can pin that base
+working change with the merge base it discovers from Git. The PR gate pins that base
 with `FALLOW_AUDIT_BASE`.
 
 `pnpm lint:check` is the type-aware lint command used by this gate. Oxlint's
@@ -38,7 +38,7 @@ pnpm exec playwright install chromium webkit # once per machine
 pnpm verify:deep
 ```
 
-The camera scanner journey always runs with mobile Chromium. CI and supported
+The camera scanner journey always runs with mobile Chromium. Supported
 local hosts also run that same tagged journey with the iPhone WebKit profile.
 Playwright's WebKit binary is skipped only on Arch-derived hosts, which its
 published Linux binary does not support.
@@ -68,85 +68,115 @@ configuration, fixtures, migrations, or runtime wiring. Without a local cache,
 the versioned report seeds the first run. The score still has to meet both the
 configured threshold and `mutation-testing/baseline-summary.json`.
 
-The mutation workflow runs eight independent shards on standard runners, with
-at most one Stryker worker per available CPU (capped at four). Statements are
-balanced by syntax-tree size, so large files such as `home.tsx` are distributed
-without cutting through a function or dropping a mutation across a line boundary.
-Each shard has its own cache and 30-minute limit. A change to production source
-forces fresh shard reports because it can move statements between shards; test
-case changes still use Stryker's incremental comparison. Shards never seed from
-the full versioned report, which could retain results outside the shard's scope.
+`pnpm mutation:test` runs the full, unsharded local measurement. Optional manual
+sharding remains available with `MUTATION_SHARD=1/8 pnpm mutation:test`; combine
+all eight reports with `pnpm mutation:merge <directory> 8`.
+`pnpm mutation:baseline` forces a complete unsharded measurement and remains
+the explicit baseline review operation.
 
-The required check waits for **all eight shards**, rejects missing, duplicate,
-stale, incomplete, or incorrectly assigned reports, and applies the unchanged
-threshold and baseline regression gate to the combined score. Scores from
-individual shards are not averaged or gated separately. Shard HTML reports and
-the combined JSON report are uploaded as artifacts. Obsolete PR/branch runs
-are canceled when a new commit arrives.
+## Pull request gate
 
-`pnpm mutation:test` remains the unsharded local command. To reproduce one CI
-shard, run `MUTATION_SHARD=1/8 pnpm mutation:test`. After collecting the shard
-artifacts under one directory, combine and check them with
-`node scripts/merge-mutation-shards.mjs <artifact-directory> 8`.
-`pnpm mutation:baseline` always forces a complete unsharded measurement and
-remains the explicit baseline review operation.
+GitHub Actions workflows have been removed. Before opening a PR, install the
+pinned dependencies and Playwright browsers, and start Docker with Compose
+available. Use Node 24 as required by `package.json`.
 
-## GitHub Actions
+Install the versioned hooks once in each checkout, with Node 24 and the pinned
+pnpm available on PATH:
 
-GitHub runs the same package scripts on the supported Node 24 line with the
-project's pinned `pnpm@11.19.0`. The fast verification workflow runs for every
-pull request. It checks out the complete Git history and sets
-`FALLOW_AUDIT_BASE` to the pull request's exact base commit, so Fallow evaluates
-only the proposed change even when the pull request targets a branch other than
-`main`.
+```sh
+pnpm hooks:install
+git add <changed-files>
+git commit -m "Describe the change" # pre-commit runs both suites
+git push -u origin HEAD           # pre-push runs both suites again
+pnpm pr:create --title "Describe the change" --body-file /path/to/pr-body.md
+```
 
-The deep verification workflow runs every Wednesday at 06:29 UTC and can also
-be started from **Actions > Deep verification > Run workflow**. It installs
-Chromium explicitly before invoking `pnpm verify:deep`.
+The installer sets `core.hooksPath` to `.githooks` and preserves an existing
+custom hook setup by refusing to replace it. With Git's `worktreeConfig`
+extension enabled, the setting applies only to the current worktree; otherwise
+it is local to the clone. Hooks are installed explicitly, so dependency installs
+in Docker do not depend on a Git checkout.
 
-Expensive focused workflows use path filters that cover their implementation,
-tests, configuration, dependency graph, and workflow definition:
+`pre-commit` verifies the staged tree before the new commit SHA exists. All
+tracked changes must be staged and untracked files must be staged or removed;
+partial staging is rejected instead of testing content outside the proposed
+commit. `git commit -a` is supported using Git's candidate index. A failure
+preserves the index and working files and prevents the commit. Its report is
+stored under `reports/pr-check/staged/<tree-sha>/summary.json`, with the parent
+commit, staged tree, base, and command results. That report never authorizes a PR.
 
-| Workflow | Automatic trigger scope |
-| --- | --- |
-| Fast verification | Every change, with no path exclusions. |
-| Mutation testing | Application and server code, tests, mutation baselines and tooling, root build/test configuration, or dependencies. |
-| CodeQL | JavaScript or TypeScript sources, dependencies, or its workflow. |
-| Dependency audit | Dependency manifests and lockfile, audit policy and allowlist, or its workflow. |
-| Deployment tests | Image and Compose inputs, production code, scripts and assets, migrations, deployment tests, root build configuration, or dependencies. |
+`pre-push` reads Git's proposed ref updates and verifies the exact SHA to be sent.
+It accepts one update: the checked-out branch at HEAD, sent to the same branch
+name on origin. Pushes of another commit, renamed destinations, tags, or multiple
+refs are rejected. Deleting refs or a push with no updates publishes no code and
+requires no checks. A failed verification prevents Git from sending the update.
+It always reruns both suites, replacing any earlier result for that commit;
+a successful push leaves the commit summary required by `pr:create`.
 
-Every gate keeps its non-zero exit status, so a typecheck, lint, test,
-architecture, mutation regression, or security failure fails the corresponding
-check. Console logs are retained as workflow artifacts for 14 days; the deep,
-mutation, and CodeQL jobs also retain their generated coverage, browser,
-mutation, or SARIF reports when available. Artifact uploads use `if: always()`
-so diagnostics survive a failed gate.
+Both hooks stream test stdout/stderr back to the Git caller, preserve a nonzero
+failure status, and print the path to the summary and logs. An AI invoking Git
+receives those diagnostics in its command result: fix the cause and retry the
+same commit or push command. Hooks do not automatically launch an AI or fix code.
+The complete deep and deployment suites run on every commit and publishing push,
+so both operations need the browser, Docker, registry access, and time for the
+full checks. The first failing suite stops the operation.
+
+The default base is `main` on `origin`. Set `git config pr.base release` to use
+another base consistently in the hooks and PR commands. `pr:check` and
+`pr:create` also accept `--base release` for a single invocation. The fetch and
+push URLs for origin must match. Authenticate Git and the GitHub CLI before
+publishing. The verification commands never commit or push automatically.
+
+`pnpm pr:check` remains available to explicitly verify an already committed SHA.
+With the hooks installed, a normal push performs this verification itself.
+
+`pr:check` requires an attached feature branch and a clean working tree,
+including staged and untracked files. It fetches the base and records the branch,
+full HEAD SHA, origin URL, base branch, and base SHA. The branch must contain
+commits beyond the base. It then runs `pnpm verify:deep` and
+`pnpm test:deployment` in order, stopping at the first failure. Fallow uses the
+recorded base SHA. Mutation testing uses the complete unsharded measurement and
+the former workflow's 94.8% minimum as well as the existing baseline gate.
+
+The ignored directory `reports/pr-check/<full-commit-sha>/` contains
+`summary.json` with timestamps, per-command exit status, and the overall result,
+plus a log for each executed command. Failed and interrupted runs never authorize
+a PR. A rerun replaces the previous result before executing tests. The commands
+use a per-worktree lock; if a forced kill leaves it behind, the error gives the
+lock directory to remove after confirming the old process has stopped.
+
+`pr:create` requires both checks to have passed for the current clean branch,
+commit, origin, and freshly fetched base SHA. It also checks that the branch
+already published on origin points to that exact commit before invoking
+`gh pr create` with an explicit repository, base, and head. Changes to the commit
+(including amend/rebase), branch name, or base invalidate the saved result.
+Changing tracked files during checks also fails the gate.
+
+Supported PR options are `--title`, `--body`, `--body-file`, `--draft`, `--fill`,
+`--fill-first`, `--fill-verbose`, `--reviewer`, `--assignee`, `--label`,
+`--milestone`, and `--project`. Head and repository overrides are rejected.
+
+This is a local workflow gate, not GitHub branch protection. Git allows hooks
+to be bypassed, and the website or a direct `gh pr create` call bypasses the PR
+wrapper. Agents must keep the hooks enabled and use the documented flow.
+Existing repository rules that require the deleted Actions checks must be updated separately by a maintainer.
+`pr:check` runs tests of the CodeQL report policy through `verify:deep`; it does
+not run a CodeQL scan. See [dependency security](dependency-security.md#codeql-results).
 
 ## Explicit external suites
 
-Docker, live network access, and credentials remain outside both gates:
+The PR gate includes Docker deployment tests. The fast and deep gates remain
+usable without Docker. Credentialed live-provider suites are separate:
 
 ```sh
-pnpm test:deployment
+pnpm test:deployment # also run by pr:check
 pnpm test:photo-live # requires private PHOTO_PILOT_DATASET and PHOTO_AI_AUTH_PATH
 FDC_API_KEY=... pnpm test:usda-live
 ```
 
-`test:deployment` requires a working Docker daemon. `test:usda-live` requires a
-registered USDA FoodData Central key and calls the live provider. These suites
-must be selected deliberately because their environment and failure modes are
-not reproducible in the ordinary local gate.
-
-GitHub keeps them in separate workflows:
-
-- **Deployment tests** runs on GitHub-hosted Linux runners, where Docker and
-  Docker Compose are available. It runs automatically only for paths that can
-  change the production container contract and is also manually dispatchable.
-- **USDA live tests** is manual-only because it exercises an external API and
-  website. Configure an Actions repository secret named `FDC_API_KEY` before
-  dispatching it. The job requires outbound network access, a registered key
-  other than `DEMO_KEY`, and Chromium; the workflow validates the secret and
-  installs the browser explicitly.
+`test:deployment` requires a working Docker daemon and Compose. The live suites
+require their provider credentials and outbound network access; USDA browser
+tests also need Chromium. No GitHub workflow runs these commands automatically.
 
 ## Fallow baselines
 

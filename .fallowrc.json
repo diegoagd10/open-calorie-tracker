@@ -112,6 +112,8 @@
           "scripts/mutation-shards.mjs",
           "scripts/merge-mutation-shards.mjs",
           "scripts/run-mutation-testing.mjs",
+          "scripts/pr.mjs",
+          "scripts/install-git-hooks.mjs",
           "stryker.config.mjs"
         ]
       }
