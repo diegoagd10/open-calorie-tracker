@@ -27,8 +27,26 @@ export function searchOffGeneration(directory: string, generation: string, expre
   } finally { database.close(); }
 }
 
+export type BuildOffGenerationOptions = {
+  aliasesFor: (food: CatalogFood) => string[];
+  directory: string;
+  foods: AsyncIterable<CatalogFood>;
+  generation: string;
+  maxBytes: number;
+  onDuplicate: () => void;
+  onIndexing: () => void;
+};
+
 // Bounded transactions and SQLite cache; the export is never accumulated in memory.
-export async function buildOffGeneration(directory: string, generation: string, foods: AsyncIterable<CatalogFood>, maxBytes: number, duplicate: () => void, indexing: () => void, aliasesFor: (food: CatalogFood) => string[]) {
+export async function buildOffGeneration({
+  aliasesFor,
+  directory,
+  foods,
+  generation,
+  maxBytes,
+  onDuplicate,
+  onIndexing,
+}: BuildOffGenerationOptions) {
   const database = new BetterSqlite3(path.join(directory, `${generation}.sqlite`));
   let count = 0;
   try {
@@ -40,7 +58,7 @@ export async function buildOffGeneration(directory: string, generation: string, 
     const flush = database.transaction(() => {
       for (const food of batch) {
         const result = insert.run(food.providerFoodId, food.name, aliasesFor(food).join(" "), food.brand ?? "", JSON.stringify(food));
-        if (result.changes) count++; else duplicate();
+        if (result.changes) count++; else onDuplicate();
       }
     });
     for await (const food of foods) {
@@ -48,7 +66,7 @@ export async function buildOffGeneration(directory: string, generation: string, 
       if (batch.length === 500) { flush(); batch.length = 0; }
     }
     flush();
-    indexing();
+    onIndexing();
     database.transaction(() => {
       database.exec("INSERT INTO product_search (rowid, name, aliases, brands) SELECT rowid, name, aliases, brands FROM products");
       database.exec("INSERT INTO product_search(product_search) VALUES ('optimize'); INSERT INTO product_search(product_search) VALUES ('integrity-check');");

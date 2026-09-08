@@ -3,15 +3,18 @@ import { describe, expect, test, vi } from "vitest";
 import type { CatalogManagement } from "../app/catalog-management/catalog-management.server";
 import {
   CatalogConfigurationError,
+  CatalogUnavailableError,
   type CatalogFood,
 } from "../app/catalog/food-catalog.server";
 import { LocalOpenFoodFactsAdapter } from "../app/catalog/local-off.server";
+import { LocalUsdaAdapter } from "../app/catalog/local-usda.server";
 import {
   offSearchAliases,
   offSearchRelevance,
 } from "../app/catalog/off-search.server";
 import {
   boundedSearchTokens,
+  controlledSingularPluralAliases,
   normalizedSearchWords,
   prefixSearchExpression,
 } from "../app/catalog/search-normalization";
@@ -82,6 +85,33 @@ describe("catalog search normalization", () => {
     );
     expect(prefixSearchExpression([])).toBe("");
   });
+
+  test("adds only the supported singular or plural form within a phrase", () => {
+    expect(controlledSingularPluralAliases("Egg noodles and tomatoes")).toEqual([
+      "eggs noodles and tomatoes",
+      "egg noodles and tomato",
+    ]);
+    expect(controlledSingularPluralAliases("Cereal snacks")).toEqual([]);
+  });
+
+  test.each([
+    ["egg", "eggs"],
+    ["carrot", "carrots"],
+    ["tomato", "tomatoes"],
+    ["lettuce", "lettuces"],
+    ["zucchini", "zucchinis"],
+    ["tilapia", "tilapias"],
+    ["spinach", "spinaches"],
+    ["huevo", "huevos"],
+    ["zanahoria", "zanahorias"],
+    ["tomate", "tomates"],
+    ["lechuga", "lechugas"],
+    ["espinaca", "espinacas"],
+    ["calabacin", "calabacines"],
+  ])("maps the controlled %s/%s pair in both directions", (singular, plural) => {
+    expect(controlledSingularPluralAliases(singular)).toEqual([plural]);
+    expect(controlledSingularPluralAliases(plural)).toEqual([singular]);
+  });
 });
 
 describe("OFF search policy", () => {
@@ -98,6 +128,19 @@ describe("OFF search policy", () => {
     expect(read).toHaveBeenCalledOnce();
   });
 
+  test.each([
+    ["OFF", (management: CatalogManagement) => new LocalOpenFoodFactsAdapter(management, "/missing-catalog-directory")],
+    ["USDA", (management: CatalogManagement) => new LocalUsdaAdapter(management, "/missing-catalog-directory")],
+  ])("maps an unreadable installed %s generation to catalog unavailability", async (_label, adapterFor) => {
+    const management = {
+      read: () => ({ installed: { generation: "missing" } }),
+    } as unknown as CatalogManagement;
+
+    await expect(adapterFor(management).search("egg")).rejects.toBeInstanceOf(
+      CatalogUnavailableError,
+    );
+  });
+
   test("collects non-empty, distinct source aliases without repeating the display name", () => {
     expect(offSearchAliases(packagedFood())).toEqual([
       "Creme brulee",
@@ -107,6 +150,10 @@ describe("OFF search policy", () => {
       "Custard",
     ]);
     expect(offSearchAliases(packagedFood({ offSourceFields: undefined }))).toEqual([]);
+    expect(offSearchAliases(packagedFood({
+      name: "Egg noodles",
+      offSourceFields: { product_name_en: "Egg noodles" },
+    }))).toEqual(["eggs noodles"]);
   });
 
   test.each([

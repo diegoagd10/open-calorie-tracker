@@ -594,7 +594,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       }
     | {
         filter?: CatalogSearchFilter;
-        groups?: CatalogSearchGroup[];
+        groups: CatalogSearchGroup[];
         mode: "search";
         query: string;
         results: CatalogSearchResult[];
@@ -659,11 +659,12 @@ export async function loader({ request }: Route.LoaderArgs) {
     } else if (foodStage.mode === "search") {
       const parsedQuery = catalogQuery(requestedQuery);
       if (!requestedQuery) {
-        catalog = { ...(requestedFilter === "all" ? {} : { filter: requestedFilter }), mode: "search", query: "", results: [] };
+        catalog = { ...(requestedFilter === "all" ? {} : { filter: requestedFilter }), groups: [], mode: "search", query: "", results: [] };
       } else if (parsedQuery === undefined) {
         responseStatus = 400;
         catalog = {
           ...(requestedFilter === "all" ? {} : { filter: requestedFilter }),
+          groups: [],
           message: "Enter a food search from 2 to 100 characters.",
           mode: "search",
           query: requestedQuery,
@@ -718,7 +719,7 @@ export async function loader({ request }: Route.LoaderArgs) {
         }
         catalog = {
           ...(requestedFilter === "all" ? {} : { filter: requestedFilter }),
-          groups,
+          groups: groups ?? [],
           message: failure.message,
           mode: "search",
           query: requestedQuery,
@@ -2856,12 +2857,16 @@ function offCalculationMessage(reason: string | undefined) {
 
 function BarcodeFoodDetail({
   actionData,
+  backHref,
+  backLabel,
   csrfToken,
   date,
   food,
   idempotencyKey,
 }: {
   actionData: HomeActionData | undefined;
+  backHref: string;
+  backLabel: string;
   csrfToken: string;
   date: string;
   food: CatalogFood;
@@ -2882,9 +2887,9 @@ function BarcodeFoodDetail({
     <section aria-labelledby="barcode-product-title">
       <Link
         className={styles.backToResults}
-        to={catalogHref(date, "barcode")}
+        to={backHref}
       >
-        ‹ Back to scanner
+        {backLabel}
       </Link>
       <div className={styles.foodIdentity}>
         <span className={styles.catalogType}>Open Food Facts</span>
@@ -3003,6 +3008,8 @@ function BarcodeCatalogStage({
     return (
       <BarcodeFoodDetail
         actionData={actionData}
+        backHref={catalogHref(date, "barcode")}
+        backLabel="‹ Back to scanner"
         csrfToken={csrfToken}
         date={date}
         food={catalog.food}
@@ -3137,12 +3144,7 @@ function CatalogDialog({
     restoreFocusSelector: "[data-food-dialog-trigger]",
   });
   const searchFilter = catalog.mode === "search" ? catalog.filter ?? "all" : "all";
-  const searchGroups = catalog.mode === "search"
-    ? catalog.groups ?? ([
-        { kind: "basic" as const, provider: "usda-fdc" as const, results: catalog.results.filter(result => result.provider === "usda-fdc"), status: "available" as const },
-        { kind: "packaged" as const, provider: "open-food-facts" as const, results: catalog.results.filter(result => result.provider === "open-food-facts"), status: "available" as const },
-      ].filter(group => group.results.length > 0))
-    : [];
+  const searchGroups = catalog.mode === "search" ? catalog.groups ?? [] : [];
 
   return (
     <DialogBackdrop onClose={closeDialog}>
@@ -3182,6 +3184,16 @@ function CatalogDialog({
         </div>
         {detailPending ? (
           <FoodDetailSkeleton />
+        ) : catalog.mode === "detail" && catalog.food.provider === "open-food-facts" ? (
+          <BarcodeFoodDetail
+            actionData={actionData}
+            backHref={catalogHref(date, "search", catalog.query, undefined, catalog.filter)}
+            backLabel="‹ Back to results"
+            csrfToken={csrfToken}
+            date={date}
+            food={catalog.food}
+            idempotencyKey={catalog.idempotencyKey}
+          />
         ) : catalog.mode === "detail" ? (
           <FoodDetailStage
             actionData={actionData}
@@ -3325,7 +3337,11 @@ function CatalogDialog({
                       ) : (
                         <div aria-disabled="true" key={`${result.provider}:${result.providerFoodId}`}>
                           {identity}
-                          <small>{result.catalogGeneration ? "Nutrition unavailable" : "Hidden in production"}</small>
+                          <small>{result.catalogGeneration
+                            ? result.provider === "open-food-facts"
+                              ? offCalculationMessage(result.calculationUnavailableReason)
+                              : "Nutrition unavailable"
+                            : "Hidden in production"}</small>
                         </div>
                       );
                         })}

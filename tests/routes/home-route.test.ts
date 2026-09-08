@@ -254,11 +254,12 @@ test("home publishes metadata and enforces account/setup/date boundaries", async
 
 test("home loader maps every catalog search and detail state", async () => {
   const empty = await load("/?food=search");
-  expect(empty.data.catalog).toEqual({ mode: "search", query: "", results: [] });
+  expect(empty.data.catalog).toEqual({ groups: [], mode: "search", query: "", results: [] });
 
   const invalid = await load("/?food=search&query=a");
   expect(invalid.init?.status).toBe(400);
   expect(invalid.data.catalog).toEqual({
+    groups: [],
     message: "Enter a food search from 2 to 100 characters.",
     mode: "search",
     query: "a",
@@ -342,11 +343,16 @@ test("home loader maps every catalog search and detail state", async () => {
   if (vanishedWithoutRefresh.data.catalog?.mode !== "search") {
     throw new Error("Expected search fallback");
   }
+  expect(vanishedWithoutRefresh.data.catalog.groups).toMatchObject([
+    { kind: "basic", provider: "usda-fdc", results: [], status: "unavailable" },
+    { kind: "packaged", provider: "open-food-facts", results: [], status: "available" },
+  ]);
   expect(vanishedWithoutRefresh.data.catalog.results).toEqual([]);
   const vanishedInvalidQuery = await load("/?food=4040&query=a");
   if (vanishedInvalidQuery.data.catalog?.mode !== "search") {
     throw new Error("Expected search fallback");
   }
+  expect(vanishedInvalidQuery.data.catalog.groups).toEqual([]);
   expect(vanishedInvalidQuery.data.catalog.results).toEqual([]);
 
   const unsafe = await load("/?food=9999&query=unsafe");

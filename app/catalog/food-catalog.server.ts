@@ -24,12 +24,14 @@ export type CatalogSearchResult = {
 };
 
 export type CatalogSearchFilter = "all" | "basic" | "packaged";
-export type CatalogSearchGroup = {
-  kind: "basic" | "packaged";
-  provider: CatalogProviderId;
+export type CatalogSearchGroupFields = {
   results: CatalogSearchResult[];
   status: "available" | "not-installed" | "unavailable";
 };
+export type CatalogSearchGroup = CatalogSearchGroupFields & (
+  | { kind: "basic"; provider: "usda-fdc" }
+  | { kind: "packaged"; provider: "open-food-facts" }
+);
 export type CatalogSearchResponse = { groups: CatalogSearchGroup[] };
 
 export type CatalogMeasurement = {

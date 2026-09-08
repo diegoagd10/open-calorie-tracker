@@ -1,6 +1,6 @@
 import { buildUsdaGeneration, readUsdaGenerationFood, searchUsdaGeneration } from "../database/usda-generation.server.ts";
 import type { CatalogManagement } from "../catalog-management/catalog-management.server";
-import { CatalogConfigurationError, CatalogFoodNotFoundError, type CatalogFood, type CatalogSearchResult, type SearchFoodCatalogProvider } from "./food-catalog.server.ts";
+import { CatalogConfigurationError, CatalogFoodNotFoundError, CatalogUnavailableError, type CatalogFood, type CatalogSearchResult, type SearchFoodCatalogProvider } from "./food-catalog.server.ts";
 import { boundedSearchTokens, normalizedSearchWords } from "./search-normalization.ts";
 
 const basicFoodAliases = [
@@ -55,7 +55,12 @@ export class LocalUsdaAdapter implements SearchFoodCatalogProvider {
   async search(query: string): Promise<CatalogSearchResult[]> {
     const tokens = boundedSearchTokens(query);
     if (!tokens) return [];
-    return searchUsdaGeneration(this.#directory, this.#generation(), searchExpression(tokens), name => relevance(name, tokens));
+    const generation = this.#generation();
+    try {
+      return searchUsdaGeneration(this.#directory, generation, searchExpression(tokens), name => relevance(name, tokens));
+    } catch {
+      throw new CatalogUnavailableError();
+    }
   }
   async getFood(providerFoodId: string): Promise<CatalogFood> {
     if (!/^[1-9]\d*$/.test(providerFoodId)) throw new CatalogFoodNotFoundError();

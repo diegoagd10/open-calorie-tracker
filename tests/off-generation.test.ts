@@ -58,15 +58,15 @@ test("generation build persists aliases, indexes once, de-duplicates, and caps r
     `Hidden alias ${food.providerFoodId}`,
   ]);
 
-  await expect(buildOffGeneration(
-    directory,
-    "built",
-    asFoods(foods),
-    16 * 1024 * 1024,
-    duplicate,
-    indexing,
+  await expect(buildOffGeneration({
     aliasesFor,
-  )).resolves.toBe(30);
+    directory,
+    foods: asFoods(foods),
+    generation: "built",
+    maxBytes: 16 * 1024 * 1024,
+    onDuplicate: duplicate,
+    onIndexing: indexing,
+  })).resolves.toBe(30);
   expect(duplicate).toHaveBeenCalledTimes(1);
   expect(indexing).toHaveBeenCalledTimes(1);
   expect(aliasesFor).toHaveBeenCalledTimes(31);

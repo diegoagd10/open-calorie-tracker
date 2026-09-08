@@ -1,5 +1,8 @@
 import type { CatalogFood } from "./food-catalog.server.ts";
-import { normalizedSearchWords } from "./search-normalization.ts";
+import {
+  controlledSingularPluralAliases,
+  normalizedSearchWords,
+} from "./search-normalization.ts";
 
 const aliasFields = [
   "product_name_en",
@@ -20,7 +23,9 @@ export function offSearchAliases(food: CatalogFood): string[] {
   const values = aliasFields
     .map(field => food.offSourceFields?.[field]?.trim())
     .filter((value): value is string => Boolean(value));
-  return [...new Set(values.filter(value => value !== food.name))];
+  const singularPlurals = [food.name, ...values]
+    .flatMap(controlledSingularPluralAliases);
+  return [...new Set([...values, ...singularPlurals].filter(value => value !== food.name))];
 }
 
 export function offSearchRelevance(food: CatalogFood, tokens: string[]): number | null {

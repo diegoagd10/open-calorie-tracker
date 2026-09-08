@@ -1390,7 +1390,15 @@ test("home catalog renders initial, empty, failure, and selectable result states
   (globalThis.document as unknown as { activeElement: TestElement }).activeElement =
     catalogPreviousFocus;
   const renderer = await renderHome({
-    catalog: { mode: "search", query: "yogurt", results },
+    catalog: {
+      groups: [
+        { kind: "basic", provider: "usda-fdc", results: results.slice(0, 2), status: "available" },
+        { kind: "packaged", provider: "open-food-facts", results: results.slice(2), status: "available" },
+      ],
+      mode: "search",
+      query: "yogurt",
+      results,
+    },
   });
   expect(semanticDom(renderer)).toMatchSnapshot();
   expect(renderer.root.findByProps({ "aria-label": "Food search results" }))
@@ -1448,7 +1456,12 @@ test("home catalog renders initial, empty, failure, and selectable result states
   expect(documentSelectors).toContain("[data-food-dialog-trigger]");
 
   const queryless = await renderHome({
-    catalog: { mode: "search", query: "", results: [results[0]] },
+    catalog: {
+      groups: [{ kind: "basic", provider: "usda-fdc", results: [results[0]], status: "available" }],
+      mode: "search",
+      query: "",
+      results: [results[0]],
+    },
   });
   expect(queryless.root.findByProps({
     href: "/?date=2026-08-31&food=1001&provider=usda-fdc",
@@ -1545,8 +1558,37 @@ test("home catalog search renders explicit source state, provenance, and active 
   expect(allText(empty)).not.toContain("Basic foodscatalog is not installed");
   await act(async () => empty.unmount());
 
+  const incompleteResult = {
+    ...packagedResult,
+    calculationUnavailableReason: "ambiguous_nutrition_basis",
+    isSelectable: false,
+  };
+  const incomplete = await renderHome({
+    catalog: {
+      groups: [{
+        kind: "packaged",
+        provider: "open-food-facts",
+        results: [incompleteResult],
+        status: "available",
+      }],
+      mode: "search",
+      query: "crunch",
+      results: [incompleteResult],
+    },
+  });
+  expect(allText(incomplete)).toContain(
+    "Calculation unavailable: this export does not establish whether nutrition is per 100 g or 100 ml.",
+  );
+  await act(async () => incomplete.unmount());
+
   const oneProviderFallback = await renderHome({
     catalog: {
+      groups: [{
+        kind: "packaged",
+        provider: "open-food-facts",
+        results: [packagedResult],
+        status: "available",
+      }],
       mode: "search",
       query: "crunch",
       results: [packagedResult],
@@ -1557,6 +1599,35 @@ test("home catalog search renders explicit source state, provenance, and active 
   )).toHaveLength(1);
   expect(allText(oneProviderFallback)).not.toContain("Basic foodscatalog");
   await act(async () => oneProviderFallback.unmount());
+});
+
+test("OFF search detail uses the complete barcode-backed review behavior", async () => {
+  const renderer = await renderHome({
+    catalog: {
+      filter: "packaged",
+      food: barcodeFood,
+      idempotencyKey: "off-search-detail",
+      mode: "detail",
+      query: "example cereal",
+    },
+  });
+
+  expect(allText(renderer)).toContain(`Barcode ${barcodeFood.barcode}`);
+  expect(allText(renderer)).toContain("Fiber");
+  expect(allText(renderer)).toContain("Sugar");
+  expect(allText(renderer)).toContain("Sodium");
+  expect(input(renderer, "quantity").props).toMatchObject({
+    min: "0.000001",
+    step: "0.000001",
+  });
+  expect(renderer.root.findByProps({
+    href: "/?date=2026-08-31&food=search&query=example+cereal&filter=packaged",
+  })).toBeDefined();
+  expect(input(renderer, "provider").props.value).toBe("open-food-facts");
+  expect(input(renderer, "providerFoodId").props.value).toBe(
+    barcodeFood.providerFoodId,
+  );
+  await act(async () => renderer.unmount());
 });
 
 test("home catalog detail recalculates previews and exposes the log contract", async () => {

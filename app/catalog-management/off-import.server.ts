@@ -101,7 +101,15 @@ export async function importOff(options: ImportOptions, publish: (message: Impor
     let count = 0;
     await pipeline(replay(), parse({ delimiter: "\t", bom: true, quote: daily ? false : '"', relax_column_count: true, skip_empty_lines: true, max_record_size: 2 * 1024 * 1024 }), async rows => {
       try {
-        count = await buildOffGeneration(options.directory, options.generation, foods(rows as AsyncIterable<string[]>), options.maxExpandedBytes, () => exclude("duplicate_identity"), () => progress("indexing"), offSearchAliases);
+        count = await buildOffGeneration({
+          aliasesFor: offSearchAliases,
+          directory: options.directory,
+          foods: foods(rows as AsyncIterable<string[]>),
+          generation: options.generation,
+          maxBytes: options.maxExpandedBytes,
+          onDuplicate: () => exclude("duplicate_identity"),
+          onIndexing: () => progress("indexing"),
+        });
       } catch (error) { importFailure = error; throw error; }
     });
     return count;

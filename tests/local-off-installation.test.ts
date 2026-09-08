@@ -62,6 +62,9 @@ test("OFF search uses installed names, aliases, brands, accents, and prefixes", 
   await expect(packaged.search("exact brand")).resolves.toMatchObject([
     { brand: "Exact Brand", name: "Crunch cereal" },
   ]);
+  await expect(packaged.search("eggs")).resolves.toMatchObject([
+    { name: "Egg noodles" },
+  ]);
   await expect(packaged.search("a")).resolves.toEqual([]);
 });
 
