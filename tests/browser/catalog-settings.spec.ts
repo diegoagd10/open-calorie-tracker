@@ -1,5 +1,7 @@
+import { installSimulatedBarcodeCamera } from "./barcode-camera-fixture";
 import AxeBuilder from "@axe-core/playwright";
 import { bootstrapOrSignInBrowserTestUser, expect, signInProvisionedMember, test } from "./reset-database";
+import { offArchive, offProduct, offWithBasis } from "../support/off-archive";
 import { basicFoodsArchive } from "../support/basic-foods-archive";
 
 const password = "correct horse 🔐 battery";
@@ -29,6 +31,15 @@ test("administrator installs USDA from mobile Settings, leaves during import, an
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.screenshot({ path: testInfo.outputPath("food-catalogs-mobile.png"), fullPage: true });
 
+  const products = offArchive([{ ...offWithBasis("100ml"), product_name: "Local oat drink" }, { ...offProduct, code: "0012345678906", product_name: "Ambiguous oats" }]);
+  await page.getByLabel("OFF tab-separated CSV GZIP").setInputFiles({ name: "products.csv.gz", mimeType: "application/gzip", buffer: products });
+  await page.getByRole("button", { name: "Install Open Food Facts" }).click();
+  await expect(page.getByText("Open Food Facts installation complete", { exact: true })).toBeVisible({ timeout: 15000 });
+  await expect(page.getByText("2 foods installed", { exact: true })).toBeVisible();
+  await expect(page.getByText("52 foods installed", { exact: true })).toBeVisible();
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+  await page.screenshot({ path: testInfo.outputPath("both-catalogs-mobile.png"), fullPage: true });
+
   const context = await browser.newContext({ ignoreHTTPSErrors: true });
   try {
     const member = await context.newPage();
@@ -48,6 +59,32 @@ test("administrator installs USDA from mobile Settings, leaves during import, an
     await expect(member.getByText("Broccoli, raw", { exact: true })).toBeVisible();
     await member.reload();
     await expect(member.getByText("Broccoli, raw", { exact: true })).toBeVisible();
+    await installSimulatedBarcodeCamera(member);
+    await member.goto("/?food=barcode");
+    await member.getByRole("button", { name: "Use camera" }).click();
+    await member.evaluate(() => {
+      const state = (window as typeof window & { __scannerState: { barcode: string; emit: boolean } }).__scannerState;
+      state.barcode = "0012345678905"; state.emit = true;
+    });
+    await expect(member.getByRole("heading", { name: "Local oat drink" })).toBeVisible();
+    await member.goto("/?food=barcode");
+    await member.getByLabel("Enter barcode").fill("0012345678905");
+    await member.getByRole("button", { name: "Look up", exact: true }).click();
+    await expect(member.getByRole("heading", { name: "Local oat drink" })).toBeVisible();
+    await member.getByLabel("Measurement", { exact: true }).selectOption("100ml");
+    await member.getByLabel("Quantity", { exact: true }).fill("2.5");
+    await expect(member.getByText("1,000 kcal", { exact: true })).toBeVisible();
+    await member.getByRole("button", { name: "Add to Food Log", exact: true }).click();
+    await expect(member.getByText("Local oat drink", { exact: true })).toBeVisible();
+    await member.reload();
+    await expect(member.getByText("Local oat drink", { exact: true })).toBeVisible();
+    await member.goto("/?food=barcode&barcode=0012345678906");
+    await expect(member.getByRole("alert")).toContainText("does not establish whether nutrition is per 100 g or 100 ml");
+    await expect(member.getByRole("button", { name: "Add to Food Log", exact: true })).toBeDisabled();
+    await member.goto("/?food=barcode&barcode=9999999999999");
+    await expect(member.getByText("Product not found", { exact: true })).toBeVisible();
+    const deniedOff = await context.request.post("/settings/catalogs", { headers: { Origin: "https://localhost:4173", "Content-Type": "application/gzip", "X-Catalog-Provider": "open-food-facts", "X-Archive-Name": "denied.gz" }, data: products });
+    expect(deniedOff.status()).toBe(404);
 
     for (const [query, expected] of [
       ["tilapia", /Fish, tilapia,/], ["eggs", /Eggs,/], ["HUÉVOS", /Eggs,/],

@@ -71,7 +71,7 @@ test("a mobile visitor claims an empty instance and completes nutrition setup", 
 
   await page.setViewportSize({ height: 720, width: 1280 });
   await page.getByRole("link", { name: "Settings", exact: true }).click();
-  await expect(page.getByText(`Private to ${administrator}`)).toBeVisible();
+  await expect(page.getByText(`Private to ${administrator}`, { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Sign out" }).click();
   await expect(page).toHaveURL("/login");
   await expect(page.getByRole("link", { name: "Register" })).toHaveCount(0);

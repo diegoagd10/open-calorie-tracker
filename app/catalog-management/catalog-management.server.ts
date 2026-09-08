@@ -17,9 +17,10 @@ export type CatalogImportJob = {
 export type InstalledCatalog = {
   generation: string; filename: string; sha256: string; foodCount: number;
   installedAt: string; publicationDateRange: { earliest: string; latest: string };
+  sourceDateRange?: { earliest: string | null; latest: string | null };
 };
 export type CatalogState = { installed: InstalledCatalog | null; job: CatalogImportJob | null; busy: boolean };
-export type CatalogManagementOptions = { directory: string; workerPath: string; maxUploadBytes?: number; maxExpandedBytes?: number };
+export type CatalogManagementOptions = { provider?: "usda-fdc" | "open-food-facts"; directory: string; workerPath: string; maxUploadBytes?: number; maxExpandedBytes?: number };
 const terminal = new Set<ImportPhase>(["succeeded", "failed", "interrupted"]);
 export class CatalogManagementError extends Error {}
 
@@ -32,38 +33,42 @@ export class CatalogManagement {
 
   constructor(database: ApplicationDatabaseClient, options: CatalogManagementOptions) {
     this.#database = database;
-    this.#options = { maxUploadBytes: 64 * 1024 * 1024, maxExpandedBytes: 256 * 1024 * 1024, ...options };
+    const off = options.provider === "open-food-facts";
+    this.#options = { provider: "usda-fdc", maxUploadBytes: (off ? 4096 : 64) * 1024 * 1024, maxExpandedBytes: (off ? 32768 : 256) * 1024 * 1024, ...options };
     const state = this.read();
     if (state.busy && state.job) {
-      this.#updateJob({ phase: "interrupted", error: "USDA installation was interrupted by a server restart. Upload the archive again." });
+      this.#updateJob({ phase: "interrupted", error: `${this.#label} installation was interrupted by a server restart. Upload the archive again.` });
       void this.#cleanup(state.job.id, true);
     }
   }
 
+  get #label() { return this.#options.provider === "open-food-facts" ? "Open Food Facts" : "USDA"; }
+  get #extension() { return this.#options.provider === "open-food-facts" ? ".gz" : ".zip"; }
+
   read(): CatalogState {
-    const state = readCatalogState(this.#database);
+    const state = readCatalogState(this.#database, this.#options.provider);
     return { ...state, busy: state.job !== null && !terminal.has(state.job.phase) };
   }
 
   async submitArchive(input: { filename: string; stream: Readable; size?: number }): Promise<void> {
-    if (!input.filename.toLowerCase().endsWith(".zip") || input.filename.length > 255) throw new CatalogManagementError("Choose a USDA Foundation CSV ZIP archive.");
+    if (!input.filename.toLowerCase().endsWith(this.#extension) || input.filename.length > 255) throw new CatalogManagementError(`Choose a ${this.#label} ${this.#extension} archive.`);
     if (input.size !== undefined && (!Number.isSafeInteger(input.size) || input.size <= 0 || input.size > this.#options.maxUploadBytes)) throw new CatalogManagementError("Archive exceeds the configured upload limit or is empty.");
     const id = randomUUID();
     const now = new Date().toISOString();
-    const conflict = claimCatalogInstallation(this.#database, { id, filename: path.basename(input.filename), phase: "uploading", receivedBytes: 0, processedRecords: 0, exclusions: {}, error: null, startedAt: now, updatedAt: now });
-    if (conflict === "installed") throw new CatalogManagementError("USDA is already installed. Catalog replacement is not available yet.");
-    if (conflict === "busy") throw new CatalogManagementError("A USDA installation is already running.");
+    const conflict = claimCatalogInstallation(this.#database, { id, filename: path.basename(input.filename), phase: "uploading", receivedBytes: 0, processedRecords: 0, exclusions: {}, error: null, startedAt: now, updatedAt: now }, this.#options.provider);
+    if (conflict === "installed") throw new CatalogManagementError(`${this.#label} is already installed. Catalog replacement is not available yet.`);
+    if (conflict === "busy") throw new CatalogManagementError(`A ${this.#label} installation is already running.`);
     this.#upload = new AbortController();
     this.#operation = this.#receive(input, id, this.#upload.signal);
     await this.#operation;
   }
 
   async #receive(input: { stream: Readable; size?: number }, id: string, signal: AbortSignal) {
-    const archivePath = path.join(this.#options.directory, `${id}.zip`);
+    const archivePath = path.join(this.#options.directory, `${id}${this.#extension}`);
     try {
       await mkdir(this.#options.directory, { recursive: true, mode: 0o700 });
       const space = await statfs(this.#options.directory);
-      if (space.bavail * space.bsize < this.#options.maxExpandedBytes * 2 + (input.size ?? this.#options.maxUploadBytes)) throw new CatalogManagementError("Not enough disk space for USDA import. Free space and retry.");
+      if (space.bavail * space.bsize < this.#options.maxExpandedBytes * 2 + (input.size ?? this.#options.maxUploadBytes)) throw new CatalogManagementError(`Not enough disk space for ${this.#label} import. Free space and retry.`);
       let receivedBytes = 0;
       let lastProgress = 0;
       const hash = createHash("sha256");
@@ -80,13 +85,13 @@ export class CatalogManagement {
       this.#updateJob({ receivedBytes, phase: "queued" });
       this.#startWorker(id, archivePath, hash.digest("hex"));
     } catch (error) {
-      this.#updateJob({ phase: "failed", error: error instanceof CatalogManagementError ? error.message : "USDA upload failed. Check available disk space and upload the archive again." });
+      this.#updateJob({ phase: "failed", error: error instanceof CatalogManagementError ? error.message : `${this.#label} upload failed. Check available disk space and upload the archive again.` });
       await this.#cleanup(id, true);
     } finally { this.#upload = undefined; }
   }
 
   #startWorker(id: string, archivePath: string, sha256: string) {
-    const worker = new Worker(this.#options.workerPath, { workerData: { archivePath, directory: this.#options.directory, generation: id, maxExpandedBytes: this.#options.maxExpandedBytes }, execArgv: [] });
+    const worker = new Worker(this.#options.workerPath, { workerData: { provider: this.#options.provider, archivePath, directory: this.#options.directory, generation: id, maxExpandedBytes: this.#options.maxExpandedBytes }, execArgv: [] });
     this.#worker = worker;
     let result: { foodCount: number; publicationDateRange: InstalledCatalog["publicationDateRange"] } | undefined;
     worker.on("message", (message: { progress?: Partial<CatalogImportJob>; result?: typeof result; error?: string }) => {
@@ -94,7 +99,7 @@ export class CatalogManagement {
       if (message.result) result = message.result;
       if (message.error) this.#updateJob({ error: message.error });
     });
-    worker.on("error", () => this.#updateJob({ error: "USDA import worker failed. Check server storage and retry the upload." }));
+    worker.on("error", () => this.#updateJob({ error: `${this.#label} import worker failed. Check server storage and retry the upload.` }));
     worker.on("exit", (code) => {
       this.#operation = this.#finish(id, sha256, code === 0 ? result : undefined);
     });
@@ -118,31 +123,31 @@ export class CatalogManagement {
       } else {
         await this.#cleanup(id, true);
         this.#worker = undefined;
-        if (state.busy) this.#updateJob({ phase: "failed", error: state.job?.error ?? "USDA import stopped before completion. Upload the archive again." });
+        if (state.busy) this.#updateJob({ phase: "failed", error: state.job?.error ?? `${this.#label} import stopped before completion. Upload the archive again.` });
       }
     } catch {
       await this.#cleanup(id, this.read().installed?.generation !== id);
       this.#worker = undefined;
-      this.#updateJob({ phase: "failed", error: "USDA activation failed. Check server storage and retry the upload." });
+      this.#updateJob({ phase: "failed", error: `${this.#label} activation failed. Check server storage and retry the upload.` });
     }
   }
 
   #save(state: Omit<CatalogState, "busy">) {
-    saveCatalogState(this.#database, state);
+    saveCatalogState(this.#database, state, this.#options.provider);
   }
   #updateJob(patch: Partial<CatalogImportJob>) {
     const state = this.read();
     if (state.job) this.#save({ installed: state.installed, job: { ...state.job, ...patch, updatedAt: new Date().toISOString() } });
   }
   async #cleanup(id: string, removeGeneration: boolean) {
-    const paths = [`${id}.zip`, `${id}.staging`, ...(removeGeneration ? [`${id}.sqlite`, `${id}.sqlite-journal`] : [])];
+    const paths = [`${id}${this.#extension}`, `${id}.staging`, ...(removeGeneration ? [`${id}.sqlite`, `${id}.sqlite-journal`] : [])];
     await Promise.all(paths.map(name => rm(path.join(this.#options.directory, name), { recursive: true, force: true }).catch(() => undefined)));
   }
   async shutdown() {
     this.#upload?.abort();
     await this.#operation;
     if (this.#worker) {
-      this.#updateJob({ phase: "interrupted", error: "USDA installation was interrupted by server shutdown. Upload the archive again." });
+      this.#updateJob({ phase: "interrupted", error: `${this.#label} installation was interrupted by server shutdown. Upload the archive again.` });
       await this.#worker.terminate();
       await this.#operation;
     }

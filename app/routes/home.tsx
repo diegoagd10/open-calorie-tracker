@@ -300,9 +300,9 @@ function barcodeCatalogFailure(
   if (error instanceof CatalogConfigurationError) {
     return {
       message:
-        "Open Food Facts needs a valid contact email before barcode lookup can be used. USDA search and saved Food Entries remain available.",
+        "An administrator can install Open Food Facts in Settings → Food Catalogs. USDA search and saved Food Entries remain available.",
       status: 503,
-      title: "Open Food Facts is not configured",
+      title: "Open Food Facts is not installed",
     };
   }
   if (error instanceof CatalogFoodNotFoundError) {
@@ -315,17 +315,17 @@ function barcodeCatalogFailure(
   if (error instanceof CatalogNutritionUnavailableError) {
     return {
       message:
-        "This product does not report usable nutrition per serving. Values per 100 g or 100 ml are not converted.",
+        "This product has no usable nutrition with a supported calculation basis.",
       status: 422,
-      title: "Nutrition per serving unavailable",
+      title: "Nutrition unavailable",
     };
   }
   if (error instanceof CatalogUnsafeMeasurementError) {
     return {
       message:
-        "This product no longer has the same usable 1 serving measurement. Your Food Log was not changed.",
+        "This product no longer has the selected supported measurement. Your Food Log was not changed.",
       status: 422,
-      title: "Serving unavailable",
+      title: "Measurement unavailable",
     };
   }
   if (error instanceof CatalogRateLimitError) {
@@ -2823,6 +2823,17 @@ function ManualFoodStage({
   );
 }
 
+function offCalculationMessage(reason: string | undefined) {
+  const messages: Record<string, string> = {
+    ambiguous_nutrition_basis: "Calculation unavailable: this export does not establish whether nutrition is per 100 g or 100 ml. Package size and serving text cannot resolve it.",
+    conflicting_nutrition_bases: "Calculation unavailable: the product has conflicting nutrition bases.",
+    calories_unavailable: "Calculation unavailable: calories are missing or have an unsupported unit.",
+    nutrition_not_provided: "Calculation unavailable: nutrition is not provided for this product.",
+    unsupported_barcode: "This product does not have a supported commercial barcode.",
+  };
+  return reason && Object.hasOwn(messages, reason) ? messages[reason] : "Calculation unavailable for this product.";
+}
+
 function BarcodeFoodDetail({
   actionData,
   csrfToken,
@@ -2837,9 +2848,11 @@ function BarcodeFoodDetail({
   idempotencyKey: string;
 }) {
   const [quantity, setQuantity] = useState("1");
+  const [measurementId, setMeasurementId] = useState(food.measurements[0]?.id ?? "");
+  const measurement = food.measurements.find(value => value.id === measurementId);
   const quantityMicrounits = quantityMicrounitsFromDecimal(quantity);
   const multiplier =
-    quantityMicrounits === undefined ? 0 : quantityMicrounits / 1_000_000;
+    quantityMicrounits === undefined ? 0 : (quantityMicrounits / 1_000_000) * (measurement?.baseQuantityMicrounits ?? 0) / food.authoritativeBaseQuantityMicrounits;
   const displayName =
     food.name === "Unnamed product" && food.barcode
       ? `Unnamed product · ${food.barcode}`
@@ -2857,12 +2870,13 @@ function BarcodeFoodDetail({
         <span className={styles.catalogType}>Open Food Facts</span>
         <h3 id="barcode-product-title">{displayName}</h3>
         <p>Barcode {food.barcode}</p>
+        {food.brand ? <p>{food.brand}</p> : null}
       </div>
       <div className={styles.snapshotNote}>
         <span aria-hidden="true">◇</span>
         <p>
           <strong>Saved as a Nutrition Snapshot</strong>
-          Confirm to keep these serving values and source details locally if
+          Confirm to keep these nutrition values and source details locally if
           Open Food Facts later changes or is unavailable.
         </p>
       </div>
@@ -2878,17 +2892,15 @@ function BarcodeFoodDetail({
           type="hidden"
           value={food.providerFoodId}
         />
-        <input
-          name="selectedMeasurementId"
-          type="hidden"
-          value={food.measurements[0]?.id ?? ""}
-        />
+        {!food.isSelectable ? <p role="alert" className={styles.catalogError}>{offCalculationMessage(food.calculationUnavailableReason)}</p> : null}
         <div className={styles.foodDetailGrid}>
-          <div className={styles.stackedField}>
+          <label className={styles.stackedField}>
             <span>Measurement</span>
-            <strong>1 serving</strong>
-            <small>Serving values are used directly; no weight conversion.</small>
-          </div>
+            <select aria-label="Measurement" name="selectedMeasurementId" value={measurementId} onChange={event => setMeasurementId(event.currentTarget.value)} disabled={!food.isSelectable}>
+              {food.measurements.map(value => <option key={value.id} value={value.id}>{value.label}</option>)}
+            </select>
+            <small>Nutrition uses the source's supported quantity and unit.</small>
+          </label>
           <label className={styles.stackedField}>
             <span>Quantity</span>
             <input
@@ -2904,12 +2916,12 @@ function BarcodeFoodDetail({
             />
           </label>
         </div>
-        <CatalogNutritionPreview
+        {food.isSelectable ? <CatalogNutritionPreview
           carbohydrateLabel="Carbohydrates"
           food={food}
           includeAdditional
           multiplier={multiplier}
-        />
+        /> : null}
         {actionData?.message ? (
           <p className={styles.catalogError} role="alert">
             {actionData.message}
@@ -2921,7 +2933,7 @@ function BarcodeFoodDetail({
           </Link>
           <button
             className={styles.primaryButton}
-            disabled={quantityMicrounits === undefined}
+            disabled={!food.isSelectable || !measurement || quantityMicrounits === undefined}
             type="submit"
           >
             Add to Food Log

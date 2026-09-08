@@ -308,7 +308,7 @@ test("setup reads and writes remain scoped to the authenticated user", async ({
   await page.getByRole("button", { name: "Finish setup" }).click();
   await expect(page).toHaveURL("/");
   await page.getByRole("link", { name: "Settings", exact: true }).click();
-  await expect(page.getByText("Private to setup.other")).toBeVisible();
+  await expect(page.getByText("Private to setup.other", { exact: true })).toBeVisible();
   await expect(page.getByText("setup.owner")).toHaveCount(0);
 
   const persistedDatabase = openBrowserTestDatabase({ readonly: true });

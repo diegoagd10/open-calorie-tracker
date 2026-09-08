@@ -51,7 +51,7 @@ test("an installed real Foundation archive supports local search, source portion
 test("upload metadata rejects invalid names and sizes before claiming installation", async () => {
   const { management } = await setup({ maxUploadBytes: 1000 });
   for (const filename of ["", "foundation.csv", "x".repeat(252) + ".zip"]) {
-    await expect(management.submitArchive({ filename, stream: Readable.from("unused") })).rejects.toThrow("Choose a USDA Foundation CSV ZIP archive.");
+    await expect(management.submitArchive({ filename, stream: Readable.from("unused") })).rejects.toThrow("Choose a USDA .zip archive.");
     expect(management.read()).toEqual({ installed: null, job: null, busy: false });
   }
   for (const size of [0, -1, 1.5, NaN, Infinity, 1001]) {
@@ -225,6 +225,21 @@ test("a missing catalog, conflicting installation and stale review have explicit
   await expect(entries.log(userId, { ...input, catalogGeneration: "00000000-0000-4000-8000-000000000000" })).rejects.toThrow("catalog changed");
   const egg = await catalog.getFood("usda-fdc", "748967");
   expect((await entries.log(userId, { ...input, catalogGeneration: egg.catalogGeneration })).energyMilliKcal).toBe(147_000);
+});
+
+test("local USDA search normalizes Unicode, bounds terms, and keeps punctuation out of FTS syntax", async () => {
+  const { management, catalog } = await setup();
+  for (const query of ["", " ", "a", " a ", "?!", "x".repeat(101)]) expect(await catalog.search("usda-fdc", query)).toEqual([]);
+  await management.submitArchive({ filename: "foundation.zip", stream: Readable.from(await foundationArchive()) });
+  await vi.waitFor(() => expect(management.read().busy).toBe(false));
+  expect((await catalog.search("usda-fdc", "ｅｇｇ")).map(food => food.providerFoodId)).toEqual(["748967"]);
+  expect((await catalog.search("usda-fdc", "EG")).map(food => food.providerFoodId)).toEqual(["748967"]);
+  expect((await catalog.search("usda-fdc", "egg" + " ".repeat(97))).map(food => food.providerFoodId)).toEqual(["748967"]);
+  expect((await catalog.search("usda-fdc", "egg-Grade/A,Large.whole")).map(food => food.providerFoodId)).toEqual(["748967"]);
+  expect((await catalog.search("usda-fdc", "egg egg egg egg egg egg egg egg nonexistent")).map(food => food.providerFoodId)).toEqual([]);
+  expect(await catalog.search("usda-fdc", "egg OR broccoli")).toEqual([]);
+  expect(await catalog.search("usda-fdc", "egg 999999")).toEqual([]);
+  for (const id of ["0", "bad1", "1bad", "0748967", "9999999"]) await expect(catalog.getFood("usda-fdc", id)).rejects.toThrow("no longer available");
 });
 
 test("Spanish egg aliases find the original USDA egg record without confusing eggplant", async () => {

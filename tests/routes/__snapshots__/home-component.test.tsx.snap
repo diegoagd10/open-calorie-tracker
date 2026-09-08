@@ -6,9 +6,9 @@ exports[`barcode mode separates confirmation from scanning while keeping errors 
 
 exports[`barcode mode separates confirmation from scanning while keeping errors recoverable 2`] = `"d7c81f1288fe5fdf155c0991c2c8f7e5314230b69eb6b7c00f5749123632dee2"`;
 
-exports[`barcode mode separates confirmation from scanning while keeping errors recoverable 3`] = `"47fab97e15ab86a94bdd381a599ea547050fc64bf0fdb8d772a0a2be837fe141"`;
+exports[`barcode mode separates confirmation from scanning while keeping errors recoverable 3`] = `"48b70262a9b7137166bc64b3b9f29f3c56a848cf9e13a928536b5a84ea2ebe5e"`;
 
-exports[`barcode mode separates confirmation from scanning while keeping errors recoverable 4`] = `"244ca11ce0f03ba9c15eaf15de8680953d009567a4d2d29a03fd16d42a3c3d43"`;
+exports[`barcode mode separates confirmation from scanning while keeping errors recoverable 4`] = `"521caa6f07206ef6a302d6a6fa4d7eac38a35e2091419f6833b54e2b92293106"`;
 
 exports[`home catalog detail recalculates previews and exposes the log contract 1`] = `"6ad0d742cfe72dd74674c37d3e582700737d1d17d30c90001859a14761503a2b"`;
 

@@ -10,6 +10,8 @@ import { serializeSessionCookie } from "../../app/auth/http.server";
 import { getAuthenticationService } from "../../app/auth/runtime.server";
 import {
   CatalogFoodNotFoundError,
+  CatalogStaleReviewError,
+  CatalogNutritionUnavailableError,
   FoodCatalog,
 } from "../../app/catalog/food-catalog.server";
 import {
@@ -462,13 +464,13 @@ test("home loader exposes barcode lookup without creating a Food Entry", async (
   expect(getFoodLogService().read(1, today)?.entries).toHaveLength(0);
 
   for (const [barcode, status, title, message] of [
-    ["0000000000000", 503, "Open Food Facts is not configured", "contact email"],
+    ["0000000000000", 503, "Open Food Facts is not installed", "Food Catalogs"],
     ["0000000000001", 404, "Product not found", "another code"],
-    ["0000000000002", 422, "Nutrition per serving unavailable", "per serving"],
+    ["0000000000002", 422, "Nutrition unavailable", "calculation basis"],
     ["0000000000003", 429, "Open Food Facts rate limit reached", "Wait a moment"],
     ["0000000000004", 503, "Open Food Facts is unavailable", "Retry"],
     ["0000000000005", 502, "Open Food Facts response could not be used", "could not be used safely"],
-    ["0000000000007", 422, "Serving unavailable", "same usable 1 serving"],
+    ["0000000000007", 422, "Measurement unavailable", "selected supported measurement"],
   ] as const) {
     const result = await load(`/?food=barcode&barcode=${barcode}`);
     expect(result.init?.status).toBe(status);
@@ -1450,4 +1452,21 @@ test("home lists accepted photo work and redirects attempts to open a processing
   photoService.correct(userId, entryId, { correction: "Butter", idempotencyKey: "home-photo-correction" });
   expectRedirect(await homeLoader(routeArgs(get(`/?date=${today}&entry=${entryId}`))), `/?date=${today}`);
   photoService.shutdown();
+});
+
+test.each([
+  [new CatalogStaleReviewError(), 409, "Review food again"],
+  [new CatalogNutritionUnavailableError(), 422, "Nutrition unavailable"],
+] as const)("catalog review failures keep their HTTP status and review guidance %#", async (error, status, title) => {
+  setFoodCatalogProviderForTests({
+    async getFood() { throw error; },
+    async search() { throw error; },
+  });
+  try {
+    const message = error instanceof CatalogStaleReviewError ? error.message : "This food has no usable calories in the installed catalog.";
+    const detail = await load("/?food=1001");
+    expect(detail.data.catalog).toMatchObject({ title, message });
+    const result = await homeAction(routeArgs(post({ intent: "log-food", idempotencyKey: "local-review-failure", providerFoodId: "1001", quantity: "1", selectedMeasurementId: "base:g:100000000" })));
+    expect(result).toMatchObject({ data: { message }, init: { status } });
+  } finally { setFoodCatalogProviderForTests(undefined); }
 });

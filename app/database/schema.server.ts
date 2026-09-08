@@ -235,8 +235,9 @@ export const foodEntries = sqliteTable(
           AND ${table.selectedMeasurementUnit} IN ('g', 'ml'))
         OR (${table.provider} = 'open-food-facts'
           AND ${table.sourceDataType} = 'Open Food Facts'
-          AND ${table.authoritativeBaseUnit} = 'serving'
-          AND ${table.selectedMeasurementUnit} = 'serving')
+          AND ${table.selectedMeasurementUnit} = ${table.authoritativeBaseUnit}
+          AND ((${table.authoritativeBaseUnit} = 'serving' AND ${table.authoritativeBaseQuantityMicrounits} = 1000000)
+            OR (${table.authoritativeBaseUnit} IN ('g', 'ml') AND ${table.authoritativeBaseQuantityMicrounits} = 100000000)))
         OR (${table.provider} = 'manual'
           AND ${table.sourceDataType} = 'User entered'
           AND ${table.authoritativeBaseUnit} = 'serving'
