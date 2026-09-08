@@ -254,11 +254,12 @@ test("home publishes metadata and enforces account/setup/date boundaries", async
 
 test("home loader maps every catalog search and detail state", async () => {
   const empty = await load("/?food=search");
-  expect(empty.data.catalog).toEqual({ mode: "search", query: "", results: [] });
+  expect(empty.data.catalog).toEqual({ groups: [], mode: "search", query: "", results: [] });
 
   const invalid = await load("/?food=search&query=a");
   expect(invalid.init?.status).toBe(400);
   expect(invalid.data.catalog).toEqual({
+    groups: [],
     message: "Enter a food search from 2 to 100 characters.",
     mode: "search",
     query: "a",
@@ -285,48 +286,37 @@ test("home loader maps every catalog search and detail state", async () => {
     expect(boundary.data.catalog).toMatchObject({ query: expectedQuery });
   }
 
-  for (const [query, status, title, message] of [
-    [
-      "configuration",
-      503,
-      "USDA Foundation is not installed",
-      "USDA Foundation is not installed. Ask your administrator to install it in Food Catalogs Settings. Your saved Food Entries remain available.",
-    ],
-    [
-      "credentials",
-      503,
-      "USDA credentials unavailable",
-      "USDA search credentials are unavailable. Your saved Food Entries remain available.",
-    ],
-    [
-      "rate",
-      429,
-      "USDA rate limit reached",
-      "USDA rate limit reached. Wait a moment and search again.",
-    ],
-    [
-      "malformed",
-      502,
-      "USDA response could not be used",
-      "USDA returned food data that could not be used safely.",
-    ],
-    [
-      "unavailable",
-      503,
-      "USDA is unavailable",
-      "USDA is unavailable right now. Your saved Food Entries are unaffected.",
-    ],
+  for (const [query, status] of [
+    ["configuration", "not-installed"],
+    ["credentials", "unavailable"],
+    ["rate", "unavailable"],
+    ["malformed", "unavailable"],
+    ["unavailable", "unavailable"],
   ] as const) {
     const result = await load(`/?food=search&query=${query}`);
-    expect(result.init?.status).toBe(status);
+    expect(result.init?.status).toBe(200);
     expect(result.data.catalog).toMatchObject({
       mode: "search",
-      message,
       query,
       results: [],
-      title,
+      groups: [
+        { provider: "usda-fdc", status },
+        { provider: "open-food-facts", status: "available" },
+      ],
     });
   }
+
+  const packaged = await load("/?food=search&query=example%20foods&filter=packaged");
+  expect(packaged.data.catalog).toMatchObject({
+    filter: "packaged",
+    groups: [{ kind: "packaged", results: [{ provider: "open-food-facts", providerFoodId: "0034000470693" }] }],
+  });
+  const packagedDetail = await load("/?food=0034000470693&provider=open-food-facts&query=example%20foods&filter=packaged");
+  expect(packagedDetail.data.catalog).toMatchObject({
+    filter: "packaged",
+    food: { provider: "open-food-facts", providerFoodId: "0034000470693" },
+    mode: "detail",
+  });
 
   const detail = await load("/?food=1001&query=yogurt");
   expect(detail.data.catalog).toMatchObject({
@@ -353,11 +343,16 @@ test("home loader maps every catalog search and detail state", async () => {
   if (vanishedWithoutRefresh.data.catalog?.mode !== "search") {
     throw new Error("Expected search fallback");
   }
+  expect(vanishedWithoutRefresh.data.catalog.groups).toMatchObject([
+    { kind: "basic", provider: "usda-fdc", results: [], status: "unavailable" },
+    { kind: "packaged", provider: "open-food-facts", results: [], status: "available" },
+  ]);
   expect(vanishedWithoutRefresh.data.catalog.results).toEqual([]);
   const vanishedInvalidQuery = await load("/?food=4040&query=a");
   if (vanishedInvalidQuery.data.catalog?.mode !== "search") {
     throw new Error("Expected search fallback");
   }
+  expect(vanishedInvalidQuery.data.catalog.groups).toEqual([]);
   expect(vanishedInvalidQuery.data.catalog.results).toEqual([]);
 
   const unsafe = await load("/?food=9999&query=unsafe");

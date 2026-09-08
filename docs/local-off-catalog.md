@@ -19,7 +19,7 @@ These decisions follow the [OFF field definitions](https://github.com/openfoodfa
 
 The [daily exporter](https://github.com/openfoodfacts/openfoodfacts-server/blob/main/scripts/export_database.pl) sanitizes control characters and joins fields with literal tabs; quotes are ordinary text. Its known ordered identity/date header identifies this dialect. Other projections use the configurable exporter's CSV quoting, including escaped quotes, embedded tabs and embedded newlines. The importer does not guess a dialect from product text. A changed daily header that no longer matches the known schema must be verified against the upstream exporter before support is added.
 
-GZIP decompression and TSV parsing stream directly into 500-product SQLite transactions. Only identity, names, brands, countries, required nutrient fields, quantities/units and source dates are retained. An indexed TEXT primary key preserves leading-zero identifiers. Noncommercial identifiers remain in the import report/database but cannot be scanned. Repeated identifiers keep the first source row and are counted; no deduplication by name occurs. Width mismatches and oversized selected fields are rejected and counted. No data archive or generated catalog is committed.
+GZIP decompression and TSV parsing stream directly into 500-product SQLite transactions. Only identity, selected display/English/Spanish names and aliases, brands, countries, required nutrient fields, quantities/units and source dates are retained. An indexed TEXT primary key preserves leading-zero identifiers. A separate FTS5 index covers the displayed name, supported alternate names and brand, using the same accent/case normalization and bounded prefix-query rules as USDA search. Noncommercial identifiers remain in the import report/database but cannot be scanned. Repeated identifiers keep the first source row and are counted; no deduplication by name occurs. Width mismatches and oversized selected fields are rejected and counted. No data archive or generated catalog is committed.
 
 OFF and USDA store separate job state in application metadata and separate immutable SQLite generation files under `CATALOG_DIRECTORY`. A failed OFF job cannot activate a partial generation or change USDA/personal history. Import runs in a worker, survives navigation, and records a durable result. Shutdown/restart marks unfinished work interrupted and permits retry. Initial installation only: replacement/update checks belong to later tickets. Archive filename and SHA-256 identify the supplied snapshot; product modification dates are explicitly **not an official release version**.
 
@@ -50,7 +50,7 @@ OFF_SCALE_DIRECTORY=/path/on/a/large/disk \
 pnpm exec vitest run tests/local-off-scale.test.ts
 ```
 
-It imports through Catalog Management, measures process RSS including its worker, database size and elapsed time, repeatedly reads installed USDA foods during OFF import, and measures local OFF barcode reads. The budget, established before the run, is p95 lookup below 100 ms and RSS below 1 GiB on the measured host. The external dataset and temporary database stay outside Git; the test removes its temporary files.
+It imports through Catalog Management, measures process RSS including its worker, database size and elapsed time, repeatedly reads installed USDA foods during OFF import, and measures local OFF barcode reads plus representative product, brand and multi-word FTS searches. The budget, established before the run, is p95 lookup below 100 ms and RSS below 1 GiB on the measured host. Search timings are recorded without a flaky unit-test threshold. The external dataset and temporary database stay outside Git; the test removes its temporary files.
 
 Measured September 8, 2026 on Node 24.13.0, Intel Core i7-13700F (24 logical CPUs), 32 GB RAM and a local encrypted Linux filesystem:
 
@@ -58,12 +58,13 @@ Measured September 8, 2026 on Node 24.13.0, Intel Core i7-13700F (24 logical CPU
 | --- | --- |
 | Compressed archive | 1,275,171,186 bytes |
 | Expanded source | 13,042,211,705 bytes |
-| Import elapsed | 372.84 seconds |
-| Peak process RSS including worker | 291.28 MiB |
-| Installed SQLite size | 21,231,251,456 bytes (19.77 GiB) |
+| Import and FTS indexing elapsed | 304.91 seconds |
+| Peak process RSS including worker | 360.11 MiB |
+| Installed SQLite size | 9,548,214,272 bytes (8.89 GiB) |
 | Source rows / installed products | 4,535,553 / 4,535,483 |
 | Duplicate identifiers / oversized selected fields | 60 / 10 |
-| USDA lookup p95 during import | 0.354 ms |
-| OFF barcode lookup p95 after import | 0.247 ms |
+| USDA lookup p95 during import | 0.312 ms |
+| OFF barcode lookup p95 after import | 0.275 ms |
+| OFF representative FTS search p95 | 62.845 ms |
 
-Archive SHA-256: `f72687ee8bc6522054fe69dbfda6b91902c16af1ec2e043cde27bc6c29ad8176`. Both resource/latency budgets passed. All products in this particular daily dump remain unavailable for calculated logging because it lacks explicit nutrition authority; the result verifies installation, identification and failure-safe eligibility rather than usable nutrition coverage. Calculation tests use explicit source-backed export fields. The daily raw-TSV dialect preserves records containing literal quotes that a conventional quoted-CSV parse can incorrectly combine.
+Archive SHA-256: `f72687ee8bc6522054fe69dbfda6b91902c16af1ec2e043cde27bc6c29ad8176`. The resource and barcode-latency budgets passed; representative FTS search remained below 100 ms p95 as an observed benchmark rather than a test assertion. All products in this particular daily dump remain unavailable for calculated logging because it lacks explicit nutrition authority; the result verifies installation, indexed identification and failure-safe eligibility rather than usable nutrition coverage. Calculation tests use explicit source-backed export fields. The daily raw-TSV dialect preserves records containing literal quotes that a conventional quoted-CSV parse can incorrectly combine.

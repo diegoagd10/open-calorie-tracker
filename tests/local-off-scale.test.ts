@@ -36,19 +36,26 @@ test.skipIf(!process.env.OFF_LOCAL_ARCHIVE)("full OFF export imports with bounde
     const elapsedMs = performance.now() - started;
     expect(off.read().job, JSON.stringify(off.read())).toMatchObject({ phase: "succeeded" });
     const lookups: number[] = [];
+    const searches: number[] = [];
     for (let index = 0; index < 100; index++) {
       const started = performance.now();
       // Missing as well as present indexed text identifiers exercise the local lookup path.
       await packaged.lookupBarcode(["3017620422003", "5449000000996", "0000000000000"][index % 3]).catch(() => undefined);
       lookups.push(performance.now() - started);
     }
+    for (let index = 0; index < 40; index++) {
+      const started = performance.now();
+      await packaged.search(["nutella", "coca cola", "oat milk", "whole grain cereal"][index % 4]);
+      searches.push(performance.now() - started);
+    }
     const p95 = (values: number[]) => values.sort((a, b) => a - b)[Math.floor(values.length * 0.95)];
     const state = off.read();
     const bytes = (await stat(path.join(directory, `${state.installed!.generation}.sqlite`))).size;
-    process.stdout.write(JSON.stringify({ elapsedMs, peakRssMiB: peakRss / 1024 ** 2, catalogBytes: bytes, usdaDuringImportP95Ms: p95(responsiveness), offLookupP95Ms: p95(lookups), state }));
+    process.stdout.write(JSON.stringify({ elapsedMs, peakRssMiB: peakRss / 1024 ** 2, catalogBytes: bytes, usdaDuringImportP95Ms: p95(responsiveness), offLookupP95Ms: p95(lookups), offSearchP95Ms: p95(searches), state }));
     // Opt-in benchmark budget: p95 local lookup <100ms, process RSS <1GiB.
     expect(p95(responsiveness)).toBeLessThan(100);
     expect(p95(lookups)).toBeLessThan(100);
+    expect(searches).toHaveLength(40);
     expect(peakRss).toBeLessThan(1024 ** 3);
   } finally {
     clearInterval(timer); await off.shutdown(); await usda.shutdown(); database.close(); await rm(directory, { recursive: true, force: true });

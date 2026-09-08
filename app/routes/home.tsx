@@ -48,6 +48,9 @@ import {
   type CatalogOperationContext,
   type CatalogFood,
   type CatalogNutrientValue,
+  type CatalogProviderId,
+  type CatalogSearchFilter,
+  type CatalogSearchGroup,
   type CatalogSearchResult,
 } from "../catalog/food-catalog.server";
 import { isSupportedCommercialBarcode } from "../catalog/barcode";
@@ -97,6 +100,10 @@ function catalogQuery(value: string): string | undefined {
 function catalogBarcode(value: string): string | undefined {
   const barcode = value.trim();
   return isSupportedCommercialBarcode(barcode) ? barcode : undefined;
+}
+
+function catalogSearchFilter(value: string | null): CatalogSearchFilter {
+  return value === "basic" || value === "packaged" ? value : "all";
 }
 
 function foodLogIntentSchema() {
@@ -550,8 +557,12 @@ export async function loader({ request }: Route.LoaderArgs) {
     }
   }
 
-  const foodStage = catalogRouteState(url.searchParams.get("food"));
+  const foodStage = catalogRouteState(
+    url.searchParams.get("food"),
+    url.searchParams.get("provider"),
+  );
   const requestedQuery = url.searchParams.get("query") ?? "";
+  const requestedFilter = catalogSearchFilter(url.searchParams.get("filter"));
   let responseStatus = 200;
   let catalog:
     | {
@@ -582,6 +593,8 @@ export async function loader({ request }: Route.LoaderArgs) {
         title?: string;
       }
     | {
+        filter?: CatalogSearchFilter;
+        groups: CatalogSearchGroup[];
         mode: "search";
         query: string;
         results: CatalogSearchResult[];
@@ -589,6 +602,7 @@ export async function loader({ request }: Route.LoaderArgs) {
         title?: string;
       }
     | {
+        filter?: CatalogSearchFilter;
         mode: "detail";
         query: string;
         food: CatalogFood;
@@ -645,10 +659,12 @@ export async function loader({ request }: Route.LoaderArgs) {
     } else if (foodStage.mode === "search") {
       const parsedQuery = catalogQuery(requestedQuery);
       if (!requestedQuery) {
-        catalog = { mode: "search", query: "", results: [] };
+        catalog = { ...(requestedFilter === "all" ? {} : { filter: requestedFilter }), groups: [], mode: "search", query: "", results: [] };
       } else if (parsedQuery === undefined) {
         responseStatus = 400;
         catalog = {
+          ...(requestedFilter === "all" ? {} : { filter: requestedFilter }),
+          groups: [],
           message: "Enter a food search from 2 to 100 characters.",
           mode: "search",
           query: requestedQuery,
@@ -656,60 +672,54 @@ export async function loader({ request }: Route.LoaderArgs) {
           title: "Search not sent",
         };
       } else {
-        try {
-          catalog = {
-            mode: "search",
-            query: parsedQuery,
-            results: await getFoodCatalog().search(
-              "usda-fdc",
-              parsedQuery,
-              catalogContext,
-            ),
-          };
-        } catch (error) {
-          const failure = catalogFailure(error);
-          if (!failure) throw error;
-          responseStatus = failure.status;
-          catalog = {
-            message: failure.message,
-            mode: "search",
-            query: parsedQuery,
-            results: [],
-            title: failure.title,
-          };
-        }
+        const search = await getFoodCatalog().searchAll(parsedQuery, requestedFilter, catalogContext);
+        catalog = {
+          ...(requestedFilter === "all" ? {} : { filter: requestedFilter }),
+          groups: search.groups,
+          mode: "search",
+          query: parsedQuery,
+          results: search.groups.flatMap(group => group.results),
+        };
       }
     } else {
       const provider = getFoodCatalog();
       try {
         catalog = {
-          food: await provider.getFood("usda-fdc", foodStage.providerFoodId, catalogContext),
+          food: await provider.getFood(foodStage.provider, foodStage.providerFoodId, catalogContext),
+          ...(requestedFilter === "all" ? {} : { filter: requestedFilter }),
           idempotencyKey: randomUUID(),
           mode: "detail",
           query: requestedQuery,
         };
       } catch (error) {
-        const failure = catalogFailure(error);
+        const failure = foodStage.provider === "open-food-facts"
+          ? barcodeCatalogFailure(error)
+          : catalogFailure(error);
         if (!failure) throw error;
         responseStatus = failure.status;
         let results: CatalogSearchResult[] = [];
+        let groups: CatalogSearchGroup[] | undefined;
         const parsedQuery = catalogQuery(requestedQuery);
         if (
           error instanceof CatalogFoodNotFoundError &&
           parsedQuery !== undefined
         ) {
           try {
-            results = (
-              await provider.search("usda-fdc", parsedQuery, catalogContext)
-            ).filter(
-              (result) => result.providerFoodId !== foodStage.providerFoodId,
-            );
+            const refreshed = await provider.searchAll(parsedQuery, requestedFilter, catalogContext);
+            groups = refreshed.groups.map(group => ({
+              ...group,
+              results: group.results.filter(result =>
+                result.provider !== foodStage.provider || result.providerFoodId !== foodStage.providerFoodId),
+            }));
+            results = groups.flatMap(group => group.results);
           } catch {
             // The original detail failure remains the useful response when
             // refreshing the surrounding search results also fails.
           }
         }
         catalog = {
+          ...(requestedFilter === "all" ? {} : { filter: requestedFilter }),
+          groups: groups ?? [],
           message: failure.message,
           mode: "search",
           query: requestedQuery,
@@ -771,7 +781,7 @@ function noticeMessage(
 type CatalogRouteState =
   | { mode: "barcode" }
   | { mode: "choose" }
-  | { mode: "detail"; providerFoodId: string }
+  | { mode: "detail"; provider: CatalogProviderId; providerFoodId: string }
   | { mode: "manual" }
   | { mode: "search" };
 
@@ -784,14 +794,23 @@ function positiveIntegerId(value: string | null): number | undefined {
 
 function catalogRouteState(
   value: string | null,
+  requestedProvider: string | null,
 ): CatalogRouteState | undefined {
   if (value === "search") return { mode: "search" };
   if (value === "choose") return { mode: "choose" };
   if (value === "barcode") return { mode: "barcode" };
   if (value === "manual") return { mode: "manual" };
-  const providerFoodId = positiveIntegerId(value);
-  if (providerFoodId !== undefined) {
-    return { mode: "detail", providerFoodId: String(providerFoodId) };
+  const provider = requestedProvider === null || requestedProvider === "usda-fdc"
+    ? "usda-fdc"
+    : requestedProvider === "open-food-facts"
+      ? "open-food-facts"
+      : undefined;
+  if (!provider || value === null) return undefined;
+  if (provider === "usda-fdc") {
+    const providerFoodId = positiveIntegerId(value);
+    if (providerFoodId !== undefined) return { mode: "detail", provider, providerFoodId: String(providerFoodId) };
+  } else if (isSupportedCommercialBarcode(value)) {
+    return { mode: "detail", provider, providerFoodId: value };
   }
   return undefined;
 }
@@ -1369,9 +1388,11 @@ function EmptyActionForm({
   );
 }
 
-function catalogHref(date: string, food: string, query?: string): string {
+function catalogHref(date: string, food: string, query?: string, provider?: CatalogProviderId, filter?: CatalogSearchFilter): string {
   const parameters = new URLSearchParams({ date, food });
   if (query) parameters.set("query", query);
+  if (provider) parameters.set("provider", provider);
+  if (filter && filter !== "all") parameters.set("filter", filter);
   return `/?${parameters}`;
 }
 
@@ -1916,7 +1937,7 @@ function FoodDetailStage({
     <>
       <Link
         className={styles.backToResults}
-        to={catalogHref(date, "search", catalog.query)}
+        to={catalogHref(date, "search", catalog.query, undefined, catalog.filter)}
       >
         ‹ Back to results
       </Link>
@@ -1924,7 +1945,7 @@ function FoodDetailStage({
         <span className={styles.catalogType}>{food.dataType}</span>
         <h3>{food.name}</h3>
         <p>
-          USDA FoodData Central
+          {food.provider === "usda-fdc" ? "USDA FoodData Central" : "Open Food Facts"}
           {food.brand ? ` · ${food.brand}` : ""}
         </p>
       </div>
@@ -1932,8 +1953,8 @@ function FoodDetailStage({
         <span aria-hidden="true">◇</span>
         <p>
           <strong>Saved as a Nutrition Snapshot</strong>
-          This entry keeps these values and source details if USDA later changes
-          or is unavailable.
+          This entry keeps these values and source details if its catalog later
+          changes or is unavailable.
         </p>
       </div>
       <Form className={styles.logFoodForm} method="post">
@@ -2672,7 +2693,7 @@ function CatalogChoiceStage({ date, photoCapture }: { date: string; photoCapture
       <Link to={catalogHref(date, "search")}>
         <span>
           <strong>Search for food</strong>
-          <small>Search United States foods with USDA FoodData Central.</small>
+          <small>Search USDA basic foods and Open Food Facts packaged products.</small>
         </span>
         <small>Choose ›</small>
       </Link>
@@ -2836,12 +2857,16 @@ function offCalculationMessage(reason: string | undefined) {
 
 function BarcodeFoodDetail({
   actionData,
+  backHref,
+  backLabel,
   csrfToken,
   date,
   food,
   idempotencyKey,
 }: {
   actionData: HomeActionData | undefined;
+  backHref: string;
+  backLabel: string;
   csrfToken: string;
   date: string;
   food: CatalogFood;
@@ -2862,9 +2887,9 @@ function BarcodeFoodDetail({
     <section aria-labelledby="barcode-product-title">
       <Link
         className={styles.backToResults}
-        to={catalogHref(date, "barcode")}
+        to={backHref}
       >
-        ‹ Back to scanner
+        {backLabel}
       </Link>
       <div className={styles.foodIdentity}>
         <span className={styles.catalogType}>Open Food Facts</span>
@@ -2983,6 +3008,8 @@ function BarcodeCatalogStage({
     return (
       <BarcodeFoodDetail
         actionData={actionData}
+        backHref={catalogHref(date, "barcode")}
+        backLabel="‹ Back to scanner"
         csrfToken={csrfToken}
         date={date}
         food={catalog.food}
@@ -3095,6 +3122,7 @@ function CatalogDialog({
   const [searchQuery, setSearchQuery] = useState(catalog.query);
   const pendingFoodStage = catalogRouteState(
     new URLSearchParams(navigation.location?.search).get("food"),
+    new URLSearchParams(navigation.location?.search).get("provider"),
   );
   const detailPending =
     catalog.mode === "search" &&
@@ -3115,6 +3143,8 @@ function CatalogDialog({
     initialFocusSelector,
     restoreFocusSelector: "[data-food-dialog-trigger]",
   });
+  const searchFilter = catalog.mode === "search" ? catalog.filter ?? "all" : "all";
+  const searchGroups = catalog.mode === "search" ? catalog.groups ?? [] : [];
 
   return (
     <DialogBackdrop onClose={closeDialog}>
@@ -3131,7 +3161,7 @@ function CatalogDialog({
             <h2 id="food-dialog-title">Add Food</h2>
             <span className={styles.dialogChip}>
               {catalog.mode === "search" || catalog.mode === "detail"
-                ? "USDA catalog"
+                ? "Local food catalogs"
                 : catalog.mode === "barcode"
                   ? "Open Food Facts"
                   : catalog.mode === "manual"
@@ -3154,6 +3184,16 @@ function CatalogDialog({
         </div>
         {detailPending ? (
           <FoodDetailSkeleton />
+        ) : catalog.mode === "detail" && catalog.food.provider === "open-food-facts" ? (
+          <BarcodeFoodDetail
+            actionData={actionData}
+            backHref={catalogHref(date, "search", catalog.query, undefined, catalog.filter)}
+            backLabel="‹ Back to results"
+            csrfToken={csrfToken}
+            date={date}
+            food={catalog.food}
+            idempotencyKey={catalog.idempotencyKey}
+          />
         ) : catalog.mode === "detail" ? (
           <FoodDetailStage
             actionData={actionData}
@@ -3197,7 +3237,8 @@ function CatalogDialog({
             >
               <input name="date" type="hidden" value={date} />
               <input name="food" type="hidden" value="search" />
-              <label htmlFor="food-query">Search United States foods</label>
+              {searchFilter === "all" ? null : <input name="filter" type="hidden" value={searchFilter} />}
+              <label htmlFor="food-query">Search local foods</label>
               <div className={styles.searchControl}>
                 <input
                   autoComplete="off"
@@ -3224,9 +3265,20 @@ function CatalogDialog({
                 </button>
               </div>
             </Form>
+            <nav aria-label="Food type filter" className={styles.catalogFilters}>
+              {(["all", "basic", "packaged"] as const).map(filter => (
+                <Link
+                  aria-current={searchFilter === filter ? "page" : undefined}
+                  key={filter}
+                  to={catalogHref(date, "search", catalog.query, undefined, filter)}
+                >
+                  {filter === "all" ? "All" : filter === "basic" ? "Basic foods" : "Packaged products"}
+                </Link>
+              ))}
+            </nav>
             {searchPending ? (
               <div className={styles.catalogState} role="status">
-                <h3>Searching USDA FoodData Central</h3>
+                <h3>Searching local food catalogs</h3>
                 <p>Your deliberate catalog request is in progress.</p>
               </div>
             ) : clientSearchMessage ? (
@@ -3246,16 +3298,19 @@ function CatalogDialog({
                     <p>{catalog.message}</p>
                   </div>
                 ) : null}
-                {catalog.results.length ? (
+                {searchGroups.some(group => group.results.length > 0) ? (
                   <div
                     className={styles.catalogResults}
-                    aria-label="USDA search results"
+                    aria-label="Food search results"
                   >
-                    {catalog.results.map((result) => {
+                    {searchGroups.map(group => (
+                      <section className={styles.catalogResultGroup} key={group.provider}>
+                        <h3>{group.kind === "basic" ? "Basic foods" : "Packaged products"}</h3>
+                        {group.results.map((result) => {
                       const identity = (
                         <span>
                           <span className={styles.catalogType}>
-                            {result.dataType}
+                            {result.provider === "usda-fdc" ? "Basic food · USDA" : "Packaged product · Open Food Facts"}
                           </span>
                           <strong>{result.name}</strong>
                           <small>
@@ -3267,23 +3322,31 @@ function CatalogDialog({
                       );
                       return result.isSelectable ? (
                         <Link
-                          key={result.providerFoodId}
+                          key={`${result.provider}:${result.providerFoodId}`}
                           to={catalogHref(
                             date,
                             result.providerFoodId,
                             catalog.query,
+                            result.provider,
+                            searchFilter,
                           )}
                         >
                           {identity}
                           <small>Select ›</small>
                         </Link>
                       ) : (
-                        <div aria-disabled="true" key={result.providerFoodId}>
+                        <div aria-disabled="true" key={`${result.provider}:${result.providerFoodId}`}>
                           {identity}
-                          <small>{result.catalogGeneration ? "Nutrition unavailable" : "Hidden in production"}</small>
+                          <small>{result.catalogGeneration
+                            ? result.provider === "open-food-facts"
+                              ? offCalculationMessage(result.calculationUnavailableReason)
+                              : "Nutrition unavailable"
+                            : "Hidden in production"}</small>
                         </div>
                       );
-                    })}
+                        })}
+                      </section>
+                    ))}
                   </div>
                 ) : catalog.message ? null : catalog.query ? (
                   <div className={styles.catalogState} role="status">
@@ -3297,11 +3360,17 @@ function CatalogDialog({
                   <div className={styles.catalogState}>
                     <h3>Find a food</h3>
                     <p>
-                      Results can include Branded, Survey/FNDDS, and Foundation
-                      foods.
+                      Search basic ingredients from USDA Foundation and packaged
+                      products from Open Food Facts.
                     </p>
                   </div>
                 )}
+                {searchGroups.filter(group => group.status !== "available").map(group => (
+                  <div className={styles.catalogSourceState} key={group.provider} role="status">
+                    <strong>{group.kind === "basic" ? "Basic foods" : "Packaged products"}</strong>
+                    <span>{group.status === "not-installed" ? "catalog is not installed" : "catalog is temporarily unavailable"}</span>
+                  </div>
+                ))}
               </>
             )}
             <p className={styles.providerAttribution}>
@@ -3312,6 +3381,10 @@ function CatalogDialog({
                 target="_blank"
               >
                 USDA FoodData Central
+              </a>{" "}
+              and{" "}
+              <a href="https://world.openfoodfacts.org/" rel="noreferrer" target="_blank">
+                Open Food Facts
               </a>
             </p>
           </>

@@ -8,6 +8,7 @@ import { parse } from "csv-parse";
 import { buildOffGeneration } from "../database/off-generation.server.ts";
 import type { CatalogFood } from "../catalog/food-catalog.server.ts";
 import { offNutrition, requiredOffField } from "./off-nutrition.server.ts";
+import { offSearchAliases } from "../catalog/off-search.server.ts";
 
 export async function importOff(options: ImportOptions, publish: (message: ImportMessage) => void): Promise<void> {
   const exclusions: Record<string, number> = {};
@@ -35,7 +36,7 @@ export async function importOff(options: ImportOptions, publish: (message: Impor
     const nutrition = offNutrition(row);
     const reason = /^(?:\d{7,8}|\d{12,14})$/.test(id) ? nutrition.calculationUnavailableReason : "unsupported_barcode";
     if (reason) exclude(reason);
-    const name = text(row.product_name) ?? "Unnamed product";
+    const name = text(row.product_name) ?? text(row.product_name_en) ?? text(row.product_name_es) ?? "Unnamed product";
     return {
       provider: "open-food-facts", providerFoodId: id, barcode: id, catalogGeneration: options.generation,
       dataType: "Open Food Facts", name, originalName: name,
@@ -100,7 +101,15 @@ export async function importOff(options: ImportOptions, publish: (message: Impor
     let count = 0;
     await pipeline(replay(), parse({ delimiter: "\t", bom: true, quote: daily ? false : '"', relax_column_count: true, skip_empty_lines: true, max_record_size: 2 * 1024 * 1024 }), async rows => {
       try {
-        count = await buildOffGeneration(options.directory, options.generation, foods(rows as AsyncIterable<string[]>), options.maxExpandedBytes, () => exclude("duplicate_identity"));
+        count = await buildOffGeneration({
+          aliasesFor: offSearchAliases,
+          directory: options.directory,
+          foods: foods(rows as AsyncIterable<string[]>),
+          generation: options.generation,
+          maxBytes: options.maxExpandedBytes,
+          onDuplicate: () => exclude("duplicate_identity"),
+          onIndexing: () => progress("indexing"),
+        });
       } catch (error) { importFailure = error; throw error; }
     });
     return count;
@@ -118,7 +127,6 @@ export async function importOff(options: ImportOptions, publish: (message: Impor
     await pipeline(createReadStream(options.archivePath), createGunzip(), meter, async chunks => {
       foodCount = await importRows(chunks as AsyncIterable<Buffer>);
     });
-    progress("indexing");
     publish({ result: { foodCount, publicationDateRange: { earliest: "", latest: "" }, sourceDateRange: { earliest, latest } } });
   } catch (pipelineError) {
     const error = importFailure ?? pipelineError;

@@ -1,6 +1,7 @@
 import { buildUsdaGeneration, readUsdaGenerationFood, searchUsdaGeneration } from "../database/usda-generation.server.ts";
 import type { CatalogManagement } from "../catalog-management/catalog-management.server";
-import { CatalogConfigurationError, CatalogFoodNotFoundError, type CatalogFood, type CatalogSearchResult, type SearchFoodCatalogProvider } from "./food-catalog.server.ts";
+import { CatalogConfigurationError, CatalogFoodNotFoundError, CatalogUnavailableError, type CatalogFood, type CatalogSearchResult, type SearchFoodCatalogProvider } from "./food-catalog.server.ts";
+import { boundedSearchTokens, normalizedSearchWords } from "./search-normalization.ts";
 
 const basicFoodAliases = [
   { headings: ["egg", "eggs"], aliases: ["egg", "eggs", "huevo", "huevos"] },
@@ -12,16 +13,13 @@ const basicFoodAliases = [
   { headings: ["lettuce"], aliases: ["lettuce", "lettuces", "lechuga", "lechugas"] },
   { headings: ["zucchini"], aliases: ["zucchini", "zucchinis", "calabacin", "calabacines"] },
 ];
-function normalizedWords(value: string): string[] {
-  return value.normalize("NFKD").replace(/\p{M}/gu, "").toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
-}
 function foodHeading(parts: string[]): string {
   if (parts[0] === "fish") return parts[1];
   if (parts[0] === "squash" && parts[1] === "summer") return parts[2] === "green" ? parts[3] : parts[2];
   return parts[0];
 }
 function aliasesFor(name: string): string[] {
-  const parts = name.split(",").map(part => normalizedWords(part).join(" "));
+  const parts = name.split(",").map(part => normalizedSearchWords(part).join(" "));
   // USDA uses category-led descriptions for fish and summer squash.
   const heading = foodHeading(parts);
   return basicFoodAliases.find(group => group.headings.includes(heading))?.aliases ?? [];
@@ -35,7 +33,7 @@ function searchExpression(tokens: string[]): string {
 }
 
 function relevance(name: string, tokens: string[]): number | null {
-  const words = normalizedWords(name);
+  const words = normalizedSearchWords(name);
   const aliases = aliasesFor(name);
   const searchable = [...words, ...aliases];
   if (!tokens.every(token => searchable.some(word => token.length === 1 ? word === token : word.startsWith(token)))) return null;
@@ -55,10 +53,14 @@ export class LocalUsdaAdapter implements SearchFoodCatalogProvider {
   readonly #directory: string;
   constructor(management: CatalogManagement, directory: string) { this.#management = management; this.#directory = directory; }
   async search(query: string): Promise<CatalogSearchResult[]> {
-    if (query.length > 100 || query.trim().length < 2) return [];
-    const tokens = normalizedWords(query);
-    if (tokens.length === 0 || tokens.length > 8 || !tokens.some(token => token.length >= 2)) return [];
-    return searchUsdaGeneration(this.#directory, this.#generation(), searchExpression(tokens), name => relevance(name, tokens));
+    const tokens = boundedSearchTokens(query);
+    if (!tokens) return [];
+    const generation = this.#generation();
+    try {
+      return searchUsdaGeneration(this.#directory, generation, searchExpression(tokens), name => relevance(name, tokens));
+    } catch {
+      throw new CatalogUnavailableError();
+    }
   }
   async getFood(providerFoodId: string): Promise<CatalogFood> {
     if (!/^[1-9]\d*$/.test(providerFoodId)) throw new CatalogFoodNotFoundError();
