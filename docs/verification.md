@@ -4,6 +4,13 @@ The repository exposes fast and deep gates through the package manager pinned in
 `package.json`. Install with `pnpm install --frozen-lockfile` on the supported
 Node 24 line before running either gate.
 
+The Codex worktree setup in `.codex/environments/environment.toml` installs the
+pinned dependencies and Git hooks automatically. `devEngines.runtime` in
+`package.json` pins Node 24.13.0: pnpm downloads that runtime during installation
+and uses it for project scripts, even when the host shell uses another Node
+version. `pnpm exec node --version` verifies the project runtime. Browser
+installation and Docker remain the host prerequisites described below.
+
 ## Fast gate
 
 ```sh
@@ -60,12 +67,26 @@ or longer. Chromium must already be installed; no browser download is hidden
 inside the gate. Like the fast gate, the sequence stops on the first failure
 and preserves the failing exit status.
 
-`pnpm mutation:test` reuses the latest completed report in
+`pnpm mutation:test` first reuses the latest compatible completed report in
 `reports/stryker-incremental.json`, including measurements rejected by the score
-gate. Stryker compares production source and test changes; a companion context
-fingerprint forces a full measurement after changes to Node, dependencies,
-configuration, fixtures, migrations, or runtime wiring. Without a local cache,
-the versioned report seeds the first run. The score still has to meet both the
+gate. If the local report is unavailable or incompatible, it looks for a
+compatible completed report in the repository's shared Git directory:
+`$(git rev-parse --path-format=absolute --git-common-dir)/mutation-cache/v1/`.
+Linked worktrees share this cache automatically; independent clones do not.
+Each worktree runs Stryker with its own local files, then atomically publishes a
+complete report. Concurrent publishers never write into each other's live
+reports. Failed or incomplete Stryker runs cannot publish, while a complete
+measurement rejected only by the score gate can still be reused. The shared
+cache is disposable and is never committed or used as PR approval evidence.
+
+Stryker compares production source and test changes. The existing conservative
+context fingerprint separates results by the exact Node version, platform,
+architecture, shard, dependencies, configuration, fixtures, migrations, runtime
+wiring, scripts, and assets. Changes to these inputs during measurement reject
+the result. A compatible shared report can replace an invalid local cache;
+otherwise the runner forces a full measurement. On a fresh worktree with no
+compatible shared report, the versioned report still seeds the first run.
+Malformed shared entries are ignored. The score still has to meet both the
 configured threshold and `mutation-testing/baseline-summary.json`.
 
 The Vitest setup forwards Stryker's active mutation into real Node workers and

@@ -7,6 +7,13 @@
   "engines": {
     "node": ">=24.7 <25"
   },
+  "devEngines": {
+    "runtime": {
+      "name": "node",
+      "version": "24.13.0",
+      "onFail": "download"
+    }
+  },
   "scripts": {
     "admin:recover": "node build/recovery/recover-administrator.js",
     "architecture": "pnpm architecture:check && pnpm architecture:test",

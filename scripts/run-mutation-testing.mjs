@@ -21,6 +21,11 @@ import {
 } from "./mutation-report.mjs";
 
 import { mutationSourceHash, parseMutationShard } from "./mutation-shards.mjs";
+import {
+  assertCompleteMutationReport,
+  publishSharedMutationReport,
+  restoreSharedMutationReport,
+} from "./mutation-cache.mjs";
 
 const shard = parseMutationShard(process.env.MUTATION_SHARD);
 const recordBaseline = process.argv.includes("--record-baseline");
@@ -111,6 +116,8 @@ if (recordBaseline) {
   }
   if (contextMatches && await exists(incrementalReportPath)) {
     console.log("Reusing the latest completed incremental mutation report.");
+  } else if (await restoreSharedMutationReport(context, incrementalReportPath)) {
+    console.log("Reusing a compatible completed mutation report from another worktree.");
   } else if (shard) {
     // Source changes can move statements between shards. Start these shards
     // fresh instead of retaining Stryker results outside their current scope.
@@ -140,10 +147,15 @@ const durationMs = performance.now() - startedAt;
 
 const currentReport = JSON.parse(await readFile(currentReportPath, "utf8"));
 const currentSummary = summarizeMutationReport(currentReport, durationMs);
-if (shard && (currentSummary.counts.Pending || currentSummary.counts.total === 0)) {
-  throw new Error("Mutation shard is incomplete or empty");
+assertCompleteMutationReport(currentReport);
+const incrementalReport = JSON.parse(await readFile(incrementalReportPath, "utf8"));
+assertCompleteMutationReport(incrementalReport);
+if (await incrementalContext() !== context) {
+  throw new Error("Mutation inputs changed during measurement; results cannot be cached. Retry with stable inputs.");
 }
 await writeFile(incrementalContextPath, context);
+// A completed measurement remains useful even when the score gate rejects it.
+await publishSharedMutationReport(context, incrementalReport);
 
 if (shard) {
   const { mutationSources } = await import("../stryker.config.mjs");
@@ -169,9 +181,6 @@ if (shard) {
 
   if (recordBaseline) {
     await mkdir(baselineDirectory, { recursive: true });
-    const incrementalReport = JSON.parse(
-      await readFile(incrementalReportPath, "utf8"),
-    );
     // Stryker only needs relative file keys for incremental reuse. Avoid checking
     // the baseline author's workstation path into the portable seed.
     incrementalReport.projectRoot = ".";

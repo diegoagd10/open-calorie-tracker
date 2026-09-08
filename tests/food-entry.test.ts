@@ -553,6 +553,13 @@ test("copying to another date rejects ineligible destinations and keeps end-of-d
     foodLogDate: "2026-08-31",
     localEventTime: "12:23:45",
   });
+  expect(() =>
+    service.copyToDate(userId, todayCopy.id, {
+      ...input,
+      foodLogDate: todayCopy.foodLogDate,
+      idempotencyKey: `copy:${todayCopy.id}:today-to-past`,
+    }),
+  ).toThrow(FoodEntryUnavailableError);
 
   const copied = service.copyToDate(userId, source.id, input);
   const retry = service.copyToDate(userId, source.id, input);
