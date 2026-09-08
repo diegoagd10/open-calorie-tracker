@@ -18,6 +18,6 @@ export async function runArchive(provider: "off" | "usda", archive: Buffer, clea
   return {
     options, messages, final: messages.at(-1)!,
     read: (id: string) => (provider === "off" ? readOffGenerationFood : readUsdaGenerationFood)(options.directory, options.generation, id),
-    search: (expression: string) => searchUsdaGeneration(options.directory, options.generation, expression),
+    search: (expression: string) => searchUsdaGeneration(options.directory, options.generation, expression, () => 0),
   };
 }

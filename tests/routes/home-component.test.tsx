@@ -2308,9 +2308,10 @@ test("touch date navigation follows the finger and settles by week while preserv
     const rail = () => renderer.root.findByProps({ "aria-label": "Nearby dates" });
     const track = () => renderer.root.findAllByType("div").find((node) => String(node.props.className).split(" ").includes(styles.dateTrack))!;
     const captured: number[] = [];
+    let railWidth = 350;
     const event = (overrides: Record<string, unknown> = {}) => ({
       pointerType: "touch", isPrimary: true, pointerId: 1, clientX: 150, clientY: 100,
-      currentTarget: { setPointerCapture: (id: number) => captured.push(id), getBoundingClientRect: () => ({ width: 350 }) },
+      currentTarget: { setPointerCapture: (id: number) => captured.push(id), getBoundingClientRect: () => ({ width: railWidth }) },
       ...overrides,
     });
     const tapPrevented = (detail = 1) => {
@@ -2319,6 +2320,32 @@ test("touch date navigation follows the finger and settles by week while preserv
       return prevented;
     };
     expect(tapPrevented()).toBe(false);
+    await act(() => rail().props.onPointerCancel(event()));
+    await act(() => { rail().props.onPointerDown(event()); rail().props.onPointerMove(event({ clientX: 157, clientY: 107 })); });
+    expect(captured).toEqual([]);
+    expect(track().props.style.transform).toBe("translateX(calc(-100% + 0px))");
+    await act(() => { rail().props.onPointerMove(event({ clientX: 158, clientY: 108 })); rail().props.onPointerMove(event({ clientX: 200 })); });
+    expect(captured).toEqual([]);
+    await act(() => { rail().props.onPointerDown(event()); rail().props.onPointerMove(event({ clientX: 158 })); });
+    expect(captured).toEqual([1]);
+    expect(track().props.style.transform).toBe("translateX(calc(-100% + 8px))");
+    await act(() => rail().props.onPointerMove(event({ clientX: 160, clientY: 200 })));
+    expect(captured).toEqual([1]);
+    expect(track().props.style.transform).toBe("translateX(calc(-100% + 10px))");
+    await act(() => rail().props.onPointerCancel(event({ pointerId: 2 })));
+    expect(track().props.style.transform).toBe("translateX(calc(-100% + 10px))");
+    const lost = event();
+    await act(() => rail().props.onLostPointerCapture({ ...lost, target: {} }));
+    expect(track().props.style.transform).toBe("translateX(calc(-100% + 10px))");
+    await act(() => rail().props.onLostPointerCapture({ ...lost, target: lost.currentTarget }));
+    expect(track().props.style.transform).toBe("translateX(calc(-100% + 0px))");
+    expect(track().props.className).toContain(styles.dateTrackSettling);
+    await act(() => rail().props.onPointerDown(event()));
+    expect(track().props.className).not.toContain(styles.dateTrackSettling);
+    await act(() => rail().props.onPointerUp(event({ clientX: 250 })));
+    await act(async () => { await vi.advanceTimersByTimeAsync(220); });
+    expect(router.state.location.search).toBe("?date=2026-08-30");
+    captured.length = 0;
     for (const begin of [{ pointerType: "mouse" }, { isPrimary: false }]) {
       await act(() => { rail().props.onPointerDown(event(begin)); rail().props.onPointerMove(event({ clientX: 50 })); rail().props.onPointerUp(event({ clientX: 50 })); });
       expect(router.state.location.search).toBe("?date=2026-08-30");
@@ -2392,15 +2419,28 @@ test("touch date navigation follows the finger and settles by week while preserv
     expect(router.state.location.search).toBe("?date=2026-08-31");
     await act(() => { rail().props.onPointerDown(event()); rail().props.onPointerUp(event()); });
     expect(tapPrevented()).toBe(false);
-    vi.stubGlobal("window", { matchMedia: (query: string) => ({ matches: query === "(prefers-reduced-motion: reduce)" }) });
-    await drag(64);
-    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    await act(() => { rail().props.onPointerDown(event()); rail().props.onPointerMove(event({ clientX: -1000 })); });
+    expect(track().props.style.transform).toBe("translateX(calc(-100% + -42px))");
+    await act(() => rail().props.onPointerCancel(event()));
+    railWidth = 200;
+    await drag(40);
+    expect(track().props.style.transform).toBe("translateX(calc(-100% + 200px))");
+    expect(track().props.className).toContain(styles.dateTrackSettling);
+    await act(async () => { await vi.advanceTimersByTimeAsync(219); });
+    expect(router.state.location.search).toBe("?date=2026-08-31");
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
     expect(router.state.location.search).toBe("?date=2026-08-24");
-    vi.stubGlobal("window", { matchMedia: () => ({ matches: false }) });
-    await drag(64);
+    const matchMedia = vi.fn((query: string) => ({ matches: query === "(prefers-reduced-motion: reduce)" }));
+    vi.stubGlobal("window", { matchMedia });
+    await drag(-40);
+    expect(track().props.style.transform).toBe("translateX(calc(-100% + -200px))");
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(router.state.location.search).toBe("?date=2026-08-31");
+    expect(matchMedia).toHaveBeenCalledWith("(prefers-reduced-motion: reduce)");
+    await drag(40);
     await act(() => renderer.unmount());
     await act(async () => { await vi.advanceTimersByTimeAsync(220); });
-    expect(router.state.location.search).toBe("?date=2026-08-24");
+    expect(router.state.location.search).toBe("?date=2026-08-31");
   } finally {
     await act(() => renderer?.unmount());
     router.dispose();

@@ -1,7 +1,7 @@
 import path from "node:path";
 import { z } from "zod";
 import type { ImportOptions, ImportMessage } from "./import-contract.ts";
-import { buildUsdaGeneration } from "../database/usda-generation.server.ts";
+import { buildLocalUsdaGeneration } from "../catalog/local-usda.server.ts";
 import type { CatalogFood, CatalogMeasurement, CatalogNutrition, CatalogNutrientValue } from "../catalog/food-catalog.server.ts";
 import type { CatalogImportJob } from "./catalog-management.server.ts";
 import { ArchiveError, foundationRows, unpackFoundation } from "./foundation-archive.server.ts";
@@ -156,7 +156,7 @@ export async function importFoundation(options: ImportOptions, publish: (message
     await readNutrition(foods);
     await readPortions(foods);
     if (![...foods.values()].some(food => food.isSelectable)) throw new ArchiveError("Foundation archive contains no foods with usable calories. Nothing was installed.");
-    buildUsdaGeneration(options.directory, options.generation, foods.values(), () => progress("indexing"));
+    buildLocalUsdaGeneration(options.directory, options.generation, foods.values(), () => progress("indexing"));
     const dates = [...foods.values()].map(food => food.providerPublishedDate!).sort();
     progress("indexing");
     publish({ result: { foodCount: foods.size, publicationDateRange: { earliest: dates[0], latest: dates[dates.length - 1] } } });

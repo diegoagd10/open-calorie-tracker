@@ -39,7 +39,7 @@ test("the Foundation importer makes foods searchable with preserved source nutri
   const messages: unknown[] = [];
   await importFoundation({ directory, archivePath, generation: "usda", maxExpandedBytes: 10 * 1024 * 1024 }, message => messages.push(structuredClone(message)));
   expect(messages.at(-1)).toEqual({ result: { foodCount: 4, publicationDateRange: { earliest: "2019-04-01", latest: "2026-04-30" } } });
-  expect(searchUsdaGeneration(directory, "usda", '"egg"*').map(food => food.providerFoodId)).toEqual(["748967"]);
+  expect(searchUsdaGeneration(directory, "usda", '"egg"*', () => 0).map(food => food.providerFoodId)).toEqual(["748967"]);
   expect(readUsdaGenerationFood(directory, "usda", "748967")).toMatchObject({
     name: "Eggs, Grade A, Large, egg whole", provider: "usda-fdc", providerFoodId: "748967", catalogGeneration: "usda",
     authoritativeBaseQuantityMicrounits: 100_000_000, authoritativeBaseUnit: "g", isSelectable: true,

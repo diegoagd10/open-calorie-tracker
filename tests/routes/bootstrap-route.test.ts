@@ -110,8 +110,8 @@ describe("administrator bootstrap route", () => {
     const rejectedOrigin = await registerAction(
       routeArgs(
         new Request(`${origin}/register`, {
-          body: new URLSearchParams(),
-          headers: { Origin: "https://attacker.example" },
+          body: new URLSearchParams({ csrfToken: invalidForm.csrfToken, username: "valid.owner", password, confirmPassword: password }),
+          headers: { Cookie: invalidForm.cookie, Origin: "https://attacker.example" },
           method: "POST",
         }),
       ),
@@ -160,7 +160,13 @@ describe("administrator bootstrap route", () => {
         }),
       ),
     );
-    expect(limited).toMatchObject({ data: { username: "limited.owner", error: "Too many registration attempts. Try again later." }, init: { status: 429 } });
+    expect(limited).toMatchObject({ init: { status: 429 }, data: { username: "limited.owner", error: "Too many registration attempts. Try again later." } });
+    const rejectedEvents = vi.mocked(console.log).mock.calls.map(([message]) => JSON.parse(String(message)) as { event: string; reason: string });
+    expect(rejectedEvents).toEqual(expect.arrayContaining([
+      expect.objectContaining({ reason: "invalid-origin" }),
+      expect.objectContaining({ reason: "invalid-input" }),
+      expect.objectContaining({ reason: "invalid-csrf" }),
+    ]));
     expect(getApplicationDatabase().getClient().select().from(users).all())
       .toEqual([]);
   });
