@@ -36,6 +36,7 @@ import { BarcodeCameraScanner } from "./barcode-camera-scanner";
 import { getAuthenticationService } from "../auth/runtime.server";
 import {
   CatalogConfigurationError,
+  CatalogStaleReviewError,
   CatalogCredentialsError,
   CatalogFoodNotFoundError,
   CatalogInvalidResponseError,
@@ -47,12 +48,14 @@ import {
   type CatalogOperationContext,
   type CatalogFood,
   type CatalogNutrientValue,
+  type CatalogProviderId,
+  type CatalogSearchFilter,
+  type CatalogSearchGroup,
   type CatalogSearchResult,
 } from "../catalog/food-catalog.server";
 import { isSupportedCommercialBarcode } from "../catalog/barcode";
 import {
   getFoodCatalog,
-  getFoodCatalogProvider,
 } from "../catalog/runtime.server";
 import {
   buildCalendarMonth,
@@ -99,6 +102,10 @@ function catalogBarcode(value: string): string | undefined {
   return isSupportedCommercialBarcode(barcode) ? barcode : undefined;
 }
 
+function catalogSearchFilter(value: string | null): CatalogSearchFilter {
+  return value === "basic" || value === "packaged" ? value : "all";
+}
+
 function foodLogIntentSchema() {
   return z.discriminatedUnion("intent", [
     z.object({ date: z.string(), intent: z.literal("add-food") }),
@@ -129,6 +136,7 @@ function foodLogIntentSchema() {
       date: z.string(),
       idempotencyKey: z.string(),
       intent: z.literal("log-food"),
+      catalogGeneration: z.string().optional(),
       provider: z.string().min(1),
       providerFoodId: z.string(),
       quantity: z.string(),
@@ -225,15 +233,24 @@ function foodLogServiceForRequest(request: Request) {
   return instant ? getFoodLogService(instant) : getFoodLogService();
 }
 
+function FoodNameField({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  return <label className={styles.stackedField}>
+    <span>Food name</span>
+    <input maxLength={200} name="name" onChange={event => onChange(event.target.value)} required value={value} />
+  </label>;
+}
+
 function catalogFailure(
   error: unknown,
 ): { message: string; status: number; title: string } | undefined {
+  if (error instanceof CatalogStaleReviewError) return { message: error.message, status: 409, title: "Review food again" };
+  if (error instanceof CatalogNutritionUnavailableError) return { message: "This food has no usable calories in the installed catalog.", status: 422, title: "Nutrition unavailable" };
   if (error instanceof CatalogConfigurationError) {
     return {
       message:
-        "USDA search is not configured. Your saved Food Entries remain available.",
+        "USDA Foundation is not installed. Ask your administrator to install it in Food Catalogs Settings. Your saved Food Entries remain available.",
       status: 503,
-      title: "USDA search is not configured",
+      title: "USDA Foundation is not installed",
     };
   }
   if (error instanceof CatalogCredentialsError) {
@@ -290,9 +307,9 @@ function barcodeCatalogFailure(
   if (error instanceof CatalogConfigurationError) {
     return {
       message:
-        "Open Food Facts needs a valid contact email before barcode lookup can be used. USDA search and saved Food Entries remain available.",
+        "An administrator can install Open Food Facts in Settings → Food Catalogs. USDA search and saved Food Entries remain available.",
       status: 503,
-      title: "Open Food Facts is not configured",
+      title: "Open Food Facts is not installed",
     };
   }
   if (error instanceof CatalogFoodNotFoundError) {
@@ -305,17 +322,17 @@ function barcodeCatalogFailure(
   if (error instanceof CatalogNutritionUnavailableError) {
     return {
       message:
-        "This product does not report usable nutrition per serving. Values per 100 g or 100 ml are not converted.",
+        "This product has no usable nutrition with a supported calculation basis.",
       status: 422,
-      title: "Nutrition per serving unavailable",
+      title: "Nutrition unavailable",
     };
   }
   if (error instanceof CatalogUnsafeMeasurementError) {
     return {
       message:
-        "This product no longer has the same usable 1 serving measurement. Your Food Log was not changed.",
+        "This product no longer has the selected supported measurement. Your Food Log was not changed.",
       status: 422,
-      title: "Serving unavailable",
+      title: "Measurement unavailable",
     };
   }
   if (error instanceof CatalogRateLimitError) {
@@ -540,8 +557,12 @@ export async function loader({ request }: Route.LoaderArgs) {
     }
   }
 
-  const foodStage = catalogRouteState(url.searchParams.get("food"));
+  const foodStage = catalogRouteState(
+    url.searchParams.get("food"),
+    url.searchParams.get("provider"),
+  );
   const requestedQuery = url.searchParams.get("query") ?? "";
+  const requestedFilter = catalogSearchFilter(url.searchParams.get("filter"));
   let responseStatus = 200;
   let catalog:
     | {
@@ -572,20 +593,19 @@ export async function loader({ request }: Route.LoaderArgs) {
         title?: string;
       }
     | {
+        filter?: CatalogSearchFilter;
+        groups: CatalogSearchGroup[];
         mode: "search";
         query: string;
-        results: Awaited<
-          ReturnType<ReturnType<typeof getFoodCatalogProvider>["search"]>
-        >;
+        results: CatalogSearchResult[];
         message?: string;
         title?: string;
       }
     | {
+        filter?: CatalogSearchFilter;
         mode: "detail";
         query: string;
-        food: Awaited<
-          ReturnType<ReturnType<typeof getFoodCatalogProvider>["getFood"]>
-        >;
+        food: CatalogFood;
         idempotencyKey: string;
       }
     | undefined;
@@ -639,10 +659,12 @@ export async function loader({ request }: Route.LoaderArgs) {
     } else if (foodStage.mode === "search") {
       const parsedQuery = catalogQuery(requestedQuery);
       if (!requestedQuery) {
-        catalog = { mode: "search", query: "", results: [] };
+        catalog = { ...(requestedFilter === "all" ? {} : { filter: requestedFilter }), groups: [], mode: "search", query: "", results: [] };
       } else if (parsedQuery === undefined) {
         responseStatus = 400;
         catalog = {
+          ...(requestedFilter === "all" ? {} : { filter: requestedFilter }),
+          groups: [],
           message: "Enter a food search from 2 to 100 characters.",
           mode: "search",
           query: requestedQuery,
@@ -650,59 +672,54 @@ export async function loader({ request }: Route.LoaderArgs) {
           title: "Search not sent",
         };
       } else {
-        try {
-          catalog = {
-            mode: "search",
-            query: parsedQuery,
-            results: await getFoodCatalogProvider().search(
-              parsedQuery,
-              catalogContext,
-            ),
-          };
-        } catch (error) {
-          const failure = catalogFailure(error);
-          if (!failure) throw error;
-          responseStatus = failure.status;
-          catalog = {
-            message: failure.message,
-            mode: "search",
-            query: parsedQuery,
-            results: [],
-            title: failure.title,
-          };
-        }
+        const search = await getFoodCatalog().searchAll(parsedQuery, requestedFilter, catalogContext);
+        catalog = {
+          ...(requestedFilter === "all" ? {} : { filter: requestedFilter }),
+          groups: search.groups,
+          mode: "search",
+          query: parsedQuery,
+          results: search.groups.flatMap(group => group.results),
+        };
       }
     } else {
-      const provider = getFoodCatalogProvider();
+      const provider = getFoodCatalog();
       try {
         catalog = {
-          food: await provider.getFood(foodStage.providerFoodId, catalogContext),
+          food: await provider.getFood(foodStage.provider, foodStage.providerFoodId, catalogContext),
+          ...(requestedFilter === "all" ? {} : { filter: requestedFilter }),
           idempotencyKey: randomUUID(),
           mode: "detail",
           query: requestedQuery,
         };
       } catch (error) {
-        const failure = catalogFailure(error);
+        const failure = foodStage.provider === "open-food-facts"
+          ? barcodeCatalogFailure(error)
+          : catalogFailure(error);
         if (!failure) throw error;
         responseStatus = failure.status;
         let results: CatalogSearchResult[] = [];
+        let groups: CatalogSearchGroup[] | undefined;
         const parsedQuery = catalogQuery(requestedQuery);
         if (
           error instanceof CatalogFoodNotFoundError &&
           parsedQuery !== undefined
         ) {
           try {
-            results = (
-              await provider.search(parsedQuery, catalogContext)
-            ).filter(
-              (result) => result.providerFoodId !== foodStage.providerFoodId,
-            );
+            const refreshed = await provider.searchAll(parsedQuery, requestedFilter, catalogContext);
+            groups = refreshed.groups.map(group => ({
+              ...group,
+              results: group.results.filter(result =>
+                result.provider !== foodStage.provider || result.providerFoodId !== foodStage.providerFoodId),
+            }));
+            results = groups.flatMap(group => group.results);
           } catch {
             // The original detail failure remains the useful response when
             // refreshing the surrounding search results also fails.
           }
         }
         catalog = {
+          ...(requestedFilter === "all" ? {} : { filter: requestedFilter }),
+          groups: groups ?? [],
           message: failure.message,
           mode: "search",
           query: requestedQuery,
@@ -764,7 +781,7 @@ function noticeMessage(
 type CatalogRouteState =
   | { mode: "barcode" }
   | { mode: "choose" }
-  | { mode: "detail"; providerFoodId: string }
+  | { mode: "detail"; provider: CatalogProviderId; providerFoodId: string }
   | { mode: "manual" }
   | { mode: "search" };
 
@@ -777,14 +794,23 @@ function positiveIntegerId(value: string | null): number | undefined {
 
 function catalogRouteState(
   value: string | null,
+  requestedProvider: string | null,
 ): CatalogRouteState | undefined {
   if (value === "search") return { mode: "search" };
   if (value === "choose") return { mode: "choose" };
   if (value === "barcode") return { mode: "barcode" };
   if (value === "manual") return { mode: "manual" };
-  const providerFoodId = positiveIntegerId(value);
-  if (providerFoodId !== undefined) {
-    return { mode: "detail", providerFoodId: String(providerFoodId) };
+  const provider = requestedProvider === null || requestedProvider === "usda-fdc"
+    ? "usda-fdc"
+    : requestedProvider === "open-food-facts"
+      ? "open-food-facts"
+      : undefined;
+  if (!provider || value === null) return undefined;
+  if (provider === "usda-fdc") {
+    const providerFoodId = positiveIntegerId(value);
+    if (providerFoodId !== undefined) return { mode: "detail", provider, providerFoodId: String(providerFoodId) };
+  } else if (isSupportedCommercialBarcode(value)) {
+    return { mode: "detail", provider, providerFoodId: value };
   }
   return undefined;
 }
@@ -816,29 +842,12 @@ export async function action({ request }: Route.ActionArgs) {
     throw new Response("CSRF token rejected.", { status: 403 });
   }
 
+  const formFields = Object.fromEntries([
+    "carbohydrateGrams", "date", "destinationDate", "energyKcal", "entryId", "eventId", "expectedUpdatedAt", "fatGrams", "fiberGrams", "idempotencyKey", "intent", "name", "proteinGrams", "providerFoodId", "provider", "quantity", "selectedMeasurementId", "sodiumMilligrams", "sugarGrams", "waterAmount", "waterEventTime", "waterSelection"
+  ].map(name => [name, formString(formData, name)]));
   const parsed = foodLogIntentSchema().safeParse({
-    carbohydrateGrams: formString(formData, "carbohydrateGrams"),
-    date: formString(formData, "date"),
-    destinationDate: formString(formData, "destinationDate"),
-    energyKcal: formString(formData, "energyKcal"),
-    entryId: formString(formData, "entryId"),
-    eventId: formString(formData, "eventId"),
-    expectedUpdatedAt: formString(formData, "expectedUpdatedAt"),
-    fatGrams: formString(formData, "fatGrams"),
-    fiberGrams: formString(formData, "fiberGrams"),
-    idempotencyKey: formString(formData, "idempotencyKey"),
-    intent: formString(formData, "intent"),
-    name: formString(formData, "name"),
-    proteinGrams: formString(formData, "proteinGrams"),
-    providerFoodId: formString(formData, "providerFoodId"),
-    provider: formString(formData, "provider"),
-    quantity: formString(formData, "quantity"),
-    selectedMeasurementId: formString(formData, "selectedMeasurementId"),
-    sodiumMilligrams: formString(formData, "sodiumMilligrams"),
-    sugarGrams: formString(formData, "sugarGrams"),
-    waterAmount: formString(formData, "waterAmount"),
-    waterEventTime: formString(formData, "waterEventTime"),
-    waterSelection: formString(formData, "waterSelection"),
+    ...formFields,
+    catalogGeneration: formString(formData, "catalogGeneration") || undefined,
   });
   if (!parsed.success) {
     return data<HomeActionData>(
@@ -1117,6 +1126,7 @@ export async function action({ request }: Route.ActionArgs) {
         foodLogDate: parsed.data.date,
         idempotencyKey: parsed.data.idempotencyKey,
         provider: parsed.data.provider,
+        catalogGeneration: parsed.data.catalogGeneration,
         providerFoodId: parsed.data.providerFoodId,
         quantity: parsed.data.quantity,
         selectedMeasurementId: parsed.data.selectedMeasurementId,
@@ -1378,9 +1388,11 @@ function EmptyActionForm({
   );
 }
 
-function catalogHref(date: string, food: string, query?: string): string {
+function catalogHref(date: string, food: string, query?: string, provider?: CatalogProviderId, filter?: CatalogSearchFilter): string {
   const parameters = new URLSearchParams({ date, food });
   if (query) parameters.set("query", query);
+  if (provider) parameters.set("provider", provider);
+  if (filter && filter !== "all") parameters.set("filter", filter);
   return `/?${parameters}`;
 }
 
@@ -1925,7 +1937,7 @@ function FoodDetailStage({
     <>
       <Link
         className={styles.backToResults}
-        to={catalogHref(date, "search", catalog.query)}
+        to={catalogHref(date, "search", catalog.query, undefined, catalog.filter)}
       >
         ‹ Back to results
       </Link>
@@ -1933,7 +1945,7 @@ function FoodDetailStage({
         <span className={styles.catalogType}>{food.dataType}</span>
         <h3>{food.name}</h3>
         <p>
-          USDA FoodData Central
+          {food.provider === "usda-fdc" ? "USDA FoodData Central" : "Open Food Facts"}
           {food.brand ? ` · ${food.brand}` : ""}
         </p>
       </div>
@@ -1941,8 +1953,8 @@ function FoodDetailStage({
         <span aria-hidden="true">◇</span>
         <p>
           <strong>Saved as a Nutrition Snapshot</strong>
-          This entry keeps these values and source details if USDA later changes
-          or is unavailable.
+          This entry keeps these values and source details if its catalog later
+          changes or is unavailable.
         </p>
       </div>
       <Form className={styles.logFoodForm} method="post">
@@ -1955,6 +1967,7 @@ function FoodDetailStage({
         />
         <input name="intent" type="hidden" value="log-food" />
         <input name="provider" type="hidden" value={food.provider} />
+        {food.catalogGeneration ? <input name="catalogGeneration" type="hidden" value={food.catalogGeneration} /> : null}
         <input
           name="providerFoodId"
           type="hidden"
@@ -2301,21 +2314,7 @@ function FoodEntryEditorDialog({
             value={entry.updatedAt}
           />
           <fieldset disabled={pending}>
-            <label className={styles.stackedField}>
-              <span>Food name</span>
-              <input
-                maxLength={200}
-                name="name"
-                onChange={(event) =>
-                  setFields((current) => ({
-                    ...current,
-                    name: event.target.value,
-                  }))
-                }
-                required
-                value={fields.name}
-              />
-            </label>
+            <FoodNameField value={fields.name} onChange={name => setFields(current => ({ ...current, name }))} />
             <div className={styles.foodDetailGrid}>
               <label className={styles.stackedField}>
                 <span>Measurement</span>
@@ -2694,7 +2693,7 @@ function CatalogChoiceStage({ date, photoCapture }: { date: string; photoCapture
       <Link to={catalogHref(date, "search")}>
         <span>
           <strong>Search for food</strong>
-          <small>Search United States foods with USDA FoodData Central.</small>
+          <small>Search USDA basic foods and Open Food Facts packaged products.</small>
         </span>
         <small>Choose ›</small>
       </Link>
@@ -2772,21 +2771,7 @@ function ManualFoodStage({
         />
         <input name="intent" type="hidden" value="log-manual-food" />
         <fieldset disabled={pending}>
-          <label className={styles.stackedField}>
-            <span>Food name</span>
-            <input
-              maxLength={200}
-              name="name"
-              onChange={(event) =>
-                setFields((current) => ({
-                  ...current,
-                  name: event.target.value,
-                }))
-              }
-              required
-              value={fields.name}
-            />
-          </label>
+          <FoodNameField value={fields.name} onChange={name => setFields(current => ({ ...current, name }))} />
           <div className={styles.foodDetailGrid}>
             <div className={styles.stackedField}>
               <span>Measurement</span>
@@ -2859,23 +2844,40 @@ function ManualFoodStage({
   );
 }
 
+function offCalculationMessage(reason: string | undefined) {
+  const messages: Record<string, string> = {
+    ambiguous_nutrition_basis: "Calculation unavailable: this export does not establish whether nutrition is per 100 g or 100 ml. Package size and serving text cannot resolve it.",
+    conflicting_nutrition_bases: "Calculation unavailable: the product has conflicting nutrition bases.",
+    calories_unavailable: "Calculation unavailable: calories are missing or have an unsupported unit.",
+    nutrition_not_provided: "Calculation unavailable: nutrition is not provided for this product.",
+    unsupported_barcode: "This product does not have a supported commercial barcode.",
+  };
+  return reason && Object.hasOwn(messages, reason) ? messages[reason] : "Calculation unavailable for this product.";
+}
+
 function BarcodeFoodDetail({
   actionData,
+  backHref,
+  backLabel,
   csrfToken,
   date,
   food,
   idempotencyKey,
 }: {
   actionData: HomeActionData | undefined;
+  backHref: string;
+  backLabel: string;
   csrfToken: string;
   date: string;
   food: CatalogFood;
   idempotencyKey: string;
 }) {
   const [quantity, setQuantity] = useState("1");
+  const [measurementId, setMeasurementId] = useState(food.measurements[0]?.id ?? "");
+  const measurement = food.measurements.find(value => value.id === measurementId);
   const quantityMicrounits = quantityMicrounitsFromDecimal(quantity);
   const multiplier =
-    quantityMicrounits === undefined ? 0 : quantityMicrounits / 1_000_000;
+    quantityMicrounits === undefined ? 0 : (quantityMicrounits / 1_000_000) * (measurement?.baseQuantityMicrounits ?? 0) / food.authoritativeBaseQuantityMicrounits;
   const displayName =
     food.name === "Unnamed product" && food.barcode
       ? `Unnamed product · ${food.barcode}`
@@ -2885,20 +2887,21 @@ function BarcodeFoodDetail({
     <section aria-labelledby="barcode-product-title">
       <Link
         className={styles.backToResults}
-        to={catalogHref(date, "barcode")}
+        to={backHref}
       >
-        ‹ Back to scanner
+        {backLabel}
       </Link>
       <div className={styles.foodIdentity}>
         <span className={styles.catalogType}>Open Food Facts</span>
         <h3 id="barcode-product-title">{displayName}</h3>
         <p>Barcode {food.barcode}</p>
+        {food.brand ? <p>{food.brand}</p> : null}
       </div>
       <div className={styles.snapshotNote}>
         <span aria-hidden="true">◇</span>
         <p>
           <strong>Saved as a Nutrition Snapshot</strong>
-          Confirm to keep these serving values and source details locally if
+          Confirm to keep these nutrition values and source details locally if
           Open Food Facts later changes or is unavailable.
         </p>
       </div>
@@ -2908,22 +2911,21 @@ function BarcodeFoodDetail({
         <input name="idempotencyKey" type="hidden" value={idempotencyKey} />
         <input name="intent" type="hidden" value="log-food" />
         <input name="provider" type="hidden" value={food.provider} />
+        {food.catalogGeneration ? <input name="catalogGeneration" type="hidden" value={food.catalogGeneration} /> : null}
         <input
           name="providerFoodId"
           type="hidden"
           value={food.providerFoodId}
         />
-        <input
-          name="selectedMeasurementId"
-          type="hidden"
-          value={food.measurements[0]?.id ?? ""}
-        />
+        {!food.isSelectable ? <p role="alert" className={styles.catalogError}>{offCalculationMessage(food.calculationUnavailableReason)}</p> : null}
         <div className={styles.foodDetailGrid}>
-          <div className={styles.stackedField}>
+          <label className={styles.stackedField}>
             <span>Measurement</span>
-            <strong>1 serving</strong>
-            <small>Serving values are used directly; no weight conversion.</small>
-          </div>
+            <select aria-label="Measurement" name="selectedMeasurementId" value={measurementId} onChange={event => setMeasurementId(event.currentTarget.value)} disabled={!food.isSelectable}>
+              {food.measurements.map(value => <option key={value.id} value={value.id}>{value.label}</option>)}
+            </select>
+            <small>Nutrition uses the source's supported quantity and unit.</small>
+          </label>
           <label className={styles.stackedField}>
             <span>Quantity</span>
             <input
@@ -2939,12 +2941,12 @@ function BarcodeFoodDetail({
             />
           </label>
         </div>
-        <CatalogNutritionPreview
+        {food.isSelectable ? <CatalogNutritionPreview
           carbohydrateLabel="Carbohydrates"
           food={food}
           includeAdditional
           multiplier={multiplier}
-        />
+        /> : null}
         {actionData?.message ? (
           <p className={styles.catalogError} role="alert">
             {actionData.message}
@@ -2956,7 +2958,7 @@ function BarcodeFoodDetail({
           </Link>
           <button
             className={styles.primaryButton}
-            disabled={quantityMicrounits === undefined}
+            disabled={!food.isSelectable || !measurement || quantityMicrounits === undefined}
             type="submit"
           >
             Add to Food Log
@@ -3006,6 +3008,8 @@ function BarcodeCatalogStage({
     return (
       <BarcodeFoodDetail
         actionData={actionData}
+        backHref={catalogHref(date, "barcode")}
+        backLabel="‹ Back to scanner"
         csrfToken={csrfToken}
         date={date}
         food={catalog.food}
@@ -3118,6 +3122,7 @@ function CatalogDialog({
   const [searchQuery, setSearchQuery] = useState(catalog.query);
   const pendingFoodStage = catalogRouteState(
     new URLSearchParams(navigation.location?.search).get("food"),
+    new URLSearchParams(navigation.location?.search).get("provider"),
   );
   const detailPending =
     catalog.mode === "search" &&
@@ -3138,6 +3143,8 @@ function CatalogDialog({
     initialFocusSelector,
     restoreFocusSelector: "[data-food-dialog-trigger]",
   });
+  const searchFilter = catalog.mode === "search" ? catalog.filter ?? "all" : "all";
+  const searchGroups = catalog.mode === "search" ? catalog.groups ?? [] : [];
 
   return (
     <DialogBackdrop onClose={closeDialog}>
@@ -3154,7 +3161,7 @@ function CatalogDialog({
             <h2 id="food-dialog-title">Add Food</h2>
             <span className={styles.dialogChip}>
               {catalog.mode === "search" || catalog.mode === "detail"
-                ? "USDA catalog"
+                ? "Local food catalogs"
                 : catalog.mode === "barcode"
                   ? "Open Food Facts"
                   : catalog.mode === "manual"
@@ -3177,6 +3184,16 @@ function CatalogDialog({
         </div>
         {detailPending ? (
           <FoodDetailSkeleton />
+        ) : catalog.mode === "detail" && catalog.food.provider === "open-food-facts" ? (
+          <BarcodeFoodDetail
+            actionData={actionData}
+            backHref={catalogHref(date, "search", catalog.query, undefined, catalog.filter)}
+            backLabel="‹ Back to results"
+            csrfToken={csrfToken}
+            date={date}
+            food={catalog.food}
+            idempotencyKey={catalog.idempotencyKey}
+          />
         ) : catalog.mode === "detail" ? (
           <FoodDetailStage
             actionData={actionData}
@@ -3220,7 +3237,8 @@ function CatalogDialog({
             >
               <input name="date" type="hidden" value={date} />
               <input name="food" type="hidden" value="search" />
-              <label htmlFor="food-query">Search United States foods</label>
+              {searchFilter === "all" ? null : <input name="filter" type="hidden" value={searchFilter} />}
+              <label htmlFor="food-query">Search local foods</label>
               <div className={styles.searchControl}>
                 <input
                   autoComplete="off"
@@ -3247,9 +3265,20 @@ function CatalogDialog({
                 </button>
               </div>
             </Form>
+            <nav aria-label="Food type filter" className={styles.catalogFilters}>
+              {(["all", "basic", "packaged"] as const).map(filter => (
+                <Link
+                  aria-current={searchFilter === filter ? "page" : undefined}
+                  key={filter}
+                  to={catalogHref(date, "search", catalog.query, undefined, filter)}
+                >
+                  {filter === "all" ? "All" : filter === "basic" ? "Basic foods" : "Packaged products"}
+                </Link>
+              ))}
+            </nav>
             {searchPending ? (
               <div className={styles.catalogState} role="status">
-                <h3>Searching USDA FoodData Central</h3>
+                <h3>Searching local food catalogs</h3>
                 <p>Your deliberate catalog request is in progress.</p>
               </div>
             ) : clientSearchMessage ? (
@@ -3269,20 +3298,23 @@ function CatalogDialog({
                     <p>{catalog.message}</p>
                   </div>
                 ) : null}
-                {catalog.results.length ? (
+                {searchGroups.some(group => group.results.length > 0) ? (
                   <div
                     className={styles.catalogResults}
-                    aria-label="USDA search results"
+                    aria-label="Food search results"
                   >
-                    {catalog.results.map((result) => {
+                    {searchGroups.map(group => (
+                      <section className={styles.catalogResultGroup} key={group.provider}>
+                        <h3>{group.kind === "basic" ? "Basic foods" : "Packaged products"}</h3>
+                        {group.results.map((result) => {
                       const identity = (
                         <span>
                           <span className={styles.catalogType}>
-                            {result.dataType}
+                            {result.provider === "usda-fdc" ? "Basic food · USDA" : "Packaged product · Open Food Facts"}
                           </span>
                           <strong>{result.name}</strong>
                           <small>
-                            {[result.brand, result.measurementSummary]
+                            {[result.brand, result.measurementSummary, result.catalogGeneration ? result.providerPublishedDate : null]
                               .filter(Boolean)
                               .join(" · ")}
                           </small>
@@ -3290,23 +3322,31 @@ function CatalogDialog({
                       );
                       return result.isSelectable ? (
                         <Link
-                          key={result.providerFoodId}
+                          key={`${result.provider}:${result.providerFoodId}`}
                           to={catalogHref(
                             date,
                             result.providerFoodId,
                             catalog.query,
+                            result.provider,
+                            searchFilter,
                           )}
                         >
                           {identity}
                           <small>Select ›</small>
                         </Link>
                       ) : (
-                        <div aria-disabled="true" key={result.providerFoodId}>
+                        <div aria-disabled="true" key={`${result.provider}:${result.providerFoodId}`}>
                           {identity}
-                          <small>Hidden in production</small>
+                          <small>{result.catalogGeneration
+                            ? result.provider === "open-food-facts"
+                              ? offCalculationMessage(result.calculationUnavailableReason)
+                              : "Nutrition unavailable"
+                            : "Hidden in production"}</small>
                         </div>
                       );
-                    })}
+                        })}
+                      </section>
+                    ))}
                   </div>
                 ) : catalog.message ? null : catalog.query ? (
                   <div className={styles.catalogState} role="status">
@@ -3320,11 +3360,17 @@ function CatalogDialog({
                   <div className={styles.catalogState}>
                     <h3>Find a food</h3>
                     <p>
-                      Results can include Branded, Survey/FNDDS, and Foundation
-                      foods.
+                      Search basic ingredients from USDA Foundation and packaged
+                      products from Open Food Facts.
                     </p>
                   </div>
                 )}
+                {searchGroups.filter(group => group.status !== "available").map(group => (
+                  <div className={styles.catalogSourceState} key={group.provider} role="status">
+                    <strong>{group.kind === "basic" ? "Basic foods" : "Packaged products"}</strong>
+                    <span>{group.status === "not-installed" ? "catalog is not installed" : "catalog is temporarily unavailable"}</span>
+                  </div>
+                ))}
               </>
             )}
             <p className={styles.providerAttribution}>
@@ -3335,6 +3381,10 @@ function CatalogDialog({
                 target="_blank"
               >
                 USDA FoodData Central
+              </a>{" "}
+              and{" "}
+              <a href="https://world.openfoodfacts.org/" rel="noreferrer" target="_blank">
+                Open Food Facts
               </a>
             </p>
           </>

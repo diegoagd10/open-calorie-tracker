@@ -3,6 +3,8 @@ import { z } from "zod";
 
 import {
   CatalogInvalidResponseError,
+  CatalogStaleReviewError,
+  CatalogNutritionUnavailableError,
   CatalogUnsafeMeasurementError,
   type CatalogFood,
   type CatalogMeasurement,
@@ -11,6 +13,7 @@ import {
 } from "../catalog/food-catalog.server";
 import { isSupportedCommercialBarcode } from "../catalog/barcode";
 import type { ApplicationDatabaseClient } from "../database/database.server";
+import { readUserTimeZone } from "../database/user-preferences.server";
 import { isPhotoEntryProcessing } from "../database/photo-analysis.server";
 import { foodEntries, userPreferences } from "../database/schema.server";
 import { localDateAt, parseIsoLocalDate } from "../food-log/date";
@@ -57,6 +60,7 @@ function copyKeyBelongsToEntry(key: string, entryId: number): boolean {
 
 function logFoodInputSchema() {
   return z.object({
+    catalogGeneration: z.string().uuid().optional(),
     foodLogDate: z.string(),
     idempotencyKey: idempotencyKeySchema.refine(
       (value) => !value.startsWith("copy:"),
@@ -175,6 +179,13 @@ export class StaleFoodEntryError extends Error {
   }
 }
 
+const offMeasuredAuthority = z.object({ catalogGeneration: z.string().min(1), authoritativeBaseUnit: z.enum(["g", "ml"]), authoritativeBaseQuantityMicrounits: z.literal(100_000_000), measurement: z.object({ baseQuantityMicrounits: z.number().int().positive().max(Number.MAX_SAFE_INTEGER) }) });
+const offServingAuthority = z.object({ authoritativeBaseUnit: z.literal("serving"), authoritativeBaseQuantityMicrounits: z.literal(1_000_000), measurement: z.object({ id: z.literal("serving"), baseQuantityMicrounits: z.literal(1_000_000) }) });
+function requireSupportedOffMeasurement(food: CatalogFood, measurement: CatalogMeasurement) {
+  const valid = z.union([offServingAuthority, offMeasuredAuthority]).safeParse({ ...food, measurement });
+  if (food.dataType !== "Open Food Facts" || !valid.success) throw new CatalogUnsafeMeasurementError();
+}
+
 function selectedCatalogMeasurement(
   food: CatalogFood,
   provider: string,
@@ -193,16 +204,7 @@ function selectedCatalogMeasurement(
   if (!measurement || measurement.unit !== food.authoritativeBaseUnit) {
     throw new CatalogUnsafeMeasurementError();
   }
-  if (
-    provider === "open-food-facts" &&
-    (food.dataType !== "Open Food Facts" ||
-      food.authoritativeBaseUnit !== "serving" ||
-      food.authoritativeBaseQuantityMicrounits !== 1_000_000 ||
-      measurement.id !== "serving" ||
-      measurement.baseQuantityMicrounits !== 1_000_000)
-  ) {
-    throw new CatalogUnsafeMeasurementError();
-  }
+  if (provider === "open-food-facts") requireSupportedOffMeasurement(food, measurement);
   return measurement;
 }
 
@@ -570,6 +572,8 @@ export class FoodEntryService {
       parsed.data.providerFoodId,
       context,
     );
+    if (food.catalogGeneration !== parsed.data.catalogGeneration) throw new CatalogStaleReviewError();
+    if (!food.isSelectable) throw new CatalogNutritionUnavailableError();
     const measurement = selectedCatalogMeasurement(
       food,
       parsed.data.provider,
@@ -673,13 +677,9 @@ export class FoodEntryService {
           ),
         )
         .get();
-      const preference = transaction
-        .select({ timeZone: userPreferences.timeZone })
-        .from(userPreferences)
-        .where(eq(userPreferences.userId, userId))
-        .get();
-      if (!preference) throw new InvalidFoodLogDateError();
-      const today = localDateAt(instant, preference.timeZone);
+      const timeZone = readUserTimeZone(transaction, userId);
+      if (!timeZone) throw new InvalidFoodLogDateError();
+      const today = localDateAt(instant, timeZone);
       const eligible = eligibleCopyDestination(
         source,
         input.foodLogDate,
@@ -716,7 +716,7 @@ export class FoodEntryService {
             eligible.destination,
             today,
             instant,
-            preference.timeZone,
+            timeZone,
           ),
           updatedAt: createdAt,
           userId,
@@ -830,14 +830,8 @@ export class FoodEntryService {
   ) {
     const parsedId = z.number().int().positive().safeParse(entryId);
     if (!parsedId.success) throw new InvalidFoodEntryInputError();
-    const existing = this.#database
-      .select()
-      .from(foodEntries)
-      .where(
-        and(eq(foodEntries.userId, userId), eq(foodEntries.id, parsedId.data)),
-      )
-      .get();
-    if (!existing || existing.foodLogDate !== input.foodLogDate) {
+    const existing = this.#readOwnedRow(userId, parsedId.data);
+    if (existing.foodLogDate !== input.foodLogDate) {
       throw new FoodEntryUnavailableError();
     }
     if (
@@ -873,14 +867,8 @@ export class FoodEntryService {
     ) {
       throw new InvalidFoodEntryInputError();
     }
-    const existing = this.#database
-      .select()
-      .from(foodEntries)
-      .where(
-        and(eq(foodEntries.userId, userId), eq(foodEntries.id, parsedId.data)),
-      )
-      .get();
-    if (!existing || existing.foodLogDate !== input.foodLogDate) {
+    const existing = this.#readOwnedRow(userId, parsedId.data);
+    if (existing.foodLogDate !== input.foodLogDate) {
       throw new FoodEntryUnavailableError();
     }
     const deleted = this.#database
@@ -933,13 +921,9 @@ export class FoodEntryService {
         .get();
       if (repeated) return foodEntrySnapshot(repeated);
 
-      const preference = transaction
-        .select({ timeZone: userPreferences.timeZone })
-        .from(userPreferences)
-        .where(eq(userPreferences.userId, userId))
-        .get();
-      if (!preference) throw new InvalidFoodLogDateError();
-      const today = localDateAt(instant, preference.timeZone);
+      const timeZone = readUserTimeZone(transaction, userId);
+      if (!timeZone) throw new InvalidFoodLogDateError();
+      const today = localDateAt(instant, timeZone);
       if (foodLogDate > today) throw new FutureFoodLogDateError();
       const localEventTime = localEventTimeForNewFoodLogEvent(
         transaction,
@@ -947,7 +931,7 @@ export class FoodEntryService {
         foodLogDate,
         today,
         instant,
-        preference.timeZone,
+        timeZone,
       );
       const row = transaction
         .insert(foodEntries)

@@ -6,7 +6,9 @@
   },
   "dynamicallyLoaded": [
     "server/playwright-https.js",
-    "server/app.ts"
+    "server/app.ts",
+    "app/catalog-management/import-worker.ts",
+    "tests/support/restored-usda-worker.mjs"
   ],
   "ignorePatterns": ["docs/mocks/**"],
   "ignoreDependencies": ["@react-router/dev", "isbot", "react-dom"],
@@ -62,6 +64,7 @@
         "name": "catalog",
         "patterns": ["app/catalog/**"]
       },
+      { "name": "catalog-management", "patterns": ["app/catalog-management/**"] },
       {
         "name": "database",
         "patterns": ["app/database/**"]
@@ -101,9 +104,11 @@
           "drizzle.config.ts",
           "eslint.config.js",
           "playwright.config.ts",
+          "playwright.catalog.config.ts",
           "react-router.config.ts",
           "vite.config.ts",
           "vite.recovery.config.ts",
+          "vite.catalog.config.ts",
           "vitest.config.ts",
           "scripts/audit-dependencies.mjs",
           "scripts/calibrate-argon2.mjs",
@@ -124,6 +129,7 @@
         "allow": [
           "auth",
           "catalog",
+          "catalog-management",
           "database",
           "photo-analysis",
           "food-entry",
@@ -135,8 +141,9 @@
         ]
       },
       { "from": "auth", "allow": ["database", "server"] },
-      { "from": "catalog", "allow": ["server"] },
-      { "from": "database", "allow": [] },
+      { "from": "catalog", "allow": ["server", "database", "catalog-management"] },
+      { "from": "database", "allow": [], "allowTypeOnly": ["catalog", "catalog-management"] },
+      { "from": "catalog-management", "allow": ["database", "catalog"] },
       {
         "from": "food-entry",
         "allow": ["catalog", "database", "food-log"]
@@ -152,13 +159,14 @@
         "from": "water-event",
         "allow": ["database", "food-log", "setup"]
       },
-      { "from": "server", "allow": ["auth", "database", "photo-analysis"] },
+      { "from": "server", "allow": ["auth", "database", "photo-analysis", "catalog-management"] },
       { "from": "photo-analysis", "allow": ["catalog", "database", "food-entry", "food-log"] },
       {
         "from": "tests",
         "allow": [
           "auth",
           "catalog",
+          "catalog-management",
           "database",
           "photo-analysis",
           "food-entry",

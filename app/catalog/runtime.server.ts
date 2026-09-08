@@ -8,23 +8,14 @@ import {
   TestFoodCatalogProvider,
   TestOpenFoodFactsProvider,
 } from "./test-fixture.server";
-import { UsdaFoodDataCentralAdapter } from "./usda.server";
-import { OpenFoodFactsAdapter } from "./open-food-facts.server";
+import { LocalUsdaAdapter } from "./local-usda.server";
+import { catalogDirectory, getCatalogManagement } from "../catalog-management/runtime.server";
+import { LocalOpenFoodFactsAdapter } from "./local-off.server";
 
 function environmentSchema() {
   return z.object({
-    FDC_API_KEY: z.string().optional(),
-    FDC_BASE_URL: z.string().url().optional(),
-    FDC_TIMEOUT_MS: z.coerce.number().int().min(100).max(20_000).optional(),
     FOOD_CATALOG_TEST_FIXTURE: z.enum(["0", "1"]).optional(),
-    OPEN_FOOD_FACTS_BASE_URL: z.string().url().optional(),
-    OPEN_FOOD_FACTS_CONTACT_EMAIL: z.string().optional(),
-    OPEN_FOOD_FACTS_TIMEOUT_MS: z.coerce
-      .number()
-      .int()
-      .min(100)
-      .max(20_000)
-      .optional(),
+
   });
 }
 
@@ -38,11 +29,7 @@ export function getFoodCatalogProvider(): SearchFoodCatalogProvider {
     process.env.NODE_ENV === "test" &&
     environment.FOOD_CATALOG_TEST_FIXTURE === "1"
       ? new TestFoodCatalogProvider()
-      : new UsdaFoodDataCentralAdapter({
-          apiKey: environment.FDC_API_KEY,
-          baseUrl: environment.FDC_BASE_URL,
-          timeoutMs: environment.FDC_TIMEOUT_MS,
-        });
+      : new LocalUsdaAdapter(getCatalogManagement(), catalogDirectory());
   return foodCatalogProvider;
 }
 
@@ -69,6 +56,9 @@ export function getFoodCatalog(): FoodCatalog {
   const fixture =
     process.env.NODE_ENV === "test" &&
     environment.FOOD_CATALOG_TEST_FIXTURE === "1";
+  const openFoodFacts = fixture
+    ? new TestOpenFoodFactsProvider()
+    : new LocalOpenFoodFactsAdapter(getCatalogManagement("open-food-facts"), catalogDirectory());
   foodCatalog = new FoodCatalog([
     {
       capability: "search",
@@ -78,13 +68,12 @@ export function getFoodCatalog(): FoodCatalog {
     {
       capability: "barcode",
       provider: "open-food-facts",
-      service: fixture
-        ? new TestOpenFoodFactsProvider()
-        : new OpenFoodFactsAdapter({
-            baseUrl: environment.OPEN_FOOD_FACTS_BASE_URL,
-            contactEmail: environment.OPEN_FOOD_FACTS_CONTACT_EMAIL,
-            timeoutMs: environment.OPEN_FOOD_FACTS_TIMEOUT_MS,
-          }),
+      service: openFoodFacts,
+    },
+    {
+      capability: "search",
+      provider: "open-food-facts",
+      service: openFoodFacts,
     },
   ]);
   return foodCatalog;

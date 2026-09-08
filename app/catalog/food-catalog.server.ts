@@ -10,6 +10,8 @@ export type CatalogDataType =
 export type CatalogProviderId = "open-food-facts" | "usda-fdc";
 
 export type CatalogSearchResult = {
+  catalogGeneration?: string;
+  calculationUnavailableReason?: string;
   barcode: string | null;
   brand: string | null;
   dataType: CatalogDataType;
@@ -20,6 +22,17 @@ export type CatalogSearchResult = {
   providerFoodId: string;
   providerPublishedDate: string | null;
 };
+
+export type CatalogSearchFilter = "all" | "basic" | "packaged";
+export type CatalogSearchGroupFields = {
+  results: CatalogSearchResult[];
+  status: "available" | "not-installed" | "unavailable";
+};
+export type CatalogSearchGroup = CatalogSearchGroupFields & (
+  | { kind: "basic"; provider: "usda-fdc" }
+  | { kind: "packaged"; provider: "open-food-facts" }
+);
+export type CatalogSearchResponse = { groups: CatalogSearchGroup[] };
 
 export type CatalogMeasurement = {
   baseQuantityMicrounits: number;
@@ -54,6 +67,7 @@ export type CatalogOperationContext = {
 };
 
 export type CatalogFood = CatalogSearchResult & {
+  offSourceFields?: Record<string, string>;
   authoritativeBaseQuantityMicrounits: number;
   authoritativeBaseUnit: "g" | "ml" | "serving";
   marketCountry: string | null;
@@ -90,6 +104,13 @@ export interface FoodCatalogReader {
     providerFoodId: string,
     context?: CatalogOperationContext,
   ): Promise<CatalogFood>;
+}
+
+export class CatalogStaleReviewError extends Error {
+  constructor() {
+    super("The catalog changed after this food was reviewed. Open the food again before saving.");
+    this.name = "CatalogStaleReviewError";
+  }
 }
 
 export class CatalogConfigurationError extends Error {
@@ -213,6 +234,50 @@ export class FoodCatalog implements FoodCatalogReader {
     return results;
   }
 
+  async searchAll(
+    query: string,
+    filter: CatalogSearchFilter = "all",
+    context?: CatalogOperationContext,
+  ): Promise<CatalogSearchResponse> {
+    const sources = [
+      { kind: "basic" as const, provider: "usda-fdc" as const },
+      { kind: "packaged" as const, provider: "open-food-facts" as const },
+    ].filter(source => filter === "all" || source.kind === filter);
+    const groups = await Promise.all(sources.map(async source => {
+      const registered = this.#providers.get(source.provider);
+      if (!registered?.capabilities.has("search")) {
+        return { ...source, results: [], status: "not-installed" as const };
+      }
+      try {
+        const results = await (registered.service as SearchFoodCatalogProvider).search(query, context);
+        if (results.some(result => result.provider !== source.provider)) throw new CatalogInvalidResponseError();
+        return { ...source, results, status: "available" as const };
+      } catch (error) {
+        if (error instanceof CatalogConfigurationError) {
+          return { ...source, results: [], status: "not-installed" as const };
+        }
+        if (
+          error instanceof CatalogCredentialsError ||
+          error instanceof CatalogInvalidResponseError ||
+          error instanceof CatalogRateLimitError ||
+          error instanceof CatalogUnavailableError
+        ) {
+          return { ...source, results: [], status: "unavailable" as const };
+        }
+        throw error;
+      }
+    }));
+    const packaged = groups.find(group => group.kind === "packaged");
+    const normalizedQuery = normalizedSearchWords(query).join(" ");
+    const hasExactPackagedMatch = packaged?.results.some(result =>
+      [result.name, result.brand]
+        .filter((value): value is string => Boolean(value))
+        .some(value => normalizedSearchWords(value).join(" ") === normalizedQuery),
+    );
+    if (hasExactPackagedMatch) groups.sort(group => group.kind === "packaged" ? -1 : 1);
+    return { groups };
+  }
+
   async lookupBarcode(
     provider: string,
     barcode: string,
@@ -256,3 +321,4 @@ export class FoodCatalog implements FoodCatalogReader {
     return food;
   }
 }
+import { normalizedSearchWords } from "./search-normalization.ts";

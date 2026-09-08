@@ -6,6 +6,7 @@ const includeWebKit = !existsSync("/etc/arch-release");
 
 export default defineConfig({
   testDir: "./tests/browser",
+  testIgnore: "**/catalog-settings.spec.ts",
   fullyParallel: false,
   workers: 1,
   use: {

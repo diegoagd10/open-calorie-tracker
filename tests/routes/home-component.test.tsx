@@ -32,7 +32,11 @@ class TestElement {
   hasAttribute() {
     return false;
   }
-  focus() {
+  lastFocusOptions: FocusOptions | undefined;
+  lastScrollOptions: ScrollIntoViewOptions | undefined;
+  scrollIntoView(options?: ScrollIntoViewOptions) { this.lastScrollOptions = options; }
+  focus(options?: FocusOptions) {
+    this.lastFocusOptions = options;
     (globalThis.document as unknown as { activeElement: TestElement }).activeElement = this;
   }
   querySelector(selector: string) {
@@ -958,8 +962,11 @@ test("manual Food Entry form keeps entered totals when quantity changes and rest
     mode: "manual" as const,
     query: "",
   };
+  queriedSelectors.length = 0;
   const renderer = await renderHome({ catalog });
 
+  expect(queriedSelectors).toContain('input[name="name"]:not([disabled])');
+  expect(nodeText(renderer.root.findByProps({ className: styles.dialogChip }))).toBe("Manual");
   expect(allText(renderer)).toContain("Add food manually");
   expect(allText(renderer)).toContain("1 serving");
   expect(input(renderer, "name").props.required).toBe(true);
@@ -1094,7 +1101,7 @@ test("barcode mode separates confirmation from scanning while keeping errors rec
   expect(input(detail, "idempotencyKey").props.value).toBe("off-detail");
   expect(input(detail, "provider").props.value).toBe("open-food-facts");
   expect(input(detail, "providerFoodId").props.value).toBe("0034000470693");
-  expect(input(detail, "selectedMeasurementId").props.value).toBe("serving");
+  expect(detail.root.findByProps({ name: "selectedMeasurementId" }).props.value).toBe("serving");
   expect(input(detail, "quantity").props.value).toBe("1");
   const confirmationForm = detail.root.findAllByType("form").find(
     (form) =>
@@ -1113,7 +1120,6 @@ test("barcode mode separates confirmation from scanning while keeping errors rec
     "provider",
     "providerFoodId",
     "quantity",
-    "selectedMeasurementId",
   ]);
   await act(async () =>
     input(detail, "quantity").props.onChange({
@@ -1195,7 +1201,7 @@ test("barcode mode separates confirmation from scanning while keeping errors rec
       query: "",
     },
   });
-  expect(input(missingMeasurement, "selectedMeasurementId").props.value).toBe("");
+  expect(missingMeasurement.root.findByProps({ name: "selectedMeasurementId" }).props.value).toBe("");
   await act(async () => missingMeasurement.unmount());
 });
 
@@ -1249,6 +1255,45 @@ test("barcode entry validates client-side and exposes only matching navigation a
   );
   expect(allText(unknownNavigation)).not.toContain("Checking Open Food Facts");
   await act(async () => unknownNavigation.unmount());
+});
+
+test("local barcode nutrition preview scales the selected source measure and quantity", async () => {
+  const renderer = await renderHome({ catalog: { barcode: barcodeFood.barcode, mode: "barcode", query: "", idempotencyKey: "volume-review", food: {
+    ...barcodeFood, authoritativeBaseUnit: "ml", authoritativeBaseQuantityMicrounits: 100_000_000,
+    measurements: [{ id: "ml", label: "1 ml", unit: "ml", baseQuantityMicrounits: 1_000_000 }, { id: "100ml", label: "100 ml", unit: "ml", baseQuantityMicrounits: 100_000_000 }],
+  } } });
+  const measurement = renderer.root.findByProps({ name: "selectedMeasurementId" });
+  expect(measurement.props["aria-label"]).toBe("Measurement");
+  expect(measurement.props.disabled).toBe(false);
+  expect(measurement.findAllByType("option").map(option => [option.props.value, nodeText(option)])).toEqual([["ml", "1 ml"], ["100ml", "100 ml"]]);
+  expect(allText(renderer)).toContain("Example Foods");
+  await act(() => measurement.props.onChange({ currentTarget: { value: "100ml" } }));
+  await act(() => input(renderer, "quantity").props.onChange({ currentTarget: { value: "2.5" } }));
+  expect(nodeText(renderer.root.findByType("dl"))).toContain("450 kcal");
+  expect(nodeText(renderer.root.findByType("dl"))).toContain("60 g");
+  expect(renderer.root.findAllByType("button").find(button => nodeText(button) === "Add to Food Log")?.props.disabled).toBe(false);
+  await act(() => measurement.props.onChange({ currentTarget: { value: "unknown" } }));
+  expect(nodeText(renderer.root.findByType("dl"))).toContain("0 kcal");
+  expect(renderer.root.findAllByType("button").find(button => nodeText(button) === "Add to Food Log")?.props.disabled).toBe(true);
+  await act(() => renderer.unmount());
+});
+
+test.each([
+  ["ambiguous_nutrition_basis", "Calculation unavailable: this export does not establish whether nutrition is per 100 g or 100 ml. Package size and serving text cannot resolve it."],
+  ["conflicting_nutrition_bases", "Calculation unavailable: the product has conflicting nutrition bases."],
+  ["calories_unavailable", "Calculation unavailable: calories are missing or have an unsupported unit."],
+  ["nutrition_not_provided", "Calculation unavailable: nutrition is not provided for this product."],
+  ["unsupported_barcode", "This product does not have a supported commercial barcode."],
+  ["constructor", "Calculation unavailable for this product."],
+  [undefined, "Calculation unavailable for this product."],
+] as const)("an unavailable barcode reports %s and cannot submit nutrition", async (reason, message) => {
+  const renderer = await renderHome({ catalog: { barcode: barcodeFood.barcode, mode: "barcode", query: "", idempotencyKey: "unavailable", food: { ...barcodeFood, brand: null, isSelectable: false, calculationUnavailableReason: reason, measurements: [] } } });
+  expect(allText(renderer)).not.toContain("Example Foods");
+  expect(nodeText(renderer.root.findByProps({ role: "alert" }))).toBe(message);
+  expect(renderer.root.findByProps({ name: "selectedMeasurementId" }).props.disabled).toBe(true);
+  expect(renderer.root.findAllByType("dl")).toHaveLength(0);
+  expect(renderer.root.findAllByType("button").find(button => nodeText(button) === "Add to Food Log")?.props.disabled).toBe(true);
+  await act(() => renderer.unmount());
 });
 
 test("USDA search validates its controlled query before navigation", async () => {
@@ -1329,20 +1374,45 @@ test("home catalog renders initial, empty, failure, and selectable result states
       providerFoodId: "9999",
       providerPublishedDate: null,
     },
+    {
+      barcode: "0012345678902",
+      brand: "Exact Brand",
+      dataType: "Open Food Facts",
+      isSelectable: true,
+      measurementSummary: "100 g",
+      name: "Crunch cereal",
+      provider: "open-food-facts",
+      providerFoodId: "0012345678902",
+      providerPublishedDate: null,
+    },
   ];
   const catalogPreviousFocus = new TestElement();
   (globalThis.document as unknown as { activeElement: TestElement }).activeElement =
     catalogPreviousFocus;
   const renderer = await renderHome({
-    catalog: { mode: "search", query: "yogurt", results },
+    catalog: {
+      groups: [
+        { kind: "basic", provider: "usda-fdc", results: results.slice(0, 2), status: "available" },
+        { kind: "packaged", provider: "open-food-facts", results: results.slice(2), status: "available" },
+      ],
+      mode: "search",
+      query: "yogurt",
+      results,
+    },
   });
   expect(semanticDom(renderer)).toMatchSnapshot();
-  expect(renderer.root.findByProps({ "aria-label": "USDA search results" }))
+  expect(renderer.root.findByProps({ "aria-label": "Food search results" }))
+    .toBeDefined();
+  expect(allText(renderer)).toContain("Basic foods");
+  expect(allText(renderer)).toContain("Packaged products");
+  expect(renderer.root.findByProps({ href: "/?date=2026-08-31&food=0012345678902&query=yogurt&provider=open-food-facts" }))
+    .toBeDefined();
+  expect(renderer.root.findByProps({ href: "/?date=2026-08-31&food=search&query=yogurt&filter=packaged" }))
     .toBeDefined();
   expect(queriedSelectors).toContain(
     'input:not([type="hidden"]):not([disabled]), button:not([disabled]), select:not([disabled]), a[href]',
   );
-  expect(renderer.root.findByProps({ href: "/?date=2026-08-31&food=1001&query=yogurt" }))
+  expect(renderer.root.findByProps({ href: "/?date=2026-08-31&food=1001&query=yogurt&provider=usda-fdc" }))
     .toBeDefined();
   expect(allText(renderer)).toContain("Example Dairy · 100 g");
   expect(allText(renderer)).toContain("Hidden in production");
@@ -1386,10 +1456,15 @@ test("home catalog renders initial, empty, failure, and selectable result states
   expect(documentSelectors).toContain("[data-food-dialog-trigger]");
 
   const queryless = await renderHome({
-    catalog: { mode: "search", query: "", results: [results[0]] },
+    catalog: {
+      groups: [{ kind: "basic", provider: "usda-fdc", results: [results[0]], status: "available" }],
+      mode: "search",
+      query: "",
+      results: [results[0]],
+    },
   });
   expect(queryless.root.findByProps({
-    href: "/?date=2026-08-31&food=1001",
+    href: "/?date=2026-08-31&food=1001&provider=usda-fdc",
   })).toBeDefined();
   await act(async () => queryless.unmount());
 
@@ -1406,6 +1481,153 @@ test("home catalog renders initial, empty, failure, and selectable result states
   expect(idleFallback.root.findAllByProps({ "aria-label": "Loading food details" }))
     .toHaveLength(0);
   await act(async () => idleFallback.unmount());
+});
+
+test("home catalog search renders explicit source state, provenance, and active filters", async () => {
+  const packagedResult = {
+    barcode: "0012345678902",
+    brand: "Exact Brand",
+    catalogGeneration: "off-generation",
+    dataType: "Open Food Facts",
+    isSelectable: true,
+    measurementSummary: "100 g",
+    name: "Crunch cereal",
+    provider: "open-food-facts",
+    providerFoodId: "0012345678902",
+    providerPublishedDate: "2026-08-01",
+  };
+  const renderer = await renderHome({
+    catalog: {
+      filter: "packaged",
+      groups: [
+        {
+          kind: "packaged",
+          provider: "open-food-facts",
+          results: [packagedResult],
+          status: "available",
+        },
+        {
+          kind: "basic",
+          provider: "usda-fdc",
+          results: [],
+          status: "unavailable",
+        },
+      ],
+      mode: "search",
+      query: "crunch",
+      results: [packagedResult],
+    },
+  });
+
+  expect(input(renderer, "filter").props.value).toBe("packaged");
+  expect(renderer.root.findByProps({
+    href: "/?date=2026-08-31&food=search&query=crunch&filter=packaged",
+  }).props["aria-current"]).toBe("page");
+  expect(renderer.root.findByProps({
+    href: "/?date=2026-08-31&food=0012345678902&query=crunch&provider=open-food-facts&filter=packaged",
+  })).toBeDefined();
+  expect(allText(renderer)).toContain("Packaged product · Open Food Facts");
+  expect(allText(renderer)).toContain("Exact Brand · 100 g · 2026-08-01");
+  expect(allText(renderer)).toContain("Basic foodscatalog is temporarily unavailable");
+  expect(allText(renderer)).toContain("USDA FoodData Central and Open Food Facts");
+  await act(async () => renderer.unmount());
+
+  const empty = await renderHome({
+    catalog: {
+      groups: [
+        {
+          kind: "basic",
+          provider: "usda-fdc",
+          results: [],
+          status: "available",
+        },
+        {
+          kind: "packaged",
+          provider: "open-food-facts",
+          results: [],
+          status: "not-installed",
+        },
+      ],
+      mode: "search",
+      query: "missing food",
+      results: [],
+    },
+  });
+  expect(allText(empty)).toContain("No foods found");
+  expect(allText(empty)).toContain("Packaged productscatalog is not installed");
+  expect(allText(empty)).not.toContain("Basic foodscatalog is not installed");
+  await act(async () => empty.unmount());
+
+  const incompleteResult = {
+    ...packagedResult,
+    calculationUnavailableReason: "ambiguous_nutrition_basis",
+    isSelectable: false,
+  };
+  const incomplete = await renderHome({
+    catalog: {
+      groups: [{
+        kind: "packaged",
+        provider: "open-food-facts",
+        results: [incompleteResult],
+        status: "available",
+      }],
+      mode: "search",
+      query: "crunch",
+      results: [incompleteResult],
+    },
+  });
+  expect(allText(incomplete)).toContain(
+    "Calculation unavailable: this export does not establish whether nutrition is per 100 g or 100 ml.",
+  );
+  await act(async () => incomplete.unmount());
+
+  const oneProviderFallback = await renderHome({
+    catalog: {
+      groups: [{
+        kind: "packaged",
+        provider: "open-food-facts",
+        results: [packagedResult],
+        status: "available",
+      }],
+      mode: "search",
+      query: "crunch",
+      results: [packagedResult],
+    },
+  });
+  expect(oneProviderFallback.root.findAllByType("section").filter(section =>
+    section.props.className === styles.catalogResultGroup,
+  )).toHaveLength(1);
+  expect(allText(oneProviderFallback)).not.toContain("Basic foodscatalog");
+  await act(async () => oneProviderFallback.unmount());
+});
+
+test("OFF search detail uses the complete barcode-backed review behavior", async () => {
+  const renderer = await renderHome({
+    catalog: {
+      filter: "packaged",
+      food: barcodeFood,
+      idempotencyKey: "off-search-detail",
+      mode: "detail",
+      query: "example cereal",
+    },
+  });
+
+  expect(allText(renderer)).toContain(`Barcode ${barcodeFood.barcode}`);
+  expect(allText(renderer)).toContain("Fiber");
+  expect(allText(renderer)).toContain("Sugar");
+  expect(allText(renderer)).toContain("Sodium");
+  expect(input(renderer, "quantity").props).toMatchObject({
+    min: "0.000001",
+    step: "0.000001",
+  });
+  expect(renderer.root.findByProps({
+    href: "/?date=2026-08-31&food=search&query=example+cereal&filter=packaged",
+  })).toBeDefined();
+  expect(input(renderer, "provider").props.value).toBe("open-food-facts");
+  expect(input(renderer, "providerFoodId").props.value).toBe(
+    barcodeFood.providerFoodId,
+  );
+  await act(async () => renderer.unmount());
 });
 
 test("home catalog detail recalculates previews and exposes the log contract", async () => {
@@ -1557,14 +1779,24 @@ test("home food editor exposes saved fields, recalculation, and delete confirmat
   const deleteButton = renderer.root.findAllByType("button").find(
     (button) => nodeText(button) === "Delete entry",
   )!;
+  const focusTarget = modalFocusables[0];
+  queriedSelectors.length = 0;
+  focusTarget.lastFocusOptions = undefined;
+  focusTarget.lastScrollOptions = undefined;
   await act(async () => deleteButton.props.onClick());
+  expect(queriedSelectors).toEqual(['button[name="intent"][value="delete-food"]']);
+  expect(document.activeElement).toBe(focusTarget);
+  expect(focusTarget.lastFocusOptions).toEqual({ preventScroll: true });
+  expect(focusTarget.lastScrollOptions).toEqual({ block: "nearest" });
   expect(semanticDom(renderer)).toMatchSnapshot();
   expect(renderer.root.findAllByProps({ role: "alert" })).toHaveLength(2);
   expect(allText(renderer)).toContain("Delete this Food Entry?");
   const keepButton = renderer.root.findAllByType("button").find(
     (button) => nodeText(button) === "Keep it",
   )!;
+  queriedSelectors.length = 0;
   await act(async () => keepButton.props.onClick());
+  expect(queriedSelectors).toEqual([]);
   expect(allText(renderer)).not.toContain("Delete this Food Entry?");
   await act(async () => renderer.unmount());
 });
@@ -1897,7 +2129,7 @@ test("home renders submission and navigation pending states", async () => {
     { to: "/?food=search&query=yogurt" },
   );
   expect(semanticDom(search)).toMatchSnapshot();
-  expect(allText(search)).toContain("Searching USDA FoodData Central");
+  expect(allText(search)).toContain("Searching local food catalogs");
   await act(async () => search.unmount());
 
   const detail = await renderPendingHome(
@@ -1913,7 +2145,7 @@ test("home renders submission and navigation pending states", async () => {
     { catalog: { mode: "search", query: "", results: [] } },
     { to: "/?other=1" },
   );
-  expect(allText(unrelated)).toContain("Searching USDA FoodData Central");
+  expect(allText(unrelated)).toContain("Searching local food catalogs");
   expect(unrelated.root.findAllByProps({ "aria-label": "Loading food details" }))
     .toHaveLength(0);
   await act(async () => unrelated.unmount());
@@ -2253,9 +2485,10 @@ test("touch date navigation follows the finger and settles by week while preserv
     const rail = () => renderer.root.findByProps({ "aria-label": "Nearby dates" });
     const track = () => renderer.root.findAllByType("div").find((node) => String(node.props.className).split(" ").includes(styles.dateTrack))!;
     const captured: number[] = [];
+    let railWidth = 350;
     const event = (overrides: Record<string, unknown> = {}) => ({
       pointerType: "touch", isPrimary: true, pointerId: 1, clientX: 150, clientY: 100,
-      currentTarget: { setPointerCapture: (id: number) => captured.push(id), getBoundingClientRect: () => ({ width: 350 }) },
+      currentTarget: { setPointerCapture: (id: number) => captured.push(id), getBoundingClientRect: () => ({ width: railWidth }) },
       ...overrides,
     });
     const tapPrevented = (detail = 1) => {
@@ -2263,6 +2496,33 @@ test("touch date navigation follows the finger and settles by week while preserv
       rail().props.onClickCapture({ detail, preventDefault: () => { prevented = true; } });
       return prevented;
     };
+    expect(tapPrevented()).toBe(false);
+    await act(() => rail().props.onPointerCancel(event()));
+    await act(() => { rail().props.onPointerDown(event()); rail().props.onPointerMove(event({ clientX: 157, clientY: 107 })); });
+    expect(captured).toEqual([]);
+    expect(track().props.style.transform).toBe("translateX(calc(-100% + 0px))");
+    await act(() => { rail().props.onPointerMove(event({ clientX: 158, clientY: 108 })); rail().props.onPointerMove(event({ clientX: 200 })); });
+    expect(captured).toEqual([]);
+    await act(() => { rail().props.onPointerDown(event()); rail().props.onPointerMove(event({ clientX: 158 })); });
+    expect(captured).toEqual([1]);
+    expect(track().props.style.transform).toBe("translateX(calc(-100% + 8px))");
+    await act(() => rail().props.onPointerMove(event({ clientX: 160, clientY: 200 })));
+    expect(captured).toEqual([1]);
+    expect(track().props.style.transform).toBe("translateX(calc(-100% + 10px))");
+    await act(() => rail().props.onPointerCancel(event({ pointerId: 2 })));
+    expect(track().props.style.transform).toBe("translateX(calc(-100% + 10px))");
+    const lost = event();
+    await act(() => rail().props.onLostPointerCapture({ ...lost, target: {} }));
+    expect(track().props.style.transform).toBe("translateX(calc(-100% + 10px))");
+    await act(() => rail().props.onLostPointerCapture({ ...lost, target: lost.currentTarget }));
+    expect(track().props.style.transform).toBe("translateX(calc(-100% + 0px))");
+    expect(track().props.className).toContain(styles.dateTrackSettling);
+    await act(() => rail().props.onPointerDown(event()));
+    expect(track().props.className).not.toContain(styles.dateTrackSettling);
+    await act(() => rail().props.onPointerUp(event({ clientX: 250 })));
+    await act(async () => { await vi.advanceTimersByTimeAsync(220); });
+    expect(router.state.location.search).toBe("?date=2026-08-30");
+    captured.length = 0;
     for (const begin of [{ pointerType: "mouse" }, { isPrimary: false }]) {
       await act(() => { rail().props.onPointerDown(event(begin)); rail().props.onPointerMove(event({ clientX: 50 })); rail().props.onPointerUp(event({ clientX: 50 })); });
       expect(router.state.location.search).toBe("?date=2026-08-30");
@@ -2279,7 +2539,28 @@ test("touch date navigation follows the finger and settles by week while preserv
     expect(captured).toEqual([1]);
     expect(tapPrevented()).toBe(true);
     expect(tapPrevented(0)).toBe(false);
+    await act(() => rail().props.onPointerCancel(event({ pointerId: 2 })));
+    expect(track().props.style.transform).toBe("translateX(calc(-100% + -30px))");
+    const target = event().currentTarget;
+    await act(() => rail().props.onLostPointerCapture(event({ currentTarget: target, target: {} })));
+    expect(track().props.style.transform).toBe("translateX(calc(-100% + -30px))");
+    await act(() => rail().props.onLostPointerCapture(event({ currentTarget: target, target })));
+    expect(track().props.className).toContain(styles.dateTrackSettling);
+    expect(track().props.style.transform).toBe("translateX(calc(-100% + 0px))");
+
+    await act(() => rail().props.onPointerDown(event()));
+    expect(track().props.className).not.toContain(styles.dateTrackSettling);
+    await act(() => rail().props.onPointerMove(event({ clientX: 157, clientY: 107 })));
+    expect(tapPrevented()).toBe(false);
+    expect(track().props.style.transform).toBe("translateX(calc(-100% + 0px))");
+    await act(() => rail().props.onPointerMove(event({ clientX: 158, clientY: 100 })));
+    expect(track().props.style.transform).toBe("translateX(calc(-100% + 8px))");
+    await act(() => rail().props.onPointerMove(event({ clientX: 150, clientY: 200 })));
+    expect(track().props.style.transform).toBe("translateX(calc(-100% + 0px))");
     await act(() => rail().props.onPointerCancel(event()));
+    await act(() => { rail().props.onPointerDown(event()); rail().props.onPointerMove(event({ clientX: 158, clientY: 108 })); });
+    expect(tapPrevented()).toBe(false);
+    await act(() => rail().props.onPointerMove(event({ clientX: 170 })));
     expect(track().props.style.transform).toBe("translateX(calc(-100% + 0px))");
 
     async function drag(dx: number) {
@@ -2291,14 +2572,16 @@ test("touch date navigation follows the finger and settles by week while preserv
     await act(async () => { await vi.advanceTimersByTimeAsync(220); });
     expect(router.state.location.search).toBe("?date=2026-08-30");
 
-    await drag(100);
+    await drag(64);
+    expect(track().props.className).toContain(styles.dateTrackSettling);
     expect(track().props.style.transform).toBe("translateX(calc(-100% + 350px))");
     expect(router.state.location.search).toBe("?date=2026-08-30");
     await act(async () => { await vi.advanceTimersByTimeAsync(220); });
     expect(router.state.location.search).toBe("?date=2026-08-23");
     expect(router.state.preventScrollReset).toBe(true);
     expect(track().props.style.transform).toBe("translateX(calc(-100% + 0px))");
-    await drag(-100);
+    await drag(-64);
+    expect(track().props.style.transform).toBe("translateX(calc(-100% + -350px))");
     await act(async () => { await vi.advanceTimersByTimeAsync(220); });
     expect(router.state.location.search).toBe("?date=2026-08-30");
     await drag(-100);
@@ -2306,14 +2589,39 @@ test("touch date navigation follows the finger and settles by week while preserv
     expect(router.state.location.search).toBe("?date=2026-08-31");
     await act(() => { rail().props.onPointerDown(event()); rail().props.onPointerMove(event({ clientX: 50 })); });
     expect(track().props.style.transform).toBe("translateX(calc(-100% + -20px))");
+    await act(() => rail().props.onPointerMove(event({ clientX: -500 })));
+    expect(track().props.style.transform).toBe("translateX(calc(-100% + -42px))");
     await act(() => rail().props.onPointerUp(event({ clientX: 50 })));
     await act(async () => { await vi.advanceTimersByTimeAsync(220); });
     expect(router.state.location.search).toBe("?date=2026-08-31");
     await act(() => { rail().props.onPointerDown(event()); rail().props.onPointerUp(event()); });
     expect(tapPrevented()).toBe(false);
+    await act(() => { rail().props.onPointerDown(event()); rail().props.onPointerMove(event({ clientX: -1000 })); });
+    expect(track().props.style.transform).toBe("translateX(calc(-100% + -42px))");
+    await act(() => rail().props.onPointerCancel(event()));
+    railWidth = 200;
+    await drag(40);
+    expect(track().props.style.transform).toBe("translateX(calc(-100% + 200px))");
+    expect(track().props.className).toContain(styles.dateTrackSettling);
+    await act(async () => { await vi.advanceTimersByTimeAsync(219); });
+    expect(router.state.location.search).toBe("?date=2026-08-31");
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    expect(router.state.location.search).toBe("?date=2026-08-24");
+    const matchMedia = vi.fn((query: string) => ({ matches: query === "(prefers-reduced-motion: reduce)" }));
+    vi.stubGlobal("window", { matchMedia });
+    await drag(-40);
+    expect(track().props.style.transform).toBe("translateX(calc(-100% + -200px))");
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(router.state.location.search).toBe("?date=2026-08-31");
+    expect(matchMedia).toHaveBeenCalledWith("(prefers-reduced-motion: reduce)");
+    await drag(40);
+    await act(() => renderer.unmount());
+    await act(async () => { await vi.advanceTimersByTimeAsync(220); });
+    expect(router.state.location.search).toBe("?date=2026-08-31");
   } finally {
     await act(() => renderer?.unmount());
     router.dispose();
     vi.useRealTimers();
+    vi.unstubAllGlobals();
   }
 });

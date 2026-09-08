@@ -10,6 +10,8 @@ import { serializeSessionCookie } from "../../app/auth/http.server";
 import { getAuthenticationService } from "../../app/auth/runtime.server";
 import {
   CatalogFoodNotFoundError,
+  CatalogStaleReviewError,
+  CatalogNutritionUnavailableError,
   FoodCatalog,
 } from "../../app/catalog/food-catalog.server";
 import {
@@ -252,11 +254,12 @@ test("home publishes metadata and enforces account/setup/date boundaries", async
 
 test("home loader maps every catalog search and detail state", async () => {
   const empty = await load("/?food=search");
-  expect(empty.data.catalog).toEqual({ mode: "search", query: "", results: [] });
+  expect(empty.data.catalog).toEqual({ groups: [], mode: "search", query: "", results: [] });
 
   const invalid = await load("/?food=search&query=a");
   expect(invalid.init?.status).toBe(400);
   expect(invalid.data.catalog).toEqual({
+    groups: [],
     message: "Enter a food search from 2 to 100 characters.",
     mode: "search",
     query: "a",
@@ -283,48 +286,37 @@ test("home loader maps every catalog search and detail state", async () => {
     expect(boundary.data.catalog).toMatchObject({ query: expectedQuery });
   }
 
-  for (const [query, status, title, message] of [
-    [
-      "configuration",
-      503,
-      "USDA search is not configured",
-      "USDA search is not configured. Your saved Food Entries remain available.",
-    ],
-    [
-      "credentials",
-      503,
-      "USDA credentials unavailable",
-      "USDA search credentials are unavailable. Your saved Food Entries remain available.",
-    ],
-    [
-      "rate",
-      429,
-      "USDA rate limit reached",
-      "USDA rate limit reached. Wait a moment and search again.",
-    ],
-    [
-      "malformed",
-      502,
-      "USDA response could not be used",
-      "USDA returned food data that could not be used safely.",
-    ],
-    [
-      "unavailable",
-      503,
-      "USDA is unavailable",
-      "USDA is unavailable right now. Your saved Food Entries are unaffected.",
-    ],
+  for (const [query, status] of [
+    ["configuration", "not-installed"],
+    ["credentials", "unavailable"],
+    ["rate", "unavailable"],
+    ["malformed", "unavailable"],
+    ["unavailable", "unavailable"],
   ] as const) {
     const result = await load(`/?food=search&query=${query}`);
-    expect(result.init?.status).toBe(status);
+    expect(result.init?.status).toBe(200);
     expect(result.data.catalog).toMatchObject({
       mode: "search",
-      message,
       query,
       results: [],
-      title,
+      groups: [
+        { provider: "usda-fdc", status },
+        { provider: "open-food-facts", status: "available" },
+      ],
     });
   }
+
+  const packaged = await load("/?food=search&query=example%20foods&filter=packaged");
+  expect(packaged.data.catalog).toMatchObject({
+    filter: "packaged",
+    groups: [{ kind: "packaged", results: [{ provider: "open-food-facts", providerFoodId: "0034000470693" }] }],
+  });
+  const packagedDetail = await load("/?food=0034000470693&provider=open-food-facts&query=example%20foods&filter=packaged");
+  expect(packagedDetail.data.catalog).toMatchObject({
+    filter: "packaged",
+    food: { provider: "open-food-facts", providerFoodId: "0034000470693" },
+    mode: "detail",
+  });
 
   const detail = await load("/?food=1001&query=yogurt");
   expect(detail.data.catalog).toMatchObject({
@@ -351,11 +343,16 @@ test("home loader maps every catalog search and detail state", async () => {
   if (vanishedWithoutRefresh.data.catalog?.mode !== "search") {
     throw new Error("Expected search fallback");
   }
+  expect(vanishedWithoutRefresh.data.catalog.groups).toMatchObject([
+    { kind: "basic", provider: "usda-fdc", results: [], status: "unavailable" },
+    { kind: "packaged", provider: "open-food-facts", results: [], status: "available" },
+  ]);
   expect(vanishedWithoutRefresh.data.catalog.results).toEqual([]);
   const vanishedInvalidQuery = await load("/?food=4040&query=a");
   if (vanishedInvalidQuery.data.catalog?.mode !== "search") {
     throw new Error("Expected search fallback");
   }
+  expect(vanishedInvalidQuery.data.catalog.groups).toEqual([]);
   expect(vanishedInvalidQuery.data.catalog.results).toEqual([]);
 
   const unsafe = await load("/?food=9999&query=unsafe");
@@ -462,13 +459,13 @@ test("home loader exposes barcode lookup without creating a Food Entry", async (
   expect(getFoodLogService().read(1, today)?.entries).toHaveLength(0);
 
   for (const [barcode, status, title, message] of [
-    ["0000000000000", 503, "Open Food Facts is not configured", "contact email"],
+    ["0000000000000", 503, "Open Food Facts is not installed", "Food Catalogs"],
     ["0000000000001", 404, "Product not found", "another code"],
-    ["0000000000002", 422, "Nutrition per serving unavailable", "per serving"],
+    ["0000000000002", 422, "Nutrition unavailable", "calculation basis"],
     ["0000000000003", 429, "Open Food Facts rate limit reached", "Wait a moment"],
     ["0000000000004", 503, "Open Food Facts is unavailable", "Retry"],
     ["0000000000005", 502, "Open Food Facts response could not be used", "could not be used safely"],
-    ["0000000000007", 422, "Serving unavailable", "same usable 1 serving"],
+    ["0000000000007", 422, "Measurement unavailable", "selected supported measurement"],
   ] as const) {
     const result = await load(`/?food=barcode&barcode=${barcode}`);
     expect(result.init?.status).toBe(status);
@@ -1450,4 +1447,21 @@ test("home lists accepted photo work and redirects attempts to open a processing
   photoService.correct(userId, entryId, { correction: "Butter", idempotencyKey: "home-photo-correction" });
   expectRedirect(await homeLoader(routeArgs(get(`/?date=${today}&entry=${entryId}`))), `/?date=${today}`);
   photoService.shutdown();
+});
+
+test.each([
+  [new CatalogStaleReviewError(), 409, "Review food again"],
+  [new CatalogNutritionUnavailableError(), 422, "Nutrition unavailable"],
+] as const)("catalog review failures keep their HTTP status and review guidance %#", async (error, status, title) => {
+  setFoodCatalogProviderForTests({
+    async getFood() { throw error; },
+    async search() { throw error; },
+  });
+  try {
+    const message = error instanceof CatalogStaleReviewError ? error.message : "This food has no usable calories in the installed catalog.";
+    const detail = await load("/?food=1001");
+    expect(detail.data.catalog).toMatchObject({ title, message });
+    const result = await homeAction(routeArgs(post({ intent: "log-food", idempotencyKey: "local-review-failure", providerFoodId: "1001", quantity: "1", selectedMeasurementId: "base:g:100000000" })));
+    expect(result).toMatchObject({ data: { message }, init: { status } });
+  } finally { setFoodCatalogProviderForTests(undefined); }
 });

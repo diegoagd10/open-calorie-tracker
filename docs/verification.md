@@ -68,6 +68,18 @@ configuration, fixtures, migrations, or runtime wiring. Without a local cache,
 the versioned report seeds the first run. The score still has to meet both the
 configured threshold and `mutation-testing/baseline-summary.json`.
 
+The Vitest setup forwards Stryker's active mutation into real Node workers and
+merges their measured counters back into the current test. Shared modules also
+receive activation before initialization in the test thread. Application worker
+messages and execution remain unchanged. `mutation:policy` runs an isolated
+Stryker regression proving that a worker arithmetic fault and a shared-module
+initialization fault are detected. Thresholds, exclusions, and the baseline
+apply normally to worker code.
+Stryker selects tests using that measured coverage. Its additional Vitest
+`related` filter is disabled because Vite's import graph cannot follow a worker
+path supplied at runtime; that filter can otherwise run zero tests for covered
+worker mutations. The regression uses the repository's configured filter option.
+
 `pnpm mutation:test` runs the full, unsharded local measurement. Optional manual
 sharding remains available with `MUTATION_SHARD=1/8 pnpm mutation:test`; combine
 all eight reports with `pnpm mutation:merge <directory> 8`.

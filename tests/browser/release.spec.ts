@@ -182,7 +182,7 @@ test("one mobile Chromium journey verifies the complete private MVP", async ({
 
   await openUsdaSearch(page);
   await page
-    .getByRole("searchbox", { name: "Search United States foods" })
+    .getByRole("searchbox", { name: "Search local foods" })
     .fill("yogurt");
   await page.getByRole("button", { name: "Search" }).click();
   await page.getByRole("link", { name: /Plain nonfat Greek yogurt/ }).click();
@@ -212,12 +212,11 @@ test("one mobile Chromium journey verifies the complete private MVP", async ({
 
   await openUsdaSearch(page);
   await page
-    .getByRole("searchbox", { name: "Search United States foods" })
+    .getByRole("searchbox", { name: "Search local foods" })
     .fill("timeout");
   await page.getByRole("button", { name: "Search" }).click();
-  await expect(page.getByRole("alert")).toContainText(
-    "Your saved Food Entries are unaffected.",
-  );
+  await expect(page.getByRole("status").filter({ hasText: "Basic foods" }))
+    .toContainText("catalog is temporarily unavailable");
   await expect(
     page.getByText("Plain nonfat Greek yogurt", { exact: true }),
   ).toBeAttached();
@@ -311,7 +310,7 @@ test("a second user cannot list, read, edit, or delete another user's records", 
 
   await openUsdaSearch(page);
   await page
-    .getByRole("searchbox", { name: "Search United States foods" })
+    .getByRole("searchbox", { name: "Search local foods" })
     .fill("yogurt");
   await page.getByRole("button", { name: "Search" }).click();
   await page.getByRole("link", { name: /Plain nonfat Greek yogurt/ }).click();
@@ -553,7 +552,7 @@ test("the critical mobile experience is operable with only a keyboard", async ({
   await tabTo(page, searchForFood);
   await page.keyboard.press("Enter");
   const searchbox = page.getByRole("searchbox", {
-    name: "Search United States foods",
+    name: "Search local foods",
   });
   await tabTo(page, searchbox);
   await searchbox.pressSequentially("yogurt");

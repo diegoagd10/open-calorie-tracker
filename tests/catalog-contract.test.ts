@@ -1,4 +1,12 @@
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { offArchive, offWithBasis } from "./support/off-archive";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { getCatalogManagement, shutdownCatalogManagement } from "../app/catalog-management/runtime.server";
+import { shutdownApplicationDatabase } from "../app/database/runtime.server";
+import { Readable } from "node:stream";
+import { foundationArchive } from "./support/foundation-archive";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import {
   CatalogConfigurationError,
@@ -212,6 +220,207 @@ test("catalog merges capabilities registered on the same service", async () => {
   });
 });
 
+test("catalog composes independent basic and packaged search with filters and stable provider identity", async () => {
+  const basic = new TestFoodCatalogProvider();
+  const basicFood = (await basic.search("egg"))[0];
+  const packagedFood = {
+    ...basicFood,
+    brand: "Exact Brand",
+    dataType: "Open Food Facts" as const,
+    name: "Crunch cereal",
+    provider: "open-food-facts" as const,
+    providerFoodId: "0012345678902",
+  };
+  const packaged: SearchFoodCatalogProvider = {
+    async getFood() {
+      return { ...(await basic.getFood("1001")), ...packagedFood };
+    },
+    async search() {
+      return [packagedFood];
+    },
+  };
+  const catalog = new FoodCatalog([
+    { capability: "search", provider: "usda-fdc", service: basic },
+    { capability: "search", provider: "open-food-facts", service: packaged },
+  ]);
+
+  await expect(catalog.searchAll("exact brand", "all")).resolves.toMatchObject({
+    groups: [
+      { kind: "packaged", provider: "open-food-facts", results: [{ providerFoodId: "0012345678902" }], status: "available" },
+      { kind: "basic", provider: "usda-fdc", status: "available" },
+    ],
+  });
+  await expect(catalog.searchAll("egg", "basic")).resolves.toMatchObject({
+    groups: [{ kind: "basic", provider: "usda-fdc" }],
+  });
+});
+
+test("catalog search filters invoke only their selected source", async () => {
+  const fixture = new TestFoodCatalogProvider();
+  const basicSearch = vi.fn(fixture.search.bind(fixture));
+  const packagedSearch = vi.fn(async () => [{
+    ...(await fixture.search("egg"))[0],
+    dataType: "Open Food Facts" as const,
+    provider: "open-food-facts" as const,
+    providerFoodId: "0012345678902",
+  }]);
+  const basic: SearchFoodCatalogProvider = {
+    getFood: fixture.getFood.bind(fixture),
+    search: basicSearch,
+  };
+  const packaged: SearchFoodCatalogProvider = {
+    async getFood() {
+      return { ...(await fixture.getFood("1001")), provider: "open-food-facts" };
+    },
+    search: packagedSearch,
+  };
+  const catalog = new FoodCatalog([
+    { capability: "search", provider: "usda-fdc", service: basic },
+    { capability: "search", provider: "open-food-facts", service: packaged },
+  ]);
+  const context = { requestId: "search-filter-test" };
+
+  await expect(catalog.searchAll("egg", "basic", context)).resolves.toMatchObject({
+    groups: [{ kind: "basic", provider: "usda-fdc", status: "available" }],
+  });
+  expect(basicSearch).toHaveBeenCalledWith("egg", context);
+  expect(packagedSearch).not.toHaveBeenCalled();
+  basicSearch.mockClear();
+
+  await expect(catalog.searchAll("egg", "packaged", context)).resolves.toMatchObject({
+    groups: [{ kind: "packaged", provider: "open-food-facts", status: "available" }],
+  });
+  expect(packagedSearch).toHaveBeenCalledWith("egg", context);
+  expect(basicSearch).not.toHaveBeenCalled();
+});
+
+test("catalog puts only an exact normalized packaged name or brand before basic foods", async () => {
+  const fixture = new TestFoodCatalogProvider();
+  const basicFood = (await fixture.search("egg"))[0];
+  const packagedFood = {
+    ...basicFood,
+    brand: null as string | null,
+    dataType: "Open Food Facts" as const,
+    name: "Crème brûlée",
+    provider: "open-food-facts" as const,
+    providerFoodId: "0012345678902",
+  };
+  const packaged: SearchFoodCatalogProvider = {
+    async getFood() {
+      return { ...(await fixture.getFood("1001")), ...packagedFood };
+    },
+    async search() {
+      return [packagedFood];
+    },
+  };
+  const catalog = new FoodCatalog([
+    { capability: "search", provider: "usda-fdc", service: fixture },
+    { capability: "search", provider: "open-food-facts", service: packaged },
+  ]);
+
+  expect((await catalog.searchAll("ordinary query")).groups.map(group => group.kind))
+    .toEqual(["basic", "packaged"]);
+  expect((await catalog.searchAll(" CREME BRULEE ")).groups.map(group => group.kind))
+    .toEqual(["packaged", "basic"]);
+  packagedFood.brand = "Mañana Foods";
+  packagedFood.name = "Other food";
+  expect((await catalog.searchAll("manana foods")).groups.map(group => group.kind))
+    .toEqual(["packaged", "basic"]);
+});
+
+test("catalog reports absent and capability-only sources as not installed", async () => {
+  const fixture = new TestOpenFoodFactsProvider();
+  const catalog = new FoodCatalog([
+    { capability: "barcode", provider: "open-food-facts", service: fixture },
+  ]);
+
+  await expect(catalog.searchAll("cereal")).resolves.toEqual({
+    groups: [
+      { kind: "basic", provider: "usda-fdc", results: [], status: "not-installed" },
+      { kind: "packaged", provider: "open-food-facts", results: [], status: "not-installed" },
+    ],
+  });
+});
+
+test("catalog contains invalid provider results without hiding the healthy source", async () => {
+  const fixture = new TestFoodCatalogProvider();
+  const packaged: SearchFoodCatalogProvider = {
+    async getFood() {
+      return { ...(await fixture.getFood("1001")), provider: "open-food-facts" };
+    },
+    async search() {
+      return [{ ...(await fixture.search("egg"))[0], provider: "usda-fdc" }];
+    },
+  };
+  const catalog = new FoodCatalog([
+    { capability: "search", provider: "usda-fdc", service: fixture },
+    { capability: "search", provider: "open-food-facts", service: packaged },
+  ]);
+
+  await expect(catalog.searchAll("egg")).resolves.toMatchObject({
+    groups: [
+      { kind: "basic", results: [{ provider: "usda-fdc" }], status: "available" },
+      { kind: "packaged", results: [], status: "unavailable" },
+    ],
+  });
+});
+
+test.each([
+  CatalogCredentialsError,
+  CatalogInvalidResponseError,
+  CatalogRateLimitError,
+  CatalogUnavailableError,
+])("catalog contains %s from one search source", async ErrorType => {
+  const failing: SearchFoodCatalogProvider = {
+    async getFood() { throw new ErrorType(); },
+    async search() { throw new ErrorType(); },
+  };
+  const catalog = new FoodCatalog([
+    { capability: "search", provider: "open-food-facts", service: failing },
+  ]);
+
+  await expect(catalog.searchAll("egg", "packaged")).resolves.toEqual({
+    groups: [{
+      kind: "packaged",
+      provider: "open-food-facts",
+      results: [],
+      status: "unavailable",
+    }],
+  });
+});
+
+test("catalog does not swallow unexpected search failures", async () => {
+  const failure = new Error("unexpected defect");
+  const failing: SearchFoodCatalogProvider = {
+    async getFood() { throw failure; },
+    async search() { throw failure; },
+  };
+  const catalog = new FoodCatalog([
+    { capability: "search", provider: "open-food-facts", service: failing },
+  ]);
+
+  await expect(catalog.searchAll("egg", "packaged")).rejects.toBe(failure);
+});
+
+test("catalog search keeps one provider available when the other is not installed", async () => {
+  const basic = new TestFoodCatalogProvider();
+  const missingPackaged: SearchFoodCatalogProvider = {
+    async getFood() { throw new CatalogConfigurationError(); },
+    async search() { throw new CatalogConfigurationError(); },
+  };
+  const catalog = new FoodCatalog([
+    { capability: "search", provider: "usda-fdc", service: basic },
+    { capability: "search", provider: "open-food-facts", service: missingPackaged },
+  ]);
+
+  await expect(catalog.searchAll("egg", "all")).resolves.toMatchObject({
+    groups: [
+      { kind: "basic", provider: "usda-fdc", results: [{ provider: "usda-fdc" }], status: "available" },
+      { kind: "packaged", provider: "open-food-facts", results: [], status: "not-installed" },
+    ],
+  });
+});
+
 test("the catalog registry can be installed only in tests", () => {
   const catalog = new FoodCatalog([]);
   setFoodCatalogForTests(catalog);
@@ -370,39 +579,34 @@ describe("deterministic catalog fixture", () => {
 });
 
 describe("catalog runtime selection", () => {
-  test("valid Open Food Facts configuration is server-only and identified", async () => {
+  let directory: string;
+  beforeEach(async () => {
+    directory = await mkdtemp(path.join(tmpdir(), "catalog-runtime-"));
+    vi.stubEnv("DATABASE_PATH", path.join(directory, "application.sqlite"));
+    vi.stubEnv("CATALOG_DIRECTORY", path.join(directory, "catalogs"));
+  });
+  afterEach(async () => {
+    await shutdownCatalogManagement();
+    shutdownApplicationDatabase();
+    await rm(directory, { recursive: true, force: true });
+  });
+  test("installed OFF works with retired API configuration absent and never contacts the food API", async () => {
     vi.stubEnv("NODE_ENV", "test");
-    vi.stubEnv("FDC_API_KEY", "runtime-catalog-key");
-    vi.stubEnv("OPEN_FOOD_FACTS_BASE_URL", "https://example.test");
-    vi.stubEnv("OPEN_FOOD_FACTS_CONTACT_EMAIL", "  maintainer@example.test  ");
-    vi.stubEnv("OPEN_FOOD_FACTS_TIMEOUT_MS", "100");
     vi.stubEnv("FOOD_CATALOG_TEST_FIXTURE", "0");
-    const fetchImplementation = vi.fn<typeof fetch>().mockResolvedValue(
-      new Response(
-        JSON.stringify({
-          product: {
-            code: "0034000470693",
-            nutriments: { fat_serving: 0 },
-            product_name: "Runtime product",
-          },
-          status: "success",
-        }),
-      ),
-    );
-    vi.stubGlobal("fetch", fetchImplementation);
-
-    await expect(
-      getFoodCatalog().lookupBarcode("open-food-facts", "034000470693"),
-    ).resolves.toMatchObject({ provider: "open-food-facts" });
-    const [, init] = fetchImplementation.mock.calls[0] ?? [];
-    expect(new Headers(init?.headers).get("User-Agent")).toBe(
-      "OpenCaloryTracker/0.1.0 (maintainer@example.test)",
-    );
-    expect(new Headers(init?.headers).has("Authorization")).toBe(false);
+    vi.stubEnv("OPEN_FOOD_FACTS_CONTACT_EMAIL", "");
+    vi.stubEnv("OFF_CATALOG_MAX_UPLOAD_BYTES", "1000000");
+    vi.stubEnv("OFF_CATALOG_MAX_EXPANDED_BYTES", "10000000");
+    const network = vi.fn(() => { throw new Error("Food API access is forbidden"); });
+    vi.stubGlobal("fetch", network);
+    const management = getCatalogManagement("open-food-facts");
+    await management.submitArchive({ filename: "products.gz", stream: Readable.from(offArchive([offWithBasis("100g")])) });
+    await vi.waitFor(() => expect(management.read().busy).toBe(false));
+    await expect(getFoodCatalog().lookupBarcode("open-food-facts", "0012345678905")).resolves.toMatchObject({ provider: "open-food-facts", authoritativeBaseUnit: "g", isSelectable: true });
+    expect(network).not.toHaveBeenCalled();
   });
 
   test.each([undefined, "", "   "])(
-    "missing contact %j disables only Open Food Facts",
+    "absent catalog reports unavailable regardless of retired contact setting %j",
     async (OPEN_FOOD_FACTS_CONTACT_EMAIL) => {
       vi.stubEnv("NODE_ENV", "test");
       vi.stubEnv("FDC_API_KEY", "runtime-catalog-key");
@@ -418,34 +622,29 @@ describe("catalog runtime selection", () => {
       );
 
       await expect(getFoodCatalog().search("usda-fdc", "bread"))
-        .resolves.toEqual([]);
+        .rejects.toBeInstanceOf(CatalogConfigurationError);
       await expect(
         getFoodCatalog().lookupBarcode("open-food-facts", "034000470693"),
       ).rejects.toBeInstanceOf(CatalogConfigurationError);
     },
   );
 
-  test("trims a configured credential before passing it to the live provider", async () => {
+  test("installed USDA ignores former food API credentials and uses no network", async () => {
     vi.stubEnv("NODE_ENV", "test");
-    vi.stubEnv("FDC_API_KEY", "  runtime-catalog-key  ");
-    vi.stubEnv("FDC_BASE_URL", "https://example.test/fdc/v1");
-    vi.stubEnv("FDC_TIMEOUT_MS", "100");
     vi.stubEnv("FOOD_CATALOG_TEST_FIXTURE", "0");
-    const fetchImplementation = vi
-      .fn<typeof fetch>()
-      .mockResolvedValue(
-        new Response(JSON.stringify({ foods: [] }), { status: 200 }),
-      );
-    vi.stubGlobal("fetch", fetchImplementation);
-
-    await expect(getFoodCatalogProvider().search("bread")).resolves.toEqual([]);
-
-    expect(String(fetchImplementation.mock.calls[0]?.[0])).toBe(
-      "https://example.test/fdc/v1/foods/search?api_key=runtime-catalog-key",
-    );
+    vi.stubEnv("FDC_API_KEY", "");
+    vi.stubEnv("FDC_BASE_URL", "not-a-url");
+    vi.stubEnv("FDC_TIMEOUT_MS", "not-a-timeout");
+    const network = vi.fn<typeof fetch>();
+    vi.stubGlobal("fetch", network);
+    const management = getCatalogManagement();
+    await management.submitArchive({ filename: "foundation.zip", stream: Readable.from(await foundationArchive()) });
+    await vi.waitFor(() => expect(management.read().busy).toBe(false));
+    expect((await getFoodCatalog().search("usda-fdc", "broccoli")).map(food => food.providerFoodId)).toEqual(["747447", "321900"]);
+    expect(network).not.toHaveBeenCalled();
   });
 
-  test("whitespace credentials remain a user-safe missing configuration", async () => {
+  test("an absent catalog remains a user-safe missing configuration", async () => {
     vi.stubEnv("NODE_ENV", "test");
     vi.stubEnv("FDC_API_KEY", "   ");
     vi.stubEnv("FOOD_CATALOG_TEST_FIXTURE", "0");
@@ -478,7 +677,7 @@ describe("catalog runtime selection", () => {
     expect(getFoodCatalogProvider()).toBe(replacement);
   });
 
-  test("fixture flag outside test mode still selects the live adapter", async () => {
+  test("fixture flag outside test mode still selects the local adapter", async () => {
     vi.stubEnv("NODE_ENV", "development");
     vi.stubEnv("FOOD_CATALOG_TEST_FIXTURE", "1");
     await expect(getFoodCatalogProvider().search("bread")).rejects.toBeInstanceOf(
@@ -486,21 +685,8 @@ describe("catalog runtime selection", () => {
     );
   });
 
-  test.each(["99", "20001", "100.5", "not-a-timeout"])(
-    "rejects invalid catalog timeout %s",
-    (FDC_TIMEOUT_MS) => {
-      vi.stubEnv("NODE_ENV", "test");
-      vi.stubEnv("FDC_TIMEOUT_MS", FDC_TIMEOUT_MS);
-      expect(() => getFoodCatalogProvider()).toThrow();
-    },
-  );
-
-  test("rejects malformed base URLs and fixture switches", () => {
+  test("rejects malformed fixture switches", () => {
     vi.stubEnv("NODE_ENV", "test");
-    vi.stubEnv("FDC_BASE_URL", "not-a-url");
-    expect(() => getFoodCatalogProvider()).toThrow();
-    setFoodCatalogProviderForTests(undefined);
-    vi.stubEnv("FDC_BASE_URL", "https://example.test/fdc/v1");
     vi.stubEnv("FOOD_CATALOG_TEST_FIXTURE", "yes");
     expect(() => getFoodCatalogProvider()).toThrow();
   });

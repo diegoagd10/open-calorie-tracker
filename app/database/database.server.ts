@@ -106,7 +106,13 @@ export function openApplicationDatabase({
     sqlite.pragma("busy_timeout = 5000");
 
     const client = createApplicationClient(sqlite);
-    migrate(client, { migrationsFolder });
+    // SQLite ignores foreign_keys changes inside Drizzle's migration transaction.
+    // Disable before rebuilding tables so dependent photo records do not cascade
+    // away; restore enforcement and check relationships before serving requests.
+    sqlite.pragma("foreign_keys = OFF");
+    try { migrate(client, { migrationsFolder }); }
+    finally { sqlite.pragma("foreign_keys = ON"); }
+    if ((sqlite.pragma("foreign_key_check") as unknown[]).length) throw new Error("SQLite foreign key validation failed after migration");
 
     const applicationDatabase: ApplicationDatabase = {
       close() {

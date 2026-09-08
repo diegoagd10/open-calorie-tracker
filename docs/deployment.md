@@ -25,10 +25,16 @@ Optional variables:
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `FDC_API_KEY` | unset | USDA FoodData Central key. Store it as a secret value. Food search reports that it is unconfigured when omitted. |
-| `FDC_TIMEOUT_MS` | `5000` | USDA request timeout in milliseconds; accepted range is 100 through 20000. |
-| `OPEN_FOOD_FACTS_CONTACT_EMAIL` | unset | Contact email included in the required Open Food Facts `User-Agent`. Barcode lookup reports that it is unconfigured when this is omitted or blank; startup, USDA search, and saved Food Entries remain available. |
+| `FDC_API_KEY` | unset | Used by the existing photo-evidence integration only. Ordinary USDA search/detail/logging use the installed local Foundation catalog without this key. |
+| `CATALOG_DIRECTORY` | `catalogs/` beside the application database | Persistent USDA/OFF generations and temporary import files. See [USDA operations](local-usda-catalog.md) and [OFF operations](local-off-catalog.md). |
+| `CATALOG_MAX_UPLOAD_BYTES` | `67108864` | Maximum compressed Foundation upload size (64 MiB). |
+| `CATALOG_MAX_EXPANDED_BYTES` | `268435456` | Maximum expanded archive size (256 MiB). |
+| `OFF_CATALOG_MAX_UPLOAD_BYTES` | 4 GiB | Compressed OFF upload limit. |
+| `OFF_CATALOG_MAX_EXPANDED_BYTES` | 32 GiB | OFF decompressed stream and SQLite size limits; see [capacity and unit limitations](local-off-catalog.md). |
+
 | `PORT` | `3000` | Internal application port. Keep the default unless Traefik and the published port mapping are updated with it. |
+
+OFF API contact/base-URL/timeout configuration is no longer used by barcode lookup. Install the catalog in Settings; the standard dump lacks an unambiguous nutrition basis and its products remain unavailable for calculated logging.
 
 The image owns `NODE_ENV`, `DATABASE_PATH`, and the migrations path. Leave them
 unset in Portainer.
@@ -203,7 +209,7 @@ without opening a container console or exposing an OAuth callback port.
 The default Compose configuration persists the connection at
 `DATA_PATH/pi/auth.json` on the host. Preserve the existing `DATA_PATH` when
 updating. No extra AI variables are required for the default provider and model;
-`FDC_API_KEY` remains the optional operator-supplied key for USDA lookup.
+`FDC_API_KEY` remains optional for the existing photo-evidence integration. Install USDA Foundation in **Settings → Food Catalogs** for local food search and logging; see [installation and source policy](local-usda-catalog.md).
 See [photo-analysis.md](photo-analysis.md#operator-setup) for reconnect,
 disconnect, and provider prerequisites.
 

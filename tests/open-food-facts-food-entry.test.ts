@@ -6,6 +6,8 @@ import { afterEach, expect, test, vi } from "vitest";
 
 import {
   CatalogFoodNotFoundError,
+  CatalogNutritionUnavailableError,
+  CatalogStaleReviewError,
   CatalogInvalidResponseError,
   CatalogUnknownProviderError,
   CatalogUnsafeMeasurementError,
@@ -453,6 +455,12 @@ test("an Open Food Facts snapshot stays local and editing recalculates from its 
     fiberMilligrams: null,
     name: "My cereal",
   });
+  const corrected = service.update(userId, created.id, {
+    expectedUpdatedAt: halvedAgain.updatedAt, foodLogDate: halvedAgain.foodLogDate, name: halvedAgain.name,
+    quantity: "0.5", selectedMeasurementId: "serving", energyKcal: "95",
+  });
+  expect(corrected.energyMilliKcal).toBe(95_000);
+  expect(corrected.authoritativeNutrition).toEqual(cereal().nutritionPerAuthoritativeBase);
   expect(provider.getFoodCalls).toBe(1);
   database.close();
 });
@@ -477,4 +485,36 @@ test("Open Food Facts public input rejects unusable barcodes before provider wor
   expect(provider.getFoodCalls).toBe(0);
   expect(client.select().from(foodEntries).all()).toEqual([]);
   database.close();
+});
+
+test("local catalog confirmations reject unavailable nutrition and a changed review generation before saving", async () => {
+  const database = await setupDatabase();
+  try {
+    const client = database.getClient();
+    const userId = insertConfiguredUser(client);
+    const provider = new OpenFoodFactsDouble();
+    const service = foodEntryService(client, provider);
+    provider.food.isSelectable = false;
+    await expect(service.log(userId, validLogInput())).rejects.toBeInstanceOf(CatalogNutritionUnavailableError);
+    provider.food.isSelectable = true;
+    provider.food.catalogGeneration = "8aec67a7-b273-4c1f-a254-0a735558e174";
+    await expect(service.log(userId, validLogInput())).rejects.toBeInstanceOf(CatalogStaleReviewError);
+    await expect(service.log(userId, { ...validLogInput(), catalogGeneration: "c4590242-eb6f-4ff4-8f29-fc7425353a9f" })).rejects.toBeInstanceOf(CatalogStaleReviewError);
+    expect(client.select().from(foodEntries).all()).toEqual([]);
+    const saved = await service.log(userId, { ...validLogInput(), catalogGeneration: provider.food.catalogGeneration });
+    expect(saved.energyMilliKcal).toBe(181_111);
+  } finally { database.close(); }
+});
+
+test.each([0, -1, 0.5, Number.MAX_SAFE_INTEGER + 1])("local mass measurements reject an unsafe base quantity %s", async quantity => {
+  const database = await setupDatabase();
+  try {
+    const client = database.getClient();
+    const userId = insertConfiguredUser(client);
+    const provider = new OpenFoodFactsDouble();
+    provider.food = { ...cereal(), catalogGeneration: "8aec67a7-b273-4c1f-a254-0a735558e174", authoritativeBaseUnit: "g", authoritativeBaseQuantityMicrounits: 100_000_000,
+      measurements: [{ id: "g", label: "1 g", unit: "g", baseQuantityMicrounits: quantity }] };
+    await expect(foodEntryService(client, provider).log(userId, { ...validLogInput(), catalogGeneration: provider.food.catalogGeneration, selectedMeasurementId: "g" })).rejects.toBeInstanceOf(CatalogUnsafeMeasurementError);
+    expect(client.select().from(foodEntries).all()).toEqual([]);
+  } finally { database.close(); }
 });

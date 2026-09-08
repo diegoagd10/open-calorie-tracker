@@ -26,5 +26,6 @@ const shutdown = await mountProductionApplication(app);
 mountOperationalErrorHandler(app);
 
 const server = https.createServer({ cert, key }, app);
+server.requestTimeout = 2 * 60 * 60 * 1000;
 server.listen(port, "0.0.0.0");
 closeOnProcessSignals(server, shutdown);

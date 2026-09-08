@@ -27,7 +27,11 @@ async function startServer() {
     );
 
     databaseRuntime.initializeApplicationDatabase();
-    shutdownApplication = databaseRuntime.shutdownApplicationDatabase;
+    shutdownApplication = async () => {
+      const source = await viteDevelopmentServer.ssrLoadModule("./server/app.ts");
+      await source.shutdown();
+      await viteDevelopmentServer.close();
+    };
     app.use(viteDevelopmentServer.middlewares);
     app.use(async (request, response, next) => {
       try {
@@ -53,6 +57,8 @@ async function startServer() {
     });
   });
 
+  // Allow administrator uploads of multi-gigabyte catalog archives.
+  server.requestTimeout = 2 * 60 * 60 * 1000;
   closeOnProcessSignals(server, shutdownApplication);
 }
 
