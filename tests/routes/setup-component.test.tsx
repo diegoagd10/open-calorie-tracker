@@ -4,7 +4,7 @@ import { createRoutesStub } from "react-router";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { expect, test } from "vitest";
 
-import Setup from "../../app/routes/setup";
+import Setup, { meta, headers } from "../../app/routes/setup";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean })
   .IS_REACT_ACT_ENVIRONMENT = true;
@@ -38,6 +38,11 @@ function input(renderer: ReactTestRenderer, name: string, value?: string) {
 }
 
 test("setup renders the complete control contract", async () => {
+  expect(meta()).toEqual([
+    { title: "Set up your Food Log · Open Calorie Tracker" },
+    { name: "description", content: "Choose display units and set your initial Food Log goals" },
+  ]);
+  expect(headers()).toEqual({ "Cache-Control": "no-store" });
   const renderer = await renderSetup();
   expect(input(renderer, "csrfToken").props.value).toBe("component-csrf");
   expect(input(renderer, "displayUnits", "us").props.checked).toBe(true);

@@ -7,7 +7,8 @@
   "dynamicallyLoaded": [
     "server/playwright-https.js",
     "server/app.ts",
-    "app/catalog-management/import-worker.ts"
+    "app/catalog-management/import-worker.ts",
+    "tests/support/restored-usda-worker.mjs"
   ],
   "ignorePatterns": ["docs/mocks/**"],
   "ignoreDependencies": ["@react-router/dev", "isbot", "react-dom"],
@@ -116,6 +117,8 @@
           "scripts/mutation-shards.mjs",
           "scripts/merge-mutation-shards.mjs",
           "scripts/run-mutation-testing.mjs",
+          "scripts/pr.mjs",
+          "scripts/install-git-hooks.mjs",
           "stryker.config.mjs"
         ]
       }
@@ -140,7 +143,7 @@
       { "from": "auth", "allow": ["database", "server"] },
       { "from": "catalog", "allow": ["server", "database", "catalog-management"] },
       { "from": "database", "allow": [], "allowTypeOnly": ["catalog", "catalog-management"] },
-      { "from": "catalog-management", "allow": ["database"], "allowTypeOnly": ["catalog"] },
+      { "from": "catalog-management", "allow": ["database", "catalog"] },
       {
         "from": "food-entry",
         "allow": ["catalog", "database", "food-log"]

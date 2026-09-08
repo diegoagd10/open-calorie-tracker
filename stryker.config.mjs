@@ -7,6 +7,9 @@ const config = {
   testRunner: "vitest",
   vitest: {
     configFile: "vitest.config.ts",
+    // Per-test mutation coverage includes real workers; Vite's import graph does
+    // not include those runtime entry points and would filter their tests out.
+    related: false,
   },
   mutate: [
     // All JavaScript and TypeScript shipped by the application is eligible.

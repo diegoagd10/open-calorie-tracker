@@ -24,3 +24,9 @@ Camera barcode scanning requirements and privacy behavior are documented in
 [the camera scanning guide](docs/barcode-scanning.md).
 
 Plate photos: see [capture, corrections, operator OAuth provisioning, and live pilot](docs/photo-analysis.md).
+
+## Contributing
+
+Install the [local Git hooks](docs/verification.md#pull-request-gate) with
+`pnpm hooks:install`. Commits and pushes run the verification suites and stop on
+failure. After a successful push, create the PR with `pnpm pr:create`.
