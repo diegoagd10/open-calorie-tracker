@@ -10,7 +10,6 @@ import {
 } from "../app/catalog/food-catalog.server";
 import { UsdaFoodDataCentralAdapter } from "../app/catalog/usda.server";
 import {
-  getFoodCatalogProvider,
   setFoodCatalogProviderForTests,
 } from "../app/catalog/runtime.server";
 
@@ -562,13 +561,13 @@ test("USDA failures are typed without including credentials", async () => {
   }
 });
 
-test("an empty deployment credential is a user-safe missing configuration", async () => {
+test("an empty live evidence credential is a user-safe missing configuration", async () => {
   vi.stubEnv("NODE_ENV", "test");
   vi.stubEnv("FDC_API_KEY", "");
   vi.stubEnv("FOOD_CATALOG_TEST_FIXTURE", "0");
   setFoodCatalogProviderForTests(undefined);
 
-  await expect(getFoodCatalogProvider().search("bread")).rejects.toBeInstanceOf(
+  await expect(new UsdaFoodDataCentralAdapter({ apiKey: "" }).search("bread")).rejects.toBeInstanceOf(
     CatalogConfigurationError,
   );
 });

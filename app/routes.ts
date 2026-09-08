@@ -8,6 +8,7 @@ export default [
   route("register", "./routes/register.tsx"),
   route("setup", "./routes/setup.tsx"),
   route("settings/goals", "./routes/settings.goals.tsx"),
+  route("settings/catalogs", "./routes/settings.catalogs.tsx"),
   route("settings/ai", "./routes/settings.ai.tsx"),
   route("settings/users", "./routes/settings.users.tsx"),
   route("account/password", "./routes/account.password.tsx"),

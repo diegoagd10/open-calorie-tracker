@@ -68,10 +68,15 @@ export function mountOperationalErrorHandler(app) {
 export function closeOnProcessSignals(server, shutdownApplication) {
   for (const signal of ["SIGINT", "SIGTERM"]) {
     process.once(signal, () => {
-      server.close(() => {
-        shutdownApplication();
-        operationalLog("info", "server_stopped", { signal });
-        process.exit(0);
+      server.close(async () => {
+        try {
+          await shutdownApplication();
+          operationalLog("info", "server_stopped", { signal });
+          process.exit(0);
+        } catch (error) {
+          operationalLog("error", "shutdown_failed", { error: operationalError(error) });
+          process.exit(1);
+        }
       });
     });
   }
