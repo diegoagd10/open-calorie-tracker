@@ -70,7 +70,7 @@ test("administrator opens the safe member directory from Settings", async ({
   await expect(memberRows.nth(0)).toContainText("Active");
   await expect(memberRows.nth(1)).toContainText("zebra.member");
   await expect(memberRows.nth(1)).toContainText("Disabled");
-  await expect(page.getByText("directory.admin")).toHaveCount(1);
+  await expect(memberRows.filter({ hasText: "directory.admin" })).toHaveCount(0);
   await expect(page.getByRole("searchbox")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Create member" })).toBeVisible();
 

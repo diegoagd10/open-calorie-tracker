@@ -31,8 +31,12 @@ export async function buildOffGeneration(directory: string, generation: string, 
       if (batch.length === 500) { flush(); batch.length = 0; }
     }
     flush();
-    if (!count) throw new Error("OFF_EMPTY");
-    if (database.pragma("quick_check", { simple: true }) !== "ok") throw new Error("OFF_DATABASE_INVALID");
+    validateGeneration(database, count);
     return count;
   } finally { database.close(); }
+}
+
+function validateGeneration(database: BetterSqlite3.Database, count: number) {
+  if (!count) throw new Error("OFF_EMPTY");
+  if (database.pragma("quick_check", { simple: true }) !== "ok") throw new Error("OFF_DATABASE_INVALID");
 }

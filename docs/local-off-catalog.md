@@ -49,3 +49,19 @@ pnpm exec vitest run tests/local-off-scale.test.ts
 ```
 
 It imports through Catalog Management, measures process RSS including its worker, database size and elapsed time, repeatedly reads installed USDA foods during OFF import, and measures local OFF barcode reads. The budget, established before the run, is p95 lookup below 100 ms and RSS below 1 GiB on the measured host. The external dataset and temporary database stay outside Git; the test removes its temporary files.
+
+Measured September 8, 2026 on Node 24.13.0, Intel Core i7-13700F (24 logical CPUs), 32 GB RAM and a local encrypted Linux filesystem:
+
+| Measurement | Result |
+| --- | --- |
+| Compressed archive | 1,275,171,186 bytes |
+| Expanded source | 13,042,211,705 bytes |
+| Import elapsed | 372.84 seconds |
+| Peak process RSS including worker | 291.28 MiB |
+| Installed SQLite size | 21,231,251,456 bytes (19.77 GiB) |
+| Source rows / installed products | 4,535,553 / 4,535,483 |
+| Duplicate identifiers / oversized selected fields | 60 / 10 |
+| USDA lookup p95 during import | 0.354 ms |
+| OFF barcode lookup p95 after import | 0.247 ms |
+
+Archive SHA-256: `f72687ee8bc6522054fe69dbfda6b91902c16af1ec2e043cde27bc6c29ad8176`. Both resource/latency budgets passed. All products in this particular daily dump remain unavailable for calculated logging because it lacks explicit nutrition authority; the result verifies installation, identification and failure-safe eligibility rather than usable nutrition coverage. Calculation tests use explicit source-backed export fields. The daily raw-TSV dialect preserves records containing literal quotes that a conventional quoted-CSV parse can incorrectly combine.
