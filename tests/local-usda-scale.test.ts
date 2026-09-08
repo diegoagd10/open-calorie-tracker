@@ -26,7 +26,8 @@ test.skipIf(!process.env.USDA_LOCAL_ARCHIVE)("full external Foundation archive i
     const timings: number[] = [];
     for (let index = 0; index < 100; index++) {
       const time = performance.now();
-      const foods = await catalog.search(["tilapia", "eggs", "broccoli", "spinach"][index % 4]);
+      const queries = ["tilapia", "eggs", "HUÉVOS", "broccoli", "brócoli", "carrots", "zanahorias", "spinach", "espinacas", "calabacín"];
+      const foods = await catalog.search(queries[index % queries.length]);
       expect(foods.length).toBeGreaterThan(0);
       await catalog.getFood(foods[0].providerFoodId);
       timings.push(performance.now() - time);

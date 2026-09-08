@@ -772,7 +772,7 @@ test("authenticated USDA search and idempotent logging preserve a local Nutritio
   await expectCatalogResponsive(page);
 
   for (const [query, status, title, message] of [
-    ["configuration", 503, "USDA search is not configured", "not configured"],
+    ["configuration", 503, "USDA Foundation is not installed", "Food Catalogs Settings"],
     ["credentials", 503, "USDA credentials unavailable", "credentials"],
     ["rate", 429, "USDA rate limit reached", "rate limit reached"],
     ["timeout", 503, "USDA is unavailable", "unavailable right now"],
@@ -876,7 +876,7 @@ test("authenticated USDA search and idempotent logging preserve a local Nutritio
   await expect(page.getByRole("article").getByText("150.5 kcal")).toBeVisible();
   await expect(page.locator("img")).toHaveCount(0);
 
-  const anonymous = await browser.newContext();
+  const anonymous = await browser.newContext({ ignoreHTTPSErrors: true });
   const anonymousPage = await anonymous.newPage();
   await anonymousPage.goto("/?food=search&query=yogurt");
   await expect(anonymousPage).toHaveURL(/\/login$/);
