@@ -32,7 +32,11 @@ class TestElement {
   hasAttribute() {
     return false;
   }
-  focus() {
+  lastFocusOptions: FocusOptions | undefined;
+  lastScrollOptions: ScrollIntoViewOptions | undefined;
+  scrollIntoView(options?: ScrollIntoViewOptions) { this.lastScrollOptions = options; }
+  focus(options?: FocusOptions) {
+    this.lastFocusOptions = options;
     (globalThis.document as unknown as { activeElement: TestElement }).activeElement = this;
   }
   querySelector(selector: string) {
@@ -958,8 +962,11 @@ test("manual Food Entry form keeps entered totals when quantity changes and rest
     mode: "manual" as const,
     query: "",
   };
+  queriedSelectors.length = 0;
   const renderer = await renderHome({ catalog });
 
+  expect(queriedSelectors).toContain('input[name="name"]:not([disabled])');
+  expect(nodeText(renderer.root.findByProps({ className: styles.dialogChip }))).toBe("Manual");
   expect(allText(renderer)).toContain("Add food manually");
   expect(allText(renderer)).toContain("1 serving");
   expect(input(renderer, "name").props.required).toBe(true);
@@ -1248,6 +1255,45 @@ test("barcode entry validates client-side and exposes only matching navigation a
   );
   expect(allText(unknownNavigation)).not.toContain("Checking Open Food Facts");
   await act(async () => unknownNavigation.unmount());
+});
+
+test("local barcode nutrition preview scales the selected source measure and quantity", async () => {
+  const renderer = await renderHome({ catalog: { barcode: barcodeFood.barcode, mode: "barcode", query: "", idempotencyKey: "volume-review", food: {
+    ...barcodeFood, authoritativeBaseUnit: "ml", authoritativeBaseQuantityMicrounits: 100_000_000,
+    measurements: [{ id: "ml", label: "1 ml", unit: "ml", baseQuantityMicrounits: 1_000_000 }, { id: "100ml", label: "100 ml", unit: "ml", baseQuantityMicrounits: 100_000_000 }],
+  } } });
+  const measurement = renderer.root.findByProps({ name: "selectedMeasurementId" });
+  expect(measurement.props["aria-label"]).toBe("Measurement");
+  expect(measurement.props.disabled).toBe(false);
+  expect(measurement.findAllByType("option").map(option => [option.props.value, nodeText(option)])).toEqual([["ml", "1 ml"], ["100ml", "100 ml"]]);
+  expect(allText(renderer)).toContain("Example Foods");
+  await act(() => measurement.props.onChange({ currentTarget: { value: "100ml" } }));
+  await act(() => input(renderer, "quantity").props.onChange({ currentTarget: { value: "2.5" } }));
+  expect(nodeText(renderer.root.findByType("dl"))).toContain("450 kcal");
+  expect(nodeText(renderer.root.findByType("dl"))).toContain("60 g");
+  expect(renderer.root.findAllByType("button").find(button => nodeText(button) === "Add to Food Log")?.props.disabled).toBe(false);
+  await act(() => measurement.props.onChange({ currentTarget: { value: "unknown" } }));
+  expect(nodeText(renderer.root.findByType("dl"))).toContain("0 kcal");
+  expect(renderer.root.findAllByType("button").find(button => nodeText(button) === "Add to Food Log")?.props.disabled).toBe(true);
+  await act(() => renderer.unmount());
+});
+
+test.each([
+  ["ambiguous_nutrition_basis", "Calculation unavailable: this export does not establish whether nutrition is per 100 g or 100 ml. Package size and serving text cannot resolve it."],
+  ["conflicting_nutrition_bases", "Calculation unavailable: the product has conflicting nutrition bases."],
+  ["calories_unavailable", "Calculation unavailable: calories are missing or have an unsupported unit."],
+  ["nutrition_not_provided", "Calculation unavailable: nutrition is not provided for this product."],
+  ["unsupported_barcode", "This product does not have a supported commercial barcode."],
+  ["constructor", "Calculation unavailable for this product."],
+  [undefined, "Calculation unavailable for this product."],
+] as const)("an unavailable barcode reports %s and cannot submit nutrition", async (reason, message) => {
+  const renderer = await renderHome({ catalog: { barcode: barcodeFood.barcode, mode: "barcode", query: "", idempotencyKey: "unavailable", food: { ...barcodeFood, brand: null, isSelectable: false, calculationUnavailableReason: reason, measurements: [] } } });
+  expect(allText(renderer)).not.toContain("Example Foods");
+  expect(nodeText(renderer.root.findByProps({ role: "alert" }))).toBe(message);
+  expect(renderer.root.findByProps({ name: "selectedMeasurementId" }).props.disabled).toBe(true);
+  expect(renderer.root.findAllByType("dl")).toHaveLength(0);
+  expect(renderer.root.findAllByType("button").find(button => nodeText(button) === "Add to Food Log")?.props.disabled).toBe(true);
+  await act(() => renderer.unmount());
 });
 
 test("USDA search validates its controlled query before navigation", async () => {
@@ -1556,14 +1602,24 @@ test("home food editor exposes saved fields, recalculation, and delete confirmat
   const deleteButton = renderer.root.findAllByType("button").find(
     (button) => nodeText(button) === "Delete entry",
   )!;
+  const focusTarget = modalFocusables[0];
+  queriedSelectors.length = 0;
+  focusTarget.lastFocusOptions = undefined;
+  focusTarget.lastScrollOptions = undefined;
   await act(async () => deleteButton.props.onClick());
+  expect(queriedSelectors).toEqual(['button[name="intent"][value="delete-food"]']);
+  expect(document.activeElement).toBe(focusTarget);
+  expect(focusTarget.lastFocusOptions).toEqual({ preventScroll: true });
+  expect(focusTarget.lastScrollOptions).toEqual({ block: "nearest" });
   expect(semanticDom(renderer)).toMatchSnapshot();
   expect(renderer.root.findAllByProps({ role: "alert" })).toHaveLength(2);
   expect(allText(renderer)).toContain("Delete this Food Entry?");
   const keepButton = renderer.root.findAllByType("button").find(
     (button) => nodeText(button) === "Keep it",
   )!;
+  queriedSelectors.length = 0;
   await act(async () => keepButton.props.onClick());
+  expect(queriedSelectors).toEqual([]);
   expect(allText(renderer)).not.toContain("Delete this Food Entry?");
   await act(async () => renderer.unmount());
 });
@@ -2262,6 +2318,7 @@ test("touch date navigation follows the finger and settles by week while preserv
       rail().props.onClickCapture({ detail, preventDefault: () => { prevented = true; } });
       return prevented;
     };
+    expect(tapPrevented()).toBe(false);
     for (const begin of [{ pointerType: "mouse" }, { isPrimary: false }]) {
       await act(() => { rail().props.onPointerDown(event(begin)); rail().props.onPointerMove(event({ clientX: 50 })); rail().props.onPointerUp(event({ clientX: 50 })); });
       expect(router.state.location.search).toBe("?date=2026-08-30");
@@ -2278,7 +2335,28 @@ test("touch date navigation follows the finger and settles by week while preserv
     expect(captured).toEqual([1]);
     expect(tapPrevented()).toBe(true);
     expect(tapPrevented(0)).toBe(false);
+    await act(() => rail().props.onPointerCancel(event({ pointerId: 2 })));
+    expect(track().props.style.transform).toBe("translateX(calc(-100% + -30px))");
+    const target = event().currentTarget;
+    await act(() => rail().props.onLostPointerCapture(event({ currentTarget: target, target: {} })));
+    expect(track().props.style.transform).toBe("translateX(calc(-100% + -30px))");
+    await act(() => rail().props.onLostPointerCapture(event({ currentTarget: target, target })));
+    expect(track().props.className).toContain(styles.dateTrackSettling);
+    expect(track().props.style.transform).toBe("translateX(calc(-100% + 0px))");
+
+    await act(() => rail().props.onPointerDown(event()));
+    expect(track().props.className).not.toContain(styles.dateTrackSettling);
+    await act(() => rail().props.onPointerMove(event({ clientX: 157, clientY: 107 })));
+    expect(tapPrevented()).toBe(false);
+    expect(track().props.style.transform).toBe("translateX(calc(-100% + 0px))");
+    await act(() => rail().props.onPointerMove(event({ clientX: 158, clientY: 100 })));
+    expect(track().props.style.transform).toBe("translateX(calc(-100% + 8px))");
+    await act(() => rail().props.onPointerMove(event({ clientX: 150, clientY: 200 })));
+    expect(track().props.style.transform).toBe("translateX(calc(-100% + 0px))");
     await act(() => rail().props.onPointerCancel(event()));
+    await act(() => { rail().props.onPointerDown(event()); rail().props.onPointerMove(event({ clientX: 158, clientY: 108 })); });
+    expect(tapPrevented()).toBe(false);
+    await act(() => rail().props.onPointerMove(event({ clientX: 170 })));
     expect(track().props.style.transform).toBe("translateX(calc(-100% + 0px))");
 
     async function drag(dx: number) {
@@ -2290,14 +2368,16 @@ test("touch date navigation follows the finger and settles by week while preserv
     await act(async () => { await vi.advanceTimersByTimeAsync(220); });
     expect(router.state.location.search).toBe("?date=2026-08-30");
 
-    await drag(100);
+    await drag(64);
+    expect(track().props.className).toContain(styles.dateTrackSettling);
     expect(track().props.style.transform).toBe("translateX(calc(-100% + 350px))");
     expect(router.state.location.search).toBe("?date=2026-08-30");
     await act(async () => { await vi.advanceTimersByTimeAsync(220); });
     expect(router.state.location.search).toBe("?date=2026-08-23");
     expect(router.state.preventScrollReset).toBe(true);
     expect(track().props.style.transform).toBe("translateX(calc(-100% + 0px))");
-    await drag(-100);
+    await drag(-64);
+    expect(track().props.style.transform).toBe("translateX(calc(-100% + -350px))");
     await act(async () => { await vi.advanceTimersByTimeAsync(220); });
     expect(router.state.location.search).toBe("?date=2026-08-30");
     await drag(-100);
@@ -2305,14 +2385,26 @@ test("touch date navigation follows the finger and settles by week while preserv
     expect(router.state.location.search).toBe("?date=2026-08-31");
     await act(() => { rail().props.onPointerDown(event()); rail().props.onPointerMove(event({ clientX: 50 })); });
     expect(track().props.style.transform).toBe("translateX(calc(-100% + -20px))");
+    await act(() => rail().props.onPointerMove(event({ clientX: -500 })));
+    expect(track().props.style.transform).toBe("translateX(calc(-100% + -42px))");
     await act(() => rail().props.onPointerUp(event({ clientX: 50 })));
     await act(async () => { await vi.advanceTimersByTimeAsync(220); });
     expect(router.state.location.search).toBe("?date=2026-08-31");
     await act(() => { rail().props.onPointerDown(event()); rail().props.onPointerUp(event()); });
     expect(tapPrevented()).toBe(false);
+    vi.stubGlobal("window", { matchMedia: (query: string) => ({ matches: query === "(prefers-reduced-motion: reduce)" }) });
+    await drag(64);
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(router.state.location.search).toBe("?date=2026-08-24");
+    vi.stubGlobal("window", { matchMedia: () => ({ matches: false }) });
+    await drag(64);
+    await act(() => renderer.unmount());
+    await act(async () => { await vi.advanceTimersByTimeAsync(220); });
+    expect(router.state.location.search).toBe("?date=2026-08-24");
   } finally {
     await act(() => renderer?.unmount());
     router.dispose();
     vi.useRealTimers();
+    vi.unstubAllGlobals();
   }
 });

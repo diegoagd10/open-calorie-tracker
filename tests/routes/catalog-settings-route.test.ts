@@ -47,12 +47,46 @@ test("catalog management requires administrator authentication and upload CSRF b
 });
 
 test("an administrator upload returns while import continues and returning to Settings shows the persisted outcome", async () => {
-  const response = await action(post(await foundationArchive()));
+  const archive = await foundationArchive();
+  const upload = post(archive);
+  upload.request.headers.set("Content-Length", String(archive.length));
+  upload.request.headers.set("X-Archive-Name", "Foundation%20source.zip");
+  const response = await action(upload);
   expect(response.status).toBe(202);
+  expect(await response.json()).toEqual({ accepted: true });
+  expect(response.headers.get("Cache-Control")).toBe("no-store");
+  expect(response.headers.get("Referrer-Policy")).toBe("no-referrer");
   expect((await loader(get())).catalog.busy).toBe(true);
   await vi.waitFor(() => expect(getCatalogManagement().read().busy).toBe(false), { timeout: 3000 });
-  expect((await loader(get())).catalog).toMatchObject({ installed: { foodCount: 4 }, job: { phase: "succeeded", error: null } });
+  expect((await loader(get())).catalog).toMatchObject({ installed: { foodCount: 4, filename: "Foundation source.zip" }, job: { phase: "succeeded", error: null, receivedBytes: archive.length } });
   expect((await action(post(await foundationArchive()))).status).toBe(409);
+});
+
+test.each([
+  ["X-Catalog-Provider", "unknown", 400, "Unknown catalog."],
+  ["Content-Type", "text/plain", 400, "Choose an archive matching this catalog."],
+  ["X-Archive-Name", "%", 409, "Invalid archive filename."],
+  ["Content-Length", "invalid", 409, "Archive exceeds the configured upload limit or is empty."],
+  ["X-Archive-Name", null, 409, "Choose a USDA .zip archive."],
+] as const)("invalid upload header %s is rejected without changing catalog state", async (name, value, status, error) => {
+  const before = await loader(get());
+  const upload = post(new Uint8Array([1]));
+  if (value === null) upload.request.headers.delete(name); else upload.request.headers.set(name, value);
+  const response = await action(upload);
+  expect(response.status).toBe(status);
+  expect(await response.json()).toEqual({ error });
+  expect(response.headers.get("Cache-Control")).toBe("no-store");
+  expect(response.headers.get("Referrer-Policy")).toBe("no-referrer");
+  expect(await loader(get())).toEqual(before);
+});
+
+test("missing upload body and missing CSRF header have distinct failures", async () => {
+  const upload = args(new Request(`${origin}/settings/catalogs`, { method: "POST", headers: { Cookie: adminCookie, Origin: origin, "X-CSRF-Token": csrfToken, "Content-Type": "application/zip" } }));
+  const response = await action(upload);
+  expect(response.status).toBe(400);
+  expect(await response.json()).toEqual({ error: "Choose an archive matching this catalog." });
+  upload.request.headers.delete("X-CSRF-Token");
+  await expect(action(upload)).rejects.toMatchObject({ status: 403 });
 });
 
 test("OFF upload has its own authorization, content type and installed outcome", async () => {

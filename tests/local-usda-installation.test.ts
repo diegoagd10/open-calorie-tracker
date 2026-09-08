@@ -60,6 +60,21 @@ test("a missing catalog, conflicting installation and stale review have explicit
   expect((await entries.log(userId, { ...input, catalogGeneration: egg.catalogGeneration })).energyMilliKcal).toBe(147_000);
 });
 
+test("local USDA search normalizes Unicode, bounds terms, and keeps punctuation out of FTS syntax", async () => {
+  const { management, catalog } = await setup();
+  for (const query of ["", " ", "a", " a ", "?!", "x".repeat(101)]) expect(await catalog.search("usda-fdc", query)).toEqual([]);
+  await management.submitArchive({ filename: "foundation.zip", stream: Readable.from(await foundationArchive()) });
+  await vi.waitFor(() => expect(management.read().busy).toBe(false));
+  expect((await catalog.search("usda-fdc", "ｅｇｇ")).map(food => food.providerFoodId)).toEqual(["748967"]);
+  expect((await catalog.search("usda-fdc", "EG")).map(food => food.providerFoodId)).toEqual(["748967"]);
+  expect((await catalog.search("usda-fdc", "egg" + " ".repeat(97))).map(food => food.providerFoodId)).toEqual(["748967"]);
+  expect((await catalog.search("usda-fdc", "egg-Grade/A,Large.whole")).map(food => food.providerFoodId)).toEqual(["748967"]);
+  expect((await catalog.search("usda-fdc", "egg egg egg egg egg egg egg egg nonexistent")).map(food => food.providerFoodId)).toEqual(["748967"]);
+  expect(await catalog.search("usda-fdc", "egg OR broccoli")).toEqual([]);
+  expect(await catalog.search("usda-fdc", "egg 999999")).toEqual([]);
+  for (const id of ["0", "bad1", "1bad", "0748967", "9999999"]) await expect(catalog.getFood("usda-fdc", id)).rejects.toThrow("no longer available");
+});
+
 test.each([
   ["corrupt ZIP", null, "not a zip"],
   ["unsafe path", { "../escape.csv": "unsafe" }, null],

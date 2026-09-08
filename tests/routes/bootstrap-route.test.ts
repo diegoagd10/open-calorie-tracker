@@ -83,9 +83,9 @@ describe("administrator bootstrap route", () => {
       routeArgs(
         new Request(`${origin}/register`, {
           body: new URLSearchParams({
-            confirmPassword: "short",
+            confirmPassword: password,
             csrfToken: invalidForm.csrfToken,
-            password: "short",
+            password,
             username: "bad user",
           }),
           headers: { Cookie: invalidForm.cookie, Origin: origin },
@@ -93,7 +93,19 @@ describe("administrator bootstrap route", () => {
         }),
       ),
     );
-    expect(invalid).toMatchObject({ init: { status: 400 } });
+    expect(invalid).toMatchObject({ data: { username: "bad user", error: "Use 3–30 ASCII letters, digits, dot, hyphen, or underscore." }, init: { status: 400 } });
+    expect(console.log).toHaveBeenCalledWith(expect.stringContaining('"reason":"invalid-input"'));
+    for (const [inputPassword, confirmation, error] of [
+      ["short", "short", "Password must contain 12–128 characters."],
+      [password, "different password", "Passwords do not match."],
+    ]) {
+      const form = await loadForm();
+      const response = await registerAction(routeArgs(new Request(`${origin}/register`, {
+        body: new URLSearchParams({ username: "prospective.owner", password: inputPassword, confirmPassword: confirmation, csrfToken: form.csrfToken }),
+        headers: { Cookie: form.cookie, Origin: origin }, method: "POST",
+      })));
+      expect(response).toMatchObject({ data: { username: "prospective.owner", error }, init: { status: 400 } });
+    }
 
     const rejectedOrigin = await registerAction(
       routeArgs(
@@ -106,6 +118,7 @@ describe("administrator bootstrap route", () => {
     ).catch((error: unknown) => error);
     expect(rejectedOrigin).toBeInstanceOf(Response);
     expect((rejectedOrigin as Response).status).toBe(403);
+    expect(console.log).toHaveBeenCalledWith(expect.stringContaining('"reason":"invalid-origin"'));
 
     const invalidCsrfForm = await loadForm();
     const rejectedCsrf = await registerAction(
@@ -119,6 +132,7 @@ describe("administrator bootstrap route", () => {
     ).catch((error: unknown) => error);
     expect(rejectedCsrf).toBeInstanceOf(Response);
     expect((rejectedCsrf as Response).status).toBe(403);
+    expect(console.log).toHaveBeenCalledWith(expect.stringContaining('"reason":"invalid-csrf"'));
 
     const limitedIp = "203.0.113.83";
     const limiter = new PersistentRateLimiter(
@@ -146,7 +160,7 @@ describe("administrator bootstrap route", () => {
         }),
       ),
     );
-    expect(limited).toMatchObject({ init: { status: 429 } });
+    expect(limited).toMatchObject({ data: { username: "limited.owner", error: "Too many registration attempts. Try again later." }, init: { status: 429 } });
     expect(getApplicationDatabase().getClient().select().from(users).all())
       .toEqual([]);
   });

@@ -61,7 +61,10 @@ test("provider messages and unsafe verification links never become browser conte
   await service.cancel("owner", state.attempt!.id);
   interaction.notify({ type: "device_code", userCode: "LATE-1234", verificationUri: "https://auth.openai.com/codex/device" });
   expect(await service.read("owner")).toMatchObject({ busy: false, attempt: { state: "cancelled" } });
-  expect(JSON.stringify(await service.read("owner"))).not.toContain("1234");
+  const cancelled = await service.read("owner");
+  expect(cancelled.attempt?.userCode).toBeUndefined();
+  expect(JSON.stringify(cancelled)).not.toContain("SAFE-1234");
+  expect(JSON.stringify(cancelled)).not.toContain("LATE-1234");
 });
 
 test("SDK initialization and metadata read failures stay private and can be retried", async () => {

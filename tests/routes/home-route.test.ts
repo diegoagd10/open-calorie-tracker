@@ -10,6 +10,8 @@ import { serializeSessionCookie } from "../../app/auth/http.server";
 import { getAuthenticationService } from "../../app/auth/runtime.server";
 import {
   CatalogFoodNotFoundError,
+  CatalogStaleReviewError,
+  CatalogNutritionUnavailableError,
   FoodCatalog,
 } from "../../app/catalog/food-catalog.server";
 import {
@@ -1450,4 +1452,21 @@ test("home lists accepted photo work and redirects attempts to open a processing
   photoService.correct(userId, entryId, { correction: "Butter", idempotencyKey: "home-photo-correction" });
   expectRedirect(await homeLoader(routeArgs(get(`/?date=${today}&entry=${entryId}`))), `/?date=${today}`);
   photoService.shutdown();
+});
+
+test.each([
+  [new CatalogStaleReviewError(), 409, "Review food again"],
+  [new CatalogNutritionUnavailableError(), 422, "Nutrition unavailable"],
+] as const)("catalog review failures keep their HTTP status and review guidance %#", async (error, status, title) => {
+  setFoodCatalogProviderForTests({
+    async getFood() { throw error; },
+    async search() { throw error; },
+  });
+  try {
+    const message = error instanceof CatalogStaleReviewError ? error.message : "This food has no usable calories in the installed catalog.";
+    const detail = await load("/?food=1001");
+    expect(detail.data.catalog).toMatchObject({ title, message });
+    const result = await homeAction(routeArgs(post({ intent: "log-food", idempotencyKey: "local-review-failure", providerFoodId: "1001", quantity: "1", selectedMeasurementId: "base:g:100000000" })));
+    expect(result).toMatchObject({ data: { message }, init: { status } });
+  } finally { setFoodCatalogProviderForTests(undefined); }
 });

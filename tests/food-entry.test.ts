@@ -39,7 +39,7 @@ import {
 } from "../app/food-entry/food-entry.server";
 import { scaleCatalogNutrient } from "../app/food-entry/snapshot.server";
 import { FoodLogService } from "../app/food-log/food-log.server";
-import { FutureFoodLogDateError } from "../app/food-log/food-log.server";
+import { FutureFoodLogDateError, InvalidFoodLogDateError } from "../app/food-log/food-log.server";
 
 const temporaryDirectories: string[] = [];
 
@@ -1709,4 +1709,26 @@ test("delete validates the log date and accepts an offset concurrency token", as
     }),
   ).toEqual({ foodLogDate: created.foodLogDate });
   database.close();
+});
+
+test("manual decimal nutrition corrections preserve all units and later quantity scaling", async () => {
+  const database = await setupDatabase();
+  try {
+    const client = database.getClient();
+    const userId = insertConfiguredUser(client, "manual.decimal");
+    const service = new FoodEntryService(client, new FakeCatalogProvider(), () => new Date("2026-08-29T18:00:00.000Z"));
+    const input = { energyKcal: " 1.111 ", foodLogDate: "2026-08-29", idempotencyKey: "manual-decimals", name: "  Meal  ", quantity: "3", fiberGrams: "0.5", sugarGrams: "0.25" };
+    const created = service.logManual(userId, input);
+    expect(created).toMatchObject({ name: "Meal", energyMilliKcal: 1111, fiberMilligrams: 500, sugarMilligrams: 250 });
+    const same = service.update(userId, created.id, { expectedUpdatedAt: created.updatedAt, foodLogDate: created.foodLogDate, name: created.name, selectedMeasurementId: "serving", quantity: "2", energyKcal: "0.741" });
+    expect(same.authoritativeNutrition.energyMilliKcal).toEqual(created.authoritativeNutrition.energyMilliKcal);
+    const updated = service.update(userId, created.id, { expectedUpdatedAt: same.updatedAt, foodLogDate: same.foodLogDate, name: same.name, selectedMeasurementId: "serving", quantity: "2", carbohydrateGrams: "3.5", proteinGrams: "2.25", fatGrams: "1.5", fiberGrams: "0.125", sugarGrams: "0.75", sodiumMilligrams: "51" });
+    const doubled = service.update(userId, created.id, { expectedUpdatedAt: updated.updatedAt, foodLogDate: updated.foodLogDate, name: updated.name, selectedMeasurementId: "serving", quantity: "4" });
+    expect(doubled).toMatchObject({ energyMilliKcal: 1481, carbohydrateMilligrams: 7000, proteinMilligrams: 4500, fatMilligrams: 3000, fiberMilligrams: 250, sugarMilligrams: 1500, sodiumMilligrams: 102 });
+    for (const key of ["!invalid-start", "invalid-end!"]) expect(() => service.logManual(userId, { ...input, idempotencyKey: key })).toThrow(InvalidFoodEntryInputError);
+    expect(() => service.logManual(userId, { ...input, foodLogDate: "2026-08-30", idempotencyKey: "future-manual" })).toThrow(FutureFoodLogDateError);
+    expect(() => service.logManual(userId, { ...input, foodLogDate: "invalid", idempotencyKey: "invalid-manual-date" })).toThrow(InvalidFoodLogDateError);
+    client.delete(userPreferences).where(eq(userPreferences.userId, userId)).run();
+    expect(service.logManual(userId, input).id).toBe(created.id);
+  } finally { database.close(); }
 });
