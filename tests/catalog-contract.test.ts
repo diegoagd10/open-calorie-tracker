@@ -1,4 +1,11 @@
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { getCatalogManagement, shutdownCatalogManagement } from "../app/catalog-management/runtime.server";
+import { shutdownApplicationDatabase } from "../app/database/runtime.server";
+import { Readable } from "node:stream";
+import { foundationArchive } from "./support/foundation-archive";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import {
   CatalogConfigurationError,
@@ -370,6 +377,17 @@ describe("deterministic catalog fixture", () => {
 });
 
 describe("catalog runtime selection", () => {
+  let directory: string;
+  beforeEach(async () => {
+    directory = await mkdtemp(path.join(tmpdir(), "catalog-runtime-"));
+    vi.stubEnv("DATABASE_PATH", path.join(directory, "application.sqlite"));
+    vi.stubEnv("CATALOG_DIRECTORY", path.join(directory, "catalogs"));
+  });
+  afterEach(async () => {
+    await shutdownCatalogManagement();
+    shutdownApplicationDatabase();
+    await rm(directory, { recursive: true, force: true });
+  });
   test("valid Open Food Facts configuration is server-only and identified", async () => {
     vi.stubEnv("NODE_ENV", "test");
     vi.stubEnv("FDC_API_KEY", "runtime-catalog-key");
@@ -402,7 +420,7 @@ describe("catalog runtime selection", () => {
   });
 
   test.each([undefined, "", "   "])(
-    "missing contact %j disables only Open Food Facts",
+    "missing contact %j leaves source-specific configuration errors",
     async (OPEN_FOOD_FACTS_CONTACT_EMAIL) => {
       vi.stubEnv("NODE_ENV", "test");
       vi.stubEnv("FDC_API_KEY", "runtime-catalog-key");
@@ -418,34 +436,29 @@ describe("catalog runtime selection", () => {
       );
 
       await expect(getFoodCatalog().search("usda-fdc", "bread"))
-        .resolves.toEqual([]);
+        .rejects.toBeInstanceOf(CatalogConfigurationError);
       await expect(
         getFoodCatalog().lookupBarcode("open-food-facts", "034000470693"),
       ).rejects.toBeInstanceOf(CatalogConfigurationError);
     },
   );
 
-  test("trims a configured credential before passing it to the live provider", async () => {
+  test("installed USDA ignores former food API credentials and uses no network", async () => {
     vi.stubEnv("NODE_ENV", "test");
-    vi.stubEnv("FDC_API_KEY", "  runtime-catalog-key  ");
-    vi.stubEnv("FDC_BASE_URL", "https://example.test/fdc/v1");
-    vi.stubEnv("FDC_TIMEOUT_MS", "100");
     vi.stubEnv("FOOD_CATALOG_TEST_FIXTURE", "0");
-    const fetchImplementation = vi
-      .fn<typeof fetch>()
-      .mockResolvedValue(
-        new Response(JSON.stringify({ foods: [] }), { status: 200 }),
-      );
-    vi.stubGlobal("fetch", fetchImplementation);
-
-    await expect(getFoodCatalogProvider().search("bread")).resolves.toEqual([]);
-
-    expect(String(fetchImplementation.mock.calls[0]?.[0])).toBe(
-      "https://example.test/fdc/v1/foods/search?api_key=runtime-catalog-key",
-    );
+    vi.stubEnv("FDC_API_KEY", "");
+    vi.stubEnv("FDC_BASE_URL", "not-a-url");
+    vi.stubEnv("FDC_TIMEOUT_MS", "not-a-timeout");
+    const network = vi.fn<typeof fetch>();
+    vi.stubGlobal("fetch", network);
+    const management = getCatalogManagement();
+    await management.submitArchive({ filename: "foundation.zip", stream: Readable.from(await foundationArchive()) });
+    await vi.waitFor(() => expect(management.read().busy).toBe(false));
+    expect((await getFoodCatalog().search("usda-fdc", "broccoli")).map(food => food.providerFoodId)).toEqual(["747447", "321900"]);
+    expect(network).not.toHaveBeenCalled();
   });
 
-  test("whitespace credentials remain a user-safe missing configuration", async () => {
+  test("an absent catalog remains a user-safe missing configuration", async () => {
     vi.stubEnv("NODE_ENV", "test");
     vi.stubEnv("FDC_API_KEY", "   ");
     vi.stubEnv("FOOD_CATALOG_TEST_FIXTURE", "0");
@@ -478,7 +491,7 @@ describe("catalog runtime selection", () => {
     expect(getFoodCatalogProvider()).toBe(replacement);
   });
 
-  test("fixture flag outside test mode still selects the live adapter", async () => {
+  test("fixture flag outside test mode still selects the local adapter", async () => {
     vi.stubEnv("NODE_ENV", "development");
     vi.stubEnv("FOOD_CATALOG_TEST_FIXTURE", "1");
     await expect(getFoodCatalogProvider().search("bread")).rejects.toBeInstanceOf(
@@ -486,21 +499,8 @@ describe("catalog runtime selection", () => {
     );
   });
 
-  test.each(["99", "20001", "100.5", "not-a-timeout"])(
-    "rejects invalid catalog timeout %s",
-    (FDC_TIMEOUT_MS) => {
-      vi.stubEnv("NODE_ENV", "test");
-      vi.stubEnv("FDC_TIMEOUT_MS", FDC_TIMEOUT_MS);
-      expect(() => getFoodCatalogProvider()).toThrow();
-    },
-  );
-
-  test("rejects malformed base URLs and fixture switches", () => {
+  test("rejects malformed fixture switches", () => {
     vi.stubEnv("NODE_ENV", "test");
-    vi.stubEnv("FDC_BASE_URL", "not-a-url");
-    expect(() => getFoodCatalogProvider()).toThrow();
-    setFoodCatalogProviderForTests(undefined);
-    vi.stubEnv("FDC_BASE_URL", "https://example.test/fdc/v1");
     vi.stubEnv("FOOD_CATALOG_TEST_FIXTURE", "yes");
     expect(() => getFoodCatalogProvider()).toThrow();
   });

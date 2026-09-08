@@ -6,9 +6,11 @@ import { resolveClientIp } from "./client-ip";
 
 import { shutdownApplicationDatabase } from "../app/database/runtime.server";
 import { getPhotoAnalysisService, shutdownPhotoAnalysis } from "../app/photo-analysis/runtime.server";
-export function shutdown() { shutdownPhotoAnalysis(); shutdownApplicationDatabase(); }
+import { getCatalogManagement, shutdownCatalogManagement } from "../app/catalog-management/runtime.server";
+export async function shutdown() { shutdownPhotoAnalysis(); await shutdownCatalogManagement(); shutdownApplicationDatabase(); }
 
 initializeApplicationDatabase();
+getCatalogManagement();
 getPhotoAnalysisService();
 
 export const app = express();

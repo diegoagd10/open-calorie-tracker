@@ -10,6 +10,7 @@ export type CatalogDataType =
 export type CatalogProviderId = "open-food-facts" | "usda-fdc";
 
 export type CatalogSearchResult = {
+  catalogGeneration?: string;
   barcode: string | null;
   brand: string | null;
   dataType: CatalogDataType;
@@ -90,6 +91,13 @@ export interface FoodCatalogReader {
     providerFoodId: string,
     context?: CatalogOperationContext,
   ): Promise<CatalogFood>;
+}
+
+export class CatalogStaleReviewError extends Error {
+  constructor() {
+    super("The catalog changed after this food was reviewed. Open the food again before saving.");
+    this.name = "CatalogStaleReviewError";
+  }
 }
 
 export class CatalogConfigurationError extends Error {
