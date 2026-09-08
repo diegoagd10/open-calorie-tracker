@@ -25,7 +25,7 @@ async function openUsdaSearch(page: Page) {
   await page.getByRole("button", { name: "Add Food" }).click();
   await page.getByRole("link", { name: /Search for food/ }).click();
   await expect(
-    page.getByRole("searchbox", { name: "Search United States foods" }),
+    page.getByRole("searchbox", { name: "Search local foods" }),
   ).toBeVisible();
 }
 async function expectCatalogResponsive(page: Page) {
@@ -391,7 +391,7 @@ test("daily calorie and nutrient progress is factual, responsive, and accessible
 
   await openUsdaSearch(page);
   await page
-    .getByRole("searchbox", { name: "Search United States foods" })
+    .getByRole("searchbox", { name: "Search local foods" })
     .fill("yogurt");
   await page.getByRole("button", { name: "Search" }).click();
   await page.getByRole("link", { name: /Plain nonfat Greek yogurt/ }).click();
@@ -631,10 +631,11 @@ test("authenticated USDA search and idempotent logging preserve a local Nutritio
     name: "Close food search",
   });
   await expect(
-    page.getByRole("searchbox", { name: "Search United States foods" }),
+    page.getByRole("searchbox", { name: "Search local foods" }),
   ).toBeFocused();
   const providerLink = page.getByRole("link", {
-    name: "USDA FoodData Central",
+    name: "Open Food Facts",
+    exact: true,
   });
   await providerLink.focus();
   await page.keyboard.press("Tab");
@@ -667,7 +668,7 @@ test("authenticated USDA search and idempotent logging preserve a local Nutritio
   await expectCatalogResponsive(page);
 
   await page
-    .getByRole("searchbox", { name: "Search United States foods" })
+    .getByRole("searchbox", { name: "Search local foods" })
     .fill(" ");
   await page.getByRole("button", { name: "Search" }).click();
   await expect(page.getByRole("alert")).toContainText("Search not sent");
@@ -687,11 +688,11 @@ test("authenticated USDA search and idempotent logging preserve a local Nutritio
     { times: 1 },
   );
   await page
-    .getByRole("searchbox", { name: "Search United States foods" })
+    .getByRole("searchbox", { name: "Search local foods" })
     .fill("yogurt");
   const searchClick = page.getByRole("button", { name: "Search" }).click();
   await expect(
-    page.getByRole("status").getByText("Searching USDA FoodData Central"),
+    page.getByRole("status").getByText("Searching local food catalogs"),
   ).toBeVisible();
   await expectCatalogResponsive(page);
   releaseSearch();
@@ -700,26 +701,25 @@ test("authenticated USDA search and idempotent logging preserve a local Nutritio
   await expectCatalogResponsive(page);
 
   await page
-    .getByRole("searchbox", { name: "Search United States foods" })
+    .getByRole("searchbox", { name: "Search local foods" })
     .fill("none");
   await page.getByRole("button", { name: "Search" }).click();
   await expect(page.getByText("No foods found")).toBeVisible();
   await expect(page.getByText("Plain nonfat Greek yogurt")).toHaveCount(0);
   await expectCatalogResponsive(page);
 
-  for (const [query, status, title, message] of [
-    ["configuration", 503, "USDA Foundation is not installed", "Food Catalogs Settings"],
-    ["credentials", 503, "USDA credentials unavailable", "credentials"],
-    ["rate", 429, "USDA rate limit reached", "rate limit reached"],
-    ["timeout", 503, "USDA is unavailable", "unavailable right now"],
-    ["malformed", 502, "USDA response could not be used", "could not be used"],
+  for (const [query, state] of [
+    ["configuration", "catalog is not installed"],
+    ["credentials", "catalog is temporarily unavailable"],
+    ["rate", "catalog is temporarily unavailable"],
+    ["timeout", "catalog is temporarily unavailable"],
+    ["malformed", "catalog is temporarily unavailable"],
   ] as const) {
     const response = await page.goto(
       `/?date=2026-08-29&food=search&query=${query}`,
     );
-    expect(response?.status()).toBe(status);
-    await expect(page.getByRole("heading", { name: title })).toBeVisible();
-    await expect(page.getByRole("alert")).toContainText(message);
+    expect(response?.status()).toBe(200);
+    await expect(page.getByRole("status").filter({ hasText: "Basic foods" })).toContainText(state);
   }
   await expectCatalogResponsive(page);
 
@@ -735,21 +735,21 @@ test("authenticated USDA search and idempotent logging preserve a local Nutritio
   await expectCatalogResponsive(page);
 
   await page
-    .getByRole("searchbox", { name: "Search United States foods" })
+    .getByRole("searchbox", { name: "Search local foods" })
     .fill("yogurt");
   await page.getByRole("button", { name: "Search" }).click();
   await expect(page.getByText("Plain nonfat Greek yogurt")).toBeVisible();
   await expect(
     page.getByText("Example Dairy Co. · 1 container · 170 g"),
   ).toBeVisible();
-  await expect(page.getByText("Branded", { exact: true })).toBeVisible();
+  await expect(page.getByText("Basic food · USDA", { exact: true })).toBeVisible();
   await expect(
     page.getByRole("link", { name: "USDA FoodData Central" }),
   ).toBeVisible();
   await expectCatalogResponsive(page);
 
   await page
-    .getByRole("searchbox", { name: "Search United States foods" })
+    .getByRole("searchbox", { name: "Search local foods" })
     .fill("unsafe");
   await page.getByRole("button", { name: "Search" }).click();
   await expect(page.getByText("Unsafe provider measurement")).toBeVisible();
@@ -769,7 +769,7 @@ test("authenticated USDA search and idempotent logging preserve a local Nutritio
   await expectCatalogResponsive(page);
 
   await page
-    .getByRole("searchbox", { name: "Search United States foods" })
+    .getByRole("searchbox", { name: "Search local foods" })
     .fill("yogurt");
   await page.getByRole("button", { name: "Search" }).click();
 
@@ -905,7 +905,7 @@ test("authenticated manual barcode confirmation creates one attributed serving s
   await expect(page.getByLabel("Enter barcode")).toBeFocused();
   await page.getByRole("link", { name: "Search for food" }).click();
   await expect(
-    page.getByRole("searchbox", { name: "Search United States foods" }),
+    page.getByRole("searchbox", { name: "Search local foods" }),
   ).toBeVisible();
 
   const accessibilityScan = await new AxeBuilder({ page }).analyze();
@@ -1156,7 +1156,7 @@ test("@camera-matrix simulated scan stays local and follows review before one sn
   ).__scannerState.cameraStarts)).toBe(3);
   releaseSearch();
   await expect(
-    page.getByRole("searchbox", { name: "Search United States foods" }),
+    page.getByRole("searchbox", { name: "Search local foods" }),
   ).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog", { name: "Add Food" })).toHaveCount(0);
@@ -1185,7 +1185,7 @@ test("food selection immediately reveals the pending detail destination", async 
 
   await openUsdaSearch(page);
   await page
-    .getByRole("searchbox", { name: "Search United States foods" })
+    .getByRole("searchbox", { name: "Search local foods" })
     .fill("yogurt");
   await page.getByRole("button", { name: "Search" }).click();
 
@@ -1209,7 +1209,7 @@ test("food selection immediately reveals the pending detail destination", async 
     page.getByRole("status", { name: "Loading food details" }),
   ).toBeVisible();
   await expect(
-    page.getByRole("searchbox", { name: "Search United States foods" }),
+    page.getByRole("searchbox", { name: "Search local foods" }),
   ).toHaveCount(0);
   for (const viewport of [
     { height: 844, width: 390 },
@@ -1250,7 +1250,7 @@ test("food logging immediately reveals a pending Daily log row", async ({
 
   await openUsdaSearch(page);
   await page
-    .getByRole("searchbox", { name: "Search United States foods" })
+    .getByRole("searchbox", { name: "Search local foods" })
     .fill("yogurt");
   await page.getByRole("button", { name: "Search" }).click();
   await page
@@ -1350,7 +1350,7 @@ test("Food Entry deletion reveals its confirmation on narrow displays", async ({
   await completeSetupForTestUser(page, "food.entry.mobile-delete");
   await openUsdaSearch(page);
   await page
-    .getByRole("searchbox", { name: "Search United States foods" })
+    .getByRole("searchbox", { name: "Search local foods" })
     .fill("yogurt");
   await page.getByRole("button", { name: "Search" }).click();
   await page.getByRole("link", { name: /Plain nonfat Greek yogurt/ }).click();
@@ -1382,7 +1382,7 @@ test("an authenticated user can correct and delete one Food Entry", async ({
   await completeSetupForTestUser(page, "food.entry.edit");
   await openUsdaSearch(page);
   await page
-    .getByRole("searchbox", { name: "Search United States foods" })
+    .getByRole("searchbox", { name: "Search local foods" })
     .fill("yogurt");
   await page.getByRole("button", { name: "Search" }).click();
   await page.getByRole("link", { name: /Plain nonfat Greek yogurt/ }).click();
@@ -1590,7 +1590,7 @@ test("an authenticated user can copy a historical Food Entry to today", async ({
   await page.goto("/?date=2026-08-28");
   await openUsdaSearch(page);
   await page
-    .getByRole("searchbox", { name: "Search United States foods" })
+    .getByRole("searchbox", { name: "Search local foods" })
     .fill("yogurt");
   await page.getByRole("button", { name: "Search" }).click();
   await page.getByRole("link", { name: /Plain nonfat Greek yogurt/ }).click();
@@ -1780,7 +1780,7 @@ test("an authenticated user can review and copy a Food Entry to another eligible
   await page.goto("/?date=2026-08-26");
   await openUsdaSearch(page);
   await page
-    .getByRole("searchbox", { name: "Search United States foods" })
+    .getByRole("searchbox", { name: "Search local foods" })
     .fill("yogurt");
   await page.getByRole("button", { name: "Search" }).click();
   await page.getByRole("link", { name: /Plain nonfat Greek yogurt/ }).click();
@@ -1961,7 +1961,7 @@ for (const width of [390, 430]) {
     await page.goto("/?date=2026-08-28");
     await openUsdaSearch(page);
     await page
-      .getByRole("searchbox", { name: "Search United States foods" })
+      .getByRole("searchbox", { name: "Search local foods" })
       .fill("yogurt");
     await page.getByRole("button", { name: "Search" }).click();
     await page.getByRole("link", { name: /Plain nonfat Greek yogurt/ }).click();
@@ -2014,7 +2014,7 @@ test("a stale Food Entry editor refreshes to the current occurrence and can retr
   await completeSetupForTestUser(page, "food.entry.stale-recovery");
   await openUsdaSearch(page);
   await page
-    .getByRole("searchbox", { name: "Search United States foods" })
+    .getByRole("searchbox", { name: "Search local foods" })
     .fill("yogurt");
   await page.getByRole("button", { name: "Search" }).click();
   await page.getByRole("link", { name: /Plain nonfat Greek yogurt/ }).click();
@@ -2063,7 +2063,7 @@ test("delete pending state names only the destructive mutation", async ({
   await completeSetupForTestUser(page, "food.entry.delete-pending");
   await openUsdaSearch(page);
   await page
-    .getByRole("searchbox", { name: "Search United States foods" })
+    .getByRole("searchbox", { name: "Search local foods" })
     .fill("yogurt");
   await page.getByRole("button", { name: "Search" }).click();
   await page.getByRole("link", { name: /Plain nonfat Greek yogurt/ }).click();

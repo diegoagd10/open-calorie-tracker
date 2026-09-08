@@ -56,6 +56,9 @@ export function getFoodCatalog(): FoodCatalog {
   const fixture =
     process.env.NODE_ENV === "test" &&
     environment.FOOD_CATALOG_TEST_FIXTURE === "1";
+  const openFoodFacts = fixture
+    ? new TestOpenFoodFactsProvider()
+    : new LocalOpenFoodFactsAdapter(getCatalogManagement("open-food-facts"), catalogDirectory());
   foodCatalog = new FoodCatalog([
     {
       capability: "search",
@@ -65,9 +68,12 @@ export function getFoodCatalog(): FoodCatalog {
     {
       capability: "barcode",
       provider: "open-food-facts",
-      service: fixture
-        ? new TestOpenFoodFactsProvider()
-        : new LocalOpenFoodFactsAdapter(getCatalogManagement("open-food-facts"), catalogDirectory()),
+      service: openFoodFacts,
+    },
+    {
+      capability: "search",
+      provider: "open-food-facts",
+      service: openFoodFacts,
     },
   ]);
   return foodCatalog;

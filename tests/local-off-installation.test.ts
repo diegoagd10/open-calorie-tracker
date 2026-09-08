@@ -44,6 +44,44 @@ test("OFF installation preserves quoted names and leading zeros, retaining ambig
   expect(network).not.toHaveBeenCalled();
 });
 
+test("OFF search uses installed names, aliases, brands, accents, and prefixes", async () => {
+  const { management, directory } = await setup();
+  await install(management, offArchive([
+    { ...offWithBasis("100g", "0012345678901"), product_name: "Crème brûlée", generic_name: "Dessert custard", brands: "Maison Test" },
+    { ...offWithBasis("100g", "0012345678902"), product_name: "Crunch cereal", generic_name: "Breakfast flakes", brands: "Exact Brand" },
+    { ...offWithBasis("100g", "0012345678903"), product_name: "Egg noodles", generic_name: "Pasta", brands: "Distractor Foods" },
+  ]));
+  const packaged = new LocalOpenFoodFactsAdapter(management, directory);
+
+  await expect(packaged.search("  CREME  ")).resolves.toMatchObject([
+    { name: "Crème brûlée", provider: "open-food-facts", providerFoodId: "0012345678901" },
+  ]);
+  await expect(packaged.search("cust")).resolves.toMatchObject([
+    { name: "Crème brûlée" },
+  ]);
+  await expect(packaged.search("exact brand")).resolves.toMatchObject([
+    { brand: "Exact Brand", name: "Crunch cereal" },
+  ]);
+  await expect(packaged.search("a")).resolves.toEqual([]);
+});
+
+test("OFF search is bounded and treats query operators as ordinary words", async () => {
+  const { management, directory } = await setup();
+  const products = Array.from({ length: 30 }, (_, index) => ({
+    ...offWithBasis("100g", String(1_000_000 + index)),
+    product_name: `Egg snack ${index}`,
+  }));
+  products.push({ ...offWithBasis("100g", "0012345678901"), product_name: "NOT operator cereal" });
+  await install(management, offArchive(products));
+  const packaged = new LocalOpenFoodFactsAdapter(management, directory);
+
+  await expect(packaged.search("egg")).resolves.toHaveLength(25);
+  await expect(packaged.search("NOT operator")).resolves.toMatchObject([
+    { name: "NOT operator cereal" },
+  ]);
+  await expect(packaged.search('" OR *')).resolves.toEqual([]);
+});
+
 test("source-backed mass nutrition scales to a logged and editable snapshot", async () => {
   const { management, catalog, entries, userId } = await setup();
   await install(management, offArchive([offWithBasis("100g")]));

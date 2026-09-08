@@ -220,6 +220,207 @@ test("catalog merges capabilities registered on the same service", async () => {
   });
 });
 
+test("catalog composes independent basic and packaged search with filters and stable provider identity", async () => {
+  const basic = new TestFoodCatalogProvider();
+  const basicFood = (await basic.search("egg"))[0];
+  const packagedFood = {
+    ...basicFood,
+    brand: "Exact Brand",
+    dataType: "Open Food Facts" as const,
+    name: "Crunch cereal",
+    provider: "open-food-facts" as const,
+    providerFoodId: "0012345678902",
+  };
+  const packaged: SearchFoodCatalogProvider = {
+    async getFood() {
+      return { ...(await basic.getFood("1001")), ...packagedFood };
+    },
+    async search() {
+      return [packagedFood];
+    },
+  };
+  const catalog = new FoodCatalog([
+    { capability: "search", provider: "usda-fdc", service: basic },
+    { capability: "search", provider: "open-food-facts", service: packaged },
+  ]);
+
+  await expect(catalog.searchAll("exact brand", "all")).resolves.toMatchObject({
+    groups: [
+      { kind: "packaged", provider: "open-food-facts", results: [{ providerFoodId: "0012345678902" }], status: "available" },
+      { kind: "basic", provider: "usda-fdc", status: "available" },
+    ],
+  });
+  await expect(catalog.searchAll("egg", "basic")).resolves.toMatchObject({
+    groups: [{ kind: "basic", provider: "usda-fdc" }],
+  });
+});
+
+test("catalog search filters invoke only their selected source", async () => {
+  const fixture = new TestFoodCatalogProvider();
+  const basicSearch = vi.fn(fixture.search.bind(fixture));
+  const packagedSearch = vi.fn(async () => [{
+    ...(await fixture.search("egg"))[0],
+    dataType: "Open Food Facts" as const,
+    provider: "open-food-facts" as const,
+    providerFoodId: "0012345678902",
+  }]);
+  const basic: SearchFoodCatalogProvider = {
+    getFood: fixture.getFood.bind(fixture),
+    search: basicSearch,
+  };
+  const packaged: SearchFoodCatalogProvider = {
+    async getFood() {
+      return { ...(await fixture.getFood("1001")), provider: "open-food-facts" };
+    },
+    search: packagedSearch,
+  };
+  const catalog = new FoodCatalog([
+    { capability: "search", provider: "usda-fdc", service: basic },
+    { capability: "search", provider: "open-food-facts", service: packaged },
+  ]);
+  const context = { requestId: "search-filter-test" };
+
+  await expect(catalog.searchAll("egg", "basic", context)).resolves.toMatchObject({
+    groups: [{ kind: "basic", provider: "usda-fdc", status: "available" }],
+  });
+  expect(basicSearch).toHaveBeenCalledWith("egg", context);
+  expect(packagedSearch).not.toHaveBeenCalled();
+  basicSearch.mockClear();
+
+  await expect(catalog.searchAll("egg", "packaged", context)).resolves.toMatchObject({
+    groups: [{ kind: "packaged", provider: "open-food-facts", status: "available" }],
+  });
+  expect(packagedSearch).toHaveBeenCalledWith("egg", context);
+  expect(basicSearch).not.toHaveBeenCalled();
+});
+
+test("catalog puts only an exact normalized packaged name or brand before basic foods", async () => {
+  const fixture = new TestFoodCatalogProvider();
+  const basicFood = (await fixture.search("egg"))[0];
+  const packagedFood = {
+    ...basicFood,
+    brand: null as string | null,
+    dataType: "Open Food Facts" as const,
+    name: "Crème brûlée",
+    provider: "open-food-facts" as const,
+    providerFoodId: "0012345678902",
+  };
+  const packaged: SearchFoodCatalogProvider = {
+    async getFood() {
+      return { ...(await fixture.getFood("1001")), ...packagedFood };
+    },
+    async search() {
+      return [packagedFood];
+    },
+  };
+  const catalog = new FoodCatalog([
+    { capability: "search", provider: "usda-fdc", service: fixture },
+    { capability: "search", provider: "open-food-facts", service: packaged },
+  ]);
+
+  expect((await catalog.searchAll("ordinary query")).groups.map(group => group.kind))
+    .toEqual(["basic", "packaged"]);
+  expect((await catalog.searchAll(" CREME BRULEE ")).groups.map(group => group.kind))
+    .toEqual(["packaged", "basic"]);
+  packagedFood.brand = "Mañana Foods";
+  packagedFood.name = "Other food";
+  expect((await catalog.searchAll("manana foods")).groups.map(group => group.kind))
+    .toEqual(["packaged", "basic"]);
+});
+
+test("catalog reports absent and capability-only sources as not installed", async () => {
+  const fixture = new TestOpenFoodFactsProvider();
+  const catalog = new FoodCatalog([
+    { capability: "barcode", provider: "open-food-facts", service: fixture },
+  ]);
+
+  await expect(catalog.searchAll("cereal")).resolves.toEqual({
+    groups: [
+      { kind: "basic", provider: "usda-fdc", results: [], status: "not-installed" },
+      { kind: "packaged", provider: "open-food-facts", results: [], status: "not-installed" },
+    ],
+  });
+});
+
+test("catalog contains invalid provider results without hiding the healthy source", async () => {
+  const fixture = new TestFoodCatalogProvider();
+  const packaged: SearchFoodCatalogProvider = {
+    async getFood() {
+      return { ...(await fixture.getFood("1001")), provider: "open-food-facts" };
+    },
+    async search() {
+      return [{ ...(await fixture.search("egg"))[0], provider: "usda-fdc" }];
+    },
+  };
+  const catalog = new FoodCatalog([
+    { capability: "search", provider: "usda-fdc", service: fixture },
+    { capability: "search", provider: "open-food-facts", service: packaged },
+  ]);
+
+  await expect(catalog.searchAll("egg")).resolves.toMatchObject({
+    groups: [
+      { kind: "basic", results: [{ provider: "usda-fdc" }], status: "available" },
+      { kind: "packaged", results: [], status: "unavailable" },
+    ],
+  });
+});
+
+test.each([
+  CatalogCredentialsError,
+  CatalogInvalidResponseError,
+  CatalogRateLimitError,
+  CatalogUnavailableError,
+])("catalog contains %s from one search source", async ErrorType => {
+  const failing: SearchFoodCatalogProvider = {
+    async getFood() { throw new ErrorType(); },
+    async search() { throw new ErrorType(); },
+  };
+  const catalog = new FoodCatalog([
+    { capability: "search", provider: "open-food-facts", service: failing },
+  ]);
+
+  await expect(catalog.searchAll("egg", "packaged")).resolves.toEqual({
+    groups: [{
+      kind: "packaged",
+      provider: "open-food-facts",
+      results: [],
+      status: "unavailable",
+    }],
+  });
+});
+
+test("catalog does not swallow unexpected search failures", async () => {
+  const failure = new Error("unexpected defect");
+  const failing: SearchFoodCatalogProvider = {
+    async getFood() { throw failure; },
+    async search() { throw failure; },
+  };
+  const catalog = new FoodCatalog([
+    { capability: "search", provider: "open-food-facts", service: failing },
+  ]);
+
+  await expect(catalog.searchAll("egg", "packaged")).rejects.toBe(failure);
+});
+
+test("catalog search keeps one provider available when the other is not installed", async () => {
+  const basic = new TestFoodCatalogProvider();
+  const missingPackaged: SearchFoodCatalogProvider = {
+    async getFood() { throw new CatalogConfigurationError(); },
+    async search() { throw new CatalogConfigurationError(); },
+  };
+  const catalog = new FoodCatalog([
+    { capability: "search", provider: "usda-fdc", service: basic },
+    { capability: "search", provider: "open-food-facts", service: missingPackaged },
+  ]);
+
+  await expect(catalog.searchAll("egg", "all")).resolves.toMatchObject({
+    groups: [
+      { kind: "basic", provider: "usda-fdc", results: [{ provider: "usda-fdc" }], status: "available" },
+      { kind: "packaged", provider: "open-food-facts", results: [], status: "not-installed" },
+    ],
+  });
+});
+
 test("the catalog registry can be installed only in tests", () => {
   const catalog = new FoodCatalog([]);
   setFoodCatalogForTests(catalog);

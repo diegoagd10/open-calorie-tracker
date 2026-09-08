@@ -285,48 +285,37 @@ test("home loader maps every catalog search and detail state", async () => {
     expect(boundary.data.catalog).toMatchObject({ query: expectedQuery });
   }
 
-  for (const [query, status, title, message] of [
-    [
-      "configuration",
-      503,
-      "USDA Foundation is not installed",
-      "USDA Foundation is not installed. Ask your administrator to install it in Food Catalogs Settings. Your saved Food Entries remain available.",
-    ],
-    [
-      "credentials",
-      503,
-      "USDA credentials unavailable",
-      "USDA search credentials are unavailable. Your saved Food Entries remain available.",
-    ],
-    [
-      "rate",
-      429,
-      "USDA rate limit reached",
-      "USDA rate limit reached. Wait a moment and search again.",
-    ],
-    [
-      "malformed",
-      502,
-      "USDA response could not be used",
-      "USDA returned food data that could not be used safely.",
-    ],
-    [
-      "unavailable",
-      503,
-      "USDA is unavailable",
-      "USDA is unavailable right now. Your saved Food Entries are unaffected.",
-    ],
+  for (const [query, status] of [
+    ["configuration", "not-installed"],
+    ["credentials", "unavailable"],
+    ["rate", "unavailable"],
+    ["malformed", "unavailable"],
+    ["unavailable", "unavailable"],
   ] as const) {
     const result = await load(`/?food=search&query=${query}`);
-    expect(result.init?.status).toBe(status);
+    expect(result.init?.status).toBe(200);
     expect(result.data.catalog).toMatchObject({
       mode: "search",
-      message,
       query,
       results: [],
-      title,
+      groups: [
+        { provider: "usda-fdc", status },
+        { provider: "open-food-facts", status: "available" },
+      ],
     });
   }
+
+  const packaged = await load("/?food=search&query=example%20foods&filter=packaged");
+  expect(packaged.data.catalog).toMatchObject({
+    filter: "packaged",
+    groups: [{ kind: "packaged", results: [{ provider: "open-food-facts", providerFoodId: "0034000470693" }] }],
+  });
+  const packagedDetail = await load("/?food=0034000470693&provider=open-food-facts&query=example%20foods&filter=packaged");
+  expect(packagedDetail.data.catalog).toMatchObject({
+    filter: "packaged",
+    food: { provider: "open-food-facts", providerFoodId: "0034000470693" },
+    mode: "detail",
+  });
 
   const detail = await load("/?food=1001&query=yogurt");
   expect(detail.data.catalog).toMatchObject({
