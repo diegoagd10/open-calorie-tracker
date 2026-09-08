@@ -1094,7 +1094,7 @@ test("barcode mode separates confirmation from scanning while keeping errors rec
   expect(input(detail, "idempotencyKey").props.value).toBe("off-detail");
   expect(input(detail, "provider").props.value).toBe("open-food-facts");
   expect(input(detail, "providerFoodId").props.value).toBe("0034000470693");
-  expect(input(detail, "selectedMeasurementId").props.value).toBe("serving");
+  expect(detail.root.findByProps({ name: "selectedMeasurementId" }).props.value).toBe("serving");
   expect(input(detail, "quantity").props.value).toBe("1");
   const confirmationForm = detail.root.findAllByType("form").find(
     (form) =>
@@ -1113,7 +1113,6 @@ test("barcode mode separates confirmation from scanning while keeping errors rec
     "provider",
     "providerFoodId",
     "quantity",
-    "selectedMeasurementId",
   ]);
   await act(async () =>
     input(detail, "quantity").props.onChange({
@@ -1195,7 +1194,7 @@ test("barcode mode separates confirmation from scanning while keeping errors rec
       query: "",
     },
   });
-  expect(input(missingMeasurement, "selectedMeasurementId").props.value).toBe("");
+  expect(missingMeasurement.root.findByProps({ name: "selectedMeasurementId" }).props.value).toBe("");
   await act(async () => missingMeasurement.unmount());
 });
 

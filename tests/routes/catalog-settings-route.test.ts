@@ -9,6 +9,7 @@ import { getApplicationDatabase, shutdownApplicationDatabase } from "../../app/d
 import { getCatalogManagement, shutdownCatalogManagement } from "../../app/catalog-management/runtime.server";
 import { action, loader, headers } from "../../app/routes/settings.catalogs";
 import { seedAuthenticatedAccount } from "../support/authentication";
+import { offArchive } from "../support/off-archive";
 import { foundationArchive } from "../support/foundation-archive";
 
 const origin = "http://localhost:3000";
@@ -24,6 +25,7 @@ function post(body: Uint8Array, cookie = adminCookie, csrf = csrfToken, requestO
 beforeAll(async () => {
   directory = await mkdtemp(path.join(tmpdir(), "catalog-settings-"));
   vi.stubEnv("APPLICATION_URL", origin); vi.stubEnv("DATABASE_PATH", path.join(directory, "application.sqlite")); vi.stubEnv("CATALOG_DIRECTORY", path.join(directory, "catalogs"));
+  vi.stubEnv("OFF_CATALOG_MAX_UPLOAD_BYTES", "1000000"); vi.stubEnv("OFF_CATALOG_MAX_EXPANDED_BYTES", "10000000");
   const auth = getAuthenticationService();
   const admin = await auth.register("catalog.admin", "correct horse battery staple", "203.0.113.181");
   if (!admin.ok) throw new Error("Could not register admin");
@@ -51,4 +53,19 @@ test("an administrator upload returns while import continues and returning to Se
   await vi.waitFor(() => expect(getCatalogManagement().read().busy).toBe(false), { timeout: 3000 });
   expect((await loader(get())).catalog).toMatchObject({ installed: { foodCount: 4 }, job: { phase: "succeeded", error: null } });
   expect((await action(post(await foundationArchive()))).status).toBe(409);
+});
+
+test("OFF upload has its own authorization, content type and installed outcome", async () => {
+  const archive = offArchive();
+  function offRequest(cookie = adminCookie, token = csrfToken) {
+    return args(new Request(`${origin}/settings/catalogs`, { method: "POST", headers: { Cookie: cookie, Origin: origin, "X-CSRF-Token": token, "X-Archive-Name": "products.csv.gz", "X-Catalog-Provider": "open-food-facts", "Content-Type": "application/gzip" }, body: new Uint8Array(archive) }));
+  }
+  await expect(action(offRequest(memberCookie))).rejects.toMatchObject({ status: 404 });
+  await expect(action(offRequest(adminCookie, "invalid"))).rejects.toMatchObject({ status: 403 });
+  const before = (await loader(get())).catalog;
+  expect((await action(offRequest())).status).toBe(202);
+  await vi.waitFor(() => expect(getCatalogManagement("open-food-facts").read().busy).toBe(false));
+  const state = await loader(get());
+  expect(state.catalog).toEqual(before);
+  expect(state.offCatalog).toMatchObject({ installed: { foodCount: 1 }, job: { phase: "succeeded" } });
 });

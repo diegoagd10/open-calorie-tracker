@@ -10,19 +10,12 @@ import {
 } from "./test-fixture.server";
 import { LocalUsdaAdapter } from "./local-usda.server";
 import { catalogDirectory, getCatalogManagement } from "../catalog-management/runtime.server";
-import { OpenFoodFactsAdapter } from "./open-food-facts.server";
+import { LocalOpenFoodFactsAdapter } from "./local-off.server";
 
 function environmentSchema() {
   return z.object({
     FOOD_CATALOG_TEST_FIXTURE: z.enum(["0", "1"]).optional(),
-    OPEN_FOOD_FACTS_BASE_URL: z.string().url().optional(),
-    OPEN_FOOD_FACTS_CONTACT_EMAIL: z.string().optional(),
-    OPEN_FOOD_FACTS_TIMEOUT_MS: z.coerce
-      .number()
-      .int()
-      .min(100)
-      .max(20_000)
-      .optional(),
+
   });
 }
 
@@ -74,11 +67,7 @@ export function getFoodCatalog(): FoodCatalog {
       provider: "open-food-facts",
       service: fixture
         ? new TestOpenFoodFactsProvider()
-        : new OpenFoodFactsAdapter({
-            baseUrl: environment.OPEN_FOOD_FACTS_BASE_URL,
-            contactEmail: environment.OPEN_FOOD_FACTS_CONTACT_EMAIL,
-            timeoutMs: environment.OPEN_FOOD_FACTS_TIMEOUT_MS,
-          }),
+        : new LocalOpenFoodFactsAdapter(getCatalogManagement("open-food-facts"), catalogDirectory()),
     },
   ]);
   return foodCatalog;

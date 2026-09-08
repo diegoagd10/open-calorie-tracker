@@ -1,3 +1,4 @@
+import { installSimulatedBarcodeCamera } from "./barcode-camera-fixture";
 import AxeBuilder from "@axe-core/playwright";
 import type { Locator, Page } from "@playwright/test";
 import {
@@ -91,71 +92,6 @@ async function copyActionIdempotencyKey(
     .inputValue();
 }
 
-async function installSimulatedBarcodeCamera(page: Page) {
-  await page.addInitScript(() => {
-    const scannerState = {
-      appliedConstraints: [] as MediaTrackConstraints[],
-      barcode: "034000470693",
-      cameraStarts: 0,
-      constraints: undefined as MediaStreamConstraints | undefined,
-      emit: false,
-      trackStops: 0,
-    };
-    const browserWindow = window as typeof window & {
-      BarcodeDetector?: unknown;
-      __scannerState: typeof scannerState;
-    };
-    browserWindow.__scannerState = scannerState;
-
-    class SimulatedBarcodeDetector {
-      static async getSupportedFormats() {
-        return ["ean_8", "ean_13", "itf", "upc_a", "upc_e"];
-      }
-
-      async detect() {
-        return scannerState.emit ? [{ rawValue: scannerState.barcode }] : [];
-      }
-    }
-    Object.defineProperty(browserWindow, "BarcodeDetector", {
-      configurable: true,
-      value: SimulatedBarcodeDetector,
-    });
-
-    const track = {
-      applyConstraints: async (constraints: MediaTrackConstraints) => {
-        scannerState.appliedConstraints.push(constraints);
-      },
-      getCapabilities: () => ({
-        focusMode: ["manual", "continuous"],
-        torch: true,
-        zoom: { max: 4, min: 1, step: 0.1 },
-      }),
-      getSettings: () => ({ zoom: 1 }),
-      stop: () => { scannerState.trackStops += 1; },
-    };
-    const stream = new MediaStream();
-    Object.defineProperty(stream, "getTracks", {
-      value: () => [track],
-    });
-    Object.defineProperty(stream, "getVideoTracks", {
-      value: () => [track],
-    });
-    Object.defineProperty(navigator, "mediaDevices", {
-      configurable: true,
-      value: {
-        getUserMedia: async (constraints: MediaStreamConstraints) => {
-          scannerState.cameraStarts += 1;
-          scannerState.constraints = constraints;
-          return stream;
-        },
-      },
-    });
-    Object.defineProperty(HTMLMediaElement.prototype, "play", {
-      configurable: true,
-      value: async () => undefined,
-    });
-  });
-}
 
 test("today, historical navigation, calendar access, travel, and future rejection", async ({
   browser,
@@ -914,7 +850,7 @@ test("authenticated manual barcode confirmation creates one attributed serving s
   await expect(page.getByRole("link", { name: "Back to scanner" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Search for food" })).toHaveCount(0);
   await expect(page.getByText("Barcode 0034000470693")).toBeVisible();
-  await expect(page.getByText("1 serving", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Measurement", { exact: true })).toHaveValue("serving");
   await expect(page.getByText("180 kcal")).toBeVisible();
   await expect(page.getByText("24 g")).toBeVisible();
   await expect(page.getByText("0 g", { exact: true })).toBeVisible();
@@ -945,9 +881,9 @@ test("authenticated manual barcode confirmation creates one attributed serving s
   await expect(page.locator("img")).toHaveCount(0);
 
   for (const [barcode, status, title] of [
-    ["0000000000000", 503, "Open Food Facts is not configured"],
+    ["0000000000000", 503, "Open Food Facts is not installed"],
     ["0000000000001", 404, "Product not found"],
-    ["0000000000002", 422, "Nutrition per serving unavailable"],
+    ["0000000000002", 422, "Nutrition unavailable"],
     ["0000000000003", 429, "Open Food Facts rate limit reached"],
     ["0000000000004", 503, "Open Food Facts is unavailable"],
     ["0000000000005", 502, "Open Food Facts response could not be used"],
@@ -1134,7 +1070,7 @@ test("@camera-matrix simulated scan stays local and follows review before one sn
   await expect(barcodeInput).toBeHidden();
   await expect(page.getByRole("link", { name: "Back to scanner" })).toBeVisible();
   await expect(page.getByText("Barcode 0034000470693")).toBeVisible();
-  await expect(page.getByText("1 serving", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Measurement", { exact: true })).toHaveValue("serving");
   await expect(page.getByText("180 kcal")).toBeVisible();
   await expect(page.getByText("24 g")).toBeVisible();
   await expect(page.getByRole("link", { name: "Open Food Facts" })).toBeVisible();

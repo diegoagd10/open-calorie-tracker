@@ -462,13 +462,13 @@ test("home loader exposes barcode lookup without creating a Food Entry", async (
   expect(getFoodLogService().read(1, today)?.entries).toHaveLength(0);
 
   for (const [barcode, status, title, message] of [
-    ["0000000000000", 503, "Open Food Facts is not configured", "contact email"],
+    ["0000000000000", 503, "Open Food Facts is not installed", "Food Catalogs"],
     ["0000000000001", 404, "Product not found", "another code"],
-    ["0000000000002", 422, "Nutrition per serving unavailable", "per serving"],
+    ["0000000000002", 422, "Nutrition unavailable", "calculation basis"],
     ["0000000000003", 429, "Open Food Facts rate limit reached", "Wait a moment"],
     ["0000000000004", 503, "Open Food Facts is unavailable", "Retry"],
     ["0000000000005", 502, "Open Food Facts response could not be used", "could not be used safely"],
-    ["0000000000007", 422, "Serving unavailable", "same usable 1 serving"],
+    ["0000000000007", 422, "Measurement unavailable", "selected supported measurement"],
   ] as const) {
     const result = await load(`/?food=barcode&barcode=${barcode}`);
     expect(result.init?.status).toBe(status);

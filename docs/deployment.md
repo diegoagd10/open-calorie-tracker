@@ -26,11 +26,15 @@ Optional variables:
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `FDC_API_KEY` | unset | Used by the existing photo-evidence integration only. Ordinary USDA search/detail/logging use the installed local Foundation catalog without this key. |
-| `CATALOG_DIRECTORY` | `catalogs/` beside the application database | Persistent USDA generations and temporary import files. See [local USDA operations](local-usda-catalog.md). |
+| `CATALOG_DIRECTORY` | `catalogs/` beside the application database | Persistent USDA/OFF generations and temporary import files. See [USDA operations](local-usda-catalog.md) and [OFF operations](local-off-catalog.md). |
 | `CATALOG_MAX_UPLOAD_BYTES` | `67108864` | Maximum compressed Foundation upload size (64 MiB). |
 | `CATALOG_MAX_EXPANDED_BYTES` | `268435456` | Maximum expanded archive size (256 MiB). |
-| `OPEN_FOOD_FACTS_CONTACT_EMAIL` | unset | Contact email included in the required Open Food Facts `User-Agent`. Barcode lookup reports that it is unconfigured when this is omitted or blank; startup, USDA search, and saved Food Entries remain available. |
+| `OFF_CATALOG_MAX_UPLOAD_BYTES` | 4 GiB | Compressed OFF upload limit. |
+| `OFF_CATALOG_MAX_EXPANDED_BYTES` | 32 GiB | OFF decompressed stream and SQLite size limits; see [capacity and unit limitations](local-off-catalog.md). |
+
 | `PORT` | `3000` | Internal application port. Keep the default unless Traefik and the published port mapping are updated with it. |
+
+OFF API contact/base-URL/timeout configuration is no longer used by barcode lookup. Install the catalog in Settings; the standard dump lacks an unambiguous nutrition basis and its products remain unavailable for calculated logging.
 
 The image owns `NODE_ENV`, `DATABASE_PATH`, and the migrations path. Leave them
 unset in Portainer.

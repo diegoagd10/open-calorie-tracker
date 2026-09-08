@@ -179,16 +179,11 @@ export class StaleFoodEntryError extends Error {
   }
 }
 
+const offMeasuredAuthority = z.object({ catalogGeneration: z.string().min(1), authoritativeBaseUnit: z.enum(["g", "ml"]), authoritativeBaseQuantityMicrounits: z.literal(100_000_000), measurement: z.object({ baseQuantityMicrounits: z.number().int().positive().max(Number.MAX_SAFE_INTEGER) }) });
+const offServingAuthority = z.object({ authoritativeBaseUnit: z.literal("serving"), authoritativeBaseQuantityMicrounits: z.literal(1_000_000), measurement: z.object({ id: z.literal("serving"), baseQuantityMicrounits: z.literal(1_000_000) }) });
 function requireSupportedOffMeasurement(food: CatalogFood, measurement: CatalogMeasurement) {
-  if (
-    (food.dataType !== "Open Food Facts" ||
-      food.authoritativeBaseUnit !== "serving" ||
-      food.authoritativeBaseQuantityMicrounits !== 1_000_000 ||
-      measurement.id !== "serving" ||
-      measurement.baseQuantityMicrounits !== 1_000_000)
-  ) {
-    throw new CatalogUnsafeMeasurementError();
-  }
+  const valid = z.union([offServingAuthority, offMeasuredAuthority]).safeParse({ ...food, measurement });
+  if (food.dataType !== "Open Food Facts" || !valid.success) throw new CatalogUnsafeMeasurementError();
 }
 
 function selectedCatalogMeasurement(

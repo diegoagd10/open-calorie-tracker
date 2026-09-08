@@ -11,6 +11,7 @@ export type CatalogProviderId = "open-food-facts" | "usda-fdc";
 
 export type CatalogSearchResult = {
   catalogGeneration?: string;
+  calculationUnavailableReason?: string;
   barcode: string | null;
   brand: string | null;
   dataType: CatalogDataType;
@@ -55,6 +56,7 @@ export type CatalogOperationContext = {
 };
 
 export type CatalogFood = CatalogSearchResult & {
+  offSourceFields?: Record<string, string>;
   authoritativeBaseQuantityMicrounits: number;
   authoritativeBaseUnit: "g" | "ml" | "serving";
   marketCountry: string | null;

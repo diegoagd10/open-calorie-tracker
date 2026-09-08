@@ -1,3 +1,4 @@
+import { offArchive, offWithBasis } from "./support/off-archive";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -388,39 +389,23 @@ describe("catalog runtime selection", () => {
     shutdownApplicationDatabase();
     await rm(directory, { recursive: true, force: true });
   });
-  test("valid Open Food Facts configuration is server-only and identified", async () => {
+  test("installed OFF works with retired API configuration absent and never contacts the food API", async () => {
     vi.stubEnv("NODE_ENV", "test");
-    vi.stubEnv("FDC_API_KEY", "runtime-catalog-key");
-    vi.stubEnv("OPEN_FOOD_FACTS_BASE_URL", "https://example.test");
-    vi.stubEnv("OPEN_FOOD_FACTS_CONTACT_EMAIL", "  maintainer@example.test  ");
-    vi.stubEnv("OPEN_FOOD_FACTS_TIMEOUT_MS", "100");
     vi.stubEnv("FOOD_CATALOG_TEST_FIXTURE", "0");
-    const fetchImplementation = vi.fn<typeof fetch>().mockResolvedValue(
-      new Response(
-        JSON.stringify({
-          product: {
-            code: "0034000470693",
-            nutriments: { fat_serving: 0 },
-            product_name: "Runtime product",
-          },
-          status: "success",
-        }),
-      ),
-    );
-    vi.stubGlobal("fetch", fetchImplementation);
-
-    await expect(
-      getFoodCatalog().lookupBarcode("open-food-facts", "034000470693"),
-    ).resolves.toMatchObject({ provider: "open-food-facts" });
-    const [, init] = fetchImplementation.mock.calls[0] ?? [];
-    expect(new Headers(init?.headers).get("User-Agent")).toBe(
-      "OpenCaloryTracker/0.1.0 (maintainer@example.test)",
-    );
-    expect(new Headers(init?.headers).has("Authorization")).toBe(false);
+    vi.stubEnv("OPEN_FOOD_FACTS_CONTACT_EMAIL", "");
+    vi.stubEnv("OFF_CATALOG_MAX_UPLOAD_BYTES", "1000000");
+    vi.stubEnv("OFF_CATALOG_MAX_EXPANDED_BYTES", "10000000");
+    const network = vi.fn(() => { throw new Error("Food API access is forbidden"); });
+    vi.stubGlobal("fetch", network);
+    const management = getCatalogManagement("open-food-facts");
+    await management.submitArchive({ filename: "products.gz", stream: Readable.from(offArchive([offWithBasis("100g")])) });
+    await vi.waitFor(() => expect(management.read().busy).toBe(false));
+    await expect(getFoodCatalog().lookupBarcode("open-food-facts", "0012345678905")).resolves.toMatchObject({ provider: "open-food-facts", authoritativeBaseUnit: "g", isSelectable: true });
+    expect(network).not.toHaveBeenCalled();
   });
 
   test.each([undefined, "", "   "])(
-    "missing contact %j leaves source-specific configuration errors",
+    "absent catalog reports unavailable regardless of retired contact setting %j",
     async (OPEN_FOOD_FACTS_CONTACT_EMAIL) => {
       vi.stubEnv("NODE_ENV", "test");
       vi.stubEnv("FDC_API_KEY", "runtime-catalog-key");
