@@ -5,11 +5,12 @@ import path from "node:path";
 import { PassThrough, Readable } from "node:stream";
 import { pathToFileURL } from "node:url";
 import { afterEach, expect, test, vi } from "vitest";
-import { CatalogManagement, type CatalogManagementOptions } from "../app/catalog-management/catalog-management.server";
+import { CatalogManagement, type CatalogImportJob, type CatalogManagementOptions } from "../app/catalog-management/catalog-management.server";
 import { LocalUsdaAdapter } from "../app/catalog/local-usda.server";
 import { TestFoodCatalogProvider, TestOpenFoodFactsProvider } from "../app/catalog/test-fixture.server";
 import { FoodCatalog } from "../app/catalog/food-catalog.server";
 import { openApplicationDatabase } from "../app/database/database.server";
+import { saveCatalogState } from "../app/database/catalog-state.server";
 import { users, userPreferences } from "../app/database/schema.server";
 import { FoodEntryService } from "../app/food-entry/food-entry.server";
 import { foundationArchive, storedZip } from "./support/foundation-archive";
@@ -104,6 +105,73 @@ test("a USDA replacement keeps the active generation usable until the complete r
   });
   expect(updated).toMatchObject({ name: original.name, energyMilliKcal: 294_000, providerFoodId: original.providerFoodId });
   expect(copied).toMatchObject({ name: original.name, energyMilliKcal: 294_000, authoritativeNutrition: saved.authoritativeNutrition });
+});
+
+test("restart restores the prior USDA catalog and personal entries before a successful retry", async () => {
+  const { management, catalog, entries, userId, database, directory } = await setup();
+  const archive = await foundationArchive();
+  await management.submitArchive({ filename: "foundation.zip", stream: Readable.from(archive) });
+  await vi.waitFor(() => expect(management.read().busy).toBe(false));
+  const previous = management.read().installed!;
+  const food = await catalog.getFood("usda-fdc", "748967");
+  const saved = await entries.log(userId, {
+    provider: food.provider,
+    providerFoodId: food.providerFoodId,
+    catalogGeneration: food.catalogGeneration,
+    foodLogDate: "2026-09-06",
+    idempotencyKey: "saved-before-restart-fallback",
+    selectedMeasurementId: "100g",
+    quantity: "1",
+  });
+  const replacementId = "00000000-0000-4000-8000-000000000030";
+  const job: CatalogImportJob = {
+    id: replacementId,
+    filename: "missing-replacement.zip",
+    phase: "activating",
+    receivedBytes: archive.length,
+    processedRecords: 4,
+    importedRecords: 4,
+    rejectedRecords: 0,
+    exclusions: {},
+    error: null,
+    startedAt: "2026-09-07T11:00:00.000Z",
+    updatedAt: "2026-09-07T11:01:00.000Z",
+  };
+  saveCatalogState(database.getClient(), {
+    installed: { ...previous, generation: replacementId, filename: job.filename },
+    retiring: previous,
+    job,
+  }, "usda-fdc");
+
+  const restarted = new CatalogManagement(database.getClient(), {
+    directory,
+    workerPath: path.resolve("app/catalog-management/import-worker.ts"),
+  });
+  cleanups.unshift(() => restarted.shutdown());
+  const restartedCatalog = new FoodCatalog([{ provider: "usda-fdc", capability: "search", service: new LocalUsdaAdapter(restarted, directory) }]);
+  const restartedEntries = new FoodEntryService(database.getClient(), restartedCatalog, () => new Date("2026-09-07T12:00:00.000Z"));
+
+  expect(restarted.read()).toMatchObject({
+    installed: previous,
+    busy: false,
+    job: { phase: "interrupted", error: "USDA replacement could not be confirmed after restart. The previous catalog remains active. Upload the archive again." },
+  });
+  await expect(restartedCatalog.search("usda-fdc", "egg")).resolves.toEqual(expect.arrayContaining([expect.objectContaining({ providerFoodId: food.providerFoodId })]));
+  await expect(restartedCatalog.getFood("usda-fdc", food.providerFoodId)).resolves.toMatchObject({ name: food.name, catalogGeneration: previous.generation });
+  expect(restartedEntries.read(userId, saved.id)).toEqual(saved);
+  const updated = restartedEntries.update(userId, saved.id, {
+    expectedUpdatedAt: saved.updatedAt,
+    foodLogDate: saved.foodLogDate,
+    name: saved.name,
+    quantity: "2",
+    selectedMeasurementId: saved.selectedMeasurementId,
+  });
+  expect(updated).toMatchObject({ name: food.name, energyMilliKcal: 294_000 });
+
+  await restarted.submitArchive({ filename: "foundation-retry.zip", stream: Readable.from(archive) });
+  await vi.waitFor(() => expect(restarted.read().busy).toBe(false));
+  expect(restarted.read()).toMatchObject({ job: { phase: "succeeded", error: null } });
+  expect(restartedEntries.read(userId, saved.id)).toEqual(updated);
 });
 
 test("validation, import and indexing leave old USDA search, detail and logging available", async () => {
@@ -592,7 +660,7 @@ test("shutdown cancels an incomplete upload and removes its private temporary fi
   await management.shutdown();
   await upload;
   expect(input.destroyed).toBe(true);
-  expect(management.read()).toMatchObject({ installed: null, busy: false, job: { phase: "failed", error: "USDA upload failed. Check available disk space and upload the archive again." } });
+  expect(management.read()).toMatchObject({ installed: null, busy: false, job: { phase: "interrupted", error: "USDA installation was interrupted by server shutdown. Upload the archive again." } });
   expect((await readdir(directory)).filter(name => name.startsWith(job.id))).toEqual([]);
 });
 

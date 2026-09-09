@@ -13,7 +13,7 @@ const empty: CatalogState = { installed: null, job: null, busy: false };
 function job(phase: ImportPhase): NonNullable<CatalogState["job"]> { return { id: "job", filename: "archive.gz", phase, receivedBytes: 1234, processedRecords: 5678, importedRecords: 4321, rejectedRecords: 123, exclusions: {}, error: null, startedAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z" }; }
 function text(node: ReactTestInstance): string { return node.children.map(child => typeof child === "string" ? child : text(child)).join(""); }
 function uploadInput(card: ReactTestInstance) { return card.findAllByType("input").find(input => input.props.type === "file")!; }
-function uploadButton(card: ReactTestInstance) { return card.findAllByType("button").find(button => /Install|Replace or reimport/.test(text(button)))!; }
+function uploadButton(card: ReactTestInstance) { return card.findAllByType("button").find(button => /Install|Replace or reimport|Retry/.test(text(button)))!; }
 function uploadForm(card: ReactTestInstance) { return card.findAllByType("form").find(form => form.findAllByProps({ name: "archive" }).length > 0)!; }
 async function render(catalog = empty, offCatalog = empty) {
   const load = vi.fn(() => ({ catalog, offCatalog, today: "2026-09-08", csrfToken: "catalog-csrf" }));
@@ -56,6 +56,18 @@ test.each([
   expect(text(off).includes("You can leave this page. Import continues on the server; return here for the outcome.")).toBe(busy);
   expect(text(off.findByType("details"))).toBe("Excluded records and unavailable datainvalid identity: 2,345These counts describe individual records or values; an archive failure is shown separately above.");
   if (phase === "failed") expect(text(off.findByProps({ role: "alert" }))).toBe("Archive rejected");
+});
+
+test.each([
+  ["usda-fdc", "failed", "Retry USDA Foundation installation"],
+  ["open-food-facts", "interrupted", "Retry Open Food Facts installation"],
+] as const)("%s %s state offers a safe archive retry after reload", async (provider, phase, button) => {
+  const retryable = { ...empty, job: { ...job(phase), error: `${provider} recovery message` } };
+  const { card } = await render(provider === "usda-fdc" ? retryable : empty, provider === "open-food-facts" ? retryable : empty);
+  const catalog = card(provider);
+  expect(text(uploadButton(catalog))).toBe(button);
+  expect(text(catalog)).toContain("Select the archive again to retry. Partial uploads are not resumed.");
+  expect(uploadInput(catalog).props.disabled).toBe(false);
 });
 
 test("each catalog reports imported foods separately from rejected food records", async () => {

@@ -212,6 +212,17 @@ disconnect, and provider prerequisites.
 
 ## Updates and backups
 
+### Recover an interrupted catalog update
+
+Catalog imports run inside the single application process; there is no separate worker service to restart. After an application/container restart, sign in as the administrator and open **Settings → Food Catalogs**. Each source recovers independently:
+
+1. A job interrupted before publication keeps the prior catalog active and removes its partial upload, staging data, database, and journal.
+2. A job interrupted after publication confirms the replacement database's recorded size and provider schema before removing the prior generation. If confirmation fails, the prior complete generation is restored.
+3. Select the same archive again with **Retry USDA Foundation installation** or **Retry Open Food Facts installation**. Upload bytes cannot be resumed.
+4. If the page reports that no prior catalog is available, restore the application database and catalog directory from the same backup or perform a fresh catalog installation.
+
+Do not delete UUID-named catalog files by hand. Startup removes abandoned artifacts while preserving both providers' active, retiring, and in-progress generations. A failed/interrupted catalog job does not rewrite Food Entries. See the [USDA](local-usda-catalog.md#operations-and-verification) and [OFF](local-off-catalog.md#resources-and-operations) guides for archive formats, free-space calculations, proxy limits, and source-specific errors.
+
 Use a short maintenance window:
 
 1. Stop the application so SQLite has no writer.
