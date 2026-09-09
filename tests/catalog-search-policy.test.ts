@@ -175,7 +175,7 @@ describe("OFF search policy", () => {
       offSearchRelevance(packagedFood({ name: "Vitamin A" }), ["a"]),
     ).toBe(3);
     expect(
-      offSearchRelevance(packagedFood({ brand: null }), ["stryker"]),
+      offSearchRelevance(packagedFood({ brand: null }), ["unknown"]),
     ).toBeNull();
   });
 

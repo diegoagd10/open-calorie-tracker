@@ -64,7 +64,6 @@ function verifyWritableStorage(
 ): boolean {
   try {
     sqlite.exec("BEGIN IMMEDIATE");
-    // Stryker disable StringLiteral: readiness probe data is rolled back; only write success is observable.
     client
       .insert(schema.applicationMetadata)
       .values({
@@ -80,7 +79,6 @@ function verifyWritableStorage(
         target: schema.applicationMetadata.key,
       })
       .run();
-    // Stryker restore StringLiteral
     sqlite.exec("ROLLBACK");
     return true;
   } catch {
@@ -159,11 +157,9 @@ export function openApplicationDatabase({
         };
       },
     };
-    // Stryker disable next-line CallExpression: the invariant function is exhaustively tested; this is its startup wiring.
     assertDatabaseReady(applicationDatabase.getStatus());
     return applicationDatabase;
   } catch (error) {
-    // Stryker disable next-line CallExpression: closing a failed local handle has no remaining public reference to observe.
     sqlite.close();
     throw error;
   }

@@ -60,7 +60,6 @@ export async function action({ request }: Route.ActionArgs) {
   };
   requirePreAuthenticationCsrf(
     request,
-    // Stryker disable next-line StringLiteral: every placeholder for a missing opaque token is rejected identically.
     String(formData.get("csrfToken") ?? ""),
   );
   const parsed = loginSchema.safeParse(fields);

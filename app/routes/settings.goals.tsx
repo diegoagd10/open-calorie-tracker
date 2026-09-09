@@ -129,7 +129,6 @@ export async function action({ request }: Route.ActionArgs) {
   if (
     !getAuthenticationService().verifyCsrfToken(
       session.token,
-      // Stryker disable next-line StringLiteral: every placeholder for a missing opaque token is rejected identically.
       String(formData.get("csrfToken") ?? ""),
     )
   ) {

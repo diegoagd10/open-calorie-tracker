@@ -40,7 +40,7 @@ Persist `CATALOG_DIRECTORY` on a volume with enough free space. Run only on supp
 
 Deterministic tests exercise installation and replacement, old/new barcode/detail/search reads, generation leases, stale review, independent USDA/OFF success and failure, expected nutrient totals, null/zero, invalid units, ambiguous records, corruption, schema errors, limits, restart/retry, authorization, and populated migration/history compatibility. Browser coverage uploads both catalogs at a mobile viewport, fails an OFF replacement without losing either installed catalog, deliberately reimports OFF, simulates scanning, changes measurements, saves nutrition, and checks missing/incomplete products and member denial.
 
-The OFF and Foundation importer modules also accept an archive path and progress/result callback directly. Tests call these entry points with real archives and SQLite so Vitest and mutation testing can observe importer behavior; Catalog Management and browser tests retain the native worker lifecycle. Each invocation owns its import state.
+The OFF and Foundation importer modules also accept an archive path and progress/result callback directly. Tests call these entry points with real archives and SQLite so Vitest can exercise importer behavior directly; Catalog Management and browser tests retain the native worker lifecycle. Each invocation owns its import state.
 
 The opt-in full-archive check is separate from ordinary tests:
 

@@ -53,59 +53,29 @@ published Linux binary does not support.
 Use the deep gate before a release and after broad production, architecture,
 testing, or tooling changes. It first runs the complete fast gate, then adds:
 
-- Vitest coverage consumed by Fallow health;
+- Vitest production-code coverage thresholds, with the report also consumed by Fallow health;
 - type-aware Fallow dead-code, duplicate, and health regression gates;
 - executable architecture and health policy tests;
 - the local-fixture Playwright suite;
 - 10,000 deterministic runs per domain property;
-- Stryker policy and mutation-score regression checks;
 - the allowlist policy, full dependency audit, and local CodeQL policy tests.
 
-The deep gate usually takes 1–5 minutes when Stryker can reuse its incremental
-data. A cold run or a change that invalidates many mutants can take 5–15 minutes
-or longer. Chromium must already be installed; no browser download is hidden
-inside the gate. Like the fast gate, the sequence stops on the first failure
-and preserves the failing exit status.
+The coverage gate includes every TypeScript or JavaScript module under `app/`
+and `server/`, plus the root production entry point `server.js`, even when a
+module was never loaded by a test. Declaration files, deterministic
+`app/**/test-fixture.server.ts` browser adapters, and the Playwright-only HTTPS
+host are excluded because they are test tooling rather than production code.
+Configuration, scripts, migrations, and other repository tooling are outside
+the include list.
 
-`pnpm mutation:test` first reuses the latest compatible completed report in
-`reports/stryker-incremental.json`, including measurements rejected by the score
-gate. If the local report is unavailable or incompatible, it looks for a
-compatible completed report in the repository's shared Git directory:
-`$(git rev-parse --path-format=absolute --git-common-dir)/mutation-cache/v1/`.
-Linked worktrees share this cache automatically; independent clones do not.
-Each worktree runs Stryker with its own local files, then atomically publishes a
-complete report. Concurrent publishers never write into each other's live
-reports. Failed or incomplete Stryker runs cannot publish, while a complete
-measurement rejected only by the score gate can still be reused. The shared
-cache is disposable and is never committed or used as PR approval evidence.
+Statements, branches, functions, and lines must each exceed 95% in aggregate;
+`vitest.config.ts` expresses that strict boundary as 95.01%. The command fails
+when any metric falls below it, so the same gate applies anywhere
+`pnpm test:coverage` or `pnpm verify:deep` runs.
 
-Stryker compares production source and test changes. The existing conservative
-context fingerprint separates results by the exact Node version, platform,
-architecture, shard, dependencies, configuration, fixtures, migrations, runtime
-wiring, scripts, and assets. Changes to these inputs during measurement reject
-the result. A compatible shared report can replace an invalid local cache;
-otherwise the runner forces a full measurement. On a fresh worktree with no
-compatible shared report, the versioned report still seeds the first run.
-Malformed shared entries are ignored. The score still has to meet both the
-configured threshold and `mutation-testing/baseline-summary.json`.
-
-The Vitest setup forwards Stryker's active mutation into real Node workers and
-merges their measured counters back into the current test. Shared modules also
-receive activation before initialization in the test thread. Application worker
-messages and execution remain unchanged. `mutation:policy` runs an isolated
-Stryker regression proving that a worker arithmetic fault and a shared-module
-initialization fault are detected. Thresholds, exclusions, and the baseline
-apply normally to worker code.
-Stryker selects tests using that measured coverage. Its additional Vitest
-`related` filter is disabled because Vite's import graph cannot follow a worker
-path supplied at runtime; that filter can otherwise run zero tests for covered
-worker mutations. The regression uses the repository's configured filter option.
-
-`pnpm mutation:test` runs the full, unsharded local measurement. Optional manual
-sharding remains available with `MUTATION_SHARD=1/8 pnpm mutation:test`; combine
-all eight reports with `pnpm mutation:merge <directory> 8`.
-`pnpm mutation:baseline` forces a complete unsharded measurement and remains
-the explicit baseline review operation.
+Chromium must already be installed; no browser download is hidden inside the
+deep gate. Like the fast gate, the sequence stops on the first failure and
+preserves the failing exit status.
 
 ## Pull request gate
 
@@ -168,8 +138,8 @@ including staged and untracked files. It fetches the base and records the branch
 full HEAD SHA, origin URL, base branch, and base SHA. The branch must contain
 commits beyond the base. It then runs `pnpm verify:deep` and
 `pnpm test:deployment` in order, stopping at the first failure. Fallow uses the
-recorded base SHA. Mutation testing uses the complete unsharded measurement and
-the former workflow's 94.8% minimum as well as the existing baseline gate.
+recorded base SHA. The production coverage thresholds run as part of
+`verify:deep`.
 
 The ignored directory `reports/pr-check/<full-commit-sha>/` contains
 `summary.json` with timestamps, per-command exit status, and the overall result,
