@@ -1,3 +1,4 @@
+import { readFile, rm, writeFile } from "node:fs/promises";
 import { installSimulatedBarcodeCamera } from "./barcode-camera-fixture";
 import AxeBuilder from "@axe-core/playwright";
 import { bootstrapOrSignInBrowserTestUser, expect, signInProvisionedMember, test } from "./reset-database";
@@ -218,4 +219,57 @@ test("administrator installs USDA from mobile Settings, leaves during import, an
     await expect(member).toHaveURL("/?date=2026-08-29");
     await expect(member.getByText("Eggs, whole, cooked, scrambled", { exact: true })).toBeVisible();
   } finally { await context.close(); }
+});
+
+
+test("administrator checks rolling OFF snapshots independently and always uploads replacements manually", async ({ page }) => {
+  const fixturePath = "data/playwright-tests/off-metadata.json";
+  const requestsPath = "data/playwright-tests/off-metadata-requests.jsonl";
+  const original = { "Content-Type": "application/gzip", "Content-Length": "252", "Last-Modified": "Mon, 07 Sep 2026 12:00:00 GMT", ETag: '"snapshot-a"', "x-amz-checksum-type": "FULL_OBJECT", "x-amz-checksum-crc64nvme": "JX7I3P/MX4I=" };
+  await rm(requestsPath, { force: true });
+  await writeFile(fixturePath, JSON.stringify({ headers: original }));
+  try {
+    await bootstrapOrSignInBrowserTestUser(page, "off.metadata.admin", password);
+    await page.getByRole("button", { name: "Finish setup" }).click();
+    await page.goto("/settings/catalogs");
+    const off = page.locator('section[aria-labelledby="open-food-facts-heading"]');
+    const usda = page.locator('section[aria-labelledby="usda-fdc-heading"]');
+    const usdaBefore = await usda.innerText();
+    const check = off.getByRole("button", { name: "Check OFF updates again" });
+    await check.click();
+    await expect(off.getByText("OFF snapshot metadata cannot be compared safely.", { exact: true })).toBeVisible();
+    await expect(off.getByText("Installed official snapshot: Unknown", { exact: true })).toBeVisible();
+    await expect(off.getByRole("link", { name: /Official OFF downloads/ })).toHaveAttribute("href", "https://world.openfoodfacts.org/data");
+    const unknown = offArchive([{ ...offProduct, product_name: "Unidentified snapshot" }]);
+    await off.getByLabel("OFF tab-separated CSV GZIP").setInputFiles({ name: "unknown.gz", mimeType: "application/gzip", buffer: unknown });
+    await off.getByRole("button", { name: /Install Open Food Facts|Replace or reimport Open Food Facts/ }).click();
+    await expect(off.getByText("Archive: unknown.gz", { exact: true })).toBeVisible();
+    await expect(off.getByText("Open Food Facts installation complete", { exact: true })).toBeVisible();
+    await expect(off.getByText("Installed official snapshot: Unknown", { exact: true })).toBeVisible();
+    await off.getByLabel("OFF tab-separated CSV GZIP").setInputFiles({ name: "renamed-snapshot.gz", mimeType: "application/gzip", buffer: offArchive() });
+    await off.getByRole("button", { name: "Replace or reimport Open Food Facts" }).click();
+    await expect(off.getByText("No change detected in the OFF export.", { exact: true })).toBeVisible();
+    await expect(off.getByText("Open Food Facts installation complete", { exact: true })).toBeVisible();
+    await expect(off.getByText("Installed official snapshot: 2026-09-07T12:00:00.000Z", { exact: true })).toBeVisible();
+    const installedBefore = await off.getByText(/^Installed: /).innerText();
+    for (const [fixture, message] of [
+      [{ headers: original }, "No change detected in the OFF export."],
+      [{ headers: { ...original, ETag: '"snapshot-b"', "Last-Modified": "Tue, 08 Sep 2026 12:00:00 GMT", "x-amz-checksum-crc64nvme": "1Oju86qC+6I=" } }, "A newer OFF export snapshot is available."],
+      [{ headers: { ...original, ETag: "", "x-amz-checksum-crc64nvme": "", "Last-Modified": "" } }, "OFF snapshot metadata cannot be compared safely."],
+      [{ status: 503 }, "OFF snapshot metadata is temporarily unavailable."],
+    ] as const) {
+      await writeFile(fixturePath, JSON.stringify(fixture));
+      await check.click();
+      await expect(off.getByText(message, { exact: true })).toBeVisible();
+      await expect(off.getByText("Archive: renamed-snapshot.gz", { exact: true })).toBeVisible();
+      await expect(off.getByText(/^Installed: /)).toHaveText(installedBefore);
+      await expect(off.getByLabel("OFF tab-separated CSV GZIP")).toBeEnabled();
+      expect(await usda.innerText()).toBe(usdaBefore);
+    }
+    const beforeReload = (await readFile(requestsPath, "utf8")).trim().split("\n");
+    await page.reload();
+    await expect(off.getByText("OFF snapshot metadata is temporarily unavailable.", { exact: true })).toBeVisible();
+    expect((await readFile(requestsPath, "utf8")).trim().split("\n")).toEqual(beforeReload);
+    expect(beforeReload.map(line => JSON.parse(line) as { method: string; url: string })).toEqual(beforeReload.map(() => ({ method: "HEAD", url: "https://static.openfoodfacts.org/data/en.openfoodfacts.org.products.csv.gz" })));
+  } finally { await rm(fixturePath, { force: true }); }
 });

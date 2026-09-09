@@ -5,6 +5,8 @@ import path from "node:path";
 import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { Worker } from "node:worker_threads";
+import { OffArchiveChecksum } from "./off-archive-checksum.server";
+import { matchOffSnapshot, offUpdateStatus, type OffSnapshotMetadata, type OffSourceTransport } from "./off-snapshot-source.server";
 import type { ApplicationDatabaseClient } from "../database/database.server";
 import { acknowledgeCatalogOutcome, readCatalogOutcomes, claimCatalogInstallation, readCatalogState, readCatalogUpdateCheck, saveCatalogState, saveCatalogUpdateCheck } from "../database/catalog-state.server";
 
@@ -15,12 +17,17 @@ export type CatalogImportJob = {
   exclusions: Record<string, number>; error: string | null;
   startedAt: string; updatedAt: string;
   sourceReleaseCandidate?: FoundationReleaseMetadata;
+  archiveCrc64nvme?: string;
+  sourceSnapshotCandidate?: OffSnapshotMetadata;
 };
 export type InstalledCatalog = {
   generation: string; filename: string; sha256: string; foodCount: number;
   installedAt: string; publicationDateRange: { earliest: string; latest: string };
   sourceDateRange?: { earliest: string | null; latest: string | null };
   sourceRelease?: Omit<FoundationReleaseMetadata, "archiveUrl">;
+  sourceSnapshot?: OffSnapshotMetadata;
+  archiveCrc64nvme?: string;
+  archiveByteLength?: number;
 };
 export type CatalogOutcome = {
   provider: "usda-fdc" | "open-food-facts";
@@ -40,6 +47,7 @@ export type CatalogUpdateCheck = {
   status: "newer" | "unchanged" | "unavailable" | "indeterminate";
   checkedAt: string;
   availableRelease: FoundationReleaseMetadata | null;
+  availableSnapshot?: OffSnapshotMetadata | null;
   error: string | null;
 };
 export type CatalogSourceTransport = { latestFoundationRelease(): Promise<FoundationReleaseMetadata | null> };
@@ -51,9 +59,11 @@ export type CatalogManagementOptions = {
   maxUploadBytes?: number;
   maxExpandedBytes?: number;
   sourceTransport?: CatalogSourceTransport;
+  offSourceTransport?: OffSourceTransport;
   now?: () => Date;
   updateCheckCacheMs?: number;
 };
+const unavailableOffSource: OffSourceTransport = { latestSnapshot: async () => null };
 const terminal = new Set<ImportPhase>(["succeeded", "failed", "interrupted"]);
 const datePattern = /^\d{4}-\d{2}-\d{2}$/;
 const releasePeriodPattern = /^\d{4}-(0[1-9]|1[0-2])$/;
@@ -103,6 +113,7 @@ export class CatalogManagement {
       maxUploadBytes: (off ? 4096 : 64) * 1024 * 1024,
       maxExpandedBytes: (off ? 32768 : 256) * 1024 * 1024,
       sourceTransport: { latestFoundationRelease: async () => null },
+      offSourceTransport: unavailableOffSource,
       now: () => new Date(),
       updateCheckCacheMs: 6 * 60 * 60 * 1000,
       ...options,
@@ -127,7 +138,7 @@ export class CatalogManagement {
 
   read(): CatalogState {
     const state = readCatalogState(this.#database, this.#options.provider);
-    const updateCheck = this.#options.provider === "usda-fdc" ? readCatalogUpdateCheck(this.#database, this.#options.provider) : undefined;
+    const updateCheck = readCatalogUpdateCheck(this.#database, this.#options.provider);
     return { ...state, busy: state.job !== null && !terminal.has(state.job.phase), ...(updateCheck ? { updateCheck } : {}) };
   }
 
@@ -140,7 +151,6 @@ export class CatalogManagement {
   }
 
   async checkForUpdate(options: { force?: boolean } = {}): Promise<void> {
-    if (this.#options.provider !== "usda-fdc") return;
     const now = this.#options.now();
     const cached = readCatalogUpdateCheck(this.#database, this.#options.provider);
     if (!options.force && cached && now.getTime() - Date.parse(cached.checkedAt) < this.#options.updateCheckCacheMs) return;
@@ -152,6 +162,10 @@ export class CatalogManagement {
 
   async #performUpdateCheck(now: Date): Promise<void> {
     const checkedAt = now.toISOString();
+    if (this.#options.provider === "open-food-facts") {
+      await this.#performOffCheck(checkedAt);
+      return;
+    }
     try {
       const availableRelease = this.#validRelease(await this.#options.sourceTransport.latestFoundationRelease());
       if (!availableRelease) {
@@ -162,6 +176,22 @@ export class CatalogManagement {
       saveCatalogUpdateCheck(this.#database, { status, checkedAt, availableRelease, error: null }, this.#options.provider);
     } catch {
       saveCatalogUpdateCheck(this.#database, { status: "unavailable", checkedAt, availableRelease: null, error: "Official USDA release metadata could not be checked." }, this.#options.provider);
+    }
+  }
+
+  async #performOffCheck(checkedAt: string): Promise<void> {
+    try {
+      const availableSnapshot = await this.#options.offSourceTransport.latestSnapshot();
+      const state = this.read();
+      const matched = matchOffSnapshot(availableSnapshot, state.installed?.archiveCrc64nvme, state.installed?.archiveByteLength);
+      if (state.installed && !state.installed.sourceSnapshot && matched) {
+        state.installed = { ...state.installed, sourceSnapshot: matched };
+        this.#save({ installed: state.installed, job: state.job, retiring: state.retiring });
+      }
+      const status = offUpdateStatus(state.installed?.sourceSnapshot, availableSnapshot, checkedAt);
+      saveCatalogUpdateCheck(this.#database, { status, checkedAt, availableRelease: null, availableSnapshot, error: null }, this.#options.provider);
+    } catch {
+      saveCatalogUpdateCheck(this.#database, { status: "unavailable", checkedAt, availableRelease: null, availableSnapshot: null, error: "Official OFF snapshot metadata could not be checked." }, this.#options.provider);
     }
   }
 
@@ -191,6 +221,8 @@ export class CatalogManagement {
     await this.#operation;
   }
 
+  #uploadChecksum() { return this.#options.provider === "open-food-facts" ? new OffArchiveChecksum() : undefined; }
+
   async #receive(input: { stream: Readable; size?: number }, id: string, signal: AbortSignal) {
     const archivePath = path.join(this.#options.directory, `${id}${this.#extension}`);
     try {
@@ -200,17 +232,20 @@ export class CatalogManagement {
       let receivedBytes = 0;
       let lastProgress = 0;
       const hash = createHash("sha256");
+      const offChecksum = this.#uploadChecksum();
       const limit = this.#options.maxUploadBytes;
       const meter = new Transform({ transform: (chunk: Buffer, _encoding, callback) => {
         receivedBytes += chunk.length;
         if (receivedBytes > limit) { callback(new CatalogManagementError("Archive exceeds the configured upload limit.")); return; }
         hash.update(chunk);
+        offChecksum?.update(chunk);
         if (Date.now() - lastProgress > 250) { this.#updateJob({ receivedBytes }); lastProgress = Date.now(); }
         callback(null, chunk);
       } });
       await pipeline(input.stream, meter, createWriteStream(archivePath, { flags: "wx", mode: 0o600 }), { signal });
       if (receivedBytes === 0 || (input.size !== undefined && receivedBytes !== input.size)) throw new CatalogManagementError("Upload was empty or incomplete. Upload the archive again.");
-      this.#updateJob({ receivedBytes, phase: "queued", sourceReleaseCandidate: this.#releaseForUpload(receivedBytes) });
+      const archiveCrc64nvme = offChecksum?.digest();
+      this.#updateJob({ receivedBytes, phase: "queued", sourceReleaseCandidate: this.#releaseForUpload(receivedBytes), archiveCrc64nvme, sourceSnapshotCandidate: matchOffSnapshot(this.read().updateCheck?.availableSnapshot, archiveCrc64nvme, receivedBytes) });
       this.#startWorker(id, archivePath, hash.digest("hex"));
     } catch (error) {
       this.#updateJob({ phase: "failed", error: error instanceof CatalogManagementError ? error.message : `${this.#label} upload failed. Check available disk space and upload the archive again.` });
@@ -247,7 +282,7 @@ export class CatalogManagement {
         await this.#cleanup(id, false);
         this.#worker = undefined;
         const now = new Date().toISOString();
-        const installed = { generation: id, filename: state.job!.filename, sha256, installedAt: now, ...result, ...this.#matchingSourceRelease(state.job!) };
+        const installed = { generation: id, filename: state.job!.filename, sha256, installedAt: now, ...result, ...this.#installedSourceMetadata(state.job!) };
         this.#save({ installed, job: { ...this.read().job!, phase: "activating", updatedAt: now }, retiring: state.installed ?? undefined });
         this.#reconcileUpdateCheck(installed);
         await this.#completeHandoff();
@@ -270,7 +305,8 @@ export class CatalogManagement {
     const state = this.read();
     if (state.job) this.#save({ installed: state.installed, job: { ...state.job, ...patch, updatedAt: new Date().toISOString() }, retiring: state.retiring });
   }
-  #matchingSourceRelease(job: CatalogImportJob): Pick<InstalledCatalog, "sourceRelease"> {
+  #installedSourceMetadata(job: CatalogImportJob): Pick<InstalledCatalog, "sourceRelease" | "sourceSnapshot" | "archiveCrc64nvme" | "archiveByteLength"> {
+    if (job.archiveCrc64nvme) return { sourceSnapshot: job.sourceSnapshotCandidate, archiveCrc64nvme: job.archiveCrc64nvme, archiveByteLength: job.receivedBytes };
     const release = job.sourceReleaseCandidate;
     return release ? { sourceRelease: { releasePeriod: release.releasePeriod, identifier: release.identifier, releasedOn: release.releasedOn, archiveFilename: release.archiveFilename, archiveByteLength: release.archiveByteLength } } : {};
   }
@@ -281,6 +317,10 @@ export class CatalogManagement {
   }
   #reconcileUpdateCheck(installed: InstalledCatalog) {
     const check = readCatalogUpdateCheck(this.#database, this.#options.provider);
+    if (check?.availableSnapshot) {
+      saveCatalogUpdateCheck(this.#database, { ...check, status: offUpdateStatus(installed.sourceSnapshot, check.availableSnapshot, check.checkedAt) }, this.#options.provider);
+      return;
+    }
     if (!check?.availableRelease) return;
     saveCatalogUpdateCheck(this.#database, { ...check, status: this.#updateStatus(installed.sourceRelease, check.availableRelease) }, this.#options.provider);
   }

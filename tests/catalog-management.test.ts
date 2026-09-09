@@ -507,7 +507,7 @@ test("Open Food Facts ignores the USDA-only update transport", async () => {
   saveCatalogUpdateCheck(database.getClient(), { status: "newer", checkedAt: "2026-09-09T14:30:00.000Z", availableRelease: officialRelease, error: null }, "open-food-facts");
   await management.checkForUpdate({ force: true });
   expect(transport.latestFoundationRelease).not.toHaveBeenCalled();
-  expect(management.read().updateCheck).toBeUndefined();
+  expect(management.read().updateCheck).toMatchObject({ status: "indeterminate", availableSnapshot: null });
 });
 
 test.each([
