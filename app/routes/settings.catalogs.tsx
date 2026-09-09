@@ -17,8 +17,9 @@ export function headers() { return { "Cache-Control": "no-store", "Referrer-Poli
 export async function loader({ request }: Route.LoaderArgs) {
   const session = await requireAdministratorSession(request);
   const catalog = getCatalogManagement();
-  await catalog.checkForUpdate();
-  return { csrfToken: session.csrfToken, today: new Date().toISOString().slice(0, 10), catalog: catalog.read(), offCatalog: getCatalogManagement("open-food-facts").read() };
+  const offCatalog = getCatalogManagement("open-food-facts");
+  await Promise.all([catalog.checkForUpdate(), offCatalog.checkForUpdate()]);
+  return { csrfToken: session.csrfToken, today: new Date().toISOString().slice(0, 10), catalog: catalog.read(), offCatalog: offCatalog.read() };
 }
 export async function action({ request }: Route.ActionArgs) {
   requireValidOrigin(request);
@@ -27,8 +28,9 @@ export async function action({ request }: Route.ActionArgs) {
   if (requestContentType.startsWith("application/x-www-form-urlencoded") || requestContentType.startsWith("multipart/form-data")) {
     const form = await request.formData();
     if (!getAuthenticationService().verifyCsrfToken(session.token, String(form.get("csrfToken") ?? ""))) throw new Response("CSRF token rejected.", { status: 403 });
-    if (form.get("intent") !== "check-usda-update") return Response.json({ error: "Unsupported action." }, { status: 400, headers: headers() });
-    await getCatalogManagement().checkForUpdate({ force: true });
+    const intent = form.get("intent");
+    if (intent !== "check-usda-update" && intent !== "check-off-update") return Response.json({ error: "Unsupported action." }, { status: 400, headers: headers() });
+    await getCatalogManagement(intent === "check-off-update" ? "open-food-facts" : "usda-fdc").checkForUpdate({ force: true });
     return Response.json({ checked: true }, { headers: headers() });
   }
   if (!getAuthenticationService().verifyCsrfToken(session.token, request.headers.get("X-CSRF-Token") ?? "")) throw new Response("CSRF token rejected.", { status: 403 });
@@ -54,6 +56,23 @@ function releaseLabel(release: Pick<FoundationReleaseMetadata, "identifier" | "r
   if (!release) return "Unknown";
   return `${release.identifier ?? `Foundation ${release.releasePeriod}`} · ${release.releasedOn ?? release.releasePeriod}`;
 }
+function OffSnapshotAvailability({ catalog }: { catalog: CatalogState }) {
+  const messages = {
+    newer: "A newer OFF export snapshot is available.",
+    unchanged: "No change detected in the OFF export.",
+    unavailable: "OFF snapshot metadata is temporarily unavailable.",
+    indeterminate: "OFF snapshot metadata cannot be compared safely.",
+  };
+  const installed = catalog.installed?.sourceSnapshot;
+  const available = catalog.updateCheck?.availableSnapshot;
+  return <>
+    <p>Installed official snapshot: {installed?.lastModified ?? (installed ? "Matched export; date unknown" : "Unknown")}</p>
+    <p>Available export last modified: {available?.lastModified ?? "Unknown"}</p>
+    <p>{catalog.updateCheck ? messages[catalog.updateCheck.status] : "OFF update status has not been checked."}</p>
+    {!installed ? <p>The uploaded archive has not been matched to an official OFF snapshot. Download and upload the current export to establish a comparison when its checksum is available.</p> : null}
+    <p>OFF publishes a rolling export. Its last-modified time describes the export object, not a dated release or the newest product. Changed metadata without reliable chronology remains incomparable.</p>
+  </>;
+}
 function CatalogCard({ catalog, csrfToken, provider }: { catalog: CatalogState; csrfToken: string; provider: "usda-fdc" | "open-food-facts" }) {
   const off = provider === "open-food-facts";
   const name = off ? "Open Food Facts" : "USDA Foundation";
@@ -62,7 +81,9 @@ function CatalogCard({ catalog, csrfToken, provider }: { catalog: CatalogState; 
   const navigation = useNavigation();
   const [upload, setUpload] = useState<{ bytes: number; total: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const checking = navigation.formData?.get("intent") === "check-usda-update";
+  const checkIntent = off ? "check-off-update" : "check-usda-update";
+  const checkLabel = off ? "OFF" : "USDA";
+  const checking = navigation.formData?.get("intent") === checkIntent;
   useEffect(() => {
     if (!catalog.busy && !upload) return;
     const timer = setInterval(() => { if (revalidator.state === "idle") void revalidator.revalidate(); }, 1000);
@@ -104,8 +125,9 @@ function CatalogCard({ catalog, csrfToken, provider }: { catalog: CatalogState; 
           <p>Installed: {new Date(catalog.installed.installedAt).toLocaleString()}</p>
           <p>Upload a newer {off ? "OFF" : "Foundation"} archive, or deliberately reimport this archive, while the installed catalog remains available.</p>
         </div> : null}
-        {!off ? <div>
+        <div>
           <h3>Update availability</h3>
+          {off ? <OffSnapshotAvailability catalog={catalog} /> : <>
           <p>Installed official release: {releaseLabel(catalog.installed?.sourceRelease)}</p>
           <p>Available official release: {releaseLabel(catalog.updateCheck?.availableRelease ?? undefined)}</p>
           {!catalog.installed ? <p>Install a Foundation archive before comparing it with USDA&apos;s declared release.</p>
@@ -115,13 +137,14 @@ function CatalogCard({ catalog, csrfToken, provider }: { catalog: CatalogState; 
                   : catalog.updateCheck?.status === "unavailable" ? <p>USDA release metadata is temporarily unavailable.</p>
                     : catalog.updateCheck ? <p>USDA release metadata cannot be compared safely.</p>
                       : <p>USDA update status has not been checked.</p>}
+          </>}
           {catalog.updateCheck ? <p>Last checked: {new Date(catalog.updateCheck.checkedAt).toLocaleString()}</p> : null}
           <Form method="post" action="/settings/catalogs" className={styles.actions}>
             <input type="hidden" name="csrfToken" value={csrfToken} />
-            <button type="submit" name="intent" value="check-usda-update" disabled={checking}>{checking ? "Checking USDA updates…" : catalog.updateCheck ? "Check USDA updates again" : "Check USDA updates"}</button>
+            <button type="submit" name="intent" value={checkIntent} disabled={checking}>{checking ? `Checking ${checkLabel} updates…` : catalog.updateCheck ? `Check ${checkLabel} updates again` : `Check ${checkLabel} updates`}</button>
           </Form>
-          <p>Checking retrieves release metadata only. Download the archive from USDA in a new tab, then upload it below; the app never downloads or installs it automatically.</p>
-        </div> : null}
+          <p>Checking retrieves source metadata only. Download the archive from {checkLabel} in a new tab, then upload it below; the app never downloads or installs it automatically.</p>
+        </div>
         {error ? <p role="alert" className={styles.error}>{error}</p> : null}
         {catalog.job?.error ? <p role="alert" className={styles.error}>{catalog.job.error}</p> : null}
         <div role="status" aria-live="polite">

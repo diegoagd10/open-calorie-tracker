@@ -25,8 +25,8 @@ function get(cookie = adminCookie) { return args(new Request(`${origin}/settings
 function post(body: Uint8Array, cookie = adminCookie, csrf = csrfToken, requestOrigin = origin) {
   return args(new Request(`${origin}/settings/catalogs`, { method: "POST", headers: { Cookie: cookie, Origin: requestOrigin, "X-CSRF-Token": csrf, "X-Archive-Name": "foundation.zip", "Content-Type": "application/zip" }, body: new Uint8Array(body) }));
 }
-function checkAgain(cookie = adminCookie, csrf = csrfToken, requestOrigin = origin) {
-  return args(new Request(`${origin}/settings/catalogs`, { method: "POST", headers: { Cookie: cookie, Origin: requestOrigin, "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8" }, body: new URLSearchParams({ csrfToken: csrf, intent: "check-usda-update" }) }));
+function checkAgain(cookie = adminCookie, csrf = csrfToken, requestOrigin = origin, intent = "check-usda-update") {
+  return args(new Request(`${origin}/settings/catalogs`, { method: "POST", headers: { Cookie: cookie, Origin: requestOrigin, "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8" }, body: new URLSearchParams({ csrfToken: csrf, intent }) }));
 }
 beforeAll(async () => {
   directory = await mkdtemp(path.join(tmpdir(), "catalog-settings-"));
@@ -220,4 +220,16 @@ test("administrator notifications consume real independent outcomes, persist ack
   expect(reloaded.outcomes).toHaveLength(result.outcomes.length);
   expect(reloaded.outcomes.find((item: { jobId: string }) => item.jobId === failed.jobId)!.acknowledgedAt).not.toBeNull();
   expect(reloaded.outcomes.filter((item: { acknowledgedAt: string | null }) => item.acknowledgedAt !== null)).toHaveLength(1);
+});
+
+
+test("OFF check-again enforces administrator, origin and CSRF and leaves USDA and imports unchanged", async () => {
+  await expect(action(checkAgain(memberCookie, csrfToken, origin, "check-off-update"))).rejects.toMatchObject({ status: 404 });
+  await expect(action(checkAgain(adminCookie, "invalid", origin, "check-off-update"))).rejects.toMatchObject({ status: 403 });
+  await expect(action(checkAgain(adminCookie, csrfToken, "https://attacker.example", "check-off-update"))).rejects.toMatchObject({ status: 403 });
+  const before = await loader(get());
+  expect((await action(checkAgain(adminCookie, csrfToken, origin, "check-off-update"))).status).toBe(200);
+  const after = await loader(get());
+  expect(after.catalog).toEqual(before.catalog);
+  expect(after.offCatalog).toMatchObject({ installed: before.offCatalog.installed, job: before.offCatalog.job, updateCheck: { status: "indeterminate" } });
 });

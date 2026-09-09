@@ -69,3 +69,71 @@ Measured September 9, 2026 on Node 24.13.0, Intel Core i7-13700F (24 logical CPU
 | OFF representative FTS search p95 after activation | 73.778 ms |
 
 Archive SHA-256: `f72687ee8bc6522054fe69dbfda6b91902c16af1ec2e043cde27bc6c29ad8176`. The resource and concurrent-read latency budgets passed; representative FTS search remained below 100 ms p95 as an observed benchmark rather than an ordinary test assertion. All products in this particular daily dump remain unavailable for calculated logging because it lacks explicit nutrition authority; the result verifies replacement, indexed identification and failure-safe eligibility rather than usable nutrition coverage. Calculation tests use explicit source-backed export fields. The daily raw-TSV dialect preserves records containing literal quotes that a conventional quoted-CSV parse can incorrectly combine.
+
+## Rolling export update checks
+
+Food Catalogs checks OFF independently of USDA when opened, reuses a persisted
+result for six hours, and provides **Check OFF updates again**. A failed check
+is cached too. Checks cannot start an import or interrupt local lookup. The
+administrator uses [OFF's official downloads page](https://world.openfoodfacts.org/data)
+to download the tab-separated CSV GZIP externally, then uploads it to Settings.
+
+### Metadata investigation (2026-09-09)
+
+A `HEAD` request to the official supported export,
+`https://static.openfoodfacts.org/data/en.openfoodfacts.org.products.csv.gz`,
+redirected to
+`https://openfoodfacts-ds.s3.eu-west-3.amazonaws.com/en.openfoodfacts.org.products.csv.gz`.
+The application follows only this exact known redirect, with a five-second
+budget shared by both requests. It never falls back to `GET`, range downloads,
+or a product API. A changed hosting arrangement produces unavailable metadata
+until reviewed.
+
+The observed S3 response with `x-amz-checksum-mode: ENABLED` included:
+
+- `Last-Modified: Wed, 09 Sep 2026 12:03:41 GMT`
+- `Content-Type: application/gzip`, `Content-Length: 1275171186`
+- `ETag: "8d6629ac4d18f33e1ddec4cd9856f19d-77"`
+- `x-amz-checksum-type: FULL_OBJECT`
+- `x-amz-checksum-crc64nvme: 1Oju86qC+6I=`
+
+These are observations of a rolling object, not permanent release identifiers.
+OFF describes [daily exports](https://github.com/openfoodfacts/openfoodfacts-exports)
+and says it does not currently provide
+[historical CSV dumps](https://support.openfoodfacts.org/help/en-gb/12-api-data-reuse/105-how-can-i-access-historical-data).
+Its [field definitions](https://github.com/openfoodfacts/openfoodfacts-server/blob/main/html/data-fields.txt)
+identify `last_modified_t` as a **product** modification time; it is not the dump
+version.
+
+[S3 HeadObject](https://docs.aws.amazon.com/AmazonS3/latest/API/API_HeadObject.html)
+returns object metadata without its body and documents the checksum-mode header.
+[S3's checksum documentation](https://docs.aws.amazon.com/AmazonS3/latest/userguide/checking-object-integrity-upload.html)
+distinguishes full-object checksums from composite multipart checksums. ETags,
+including multipart values, are treated as opaque identity validators. They are
+never parsed as hashes or ordered as versions.
+
+### Comparison contract
+
+The upload stream computes CRC-64/NVME in bounded memory alongside the existing
+SHA-256 fingerprint. A matching full-object CRC and exact byte length associate
+the upload with observed official metadata, regardless of its filename. The
+checksum is an integrity association for administrator-supplied data, not a
+cryptographic authenticity guarantee. Composite, missing, invalid or mismatched
+checksums leave the installed official snapshot unknown. Previously imported
+archives without this checksum remain unknown until deliberately reimported.
+An upload performed during an outage can be matched by a later successful check.
+
+A matching checksum or strong ETag, with matching length and no conflicting
+checksum, means **no detected change**. A changed identity plus a strictly later
+valid object last-modified timestamp means **newer export snapshot**. A changed
+opaque validator alone, missing identity, equal or older timestamps with changed
+identity, future timestamps, or conflicting evidence remains **indeterminate**.
+HTTP/network failures are **unavailable**. Unknown installed snapshots cannot
+claim to be current or older.
+
+An object timestamp can describe republication; it does not establish product
+freshness or a dated OFF release. Settings explains this limitation and displays
+the installed snapshot, available object timestamp, upload time and last check
+separately. Snapshot association, upload checksum and update-check results persist
+in per-provider application management storage; the catalog database and saved
+Food Entries are not rewritten by checking.
