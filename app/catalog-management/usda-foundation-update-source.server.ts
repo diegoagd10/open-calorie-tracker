@@ -58,6 +58,12 @@ function foundationDownload(html: string): { month: number; year: number; archiv
   return { month: Number(period[1]), year: Number(period[2]), archiveUrl };
 }
 
+function exactReleaseDate(year: number, month: number, day: string): string | null {
+  const value = `${year}-${String(month).padStart(2, "0")}-${day.padStart(2, "0")}`;
+  const parsed = new Date(`${value}T00:00:00.000Z`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value ? value : null;
+}
+
 function corroboratedRelease(html: string, month: number, year: number): Pick<FoundationReleaseMetadata, "identifier" | "releasedOn"> | null {
   const months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
   const candidates = html.split(/(?=<div\b[^>]*class=["'][^"']*\bdata-release-log\b)/i).flatMap(block => {
@@ -65,7 +71,8 @@ function corroboratedRelease(html: string, month: number, year: number): Pick<Fo
     const heading = textContent(block.match(/<h3\b[^>]*>([\s\S]*?)<\/h3>/i)?.[1] ?? "");
     const match = heading.match(/^([A-Z][a-z]+) (\d{1,2}), (\d{4}) - FoodData Central Version ([0-9]+(?:\.[0-9]+)*)$/);
     if (!match || months.indexOf(match[1]) + 1 !== month || Number(match[3]) !== year) return [];
-    const releasedOn = `${match[3]}-${String(month).padStart(2, "0")}-${match[2].padStart(2, "0")}`;
+    const releasedOn = exactReleaseDate(year, month, match[2]);
+    if (!releasedOn) return [];
     return [{ identifier: `FoodData Central ${match[4]}`, releasedOn }];
   });
   return candidates.length === 1 ? candidates[0] : null;

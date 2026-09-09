@@ -521,6 +521,8 @@ test.each([
   { identifier: "" },
   { identifier: "   " },
   { releasedOn: "April 30, 2026" },
+  { releasedOn: "2026-04-99" },
+  { releasedOn: "2026-05-01" },
   { releasePeriod: "2026-13" },
   { archiveFilename: "../foundation.zip" },
   { archiveByteLength: 0 },
@@ -557,6 +559,17 @@ test("same-period conflicting USDA versions are indeterminate", async () => {
   const { management, database } = await setup({ provider: "usda-fdc", sourceTransport: transport });
   saveCatalogState(database.getClient(), {
     installed: { generation: "generation", filename: "foundation.zip", sha256: "sha", foodCount: 1, installedAt: "2026-01-01T00:00:00Z", publicationDateRange: { earliest: "2020-01-01", latest: "2026-04-30" }, sourceRelease: { releasePeriod: officialRelease.releasePeriod, identifier: "FoodData Central 14.9", releasedOn: officialRelease.releasedOn, archiveFilename: officialRelease.archiveFilename, archiveByteLength: officialRelease.archiveByteLength } },
+    job: null,
+  });
+  await management.checkForUpdate();
+  expect(management.read().updateCheck?.status).toBe("indeterminate");
+});
+
+test("same-period conflicting exact USDA release dates are indeterminate", async () => {
+  const transport = { latestFoundationRelease: vi.fn().mockResolvedValue(officialRelease) };
+  const { management, database } = await setup({ provider: "usda-fdc", sourceTransport: transport });
+  saveCatalogState(database.getClient(), {
+    installed: { generation: "generation", filename: "foundation.zip", sha256: "sha", foodCount: 1, installedAt: "2026-01-01T00:00:00Z", publicationDateRange: { earliest: "2020-01-01", latest: "2026-04-29" }, sourceRelease: { releasePeriod: officialRelease.releasePeriod, identifier: officialRelease.identifier, releasedOn: "2026-04-29", archiveFilename: officialRelease.archiveFilename, archiveByteLength: officialRelease.archiveByteLength } },
     job: null,
   });
   await management.checkForUpdate();

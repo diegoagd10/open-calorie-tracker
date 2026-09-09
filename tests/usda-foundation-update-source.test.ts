@@ -127,6 +127,7 @@ test.each([
   [downloads.replace("/fdc-datasets/FoodData_Central_foundation_food_csv_2026-04-30.zip", "http://fdc.nal.usda.gov/foundation.zip"), log],
   [downloads, log.replace("April 30, 2026", "April 30, 2025")],
   [downloads, log.replace("April 30, 2026", "March 30, 2026")],
+  [downloads, log.replace("April 30, 2026", "April 31, 2026")],
   [downloads, log.replace('<h3 class="version">April 30, 2026 - FoodData Central Version 15.0</h3>', "")],
   [downloads, log.replace("April 30, 2026", "Note April 30, 2026")],
   [downloads, log.replace("Version 15.0", "Version 15.0 notes")],

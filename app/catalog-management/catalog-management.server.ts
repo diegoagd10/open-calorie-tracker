@@ -51,9 +51,15 @@ export type CatalogManagementOptions = {
 const terminal = new Set<ImportPhase>(["succeeded", "failed", "interrupted"]);
 const datePattern = /^\d{4}-\d{2}-\d{2}$/;
 const releasePeriodPattern = /^\d{4}-(0[1-9]|1[0-2])$/;
+function validExactDate(releasedOn: string | null, releasePeriod: string): boolean {
+  if (releasedOn === null) return true;
+  if (!datePattern.test(releasedOn) || !releasedOn.startsWith(`${releasePeriod}-`)) return false;
+  const parsed = new Date(`${releasedOn}T00:00:00.000Z`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === releasedOn;
+}
 function validDeclaredRelease(release: FoundationReleaseMetadata): boolean {
   const identifierValid = release.identifier === null || Boolean(release.identifier.trim());
-  const exactDateValid = release.releasedOn === null || datePattern.test(release.releasedOn);
+  const exactDateValid = validExactDate(release.releasedOn, release.releasePeriod);
   return releasePeriodPattern.test(release.releasePeriod) && identifierValid && exactDateValid;
 }
 function validArchiveDescriptor(release: FoundationReleaseMetadata): boolean {
@@ -67,8 +73,9 @@ function trustedArchiveUrl(value: string): boolean {
 }
 function sameReleaseArtifact(installed: NonNullable<InstalledCatalog["sourceRelease"]>, available: FoundationReleaseMetadata): boolean {
   const versionsConflict = installed.identifier !== null && available.identifier !== null && installed.identifier !== available.identifier;
+  const datesConflict = installed.releasedOn !== null && available.releasedOn !== null && installed.releasedOn !== available.releasedOn;
   const artifactMatches = installed.archiveFilename === available.archiveFilename && installed.archiveByteLength === available.archiveByteLength;
-  return !versionsConflict && artifactMatches;
+  return !versionsConflict && !datesConflict && artifactMatches;
 }
 export class CatalogManagementError extends Error {}
 
