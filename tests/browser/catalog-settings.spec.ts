@@ -29,6 +29,15 @@ test("administrator installs USDA from mobile Settings, leaves during import, an
   await page.getByRole("button", { name: "Install USDA Foundation" }).click();
   expect((await uploaded).status()).toBe(202);
   await page.goto("/settings/goals");
+  const notifications = page.getByRole("complementary", { name: "Catalog notifications" });
+  await expect(notifications.getByText("(1 unread)", { exact: true })).toBeVisible({ timeout: 15000 });
+  await notifications.getByText("Catalog updates", { exact: false }).first().click();
+  await expect(notifications.getByRole("heading", { name: "USDA update succeeded" })).toBeVisible();
+  await expect(notifications).toContainText("Installed snapshot: foundation-browser.zip");
+  await page.reload();
+  await notifications.locator("summary").first().click();
+  await expect(notifications.getByRole("heading", { name: "USDA update succeeded" })).toHaveCount(1);
+  await notifications.locator("summary").first().click();
   await page.getByRole("link", { name: /Food Catalogs/ }).click();
   await expect(page.getByText("USDA installation complete", { exact: true })).toBeVisible({ timeout: 15000 });
   await expect(page.getByText(/\d+ foods installed/, { exact: true })).toBeVisible();
@@ -52,6 +61,26 @@ test("administrator installs USDA from mobile Settings, leaves during import, an
   await page.getByLabel("OFF tab-separated CSV GZIP").setInputFiles({ name: "products.csv.gz", mimeType: "application/gzip", buffer: products });
   await page.getByRole("button", { name: "Install Open Food Facts" }).click();
   await expect(page.getByText("Open Food Facts installation complete", { exact: true })).toBeVisible({ timeout: 15000 });
+  await expect(notifications.getByText("(3 unread)", { exact: true })).toBeVisible();
+  await notifications.locator("summary").first().click();
+  await expect(notifications.getByRole("heading", { name: "USDA update succeeded" })).toHaveCount(2);
+  await expect(notifications.getByRole("heading", { name: "Open Food Facts update succeeded" })).toHaveCount(1);
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+  await expect(notifications).toHaveCSS("background-color", "rgb(255, 255, 255)");
+  await page.screenshot({ path: testInfo.outputPath("catalog-notifications-mobile.png") });
+  // Poll and reconnect repeatedly against the actual durable outcomes.
+  for (let poll = 0; poll < 3; poll++) {
+    const response = await page.waitForResponse(response => response.url().endsWith("/catalog-notifications") && response.request().method() === "GET");
+    expect(response.status()).toBe(200);
+    expect((await response.json() as { outcomes: unknown[] }).outcomes).toHaveLength(3);
+  }
+  await page.context().setOffline(true);
+  await expect(notifications).toContainText("Catalog updates could not refresh. Reconnecting automatically.");
+  await expect(notifications.getByRole("heading", { name: "Open Food Facts update succeeded" })).toHaveCount(1);
+  await page.context().setOffline(false);
+  await expect(notifications).not.toContainText("Catalog updates could not refresh.");
+  await expect(notifications.getByRole("heading", { name: "Open Food Facts update succeeded" })).toHaveCount(1);
+  await notifications.locator("summary").first().click();
   await expect(page.getByText("3 foods installed", { exact: true })).toBeVisible();
   await expect(page.getByText("52 foods installed", { exact: true })).toBeVisible();
   await expect(page.getByText("3 foods imported · 0 food records rejected", { exact: true })).toBeVisible();
@@ -78,6 +107,23 @@ test("administrator installs USDA from mobile Settings, leaves during import, an
   await expect(activeOffReplacement).toBeVisible();
   await lookup.close();
   await expect(page.getByText("Open Food Facts installation failed", { exact: true })).toBeVisible({ timeout: 15000 });
+  await page.goto("/settings/goals");
+  await expect(notifications.getByText("(4 unread)", { exact: true })).toBeVisible();
+  await notifications.locator("summary").first().click();
+  const failedNotice = notifications.getByRole("listitem").filter({ has: page.getByRole("heading", { name: "Open Food Facts update failed" }) });
+  await expect(failedNotice).toContainText("The previous catalog remains active.");
+  await expect(failedNotice).toContainText("Active snapshot at completion: products.csv.gz");
+  await failedNotice.getByRole("button", { name: "Acknowledge Open Food Facts update" }).click();
+  await expect(notifications.getByText("(3 unread)", { exact: true })).toBeVisible();
+  await page.reload();
+  await notifications.locator("summary").first().click();
+  await expect(notifications.getByText("(3 unread)", { exact: true })).toBeVisible();
+  await notifications.getByText("Acknowledged updates (1)", { exact: true }).click();
+  await expect(failedNotice.getByText("Acknowledged", { exact: true })).toBeVisible();
+  await failedNotice.getByRole("link", { name: "Manage Open Food Facts catalog" }).click();
+  await expect(page).toHaveURL(/settings\/catalogs#open-food-facts-heading/);
+  if (await notifications.locator("details").first().getAttribute("open") !== null) await notifications.locator("summary").first().click();
+
   await expect(page.getByRole("alert")).toContainText("Corrupt OFF GZIP");
   await expect(page.locator('section[aria-labelledby="open-food-facts-heading"]').getByText(/^[1-9][\d,]* foods imported · \d[\d,]* food records rejected$/)).toBeVisible();
   await expect(page.getByText("3 foods installed", { exact: true })).toBeVisible();
@@ -96,6 +142,9 @@ test("administrator installs USDA from mobile Settings, leaves during import, an
     await signInProvisionedMember(member, "catalog.browser.member", password);
     await member.getByRole("button", { name: "Finish setup" }).click();
     await expect(member).toHaveURL("/");
+    await expect(member.getByRole("complementary", { name: "Catalog notifications" })).toHaveCount(0);
+    expect((await context.request.get("/catalog-notifications")).status()).toBe(404);
+    expect((await context.request.post("/catalog-notifications", { headers: { Origin: "https://localhost:4173" }, form: { provider: "usda-fdc", jobId: "denied", completedAt: "denied", csrfToken: "denied" } })).status()).toBe(404);
     expect((await member.goto("/settings/catalogs"))?.status()).toBe(404);
     const denied = await context.request.post("/settings/catalogs", { headers: { Origin: "https://localhost:4173", "Content-Type": "application/zip", "X-Archive-Name": "denied.zip" }, data: archive });
     expect(denied.status()).toBe(404);

@@ -34,6 +34,7 @@ describe("static route contracts", () => {
   test("the complete public route table maps URLs to their modules", () => {
     expect(routeConfig).toEqual([
       { file: "./routes/home.tsx", index: true },
+      { children: undefined, file: "./routes/catalog-notifications.ts", path: "catalog-notifications" },
       { children: undefined, file: "./routes/photo-analysis.ts", path: "photo-analysis" },
       { children: undefined, file: "./routes/login.tsx", path: "login" },
       { children: undefined, file: "./routes/logout.tsx", path: "logout" },
