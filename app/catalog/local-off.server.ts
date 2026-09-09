@@ -1,7 +1,7 @@
 import { readOffGenerationFood, searchOffGeneration } from "../database/off-generation.server";
 import type { CatalogManagement } from "../catalog-management/catalog-management.server";
 import { isSupportedCommercialBarcode } from "./barcode";
-import { CatalogConfigurationError, CatalogFoodNotFoundError, CatalogUnavailableError, type BarcodeFoodCatalogProvider, type SearchFoodCatalogProvider } from "./food-catalog.server";
+import { CatalogConfigurationError, CatalogFoodNotFoundError, CatalogStaleReviewError, CatalogUnavailableError, type BarcodeFoodCatalogProvider, type CatalogOperationContext, type SearchFoodCatalogProvider } from "./food-catalog.server";
 import { offSearchRelevance } from "./off-search.server";
 import { boundedSearchTokens, prefixSearchExpression } from "./search-normalization";
 
@@ -10,20 +10,23 @@ export class LocalOpenFoodFactsAdapter implements BarcodeFoodCatalogProvider, Se
   async search(query: string) {
     const tokens = boundedSearchTokens(query);
     if (!tokens) return [];
-    const installed = this.management.read().installed;
-    if (!installed) throw new CatalogConfigurationError();
+    let results;
     try {
-      return searchOffGeneration(this.directory, installed.generation, prefixSearchExpression(tokens), food => offSearchRelevance(food, tokens));
+      results = await this.management.withActiveGeneration(generation => searchOffGeneration(this.directory, generation, prefixSearchExpression(tokens), food => offSearchRelevance(food, tokens)));
     } catch {
       throw new CatalogUnavailableError();
     }
+    if (!results) throw new CatalogConfigurationError();
+    return results;
   }
-  async lookupBarcode(barcode: string) { return this.getFood(barcode); }
-  async getFood(id: string) {
+  async lookupBarcode(barcode: string, context?: CatalogOperationContext) { return this.getFood(barcode, context); }
+  async getFood(id: string, context?: CatalogOperationContext) {
     if (!isSupportedCommercialBarcode(id)) throw new CatalogFoodNotFoundError();
-    const installed = this.management.read().installed;
-    if (!installed) throw new CatalogConfigurationError();
-    const food = readOffGenerationFood(this.directory, installed.generation, id);
+    const food = await this.management.withActiveGeneration(generation => {
+      if (context?.reviewedCatalogGeneration !== undefined && context.reviewedCatalogGeneration !== generation) throw new CatalogStaleReviewError();
+      return readOffGenerationFood(this.directory, generation, id);
+    });
+    if (food === undefined && !this.management.read().installed) throw new CatalogConfigurationError();
     if (!food) throw new CatalogFoodNotFoundError();
     return food;
   }

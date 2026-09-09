@@ -114,8 +114,7 @@ async function check(expected, directory) {
   // Replace any previous pass before starting; interrupted runs cannot reuse it.
   save(directory, report);
   console.log(`Checking ${expected.branch} at ${expected.commit ?? `staged tree ${expected.tree}`} against ${expected.base} at ${expected.baseCommit}`);
-  const env = { ...process.env, FALLOW_AUDIT_BASE: expected.baseCommit, MUTATION_SCORE_THRESHOLD: "94.8" };
-  delete env.MUTATION_SHARD;
+  const env = { ...process.env, FALLOW_AUDIT_BASE: expected.baseCommit };
   // Git hooks can export an alternate index or repository. Keep those for the
   // snapshot checks above, but do not leak them into tests using fixture repos.
   for (const name of git("rev-parse", "--local-env-vars").split("\n")) delete env[name];

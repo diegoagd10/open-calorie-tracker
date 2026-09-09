@@ -7,6 +7,7 @@ import { afterEach, expect, test } from "vitest";
 
 import type {
   CatalogFood,
+  CatalogOperationContext,
   FoodCatalogReader,
   CatalogSearchResult,
   FoodCatalogProvider,
@@ -154,6 +155,33 @@ class FakeCatalogProvider implements FoodCatalogProvider {
     return [];
   }
 }
+
+test("catalog logging carries the request and reviewed generation through the catalog seam", async () => {
+  const database = await setupDatabase();
+  const client = database.getClient();
+  const userId = insertConfiguredUser(client, "catalog.context.user");
+  const provider = new FakeCatalogProvider();
+  provider.food.catalogGeneration = "00000000-0000-4000-8000-000000000001";
+  let receivedContext: CatalogOperationContext | undefined;
+  const reader: FoodCatalogReader = {
+    async getFood(_provider, _providerFoodId, context) {
+      receivedContext = context;
+      return provider.getFood();
+    },
+  };
+  const service = new FoodEntryService(client, reader, () => new Date("2026-08-29T18:00:00.000Z"));
+
+  await service.log(userId, {
+    ...validLogInput(),
+    catalogGeneration: provider.food.catalogGeneration,
+  }, { requestId: "food-entry-request" });
+
+  expect(receivedContext).toEqual({
+    requestId: "food-entry-request",
+    reviewedCatalogGeneration: provider.food.catalogGeneration,
+  });
+  database.close();
+});
 
 function validLogInput() {
   return {
@@ -553,6 +581,13 @@ test("copying to another date rejects ineligible destinations and keeps end-of-d
     foodLogDate: "2026-08-31",
     localEventTime: "12:23:45",
   });
+  expect(() =>
+    service.copyToDate(userId, todayCopy.id, {
+      ...input,
+      foodLogDate: todayCopy.foodLogDate,
+      idempotencyKey: `copy:${todayCopy.id}:today-to-past`,
+    }),
+  ).toThrow(FoodEntryUnavailableError);
 
   const copied = service.copyToDate(userId, source.id, input);
   const retry = service.copyToDate(userId, source.id, input);

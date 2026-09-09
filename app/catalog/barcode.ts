@@ -11,7 +11,6 @@ function matchesGtinCheckDigit(value: string): boolean {
   const payload = value.slice(0, -1);
   let sum = 0;
   let weight = 3;
-  // Stryker disable next-line AssignmentOperator: incrementing this reverse index never terminates; the mutation is a timeout rather than a distinguishable result.
   for (let index = payload.length - 1; index >= 0; index -= 1) {
     sum += Number(payload[index]) * weight;
     weight = weight === 3 ? 1 : 3;
@@ -46,6 +45,5 @@ function expandUpce(value: string): string | undefined {
 export function hasValidGtinCheckDigit(value: string): boolean {
   if (matchesGtinCheckDigit(value)) return true;
   const expandedUpce = expandUpce(value);
-  // Stryker disable next-line ConditionalExpression: calling the digit validator with undefined also returns false, so removing this defensive narrowing is behaviorally equivalent at runtime.
   return expandedUpce !== undefined && matchesGtinCheckDigit(expandedUpce);
 }

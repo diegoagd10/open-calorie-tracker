@@ -111,12 +111,10 @@ export function buildCalendarMonth(
   const requestedMonthNumber = match ? Number(match[2]) : 0;
   const validRequestedMonth =
     Boolean(match) && requestedMonthNumber >= 1 && requestedMonthNumber <= 12;
-  // Stryker disable EqualityOperator: <= is equivalent because equality falls back to the identical todayMonth value.
   const month =
     validRequestedMonth && requestedMonth < todayMonth
       ? requestedMonth
       : todayMonth;
-  // Stryker restore EqualityOperator
   const [year, monthNumber] = month.split("-").map(Number);
   const first = utcCalendarDate(year, monthNumber - 1);
   const numberOfDays = utcCalendarDate(year, monthNumber, 0).getUTCDate();

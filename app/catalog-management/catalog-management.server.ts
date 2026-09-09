@@ -6,22 +6,77 @@ import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { Worker } from "node:worker_threads";
 import type { ApplicationDatabaseClient } from "../database/database.server";
-import { claimCatalogInstallation, readCatalogState, saveCatalogState } from "../database/catalog-state.server";
+import { claimCatalogInstallation, readCatalogState, readCatalogUpdateCheck, saveCatalogState, saveCatalogUpdateCheck } from "../database/catalog-state.server";
 
 export type ImportPhase = "uploading" | "queued" | "validating" | "importing" | "indexing" | "activating" | "succeeded" | "failed" | "interrupted";
 export type CatalogImportJob = {
   id: string; filename: string; phase: ImportPhase; receivedBytes: number;
-  processedRecords: number; exclusions: Record<string, number>; error: string | null;
+  processedRecords: number; importedRecords?: number; rejectedRecords?: number;
+  exclusions: Record<string, number>; error: string | null;
   startedAt: string; updatedAt: string;
+  sourceReleaseCandidate?: FoundationReleaseMetadata;
 };
 export type InstalledCatalog = {
   generation: string; filename: string; sha256: string; foodCount: number;
   installedAt: string; publicationDateRange: { earliest: string; latest: string };
   sourceDateRange?: { earliest: string | null; latest: string | null };
+  sourceRelease?: Omit<FoundationReleaseMetadata, "archiveUrl">;
 };
-export type CatalogState = { installed: InstalledCatalog | null; job: CatalogImportJob | null; busy: boolean };
-export type CatalogManagementOptions = { provider?: "usda-fdc" | "open-food-facts"; directory: string; workerPath: string; maxUploadBytes?: number; maxExpandedBytes?: number };
+export type FoundationReleaseMetadata = {
+  releasePeriod: string;
+  identifier: string | null;
+  releasedOn: string | null;
+  archiveUrl: string;
+  archiveFilename: string;
+  archiveByteLength: number;
+};
+export type CatalogUpdateCheck = {
+  status: "newer" | "unchanged" | "unavailable" | "indeterminate";
+  checkedAt: string;
+  availableRelease: FoundationReleaseMetadata | null;
+  error: string | null;
+};
+export type CatalogSourceTransport = { latestFoundationRelease(): Promise<FoundationReleaseMetadata | null> };
+export type CatalogState = { installed: InstalledCatalog | null; job: CatalogImportJob | null; busy: boolean; retiring?: InstalledCatalog; updateCheck?: CatalogUpdateCheck };
+export type CatalogManagementOptions = {
+  provider?: "usda-fdc" | "open-food-facts";
+  directory: string;
+  workerPath: string;
+  maxUploadBytes?: number;
+  maxExpandedBytes?: number;
+  sourceTransport?: CatalogSourceTransport;
+  now?: () => Date;
+  updateCheckCacheMs?: number;
+};
 const terminal = new Set<ImportPhase>(["succeeded", "failed", "interrupted"]);
+const datePattern = /^\d{4}-\d{2}-\d{2}$/;
+const releasePeriodPattern = /^\d{4}-(0[1-9]|1[0-2])$/;
+function validExactDate(releasedOn: string | null, releasePeriod: string): boolean {
+  if (releasedOn === null) return true;
+  if (!datePattern.test(releasedOn) || !releasedOn.startsWith(`${releasePeriod}-`)) return false;
+  const parsed = new Date(`${releasedOn}T00:00:00.000Z`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === releasedOn;
+}
+function validDeclaredRelease(release: FoundationReleaseMetadata): boolean {
+  const identifierValid = release.identifier === null || Boolean(release.identifier.trim());
+  const exactDateValid = validExactDate(release.releasedOn, release.releasePeriod);
+  return releasePeriodPattern.test(release.releasePeriod) && identifierValid && exactDateValid;
+}
+function validArchiveDescriptor(release: FoundationReleaseMetadata): boolean {
+  return path.basename(release.archiveFilename) === release.archiveFilename
+    && Number.isSafeInteger(release.archiveByteLength)
+    && release.archiveByteLength > 0;
+}
+function trustedArchiveUrl(value: string): boolean {
+  const archiveUrl = new URL(value);
+  return archiveUrl.protocol === "https:" && archiveUrl.hostname === "fdc.nal.usda.gov";
+}
+function sameReleaseArtifact(installed: NonNullable<InstalledCatalog["sourceRelease"]>, available: FoundationReleaseMetadata): boolean {
+  const versionsConflict = installed.identifier !== null && available.identifier !== null && installed.identifier !== available.identifier;
+  const datesConflict = installed.releasedOn !== null && available.releasedOn !== null && installed.releasedOn !== available.releasedOn;
+  const artifactMatches = installed.archiveFilename === available.archiveFilename && installed.archiveByteLength === available.archiveByteLength;
+  return !versionsConflict && !datesConflict && artifactMatches;
+}
 export class CatalogManagementError extends Error {}
 
 export class CatalogManagement {
@@ -30,15 +85,33 @@ export class CatalogManagement {
   #worker: Worker | undefined;
   #upload: AbortController | undefined;
   #operation: Promise<void> | undefined;
+  #handoff: Promise<void> | undefined;
+  #checking: Promise<void> | undefined;
+  readonly #readers = new Map<string, Set<object>>();
 
   constructor(database: ApplicationDatabaseClient, options: CatalogManagementOptions) {
     this.#database = database;
     const off = options.provider === "open-food-facts";
-    this.#options = { provider: "usda-fdc", maxUploadBytes: (off ? 4096 : 64) * 1024 * 1024, maxExpandedBytes: (off ? 32768 : 256) * 1024 * 1024, ...options };
+    this.#options = {
+      provider: "usda-fdc",
+      maxUploadBytes: (off ? 4096 : 64) * 1024 * 1024,
+      maxExpandedBytes: (off ? 32768 : 256) * 1024 * 1024,
+      sourceTransport: { latestFoundationRelease: async () => null },
+      now: () => new Date(),
+      updateCheckCacheMs: 6 * 60 * 60 * 1000,
+      ...options,
+    };
     const state = this.read();
-    if (state.busy && state.job) {
-      this.#updateJob({ phase: "interrupted", error: `${this.#label} installation was interrupted by a server restart. Upload the archive again.` });
-      void this.#cleanup(state.job.id, true);
+    if (state.retiring && state.job?.phase === "failed" && state.installed?.generation === state.job.id) {
+      this.#updateJob({ phase: "activating", error: null });
+      void this.#completeHandoff();
+    } else if (state.busy && state.job) {
+      if (state.job.phase === "activating" && state.installed?.generation === state.job.id) {
+        void this.#completeHandoff();
+      } else {
+        this.#updateJob({ phase: "interrupted", error: `${this.#label} installation was interrupted by a server restart. Upload the archive again.` });
+        void this.#cleanup(state.job.id, true);
+      }
     }
   }
 
@@ -47,7 +120,48 @@ export class CatalogManagement {
 
   read(): CatalogState {
     const state = readCatalogState(this.#database, this.#options.provider);
-    return { ...state, busy: state.job !== null && !terminal.has(state.job.phase) };
+    const updateCheck = this.#options.provider === "usda-fdc" ? readCatalogUpdateCheck(this.#database, this.#options.provider) : undefined;
+    return { ...state, busy: state.job !== null && !terminal.has(state.job.phase), ...(updateCheck ? { updateCheck } : {}) };
+  }
+
+  async checkForUpdate(options: { force?: boolean } = {}): Promise<void> {
+    if (this.#options.provider !== "usda-fdc") return;
+    const now = this.#options.now();
+    const cached = readCatalogUpdateCheck(this.#database, this.#options.provider);
+    if (!options.force && cached && now.getTime() - Date.parse(cached.checkedAt) < this.#options.updateCheckCacheMs) return;
+    if (this.#checking) return this.#checking;
+    const checking = this.#performUpdateCheck(now);
+    this.#checking = checking;
+    try { await checking; } finally { if (this.#checking === checking) this.#checking = undefined; }
+  }
+
+  async #performUpdateCheck(now: Date): Promise<void> {
+    const checkedAt = now.toISOString();
+    try {
+      const availableRelease = this.#validRelease(await this.#options.sourceTransport.latestFoundationRelease());
+      if (!availableRelease) {
+        saveCatalogUpdateCheck(this.#database, { status: "indeterminate", checkedAt, availableRelease: null, error: null }, this.#options.provider);
+        return;
+      }
+      const status = this.#updateStatus(this.read().installed?.sourceRelease, availableRelease);
+      saveCatalogUpdateCheck(this.#database, { status, checkedAt, availableRelease, error: null }, this.#options.provider);
+    } catch {
+      saveCatalogUpdateCheck(this.#database, { status: "unavailable", checkedAt, availableRelease: null, error: "Official USDA release metadata could not be checked." }, this.#options.provider);
+    }
+  }
+
+  #validRelease(release: FoundationReleaseMetadata | null): FoundationReleaseMetadata | null {
+    try {
+      if (!release || !validDeclaredRelease(release) || !validArchiveDescriptor(release) || !trustedArchiveUrl(release.archiveUrl)) return null;
+      return { ...release, identifier: release.identifier?.trim() ?? null };
+    } catch { return null; }
+  }
+
+  #updateStatus(installed: InstalledCatalog["sourceRelease"], available: FoundationReleaseMetadata): CatalogUpdateCheck["status"] {
+    if (!installed || !releasePeriodPattern.test(installed.releasePeriod)) return "indeterminate";
+    if (installed.releasePeriod < available.releasePeriod) return "newer";
+    if (installed.releasePeriod > available.releasePeriod) return "indeterminate";
+    return sameReleaseArtifact(installed, available) ? "unchanged" : "indeterminate";
   }
 
   async submitArchive(input: { filename: string; stream: Readable; size?: number }): Promise<void> {
@@ -55,8 +169,7 @@ export class CatalogManagement {
     if (input.size !== undefined && (!Number.isSafeInteger(input.size) || input.size <= 0 || input.size > this.#options.maxUploadBytes)) throw new CatalogManagementError("Archive exceeds the configured upload limit or is empty.");
     const id = randomUUID();
     const now = new Date().toISOString();
-    const conflict = claimCatalogInstallation(this.#database, { id, filename: path.basename(input.filename), phase: "uploading", receivedBytes: 0, processedRecords: 0, exclusions: {}, error: null, startedAt: now, updatedAt: now }, this.#options.provider);
-    if (conflict === "installed") throw new CatalogManagementError(`${this.#label} is already installed. Catalog replacement is not available yet.`);
+    const conflict = claimCatalogInstallation(this.#database, { id, filename: path.basename(input.filename), phase: "uploading", receivedBytes: 0, processedRecords: 0, importedRecords: 0, rejectedRecords: 0, exclusions: {}, error: null, startedAt: now, updatedAt: now }, this.#options.provider);
     if (conflict === "busy") throw new CatalogManagementError(`A ${this.#label} installation is already running.`);
     this.#upload = new AbortController();
     this.#operation = this.#receive(input, id, this.#upload.signal);
@@ -82,7 +195,7 @@ export class CatalogManagement {
       } });
       await pipeline(input.stream, meter, createWriteStream(archivePath, { flags: "wx", mode: 0o600 }), { signal });
       if (receivedBytes === 0 || (input.size !== undefined && receivedBytes !== input.size)) throw new CatalogManagementError("Upload was empty or incomplete. Upload the archive again.");
-      this.#updateJob({ receivedBytes, phase: "queued" });
+      this.#updateJob({ receivedBytes, phase: "queued", sourceReleaseCandidate: this.#releaseForUpload(receivedBytes) });
       this.#startWorker(id, archivePath, hash.digest("hex"));
     } catch (error) {
       this.#updateJob({ phase: "failed", error: error instanceof CatalogManagementError ? error.message : `${this.#label} upload failed. Check available disk space and upload the archive again.` });
@@ -119,7 +232,10 @@ export class CatalogManagement {
         await this.#cleanup(id, false);
         this.#worker = undefined;
         const now = new Date().toISOString();
-        this.#save({ installed: { generation: id, filename: state.job!.filename, sha256, installedAt: now, ...result }, job: { ...this.read().job!, phase: "succeeded", updatedAt: now } });
+        const installed = { generation: id, filename: state.job!.filename, sha256, installedAt: now, ...result, ...this.#matchingSourceRelease(state.job!) };
+        this.#save({ installed, job: { ...this.read().job!, phase: "activating", updatedAt: now }, retiring: state.installed ?? undefined });
+        this.#reconcileUpdateCheck(installed);
+        await this.#completeHandoff();
       } else {
         await this.#cleanup(id, true);
         this.#worker = undefined;
@@ -137,7 +253,63 @@ export class CatalogManagement {
   }
   #updateJob(patch: Partial<CatalogImportJob>) {
     const state = this.read();
-    if (state.job) this.#save({ installed: state.installed, job: { ...state.job, ...patch, updatedAt: new Date().toISOString() } });
+    if (state.job) this.#save({ installed: state.installed, job: { ...state.job, ...patch, updatedAt: new Date().toISOString() }, retiring: state.retiring });
+  }
+  #matchingSourceRelease(job: CatalogImportJob): Pick<InstalledCatalog, "sourceRelease"> {
+    const release = job.sourceReleaseCandidate;
+    return release ? { sourceRelease: { releasePeriod: release.releasePeriod, identifier: release.identifier, releasedOn: release.releasedOn, archiveFilename: release.archiveFilename, archiveByteLength: release.archiveByteLength } } : {};
+  }
+  #releaseForUpload(receivedBytes: number): FoundationReleaseMetadata | undefined {
+    const state = readCatalogState(this.#database, this.#options.provider);
+    const release = readCatalogUpdateCheck(this.#database, this.#options.provider)?.availableRelease;
+    return release && state.job?.filename === release.archiveFilename && receivedBytes === release.archiveByteLength ? release : undefined;
+  }
+  #reconcileUpdateCheck(installed: InstalledCatalog) {
+    const check = readCatalogUpdateCheck(this.#database, this.#options.provider);
+    if (!check?.availableRelease) return;
+    saveCatalogUpdateCheck(this.#database, { ...check, status: this.#updateStatus(installed.sourceRelease, check.availableRelease) }, this.#options.provider);
+  }
+  async withActiveGeneration<T>(read: (generation: string) => T | Promise<T>): Promise<T | undefined> {
+    const generation = this.read().installed?.generation;
+    if (!generation) return undefined;
+    const lease = {};
+    const readers = this.#readers.get(generation) ?? new Set<object>();
+    readers.add(lease);
+    this.#readers.set(generation, readers);
+    try {
+      return await read(generation);
+    } finally {
+      readers.delete(lease);
+      await this.#completeHandoff();
+    }
+  }
+  async #completeHandoff() {
+    if (this.#handoff) return this.#handoff;
+    const state = this.read();
+    if (!this.#handoffReady(state)) return;
+    const handoff = this.#retireAndComplete(state);
+    this.#handoff = handoff;
+    try {
+      await handoff;
+    } catch {
+      this.#updateJob({ phase: "failed", error: `${this.#label} catalog handoff failed. The replacement remains active; check catalog storage and restart the server.` });
+    } finally {
+      if (this.#handoff === handoff) this.#handoff = undefined;
+    }
+  }
+  #handoffReady(state: CatalogState) {
+    return state.job?.phase === "activating"
+      && state.installed?.generation === state.job.id
+      && (!state.retiring || !this.#readers.get(state.retiring.generation)?.size);
+  }
+  async #retireAndComplete(state: CatalogState) {
+    if (state.retiring) await this.#removeGeneration(state.retiring.generation);
+    this.#save({ installed: state.installed, job: { ...state.job!, phase: "succeeded", updatedAt: new Date().toISOString() } });
+  }
+  async #removeGeneration(generation: string) {
+    await rm(path.join(this.#options.directory, `${generation}.sqlite`), { force: true });
+    await rm(path.join(this.#options.directory, `${generation}.sqlite-journal`), { force: true });
+    this.#readers.delete(generation);
   }
   async #cleanup(id: string, removeGeneration: boolean) {
     const paths = [`${id}${this.#extension}`, `${id}.staging`, ...(removeGeneration ? [`${id}.sqlite`, `${id}.sqlite-journal`] : [])];

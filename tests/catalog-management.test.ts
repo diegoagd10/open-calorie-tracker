@@ -4,14 +4,15 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { PassThrough, Readable } from "node:stream";
 import { afterEach, expect, test, vi } from "vitest";
-import { CatalogManagement, type CatalogManagementOptions } from "../app/catalog-management/catalog-management.server";
+import { CatalogManagement, type CatalogImportJob, type CatalogManagementOptions, type FoundationReleaseMetadata } from "../app/catalog-management/catalog-management.server";
 import { openApplicationDatabase } from "../app/database/database.server";
-import { saveCatalogState } from "../app/database/catalog-state.server";
+import { saveCatalogState, saveCatalogUpdateCheck } from "../app/database/catalog-state.server";
+import { foundationArchive } from "./support/foundation-archive";
 import { offArchive, offWithBasis } from "./support/off-archive";
 
 vi.mock("node:fs/promises", async importOriginal => {
   const actual = await importOriginal<typeof import("node:fs/promises")>();
-  return { ...actual, statfs: vi.fn(actual.statfs), chmod: vi.fn(actual.chmod) };
+  return { ...actual, statfs: vi.fn(actual.statfs), chmod: vi.fn(actual.chmod), rm: vi.fn(actual.rm) };
 });
 
 const cleanups: (() => Promise<void>)[] = [];
@@ -25,6 +26,14 @@ async function setup(options: Partial<CatalogManagementOptions> = {}, defaults =
   return { management, directory, database, settings };
 }
 const finished = async (management: CatalogManagement) => vi.waitFor(() => expect(management.read().busy).toBe(false));
+const officialRelease: FoundationReleaseMetadata = {
+  releasePeriod: "2026-04",
+  identifier: "FoodData Central 15.0",
+  releasedOn: "2026-04-30",
+  archiveUrl: "https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_foundation_food_csv_2026-04-30.zip",
+  archiveFilename: "FoodData_Central_foundation_food_csv_2026-04-30.zip",
+  archiveByteLength: 1234,
+};
 
 test.each([
   ["off.zip", undefined], ["a".repeat(253) + ".gz", undefined], ["off.gz", 0], ["off.gz", -1], ["off.gz", 1.5], ["off.gz", Number.NaN], ["off.gz", 1025],
@@ -43,7 +52,7 @@ test("boundary-sized uppercase uploads preserve metadata and remove private stag
   await finished(management);
   const state = management.read();
   expect(state.installed).toMatchObject({ filename, sha256: createHash("sha256").update(archive).digest("hex"), foodCount: 1 });
-  expect(state.job).toMatchObject({ phase: "succeeded", filename, receivedBytes: archive.length, processedRecords: 1, error: null });
+  expect(state.job).toMatchObject({ phase: "succeeded", filename, receivedBytes: archive.length, processedRecords: 1, importedRecords: 1, rejectedRecords: 0, error: null });
   expect((await fs.stat(path.join(directory, `${state.installed!.generation}.sqlite`))).mode & 0o777).toBe(0o444);
   expect((await fs.readdir(directory)).filter(name => name.startsWith(state.job!.id))).toEqual([`${state.job!.id}.sqlite`]);
 });
@@ -153,6 +162,12 @@ const release = setInterval(() => {
   return { ...context, management, release: () => fs.writeFile(path.join(context.directory, "release"), "ready") };
 }
 const resultMessage = 'parentPort.postMessage({result: {foodCount: 1, publicationDateRange: {earliest: "2024-01-01", latest: "2025-01-01"}}});';
+function activatingJob(id: string, filename = "replacement.zip"): CatalogImportJob {
+  return {
+    id, filename, phase: "activating", receivedBytes: 100, processedRecords: 4,
+    exclusions: {}, error: null, startedAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z",
+  };
+}
 
 test("shutdown interrupts the live worker and removes its partial generation", async () => {
   const { management, directory } = await workerSetup(resultMessage);
@@ -188,11 +203,465 @@ test.each(["missing", "different", "interrupted"] as const)("a stale worker does
   expect(management.read().installed).toBeNull();
 });
 
-test("installation claims distinguish busy and already installed providers", async () => {
+test("installation claims prevent overlap and permit deliberate OFF reimport", async () => {
   const { management } = await setup();
   const pending = new PassThrough();
   const upload = management.submitArchive({ filename: "off.gz", stream: pending });
   await expect(management.submitArchive({ filename: "off.gz", stream: Readable.from("other") })).rejects.toThrow("A Open Food Facts installation is already running.");
   pending.end(offArchive([offWithBasis("serving")])); await upload; await finished(management);
-  await expect(management.submitArchive({ filename: "off.gz", stream: Readable.from("other") })).rejects.toThrow("Open Food Facts is already installed. Catalog replacement is not available yet.");
+  const firstGeneration = management.read().installed?.generation;
+  await management.submitArchive({ filename: "off-reimport.gz", stream: Readable.from(offArchive([offWithBasis("serving")])) });
+  await finished(management);
+  expect(management.read()).toMatchObject({ installed: { filename: "off-reimport.gz" }, job: { phase: "succeeded" } });
+  expect(management.read().installed?.generation).not.toBe(firstGeneration);
+});
+
+test("activation publishes the replacement to new readers before retiring the generation held by an in-flight reader", async () => {
+  const { management, directory } = await setup({ provider: "usda-fdc" });
+  const archive = await foundationArchive();
+  await management.submitArchive({ filename: "foundation.zip", stream: Readable.from(archive) });
+  await finished(management);
+  const oldGeneration = management.read().installed!.generation;
+
+  let releaseFirst!: () => void;
+  let releaseSecond!: () => void;
+  const heldFirst = new Promise<void>(resolve => { releaseFirst = resolve; });
+  const heldSecond = new Promise<void>(resolve => { releaseSecond = resolve; });
+  let readersStarted = 0;
+  const holdOldReader = (held: Promise<void>) => management.withActiveGeneration(async generation => {
+    readersStarted += 1;
+    expect(generation).toBe(oldGeneration);
+    await held;
+    return generation;
+  });
+  const firstOldReader = holdOldReader(heldFirst);
+  const secondOldReader = holdOldReader(heldSecond);
+  await vi.waitFor(() => expect(readersStarted).toBe(2));
+  await fs.writeFile(path.join(directory, `${oldGeneration}.sqlite-journal`), "retained journal");
+
+  await management.submitArchive({ filename: "foundation.zip", stream: Readable.from(archive) });
+  await vi.waitFor(() => {
+    expect(management.read().installed?.generation).not.toBe(oldGeneration);
+    expect(management.read().job?.phase).toBe("activating");
+  });
+  await expect(fs.access(path.join(directory, `${oldGeneration}.sqlite`))).resolves.toBeUndefined();
+  await expect(management.withActiveGeneration(generation => generation)).resolves.toBe(management.read().installed?.generation);
+
+  releaseFirst();
+  await expect(firstOldReader).resolves.toBe(oldGeneration);
+  expect(management.read().job?.phase).toBe("activating");
+  await expect(fs.access(path.join(directory, `${oldGeneration}.sqlite`))).resolves.toBeUndefined();
+
+  releaseSecond();
+  await expect(secondOldReader).resolves.toBe(oldGeneration);
+  await finished(management);
+  await expect(fs.access(path.join(directory, `${oldGeneration}.sqlite`))).rejects.toMatchObject({ code: "ENOENT" });
+  await expect(fs.access(path.join(directory, `${oldGeneration}.sqlite-journal`))).rejects.toMatchObject({ code: "ENOENT" });
+  expect(management.read().job?.phase).toBe("succeeded");
+});
+
+test("restart completes an already-published activation handoff instead of interrupting the replacement", async () => {
+  const { management, directory, database, settings } = await setup({ provider: "usda-fdc" });
+  const archive = await foundationArchive();
+  await management.submitArchive({ filename: "foundation.zip", stream: Readable.from(archive) });
+  await finished(management);
+  const old = management.read().installed!;
+  const replacement = { ...old, generation: "00000000-0000-4000-8000-000000000001", filename: "replacement.zip" };
+  await fs.copyFile(path.join(directory, `${old.generation}.sqlite`), path.join(directory, `${replacement.generation}.sqlite`));
+  const activating = activatingJob(replacement.generation, replacement.filename);
+  saveCatalogState(database.getClient(), { installed: replacement, retiring: old, job: activating }, "usda-fdc");
+
+  const restarted = new CatalogManagement(database.getClient(), settings);
+  cleanups.unshift(() => restarted.shutdown());
+  await vi.waitFor(() => expect(restarted.read().busy).toBe(false));
+  expect(restarted.read()).toMatchObject({ installed: replacement, job: { phase: "succeeded", error: null } });
+  expect(restarted.read().retiring).toBeUndefined();
+  await expect(fs.access(path.join(directory, `${old.generation}.sqlite`))).rejects.toMatchObject({ code: "ENOENT" });
+  await expect(fs.access(path.join(directory, `${replacement.generation}.sqlite`))).resolves.toBeUndefined();
+});
+
+test("restart interrupts activation before publication and preserves the previous generation", async () => {
+  const { management, directory, database, settings } = await setup({ provider: "usda-fdc" });
+  const archive = await foundationArchive();
+  await management.submitArchive({ filename: "foundation.zip", stream: Readable.from(archive) });
+  await finished(management);
+  const working = management.read().installed!;
+  const pendingId = "00000000-0000-4000-8000-000000000002";
+  const activating = activatingJob(pendingId);
+  await fs.copyFile(path.join(directory, `${working.generation}.sqlite`), path.join(directory, `${pendingId}.sqlite`));
+  await fs.writeFile(path.join(directory, `${pendingId}.zip`), archive);
+  saveCatalogState(database.getClient(), { installed: working, job: activating }, "usda-fdc");
+
+  const restarted = new CatalogManagement(database.getClient(), settings);
+  cleanups.unshift(() => restarted.shutdown());
+  expect(restarted.read()).toMatchObject({
+    installed: working,
+    busy: false,
+    job: { phase: "interrupted", error: "USDA installation was interrupted by a server restart. Upload the archive again." },
+  });
+  await vi.waitFor(async () => expect((await fs.readdir(directory)).filter(name => name.startsWith(pendingId))).toEqual([]));
+  await expect(fs.access(path.join(directory, `${working.generation}.sqlite`))).resolves.toBeUndefined();
+});
+
+test("restart interrupts an unpublished activation when no previous generation exists", async () => {
+  const { database, directory, settings } = await setup({ provider: "usda-fdc" });
+  const pendingId = "00000000-0000-4000-8000-000000000004";
+  const activating = activatingJob(pendingId, "foundation.zip");
+  await fs.writeFile(path.join(directory, `${pendingId}.sqlite`), "unpublished generation");
+  saveCatalogState(database.getClient(), { installed: null, job: activating }, "usda-fdc");
+
+  const restarted = new CatalogManagement(database.getClient(), settings);
+  cleanups.unshift(() => restarted.shutdown());
+  expect(restarted.read()).toMatchObject({
+    installed: null,
+    busy: false,
+    job: { phase: "interrupted", error: "USDA installation was interrupted by a server restart. Upload the archive again." },
+  });
+  await vi.waitFor(async () => expect((await fs.readdir(directory)).filter(name => name.startsWith(pendingId))).toEqual([]));
+});
+
+test("reader release completes only the exact published activation handoff", async () => {
+  const { management, database } = await setup({ provider: "usda-fdc" });
+  await management.submitArchive({ filename: "foundation.zip", stream: Readable.from(await foundationArchive()) });
+  await finished(management);
+  const installed = management.read().installed!;
+  const succeeded = management.read().job!;
+  const importing = { ...succeeded, phase: "importing" as const };
+  const mismatched = { ...succeeded, id: "00000000-0000-4000-8000-000000000003", phase: "activating" as const };
+  const incompleteStates = [
+    { installed, job: null },
+    { installed, job: importing },
+    { installed, job: mismatched },
+    { installed: null, job: { ...succeeded, phase: "activating" as const } },
+  ];
+
+  for (const incomplete of incompleteStates) {
+    saveCatalogState(database.getClient(), { installed, job: succeeded }, "usda-fdc");
+    const read = management.withActiveGeneration(generation => {
+      saveCatalogState(database.getClient(), incomplete, "usda-fdc");
+      return generation;
+    });
+    await expect(read).resolves.toBe(installed.generation);
+    expect(management.read()).toEqual({ ...incomplete, busy: incomplete.job !== null });
+  }
+});
+
+test("a retirement failure keeps the replacement usable, reports the handoff error and recovers on restart", async () => {
+  const { management, database, directory, settings } = await setup({ provider: "usda-fdc" });
+  const archive = await foundationArchive();
+  await management.submitArchive({ filename: "foundation.zip", stream: Readable.from(archive) });
+  await finished(management);
+  const old = management.read().installed!;
+  let release!: () => void;
+  const held = new Promise<void>(resolve => { release = resolve; });
+  const oldReader = management.withActiveGeneration(async generation => { await held; return generation; });
+
+  await management.submitArchive({ filename: "replacement.zip", stream: Readable.from(archive) });
+  await vi.waitFor(() => {
+    const state = management.read();
+    expect(state.installed?.generation).not.toBe(old.generation);
+    expect(state.retiring).toEqual(old);
+    expect(state.job?.phase).toBe("activating");
+  });
+  const replacement = management.read().installed!;
+  vi.mocked(fs.rm).mockRejectedValueOnce(new Error("private retirement failure"));
+  release();
+
+  await expect(oldReader).resolves.toBe(old.generation);
+  await vi.waitFor(() => {
+    expect(management.read()).toMatchObject({
+      installed: replacement,
+      retiring: old,
+      busy: false,
+      job: { phase: "failed", error: "USDA catalog handoff failed. The replacement remains active; check catalog storage and restart the server." },
+    });
+  });
+  await expect(management.submitArchive({ filename: "next.zip", stream: Readable.from(archive) })).rejects.toThrow("A USDA installation is already running.");
+
+  const restarted = new CatalogManagement(database.getClient(), settings);
+  cleanups.unshift(() => restarted.shutdown());
+  await finished(restarted);
+  expect(restarted.read()).toMatchObject({ installed: replacement, job: { phase: "succeeded", error: null } });
+  expect(restarted.read().retiring).toBeUndefined();
+  await expect(fs.access(path.join(directory, `${old.generation}.sqlite`))).rejects.toMatchObject({ code: "ENOENT" });
+});
+
+test.each(["missing job", "nonfailed job", "mismatched generation", "missing installed generation"] as const)("restart does not recover a handoff with %s", async invalid => {
+  const { management, database, settings } = await setup({ provider: "usda-fdc" });
+  await management.submitArchive({ filename: "foundation.zip", stream: Readable.from(await foundationArchive()) });
+  await finished(management);
+  const installed = management.read().installed!;
+  const succeeded = management.read().job!;
+  const failed = { ...succeeded, phase: "failed" as const, error: "USDA catalog handoff failed." };
+  const retiring = { ...installed, generation: "00000000-0000-4000-8000-000000000005" };
+  const candidate = invalid === "missing job"
+    ? { installed, job: null, retiring }
+    : invalid === "nonfailed job"
+      ? { installed, job: succeeded, retiring }
+      : invalid === "mismatched generation"
+        ? { installed, job: { ...failed, id: "00000000-0000-4000-8000-000000000006" }, retiring }
+        : { installed: null, job: failed, retiring };
+  saveCatalogState(database.getClient(), candidate, "usda-fdc");
+
+  const restarted = new CatalogManagement(database.getClient(), settings);
+  cleanups.unshift(() => restarted.shutdown());
+  expect(restarted.read()).toEqual({ ...candidate, busy: false });
+});
+
+test("a USDA replacement activation failure leaves the working generation active and permits retry", async () => {
+  const { management, directory } = await setup({ provider: "usda-fdc" });
+  const archive = await foundationArchive();
+  await management.submitArchive({ filename: "foundation.zip", stream: Readable.from(archive) });
+  await finished(management);
+  const working = management.read().installed!;
+
+  vi.mocked(fs.chmod).mockRejectedValueOnce(new Error("private activation fault"));
+  await management.submitArchive({ filename: "replacement.zip", stream: Readable.from(archive) });
+  await finished(management);
+  expect(management.read()).toMatchObject({
+    installed: working,
+    job: { phase: "failed", error: "USDA activation failed. Check server storage and retry the upload." },
+  });
+  await expect(fs.access(path.join(directory, `${working.generation}.sqlite`))).resolves.toBeUndefined();
+
+  await management.submitArchive({ filename: "replacement.zip", stream: Readable.from(archive) });
+  await finished(management);
+  expect(management.read()).toMatchObject({ installed: { filename: "replacement.zip" }, job: { phase: "succeeded", error: null } });
+  expect(management.read().installed?.generation).not.toBe(working.generation);
+});
+
+test.each([
+  ["newer", { releasePeriod: "2025-12", identifier: "FoodData Central 14.0", releasedOn: "2025-12-18", archiveFilename: "FoodData_Central_foundation_food_csv_2025-12-18.zip", archiveByteLength: 1200 }, officialRelease],
+  ["unchanged", { releasePeriod: officialRelease.releasePeriod, identifier: officialRelease.identifier, releasedOn: officialRelease.releasedOn, archiveFilename: officialRelease.archiveFilename, archiveByteLength: officialRelease.archiveByteLength }, officialRelease],
+] as const)("USDA update checks report %s releases from explicit source metadata", async (status, installedRelease, availableRelease) => {
+  const transport = { latestFoundationRelease: vi.fn().mockResolvedValue(availableRelease) };
+  const now = vi.fn(() => new Date("2026-09-09T14:30:00.000Z"));
+  const { management, database } = await setup({ provider: "usda-fdc", sourceTransport: transport, now });
+  saveCatalogState(database.getClient(), {
+    installed: {
+      generation: "installed-generation", filename: "foundation.zip", sha256: "installed-sha", foodCount: 469,
+      installedAt: "2026-01-02T03:04:05.000Z", publicationDateRange: { earliest: "2019-04-01", latest: "2025-12-18" }, sourceRelease: installedRelease,
+    },
+    job: null,
+  });
+
+  await management.checkForUpdate();
+
+  expect(management.read().updateCheck).toEqual({
+    status, checkedAt: "2026-09-09T14:30:00.000Z", availableRelease, error: null,
+  });
+});
+
+test("USDA update checks cache results and explicit checks bypass the cache", async () => {
+  let current = new Date("2026-09-09T14:30:00.000Z");
+  const transport = { latestFoundationRelease: vi.fn().mockResolvedValue(officialRelease) };
+  const { management } = await setup({ provider: "usda-fdc", sourceTransport: transport, now: () => current, updateCheckCacheMs: 60_000 });
+
+  await management.checkForUpdate();
+  current = new Date("2026-09-09T14:30:30.000Z");
+  await management.checkForUpdate();
+  expect(transport.latestFoundationRelease).toHaveBeenCalledOnce();
+
+  await management.checkForUpdate({ force: true });
+  expect(transport.latestFoundationRelease).toHaveBeenCalledTimes(2);
+  expect(management.read().updateCheck?.checkedAt).toBe("2026-09-09T14:30:30.000Z");
+});
+
+test("the default USDA update cache lasts six hours", async () => {
+  let current = new Date("2026-09-09T00:00:00.000Z");
+  const transport = { latestFoundationRelease: vi.fn().mockResolvedValue(officialRelease) };
+  const { management } = await setup({ provider: "usda-fdc", sourceTransport: transport, now: () => current });
+  await management.checkForUpdate();
+  current = new Date("2026-09-09T05:59:59.999Z"); await management.checkForUpdate();
+  expect(transport.latestFoundationRelease).toHaveBeenCalledOnce();
+  current = new Date("2026-09-09T06:00:00.000Z"); await management.checkForUpdate();
+  expect(transport.latestFoundationRelease).toHaveBeenCalledTimes(2);
+});
+
+test("concurrent USDA checks share one metadata request", async () => {
+  let release!: (value: FoundationReleaseMetadata) => void;
+  const transport = { latestFoundationRelease: vi.fn(() => new Promise<FoundationReleaseMetadata>(resolve => { release = resolve; })) };
+  const { management } = await setup({ provider: "usda-fdc", sourceTransport: transport });
+  const first = management.checkForUpdate({ force: true });
+  const second = management.checkForUpdate({ force: true });
+  expect(transport.latestFoundationRelease).toHaveBeenCalledOnce();
+  release(officialRelease);
+  await Promise.all([first, second]);
+  expect(management.read().updateCheck?.availableRelease).toEqual(officialRelease);
+  transport.latestFoundationRelease.mockResolvedValueOnce(officialRelease);
+  await management.checkForUpdate({ force: true });
+  expect(transport.latestFoundationRelease).toHaveBeenCalledTimes(2);
+});
+
+test("Open Food Facts ignores the USDA-only update transport", async () => {
+  const transport = { latestFoundationRelease: vi.fn().mockResolvedValue(officialRelease) };
+  const { management, database } = await setup({ provider: "open-food-facts", sourceTransport: transport });
+  saveCatalogUpdateCheck(database.getClient(), { status: "newer", checkedAt: "2026-09-09T14:30:00.000Z", availableRelease: officialRelease, error: null }, "open-food-facts");
+  await management.checkForUpdate({ force: true });
+  expect(transport.latestFoundationRelease).not.toHaveBeenCalled();
+  expect(management.read().updateCheck).toBeUndefined();
+});
+
+test.each([
+  [{ identifier: null, releasedOn: null }, { ...officialRelease, identifier: null, releasedOn: null }],
+  [{ identifier: "  FoodData Central 15.0  " }, officialRelease],
+] as const)("valid USDA metadata normalizes optional enrichment %#", async (patch, expected) => {
+  const available = { ...officialRelease, ...patch };
+  const transport = { latestFoundationRelease: vi.fn().mockResolvedValue(available) };
+  const { management, database } = await setup({ provider: "usda-fdc", sourceTransport: transport });
+  saveCatalogState(database.getClient(), {
+    installed: { generation: "generation", filename: "foundation.zip", sha256: "sha", foodCount: 1, installedAt: "2026-01-01T00:00:00Z", publicationDateRange: { earliest: "2020-01-01", latest: "2025-12-18" }, sourceRelease: { ...officialRelease, releasePeriod: "2025-12" } },
+    job: null,
+  });
+  await management.checkForUpdate();
+  expect(management.read().updateCheck).toMatchObject({ status: "newer", availableRelease: expected });
+});
+
+test.each([
+  { identifier: "" },
+  { identifier: "   " },
+  { releasedOn: "April 30, 2026" },
+  { releasedOn: "2026-04-99" },
+  { releasedOn: "2026-05-01" },
+  { releasePeriod: "2026-13" },
+  { archiveFilename: "../foundation.zip" },
+  { archiveByteLength: 0 },
+  { archiveByteLength: -1 },
+  { archiveByteLength: 1.5 },
+  { archiveByteLength: Number.NaN },
+  { archiveUrl: "http://fdc.nal.usda.gov/foundation.zip" },
+  { archiveUrl: "https://example.com/foundation.zip" },
+  { archiveUrl: "not a URL" },
+] as const)("successful but invalid official metadata is indeterminate %#", async patch => {
+  const transport = { latestFoundationRelease: vi.fn().mockResolvedValue({ ...officialRelease, ...patch }) };
+  const { management } = await setup({ provider: "usda-fdc", sourceTransport: transport });
+  await management.checkForUpdate();
+  expect(management.read().updateCheck).toMatchObject({ status: "indeterminate", availableRelease: null, error: null });
+});
+
+test.each([
+  [null, "FoodData Central 15.0"],
+  ["FoodData Central 15.0", null],
+] as const)("same-period descriptors compare unchanged when only one side lacks update-log enrichment", async (installedIdentifier, availableIdentifier) => {
+  const available = { ...officialRelease, identifier: availableIdentifier };
+  const transport = { latestFoundationRelease: vi.fn().mockResolvedValue(available) };
+  const { management, database } = await setup({ provider: "usda-fdc", sourceTransport: transport });
+  saveCatalogState(database.getClient(), {
+    installed: { generation: "generation", filename: "foundation.zip", sha256: "sha", foodCount: 1, installedAt: "2026-01-01T00:00:00Z", publicationDateRange: { earliest: "2020-01-01", latest: "2026-04-30" }, sourceRelease: { releasePeriod: officialRelease.releasePeriod, identifier: installedIdentifier, releasedOn: officialRelease.releasedOn, archiveFilename: officialRelease.archiveFilename, archiveByteLength: officialRelease.archiveByteLength } },
+    job: null,
+  });
+  await management.checkForUpdate();
+  expect(management.read().updateCheck?.status).toBe("unchanged");
+});
+
+test("same-period conflicting USDA versions are indeterminate", async () => {
+  const transport = { latestFoundationRelease: vi.fn().mockResolvedValue(officialRelease) };
+  const { management, database } = await setup({ provider: "usda-fdc", sourceTransport: transport });
+  saveCatalogState(database.getClient(), {
+    installed: { generation: "generation", filename: "foundation.zip", sha256: "sha", foodCount: 1, installedAt: "2026-01-01T00:00:00Z", publicationDateRange: { earliest: "2020-01-01", latest: "2026-04-30" }, sourceRelease: { releasePeriod: officialRelease.releasePeriod, identifier: "FoodData Central 14.9", releasedOn: officialRelease.releasedOn, archiveFilename: officialRelease.archiveFilename, archiveByteLength: officialRelease.archiveByteLength } },
+    job: null,
+  });
+  await management.checkForUpdate();
+  expect(management.read().updateCheck?.status).toBe("indeterminate");
+});
+
+test("same-period conflicting exact USDA release dates are indeterminate", async () => {
+  const transport = { latestFoundationRelease: vi.fn().mockResolvedValue(officialRelease) };
+  const { management, database } = await setup({ provider: "usda-fdc", sourceTransport: transport });
+  saveCatalogState(database.getClient(), {
+    installed: { generation: "generation", filename: "foundation.zip", sha256: "sha", foodCount: 1, installedAt: "2026-01-01T00:00:00Z", publicationDateRange: { earliest: "2020-01-01", latest: "2026-04-29" }, sourceRelease: { releasePeriod: officialRelease.releasePeriod, identifier: officialRelease.identifier, releasedOn: "2026-04-29", archiveFilename: officialRelease.archiveFilename, archiveByteLength: officialRelease.archiveByteLength } },
+    job: null,
+  });
+  await management.checkForUpdate();
+  expect(management.read().updateCheck?.status).toBe("indeterminate");
+});
+
+test.each([
+  ["not installed", null, officialRelease, "indeterminate", null],
+  ["unknown official metadata", { releasePeriod: "2025-12", identifier: "FoodData Central 14.0", releasedOn: "2025-12-18", archiveFilename: "foundation.zip", archiveByteLength: 1200 }, null, "indeterminate", null],
+  ["incomparable identifiers", { releasePeriod: "invalid", identifier: "unversioned", releasedOn: null, archiveFilename: "foundation.zip", archiveByteLength: 1200 }, officialRelease, "indeterminate", null],
+  ["an apparently older official release", { releasePeriod: "2026-12", identifier: "FoodData Central 16.0", releasedOn: "2026-12-01", archiveFilename: "foundation.zip", archiveByteLength: 1200 }, officialRelease, "indeterminate", null],
+  ["a same-release artifact revision", { releasePeriod: officialRelease.releasePeriod, identifier: officialRelease.identifier, releasedOn: officialRelease.releasedOn, archiveFilename: officialRelease.archiveFilename, archiveByteLength: officialRelease.archiveByteLength - 1 }, officialRelease, "indeterminate", null],
+  ["a same-release filename revision", { releasePeriod: officialRelease.releasePeriod, identifier: officialRelease.identifier, releasedOn: officialRelease.releasedOn, archiveFilename: "foundation-renamed.zip", archiveByteLength: officialRelease.archiveByteLength }, officialRelease, "indeterminate", null],
+] as const)("USDA update checks keep %s honest", async (_case, sourceRelease, available, status, error) => {
+  const transport = { latestFoundationRelease: vi.fn().mockResolvedValue(available) };
+  const { management, database } = await setup({ provider: "usda-fdc", sourceTransport: transport, now: () => new Date("2026-09-09T14:30:00.000Z") });
+  if (sourceRelease) saveCatalogState(database.getClient(), {
+    installed: {
+      generation: "installed-generation", filename: "foundation.zip", sha256: "installed-sha", foodCount: 469,
+      installedAt: "2026-01-02T03:04:05.000Z", publicationDateRange: { earliest: "2019-04-01", latest: "2025-12-18" }, sourceRelease,
+    },
+    job: null,
+  });
+
+  await management.checkForUpdate();
+
+  expect(management.read().updateCheck).toMatchObject({ status, availableRelease: available, error });
+});
+
+test("failed USDA metadata checks preserve the installed catalog and manual upload state", async () => {
+  const transport = { latestFoundationRelease: vi.fn().mockRejectedValue(new Error("private network failure")) };
+  const { management } = await setup({ provider: "usda-fdc", sourceTransport: transport, now: () => new Date("2026-09-09T14:30:00.000Z") });
+  const archive = await foundationArchive();
+  await management.submitArchive({ filename: "foundation.zip", stream: Readable.from(archive) });
+  await finished(management);
+  const before = management.read();
+
+  await management.checkForUpdate();
+
+  expect(management.read()).toMatchObject({
+    installed: before.installed,
+    job: before.job,
+    busy: false,
+    updateCheck: { status: "unavailable", checkedAt: "2026-09-09T14:30:00.000Z", availableRelease: null, error: "Official USDA release metadata could not be checked." },
+  });
+});
+
+test("a successful USDA metadata check cannot activate or mutate the installed catalog", async () => {
+  const transport = { latestFoundationRelease: vi.fn().mockResolvedValue(officialRelease) };
+  const { management, database, directory } = await setup({ provider: "usda-fdc", sourceTransport: transport, now: () => new Date("2026-09-09T14:30:00.000Z") });
+  const archive = await foundationArchive();
+  await management.submitArchive({ filename: "foundation.zip", stream: Readable.from(archive) });
+  await finished(management);
+  const completed = management.read();
+  saveCatalogState(database.getClient(), {
+    installed: { ...completed.installed!, sourceRelease: { releasePeriod: "2025-12", identifier: "FoodData Central 14.0", releasedOn: "2025-12-18", archiveFilename: "foundation-old.zip", archiveByteLength: 1200 } },
+    job: completed.job,
+  });
+  const before = management.read();
+  const filesBefore = await fs.readdir(directory);
+
+  await management.checkForUpdate();
+
+  expect(management.read()).toMatchObject({ installed: before.installed, job: before.job, busy: false, updateCheck: { status: "newer", availableRelease: officialRelease } });
+  expect(await fs.readdir(directory)).toEqual(filesBefore);
+});
+
+test("a validated upload records the corroborated official release only when filename and exact byte length match", async () => {
+  const archive = await foundationArchive();
+  const release = { ...officialRelease, archiveByteLength: archive.length };
+  const transport = { latestFoundationRelease: vi.fn().mockResolvedValue(release) };
+  const { management } = await setup({ provider: "usda-fdc", sourceTransport: transport, now: () => new Date("2026-09-09T14:30:00.000Z") });
+  await management.checkForUpdate();
+
+  await management.submitArchive({ filename: release.archiveFilename, size: archive.length, stream: Readable.from(archive) });
+  await finished(management);
+
+  expect(management.read().installed?.sourceRelease).toEqual({ releasePeriod: release.releasePeriod, identifier: release.identifier, releasedOn: release.releasedOn, archiveFilename: release.archiveFilename, archiveByteLength: release.archiveByteLength });
+  expect(management.read().updateCheck?.status).toBe("unchanged");
+});
+
+test.each([
+  ["renamed.zip", 0],
+  [officialRelease.archiveFilename, 1],
+] as const)("valid manual uploads with unmatched official correlation remain installable (%s)", async (filename, lengthDelta) => {
+  const archive = await foundationArchive();
+  const release = { ...officialRelease, archiveByteLength: archive.length + lengthDelta };
+  const transport = { latestFoundationRelease: vi.fn().mockResolvedValue(release) };
+  const { management } = await setup({ provider: "usda-fdc", sourceTransport: transport });
+  await management.checkForUpdate();
+  await management.submitArchive({ filename, size: archive.length, stream: Readable.from(archive) });
+  await finished(management);
+  expect(management.read()).toMatchObject({ installed: { filename }, job: { phase: "succeeded" }, updateCheck: { status: "indeterminate" } });
+  expect(management.read().installed?.sourceRelease).toBeUndefined();
 });

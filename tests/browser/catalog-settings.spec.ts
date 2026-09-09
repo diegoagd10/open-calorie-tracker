@@ -5,7 +5,7 @@ import { offArchive, offProduct, offWithBasis } from "../support/off-archive";
 import { basicFoodsArchive } from "../support/basic-foods-archive";
 
 const password = "correct horse 🔐 battery";
-test.setTimeout(60_000);
+test.setTimeout(120_000);
 test("administrator installs USDA from mobile Settings, leaves during import, and a member logs a local food", async ({ page, browser }, testInfo) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await bootstrapOrSignInBrowserTestUser(page, "catalog.browser.admin", password);
@@ -16,6 +16,13 @@ test("administrator installs USDA from mobile Settings, leaves during import, an
   await page.goto("/settings/goals");
   await page.getByRole("link", { name: /Food Catalogs/ }).click();
   await expect(page.getByRole("heading", { name: "Food Catalogs", exact: true })).toBeVisible();
+  const usdaCard = page.locator('section[aria-labelledby="usda-fdc-heading"]');
+  await expect(usdaCard.getByText("Install a Foundation archive before comparing it with USDA's declared release.", { exact: true })).toBeVisible();
+  const officialDownload = usdaCard.getByRole("link", { name: /Official USDA downloads/ });
+  await expect(officialDownload).toHaveAttribute("href", "https://fdc.nal.usda.gov/download-datasets/");
+  await expect(officialDownload).toHaveAttribute("target", "_blank");
+  await usdaCard.getByRole("button", { name: "Check USDA updates again" }).click();
+  await expect(usdaCard.getByLabel("Foundation CSV ZIP")).toBeEnabled();
   const archive = await basicFoodsArchive(75_000);
   await page.getByLabel("Foundation CSV ZIP").setInputFiles({ name: "foundation-browser.zip", mimeType: "application/zip", buffer: archive });
   const uploaded = page.waitForResponse(response => response.url().endsWith("/settings/catalogs") && response.request().method() === "POST");
@@ -26,6 +33,11 @@ test("administrator installs USDA from mobile Settings, leaves during import, an
   await expect(page.getByText("USDA installation complete", { exact: true })).toBeVisible({ timeout: 15000 });
   await expect(page.getByText(/\d+ foods installed/, { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Install USDA Foundation" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Replace or reimport USDA Foundation" })).toBeVisible();
+  await page.getByLabel("Foundation CSV ZIP").setInputFiles({ name: "foundation-browser-reimport.zip", mimeType: "application/zip", buffer: archive });
+  await page.getByRole("button", { name: "Replace or reimport USDA Foundation" }).click();
+  await expect(page.getByText("USDA installation complete", { exact: true })).toBeVisible({ timeout: 15000 });
+  await expect(page.getByText("Archive: foundation-browser-reimport.zip", { exact: true })).toBeVisible();
   await page.reload();
   await expect(page.getByText("USDA installation complete", { exact: true })).toBeVisible();
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
@@ -42,6 +54,39 @@ test("administrator installs USDA from mobile Settings, leaves during import, an
   await expect(page.getByText("Open Food Facts installation complete", { exact: true })).toBeVisible({ timeout: 15000 });
   await expect(page.getByText("3 foods installed", { exact: true })).toBeVisible();
   await expect(page.getByText("52 foods installed", { exact: true })).toBeVisible();
+  await expect(page.getByText("3 foods imported · 0 food records rejected", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Replace or reimport Open Food Facts" })).toBeVisible();
+
+  const failingReplacement = offArchive(Array.from({ length: 75_000 }, (_, index) => ({
+    ...offWithBasis("100g", String(1_000_000_000_000 + index)),
+    product_name: `Replacement cereal ${index}`,
+  }))).subarray(0, -8);
+  await page.getByLabel("OFF tab-separated CSV GZIP").setInputFiles({ name: "corrupt.csv.gz", mimeType: "application/gzip", buffer: failingReplacement });
+  const replacementAccepted = page.waitForResponse(response => response.url().endsWith("/settings/catalogs") && response.request().method() === "POST");
+  await page.getByRole("button", { name: "Replace or reimport Open Food Facts" }).click();
+  expect((await replacementAccepted).status()).toBe(202);
+  const activeOffReplacement = page.getByText(/Importing foods and nutrition|Building search index/);
+  await expect(activeOffReplacement).toBeVisible({ timeout: 15000 });
+  const lookup = await page.context().newPage();
+  await lookup.goto("/?food=barcode&barcode=0012345678905");
+  await expect(lookup.getByRole("heading", { name: "Local oat drink", exact: true })).toBeVisible();
+  await page.reload();
+  await expect(activeOffReplacement).toBeVisible();
+  await lookup.goto("/?food=search&query=broccoli&filter=basic");
+  await expect(lookup.getByText("Broccoli, raw", { exact: true }).first()).toBeVisible();
+  await page.reload();
+  await expect(activeOffReplacement).toBeVisible();
+  await lookup.close();
+  await expect(page.getByText("Open Food Facts installation failed", { exact: true })).toBeVisible({ timeout: 15000 });
+  await expect(page.getByRole("alert")).toContainText("Corrupt OFF GZIP");
+  await expect(page.locator('section[aria-labelledby="open-food-facts-heading"]').getByText(/^[1-9][\d,]* foods imported · \d[\d,]* food records rejected$/)).toBeVisible();
+  await expect(page.getByText("3 foods installed", { exact: true })).toBeVisible();
+  await expect(page.getByText("52 foods installed", { exact: true })).toBeVisible();
+
+  await page.getByLabel("OFF tab-separated CSV GZIP").setInputFiles({ name: "products-reimport.csv.gz", mimeType: "application/gzip", buffer: products });
+  await page.getByRole("button", { name: "Replace or reimport Open Food Facts" }).click();
+  await expect(page.getByText("Open Food Facts installation complete", { exact: true })).toBeVisible({ timeout: 15000 });
+  await expect(page.getByText("Archive: products-reimport.csv.gz", { exact: true })).toBeVisible();
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
   await page.screenshot({ path: testInfo.outputPath("both-catalogs-mobile.png"), fullPage: true });
 

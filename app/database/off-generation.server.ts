@@ -3,7 +3,6 @@ import BetterSqlite3 from "better-sqlite3";
 import type { CatalogFood } from "../catalog/food-catalog.server.ts";
 
 export function readOffGenerationFood(directory: string, generation: string, id: string): CatalogFood | undefined {
-  // Stryker disable next-line BooleanLiteral: either immutable-open option independently prevents a missing catalog from being created; their joint contract is tested.
   const database = new BetterSqlite3(path.join(directory, `${generation}.sqlite`), { readonly: true, fileMustExist: true });
   try {
     const row = database.prepare("SELECT record FROM products WHERE id = ?").get(id) as { record: string } | undefined;
@@ -12,7 +11,6 @@ export function readOffGenerationFood(directory: string, generation: string, id:
 }
 
 export function searchOffGeneration(directory: string, generation: string, expression: string, relevance: (food: CatalogFood) => number | null): CatalogFood[] {
-  // Stryker disable next-line BooleanLiteral: either immutable-open option independently prevents a missing catalog from being created; their joint contract is tested.
   const database = new BetterSqlite3(path.join(directory, `${generation}.sqlite`), { readonly: true, fileMustExist: true });
   try {
     database.function("food_relevance", record => relevance(JSON.parse(record as string) as CatalogFood));
@@ -35,6 +33,7 @@ export type BuildOffGenerationOptions = {
   maxBytes: number;
   onDuplicate: () => void;
   onIndexing: () => void;
+  onStored: () => void;
 };
 
 // Bounded transactions and SQLite cache; the export is never accumulated in memory.
@@ -46,6 +45,7 @@ export async function buildOffGeneration({
   maxBytes,
   onDuplicate,
   onIndexing,
+  onStored,
 }: BuildOffGenerationOptions) {
   const database = new BetterSqlite3(path.join(directory, `${generation}.sqlite`));
   let count = 0;
@@ -58,7 +58,7 @@ export async function buildOffGeneration({
     const flush = database.transaction(() => {
       for (const food of batch) {
         const result = insert.run(food.providerFoodId, food.name, aliasesFor(food).join(" "), food.brand ?? "", JSON.stringify(food));
-        if (result.changes) count++; else onDuplicate();
+        if (result.changes) { count++; onStored(); } else onDuplicate();
       }
     });
     for await (const food of foods) {

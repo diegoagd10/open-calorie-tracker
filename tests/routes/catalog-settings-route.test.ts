@@ -9,7 +9,7 @@ import { getApplicationDatabase, shutdownApplicationDatabase } from "../../app/d
 import { getCatalogManagement, shutdownCatalogManagement } from "../../app/catalog-management/runtime.server";
 import { action, loader, headers } from "../../app/routes/settings.catalogs";
 import { seedAuthenticatedAccount } from "../support/authentication";
-import { offArchive } from "../support/off-archive";
+import { offArchive, offWithBasis } from "../support/off-archive";
 import { foundationArchive } from "../support/foundation-archive";
 
 const origin = "http://localhost:3000";
@@ -21,6 +21,9 @@ function args(request: Request) { return { request, params: {}, context: new Rou
 function get(cookie = adminCookie) { return args(new Request(`${origin}/settings/catalogs`, { headers: { Cookie: cookie } })); }
 function post(body: Uint8Array, cookie = adminCookie, csrf = csrfToken, requestOrigin = origin) {
   return args(new Request(`${origin}/settings/catalogs`, { method: "POST", headers: { Cookie: cookie, Origin: requestOrigin, "X-CSRF-Token": csrf, "X-Archive-Name": "foundation.zip", "Content-Type": "application/zip" }, body: new Uint8Array(body) }));
+}
+function checkAgain(cookie = adminCookie, csrf = csrfToken, requestOrigin = origin) {
+  return args(new Request(`${origin}/settings/catalogs`, { method: "POST", headers: { Cookie: cookie, Origin: requestOrigin, "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8" }, body: new URLSearchParams({ csrfToken: csrf, intent: "check-usda-update" }) }));
 }
 beforeAll(async () => {
   directory = await mkdtemp(path.join(tmpdir(), "catalog-settings-"));
@@ -43,9 +46,34 @@ test("catalog management requires administrator authentication and upload CSRF b
   await expect(action(post(zip, adminCookie, "invalid"))).rejects.toMatchObject({ status: 403 });
   await expect(action(post(zip, adminCookie, csrfToken, "https://attacker.example"))).rejects.toMatchObject({ status: 403 });
   expect((await loader(get())).catalog).toMatchObject({ installed: null, job: null, busy: false });
+  expect((await loader(get())).catalog.updateCheck).toMatchObject({ status: "indeterminate", availableRelease: null, error: null });
   expect((await loader(get())).csrfToken).toBe(csrfToken);
   expect((await loader(get())).today).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   expect(headers()).toEqual({ "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" });
+});
+
+test("explicit USDA checks reuse administrator and CSRF protections without starting an import", async () => {
+  await expect(action(checkAgain(memberCookie))).rejects.toMatchObject({ status: 404 });
+  await expect(action(checkAgain(adminCookie, "invalid"))).rejects.toMatchObject({ status: 403 });
+  await expect(action(checkAgain(adminCookie, csrfToken, "https://attacker.example"))).rejects.toMatchObject({ status: 403 });
+  const before = getCatalogManagement().read();
+  const response = await action(checkAgain());
+  expect(response.status).toBe(200);
+  expect(await response.json()).toEqual({ checked: true });
+  expect(response.headers.get("Cache-Control")).toBe("no-store");
+  expect(response.headers.get("Referrer-Policy")).toBe("no-referrer");
+  expect(getCatalogManagement().read()).toMatchObject({ installed: before.installed, job: before.job, busy: false, updateCheck: { status: "indeterminate" } });
+});
+
+test("unsupported catalog form actions are rejected without changing either catalog", async () => {
+  const before = await loader(get());
+  const request = checkAgain();
+  request.request = new Request(request.request, { body: new URLSearchParams({ csrfToken, intent: "unexpected" }) });
+  const response = await action(request);
+  expect(response.status).toBe(400);
+  expect(await response.json()).toEqual({ error: "Unsupported action." });
+  expect((await loader(get())).catalog).toEqual(before.catalog);
+  expect((await loader(get())).offCatalog).toEqual(before.offCatalog);
 });
 
 test("malformed upload requests return public errors without claiming an installation", async () => {
@@ -63,7 +91,7 @@ test("malformed upload requests return public errors without claiming an install
     expect(await response.json()).toEqual({ error });
     expect(response.headers.get("Cache-Control")).toBe("no-store");
     expect(response.headers.get("Referrer-Policy")).toBe("no-referrer");
-    expect((await loader(get())).catalog).toEqual({ installed: null, job: null, busy: false });
+    expect((await loader(get())).catalog).toMatchObject({ installed: null, job: null, busy: false, updateCheck: { status: "indeterminate" } });
   }
   const missingCsrf = post(await foundationArchive());
   missingCsrf.request.headers.delete("X-CSRF-Token");
@@ -90,7 +118,11 @@ test("an administrator upload returns while import continues and returning to Se
   expect((await loader(get())).catalog.busy).toBe(true);
   await vi.waitFor(() => expect(getCatalogManagement().read().busy).toBe(false), { timeout: 3000 });
   expect((await loader(get())).catalog).toMatchObject({ installed: { foodCount: 4, filename: "Fondación.zip" }, job: { phase: "succeeded", error: null, receivedBytes: archive.length } });
-  expect((await action(post(await foundationArchive()))).status).toBe(409);
+  const firstGeneration = getCatalogManagement().read().installed?.generation;
+  expect((await action(post(await foundationArchive()))).status).toBe(202);
+  await vi.waitFor(() => expect(getCatalogManagement().read().busy).toBe(false), { timeout: 3000 });
+  expect(getCatalogManagement().read()).toMatchObject({ installed: { filename: "foundation.zip" }, job: { phase: "succeeded" } });
+  expect(getCatalogManagement().read().installed?.generation).not.toBe(firstGeneration);
 });
 
 test.each([
@@ -120,10 +152,10 @@ test("missing upload body and missing CSRF header have distinct failures", async
   await expect(action(upload)).rejects.toMatchObject({ status: 403 });
 });
 
-test("OFF upload has its own authorization, content type and installed outcome", async () => {
+test("OFF upload and replacement have their own authorization, state and installed outcome", async () => {
   const archive = offArchive();
-  function offRequest(cookie = adminCookie, token = csrfToken) {
-    return args(new Request(`${origin}/settings/catalogs`, { method: "POST", headers: { Cookie: cookie, Origin: origin, "X-CSRF-Token": token, "X-Archive-Name": "products.csv.gz", "X-Catalog-Provider": "open-food-facts", "Content-Type": "application/gzip" }, body: new Uint8Array(archive) }));
+  function offRequest(cookie = adminCookie, token = csrfToken, source = archive, filename = "products.csv.gz") {
+    return args(new Request(`${origin}/settings/catalogs`, { method: "POST", headers: { Cookie: cookie, Origin: origin, "X-CSRF-Token": token, "X-Archive-Name": filename, "X-Catalog-Provider": "open-food-facts", "Content-Type": "application/gzip" }, body: new Uint8Array(source) }));
   }
   await expect(action(offRequest(memberCookie))).rejects.toMatchObject({ status: 404 });
   await expect(action(offRequest(adminCookie, "invalid"))).rejects.toMatchObject({ status: 403 });
@@ -132,5 +164,14 @@ test("OFF upload has its own authorization, content type and installed outcome",
   await vi.waitFor(() => expect(getCatalogManagement("open-food-facts").read().busy).toBe(false));
   const state = await loader(get());
   expect(state.catalog).toEqual(before);
-  expect(state.offCatalog).toMatchObject({ installed: { foodCount: 1 }, job: { phase: "succeeded" } });
+  expect(state.offCatalog).toMatchObject({ installed: { foodCount: 1, filename: "products.csv.gz" }, job: { phase: "succeeded", importedRecords: 1, rejectedRecords: 0 } });
+  const firstGeneration = state.offCatalog.installed?.generation;
+
+  const replacement = offArchive([{ ...offWithBasis("100g", "0012345678906"), product_name: "Replacement product" }]);
+  expect((await action(offRequest(adminCookie, csrfToken, replacement, "replacement.csv.gz"))).status).toBe(202);
+  await vi.waitFor(() => expect(getCatalogManagement("open-food-facts").read().busy).toBe(false));
+  const replaced = await loader(get());
+  expect(replaced.catalog).toEqual(before);
+  expect(replaced.offCatalog).toMatchObject({ installed: { foodCount: 1, filename: "replacement.csv.gz" }, job: { phase: "succeeded", importedRecords: 1, rejectedRecords: 0 } });
+  expect(replaced.offCatalog.installed?.generation).not.toBe(firstGeneration);
 });
