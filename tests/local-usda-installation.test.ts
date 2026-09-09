@@ -155,6 +155,64 @@ await importFoundation(workerData, publish);
   expect(replacement.read().installed?.generation).not.toBe(original.catalogGeneration);
 });
 
+test("a public catalog read holds its old generation until the replacement handoff completes", async () => {
+  const { management, catalog, directory } = await setup();
+  const archive = await foundationArchive();
+  await management.submitArchive({ filename: "foundation.zip", stream: Readable.from(archive) });
+  await vi.waitFor(() => expect(management.read().busy).toBe(false));
+  const oldGeneration = management.read().installed!.generation;
+  const lease = management.withActiveGeneration.bind(management);
+  let release!: () => void;
+  let readerStarted!: () => void;
+  const held = new Promise<void>(resolve => { release = resolve; });
+  const started = new Promise<void>(resolve => { readerStarted = resolve; });
+  vi.spyOn(management, "withActiveGeneration").mockImplementation(read => lease(async generation => {
+    if (generation === oldGeneration) { readerStarted(); await held; }
+    return read(generation);
+  }));
+
+  const oldRead = catalog.getFood("usda-fdc", "748967");
+  await started;
+  await management.submitArchive({ filename: "replacement.zip", stream: Readable.from(archive) });
+  await vi.waitFor(() => {
+    expect(management.read().job?.phase).toBe("activating");
+    expect(management.read().installed?.generation).not.toBe(oldGeneration);
+  });
+  const newGeneration = management.read().installed!.generation;
+  expect(newGeneration).not.toBe(oldGeneration);
+  await expect(catalog.getFood("usda-fdc", "748967")).resolves.toMatchObject({ catalogGeneration: newGeneration });
+  await expect(stat(path.join(directory, `${oldGeneration}.sqlite`))).resolves.toBeDefined();
+
+  release();
+  await expect(oldRead).resolves.toMatchObject({ catalogGeneration: oldGeneration });
+  await vi.waitFor(() => expect(management.read().busy).toBe(false));
+  await expect(stat(path.join(directory, `${oldGeneration}.sqlite`))).rejects.toMatchObject({ code: "ENOENT" });
+});
+
+test("a validation failure leaves the previous USDA catalog searchable and loggable", async () => {
+  const { management, catalog, entries, userId } = await setup();
+  await management.submitArchive({ filename: "foundation.zip", stream: Readable.from(await foundationArchive()) });
+  await vi.waitFor(() => expect(management.read().busy).toBe(false));
+  const working = management.read().installed!;
+  const food = await catalog.getFood("usda-fdc", "748967");
+
+  await management.submitArchive({ filename: "invalid.zip", stream: Readable.from(await foundationArchive({
+    "food.csv": "fdc_id,data_type,description,publication_date\n1,branded_food,Wrong dataset,2026-01-01\n",
+  })) });
+  await vi.waitFor(() => expect(management.read().busy).toBe(false));
+  expect(management.read()).toMatchObject({ installed: working, job: { phase: "failed", error: "Wrong USDA dataset. Only a Foundation CSV archive is supported." } });
+  await expect(catalog.search("usda-fdc", "egg")).resolves.toEqual(expect.arrayContaining([expect.objectContaining({ catalogGeneration: working.generation })]));
+  await expect(entries.log(userId, {
+    provider: food.provider,
+    providerFoodId: food.providerFoodId,
+    catalogGeneration: food.catalogGeneration,
+    foodLogDate: "2026-09-06",
+    idempotencyKey: "log-after-validation-failure",
+    selectedMeasurementId: "100g",
+    quantity: "1",
+  })).resolves.toMatchObject({ name: food.name, energyMilliKcal: 147_000 });
+});
+
 test("saving a review from a retired generation reports staleness even when the replacement removed that FDC ID", async () => {
   const { management, catalog, entries, userId } = await setup();
   await management.submitArchive({ filename: "foundation.zip", stream: Readable.from(await foundationArchive()) });

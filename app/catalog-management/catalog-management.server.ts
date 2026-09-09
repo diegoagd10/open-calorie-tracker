@@ -11,7 +11,8 @@ import { claimCatalogInstallation, readCatalogState, saveCatalogState } from "..
 export type ImportPhase = "uploading" | "queued" | "validating" | "importing" | "indexing" | "activating" | "succeeded" | "failed" | "interrupted";
 export type CatalogImportJob = {
   id: string; filename: string; phase: ImportPhase; receivedBytes: number;
-  processedRecords: number; exclusions: Record<string, number>; error: string | null;
+  processedRecords: number; importedRecords?: number; rejectedRecords?: number;
+  exclusions: Record<string, number>; error: string | null;
   startedAt: string; updatedAt: string;
 };
 export type InstalledCatalog = {
@@ -38,7 +39,10 @@ export class CatalogManagement {
     const off = options.provider === "open-food-facts";
     this.#options = { provider: "usda-fdc", maxUploadBytes: (off ? 4096 : 64) * 1024 * 1024, maxExpandedBytes: (off ? 32768 : 256) * 1024 * 1024, ...options };
     const state = this.read();
-    if (state.busy && state.job) {
+    if (state.retiring && state.job?.phase === "failed" && state.installed?.generation === state.job.id) {
+      this.#updateJob({ phase: "activating", error: null });
+      void this.#completeHandoff();
+    } else if (state.busy && state.job) {
       if (state.job.phase === "activating" && state.installed?.generation === state.job.id) {
         void this.#completeHandoff();
       } else {
@@ -61,7 +65,7 @@ export class CatalogManagement {
     if (input.size !== undefined && (!Number.isSafeInteger(input.size) || input.size <= 0 || input.size > this.#options.maxUploadBytes)) throw new CatalogManagementError("Archive exceeds the configured upload limit or is empty.");
     const id = randomUUID();
     const now = new Date().toISOString();
-    const conflict = claimCatalogInstallation(this.#database, { id, filename: path.basename(input.filename), phase: "uploading", receivedBytes: 0, processedRecords: 0, exclusions: {}, error: null, startedAt: now, updatedAt: now }, this.#options.provider, this.#options.provider === "usda-fdc");
+    const conflict = claimCatalogInstallation(this.#database, { id, filename: path.basename(input.filename), phase: "uploading", receivedBytes: 0, processedRecords: 0, importedRecords: 0, rejectedRecords: 0, exclusions: {}, error: null, startedAt: now, updatedAt: now }, this.#options.provider, this.#options.provider === "usda-fdc");
     if (conflict === "installed") throw new CatalogManagementError(`${this.#label} is already installed. Catalog replacement is not available yet.`);
     if (conflict === "busy") throw new CatalogManagementError(`A ${this.#label} installation is already running.`);
     this.#upload = new AbortController();
@@ -166,7 +170,13 @@ export class CatalogManagement {
     if (!this.#handoffReady(state)) return;
     const handoff = this.#retireAndComplete(state);
     this.#handoff = handoff;
-    try { await handoff; } finally { if (this.#handoff === handoff) this.#handoff = undefined; }
+    try {
+      await handoff;
+    } catch {
+      this.#updateJob({ phase: "failed", error: `${this.#label} catalog handoff failed. The replacement remains active; check catalog storage and restart the server.` });
+    } finally {
+      if (this.#handoff === handoff) this.#handoff = undefined;
+    }
   }
   #handoffReady(state: CatalogState) {
     return state.job?.phase === "activating"
@@ -178,7 +188,7 @@ export class CatalogManagement {
     this.#save({ installed: state.installed, job: { ...state.job!, phase: "succeeded", updatedAt: new Date().toISOString() } });
   }
   async #removeGeneration(generation: string) {
-    await rm(path.join(this.#options.directory, `${generation}.sqlite`));
+    await rm(path.join(this.#options.directory, `${generation}.sqlite`), { force: true });
     await rm(path.join(this.#options.directory, `${generation}.sqlite-journal`), { force: true });
     this.#readers.delete(generation);
   }

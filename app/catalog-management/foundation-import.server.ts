@@ -10,8 +10,11 @@ export async function importFoundation(options: ImportOptions, publish: (message
   const staging = path.join(options.directory, `${options.generation}.staging`);
   const exclusions: Record<string, number> = {};
   let processedRecords = 0;
+  let importedRecords = 0;
+  let rejectedRecords = 0;
   function exclude(reason: string) { exclusions[reason] = (exclusions[reason] ?? 0) + 1; }
-  function progress(phase: CatalogImportJob["phase"]) { publish({ progress: { phase, processedRecords, exclusions } }); }
+  function rejectFood(reason: string) { rejectedRecords++; exclude(reason); }
+  function progress(phase: CatalogImportJob["phase"]) { publish({ progress: { phase, processedRecords, importedRecords, rejectedRecords, exclusions } }); }
   const supportedNutrients: Record<string, { field: keyof CatalogNutrition; units: Record<string, number> }> = {
     "1003": { field: "proteinMilligrams", units: { G: 1000 } },
     "1004": { field: "fatMilligrams", units: { G: 1000 } },
@@ -36,13 +39,13 @@ export async function importFoundation(options: ImportOptions, publish: (message
   }
   const researchTypes = new Set(["agricultural_acquisition", "market_acquisition", "sample_food", "sub_sample_food"]);
   function selectableRecordType(dataType: string): boolean {
-    if (researchTypes.has(dataType)) { exclude("research_record"); return false; }
+    if (researchTypes.has(dataType)) { rejectFood("research_record"); return false; }
     if (dataType !== "foundation_food") throw new ArchiveError("Wrong USDA dataset. Only a Foundation CSV archive is supported.");
     return true;
   }
   function foodRecord(row: Record<string, string>): CatalogFood | null {
     const parsed = foodSchema.safeParse(row);
-    if (!parsed.success) { exclude("invalid_food_record"); return null; }
+    if (!parsed.success) { rejectFood("invalid_food_record"); return null; }
     const food = parsed.data;
     return {
       barcode: null, brand: null, dataType: "Foundation", isSelectable: false, measurementSummary: "100 g", name: food.description.normalize("NFC"),
@@ -57,6 +60,7 @@ export async function importFoundation(options: ImportOptions, publish: (message
     if (foods.has(food.providerFoodId)) throw new ArchiveError("Duplicate FDC ID in food.csv.");
     if (foods.size >= 100_000) throw new ArchiveError("Foundation record limit exceeded.");
     foods.set(food.providerFoodId, food);
+    importedRecords++;
   }
   function processedRecord() {
     processedRecords++;
@@ -162,7 +166,7 @@ export async function importFoundation(options: ImportOptions, publish: (message
     publish({ result: { foodCount: foods.size, publicationDateRange: { earliest: dates[0], latest: dates[dates.length - 1] } } });
   }
   try { await run(); } catch (error) {
-    publish({ progress: { processedRecords, exclusions }, error: error instanceof ArchiveError ? error.message : "Invalid or corrupt Foundation CSV ZIP, or insufficient disk space. Verify the download and retry." });
+    publish({ progress: { processedRecords, importedRecords, rejectedRecords, exclusions }, error: error instanceof ArchiveError ? error.message : "Invalid or corrupt Foundation CSV ZIP, or insufficient disk space. Verify the download and retry." });
   }
 
 }

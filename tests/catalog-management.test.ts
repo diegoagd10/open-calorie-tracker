@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { PassThrough, Readable } from "node:stream";
 import { afterEach, expect, test, vi } from "vitest";
-import { CatalogManagement, type CatalogManagementOptions } from "../app/catalog-management/catalog-management.server";
+import { CatalogManagement, type CatalogImportJob, type CatalogManagementOptions } from "../app/catalog-management/catalog-management.server";
 import { openApplicationDatabase } from "../app/database/database.server";
 import { saveCatalogState } from "../app/database/catalog-state.server";
 import { foundationArchive } from "./support/foundation-archive";
@@ -12,7 +12,7 @@ import { offArchive, offWithBasis } from "./support/off-archive";
 
 vi.mock("node:fs/promises", async importOriginal => {
   const actual = await importOriginal<typeof import("node:fs/promises")>();
-  return { ...actual, statfs: vi.fn(actual.statfs), chmod: vi.fn(actual.chmod) };
+  return { ...actual, statfs: vi.fn(actual.statfs), chmod: vi.fn(actual.chmod), rm: vi.fn(actual.rm) };
 });
 
 const cleanups: (() => Promise<void>)[] = [];
@@ -154,6 +154,12 @@ const release = setInterval(() => {
   return { ...context, management, release: () => fs.writeFile(path.join(context.directory, "release"), "ready") };
 }
 const resultMessage = 'parentPort.postMessage({result: {foodCount: 1, publicationDateRange: {earliest: "2024-01-01", latest: "2025-01-01"}}});';
+function activatingJob(id: string, filename = "replacement.zip"): CatalogImportJob {
+  return {
+    id, filename, phase: "activating", receivedBytes: 100, processedRecords: 4,
+    exclusions: {}, error: null, startedAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z",
+  };
+}
 
 test("shutdown interrupts the live worker and removes its partial generation", async () => {
   const { management, directory } = await workerSetup(resultMessage);
@@ -250,17 +256,7 @@ test("restart completes an already-published activation handoff instead of inter
   const old = management.read().installed!;
   const replacement = { ...old, generation: "00000000-0000-4000-8000-000000000001", filename: "replacement.zip" };
   await fs.copyFile(path.join(directory, `${old.generation}.sqlite`), path.join(directory, `${replacement.generation}.sqlite`));
-  const activating = {
-    id: replacement.generation,
-    filename: replacement.filename,
-    phase: "activating" as const,
-    receivedBytes: 100,
-    processedRecords: 4,
-    exclusions: {},
-    error: null,
-    startedAt: "2026-01-01T00:00:00Z",
-    updatedAt: "2026-01-01T00:00:00Z",
-  };
+  const activating = activatingJob(replacement.generation, replacement.filename);
   saveCatalogState(database.getClient(), { installed: replacement, retiring: old, job: activating }, "usda-fdc");
 
   const restarted = new CatalogManagement(database.getClient(), settings);
@@ -279,17 +275,7 @@ test("restart interrupts activation before publication and preserves the previou
   await finished(management);
   const working = management.read().installed!;
   const pendingId = "00000000-0000-4000-8000-000000000002";
-  const activating = {
-    id: pendingId,
-    filename: "replacement.zip",
-    phase: "activating" as const,
-    receivedBytes: 100,
-    processedRecords: 4,
-    exclusions: {},
-    error: null,
-    startedAt: "2026-01-01T00:00:00Z",
-    updatedAt: "2026-01-01T00:00:00Z",
-  };
+  const activating = activatingJob(pendingId);
   await fs.copyFile(path.join(directory, `${working.generation}.sqlite`), path.join(directory, `${pendingId}.sqlite`));
   await fs.writeFile(path.join(directory, `${pendingId}.zip`), archive);
   saveCatalogState(database.getClient(), { installed: working, job: activating }, "usda-fdc");
@@ -308,17 +294,7 @@ test("restart interrupts activation before publication and preserves the previou
 test("restart interrupts an unpublished activation when no previous generation exists", async () => {
   const { database, directory, settings } = await setup({ provider: "usda-fdc" });
   const pendingId = "00000000-0000-4000-8000-000000000004";
-  const activating = {
-    id: pendingId,
-    filename: "foundation.zip",
-    phase: "activating" as const,
-    receivedBytes: 100,
-    processedRecords: 4,
-    exclusions: {},
-    error: null,
-    startedAt: "2026-01-01T00:00:00Z",
-    updatedAt: "2026-01-01T00:00:00Z",
-  };
+  const activating = activatingJob(pendingId, "foundation.zip");
   await fs.writeFile(path.join(directory, `${pendingId}.sqlite`), "unpublished generation");
   saveCatalogState(database.getClient(), { installed: null, job: activating }, "usda-fdc");
 
@@ -356,6 +332,61 @@ test("reader release completes only the exact published activation handoff", asy
     await expect(read).resolves.toBe(installed.generation);
     expect(management.read()).toEqual({ ...incomplete, busy: incomplete.job !== null });
   }
+});
+
+test("a retirement failure keeps the replacement usable, reports the handoff error and recovers on restart", async () => {
+  const { management, database, directory, settings } = await setup({ provider: "usda-fdc" });
+  const archive = await foundationArchive();
+  await management.submitArchive({ filename: "foundation.zip", stream: Readable.from(archive) });
+  await finished(management);
+  const old = management.read().installed!;
+  let release!: () => void;
+  const held = new Promise<void>(resolve => { release = resolve; });
+  const oldReader = management.withActiveGeneration(async generation => { await held; return generation; });
+
+  await management.submitArchive({ filename: "replacement.zip", stream: Readable.from(archive) });
+  await vi.waitFor(() => expect(management.read().job?.phase).toBe("activating"));
+  const replacement = management.read().installed!;
+  vi.mocked(fs.rm).mockRejectedValueOnce(new Error("private retirement failure"));
+  release();
+
+  await expect(oldReader).resolves.toBe(old.generation);
+  expect(management.read()).toMatchObject({
+    installed: replacement,
+    retiring: old,
+    busy: false,
+    job: { phase: "failed", error: "USDA catalog handoff failed. The replacement remains active; check catalog storage and restart the server." },
+  });
+  await expect(management.submitArchive({ filename: "next.zip", stream: Readable.from(archive) })).rejects.toThrow("A USDA installation is already running.");
+
+  const restarted = new CatalogManagement(database.getClient(), settings);
+  cleanups.unshift(() => restarted.shutdown());
+  await finished(restarted);
+  expect(restarted.read()).toMatchObject({ installed: replacement, job: { phase: "succeeded", error: null } });
+  expect(restarted.read().retiring).toBeUndefined();
+  await expect(fs.access(path.join(directory, `${old.generation}.sqlite`))).rejects.toMatchObject({ code: "ENOENT" });
+});
+
+test.each(["missing job", "nonfailed job", "mismatched generation", "missing installed generation"] as const)("restart does not recover a handoff with %s", async invalid => {
+  const { management, database, settings } = await setup({ provider: "usda-fdc" });
+  await management.submitArchive({ filename: "foundation.zip", stream: Readable.from(await foundationArchive()) });
+  await finished(management);
+  const installed = management.read().installed!;
+  const succeeded = management.read().job!;
+  const failed = { ...succeeded, phase: "failed" as const, error: "USDA catalog handoff failed." };
+  const retiring = { ...installed, generation: "00000000-0000-4000-8000-000000000005" };
+  const candidate = invalid === "missing job"
+    ? { installed, job: null, retiring }
+    : invalid === "nonfailed job"
+      ? { installed, job: succeeded, retiring }
+      : invalid === "mismatched generation"
+        ? { installed, job: { ...failed, id: "00000000-0000-4000-8000-000000000006" }, retiring }
+        : { installed: null, job: failed, retiring };
+  saveCatalogState(database.getClient(), candidate, "usda-fdc");
+
+  const restarted = new CatalogManagement(database.getClient(), settings);
+  cleanups.unshift(() => restarted.shutdown());
+  expect(restarted.read()).toEqual({ ...candidate, busy: false });
 });
 
 test("a USDA replacement activation failure leaves the working generation active and permits retry", async () => {

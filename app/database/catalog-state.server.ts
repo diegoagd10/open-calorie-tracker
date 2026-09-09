@@ -17,6 +17,7 @@ export function claimCatalogInstallation(database: ApplicationDatabaseClient, jo
   return database.transaction(() => {
     const state = readCatalogState(database, provider);
     if (state.installed && !allowReplacement) return "installed";
+    if (state.retiring) return "busy";
     if (state.job && !["succeeded", "failed", "interrupted"].includes(state.job.phase)) return "busy";
     saveCatalogState(database, { installed: state.installed, job }, provider);
     return null;
