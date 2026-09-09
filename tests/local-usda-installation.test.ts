@@ -23,13 +23,45 @@ async function setup(options: Partial<CatalogManagementOptions> = {}) {
   const database = openApplicationDatabase({ databasePath: path.join(directory, "app.sqlite"), migrationsFolder: path.resolve("drizzle") });
   const management = new CatalogManagement(database.getClient(), { directory, workerPath: path.resolve("app/catalog-management/import-worker.ts"), ...options });
   cleanups.push(async () => { await management.shutdown(); database.close(); await rm(directory, { recursive: true, force: true }); });
-  const catalog = new FoodCatalog([{ provider: "usda-fdc", capability: "search", service: new LocalUsdaAdapter(management, directory) }]);
+  const local = new LocalUsdaAdapter(management, directory);
+  const catalog = new FoodCatalog([{ provider: "usda-fdc", capability: "search", service: local }]);
   const createdAt = "2026-01-01T00:00:00.000Z";
   const user = database.getClient().insert(users).values({ usernameNormalized: "local.member", createdAt }).returning().get();
   database.getClient().insert(userPreferences).values({ userId: user.id, timeZone: "UTC", displayUnits: "metric", createdAt, updatedAt: createdAt }).run();
   const entries = new FoodEntryService(database.getClient(), catalog, () => new Date("2026-09-07T12:00:00.000Z"));
-  return { management, catalog, entries, userId: user.id, database, directory };
+  return { management, local, catalog, entries, userId: user.id, database, directory };
 }
+
+test("an installed Foundation catalog supplies bounded photo evidence without inventing source fields", async () => {
+  const { management, local } = await setup();
+  await management.submitArchive({ filename: "foundation.zip", stream: Readable.from(await foundationArchive()) });
+  await vi.waitFor(() => expect(management.read().busy).toBe(false));
+
+  const evidence = await local.searchEvidence("broccoli", 1, new AbortController().signal);
+
+  expect(evidence.map(item => item.food.providerFoodId)).toEqual(["747447", "321900"]);
+  expect(evidence[0].record).toEqual({
+    fdcId: 747447,
+    dataType: "Foundation",
+    description: "Broccoli, raw",
+    publicationDate: "2019-12-16",
+    nutrientsPer100g: {
+      energyKcal: 32,
+      proteinGrams: 2.57,
+      carbohydrateGrams: 6.27,
+      fatGrams: 0.34,
+      fiberGrams: 2.4,
+      sugarGrams: null,
+      sodiumMilligrams: 36,
+    },
+    supportedPortions: [
+      { id: "g", label: "1 g", gramWeight: 1 },
+      { id: "100g", label: "100 g", gramWeight: 100 },
+      { id: "portion:187633", label: "1 cup, chopped (76 g)", gramWeight: 76 },
+    ],
+  });
+  await expect(local.getEvidence("747447", new AbortController().signal)).resolves.toEqual(evidence[0]);
+});
 
 test("an installed real Foundation archive supports local search, source portions and saved nutrition", async () => {
   const { management, catalog, entries, userId } = await setup();

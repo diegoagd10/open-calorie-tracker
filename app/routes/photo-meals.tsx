@@ -256,7 +256,7 @@ export function PhotoCorrection({
             {component.unit}
             <br />
             {component.source.kind === "usda"
-              ? `USDA FDC ${component.source.fdcId}`
+              ? `USDA${component.source.dataType ? ` ${component.source.dataType}` : ""} · FDC ${component.source.fdcId}`
               : `AI estimate: ${component.source.reason}`}
             {component.supplements.map((item) => (
               <span key={item.nutrient}>

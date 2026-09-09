@@ -6,6 +6,14 @@ import { offArchive, offProduct, offWithBasis } from "../support/off-archive";
 import { basicFoodsArchive } from "../support/basic-foods-archive";
 
 const password = "correct horse 🔐 battery";
+const localEvidencePhoto = {
+  name: "local-evidence.png",
+  mimeType: "image/png",
+  buffer: Buffer.concat([
+    Buffer.from("iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAAFElEQVR4nGP4TyJgGNUwqmH4agAAr639H708R/EAAAAASUVORK5CYII=", "base64"),
+    Buffer.from("local-usda"),
+  ]),
+};
 test.setTimeout(120_000);
 test("administrator installs USDA from mobile Settings, leaves during import, and a member logs a local food", async ({ page, browser }, testInfo) => {
   await page.setViewportSize({ width: 390, height: 844 });
@@ -50,6 +58,19 @@ test("administrator installs USDA from mobile Settings, leaves during import, an
   await expect(page.getByText("Archive: foundation-browser-reimport.zip", { exact: true })).toBeVisible();
   await page.reload();
   await expect(page.getByText("USDA installation complete", { exact: true })).toBeVisible();
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "Add Food", exact: true }).click();
+  await page.getByLabel("Take photo · AI calories").setInputFiles(localEvidencePhoto);
+  const photoEntry = page.getByRole("region", { name: "Daily log entries", exact: true }).getByRole("link", { name: /Photo broccoli plate.*32 kcal/ });
+  await expect(photoEntry).toBeVisible({ timeout: 15_000 });
+  await photoEntry.click();
+  const details = page.getByRole("region", { name: "Photo analysis details" });
+  await details.getByText("Components, sources and assumptions", { exact: true }).click();
+  await expect(details).toContainText("USDA Foundation · FDC 107");
+  await expect(details).toContainText("Installed Foundation fixture omits protein");
+  await page.goto("/settings/catalogs");
+
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.screenshot({ path: testInfo.outputPath("food-catalogs-mobile.png"), fullPage: true });

@@ -29,6 +29,7 @@ export type PhotoAnalyzer = {
     };
   }): Promise<unknown>;
 };
+
 const keySchema = z
   .string()
   .min(8)
@@ -127,11 +128,18 @@ export class PhotoAnalysisService {
 
   view(userId: number, id: string) {
     const status = this.status(userId, id);
-    const entry =
-      status.entryId === null
-        ? undefined
-        : this.store.entry(userId, status.entryId);
-    const result = this.store.recent(id, true)[0]?.result;
+    let name: string | null = null;
+    let energyMilliKcal: number | null = null;
+    if (status.entryId !== null) {
+      const entry = this.store.entry(userId, status.entryId);
+      if (entry) {
+        name = entry.editedName ?? entry.originalName;
+        energyMilliKcal = entry.energyMilliKcal;
+      }
+    }
+    const storedResult = this.store.recent(id, true)[0]?.result;
+    let result: PhotoResult | null = null;
+    if (storedResult) result = JSON.parse(storedResult) as PhotoResult;
     return {
       id,
       entryId: status.entryId,
@@ -142,9 +150,9 @@ export class PhotoAnalysisService {
       startedAt: status.startedAt,
       finishedAt: status.finishedAt,
       error: status.error,
-      name: entry?.editedName ?? entry?.originalName ?? null,
-      energyMilliKcal: entry?.energyMilliKcal ?? null,
-      result: result ? (JSON.parse(result) as PhotoResult) : null,
+      name,
+      energyMilliKcal,
+      result,
     };
   }
 
@@ -308,7 +316,10 @@ export class PhotoAnalysisService {
           "Consulting USDA",
           JSON.stringify([...evidence.values()]),
         );
-        const items = await this.usda.searchEvidence(query, page, signal);
+        const found = await this.usda.searchEvidence(query, page, signal);
+        const items = found.map(item =>
+          evidence.get(item.food.providerFoodId) ?? item,
+        );
         retain(items);
         return items;
       },
@@ -316,6 +327,8 @@ export class PhotoAnalysisService {
         signal.throwIfAborted();
         if (++details > 6 || !this.usda)
           throw new Error("USDA detail limit reached or unavailable");
+        const captured = evidence.get(id);
+        if (captured) return captured;
         const item = await this.usda.getEvidence(id, signal);
         retain([item]);
         return item;

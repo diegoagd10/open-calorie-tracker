@@ -1,11 +1,13 @@
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { Readable } from "node:stream";
 import { expect, test } from "vitest";
 import { z } from "zod";
+import { CatalogManagement } from "../app/catalog-management/catalog-management.server";
+import { LocalUsdaAdapter } from "../app/catalog/local-usda.server";
 import { openApplicationDatabase } from "../app/database/database.server";
 import { users, userPreferences } from "../app/database/schema.server";
-import { UsdaFoodDataCentralAdapter } from "../app/catalog/usda.server";
 import { PhotoAnalysisService } from "../app/photo-analysis/photo-analysis.server";
 import { PiPhotoAnalyzer, piCompletion } from "../app/photo-analysis/pi.server";
 
@@ -28,6 +30,10 @@ test.skipIf(process.env.PHOTO_ANALYSIS_LIVE !== "1")(
       .min(1)
       .parse(process.env.PHOTO_PILOT_DATASET);
     const authPath = z.string().min(1).parse(process.env.PHOTO_AI_AUTH_PATH);
+    const foundationArchivePath = z
+      .string()
+      .min(1)
+      .parse(process.env.PHOTO_PILOT_USDA_ARCHIVE);
     const meals = z
       .array(mealSchema)
       .min(1)
@@ -55,6 +61,19 @@ test.skipIf(process.env.PHOTO_ANALYSIS_LIVE !== "1")(
       })
       .run();
     const usage: unknown[] = [];
+    const catalogDirectory = path.join(directory, "catalogs");
+    const catalog = new CatalogManagement(client, {
+      directory: catalogDirectory,
+      workerPath: path.resolve("app/catalog-management/import-worker.ts"),
+    });
+    await catalog.submitArchive({
+      filename: path.basename(foundationArchivePath),
+      stream: Readable.from(await readFile(foundationArchivePath)),
+    });
+    await expect.poll(() => catalog.read().busy, { timeout: 120_000 }).toBe(false);
+    if (catalog.read().job?.phase !== "succeeded") {
+      throw new Error(catalog.read().job?.error ?? "Foundation catalog installation failed");
+    }
     const complete = piCompletion({
       authPath,
       provider: process.env.PHOTO_AI_PROVIDER ?? "openai-codex",
@@ -83,9 +102,7 @@ test.skipIf(process.env.PHOTO_ANALYSIS_LIVE !== "1")(
         return result;
       }),
       {
-        usda: new UsdaFoodDataCentralAdapter({
-          apiKey: process.env.FDC_API_KEY,
-        }),
+        usda: new LocalUsdaAdapter(catalog, catalogDirectory),
       },
     );
     const results: Record<string, unknown>[] = [];
@@ -199,6 +216,7 @@ test.skipIf(process.env.PHOTO_ANALYSIS_LIVE !== "1")(
     } finally {
       service.shutdown();
       await Promise.resolve();
+      await catalog.shutdown();
       database.close();
       await rm(directory, { recursive: true, force: true });
     }

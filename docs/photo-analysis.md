@@ -21,7 +21,8 @@ Hidden model reasoning is not persisted. Do not publish the database or auth fil
 
 ## Operator setup
 
-Each installation supplies its own AI account and USDA FoodData Central API key.
+Each installation supplies its own AI account and installs a USDA Foundation
+catalog from **Settings → Food Catalogs**.
 The default subscription path is Pi's `openai-codex` provider, model
 `gpt-5.6-luna`, reasoning `low`. An `OPENAI_API_KEY` is a separately billed API
 credential and does not authenticate a Codex subscription.
@@ -71,15 +72,20 @@ resumable execution system.
 | `PHOTO_AI_REASONING` | `low` (`minimal`, `medium`, `high` also supported) |
 | `PHOTO_AI_AUTH_PATH` | `data/pi/auth.json` under the working directory |
 | `PHOTO_AI_USDA_ROUNDS` | `3` (range 1–5) |
-| `FDC_API_KEY` | Required for USDA evidence; otherwise explicit AI estimates are permitted |
 
 The Pi SDK adapter creates no coding-agent session, shell, file tools, extension
-loader, project-context discovery, or automatic compaction. Only USDA search and
-detail are exposed. Each search retrieves up to five complete candidate records,
-including Foundation, Survey (FNDDS), and Branded. Detail calls, pagination, model
+loader, project-context discovery, or automatic compaction. Only local USDA
+Foundation search and detail are exposed. Each search retrieves up to five
+complete source-backed candidate records from the installed generation. Detail calls, pagination, model
 turns, result size, and context are bounded. Provider configuration stays behind
 the backend runtime boundary. Unavailable models or credentials produce a failed
 card; they never save an unvalidated completion event as nutrition.
+
+If no Foundation catalog is installed, or if it lacks the food or preparation
+shown, analysis can still save an explicit AI estimate with a reason. It never
+falls back to the USDA food API or invents an FDC identity. Evidence selected
+during an analysis is captured with its nutrition and portions so a catalog
+replacement cannot revise the source before validation and saving.
 
 USDA-backed values are derived from retrieved authoritative records and the
 component quantity. An explicit AI supplement is required for a missing mandatory
@@ -95,22 +101,23 @@ boundaries. The browser fixture is available only with `NODE_ENV=test` and
 `PHOTO_ANALYSIS_TEST_FIXTURE=1`; it does not measure model accuracy.
 
 The installed Pi 0.85.1 registry includes `gpt-5.6-luna` with image support.
-Account access was verified with operator-provided Pi OAuth credentials. A live
-smoke test on September 5, 2026 used the public
+Account access was verified with operator-provided Pi OAuth credentials. A
+historical smoke test on September 5, 2026, before local Foundation evidence was
+introduced, used the public
 [Hamburger (5) photograph](https://commons.wikimedia.org/wiki/File:Hamburger_(5).jpg)
-by cyclonebill (CC BY-SA 2.0), the default Luna model, and USDA's public `DEMO_KEY`.
+by cyclonebill (CC BY-SA 2.0), the default Luna model, and the former API-backed
+USDA evidence reader.
 The final implementation saved an initial estimate of 930 kcal in 16.46 seconds.
 A correction specifying five grams of butter replaced the same entry with
 966 kcal in 12.89 seconds. Four model calls reported 18,061 total tokens; these
 counts do not establish billed subscription cost. Three earlier initial trials
 timed out (observed latencies 20.037, 20.029, and 20.016 seconds) before the prompt
-was tightened to request compact results. The first lacked a USDA key; the next
-two used `DEMO_KEY`. These changing configurations are tuning trials, not a
-representative latency distribution.
+was tightened to request compact results. These tuning trials are not a
+representative latency distribution or verification of the current local reader.
 
 This is one unweighed photo and one correction, with no reference nutrition.
 The accuracy sample size is zero; the below-20% calorie-error goal remains
-unmeasured. The smoke report confirms USDA tool calls, but does not establish
+unmeasured. The smoke report confirms food-evidence tool calls, but does not establish
 which returned references were used. Deterministic tests separately verify
 authoritative USDA arithmetic and explicit fallback behavior. A representative
 weighed-meal pilot is still required to evaluate accuracy and latency distributions.
@@ -142,7 +149,8 @@ configured provider and consumes that account's usage:
 PHOTO_AI_AUTH_PATH=/private/pi/auth.json \
 PHOTO_PILOT_DATASET=/private/meals/dataset.json \
 PHOTO_PILOT_REPORT=/private/meals/report.json \
-FDC_API_KEY=your-key pnpm test:photo-live
+PHOTO_PILOT_USDA_ARCHIVE=/private/usda/FoodData_Central_foundation_food_csv.zip \
+pnpm test:photo-live
 ```
 
 The report records sample size, individual initial calorie percentage errors,
@@ -176,4 +184,4 @@ the browser from hydrating during an earlier development preview.
 
 Primary references: [Pi SDK](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/sdk.md),
 [Pi authentication](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/providers.md),
-[USDA API guide](https://fdc.nal.usda.gov/api-guide/).
+[USDA Foundation downloads](https://fdc.nal.usda.gov/download-datasets/).
