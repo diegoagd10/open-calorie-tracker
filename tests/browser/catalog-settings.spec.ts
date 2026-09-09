@@ -82,9 +82,10 @@ test("administrator installs USDA from mobile Settings, leaves during import, an
   await expect(page.locator('section[aria-labelledby="open-food-facts-heading"]').getByText(/^[1-9][\d,]* foods imported · \d[\d,]* food records rejected$/)).toBeVisible();
   await expect(page.getByText("3 foods installed", { exact: true })).toBeVisible();
   await expect(page.getByText("52 foods installed", { exact: true })).toBeVisible();
+  await expect(page.getByText("Select the archive again to retry. Partial uploads are not resumed.", { exact: true })).toBeVisible();
 
   await page.getByLabel("OFF tab-separated CSV GZIP").setInputFiles({ name: "products-reimport.csv.gz", mimeType: "application/gzip", buffer: products });
-  await page.getByRole("button", { name: "Replace or reimport Open Food Facts" }).click();
+  await page.getByRole("button", { name: "Retry Open Food Facts installation" }).click();
   await expect(page.getByText("Open Food Facts installation complete", { exact: true })).toBeVisible({ timeout: 15000 });
   await expect(page.getByText("Archive: products-reimport.csv.gz", { exact: true })).toBeVisible();
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
