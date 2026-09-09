@@ -6,7 +6,7 @@ import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { Worker } from "node:worker_threads";
 import type { ApplicationDatabaseClient } from "../database/database.server";
-import { claimCatalogInstallation, readCatalogState, readCatalogUpdateCheck, saveCatalogState, saveCatalogUpdateCheck } from "../database/catalog-state.server";
+import { acknowledgeCatalogOutcome, readCatalogOutcomes, claimCatalogInstallation, readCatalogState, readCatalogUpdateCheck, saveCatalogState, saveCatalogUpdateCheck } from "../database/catalog-state.server";
 
 export type ImportPhase = "uploading" | "queued" | "validating" | "importing" | "indexing" | "activating" | "succeeded" | "failed" | "interrupted";
 export type CatalogImportJob = {
@@ -21,6 +21,12 @@ export type InstalledCatalog = {
   installedAt: string; publicationDateRange: { earliest: string; latest: string };
   sourceDateRange?: { earliest: string | null; latest: string | null };
   sourceRelease?: Omit<FoundationReleaseMetadata, "archiveUrl">;
+};
+export type CatalogOutcome = {
+  provider: "usda-fdc" | "open-food-facts";
+  jobId: string; filename: string; phase: "succeeded" | "failed" | "interrupted";
+  completedAt: string; error: string | null; installed: InstalledCatalog | null;
+  acknowledgedAt: string | null;
 };
 export type FoundationReleaseMetadata = {
   releasePeriod: string;
@@ -102,6 +108,7 @@ export class CatalogManagement {
       ...options,
     };
     const state = this.read();
+    this.#save({ installed: state.installed, job: state.job, retiring: state.retiring });
     if (state.retiring && state.job?.phase === "failed" && state.installed?.generation === state.job.id) {
       this.#updateJob({ phase: "activating", error: null });
       void this.#completeHandoff();
@@ -122,6 +129,14 @@ export class CatalogManagement {
     const state = readCatalogState(this.#database, this.#options.provider);
     const updateCheck = this.#options.provider === "usda-fdc" ? readCatalogUpdateCheck(this.#database, this.#options.provider) : undefined;
     return { ...state, busy: state.job !== null && !terminal.has(state.job.phase), ...(updateCheck ? { updateCheck } : {}) };
+  }
+
+  outcomes(): CatalogOutcome[] {
+    return readCatalogOutcomes(this.#database, this.#options.provider);
+  }
+
+  acknowledgeOutcome(jobId: string, completedAt: string): boolean {
+    return acknowledgeCatalogOutcome(this.#database, this.#options.provider, jobId, completedAt);
   }
 
   async checkForUpdate(options: { force?: boolean } = {}): Promise<void> {

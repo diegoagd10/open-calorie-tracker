@@ -7,8 +7,18 @@ import {
   isRouteErrorResponse,
 } from "react-router";
 
+import type { Route } from "./+types/root";
+import { getSessionForAccountAccess } from "./auth/http.server";
+
 import stylesheet from "./styles.css?url";
 import readinessStyles from "./readiness.module.css";
+
+export async function loader({ request }: Route.LoaderArgs) {
+  const session = await getSessionForAccountAccess(request);
+  const navigation = { catalogAdministrator: session?.user.role === "admin" && !session.user.passwordChangeRequired };
+  return navigation;
+}
+export function headers() { return { "Cache-Control": "no-store" }; }
 
 export const links = () => [
   { rel: "stylesheet", href: stylesheet },

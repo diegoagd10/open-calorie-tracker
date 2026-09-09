@@ -1,4 +1,7 @@
-import { Form, Link } from "react-router";
+import { Form, Link, useRouteLoaderData } from "react-router";
+
+import type { loader as rootLoader } from "./root";
+import { CatalogNotifications } from "./catalog-management/notifications";
 
 import styles from "./food-log.module.css";
 import { UiIcon } from "./ui-icon";
@@ -22,6 +25,7 @@ export function AppNavigation({
   selectedDate,
   today,
 }: AppNavigationProps) {
+  const root = useRouteLoaderData<typeof rootLoader>("root");
   const historyHref = foodLogHref(selectedDate, selectedDate.slice(0, 7));
 
   return (
@@ -100,6 +104,7 @@ export function AppNavigation({
           Settings
         </Link>
       </nav>
+      {root?.catalogAdministrator ? <CatalogNotifications /> : null}
     </>
   );
 }
