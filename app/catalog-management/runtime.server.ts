@@ -4,6 +4,7 @@ import { z } from "zod";
 import { getApplicationDatabase } from "../database/runtime.server";
 import type { ApplicationDatabaseClient } from "../database/database.server";
 import { CatalogManagement } from "./catalog-management.server";
+import { UsdaFoundationSourceTransport } from "./usda-foundation-update-source.server";
 
 function configuration() {
   return z.object({
@@ -29,6 +30,7 @@ export function getCatalogManagement(provider: CatalogProviderId = "usda-fdc") {
   const management = new CatalogManagement(database, {
     provider, directory: catalogDirectory(), maxUploadBytes: provider === "open-food-facts" ? config.OFF_CATALOG_MAX_UPLOAD_BYTES : config.CATALOG_MAX_UPLOAD_BYTES, maxExpandedBytes: provider === "open-food-facts" ? config.OFF_CATALOG_MAX_EXPANDED_BYTES : config.CATALOG_MAX_EXPANDED_BYTES,
     workerPath: path.resolve(process.env.NODE_ENV === "production" || process.env.CATALOG_BUILT_WORKER === "1" ? "build/catalog/import-worker.js" : "app/catalog-management/import-worker.ts"),
+    ...(provider === "usda-fdc" && process.env.NODE_ENV !== "test" ? { sourceTransport: new UsdaFoundationSourceTransport() } : {}),
   });
   current.set(provider, { database, management });
   return management;

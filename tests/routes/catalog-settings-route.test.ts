@@ -22,6 +22,9 @@ function get(cookie = adminCookie) { return args(new Request(`${origin}/settings
 function post(body: Uint8Array, cookie = adminCookie, csrf = csrfToken, requestOrigin = origin) {
   return args(new Request(`${origin}/settings/catalogs`, { method: "POST", headers: { Cookie: cookie, Origin: requestOrigin, "X-CSRF-Token": csrf, "X-Archive-Name": "foundation.zip", "Content-Type": "application/zip" }, body: new Uint8Array(body) }));
 }
+function checkAgain(cookie = adminCookie, csrf = csrfToken, requestOrigin = origin) {
+  return args(new Request(`${origin}/settings/catalogs`, { method: "POST", headers: { Cookie: cookie, Origin: requestOrigin, "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8" }, body: new URLSearchParams({ csrfToken: csrf, intent: "check-usda-update" }) }));
+}
 beforeAll(async () => {
   directory = await mkdtemp(path.join(tmpdir(), "catalog-settings-"));
   vi.stubEnv("APPLICATION_URL", origin); vi.stubEnv("DATABASE_PATH", path.join(directory, "application.sqlite")); vi.stubEnv("CATALOG_DIRECTORY", path.join(directory, "catalogs"));
@@ -43,9 +46,34 @@ test("catalog management requires administrator authentication and upload CSRF b
   await expect(action(post(zip, adminCookie, "invalid"))).rejects.toMatchObject({ status: 403 });
   await expect(action(post(zip, adminCookie, csrfToken, "https://attacker.example"))).rejects.toMatchObject({ status: 403 });
   expect((await loader(get())).catalog).toMatchObject({ installed: null, job: null, busy: false });
+  expect((await loader(get())).catalog.updateCheck).toMatchObject({ status: "indeterminate", availableRelease: null, error: null });
   expect((await loader(get())).csrfToken).toBe(csrfToken);
   expect((await loader(get())).today).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   expect(headers()).toEqual({ "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" });
+});
+
+test("explicit USDA checks reuse administrator and CSRF protections without starting an import", async () => {
+  await expect(action(checkAgain(memberCookie))).rejects.toMatchObject({ status: 404 });
+  await expect(action(checkAgain(adminCookie, "invalid"))).rejects.toMatchObject({ status: 403 });
+  await expect(action(checkAgain(adminCookie, csrfToken, "https://attacker.example"))).rejects.toMatchObject({ status: 403 });
+  const before = getCatalogManagement().read();
+  const response = await action(checkAgain());
+  expect(response.status).toBe(200);
+  expect(await response.json()).toEqual({ checked: true });
+  expect(response.headers.get("Cache-Control")).toBe("no-store");
+  expect(response.headers.get("Referrer-Policy")).toBe("no-referrer");
+  expect(getCatalogManagement().read()).toMatchObject({ installed: before.installed, job: before.job, busy: false, updateCheck: { status: "indeterminate" } });
+});
+
+test("unsupported catalog form actions are rejected without changing either catalog", async () => {
+  const before = await loader(get());
+  const request = checkAgain();
+  request.request = new Request(request.request, { body: new URLSearchParams({ csrfToken, intent: "unexpected" }) });
+  const response = await action(request);
+  expect(response.status).toBe(400);
+  expect(await response.json()).toEqual({ error: "Unsupported action." });
+  expect((await loader(get())).catalog).toEqual(before.catalog);
+  expect((await loader(get())).offCatalog).toEqual(before.offCatalog);
 });
 
 test("malformed upload requests return public errors without claiming an installation", async () => {
@@ -63,7 +91,7 @@ test("malformed upload requests return public errors without claiming an install
     expect(await response.json()).toEqual({ error });
     expect(response.headers.get("Cache-Control")).toBe("no-store");
     expect(response.headers.get("Referrer-Policy")).toBe("no-referrer");
-    expect((await loader(get())).catalog).toEqual({ installed: null, job: null, busy: false });
+    expect((await loader(get())).catalog).toMatchObject({ installed: null, job: null, busy: false, updateCheck: { status: "indeterminate" } });
   }
   const missingCsrf = post(await foundationArchive());
   missingCsrf.request.headers.delete("X-CSRF-Token");

@@ -1,6 +1,6 @@
 # Local USDA Foundation installation and replacement
 
-Administrators open **Settings → Food Catalogs**, download the Foundation **CSV ZIP** from [USDA's official downloads](https://fdc.nal.usda.gov/download-datasets/), and upload it. USDA search and new catalog Food Entries then use local SQLite without an API key or food API request. After installation, the same control accepts a newer archive or a deliberate reimport of the same archive. Open Food Facts replacement uses an independent lifecycle; update discovery and local photo evidence belong to later tickets.
+Administrators open **Settings → Food Catalogs**, download the Foundation **CSV ZIP** from [USDA's official downloads](https://fdc.nal.usda.gov/download-datasets/), and upload it. USDA search and new catalog Food Entries then use local SQLite without an API key or food API request. After installation, the same control accepts a newer archive or a deliberate reimport of the same archive. Open Food Facts replacement uses an independent lifecycle; local photo evidence belongs to a later ticket.
 
 The application database stores installation state under the `catalog:usda-fdc` application metadata key. Each USDA generation is a separate SQLite file. The worker validates the archive, joins the CSVs, writes the database, completes FTS5, and checks integrity before the active generation reference is published in one application-database write. The previous reference stays active throughout upload, validation, import, and indexing. New readers see the replacement only after publication; a reader that already acquired the previous generation may finish before its file is retired. A restart after publication completes that durable handoff instead of rolling back to a partial generation.
 
@@ -15,6 +15,14 @@ Inspected the official April 30, 2026 CSV ZIP directly on September 7, 2026. The
 Select main-table `foundation_food` records with valid FDC ID, name, and publication date. Require the subtype table's schema but do not use it as an inclusion whitelist. Explicitly exclude agricultural acquisitions, market acquisitions, samples, and subsamples. Reject archives containing other main-table food types rather than silently treating a full or Branded archive as Foundation.
 
 Preserve every distinct FDC ID and its publication date. Identical descriptions are not proof of identical nutrient records or a reliable replacement relationship. For example, broccoli 321900 and 747447 have different dates and nutrient fields. The archive's main table omits the documented `food_key` lineage field, and the subtype table's NDB numbers do not cover all main records. Do not merge by name, invent lineage, or discard unmatched records. Sort otherwise-equivalent search results by descending publication date, then FDC ID; retain preparation in the original description. Duplicate instances of the same FDC ID make an archive invalid. Neither 395 nor 469 is a completeness gate.
+
+## Release checks
+
+Opening Food Catalogs checks USDA's declared Foundation release, with successful and failed results cached for six hours; **Check USDA updates again** bypasses that cache. The check reads the official Download Datasets page, corroborates its Foundation month with the Foundation-bearing entry in USDA's update log when that page is available, and sends `HEAD` to the CSV link for its exact byte length. It never downloads an archive or starts an import. Network failure, changed page structure, contradictory metadata, or an unverified installed release leaves search and manual upload available.
+
+Release ordering uses only USDA's explicit `M/YYYY` Foundation period. The global FoodData Central version is display/equality metadata, not a sortable Foundation version. Filenames, HTTP validators, local upload/install time, and per-food publication dates do not establish a newer release. An installed archive is associated with a checked official descriptor only after Foundation validation succeeds and its received filename and exact byte count match the descriptor captured before import. Otherwise the installed release remains unknown and the UI reports an indeterminate comparison. A same-period byte-length change is likewise indeterminate because USDA may republish corrections without declaring a newer Foundation release.
+
+The official source evidence, observed page contract, known limitations, and full state semantics are documented in [USDA Foundation bulk-release metadata](usda-foundation-release-metadata.md).
 
 ## Nutrition and portions
 
