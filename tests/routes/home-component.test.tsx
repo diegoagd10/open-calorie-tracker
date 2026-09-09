@@ -77,7 +77,6 @@ const documentSelectors: string[] = [];
   };
 (globalThis as typeof globalThis & { cancelAnimationFrame: typeof cancelAnimationFrame })
   .cancelAnimationFrame = () => undefined;
-
 const completeGoal = {
   calorieTargetMilliKcal: 2_050_000,
   carbohydrateTargetMilligrams: 230_000,
@@ -254,8 +253,27 @@ test("home renders today's empty log and all goal progress contracts", async () 
   expect(allText(renderer)).toContain("Monday, August 31, 2026");
   expect(allText(renderer)).toContain("No entries for this day");
   expect(allText(renderer)).toContain(
-    "Start today’s Food Log with food or water when you’re ready.",
+    "Use the floating food or water action when you’re ready.",
   );
+  const quickLog = renderer.root.findByProps({
+    "aria-label": "Quick log",
+    role: "group",
+  });
+  expect(quickLog.props.className).toBe(styles.quickLogActions);
+  expect(
+    renderer.root
+      .findByProps({ className: styles.floatingUtilities })
+      .findByProps({ "aria-label": "Quick log" }),
+  ).toBe(quickLog);
+  expect(
+    quickLog.findAllByType("button").map((button) => ({
+      label: button.props["aria-label"],
+      value: button.props.value,
+    })),
+  ).toEqual([
+    { label: "Add Food", value: "add-food" },
+    { label: "Add Water", value: "add-water" },
+  ]);
   expect(renderer.root.findAllByType("button").filter(
     (button) => ["add-food", "add-water"].includes(button.props.value),
   )).toHaveLength(2);
@@ -488,6 +506,8 @@ test("home distinguishes past, future, no-goal, and incomplete summaries", async
   expect(future.root.findAllByType("button").filter(
     (button) => ["add-food", "add-water"].includes(button.props.value),
   )).toHaveLength(0);
+  expect(future.root.findAllByProps({ "aria-label": "Quick log" }))
+    .toHaveLength(0);
   await act(async () => future.unmount());
 });
 
@@ -509,6 +529,8 @@ test("home renders calendar navigation, selected dates, and future days", async 
   expect(renderer.root.findByType("h1").props["aria-label"])
     .toBe("Food Log history");
   expect(renderer.root.findByType("h1").children.join("")).toBe("History");
+  expect(renderer.root.findAllByProps({ "aria-label": "Quick log" }))
+    .toHaveLength(0);
   expect(renderer.root.findAllByProps({ "aria-current": "page" })
     .map((node) => node.props.to)
     .filter(Boolean)).toContain("/?date=2026-08-31&calendar=2026-08");
@@ -2364,11 +2386,11 @@ test("photo meals share the food and water timeline in event order and expose co
   const water = { id: editableEntry.id, kind: "water", amountMicroliters: 237000, foodLogDate: "2026-08-31", localEventTime: "12:05:00" };
   const renderer = await renderHome({ photoMeals: [photoMeal], foodLog: { ...baseFoodLog, entries: [food, copiedFood], events: [copiedFood, food, water] }, foodEntryEditor: editableEntry });
   expect(renderer.root.findAllByType("a").filter(node => node.props.href === "/?date=2026-08-31&entry=41")).toHaveLength(1);
-  const timeline = renderer.root.findByProps({ className: styles.timeline });
+  const timeline = renderer.root.findByProps({ className: styles.entryList });
   const actionsAndEntries = timeline.findAll(node => node.type === "button" || node.type === "a");
   expect(actionsAndEntries.map(node => nodeText(node))).toEqual([
-    expect.stringContaining("Add Food"), expect.stringContaining("Copied photo"),
-    expect.stringContaining("Photo dinner"), expect.stringContaining("Water"), expect.stringContaining("Add Water"),
+    expect.stringContaining("Copied photo"), expect.stringContaining("Photo dinner"),
+    expect.stringContaining("Water"),
   ]);
   const photoLink = timeline.findAllByType("a").find(node => node.props.href === "/?date=2026-08-31&entry=41")!;
   expect(photoLink.props.className).toBe(styles.foodEntryCard);
@@ -2389,7 +2411,7 @@ test("photo meals share the food and water timeline in event order and expose co
   const pending = await renderHome({ photoMeals: [{ ...photoMeal, status: "active", entryId: null, name: null, result: null, energyMilliKcal: null }] });
   expect(allText(pending)).not.toContain("No entries for this day");
   expect(allText(pending)).toContain("Cancel analysis");
-  expect(nodeText(pending.root.findByProps({ className: styles.timeline }))).toContain("Cancel analysis");
+  expect(nodeText(pending.root.findByProps({ className: styles.entryList }))).toContain("Cancel analysis");
   await act(async () => pending.unmount());
   for (const status of ["active", "failed", "canceled", "succeeded"]) {
     const active = status === "active";
@@ -2401,7 +2423,7 @@ test("photo meals share the food and water timeline in event order and expose co
       foodLog: { ...baseFoodLog, entries: [food, copiedFood], events: [copiedFood, food, water] },
     });
     expect(state.root.findByType("fieldset").props.disabled).toBe(active);
-    const log = state.root.findByProps({ className: styles.timeline });
+    const log = state.root.findByProps({ className: styles.entryList });
     const rows = log.findAllByType("article");
     expect(rows).toHaveLength(3);
     const row = rows.find(node => nodeText(node).includes("Photo dinner"))!;
@@ -2450,7 +2472,7 @@ test("photo meals share the food and water timeline in event order and expose co
   expect(requestView.root.findByType("textarea").props.disabled).toBe(true);
   await act(async () => { finishNavigation(data); await Promise.resolve(); });
   expect(requestView.root.findAllByProps({ role: "dialog" })).toHaveLength(0);
-  const busyLog = requestView.root.findByProps({ className: styles.timeline });
+  const busyLog = requestView.root.findByProps({ className: styles.entryList });
   expect(busyLog.findAllByType("article")).toHaveLength(2);
   const busyRow = busyLog.findByProps({ "aria-busy": true });
   expect(nodeText(busyRow)).toContain("Starting correction. Previous nutrition retained.");

@@ -30,7 +30,7 @@ async function openUsdaSearch(page: Page) {
 }
 async function expectCatalogResponsive(page: Page) {
   for (const viewport of [
-    { height: 844, width: 390 },
+    { height: 908, width: 362 },
     { height: 900, width: 800 },
     { height: 900, width: 1_120 },
   ]) {
@@ -107,6 +107,32 @@ test("today, historical navigation, calendar access, travel, and future rejectio
   await expect(
     page.getByText("Saturday, August 29, 2026", { exact: true }).first(),
   ).toBeVisible();
+  const quickLog = page.getByRole("group", { name: "Quick log" });
+  await expect(
+    quickLog.getByRole("button", { name: "Add Food" }),
+  ).toBeVisible();
+  await expect(
+    quickLog.getByRole("button", { name: "Add Water" }),
+  ).toBeVisible();
+  const catalogNotifications = page.getByRole("complementary", {
+    name: "Catalog notifications",
+  });
+  expect(
+    await quickLog.evaluate((element) =>
+      getComputedStyle(element.parentElement!).position,
+    ),
+  ).toBe("fixed");
+  expect(
+    await quickLog.evaluate((element) =>
+      getComputedStyle(element.parentElement!).pointerEvents,
+    ),
+  ).toBe("none");
+  expect(
+    await quickLog.evaluate((element) => getComputedStyle(element).pointerEvents),
+  ).toBe("auto");
+  expect(
+    await quickLog.evaluate((element) => getComputedStyle(element).backgroundColor),
+  ).toBe("rgba(0, 0, 0, 0)");
 
   for (const viewport of [
     { height: 844, width: 390 },
@@ -114,6 +140,18 @@ test("today, historical navigation, calendar access, travel, and future rejectio
     { height: 900, width: 1_120 },
   ]) {
     await page.setViewportSize(viewport);
+    await expect(quickLog).toBeVisible();
+    const quickLogBox = await quickLog.boundingBox();
+    const notificationsBox = await catalogNotifications.boundingBox();
+    expect(quickLogBox).not.toBeNull();
+    expect(notificationsBox).not.toBeNull();
+    if (viewport.width <= 560) {
+      expect(quickLogBox!.y + quickLogBox!.height)
+        .toBeLessThan(notificationsBox!.y);
+    } else {
+      expect(quickLogBox!.x + quickLogBox!.width)
+        .toBeLessThan(notificationsBox!.x);
+    }
     expect(
       await page.evaluate(
         () => document.documentElement.scrollWidth <= window.innerWidth,

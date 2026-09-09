@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { Form, Link, useRouteLoaderData } from "react-router";
 
 import type { loader as rootLoader } from "./root";
@@ -9,6 +10,7 @@ import { UiIcon } from "./ui-icon";
 export type AppNavigationProps = {
   active: "history" | "log" | "settings";
   csrfToken: string;
+  floatingActions?: ReactNode;
   selectedDate: string;
   today: string;
 };
@@ -22,6 +24,7 @@ function foodLogHref(date: string, calendar?: string): string {
 export function AppNavigation({
   active,
   csrfToken,
+  floatingActions,
   selectedDate,
   today,
 }: AppNavigationProps) {
@@ -104,7 +107,15 @@ export function AppNavigation({
           Settings
         </Link>
       </nav>
-      {root?.catalogAdministrator ? <CatalogNotifications /> : null}
+      {floatingActions || root?.catalogAdministrator ? (
+        <aside
+          aria-label="Floating utilities"
+          className={styles.floatingUtilities}
+        >
+          {floatingActions}
+          {root?.catalogAdministrator ? <CatalogNotifications /> : null}
+        </aside>
+      ) : null}
     </>
   );
 }
