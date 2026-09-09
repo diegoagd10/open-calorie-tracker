@@ -1,6 +1,6 @@
 import { buildUsdaGeneration, readUsdaGenerationFood, searchUsdaGeneration } from "../database/usda-generation.server.ts";
 import type { CatalogManagement } from "../catalog-management/catalog-management.server";
-import { CatalogConfigurationError, CatalogFoodNotFoundError, CatalogUnavailableError, type CatalogFood, type CatalogSearchResult, type SearchFoodCatalogProvider } from "./food-catalog.server.ts";
+import { CatalogConfigurationError, CatalogFoodNotFoundError, CatalogStaleReviewError, CatalogUnavailableError, type CatalogFood, type CatalogOperationContext, type CatalogSearchResult, type SearchFoodCatalogProvider } from "./food-catalog.server.ts";
 import { boundedSearchTokens, normalizedSearchWords } from "./search-normalization.ts";
 
 const basicFoodAliases = [
@@ -55,23 +55,23 @@ export class LocalUsdaAdapter implements SearchFoodCatalogProvider {
   async search(query: string): Promise<CatalogSearchResult[]> {
     const tokens = boundedSearchTokens(query);
     if (!tokens) return [];
-    const generation = this.#generation();
+    let results: CatalogSearchResult[] | undefined;
     try {
-      return searchUsdaGeneration(this.#directory, generation, searchExpression(tokens), name => relevance(name, tokens));
+      results = await this.#management.withActiveGeneration(generation => searchUsdaGeneration(this.#directory, generation, searchExpression(tokens), name => relevance(name, tokens)));
     } catch {
       throw new CatalogUnavailableError();
     }
+    if (!results) throw new CatalogConfigurationError();
+    return results;
   }
-  async getFood(providerFoodId: string): Promise<CatalogFood> {
+  async getFood(providerFoodId: string, context?: CatalogOperationContext): Promise<CatalogFood> {
     if (!/^[1-9]\d*$/.test(providerFoodId)) throw new CatalogFoodNotFoundError();
-    const food = readUsdaGenerationFood(this.#directory, this.#generation(), providerFoodId);
+    const food = await this.#management.withActiveGeneration(generation => {
+      if (context?.reviewedCatalogGeneration !== undefined && context.reviewedCatalogGeneration !== generation) throw new CatalogStaleReviewError();
+      return readUsdaGenerationFood(this.#directory, generation, providerFoodId);
+    });
+    if (food === undefined && !this.#management.read().installed) throw new CatalogConfigurationError();
     if (!food) throw new CatalogFoodNotFoundError();
     return food;
-  }
-
-  #generation(): string {
-    const installed = this.#management.read().installed;
-    if (!installed) throw new CatalogConfigurationError();
-    return installed.generation;
   }
 }

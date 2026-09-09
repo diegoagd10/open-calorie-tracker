@@ -2,7 +2,8 @@ import { mkdtemp, readFile, rm, readdir, stat, writeFile, mkdir } from "node:fs/
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { Readable } from "node:stream";
+import { PassThrough, Readable } from "node:stream";
+import { pathToFileURL } from "node:url";
 import { afterEach, expect, test, vi } from "vitest";
 import { CatalogManagement, type CatalogManagementOptions } from "../app/catalog-management/catalog-management.server";
 import { LocalUsdaAdapter } from "../app/catalog/local-usda.server";
@@ -46,6 +47,137 @@ test("an installed real Foundation archive supports local search, source portion
   // USDA specific Atwater = 32 kcal/100g; two source cups = 152g.
   expect(saved).toMatchObject({ energyMilliKcal: 48_640, proteinMilligrams: 3_906, fatMilligrams: 517, carbohydrateMilligrams: 9_530, sodiumMilligrams: 55 });
   expect(network).not.toHaveBeenCalled();
+});
+
+test("a USDA replacement keeps the active generation usable until the complete replacement activates", async () => {
+  const { management, catalog, entries, userId } = await setup();
+  await management.submitArchive({ filename: "foundation.zip", stream: Readable.from(await foundationArchive()) });
+  await vi.waitFor(() => expect(management.read().busy).toBe(false));
+  const original = await catalog.getFood("usda-fdc", "748967");
+
+  const replacement = await foundationArchive({
+    "food.csv": "fdc_id,data_type,description,publication_date\n748967,foundation_food,Replacement egg,2026-08-01\n",
+    "foundation_food.csv": "fdc_id,NDB_number,footnote\n748967,01123,Replacement release\n",
+    "food_nutrient.csv": "id,fdc_id,nutrient_id,amount\n1,748967,2048,200\n",
+    "food_portion.csv": "id,fdc_id,amount,measure_unit_id,gram_weight,modifier,portion_description\n",
+  });
+  const upload = new PassThrough();
+  const receiving = management.submitArchive({ filename: "foundation.zip", stream: upload });
+  upload.write(replacement.subarray(0, 20));
+  await vi.waitFor(() => expect(management.read().job?.phase).toBe("uploading"));
+
+  expect((await catalog.getFood("usda-fdc", "748967")).name).toBe(original.name);
+  const saved = await entries.log(userId, {
+    provider: original.provider,
+    providerFoodId: original.providerFoodId,
+    catalogGeneration: original.catalogGeneration,
+    foodLogDate: "2026-09-06",
+    idempotencyKey: "logged-during-replacement",
+    selectedMeasurementId: "100g",
+    quantity: "1",
+  });
+  expect(saved).toMatchObject({ name: original.name, energyMilliKcal: 147_000 });
+
+  upload.end(replacement.subarray(20));
+  await receiving;
+  await vi.waitFor(() => expect(management.read().busy).toBe(false));
+  expect(management.read()).toMatchObject({
+    installed: { filename: "foundation.zip", foodCount: 1 },
+    job: { phase: "succeeded", error: null },
+  });
+  expect(await catalog.getFood("usda-fdc", "748967")).toMatchObject({
+    name: "Replacement egg",
+    catalogGeneration: management.read().installed?.generation,
+    nutritionPerAuthoritativeBase: { energyMilliKcal: { amount: 200, fixedPointMultiplier: 1000 } },
+  });
+  expect(entries.read(userId, saved.id)).toEqual(saved);
+  const updated = entries.update(userId, saved.id, {
+    expectedUpdatedAt: saved.updatedAt,
+    foodLogDate: saved.foodLogDate,
+    name: saved.name,
+    quantity: "2",
+    selectedMeasurementId: saved.selectedMeasurementId,
+  });
+  const copied = entries.copyToToday(userId, saved.id, {
+    foodLogDate: saved.foodLogDate,
+    idempotencyKey: `copy:${saved.id}:after-replacement`,
+  });
+  expect(updated).toMatchObject({ name: original.name, energyMilliKcal: 294_000, providerFoodId: original.providerFoodId });
+  expect(copied).toMatchObject({ name: original.name, energyMilliKcal: 294_000, authoritativeNutrition: saved.authoritativeNutrition });
+});
+
+test("validation, import and indexing leave old USDA search, detail and logging available", async () => {
+  const { management, catalog, entries, userId, database, directory } = await setup();
+  const archive = await foundationArchive();
+  await management.submitArchive({ filename: "foundation.zip", stream: Readable.from(archive) });
+  await vi.waitFor(() => expect(management.read().busy).toBe(false));
+  const original = await catalog.getFood("usda-fdc", "748967");
+
+  const workerPath = path.join(directory, "controlled-foundation-worker.mjs");
+  const importerUrl = pathToFileURL(path.resolve("app/catalog-management/foundation-import.server.ts")).href;
+  await writeFile(workerPath, `
+import { existsSync } from "node:fs";
+import path from "node:path";
+import { setTimeout as wait } from "node:timers/promises";
+import { parentPort, workerData } from "node:worker_threads";
+const publish = message => parentPort.postMessage(message);
+for (const phase of ["validating", "importing", "indexing"]) {
+  publish({ progress: { phase } });
+  while (!existsSync(path.join(workerData.directory, phase + ".release"))) await wait(5);
+}
+const { importFoundation } = await import(${JSON.stringify(importerUrl)});
+await importFoundation(workerData, publish);
+`);
+  const replacement = new CatalogManagement(database.getClient(), { directory, workerPath });
+  cleanups.unshift(() => replacement.shutdown());
+  await replacement.submitArchive({ filename: "foundation.zip", stream: Readable.from(archive) });
+
+  let loggedDuringImport: ReturnType<FoodEntryService["read"]> | undefined;
+  for (const phase of ["validating", "importing", "indexing"] as const) {
+    await vi.waitFor(() => expect(replacement.read().job?.phase).toBe(phase));
+    expect((await catalog.search("usda-fdc", "egg"))[0]).toMatchObject({ providerFoodId: original.providerFoodId, catalogGeneration: original.catalogGeneration });
+    expect(await catalog.getFood("usda-fdc", original.providerFoodId)).toMatchObject({ name: original.name, catalogGeneration: original.catalogGeneration });
+    if (phase === "importing") {
+      loggedDuringImport = await entries.log(userId, {
+        provider: original.provider,
+        providerFoodId: original.providerFoodId,
+        catalogGeneration: original.catalogGeneration,
+        foodLogDate: "2026-09-06",
+        idempotencyKey: "old-generation-during-import",
+        selectedMeasurementId: "100g",
+        quantity: "1",
+      });
+    }
+    await writeFile(path.join(directory, `${phase}.release`), "continue");
+  }
+  expect(loggedDuringImport).toMatchObject({ name: original.name, energyMilliKcal: 147_000 });
+  await vi.waitFor(() => expect(replacement.read().busy).toBe(false));
+  expect(replacement.read().installed?.generation).not.toBe(original.catalogGeneration);
+});
+
+test("saving a review from a retired generation reports staleness even when the replacement removed that FDC ID", async () => {
+  const { management, catalog, entries, userId } = await setup();
+  await management.submitArchive({ filename: "foundation.zip", stream: Readable.from(await foundationArchive()) });
+  await vi.waitFor(() => expect(management.read().busy).toBe(false));
+  const reviewed = await catalog.getFood("usda-fdc", "748967");
+
+  await management.submitArchive({ filename: "replacement.zip", stream: Readable.from(await foundationArchive({
+    "food.csv": "fdc_id,data_type,description,publication_date\n747447,foundation_food,Broccoli replacement,2026-08-01\n",
+    "foundation_food.csv": "fdc_id,NDB_number,footnote\n747447,11090,Replacement release\n",
+    "food_nutrient.csv": "id,fdc_id,nutrient_id,amount\n1,747447,2048,40\n",
+    "food_portion.csv": "id,fdc_id,amount,measure_unit_id,gram_weight,modifier,portion_description\n",
+  })) });
+  await vi.waitFor(() => expect(management.read().busy).toBe(false));
+
+  await expect(entries.log(userId, {
+    provider: reviewed.provider,
+    providerFoodId: reviewed.providerFoodId,
+    catalogGeneration: reviewed.catalogGeneration,
+    foodLogDate: "2026-09-06",
+    idempotencyKey: "removed-stale-review",
+    selectedMeasurementId: "100g",
+    quantity: "1",
+  })).rejects.toThrow("catalog changed");
 });
 
 test("upload metadata rejects invalid names and sizes before claiming installation", async () => {
@@ -212,14 +344,17 @@ test("invalid values, duplicate nutrients and unsupported portions stay unknown 
   expect(management.read().job?.exclusions).toMatchObject({ duplicate_nutrient: 1, invalid_nutrient: 3, invalid_portion: 3, food_without_calories: 3 });
 });
 
-test("a missing catalog, conflicting installation and stale review have explicit failures", async () => {
+test("a missing catalog, conflicting replacement, deliberate reimport and stale review have explicit outcomes", async () => {
   const { management, catalog, entries, userId } = await setup();
   await expect(catalog.search("usda-fdc", "egg")).rejects.toThrow("not configured");
   for (const id of ["0", "x748967", "748967x"]) await expect(catalog.getFood("usda-fdc", id)).rejects.toThrow("no longer available");
   await management.submitArchive({ filename: "foundation.zip", stream: Readable.from(await foundationArchive()) });
   await expect(management.submitArchive({ filename: "second.zip", stream: Readable.from("unused") })).rejects.toThrow("already running");
   await vi.waitFor(() => expect(management.read().busy).toBe(false));
-  await expect(management.submitArchive({ filename: "second.zip", stream: Readable.from("unused") })).rejects.toThrow("replacement is not available");
+  const firstGeneration = management.read().installed?.generation;
+  await management.submitArchive({ filename: "foundation.zip", stream: Readable.from(await foundationArchive()) });
+  await vi.waitFor(() => expect(management.read().busy).toBe(false));
+  expect(management.read().installed?.generation).not.toBe(firstGeneration);
   const input = { provider: "usda-fdc", providerFoodId: "748967", foodLogDate: "2026-09-06", idempotencyKey: "stale-review-123", selectedMeasurementId: "100g", quantity: "1" };
   await expect(entries.log(userId, input)).rejects.toThrow("catalog changed");
   await expect(entries.log(userId, { ...input, catalogGeneration: "00000000-0000-4000-8000-000000000000" })).rejects.toThrow("catalog changed");

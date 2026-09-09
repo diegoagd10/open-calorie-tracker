@@ -90,7 +90,11 @@ test("an administrator upload returns while import continues and returning to Se
   expect((await loader(get())).catalog.busy).toBe(true);
   await vi.waitFor(() => expect(getCatalogManagement().read().busy).toBe(false), { timeout: 3000 });
   expect((await loader(get())).catalog).toMatchObject({ installed: { foodCount: 4, filename: "Fondación.zip" }, job: { phase: "succeeded", error: null, receivedBytes: archive.length } });
-  expect((await action(post(await foundationArchive()))).status).toBe(409);
+  const firstGeneration = getCatalogManagement().read().installed?.generation;
+  expect((await action(post(await foundationArchive()))).status).toBe(202);
+  await vi.waitFor(() => expect(getCatalogManagement().read().busy).toBe(false), { timeout: 3000 });
+  expect(getCatalogManagement().read()).toMatchObject({ installed: { filename: "foundation.zip" }, job: { phase: "succeeded" } });
+  expect(getCatalogManagement().read().installed?.generation).not.toBe(firstGeneration);
 });
 
 test.each([

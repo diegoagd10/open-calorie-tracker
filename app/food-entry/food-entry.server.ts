@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 
@@ -570,7 +571,10 @@ export class FoodEntryService {
     const food = await this.#catalog.getFood(
       parsed.data.provider,
       parsed.data.providerFoodId,
-      context,
+      {
+        requestId: context?.requestId ?? randomUUID(),
+        reviewedCatalogGeneration: parsed.data.catalogGeneration,
+      },
     );
     if (food.catalogGeneration !== parsed.data.catalogGeneration) throw new CatalogStaleReviewError();
     if (!food.isSelectable) throw new CatalogNutritionUnavailableError();

@@ -69,6 +69,9 @@ test.each([undefined, { earliest: null, latest: null }, { earliest: "2024-01-01"
   expect(text(off)).toContain("Installed: 1/2/2026, 3:04:05 AM");
   expect(text(off)).toContain("Catalog replacement is not available yet.");
   expect(off.findAllByType("form")).toHaveLength(0);
+  expect(text(usda)).toContain("Upload a newer Foundation archive, or deliberately reimport this archive, while the installed catalog remains available.");
+  expect(text(usda.findByType("button"))).toBe("Replace or reimport USDA Foundation");
+  expect(usda.findByType("input").props.disabled).toBe(false);
 });
 
 test("busy catalogs poll, stop polling on unmount, and idle catalogs do not poll", async () => {

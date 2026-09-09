@@ -19,7 +19,7 @@ export type InstalledCatalog = {
   installedAt: string; publicationDateRange: { earliest: string; latest: string };
   sourceDateRange?: { earliest: string | null; latest: string | null };
 };
-export type CatalogState = { installed: InstalledCatalog | null; job: CatalogImportJob | null; busy: boolean };
+export type CatalogState = { installed: InstalledCatalog | null; job: CatalogImportJob | null; busy: boolean; retiring?: InstalledCatalog };
 export type CatalogManagementOptions = { provider?: "usda-fdc" | "open-food-facts"; directory: string; workerPath: string; maxUploadBytes?: number; maxExpandedBytes?: number };
 const terminal = new Set<ImportPhase>(["succeeded", "failed", "interrupted"]);
 export class CatalogManagementError extends Error {}
@@ -30,6 +30,8 @@ export class CatalogManagement {
   #worker: Worker | undefined;
   #upload: AbortController | undefined;
   #operation: Promise<void> | undefined;
+  #handoff: Promise<void> | undefined;
+  readonly #readers = new Map<string, Set<object>>();
 
   constructor(database: ApplicationDatabaseClient, options: CatalogManagementOptions) {
     this.#database = database;
@@ -37,8 +39,12 @@ export class CatalogManagement {
     this.#options = { provider: "usda-fdc", maxUploadBytes: (off ? 4096 : 64) * 1024 * 1024, maxExpandedBytes: (off ? 32768 : 256) * 1024 * 1024, ...options };
     const state = this.read();
     if (state.busy && state.job) {
-      this.#updateJob({ phase: "interrupted", error: `${this.#label} installation was interrupted by a server restart. Upload the archive again.` });
-      void this.#cleanup(state.job.id, true);
+      if (state.job.phase === "activating" && state.installed?.generation === state.job.id) {
+        void this.#completeHandoff();
+      } else {
+        this.#updateJob({ phase: "interrupted", error: `${this.#label} installation was interrupted by a server restart. Upload the archive again.` });
+        void this.#cleanup(state.job.id, true);
+      }
     }
   }
 
@@ -55,7 +61,7 @@ export class CatalogManagement {
     if (input.size !== undefined && (!Number.isSafeInteger(input.size) || input.size <= 0 || input.size > this.#options.maxUploadBytes)) throw new CatalogManagementError("Archive exceeds the configured upload limit or is empty.");
     const id = randomUUID();
     const now = new Date().toISOString();
-    const conflict = claimCatalogInstallation(this.#database, { id, filename: path.basename(input.filename), phase: "uploading", receivedBytes: 0, processedRecords: 0, exclusions: {}, error: null, startedAt: now, updatedAt: now }, this.#options.provider);
+    const conflict = claimCatalogInstallation(this.#database, { id, filename: path.basename(input.filename), phase: "uploading", receivedBytes: 0, processedRecords: 0, exclusions: {}, error: null, startedAt: now, updatedAt: now }, this.#options.provider, this.#options.provider === "usda-fdc");
     if (conflict === "installed") throw new CatalogManagementError(`${this.#label} is already installed. Catalog replacement is not available yet.`);
     if (conflict === "busy") throw new CatalogManagementError(`A ${this.#label} installation is already running.`);
     this.#upload = new AbortController();
@@ -119,7 +125,8 @@ export class CatalogManagement {
         await this.#cleanup(id, false);
         this.#worker = undefined;
         const now = new Date().toISOString();
-        this.#save({ installed: { generation: id, filename: state.job!.filename, sha256, installedAt: now, ...result }, job: { ...this.read().job!, phase: "succeeded", updatedAt: now } });
+        this.#save({ installed: { generation: id, filename: state.job!.filename, sha256, installedAt: now, ...result }, job: { ...this.read().job!, phase: "activating", updatedAt: now }, retiring: state.installed ?? undefined });
+        await this.#completeHandoff();
       } else {
         await this.#cleanup(id, true);
         this.#worker = undefined;
@@ -137,7 +144,43 @@ export class CatalogManagement {
   }
   #updateJob(patch: Partial<CatalogImportJob>) {
     const state = this.read();
-    if (state.job) this.#save({ installed: state.installed, job: { ...state.job, ...patch, updatedAt: new Date().toISOString() } });
+    if (state.job) this.#save({ installed: state.installed, job: { ...state.job, ...patch, updatedAt: new Date().toISOString() }, retiring: state.retiring });
+  }
+  async withActiveGeneration<T>(read: (generation: string) => T | Promise<T>): Promise<T | undefined> {
+    const generation = this.read().installed?.generation;
+    if (!generation) return undefined;
+    const lease = {};
+    const readers = this.#readers.get(generation) ?? new Set<object>();
+    readers.add(lease);
+    this.#readers.set(generation, readers);
+    try {
+      return await read(generation);
+    } finally {
+      readers.delete(lease);
+      await this.#completeHandoff();
+    }
+  }
+  async #completeHandoff() {
+    if (this.#handoff) return this.#handoff;
+    const state = this.read();
+    if (!this.#handoffReady(state)) return;
+    const handoff = this.#retireAndComplete(state);
+    this.#handoff = handoff;
+    try { await handoff; } finally { if (this.#handoff === handoff) this.#handoff = undefined; }
+  }
+  #handoffReady(state: CatalogState) {
+    return state.job?.phase === "activating"
+      && state.installed?.generation === state.job.id
+      && (!state.retiring || !this.#readers.get(state.retiring.generation)?.size);
+  }
+  async #retireAndComplete(state: CatalogState) {
+    if (state.retiring) await this.#removeGeneration(state.retiring.generation);
+    this.#save({ installed: state.installed, job: { ...state.job!, phase: "succeeded", updatedAt: new Date().toISOString() } });
+  }
+  async #removeGeneration(generation: string) {
+    await rm(path.join(this.#options.directory, `${generation}.sqlite`));
+    await rm(path.join(this.#options.directory, `${generation}.sqlite-journal`), { force: true });
+    this.#readers.delete(generation);
   }
   async #cleanup(id: string, removeGeneration: boolean) {
     const paths = [`${id}${this.#extension}`, `${id}.staging`, ...(removeGeneration ? [`${id}.sqlite`, `${id}.sqlite-journal`] : [])];

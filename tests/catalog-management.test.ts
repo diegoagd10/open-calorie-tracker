@@ -7,6 +7,7 @@ import { afterEach, expect, test, vi } from "vitest";
 import { CatalogManagement, type CatalogManagementOptions } from "../app/catalog-management/catalog-management.server";
 import { openApplicationDatabase } from "../app/database/database.server";
 import { saveCatalogState } from "../app/database/catalog-state.server";
+import { foundationArchive } from "./support/foundation-archive";
 import { offArchive, offWithBasis } from "./support/off-archive";
 
 vi.mock("node:fs/promises", async importOriginal => {
@@ -195,4 +196,186 @@ test("installation claims distinguish busy and already installed providers", asy
   await expect(management.submitArchive({ filename: "off.gz", stream: Readable.from("other") })).rejects.toThrow("A Open Food Facts installation is already running.");
   pending.end(offArchive([offWithBasis("serving")])); await upload; await finished(management);
   await expect(management.submitArchive({ filename: "off.gz", stream: Readable.from("other") })).rejects.toThrow("Open Food Facts is already installed. Catalog replacement is not available yet.");
+});
+
+test("activation publishes the replacement to new readers before retiring the generation held by an in-flight reader", async () => {
+  const { management, directory } = await setup({ provider: "usda-fdc" });
+  const archive = await foundationArchive();
+  await management.submitArchive({ filename: "foundation.zip", stream: Readable.from(archive) });
+  await finished(management);
+  const oldGeneration = management.read().installed!.generation;
+
+  let releaseFirst!: () => void;
+  let releaseSecond!: () => void;
+  const heldFirst = new Promise<void>(resolve => { releaseFirst = resolve; });
+  const heldSecond = new Promise<void>(resolve => { releaseSecond = resolve; });
+  let readersStarted = 0;
+  const holdOldReader = (held: Promise<void>) => management.withActiveGeneration(async generation => {
+    readersStarted += 1;
+    expect(generation).toBe(oldGeneration);
+    await held;
+    return generation;
+  });
+  const firstOldReader = holdOldReader(heldFirst);
+  const secondOldReader = holdOldReader(heldSecond);
+  await vi.waitFor(() => expect(readersStarted).toBe(2));
+  await fs.writeFile(path.join(directory, `${oldGeneration}.sqlite-journal`), "retained journal");
+
+  await management.submitArchive({ filename: "foundation.zip", stream: Readable.from(archive) });
+  await vi.waitFor(() => {
+    expect(management.read().installed?.generation).not.toBe(oldGeneration);
+    expect(management.read().job?.phase).toBe("activating");
+  });
+  await expect(fs.access(path.join(directory, `${oldGeneration}.sqlite`))).resolves.toBeUndefined();
+  await expect(management.withActiveGeneration(generation => generation)).resolves.toBe(management.read().installed?.generation);
+
+  releaseFirst();
+  await expect(firstOldReader).resolves.toBe(oldGeneration);
+  expect(management.read().job?.phase).toBe("activating");
+  await expect(fs.access(path.join(directory, `${oldGeneration}.sqlite`))).resolves.toBeUndefined();
+
+  releaseSecond();
+  await expect(secondOldReader).resolves.toBe(oldGeneration);
+  await finished(management);
+  await expect(fs.access(path.join(directory, `${oldGeneration}.sqlite`))).rejects.toMatchObject({ code: "ENOENT" });
+  await expect(fs.access(path.join(directory, `${oldGeneration}.sqlite-journal`))).rejects.toMatchObject({ code: "ENOENT" });
+  expect(management.read().job?.phase).toBe("succeeded");
+});
+
+test("restart completes an already-published activation handoff instead of interrupting the replacement", async () => {
+  const { management, directory, database, settings } = await setup({ provider: "usda-fdc" });
+  const archive = await foundationArchive();
+  await management.submitArchive({ filename: "foundation.zip", stream: Readable.from(archive) });
+  await finished(management);
+  const old = management.read().installed!;
+  const replacement = { ...old, generation: "00000000-0000-4000-8000-000000000001", filename: "replacement.zip" };
+  await fs.copyFile(path.join(directory, `${old.generation}.sqlite`), path.join(directory, `${replacement.generation}.sqlite`));
+  const activating = {
+    id: replacement.generation,
+    filename: replacement.filename,
+    phase: "activating" as const,
+    receivedBytes: 100,
+    processedRecords: 4,
+    exclusions: {},
+    error: null,
+    startedAt: "2026-01-01T00:00:00Z",
+    updatedAt: "2026-01-01T00:00:00Z",
+  };
+  saveCatalogState(database.getClient(), { installed: replacement, retiring: old, job: activating }, "usda-fdc");
+
+  const restarted = new CatalogManagement(database.getClient(), settings);
+  cleanups.unshift(() => restarted.shutdown());
+  await vi.waitFor(() => expect(restarted.read().busy).toBe(false));
+  expect(restarted.read()).toMatchObject({ installed: replacement, job: { phase: "succeeded", error: null } });
+  expect(restarted.read().retiring).toBeUndefined();
+  await expect(fs.access(path.join(directory, `${old.generation}.sqlite`))).rejects.toMatchObject({ code: "ENOENT" });
+  await expect(fs.access(path.join(directory, `${replacement.generation}.sqlite`))).resolves.toBeUndefined();
+});
+
+test("restart interrupts activation before publication and preserves the previous generation", async () => {
+  const { management, directory, database, settings } = await setup({ provider: "usda-fdc" });
+  const archive = await foundationArchive();
+  await management.submitArchive({ filename: "foundation.zip", stream: Readable.from(archive) });
+  await finished(management);
+  const working = management.read().installed!;
+  const pendingId = "00000000-0000-4000-8000-000000000002";
+  const activating = {
+    id: pendingId,
+    filename: "replacement.zip",
+    phase: "activating" as const,
+    receivedBytes: 100,
+    processedRecords: 4,
+    exclusions: {},
+    error: null,
+    startedAt: "2026-01-01T00:00:00Z",
+    updatedAt: "2026-01-01T00:00:00Z",
+  };
+  await fs.copyFile(path.join(directory, `${working.generation}.sqlite`), path.join(directory, `${pendingId}.sqlite`));
+  await fs.writeFile(path.join(directory, `${pendingId}.zip`), archive);
+  saveCatalogState(database.getClient(), { installed: working, job: activating }, "usda-fdc");
+
+  const restarted = new CatalogManagement(database.getClient(), settings);
+  cleanups.unshift(() => restarted.shutdown());
+  expect(restarted.read()).toMatchObject({
+    installed: working,
+    busy: false,
+    job: { phase: "interrupted", error: "USDA installation was interrupted by a server restart. Upload the archive again." },
+  });
+  await vi.waitFor(async () => expect((await fs.readdir(directory)).filter(name => name.startsWith(pendingId))).toEqual([]));
+  await expect(fs.access(path.join(directory, `${working.generation}.sqlite`))).resolves.toBeUndefined();
+});
+
+test("restart interrupts an unpublished activation when no previous generation exists", async () => {
+  const { database, directory, settings } = await setup({ provider: "usda-fdc" });
+  const pendingId = "00000000-0000-4000-8000-000000000004";
+  const activating = {
+    id: pendingId,
+    filename: "foundation.zip",
+    phase: "activating" as const,
+    receivedBytes: 100,
+    processedRecords: 4,
+    exclusions: {},
+    error: null,
+    startedAt: "2026-01-01T00:00:00Z",
+    updatedAt: "2026-01-01T00:00:00Z",
+  };
+  await fs.writeFile(path.join(directory, `${pendingId}.sqlite`), "unpublished generation");
+  saveCatalogState(database.getClient(), { installed: null, job: activating }, "usda-fdc");
+
+  const restarted = new CatalogManagement(database.getClient(), settings);
+  cleanups.unshift(() => restarted.shutdown());
+  expect(restarted.read()).toMatchObject({
+    installed: null,
+    busy: false,
+    job: { phase: "interrupted", error: "USDA installation was interrupted by a server restart. Upload the archive again." },
+  });
+  await vi.waitFor(async () => expect((await fs.readdir(directory)).filter(name => name.startsWith(pendingId))).toEqual([]));
+});
+
+test("reader release completes only the exact published activation handoff", async () => {
+  const { management, database } = await setup({ provider: "usda-fdc" });
+  await management.submitArchive({ filename: "foundation.zip", stream: Readable.from(await foundationArchive()) });
+  await finished(management);
+  const installed = management.read().installed!;
+  const succeeded = management.read().job!;
+  const importing = { ...succeeded, phase: "importing" as const };
+  const mismatched = { ...succeeded, id: "00000000-0000-4000-8000-000000000003", phase: "activating" as const };
+  const incompleteStates = [
+    { installed, job: null },
+    { installed, job: importing },
+    { installed, job: mismatched },
+    { installed: null, job: { ...succeeded, phase: "activating" as const } },
+  ];
+
+  for (const incomplete of incompleteStates) {
+    saveCatalogState(database.getClient(), { installed, job: succeeded }, "usda-fdc");
+    const read = management.withActiveGeneration(generation => {
+      saveCatalogState(database.getClient(), incomplete, "usda-fdc");
+      return generation;
+    });
+    await expect(read).resolves.toBe(installed.generation);
+    expect(management.read()).toEqual({ ...incomplete, busy: incomplete.job !== null });
+  }
+});
+
+test("a USDA replacement activation failure leaves the working generation active and permits retry", async () => {
+  const { management, directory } = await setup({ provider: "usda-fdc" });
+  const archive = await foundationArchive();
+  await management.submitArchive({ filename: "foundation.zip", stream: Readable.from(archive) });
+  await finished(management);
+  const working = management.read().installed!;
+
+  vi.mocked(fs.chmod).mockRejectedValueOnce(new Error("private activation fault"));
+  await management.submitArchive({ filename: "replacement.zip", stream: Readable.from(archive) });
+  await finished(management);
+  expect(management.read()).toMatchObject({
+    installed: working,
+    job: { phase: "failed", error: "USDA activation failed. Check server storage and retry the upload." },
+  });
+  await expect(fs.access(path.join(directory, `${working.generation}.sqlite`))).resolves.toBeUndefined();
+
+  await management.submitArchive({ filename: "replacement.zip", stream: Readable.from(archive) });
+  await finished(management);
+  expect(management.read()).toMatchObject({ installed: { filename: "replacement.zip" }, job: { phase: "succeeded", error: null } });
+  expect(management.read().installed?.generation).not.toBe(working.generation);
 });
