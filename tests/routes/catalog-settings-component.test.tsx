@@ -55,10 +55,10 @@ test.each([
   if (phase === "failed") expect(text(off.findByProps({ role: "alert" }))).toBe("Archive rejected");
 });
 
-test("USDA progress distinguishes imported foods from rejected food records", async () => {
-  const { card } = await render({ ...empty, busy: true, job: job("importing") });
+test("each catalog reports imported foods separately from rejected food records", async () => {
+  const { card } = await render({ ...empty, busy: true, job: job("importing") }, { ...empty, busy: true, job: job("importing") });
   expect(text(card("usda-fdc").findByProps({ role: "status" }))).toContain("4,321 foods imported · 123 food records rejected");
-  expect(text(card("open-food-facts").findByProps({ role: "status" }))).not.toContain("foods imported");
+  expect(text(card("open-food-facts").findByProps({ role: "status" }))).toContain("4,321 foods imported · 123 food records rejected");
 });
 
 test.each([undefined, { earliest: null, latest: null }, { earliest: "2024-01-01", latest: "2025-01-01" }])("installed sources show distinct dates and immutable snapshot metadata %#", async sourceDateRange => {
@@ -73,8 +73,9 @@ test.each([undefined, { earliest: null, latest: null }, { earliest: "2024-01-01"
   expect(text(usda)).toContain("USDA installation complete");
   expect(text(off.findByType("details"))).toBe("Source snapshot fingerprintSHA-256: abc123");
   expect(text(off)).toContain("Installed: 1/2/2026, 3:04:05 AM");
-  expect(text(off)).toContain("Catalog replacement is not available yet.");
-  expect(off.findAllByType("form")).toHaveLength(0);
+  expect(text(off)).toContain("Upload a newer OFF archive, or deliberately reimport this archive, while the installed catalog remains available.");
+  expect(text(off.findByType("button"))).toBe("Replace or reimport Open Food Facts");
+  expect(off.findByType("input").props.disabled).toBe(false);
   expect(text(usda)).toContain("Upload a newer Foundation archive, or deliberately reimport this archive, while the installed catalog remains available.");
   expect(text(usda.findByType("button"))).toBe("Replace or reimport USDA Foundation");
   expect(usda.findByType("input").props.disabled).toBe(false);

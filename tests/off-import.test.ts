@@ -128,6 +128,16 @@ test.each([
   expect(imported.messages.some(message => message.result)).toBe(false);
 });
 
+test("a late OFF archive failure reports accepted and rejected staging rows", async () => {
+  const rows = Array.from({ length: 500 }, (_, index) => offWithBasis("serving", String(1_000_000_000_000 + index)));
+  const archive = offArchive([...rows, { ...offProduct, code: "" }, offWithBasis("serving", "0012345678906")]).subarray(0, -8);
+  const imported = await install(archive);
+  expect(imported.final).toMatchObject({
+    progress: { processedRecords: 501, importedRecords: 500, rejectedRecords: 1, exclusions: { invalid_identity: 1 } },
+    error: "Corrupt OFF GZIP or malformed TSV. Download the archive again.",
+  });
+});
+
 test("OFF distinguishes expanded input and staged SQLite resource failures", async () => {
   const limit = await install(offArchive(), 10);
   expect(limit.final.error).toBe("OFF expanded data exceeds the configured resource limit.");

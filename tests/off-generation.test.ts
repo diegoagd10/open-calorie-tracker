@@ -54,6 +54,7 @@ test("generation build persists aliases, indexes once, de-duplicates, and caps r
   foods.push({ ...foods[0], name: "Ignored duplicate" });
   const duplicate = vi.fn();
   const indexing = vi.fn();
+  const stored = vi.fn();
   const aliasesFor = vi.fn((food: CatalogFood) => [
     `Hidden alias ${food.providerFoodId}`,
   ]);
@@ -66,9 +67,11 @@ test("generation build persists aliases, indexes once, de-duplicates, and caps r
     maxBytes: 16 * 1024 * 1024,
     onDuplicate: duplicate,
     onIndexing: indexing,
+    onStored: stored,
   })).resolves.toBe(30);
   expect(duplicate).toHaveBeenCalledTimes(1);
   expect(indexing).toHaveBeenCalledTimes(1);
+  expect(stored).toHaveBeenCalledTimes(30);
   expect(aliasesFor).toHaveBeenCalledTimes(31);
   expect(readOffGenerationFood(directory, "built", "0000000000001"))
     .toEqual(foods[0]);

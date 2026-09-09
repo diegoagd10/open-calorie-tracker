@@ -65,8 +65,7 @@ export class CatalogManagement {
     if (input.size !== undefined && (!Number.isSafeInteger(input.size) || input.size <= 0 || input.size > this.#options.maxUploadBytes)) throw new CatalogManagementError("Archive exceeds the configured upload limit or is empty.");
     const id = randomUUID();
     const now = new Date().toISOString();
-    const conflict = claimCatalogInstallation(this.#database, { id, filename: path.basename(input.filename), phase: "uploading", receivedBytes: 0, processedRecords: 0, importedRecords: 0, rejectedRecords: 0, exclusions: {}, error: null, startedAt: now, updatedAt: now }, this.#options.provider, this.#options.provider === "usda-fdc");
-    if (conflict === "installed") throw new CatalogManagementError(`${this.#label} is already installed. Catalog replacement is not available yet.`);
+    const conflict = claimCatalogInstallation(this.#database, { id, filename: path.basename(input.filename), phase: "uploading", receivedBytes: 0, processedRecords: 0, importedRecords: 0, rejectedRecords: 0, exclusions: {}, error: null, startedAt: now, updatedAt: now }, this.#options.provider);
     if (conflict === "busy") throw new CatalogManagementError(`A ${this.#label} installation is already running.`);
     this.#upload = new AbortController();
     this.#operation = this.#receive(input, id, this.#upload.signal);
