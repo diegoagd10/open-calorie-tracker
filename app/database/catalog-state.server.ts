@@ -2,7 +2,7 @@ import type { CatalogProviderId } from "../catalog/food-catalog.server";
 import { eq } from "drizzle-orm";
 import type { ApplicationDatabaseClient } from "./database.server";
 import { applicationMetadata } from "./schema.server";
-import type { CatalogImportJob, CatalogState } from "../catalog-management/catalog-management.server";
+import type { CatalogImportJob, CatalogState, CatalogUpdateCheck } from "../catalog-management/catalog-management.server";
 
 
 export function readCatalogState(database: ApplicationDatabaseClient, provider: CatalogProviderId = "usda-fdc"): Omit<CatalogState, "busy"> {
@@ -11,6 +11,14 @@ export function readCatalogState(database: ApplicationDatabaseClient, provider: 
 }
 export function saveCatalogState(database: ApplicationDatabaseClient, state: Omit<CatalogState, "busy">, provider: CatalogProviderId = "usda-fdc") {
   const row = { key: `catalog:${provider}`, value: JSON.stringify(state), updatedAt: new Date().toISOString() };
+  database.insert(applicationMetadata).values(row).onConflictDoUpdate({ target: applicationMetadata.key, set: row }).run();
+}
+export function readCatalogUpdateCheck(database: ApplicationDatabaseClient, provider: CatalogProviderId = "usda-fdc"): CatalogUpdateCheck | undefined {
+  const row = database.select().from(applicationMetadata).where(eq(applicationMetadata.key, `catalog-update:${provider}`)).get();
+  return row ? JSON.parse(row.value) as CatalogUpdateCheck : undefined;
+}
+export function saveCatalogUpdateCheck(database: ApplicationDatabaseClient, check: CatalogUpdateCheck, provider: CatalogProviderId = "usda-fdc") {
+  const row = { key: `catalog-update:${provider}`, value: JSON.stringify(check), updatedAt: check.checkedAt };
   database.insert(applicationMetadata).values(row).onConflictDoUpdate({ target: applicationMetadata.key, set: row }).run();
 }
 export function claimCatalogInstallation(database: ApplicationDatabaseClient, job: CatalogImportJob, provider: CatalogProviderId = "usda-fdc"): "busy" | null {

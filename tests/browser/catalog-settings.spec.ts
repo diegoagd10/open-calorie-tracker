@@ -16,6 +16,13 @@ test("administrator installs USDA from mobile Settings, leaves during import, an
   await page.goto("/settings/goals");
   await page.getByRole("link", { name: /Food Catalogs/ }).click();
   await expect(page.getByRole("heading", { name: "Food Catalogs", exact: true })).toBeVisible();
+  const usdaCard = page.locator('section[aria-labelledby="usda-fdc-heading"]');
+  await expect(usdaCard.getByText("Install a Foundation archive before comparing it with USDA's declared release.", { exact: true })).toBeVisible();
+  const officialDownload = usdaCard.getByRole("link", { name: /Official USDA downloads/ });
+  await expect(officialDownload).toHaveAttribute("href", "https://fdc.nal.usda.gov/download-datasets/");
+  await expect(officialDownload).toHaveAttribute("target", "_blank");
+  await usdaCard.getByRole("button", { name: "Check USDA updates again" }).click();
+  await expect(usdaCard.getByLabel("Foundation CSV ZIP")).toBeEnabled();
   const archive = await basicFoodsArchive(75_000);
   await page.getByLabel("Foundation CSV ZIP").setInputFiles({ name: "foundation-browser.zip", mimeType: "application/zip", buffer: archive });
   const uploaded = page.waitForResponse(response => response.url().endsWith("/settings/catalogs") && response.request().method() === "POST");
