@@ -171,11 +171,13 @@ explicit failure. Non-food results retain the photo and retry controls without
 creating a Food Entry. JPEG signature validation permits trailing camera metadata
 after the end-of-image marker.
 
-A live smoke test on 2026-09-06 used Pi/Codex Luna with the public USDA key and
-two public JPEGs: [a dog portrait by Pittigrilli, CC BY-SA 4.0](https://commons.wikimedia.org/wiki/File:Close-up_portrait_of_dog.jpg)
+A pre-cutover live smoke test on 2026-09-06 used Pi/Codex Luna and two public
+JPEGs: [a dog portrait by Pittigrilli, CC BY-SA 4.0](https://commons.wikimedia.org/wiki/File:Close-up_portrait_of_dog.jpg)
 was rejected as non-food in 3.13 seconds, while [a Pepsi can](https://commons.wikimedia.org/wiki/File:2019-02-26_12_58_50_A_can_of_Pepsi_in_the_Dulles_section_of_Sterling,_Loudoun_County,_Virginia.jpg)
 was accepted in 17.42 seconds. This checks rejection and successful processing,
-not nutritional accuracy. The photos are not committed to this repository.
+not nutritional accuracy. It predates the local Foundation evidence workflow
+and is not current cutover verification. The photos are not committed to this
+repository.
 
 For mobile previews, use a compiled release with its own build directory and the
 local HTTPS proxy configuration in [deployment.md](deployment.md). Sharing Vite

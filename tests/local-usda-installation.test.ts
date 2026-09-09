@@ -504,7 +504,7 @@ test("invalid values, duplicate nutrients and unsupported portions stay unknown 
 
 test("a missing catalog, conflicting replacement, deliberate reimport and stale review have explicit outcomes", async () => {
   const { management, catalog, entries, userId } = await setup();
-  await expect(catalog.search("usda-fdc", "egg")).rejects.toThrow("not configured");
+  await expect(catalog.search("usda-fdc", "egg")).rejects.toThrow("not installed");
   for (const id of ["0", "x748967", "748967x"]) await expect(catalog.getFood("usda-fdc", id)).rejects.toThrow("no longer available");
   await management.submitArchive({ filename: "foundation.zip", stream: Readable.from(await foundationArchive()) });
   await expect(management.submitArchive({ filename: "second.zip", stream: Readable.from("unused") })).rejects.toThrow("already running");
@@ -834,7 +834,7 @@ test.each([
   await management.submitArchive({ filename: "bad.zip", stream: Readable.from(body ?? await foundationArchive(overrides ?? {})) });
   await vi.waitFor(() => expect(management.read().busy).toBe(false));
   expect(management.read()).toMatchObject({ installed: null, job: { phase: "failed" } });
-  await expect(catalog.getFood("usda-fdc", "747447")).rejects.toThrow("not configured");
+  await expect(catalog.getFood("usda-fdc", "747447")).rejects.toThrow("not installed");
   await management.submitArchive({ filename: "retry.zip", stream: Readable.from(await foundationArchive()) });
   await vi.waitFor(() => expect(management.read().busy).toBe(false));
   expect(management.read().job?.phase).toBe("succeeded");

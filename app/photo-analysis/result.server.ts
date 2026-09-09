@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { UsdaEvidence } from "../catalog/usda.server";
+import type { UsdaEvidence } from "../catalog/usda-evidence";
 import type { PhotoSnapshot } from "../database/photo-analysis.server";
 import {
   scaleCatalogNutrient,

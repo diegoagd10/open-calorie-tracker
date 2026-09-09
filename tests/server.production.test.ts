@@ -95,11 +95,11 @@ function parseJsonLines(output: string): Array<Record<string, unknown>> {
 }
 
 test("missing production configuration exits with a redacted structured log", async () => {
-  const apiKey = "deployment-secret-usda-key";
+  const apiKey = "deployment-secret-api-key";
   const applicationPassword = "deployment-secret-password";
   const running = startProductionProcess({
     APPLICATION_URL: undefined,
-    FDC_API_KEY: apiKey,
+    EXAMPLE_API_KEY: apiKey,
     OWNER_PASSWORD: applicationPassword,
   });
 
@@ -193,7 +193,7 @@ test("production health and logs are safe on a configurable internal port", asyn
   const directory = await mkdtemp(path.join(tmpdir(), "calory-server-"));
   temporaryDirectories.push(directory);
   const port = await availablePort();
-  const apiKey = "deployment-secret-usda-key";
+  const apiKey = "deployment-secret-api-key";
   const password = "deployment-secret-password";
   const sessionToken = "deployment-secret-session-token";
   const csrfToken = "deployment-secret-csrf-token";
@@ -201,7 +201,7 @@ test("production health and logs are safe on a configurable internal port", asyn
   const running = startProductionProcess({
     APPLICATION_URL: "https://calories.example.test",
     DATABASE_PATH: path.join(directory, "application.sqlite"),
-    FDC_API_KEY: apiKey,
+    EXAMPLE_API_KEY: apiKey,
     PORT: String(port),
     TRUST_PROXY: "172.30.0.0/16",
   });

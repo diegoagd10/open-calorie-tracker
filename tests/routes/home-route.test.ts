@@ -287,9 +287,7 @@ test("home loader maps every catalog search and detail state", async () => {
   }
 
   for (const [query, status] of [
-    ["configuration", "not-installed"],
-    ["credentials", "unavailable"],
-    ["rate", "unavailable"],
+    ["not-installed", "not-installed"],
     ["malformed", "unavailable"],
     ["unavailable", "unavailable"],
   ] as const) {
@@ -462,9 +460,8 @@ test("home loader exposes barcode lookup without creating a Food Entry", async (
     ["0000000000000", 503, "Open Food Facts is not installed", "Food Catalogs"],
     ["0000000000001", 404, "Product not found", "another code"],
     ["0000000000002", 422, "Nutrition unavailable", "calculation basis"],
-    ["0000000000003", 429, "Open Food Facts rate limit reached", "Wait a moment"],
     ["0000000000004", 503, "Open Food Facts is unavailable", "Retry"],
-    ["0000000000005", 502, "Open Food Facts response could not be used", "could not be used safely"],
+    ["0000000000005", 500, "Open Food Facts catalog data could not be used", "could not be used safely"],
     ["0000000000007", 422, "Measurement unavailable", "selected supported measurement"],
   ] as const) {
     const result = await load(`/?food=barcode&barcode=${barcode}`);
@@ -939,9 +936,8 @@ test("home food actions log, edit, detect conflicts, delete, and map catalog fai
     ["0000000000000", 503],
     ["0000000000001", 404],
     ["0000000000002", 422],
-    ["0000000000003", 429],
     ["0000000000004", 503],
-    ["0000000000005", 502],
+    ["0000000000005", 500],
     ["0000000000007", 422],
   ] as const) {
     const failedConfirmation = await homeAction(

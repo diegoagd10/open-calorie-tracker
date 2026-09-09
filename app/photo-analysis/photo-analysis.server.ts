@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import type { UsdaAnalysisReader, UsdaEvidence } from "../catalog/usda.server";
+import type { UsdaAnalysisReader, UsdaEvidence } from "../catalog/usda-evidence";
 import type { ApplicationDatabaseClient } from "../database/database.server";
 import {
   PhotoAnalysisStore,

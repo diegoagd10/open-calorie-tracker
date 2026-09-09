@@ -173,10 +173,9 @@ usuario e idempotencia; nunca llega al navegador.
 
 El catálogo actual ya tiene la separación adecuada entre búsqueda y lectura en
 [`app/catalog/food-catalog.server.ts`](../app/catalog/food-catalog.server.ts),
-USDA como proveedor buscable en
-[`app/catalog/usda.server.ts`](../app/catalog/usda.server.ts) y Open Food Facts
-como proveedor por código de barras en
-[`app/catalog/open-food-facts.server.ts`](../app/catalog/open-food-facts.server.ts).
+con adaptadores locales para
+[`USDA`](../app/catalog/local-usda.server.ts) y
+[`Open Food Facts`](../app/catalog/local-off.server.ts).
 MiniMax debería entrar como un nuevo módulo de **image extraction**, no como un
 `FoodCatalogProvider` que afirma ofrecer nutrición autoritativa.
 

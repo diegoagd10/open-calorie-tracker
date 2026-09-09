@@ -15,10 +15,10 @@ import {
   type PiMessage,
 } from "../app/photo-analysis/pi.server";
 import { FoodEntryService } from "../app/food-entry/food-entry.server";
-import {
-  UsdaFoodDataCentralAdapter,
-  type UsdaAnalysisReader,
-} from "../app/catalog/usda.server";
+import type {
+  UsdaAnalysisReader,
+  UsdaEvidence,
+} from "../app/catalog/usda-evidence";
 import { FoodLogService } from "../app/food-log/food-log.server";
 import {
   PhotoAnalysisService,
@@ -422,26 +422,40 @@ test("a bounded attempt times out and a new server marks lost work interrupted w
   expect(restarted.photo(userId, running.id).bytes).toEqual(photo.bytes);
 });
 
-function usdaFixture() {
-  const record = {
-    fdcId: 700,
-    dataType: "Foundation",
-    description: "Rice, cooked",
-    foodNutrients: [
-      { amount: 130, nutrient: { id: 1008, unitName: "kcal" } },
-      { amount: 2.7, nutrient: { id: 1003, unitName: "g" } },
-      { amount: 28, nutrient: { id: 1005, unitName: "g" } },
-      { amount: 0.3, nutrient: { id: 1004, unitName: "g" } },
-      { amount: 0, nutrient: { id: 2000, unitName: "g" } },
-    ],
+function usdaFixture(): UsdaAnalysisReader {
+  const evidence: UsdaEvidence = {
+    food: {
+      authoritativeBaseQuantityMicrounits: 100_000_000,
+      authoritativeBaseUnit: "g",
+      barcode: null,
+      brand: null,
+      dataType: "Foundation",
+      isSelectable: true,
+      marketCountry: null,
+      measurements: [{ baseQuantityMicrounits: 100_000_000, id: "base:g:100000000", label: "100 g", unit: "g" }],
+      measurementSummary: "100 g",
+      name: "Rice, cooked",
+      nutritionPerAuthoritativeBase: {
+        carbohydrateMilligrams: { amount: 28, fixedPointMultiplier: 1_000 },
+        energyMilliKcal: { amount: 130, fixedPointMultiplier: 1_000 },
+        fatMilligrams: { amount: 0.3, fixedPointMultiplier: 1_000 },
+        fiberMilligrams: null,
+        proteinMilligrams: { amount: 2.7, fixedPointMultiplier: 1_000 },
+        sodiumMilligrams: null,
+        sugarMilligrams: { amount: 0, fixedPointMultiplier: 1_000 },
+      },
+      originalName: "Rice, cooked",
+      provider: "usda-fdc",
+      providerFoodId: "700",
+      providerModifiedDate: null,
+      providerPublishedDate: null,
+    },
+    record: { dataType: "Foundation", description: "Rice, cooked", fdcId: 700 },
   };
-  return new UsdaFoodDataCentralAdapter({
-    apiKey: "fixture",
-    fetchImplementation: async (_url, init) =>
-      new Response(
-        JSON.stringify(init?.method === "POST" ? { foods: [record] } : record),
-      ),
-  });
+  return {
+    async getEvidence() { return evidence; },
+    async searchEvidence() { return [evidence]; },
+  };
 }
 
 test("AI can revise USDA searches while authoritative records determine nutrition and the consumed fraction applies once", async () => {

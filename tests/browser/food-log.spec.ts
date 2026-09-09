@@ -747,10 +747,7 @@ test("authenticated USDA search and idempotent logging preserve a local Nutritio
   await expectCatalogResponsive(page);
 
   for (const [query, state] of [
-    ["configuration", "catalog is not installed"],
-    ["credentials", "catalog is temporarily unavailable"],
-    ["rate", "catalog is temporarily unavailable"],
-    ["timeout", "catalog is temporarily unavailable"],
+    ["not-installed", "catalog is not installed"],
     ["malformed", "catalog is temporarily unavailable"],
   ] as const) {
     const response = await page.goto(
@@ -922,9 +919,8 @@ test("authenticated manual barcode confirmation creates one attributed serving s
     ["0000000000000", 503, "Open Food Facts is not installed"],
     ["0000000000001", 404, "Product not found"],
     ["0000000000002", 422, "Nutrition unavailable"],
-    ["0000000000003", 429, "Open Food Facts rate limit reached"],
     ["0000000000004", 503, "Open Food Facts is unavailable"],
-    ["0000000000005", 502, "Open Food Facts response could not be used"],
+    ["0000000000005", 500, "Open Food Facts catalog data could not be used"],
   ] as const) {
     const lookup = await page.goto(
       `/?date=2026-08-29&food=barcode&barcode=${barcode}`,

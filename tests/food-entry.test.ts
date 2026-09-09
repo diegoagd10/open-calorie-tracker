@@ -13,11 +13,9 @@ import type {
   FoodCatalogProvider,
 } from "../app/catalog/food-catalog.server";
 import {
-  CatalogConfigurationError,
-  CatalogCredentialsError,
+  CatalogNotInstalledError,
   CatalogFoodNotFoundError,
-  CatalogInvalidResponseError,
-  CatalogRateLimitError,
+  CatalogInvalidDataError,
   CatalogUnavailableError,
   CatalogUnsafeMeasurementError,
 } from "../app/catalog/food-catalog.server";
@@ -955,11 +953,9 @@ test("authorization, future dates, unsafe measurements, provider failures, and t
   ).rejects.toBeInstanceOf(CatalogUnsafeMeasurementError);
 
   const providerFailures = [
-    new CatalogConfigurationError(),
-    new CatalogCredentialsError(),
+    new CatalogNotInstalledError(),
     new CatalogFoodNotFoundError(),
-    new CatalogInvalidResponseError(),
-    new CatalogRateLimitError(),
+    new CatalogInvalidDataError(),
     new CatalogUnavailableError(),
   ];
   for (const [index, providerFailure] of providerFailures.entries()) {
@@ -1243,7 +1239,7 @@ test("log validates provider identity and measurement unit", async () => {
 
   provider.food.providerFoodId = "201";
   await expect(service.log(userId, validLogInput())).rejects.toBeInstanceOf(
-    CatalogInvalidResponseError,
+    CatalogInvalidDataError,
   );
 
   provider.food.providerFoodId = "200";

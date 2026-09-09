@@ -32,7 +32,9 @@ Optional variables:
 | `OFF_CATALOG_MAX_EXPANDED_BYTES` | 32 GiB | OFF decompressed stream and SQLite size limits; see [capacity and unit limitations](local-off-catalog.md). |
 | `PORT` | `3000` | Internal application port. Keep the default unless Traefik and the published port mapping are updated with it. |
 
-OFF API contact/base-URL/timeout configuration is no longer used by barcode lookup. Install the catalog in Settings; the standard dump lacks an unambiguous nutrition basis and its products remain unavailable for calculated logging.
+No USDA or OFF food API credentials, contact address, base URL, or lookup
+timeout are configured. Install both local catalogs in Settings; see the
+[complete food catalog workflow](food-catalog-operations.md).
 
 The image owns `NODE_ENV`, `DATABASE_PATH`, and the migrations path. Leave them
 unset in Portainer.
@@ -44,8 +46,8 @@ an archive outside the application.
 
 Keep `APPLICATION_URL` on HTTPS in production. Barcode camera work requires a
 browser secure context; the manual barcode field remains available without a
-camera. This release provides manual entry and product review only and does not
-upload or download product images.
+camera. Both camera scanning and manual barcode entry use the local OFF catalog.
+Product images are not uploaded or downloaded.
 
 ## Set `TRUST_PROXY` exactly
 

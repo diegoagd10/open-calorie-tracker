@@ -169,17 +169,16 @@ not run a CodeQL scan. See [dependency security](dependency-security.md#codeql-r
 ## Explicit external suites
 
 The PR gate includes Docker deployment tests. The fast and deep gates remain
-usable without Docker. Credentialed live-provider suites are separate:
+usable without Docker. The credentialed AI photo pilot remains separate:
 
 ```sh
 pnpm test:deployment # also run by pr:check
 PHOTO_PILOT_DATASET=... PHOTO_AI_AUTH_PATH=... PHOTO_PILOT_USDA_ARCHIVE=... pnpm test:photo-live
-FDC_API_KEY=... pnpm test:usda-live
 ```
 
-`test:deployment` requires a working Docker daemon and Compose. The live suites
-require their provider credentials and outbound network access; USDA browser
-tests also need Chromium. No GitHub workflow runs these commands automatically.
+`test:deployment` requires a working Docker daemon and Compose. The photo pilot
+requires its AI-provider credentials, a local USDA Foundation archive, and
+outbound AI access. No GitHub workflow runs these commands automatically.
 
 ## Fallow baselines
 

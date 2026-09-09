@@ -1,9 +1,7 @@
 import {
-  CatalogConfigurationError,
-  CatalogCredentialsError,
+  CatalogNotInstalledError,
   CatalogFoodNotFoundError,
-  CatalogInvalidResponseError,
-  CatalogRateLimitError,
+  CatalogInvalidDataError,
   CatalogUnavailableError,
   CatalogUnsafeMeasurementError,
   CatalogNutritionUnavailableError,
@@ -72,19 +70,15 @@ function searchResult(food: CatalogFood): CatalogSearchResult {
 export class TestFoodCatalogProvider implements SearchFoodCatalogProvider {
   async search(query: string): Promise<CatalogSearchResult[]> {
     switch (query.trim().toLowerCase()) {
-      case "configuration":
-        throw new CatalogConfigurationError();
-      case "credentials":
-        throw new CatalogCredentialsError();
+      case "not-installed":
+        throw new CatalogNotInstalledError();
       case "none":
         return [];
-      case "rate":
-        throw new CatalogRateLimitError();
       case "unavailable":
       case "timeout":
         throw new CatalogUnavailableError();
       case "malformed":
-        throw new CatalogInvalidResponseError();
+        throw new CatalogInvalidDataError();
       case "unsafe":
         return [
           {
@@ -169,18 +163,16 @@ export class TestOpenFoodFactsProvider implements BarcodeFoodCatalogProvider, Se
   async lookupBarcode(barcode: string): Promise<CatalogFood> {
     switch (barcode) {
       case "0000000000000":
-        throw new CatalogConfigurationError();
+        throw new CatalogNotInstalledError();
       case "0000000000001":
         throw new CatalogFoodNotFoundError();
       case "0000000000002":
         throw new CatalogNutritionUnavailableError();
-      case "0000000000003":
-        throw new CatalogRateLimitError();
       case "0000000000004":
       case "0000000000048":
         throw new CatalogUnavailableError();
       case "0000000000005":
-        throw new CatalogInvalidResponseError();
+        throw new CatalogInvalidDataError();
       case "0000000000006":
         return barcodeProduct(barcode, true);
       case "0000000000007":

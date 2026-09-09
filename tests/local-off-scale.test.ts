@@ -54,7 +54,15 @@ test.skipIf(!process.env.OFF_LOCAL_ARCHIVE)("full OFF export imports with bounde
     expect(off.read().job, JSON.stringify(off.read())).toMatchObject({ phase: "succeeded" });
     expect(off.read().installed?.generation).not.toBe(previousOffGeneration);
     const lookups: number[] = [];
-    const searches: number[] = [];
+    const exactSearches: number[] = [];
+    const prefixSearches: number[] = [];
+    const knownProduct = await packaged.lookupBarcode("3017620422003");
+    const exactProductQuery = knownProduct.name;
+    const prefixProductQuery = knownProduct.name.slice(0, Math.max(2, Math.min(6, knownProduct.name.length - 1)));
+    let exactProductNameMatched = false;
+    let prefixProductNameMatched = false;
+    const normalizedExactProductQuery = exactProductQuery.toLocaleLowerCase("en");
+    const normalizedPrefixProductQuery = prefixProductQuery.toLocaleLowerCase("en");
     for (let index = 0; index < 100; index++) {
       const started = performance.now();
       // Missing as well as present indexed text identifiers exercise the local lookup path.
@@ -63,18 +71,31 @@ test.skipIf(!process.env.OFF_LOCAL_ARCHIVE)("full OFF export imports with bounde
     }
     for (let index = 0; index < 40; index++) {
       const started = performance.now();
-      await packaged.search(["nutella", "coca cola", "oat milk", "whole grain cereal"][index % 4]);
-      searches.push(performance.now() - started);
+      const exactResults = await packaged.search(exactProductQuery);
+      exactProductNameMatched ||= exactResults.some(result => result.name.toLocaleLowerCase("en") === normalizedExactProductQuery);
+      exactSearches.push(performance.now() - started);
+      const prefixStarted = performance.now();
+      const prefixResults = await packaged.search(prefixProductQuery);
+      prefixProductNameMatched ||= prefixResults.some(result => result.name.toLocaleLowerCase("en").startsWith(normalizedPrefixProductQuery));
+      prefixSearches.push(performance.now() - prefixStarted);
     }
     const p95 = (values: number[]) => values.sort((a, b) => a - b)[Math.floor(values.length * 0.95)];
     const state = off.read();
     const bytes = (await stat(path.join(directory, `${state.installed!.generation}.sqlite`))).size;
-    process.stdout.write(JSON.stringify({ elapsedMs, peakRssMiB: peakRss / 1024 ** 2, catalogBytes: bytes, usdaDuringReplacementP95Ms: p95(usdaResponsiveness), offDuringReplacementP95Ms: p95(offResponsiveness), offLookupP95Ms: p95(lookups), offSearchP95Ms: p95(searches), state }));
+    const measurements = {
+      usdaDuringReplacementP95Ms: p95(usdaResponsiveness),
+      offDuringReplacementP95Ms: p95(offResponsiveness),
+      offLookupP95Ms: p95(lookups),
+      offExactSearchP95Ms: p95(exactSearches),
+      offPrefixSearchP95Ms: p95(prefixSearches),
+    };
+    process.stdout.write(JSON.stringify({ elapsedMs, peakRssMiB: peakRss / 1024 ** 2, catalogBytes: bytes, exactProductQuery, prefixProductQuery, ...measurements, state }));
     // Opt-in benchmark budget: p95 local lookup <100ms, process RSS <1GiB.
-    expect(p95(usdaResponsiveness)).toBeLessThan(100);
-    expect(p95(offResponsiveness)).toBeLessThan(100);
-    expect(p95(lookups)).toBeLessThan(100);
-    expect(searches).toHaveLength(40);
+    expect(Object.values(measurements).every(value => value < 100)).toBe(true);
+    expect(exactProductNameMatched).toBe(true);
+    expect(prefixProductNameMatched).toBe(true);
+    expect(exactSearches).toHaveLength(40);
+    expect(prefixSearches).toHaveLength(40);
     expect(peakRss).toBeLessThan(1024 ** 3);
   } finally {
     clearInterval(timer); await off.shutdown(); await usda.shutdown(); database.close(); await rm(directory, { recursive: true, force: true });
