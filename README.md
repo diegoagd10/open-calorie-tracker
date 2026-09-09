@@ -20,6 +20,10 @@ coaching, judgment, or gamification.
 For production configuration, deployment, updates, and backups, follow the
 [production deployment guide](docs/deployment.md).
 
+Local USDA and Open Food Facts installation, storage, recovery, limits, and
+end-to-end verification are covered in the [food catalog operations
+guide](docs/food-catalog-operations.md).
+
 Camera barcode scanning requirements and privacy behavior are documented in
 [the camera scanning guide](docs/barcode-scanning.md).
 

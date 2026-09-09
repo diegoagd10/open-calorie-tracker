@@ -98,8 +98,8 @@ describe("operational logging", () => {
     });
   });
 
-  test("Open Food Facts contact details are omitted from operational logs", () => {
-    vi.stubEnv("OPEN_FOOD_FACTS_CONTACT_EMAIL", "private@example.test");
+  test("configured contact details are omitted from operational logs", () => {
+    vi.stubEnv("EXAMPLE_CONTACT_EMAIL", "private@example.test");
     vi.spyOn(console, "log").mockImplementation(() => {});
 
     operationalLog("info", "catalog_configuration", {

@@ -35,13 +35,11 @@ import { UiIcon } from "../ui-icon";
 import { BarcodeCameraScanner } from "./barcode-camera-scanner";
 import { getAuthenticationService } from "../auth/runtime.server";
 import {
-  CatalogConfigurationError,
+  CatalogNotInstalledError,
   CatalogStaleReviewError,
-  CatalogCredentialsError,
   CatalogFoodNotFoundError,
-  CatalogInvalidResponseError,
+  CatalogInvalidDataError,
   CatalogNutritionUnavailableError,
-  CatalogRateLimitError,
   CatalogUnknownProviderError,
   CatalogUnavailableError,
   CatalogUnsafeMeasurementError,
@@ -245,27 +243,12 @@ function catalogFailure(
 ): { message: string; status: number; title: string } | undefined {
   if (error instanceof CatalogStaleReviewError) return { message: error.message, status: 409, title: "Review food again" };
   if (error instanceof CatalogNutritionUnavailableError) return { message: "This food has no usable calories in the installed catalog.", status: 422, title: "Nutrition unavailable" };
-  if (error instanceof CatalogConfigurationError) {
+  if (error instanceof CatalogNotInstalledError) {
     return {
       message:
         "USDA Foundation is not installed. Ask your administrator to install it in Food Catalogs Settings. Your saved Food Entries remain available.",
       status: 503,
       title: "USDA Foundation is not installed",
-    };
-  }
-  if (error instanceof CatalogCredentialsError) {
-    return {
-      message:
-        "USDA search credentials are unavailable. Your saved Food Entries remain available.",
-      status: 503,
-      title: "USDA credentials unavailable",
-    };
-  }
-  if (error instanceof CatalogRateLimitError) {
-    return {
-      message: "USDA rate limit reached. Wait a moment and search again.",
-      status: 429,
-      title: "USDA rate limit reached",
     };
   }
   if (error instanceof CatalogFoodNotFoundError) {
@@ -283,11 +266,11 @@ function catalogFailure(
       title: "Measurement unavailable",
     };
   }
-  if (error instanceof CatalogInvalidResponseError) {
+  if (error instanceof CatalogInvalidDataError) {
     return {
-      message: "USDA returned food data that could not be used safely.",
-      status: 502,
-      title: "USDA response could not be used",
+      message: "The installed USDA catalog contains food data that could not be used safely.",
+      status: 500,
+      title: "USDA catalog data could not be used",
     };
   }
   if (error instanceof CatalogUnavailableError) {
@@ -304,7 +287,7 @@ function catalogFailure(
 function barcodeCatalogFailure(
   error: unknown,
 ): { message: string; status: number; title: string } | undefined {
-  if (error instanceof CatalogConfigurationError) {
+  if (error instanceof CatalogNotInstalledError) {
     return {
       message:
         "An administrator can install Open Food Facts in Settings → Food Catalogs. USDA search and saved Food Entries remain available.",
@@ -335,18 +318,11 @@ function barcodeCatalogFailure(
       title: "Measurement unavailable",
     };
   }
-  if (error instanceof CatalogRateLimitError) {
+  if (error instanceof CatalogInvalidDataError) {
     return {
-      message: "Open Food Facts rate limit reached. Wait a moment before retrying.",
-      status: 429,
-      title: "Open Food Facts rate limit reached",
-    };
-  }
-  if (error instanceof CatalogInvalidResponseError) {
-    return {
-      message: "Open Food Facts returned product data that could not be used safely.",
-      status: 502,
-      title: "Open Food Facts response could not be used",
+      message: "The installed Open Food Facts catalog contains product data that could not be used safely.",
+      status: 500,
+      title: "Open Food Facts catalog data could not be used",
     };
   }
   if (error instanceof CatalogUnavailableError) {

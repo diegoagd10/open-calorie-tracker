@@ -9,12 +9,11 @@ import { foundationArchive } from "./support/foundation-archive";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import {
-  CatalogConfigurationError,
-  CatalogCredentialsError,
+  CatalogRegistrationConflictError,
+  CatalogInvalidDataError,
   CatalogFoodNotFoundError,
-  CatalogInvalidResponseError,
+  CatalogNotInstalledError,
   CatalogNutritionUnavailableError,
-  CatalogRateLimitError,
   CatalogUnavailableError,
   CatalogUnsafeMeasurementError,
   CatalogUnknownProviderError,
@@ -49,19 +48,9 @@ afterEach(() => {
 test("catalog errors expose stable safe names and messages", () => {
   const expected = [
     [
-      new CatalogConfigurationError(),
-      "CatalogConfigurationError",
-      "The food catalog is not configured",
-    ],
-    [
-      new CatalogCredentialsError(),
-      "CatalogCredentialsError",
-      "The food catalog credentials were rejected",
-    ],
-    [
-      new CatalogRateLimitError(),
-      "CatalogRateLimitError",
-      "The food catalog rate limit was reached",
+      new CatalogNotInstalledError(),
+      "CatalogNotInstalledError",
+      "The food catalog is not installed",
     ],
     [
       new CatalogUnavailableError(),
@@ -69,9 +58,9 @@ test("catalog errors expose stable safe names and messages", () => {
       "The food catalog is unavailable",
     ],
     [
-      new CatalogInvalidResponseError(),
-      "CatalogInvalidResponseError",
-      "The food catalog returned an invalid response",
+      new CatalogInvalidDataError(),
+      "CatalogInvalidDataError",
+      "The food catalog contains invalid data",
     ],
     [
       new CatalogFoodNotFoundError(),
@@ -151,7 +140,7 @@ test("catalog rejects conflicting registrations and provider identity mismatches
         { capability: "search", provider: "usda-fdc", service: usda },
         { capability: "barcode", provider: "usda-fdc", service: other },
       ]),
-  ).toThrow(CatalogConfigurationError);
+  ).toThrow(CatalogRegistrationConflictError);
 
   const mismatchedSearch: SearchFoodCatalogProvider = {
     async getFood() {
@@ -187,14 +176,14 @@ test("catalog rejects conflicting registrations and provider identity mismatches
     },
   ]);
   await expect(catalog.search("usda-fdc", "yogurt")).rejects.toBeInstanceOf(
-    CatalogInvalidResponseError,
+    CatalogInvalidDataError,
   );
   await expect(
     catalog.lookupBarcode("open-food-facts", "034000470693"),
-  ).rejects.toBeInstanceOf(CatalogInvalidResponseError);
+  ).rejects.toBeInstanceOf(CatalogInvalidDataError);
   await expect(
     catalog.getFood("open-food-facts", "0034000470693"),
-  ).rejects.toBeInstanceOf(CatalogInvalidResponseError);
+  ).rejects.toBeInstanceOf(CatalogInvalidDataError);
   await expect(catalog.search("missing", "yogurt")).rejects.toBeInstanceOf(
     CatalogUnknownProviderError,
   );
@@ -366,9 +355,7 @@ test("catalog contains invalid provider results without hiding the healthy sourc
 });
 
 test.each([
-  CatalogCredentialsError,
-  CatalogInvalidResponseError,
-  CatalogRateLimitError,
+  CatalogInvalidDataError,
   CatalogUnavailableError,
 ])("catalog contains %s from one search source", async ErrorType => {
   const failing: SearchFoodCatalogProvider = {
@@ -405,8 +392,8 @@ test("catalog does not swallow unexpected search failures", async () => {
 test("catalog search keeps one provider available when the other is not installed", async () => {
   const basic = new TestFoodCatalogProvider();
   const missingPackaged: SearchFoodCatalogProvider = {
-    async getFood() { throw new CatalogConfigurationError(); },
-    async search() { throw new CatalogConfigurationError(); },
+    async getFood() { throw new CatalogNotInstalledError(); },
+    async search() { throw new CatalogNotInstalledError(); },
   };
   const catalog = new FoodCatalog([
     { capability: "search", provider: "usda-fdc", service: basic },
@@ -557,12 +544,9 @@ describe("deterministic catalog fixture", () => {
   });
 
   test.each([
-    ["configuration", CatalogConfigurationError],
-    [" CREDENTIALS ", CatalogCredentialsError],
-    ["rate", CatalogRateLimitError],
+    ["not-installed", CatalogNotInstalledError],
     ["unavailable", CatalogUnavailableError],
-    ["timeout", CatalogUnavailableError],
-    ["malformed", CatalogInvalidResponseError],
+    ["malformed", CatalogInvalidDataError],
   ] as const)("search %s throws %s", async (query, ErrorType) => {
     await expect(provider.search(query)).rejects.toBeInstanceOf(ErrorType);
   });
@@ -590,10 +574,9 @@ describe("catalog runtime selection", () => {
     shutdownApplicationDatabase();
     await rm(directory, { recursive: true, force: true });
   });
-  test("installed OFF works with retired API configuration absent and never contacts the food API", async () => {
+  test("installed OFF uses no food lookup network", async () => {
     vi.stubEnv("NODE_ENV", "test");
     vi.stubEnv("FOOD_CATALOG_TEST_FIXTURE", "0");
-    vi.stubEnv("OPEN_FOOD_FACTS_CONTACT_EMAIL", "");
     vi.stubEnv("OFF_CATALOG_MAX_UPLOAD_BYTES", "1000000");
     vi.stubEnv("OFF_CATALOG_MAX_EXPANDED_BYTES", "10000000");
     const network = vi.fn(() => { throw new Error("Food API access is forbidden"); });
@@ -605,36 +588,23 @@ describe("catalog runtime selection", () => {
     expect(network).not.toHaveBeenCalled();
   });
 
-  test.each([undefined, "", "   "])(
-    "absent catalog reports unavailable regardless of retired contact setting %j",
-    async (OPEN_FOOD_FACTS_CONTACT_EMAIL) => {
+  test("absent catalogs report not installed without attempting a food lookup request", async () => {
       vi.stubEnv("NODE_ENV", "test");
-      vi.stubEnv("FDC_API_KEY", "runtime-catalog-key");
-      vi.stubEnv("FDC_BASE_URL", "https://example.test/fdc/v1");
-      vi.stubEnv("OPEN_FOOD_FACTS_BASE_URL", "https://example.test");
-      vi.stubEnv("OPEN_FOOD_FACTS_CONTACT_EMAIL", OPEN_FOOD_FACTS_CONTACT_EMAIL);
       vi.stubEnv("FOOD_CATALOG_TEST_FIXTURE", "0");
-      vi.stubGlobal(
-        "fetch",
-        vi.fn<typeof fetch>().mockResolvedValue(
-          new Response(JSON.stringify({ foods: [] }), { status: 200 }),
-        ),
-      );
+      const network = vi.fn(() => { throw new Error("Food lookup network is forbidden"); });
+      vi.stubGlobal("fetch", network);
 
       await expect(getFoodCatalog().search("usda-fdc", "bread"))
-        .rejects.toBeInstanceOf(CatalogConfigurationError);
+        .rejects.toBeInstanceOf(CatalogNotInstalledError);
       await expect(
         getFoodCatalog().lookupBarcode("open-food-facts", "034000470693"),
-      ).rejects.toBeInstanceOf(CatalogConfigurationError);
-    },
-  );
+      ).rejects.toBeInstanceOf(CatalogNotInstalledError);
+      expect(network).not.toHaveBeenCalled();
+  });
 
-  test("installed USDA ignores former food API credentials and uses no network", async () => {
+  test("installed USDA uses no food lookup network", async () => {
     vi.stubEnv("NODE_ENV", "test");
     vi.stubEnv("FOOD_CATALOG_TEST_FIXTURE", "0");
-    vi.stubEnv("FDC_API_KEY", "");
-    vi.stubEnv("FDC_BASE_URL", "not-a-url");
-    vi.stubEnv("FDC_TIMEOUT_MS", "not-a-timeout");
     const network = vi.fn<typeof fetch>();
     vi.stubGlobal("fetch", network);
     const management = getCatalogManagement();
@@ -644,13 +614,12 @@ describe("catalog runtime selection", () => {
     expect(network).not.toHaveBeenCalled();
   });
 
-  test("an absent catalog remains a user-safe missing configuration", async () => {
+  test("an absent catalog remains a user-safe not-installed state", async () => {
     vi.stubEnv("NODE_ENV", "test");
-    vi.stubEnv("FDC_API_KEY", "   ");
     vi.stubEnv("FOOD_CATALOG_TEST_FIXTURE", "0");
     const provider = getFoodCatalogProvider();
     await expect(provider.search("bread")).rejects.toBeInstanceOf(
-      CatalogConfigurationError,
+      CatalogNotInstalledError,
     );
   });
 
@@ -681,7 +650,7 @@ describe("catalog runtime selection", () => {
     vi.stubEnv("NODE_ENV", "development");
     vi.stubEnv("FOOD_CATALOG_TEST_FIXTURE", "1");
     await expect(getFoodCatalogProvider().search("bread")).rejects.toBeInstanceOf(
-      CatalogConfigurationError,
+      CatalogNotInstalledError,
     );
   });
 

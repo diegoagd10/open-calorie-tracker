@@ -33,7 +33,11 @@ test.skipIf(!process.env.USDA_LOCAL_ARCHIVE)("full external Foundation archive i
       timings.push(performance.now() - time);
     }
     timings.sort((a, b) => a - b);
+    const lookupP95Ms = timings[94];
     const disk = await stat(path.join(directory, `${state.installed!.generation}.sqlite`));
-    process.stdout.write(JSON.stringify({ elapsedMs, peakRssMiB: peakRss / 1024 / 1024, maxTimerDelayMs: maxTimerDelay, lookupP95Ms: timings[94], catalogBytes: disk.size, installed: state.installed, exclusions: state.job?.exclusions }));
+    process.stdout.write(JSON.stringify({ elapsedMs, peakRssMiB: peakRss / 1024 / 1024, maxTimerDelayMs: maxTimerDelay, lookupP95Ms, catalogBytes: disk.size, installed: state.installed, exclusions: state.job?.exclusions }));
+    // Opt-in benchmark budget; this test is excluded from the deterministic suite.
+    expect(lookupP95Ms).toBeLessThan(100);
+    expect(peakRss).toBeLessThan(1024 ** 3);
   } finally { clearInterval(timer); await management.shutdown(); database.close(); await rm(directory, { recursive: true, force: true }); }
 }, 60000);

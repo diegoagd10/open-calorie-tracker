@@ -1,11 +1,7 @@
-export const SUPPORTED_CATALOG_DATA_TYPES = [
-  "Branded",
-  "Survey (FNDDS)",
-  "Foundation",
-] as const;
-
 export type CatalogDataType =
-  | (typeof SUPPORTED_CATALOG_DATA_TYPES)[number]
+  | "Branded"
+  | "Survey (FNDDS)"
+  | "Foundation"
   | "Open Food Facts";
 export type CatalogProviderId = "open-food-facts" | "usda-fdc";
 
@@ -54,12 +50,6 @@ export type CatalogNutrition = {
   proteinMilligrams: CatalogNutrientValue | null;
   sodiumMilligrams: CatalogNutrientValue | null;
   sugarMilligrams: CatalogNutrientValue | null;
-};
-
-export type FoodCatalogDiagnostic = {
-  code: "negative_nutrient_amount";
-  nutrientId: number;
-  providerFoodId: string;
 };
 
 export type CatalogOperationContext = {
@@ -114,24 +104,17 @@ export class CatalogStaleReviewError extends Error {
   }
 }
 
-export class CatalogConfigurationError extends Error {
+export class CatalogRegistrationConflictError extends Error {
   constructor() {
-    super("The food catalog is not configured");
-    this.name = "CatalogConfigurationError";
+    super("The food catalog registration is invalid");
+    this.name = "CatalogRegistrationConflictError";
   }
 }
 
-export class CatalogCredentialsError extends Error {
+export class CatalogNotInstalledError extends Error {
   constructor() {
-    super("The food catalog credentials were rejected");
-    this.name = "CatalogCredentialsError";
-  }
-}
-
-export class CatalogRateLimitError extends Error {
-  constructor() {
-    super("The food catalog rate limit was reached");
-    this.name = "CatalogRateLimitError";
+    super("The food catalog is not installed");
+    this.name = "CatalogNotInstalledError";
   }
 }
 
@@ -142,10 +125,10 @@ export class CatalogUnavailableError extends Error {
   }
 }
 
-export class CatalogInvalidResponseError extends Error {
+export class CatalogInvalidDataError extends Error {
   constructor() {
-    super("The food catalog returned an invalid response");
-    this.name = "CatalogInvalidResponseError";
+    super("The food catalog contains invalid data");
+    this.name = "CatalogInvalidDataError";
   }
 }
 
@@ -209,7 +192,7 @@ export class FoodCatalog implements FoodCatalogReader {
       const existing = this.#providers.get(registration.provider);
       if (existing) {
         if (existing.service !== registration.service) {
-          throw new CatalogConfigurationError();
+          throw new CatalogRegistrationConflictError();
         }
         existing.capabilities.add(registration.capability);
       } else {
@@ -230,7 +213,7 @@ export class FoodCatalog implements FoodCatalogReader {
     const service = registered.service as SearchFoodCatalogProvider;
     const results = await service.search(query, context);
     if (results.some((result) => result.provider !== provider)) {
-      throw new CatalogInvalidResponseError();
+      throw new CatalogInvalidDataError();
     }
     return results;
   }
@@ -251,18 +234,13 @@ export class FoodCatalog implements FoodCatalogReader {
       }
       try {
         const results = await (registered.service as SearchFoodCatalogProvider).search(query, context);
-        if (results.some(result => result.provider !== source.provider)) throw new CatalogInvalidResponseError();
+        if (results.some(result => result.provider !== source.provider)) throw new CatalogInvalidDataError();
         return { ...source, results, status: "available" as const };
       } catch (error) {
-        if (error instanceof CatalogConfigurationError) {
+        if (error instanceof CatalogNotInstalledError) {
           return { ...source, results: [], status: "not-installed" as const };
         }
-        if (
-          error instanceof CatalogCredentialsError ||
-          error instanceof CatalogInvalidResponseError ||
-          error instanceof CatalogRateLimitError ||
-          error instanceof CatalogUnavailableError
-        ) {
+        if (error instanceof CatalogInvalidDataError || error instanceof CatalogUnavailableError) {
           return { ...source, results: [], status: "unavailable" as const };
         }
         throw error;
@@ -318,7 +296,7 @@ export class FoodCatalog implements FoodCatalogReader {
   }
 
   #validatedFood(provider: string, food: CatalogFood): CatalogFood {
-    if (food.provider !== provider) throw new CatalogInvalidResponseError();
+    if (food.provider !== provider) throw new CatalogInvalidDataError();
     return food;
   }
 }

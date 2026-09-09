@@ -1,8 +1,8 @@
 import { buildUsdaGeneration, readUsdaGenerationFood, searchUsdaGeneration } from "../database/usda-generation.server.ts";
 import type { CatalogManagement } from "../catalog-management/catalog-management.server";
-import { CatalogConfigurationError, CatalogFoodNotFoundError, CatalogStaleReviewError, CatalogUnavailableError, type CatalogFood, type CatalogNutrientValue, type CatalogOperationContext, type CatalogSearchResult, type SearchFoodCatalogProvider } from "./food-catalog.server.ts";
+import { CatalogNotInstalledError, CatalogFoodNotFoundError, CatalogStaleReviewError, CatalogUnavailableError, type CatalogFood, type CatalogNutrientValue, type CatalogOperationContext, type CatalogSearchResult, type SearchFoodCatalogProvider } from "./food-catalog.server.ts";
 import { boundedSearchTokens, normalizedSearchWords } from "./search-normalization.ts";
-import type { UsdaAnalysisReader, UsdaEvidence } from "./usda.server.ts";
+import type { UsdaAnalysisReader, UsdaEvidence } from "./usda-evidence";
 
 const basicFoodAliases = [
   { headings: ["egg", "eggs"], aliases: ["egg", "eggs", "huevo", "huevos"] },
@@ -93,7 +93,7 @@ export class LocalUsdaAdapter implements SearchFoodCatalogProvider, UsdaAnalysis
     } catch {
       throw new CatalogUnavailableError();
     }
-    if (!results) throw new CatalogConfigurationError();
+    if (!results) throw new CatalogNotInstalledError();
     return results;
   }
   async search(query: string): Promise<CatalogSearchResult[]> {
@@ -105,7 +105,7 @@ export class LocalUsdaAdapter implements SearchFoodCatalogProvider, UsdaAnalysis
       if (context?.reviewedCatalogGeneration !== undefined && context.reviewedCatalogGeneration !== generation) throw new CatalogStaleReviewError();
       return readUsdaGenerationFood(this.#directory, generation, providerFoodId);
     });
-    if (food === undefined && !this.#management.read().installed) throw new CatalogConfigurationError();
+    if (food === undefined && !this.#management.read().installed) throw new CatalogNotInstalledError();
     if (!food) throw new CatalogFoodNotFoundError();
     return food;
   }

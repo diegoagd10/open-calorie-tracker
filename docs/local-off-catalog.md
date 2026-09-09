@@ -32,7 +32,7 @@ OFF and USDA store separate job state in application metadata and separate immut
 | `CATALOG_MAX_UPLOAD_BYTES` | 64 MiB | USDA only |
 | `CATALOG_MAX_EXPANDED_BYTES` | 256 MiB | USDA only |
 
-The preflight reserves currently available space for one expanded-data limit for the streamed staged database and the compressed upload size (or upload limit if unknown): up to **36 GiB free** at the defaults for either initial installation or replacement. The current generation already consumes filesystem capacity and is reflected in the available-space reading, so it is not counted a second time; its exact size is persisted for handoff recovery. A volume holding the measured 8.89 GiB current catalog therefore needs about 44.89 GiB total capacity before proxy buffering, other application data, or filesystem overhead to retain it while providing the 36 GiB replacement reserve. This check reserves capacity; it does not allocate that amount. The uncompressed export is never written to disk. SQLite uses an 8 MiB page cache; an individual parsed record is capped at 2 MiB, headers at 256 KiB/1,000 columns, and selected text fields at 2,000 characters (names/brands 500). Resource-limit failures, insufficient storage, incompatible schemas and corrupt archives have different errors; row rejections appear in the report.
+The preflight reserves currently available space for one expanded-data limit for the streamed staged database and the compressed upload size (or upload limit if unknown): up to **36 GiB free** at the defaults for either initial installation or replacement. The current generation already consumes filesystem capacity and is reflected in the available-space reading, so it is not counted a second time; its exact size is persisted for handoff recovery. A volume holding the measured 8.90 GiB current catalog therefore needs about 44.90 GiB total capacity before proxy buffering, other application data, or filesystem overhead to retain it while providing the 36 GiB replacement reserve. This check reserves capacity; it does not allocate that amount. The uncompressed export is never written to disk. SQLite uses an 8 MiB page cache; an individual parsed record is capped at 2 MiB, headers at 256 KiB/1,000 columns, and selected text fields at 2,000 characters (names/brands 500). Resource-limit failures, insufficient storage, incompatible schemas and corrupt archives have different errors; row rejections appear in the report.
 
 Persist `CATALOG_DIRECTORY` on a volume with enough free space. Run only on supported Node 24. The HTTP host allows up to two hours to receive a request. For reverse proxies, allow at least the configured compressed limit, disable request buffering where practical, and allow upload/read timeouts appropriate to the connection. Buffered proxies need additional temporary disk space. For example, Nginx deployments can set `client_max_body_size 4g`, `proxy_request_buffering off`, and suitable `client_body_timeout`/`proxy_read_timeout`; apply equivalent controls on the actual proxy. A partial upload is not resumable. After restart, open **Settings → Food Catalogs**. An interrupted job shows **Retry Open Food Facts installation**; select the archive again. The page states whether the previous generation remains active or no usable OFF catalog is installed. Do not remove active generation files manually, and back up the application database together with `CATALOG_DIRECTORY`.
 
@@ -50,7 +50,7 @@ OFF_SCALE_DIRECTORY=/path/on/a/large/disk \
 pnpm exec vitest run tests/local-off-scale.test.ts
 ```
 
-It seeds a small OFF generation, replaces it with the full archive through Catalog Management, measures process RSS including its worker, database size and elapsed time, and repeatedly performs old-generation OFF barcode/name reads plus installed USDA reads during the replacement. It then measures local OFF barcode reads and representative product, brand, and multi-word FTS searches against the activated full generation. The budget, established before the run, is p95 lookup below 100 ms and RSS below 1 GiB on the measured host. Search timings are recorded without a flaky ordinary-test threshold. The external dataset and temporary database stay outside Git; the test removes its temporary files.
+It seeds a small OFF generation, replaces it with the full archive through Catalog Management, measures process RSS including its worker, database size and elapsed time, and repeatedly performs old-generation OFF barcode/name reads plus installed USDA reads during the replacement. It then measures local OFF barcode reads plus an exact product name and a prefix of that name against the activated full generation. The budget, established before the run, is p95 lookup below 100 ms and RSS below 1 GiB on the measured host. The opt-in scale test enforces that budget; ordinary deterministic tests contain no wall-clock assertion. The external dataset and temporary database stay outside Git; the test removes its temporary files.
 
 Measured September 9, 2026 on Node 24.13.0, Intel Core i7-13700F (24 logical CPUs), 32 GB RAM and a local encrypted Linux filesystem. The full archive replaced a small installed OFF generation while both the old OFF generation and USDA were queried:
 
@@ -58,17 +58,19 @@ Measured September 9, 2026 on Node 24.13.0, Intel Core i7-13700F (24 logical CPU
 | --- | --- |
 | Compressed archive | 1,275,171,186 bytes |
 | Expanded source | 13,042,211,705 bytes |
-| Replacement import, FTS indexing, and activation elapsed | 322.15 seconds |
-| Peak process RSS including worker | 353.43 MiB |
-| Installed SQLite size | 9,548,214,272 bytes (8.89 GiB) |
+| Replacement import, FTS indexing, and activation elapsed | 393.82 seconds |
+| Peak process RSS including worker | 369.04 MiB |
+| Installed SQLite size | 9,554,251,776 bytes (8.90 GiB) |
 | Source rows / installed products | 4,535,553 / 4,535,483 |
 | Duplicate identifiers / oversized selected fields | 60 / 10 |
-| USDA lookup p95 during OFF replacement | 0.415 ms |
-| Old OFF barcode-plus-name-read p95 during replacement | 0.790 ms |
-| OFF barcode lookup p95 after activation | 0.167 ms |
-| OFF representative FTS search p95 after activation | 73.778 ms |
+| Ambiguous basis / unsupported barcode / nutrition not provided | 4,459,866 / 70,701 / 4,976 |
+| USDA lookup p95 during OFF replacement | 0.645 ms |
+| Old OFF barcode-plus-name-read p95 during replacement | 1.233 ms |
+| OFF barcode lookup p95 after activation | 0.814 ms |
+| Exact `Nutella` FTS search p95 after activation | 28.209 ms |
+| Prefix `Nutell` FTS search p95 after activation | 23.389 ms |
 
-Archive SHA-256: `f72687ee8bc6522054fe69dbfda6b91902c16af1ec2e043cde27bc6c29ad8176`. The resource and concurrent-read latency budgets passed; representative FTS search remained below 100 ms p95 as an observed benchmark rather than an ordinary test assertion. All products in this particular daily dump remain unavailable for calculated logging because it lacks explicit nutrition authority; the result verifies replacement, indexed identification and failure-safe eligibility rather than usable nutrition coverage. Calculation tests use explicit source-backed export fields. The daily raw-TSV dialect preserves records containing literal quotes that a conventional quoted-CSV parse can incorrectly combine.
+Archive SHA-256: `f72687ee8bc6522054fe69dbfda6b91902c16af1ec2e043cde27bc6c29ad8176`. The resource and concurrent-read latency budgets passed. All products in this particular daily dump remain unavailable for calculated logging because it lacks explicit nutrition authority; the result verifies replacement, indexed identification and failure-safe eligibility rather than usable nutrition coverage. Calculation tests use explicit source-backed export fields. The daily raw-TSV dialect preserves records containing literal quotes that a conventional quoted-CSV parse can incorrectly combine.
 
 ## Rolling export update checks
 

@@ -3,7 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 
 import {
-  CatalogInvalidResponseError,
+  CatalogInvalidDataError,
   CatalogStaleReviewError,
   CatalogNutritionUnavailableError,
   CatalogUnsafeMeasurementError,
@@ -197,7 +197,7 @@ function selectedCatalogMeasurement(
     food.providerFoodId !== providerFoodId ||
     (provider === "open-food-facts" && food.barcode !== providerFoodId)
   ) {
-    throw new CatalogInvalidResponseError();
+    throw new CatalogInvalidDataError();
   }
   const measurement = food.measurements.find(
     (candidate) => candidate.id === selectedMeasurementId,

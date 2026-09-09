@@ -52,12 +52,19 @@ After an application or host restart, open **Settings → Food Catalogs**. An in
 
 The bundled production worker is built by `vite.catalog.config.ts`. Deterministic integration tests submit small real-format ZIP fixtures to Catalog Management and use real temporary application/catalog databases. Browser coverage runs with `pnpm test:browser:catalog`, using the local adapter and no USDA key. Normal browser fixtures remain independent.
 
-For a reproducible full-archive check, run `USDA_LOCAL_ARCHIVE=/absolute/path/to/Foundation.zip pnpm exec vitest run tests/local-usda-scale.test.ts`. The archive is an external developer validation input and is not shipped. The declared lookup budget is p95 below **100 ms** for sequential local searches/details with up to 25 search results on this development machine; the check records values without a flaky timing assertion. Record import elapsed time, sampled process RSS, catalog disk size, and main-thread timer delay to assess background responsiveness.
+For a reproducible full-archive check, run `USDA_LOCAL_ARCHIVE=/absolute/path/to/Foundation.zip pnpm exec vitest run tests/local-usda-scale.test.ts`. The archive is an external developer validation input and is not shipped. The declared lookup budget is p95 below **100 ms** for sequential local searches/details with up to 25 search results on this development machine, with process RSS below **1 GiB**. The opt-in scale test enforces those bounds; ordinary deterministic tests contain no wall-clock assertion. Record import elapsed time, sampled process RSS, catalog disk size, and main-thread timer delay to assess background responsiveness.
 
 
 Validation on September 7, 2026: Linux x86_64, Intel Core i7-13700F (24 logical CPUs), Node 24.13.0. Official archive SHA-256 `70457ee9d9342f43bda2010318c85f04210c689fdeb9cd2da4c513b0e8dbc655`: 978 ms import, 205 MiB sampled RSS for the Vitest process including its worker, 32 ms maximum observed 10 ms timer delay, 696,320-byte catalog, and 0.39 ms p95 search-plus-detail over 100 sequential queries. Result: 469 retained Foundation identities, 378 with usable calories, 91 without calories, 87,521 research records excluded, and 10 invalid tracked nutrient values excluded. RSS includes the test harness and application database; timings are machine-specific observations, not normal-suite assertions.
 
 Validation of TKT-06ff03eb on September 8, 2026, on the same hardware and official archive: 992 ms import, 208 MiB sampled RSS, 45 ms maximum timer delay, 700,416-byte indexed catalog, and 0.57 ms p95 search-plus-detail over 100 lookups including Spanish aliases. A compatibility check built a name-only generation using the preceding implementation and verified alias/full-name searches through Food Catalog while its read-only file remained byte-identical. Deterministic tests cover a mixed corpus with 30 distracting soup records, unavailable calories, missing macros, preparation-specific nutrition, literal FTS operator input, and the mobile search-to-log journey.
+
+Final cutover validation on September 9, 2026, on the same hardware and archive:
+998 ms import, 233 MiB sampled RSS, 63 ms maximum timer delay, a 700,416-byte
+catalog, and 0.81 ms p95 search-plus-detail across the representative
+tilapia/eggs/huevos/vegetable and prefix queries. The result again retained 469
+Foundation identities, with 91 unavailable for calories, 87,521 research
+records excluded, and 10 invalid tracked nutrient values excluded.
 
 
 ## Administrator catalog notifications

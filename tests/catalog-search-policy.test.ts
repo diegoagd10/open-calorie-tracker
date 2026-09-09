@@ -2,7 +2,7 @@ import { describe, expect, test, vi } from "vitest";
 
 import type { CatalogManagement } from "../app/catalog-management/catalog-management.server";
 import {
-  CatalogConfigurationError,
+  CatalogNotInstalledError,
   CatalogUnavailableError,
   type CatalogFood,
 } from "../app/catalog/food-catalog.server";
@@ -123,7 +123,7 @@ describe("OFF search policy", () => {
     );
 
     await expect(adapter.search("egg")).rejects.toBeInstanceOf(
-      CatalogConfigurationError,
+      CatalogNotInstalledError,
     );
     expect(withActiveGeneration).toHaveBeenCalledOnce();
   });

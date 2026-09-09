@@ -15,7 +15,6 @@ import { LocalOpenFoodFactsAdapter } from "./local-off.server";
 function environmentSchema() {
   return z.object({
     FOOD_CATALOG_TEST_FIXTURE: z.enum(["0", "1"]).optional(),
-
   });
 }
 
