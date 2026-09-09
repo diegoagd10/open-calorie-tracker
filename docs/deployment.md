@@ -39,13 +39,10 @@ OFF API contact/base-URL/timeout configuration is no longer used by barcode look
 The image owns `NODE_ENV`, `DATABASE_PATH`, and the migrations path. Leave them
 unset in Portainer.
 
-Open Food Facts product reads leave only from the application server. They use
-the read-only v3 API with the identifying `User-Agent`; no Open Food Facts login,
-access token, or browser-side provider request is used. The server must have
-outbound HTTPS access to `world.openfoodfacts.org`. Open Food Facts currently
-limits product reads to 15 requests per minute per IP and can also return global
-503 responses, so lookup availability is not guaranteed. The application
-coalesces repeated concurrent lookups and keeps only a small in-memory cache.
+Open Food Facts product barcode, detail, and name reads use the installed local
+SQLite generation and make no runtime provider request. Outbound access to the
+official OFF download page is needed only when an administrator chooses to fetch
+an archive outside the application.
 
 Keep `APPLICATION_URL` on HTTPS in production. Barcode camera work requires a
 browser secure context; the manual barcode field remains available without a

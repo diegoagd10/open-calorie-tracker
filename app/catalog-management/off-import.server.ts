@@ -13,10 +13,13 @@ import { offSearchAliases } from "../catalog/off-search.server.ts";
 export async function importOff(options: ImportOptions, publish: (message: ImportMessage) => void): Promise<void> {
   const exclusions: Record<string, number> = {};
   let processedRecords = 0;
+  let importedRecords = 0;
+  let rejectedRecords = 0;
   let earliest: string | null = null;
   let latest: string | null = null;
   function exclude(reason: string) { exclusions[reason] = (exclusions[reason] ?? 0) + 1; }
-  function progress(phase: "validating" | "importing" | "indexing") { publish({ progress: { phase, processedRecords, exclusions } }); }
+  function reject(reason: string) { exclude(reason); rejectedRecords++; }
+  function progress(phase: "validating" | "importing" | "indexing") { publish({ progress: { phase, processedRecords, importedRecords, rejectedRecords, exclusions } }); }
   function date(value: string | undefined) {
     if (!value || !/^\d{1,11}$/.test(value)) return null;
     const timestamp = Number(value) * 1000;
@@ -55,13 +58,13 @@ export async function importOff(options: ImportOptions, publish: (message: Impor
   const selectedFieldsSchema = z.record(z.string(), z.string().max(2000)).and(z.object({ code: z.string().min(1).max(128).refine(value => value.trim().length > 0), product_name: z.string().max(500), brands: z.string().max(500).optional() }));
   function validatedProduct(row: Record<string, string>) {
     const parsed = selectedFieldsSchema.safeParse(row);
-    if (!parsed.success) { exclude(parsed.error.issues.some(issue => issue.path[0] === "code") ? "invalid_identity" : "oversized_product_field"); return null; }
+    if (!parsed.success) { reject(parsed.error.issues.some(issue => issue.path[0] === "code") ? "invalid_identity" : "oversized_product_field"); return null; }
     return product(row);
   }
   function readProduct(fields: string[], width: number, selected: { key: string; index: number }[]) {
     processedRecords++;
     if (processedRecords % 5000 === 0) progress("importing");
-    if (fields.length !== width) { exclude("row_width_mismatch"); return null; }
+    if (fields.length !== width) { reject("row_width_mismatch"); return null; }
     const row = Object.fromEntries(selected.map(({ key, index }) => [key, fields[index]]));
     return validatedProduct(row);
   }
@@ -107,8 +110,9 @@ export async function importOff(options: ImportOptions, publish: (message: Impor
           foods: foods(rows as AsyncIterable<string[]>),
           generation: options.generation,
           maxBytes: options.maxExpandedBytes,
-          onDuplicate: () => exclude("duplicate_identity"),
+          onDuplicate: () => reject("duplicate_identity"),
           onIndexing: () => progress("indexing"),
+          onStored: () => { importedRecords++; },
         });
       } catch (error) { importFailure = error; throw error; }
     });
@@ -127,6 +131,7 @@ export async function importOff(options: ImportOptions, publish: (message: Impor
     await pipeline(createReadStream(options.archivePath), createGunzip(), meter, async chunks => {
       foodCount = await importRows(chunks as AsyncIterable<Buffer>);
     });
+    publish({ progress: { processedRecords, importedRecords, rejectedRecords, exclusions } });
     publish({ result: { foodCount, publicationDateRange: { earliest: "", latest: "" }, sourceDateRange: { earliest, latest } } });
   } catch (pipelineError) {
     const error = importFailure ?? pipelineError;
@@ -139,7 +144,7 @@ export async function importOff(options: ImportOptions, publish: (message: Impor
       OFF_DATABASE_INVALID: "OFF database validation failed. Nothing was installed.",
     };
     const storage = code === "SQLITE_FULL" || code === "ENOSPC";
-    publish({ progress: { processedRecords, exclusions }, error: storage ? "Insufficient storage for OFF import. Free space or increase the resource limit and retry." : messages[message] ?? "Corrupt OFF GZIP or malformed TSV. Download the archive again." });
+    publish({ progress: { processedRecords, importedRecords, rejectedRecords, exclusions }, error: storage ? "Insufficient storage for OFF import. Free space or increase the resource limit and retry." : messages[message] ?? "Corrupt OFF GZIP or malformed TSV. Download the archive again." });
   }
 
 }

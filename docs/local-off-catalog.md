@@ -1,6 +1,6 @@
-# Local Open Food Facts installation
+# Local Open Food Facts installation and replacement
 
-Administrators install OFF independently in **Settings → Food Catalogs**. Download the official tab-separated product CSV GZIP from [Open Food Facts](https://world.openfoodfacts.org/data), then upload it to the OFF card. USDA can be absent or remain in use throughout this operation. Barcode scanning, manual barcode entry, product review and saving use the local OFF database; no OFF API configuration or network fallback is used. OFF data is licensed under the [Open Database License](https://opendatacommons.org/licenses/odbl/1-0/).
+Administrators install or replace OFF independently in **Settings → Food Catalogs**. Download the official tab-separated product CSV GZIP from [Open Food Facts](https://world.openfoodfacts.org/data), then upload it to the OFF card. The same control accepts a newer archive or a deliberate reimport of the current archive. USDA can be absent, importing, failing, or remain in use throughout this operation. Barcode scanning, manual barcode entry, product search, review, and saving use the local OFF database; no OFF API configuration or network fallback is used. OFF data is licensed under the [Open Database License](https://opendatacommons.org/licenses/odbl/1-0/).
 
 ## Nutrition authority and current export limitation
 
@@ -21,7 +21,7 @@ The [daily exporter](https://github.com/openfoodfacts/openfoodfacts-server/blob/
 
 GZIP decompression and TSV parsing stream directly into 500-product SQLite transactions. Only identity, selected display/English/Spanish names and aliases, brands, countries, required nutrient fields, quantities/units and source dates are retained. An indexed TEXT primary key preserves leading-zero identifiers. A separate FTS5 index covers the displayed name, supported alternate names and brand, using the same accent/case normalization and bounded prefix-query rules as USDA search. Noncommercial identifiers remain in the import report/database but cannot be scanned. Repeated identifiers keep the first source row and are counted; no deduplication by name occurs. Width mismatches and oversized selected fields are rejected and counted. No data archive or generated catalog is committed.
 
-OFF and USDA store separate job state in application metadata and separate immutable SQLite generation files under `CATALOG_DIRECTORY`. A failed OFF job cannot activate a partial generation or change USDA/personal history. Import runs in a worker, survives navigation, and records a durable result. Shutdown/restart marks unfinished work interrupted and permits retry. Initial installation only: replacement/update checks belong to later tickets. Archive filename and SHA-256 identify the supplied snapshot; product modification dates are explicitly **not an official release version**.
+OFF and USDA store separate job state in application metadata and separate immutable SQLite generation files under `CATALOG_DIRECTORY`. Each OFF replacement streams into a staging generation and completes its barcode/name indexes before one provider-scoped active reference is published. Existing readers hold a generation lease until their barcode, detail, or search operation finishes; only then is the retired file removed. New readers see the complete replacement after publication. A failed OFF job cannot activate a partial generation or change USDA/personal history, and a slow or failed OFF job cannot block a ready USDA generation from activating. Preview/save carries the reviewed OFF generation and rejects a stale review after activation, while existing Food Entry snapshots remain unchanged. Import runs in a worker, survives navigation, records imported and rejected row counts, and persists a catalog-specific outcome. Shutdown/restart marks unfinished work interrupted and permits retry; published handoffs are completed on restart. Update discovery belongs to a later ticket. Archive filename and SHA-256 identify the supplied snapshot; product modification dates are explicitly **not an official release version**.
 
 ## Resources and operations
 
@@ -38,7 +38,7 @@ Persist `CATALOG_DIRECTORY` on a volume with enough free space. Run only on supp
 
 ## Verification and scale
 
-Deterministic tests exercise installation, barcode/detail lookup, independent expected nutrient totals, null/zero, invalid units, ambiguous records, corruption, schema errors, limits, restart/retry, authorization, and populated migration/history compatibility. Browser coverage uploads both catalogs at a mobile viewport, simulates scanning, manually enters barcodes, changes measurements, saves nutrition, and checks missing/incomplete products and member denial.
+Deterministic tests exercise installation and replacement, old/new barcode/detail/search reads, generation leases, stale review, independent USDA/OFF success and failure, expected nutrient totals, null/zero, invalid units, ambiguous records, corruption, schema errors, limits, restart/retry, authorization, and populated migration/history compatibility. Browser coverage uploads both catalogs at a mobile viewport, fails an OFF replacement without losing either installed catalog, deliberately reimports OFF, simulates scanning, changes measurements, saves nutrition, and checks missing/incomplete products and member denial.
 
 The OFF and Foundation importer modules also accept an archive path and progress/result callback directly. Tests call these entry points with real archives and SQLite so Vitest and mutation testing can observe importer behavior; Catalog Management and browser tests retain the native worker lifecycle. Each invocation owns its import state.
 
@@ -50,21 +50,22 @@ OFF_SCALE_DIRECTORY=/path/on/a/large/disk \
 pnpm exec vitest run tests/local-off-scale.test.ts
 ```
 
-It imports through Catalog Management, measures process RSS including its worker, database size and elapsed time, repeatedly reads installed USDA foods during OFF import, and measures local OFF barcode reads plus representative product, brand and multi-word FTS searches. The budget, established before the run, is p95 lookup below 100 ms and RSS below 1 GiB on the measured host. Search timings are recorded without a flaky unit-test threshold. The external dataset and temporary database stay outside Git; the test removes its temporary files.
+It seeds a small OFF generation, replaces it with the full archive through Catalog Management, measures process RSS including its worker, database size and elapsed time, and repeatedly performs old-generation OFF barcode/name reads plus installed USDA reads during the replacement. It then measures local OFF barcode reads and representative product, brand, and multi-word FTS searches against the activated full generation. The budget, established before the run, is p95 lookup below 100 ms and RSS below 1 GiB on the measured host. Search timings are recorded without a flaky ordinary-test threshold. The external dataset and temporary database stay outside Git; the test removes its temporary files.
 
-Measured September 8, 2026 on Node 24.13.0, Intel Core i7-13700F (24 logical CPUs), 32 GB RAM and a local encrypted Linux filesystem:
+Measured September 9, 2026 on Node 24.13.0, Intel Core i7-13700F (24 logical CPUs), 32 GB RAM and a local encrypted Linux filesystem. The full archive replaced a small installed OFF generation while both the old OFF generation and USDA were queried:
 
 | Measurement | Result |
 | --- | --- |
 | Compressed archive | 1,275,171,186 bytes |
 | Expanded source | 13,042,211,705 bytes |
-| Import and FTS indexing elapsed | 304.91 seconds |
-| Peak process RSS including worker | 360.11 MiB |
+| Replacement import, FTS indexing, and activation elapsed | 322.15 seconds |
+| Peak process RSS including worker | 353.43 MiB |
 | Installed SQLite size | 9,548,214,272 bytes (8.89 GiB) |
 | Source rows / installed products | 4,535,553 / 4,535,483 |
 | Duplicate identifiers / oversized selected fields | 60 / 10 |
-| USDA lookup p95 during import | 0.312 ms |
-| OFF barcode lookup p95 after import | 0.275 ms |
-| OFF representative FTS search p95 | 62.845 ms |
+| USDA lookup p95 during OFF replacement | 0.415 ms |
+| Old OFF barcode-plus-name-read p95 during replacement | 0.790 ms |
+| OFF barcode lookup p95 after activation | 0.167 ms |
+| OFF representative FTS search p95 after activation | 73.778 ms |
 
-Archive SHA-256: `f72687ee8bc6522054fe69dbfda6b91902c16af1ec2e043cde27bc6c29ad8176`. The resource and barcode-latency budgets passed; representative FTS search remained below 100 ms p95 as an observed benchmark rather than a test assertion. All products in this particular daily dump remain unavailable for calculated logging because it lacks explicit nutrition authority; the result verifies installation, indexed identification and failure-safe eligibility rather than usable nutrition coverage. Calculation tests use explicit source-backed export fields. The daily raw-TSV dialect preserves records containing literal quotes that a conventional quoted-CSV parse can incorrectly combine.
+Archive SHA-256: `f72687ee8bc6522054fe69dbfda6b91902c16af1ec2e043cde27bc6c29ad8176`. The resource and concurrent-read latency budgets passed; representative FTS search remained below 100 ms p95 as an observed benchmark rather than an ordinary test assertion. All products in this particular daily dump remain unavailable for calculated logging because it lacks explicit nutrition authority; the result verifies replacement, indexed identification and failure-safe eligibility rather than usable nutrition coverage. Calculation tests use explicit source-backed export fields. The daily raw-TSV dialect preserves records containing literal quotes that a conventional quoted-CSV parse can incorrectly combine.

@@ -1,8 +1,9 @@
 import { gzipSync } from "node:zlib";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { Readable } from "node:stream";
+import { pathToFileURL } from "node:url";
 import { afterEach, expect, test, vi } from "vitest";
 import { CatalogManagement } from "../app/catalog-management/catalog-management.server";
 import { LocalOpenFoodFactsAdapter } from "../app/catalog/local-off.server";
@@ -37,7 +38,7 @@ test("OFF installation preserves quoted names and leading zeros, retaining ambig
   const { management, catalog, entries, userId } = await setup();
   const network = vi.fn(() => { throw new Error("Food API forbidden"); }); vi.stubGlobal("fetch", network);
   await install(management, offArchive([offProduct], ["bad\trow"]));
-  expect(management.read()).toMatchObject({ installed: { foodCount: 1 }, job: { phase: "succeeded", exclusions: { row_width_mismatch: 1, ambiguous_nutrition_basis: 1 } } });
+  expect(management.read()).toMatchObject({ installed: { foodCount: 1 }, job: { phase: "succeeded", importedRecords: 1, rejectedRecords: 1, exclusions: { row_width_mismatch: 1, ambiguous_nutrition_basis: 1 } } });
   const food = await catalog.lookupBarcode("open-food-facts", offProduct.code);
   expect(food).toMatchObject({ barcode: "0012345678905", name: 'Oats\twith "bran"', isSelectable: false, calculationUnavailableReason: "ambiguous_nutrition_basis", measurements: [], providerModifiedDate: "2025-01-01T00:00:00.000Z" });
   await expect(entries.log(userId, { provider: food.provider, providerFoodId: food.providerFoodId, catalogGeneration: food.catalogGeneration, foodLogDate: "2026-09-06", idempotencyKey: "ambiguous-product", selectedMeasurementId: "g", quantity: "30" })).rejects.toThrow();
@@ -143,6 +144,180 @@ test("OFF supports only an explicitly normalized serving in its authoritative di
   expect((await entries.log(userId, { ...input, catalogGeneration: food.catalogGeneration })).energyMilliKcal).toBe(1_000_000);
 });
 
+test("OFF replacement rejects a stale review and preserves the saved serving snapshot", async () => {
+  const { management, catalog, entries, userId } = await setup();
+  await install(management, offArchive([{ ...offWithBasis("100g"), product_name: "Original oats" }]));
+  const reviewed = await catalog.getFood("open-food-facts", offProduct.code);
+  const saved = await entries.log(userId, {
+    provider: reviewed.provider,
+    providerFoodId: reviewed.providerFoodId,
+    catalogGeneration: reviewed.catalogGeneration,
+    foodLogDate: "2026-09-06",
+    idempotencyKey: "off-before-replacement",
+    selectedMeasurementId: "100g",
+    quantity: "1",
+  });
+
+  const replacementId = "0012345678906";
+  await install(management, offArchive([{ ...offWithBasis("100g", replacementId), product_name: "Replacement oats" }]));
+
+  await expect(entries.log(userId, {
+    provider: reviewed.provider,
+    providerFoodId: reviewed.providerFoodId,
+    catalogGeneration: reviewed.catalogGeneration,
+    foodLogDate: "2026-09-06",
+    idempotencyKey: "stale-off-review",
+    selectedMeasurementId: "100g",
+    quantity: "1",
+  })).rejects.toThrow("catalog changed");
+  await expect(catalog.getFood("open-food-facts", replacementId)).resolves.toMatchObject({
+    name: "Replacement oats",
+    catalogGeneration: management.read().installed?.generation,
+  });
+  expect(entries.read(userId, saved.id)).toEqual(saved);
+});
+
+test("a public OFF read holds its generation until replacement handoff completes", async () => {
+  const { management, catalog, directory } = await setup();
+  await install(management, offArchive([{ ...offWithBasis("100g"), product_name: "Original oats" }]));
+  const oldGeneration = management.read().installed!.generation;
+  const lease = management.withActiveGeneration.bind(management);
+  let release!: () => void;
+  const held = new Promise<void>(resolve => { release = resolve; });
+  let readerStarted = false;
+  vi.spyOn(management, "withActiveGeneration").mockImplementation(read => lease(async generation => {
+    if (generation === oldGeneration) {
+      readerStarted = true;
+      await held;
+    }
+    return read(generation);
+  }));
+
+  const oldRead = catalog.lookupBarcode("open-food-facts", offProduct.code);
+  await vi.waitFor(() => expect(readerStarted).toBe(true));
+  await management.submitArchive({
+    filename: "replacement.csv.gz",
+    stream: Readable.from(offArchive([{ ...offWithBasis("100g"), product_name: "Replacement oats" }])),
+  });
+  await vi.waitFor(() => {
+    expect(management.read().installed?.generation).not.toBe(oldGeneration);
+    expect(management.read().job?.phase).toBe("activating");
+  });
+  const newGeneration = management.read().installed!.generation;
+  await expect(catalog.lookupBarcode("open-food-facts", offProduct.code)).resolves.toMatchObject({
+    name: "Replacement oats",
+    catalogGeneration: newGeneration,
+  });
+  await expect(stat(path.join(directory, `${oldGeneration}.sqlite`))).resolves.toBeDefined();
+
+  release();
+  await expect(oldRead).resolves.toMatchObject({ name: "Original oats", catalogGeneration: oldGeneration });
+  await vi.waitFor(() => expect(management.read().busy).toBe(false));
+  await expect(stat(path.join(directory, `${oldGeneration}.sqlite`))).rejects.toMatchObject({ code: "ENOENT" });
+});
+
+test("OFF validation, import and indexing leave old product reads and USDA search available", async () => {
+  const { management, database, directory } = await setup();
+  const originalArchive = offArchive([{ ...offWithBasis("100g"), product_name: "Original oats" }]);
+  await install(management, originalArchive);
+  const originalGeneration = management.read().installed!.generation;
+  const packaged = new LocalOpenFoodFactsAdapter(management, directory);
+  const usda = new CatalogManagement(database.getClient(), { directory, workerPath: path.resolve("app/catalog-management/import-worker.ts") });
+  cleanups.unshift(() => usda.shutdown());
+  await usda.submitArchive({ filename: "foundation.zip", stream: Readable.from(await foundationArchive()) });
+  await vi.waitFor(() => expect(usda.read().busy).toBe(false));
+  const basic = new LocalUsdaAdapter(usda, directory);
+
+  const workerPath = path.join(directory, "controlled-off-worker.mjs");
+  const importerUrl = pathToFileURL(path.resolve("app/catalog-management/off-import.server.ts")).href;
+  await writeFile(workerPath, `
+import { existsSync } from "node:fs";
+import path from "node:path";
+import { setTimeout as wait } from "node:timers/promises";
+import { parentPort, workerData } from "node:worker_threads";
+const publish = message => parentPort.postMessage(message);
+for (const phase of ["validating", "importing", "indexing"]) {
+  publish({ progress: { phase } });
+  while (!existsSync(path.join(workerData.directory, "off-" + phase + ".release"))) await wait(5);
+}
+const { importOff } = await import(${JSON.stringify(importerUrl)});
+await importOff(workerData, publish);
+`);
+  const replacement = new CatalogManagement(database.getClient(), {
+    directory,
+    provider: "open-food-facts",
+    workerPath,
+    maxUploadBytes: 1024 * 1024,
+    maxExpandedBytes: 10 * 1024 * 1024,
+  });
+  cleanups.unshift(() => replacement.shutdown());
+  await replacement.submitArchive({
+    filename: "replacement.csv.gz",
+    stream: Readable.from(offArchive([{ ...offWithBasis("100g"), product_name: "Replacement oats" }])),
+  });
+
+  for (const phase of ["validating", "importing", "indexing"] as const) {
+    await vi.waitFor(() => expect(replacement.read().job?.phase).toBe(phase));
+    await expect(packaged.lookupBarcode(offProduct.code)).resolves.toMatchObject({ name: "Original oats", catalogGeneration: originalGeneration });
+    await expect(packaged.search("original oats")).resolves.toMatchObject([{ name: "Original oats", catalogGeneration: originalGeneration }]);
+    await expect(basic.search("egg")).resolves.toEqual(expect.arrayContaining([expect.objectContaining({ provider: "usda-fdc" })]));
+    await writeFile(path.join(directory, `off-${phase}.release`), "continue");
+  }
+
+  await vi.waitFor(() => expect(replacement.read().busy).toBe(false));
+  await expect(packaged.lookupBarcode(offProduct.code)).resolves.toMatchObject({
+    name: "Replacement oats",
+    catalogGeneration: replacement.read().installed?.generation,
+  });
+  expect(usda.read().job?.phase).toBe("succeeded");
+});
+
+test("a slow failing OFF replacement does not prevent USDA replacement activation", async () => {
+  const { management, database, directory } = await setup();
+  await install(management, offArchive([{ ...offWithBasis("100g"), product_name: "Working oats" }]));
+  const workingOff = management.read().installed!;
+  const packaged = new LocalOpenFoodFactsAdapter(management, directory);
+  const usda = new CatalogManagement(database.getClient(), { directory, workerPath: path.resolve("app/catalog-management/import-worker.ts") });
+  cleanups.unshift(() => usda.shutdown());
+  const foundation = await foundationArchive();
+  await usda.submitArchive({ filename: "foundation.zip", stream: Readable.from(foundation) });
+  await vi.waitFor(() => expect(usda.read().busy).toBe(false));
+  const workingUsda = usda.read().installed!.generation;
+
+  const workerPath = path.join(directory, "failing-off-worker.mjs");
+  await writeFile(workerPath, `
+import { existsSync, writeFileSync } from "node:fs";
+import path from "node:path";
+import { setTimeout as wait } from "node:timers/promises";
+import { parentPort, workerData } from "node:worker_threads";
+writeFileSync(path.join(workerData.directory, workerData.generation + ".sqlite"), "incomplete");
+parentPort.postMessage({ progress: { phase: "importing", processedRecords: 7 } });
+while (!existsSync(path.join(workerData.directory, "fail-off.release"))) await wait(5);
+parentPort.postMessage({ error: "OFF controlled validation failure" });
+`);
+  const failingOff = new CatalogManagement(database.getClient(), {
+    directory,
+    provider: "open-food-facts",
+    workerPath,
+    maxUploadBytes: 1024 * 1024,
+    maxExpandedBytes: 10 * 1024 * 1024,
+  });
+  cleanups.unshift(() => failingOff.shutdown());
+  await failingOff.submitArchive({ filename: "slow-replacement.gz", stream: Readable.from("controlled") });
+  await vi.waitFor(() => expect(failingOff.read().job?.phase).toBe("importing"));
+
+  await usda.submitArchive({ filename: "foundation-replacement.zip", stream: Readable.from(foundation) });
+  await vi.waitFor(() => expect(usda.read().busy).toBe(false));
+  expect(usda.read()).toMatchObject({ installed: { filename: "foundation-replacement.zip" }, job: { phase: "succeeded" } });
+  expect(usda.read().installed?.generation).not.toBe(workingUsda);
+  expect(failingOff.read()).toMatchObject({ installed: workingOff, busy: true, job: { phase: "importing" } });
+
+  await writeFile(path.join(directory, "fail-off.release"), "continue");
+  await vi.waitFor(() => expect(failingOff.read().busy).toBe(false));
+  expect(failingOff.read()).toMatchObject({ installed: workingOff, job: { phase: "failed", error: "OFF controlled validation failure" } });
+  await expect(packaged.lookupBarcode(offProduct.code)).resolves.toMatchObject({ name: "Working oats", catalogGeneration: workingOff.generation });
+});
+
 test.each([
   ["corrupt GZIP", Buffer.from("bad gzip"), "Corrupt OFF GZIP"],
   ["truncated GZIP", offArchive().subarray(0, -8), "Corrupt OFF GZIP"],
@@ -188,7 +363,11 @@ test("storage preflight, conflicts and shutdown preserve independent OFF job sta
   expect(retry.read().job?.phase).toBe("interrupted");
   await install(retry);
   expect(retry.read().job?.phase).toBe("succeeded");
-  await expect(retry.submitArchive({ filename: "again.gz", stream: Readable.from(offArchive()) })).rejects.toThrow("replacement is not available");
+  const installed = retry.read().installed?.generation;
+  await retry.submitArchive({ filename: "again.gz", stream: Readable.from(offArchive()) });
+  await vi.waitFor(() => expect(retry.read().busy).toBe(false));
+  expect(retry.read()).toMatchObject({ installed: { filename: "again.gz" }, job: { phase: "succeeded" } });
+  expect(retry.read().installed?.generation).not.toBe(installed);
 });
 
 

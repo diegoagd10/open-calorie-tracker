@@ -44,7 +44,7 @@ test("boundary-sized uppercase uploads preserve metadata and remove private stag
   await finished(management);
   const state = management.read();
   expect(state.installed).toMatchObject({ filename, sha256: createHash("sha256").update(archive).digest("hex"), foodCount: 1 });
-  expect(state.job).toMatchObject({ phase: "succeeded", filename, receivedBytes: archive.length, processedRecords: 1, error: null });
+  expect(state.job).toMatchObject({ phase: "succeeded", filename, receivedBytes: archive.length, processedRecords: 1, importedRecords: 1, rejectedRecords: 0, error: null });
   expect((await fs.stat(path.join(directory, `${state.installed!.generation}.sqlite`))).mode & 0o777).toBe(0o444);
   expect((await fs.readdir(directory)).filter(name => name.startsWith(state.job!.id))).toEqual([`${state.job!.id}.sqlite`]);
 });
@@ -195,13 +195,17 @@ test.each(["missing", "different", "interrupted"] as const)("a stale worker does
   expect(management.read().installed).toBeNull();
 });
 
-test("installation claims distinguish busy and already installed providers", async () => {
+test("installation claims prevent overlap and permit deliberate OFF reimport", async () => {
   const { management } = await setup();
   const pending = new PassThrough();
   const upload = management.submitArchive({ filename: "off.gz", stream: pending });
   await expect(management.submitArchive({ filename: "off.gz", stream: Readable.from("other") })).rejects.toThrow("A Open Food Facts installation is already running.");
   pending.end(offArchive([offWithBasis("serving")])); await upload; await finished(management);
-  await expect(management.submitArchive({ filename: "off.gz", stream: Readable.from("other") })).rejects.toThrow("Open Food Facts is already installed. Catalog replacement is not available yet.");
+  const firstGeneration = management.read().installed?.generation;
+  await management.submitArchive({ filename: "off-reimport.gz", stream: Readable.from(offArchive([offWithBasis("serving")])) });
+  await finished(management);
+  expect(management.read()).toMatchObject({ installed: { filename: "off-reimport.gz" }, job: { phase: "succeeded" } });
+  expect(management.read().installed?.generation).not.toBe(firstGeneration);
 });
 
 test("activation publishes the replacement to new readers before retiring the generation held by an in-flight reader", async () => {

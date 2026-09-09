@@ -116,16 +116,16 @@ describe("catalog search normalization", () => {
 
 describe("OFF search policy", () => {
   test("requires an installed local catalog for a valid query", async () => {
-    const read = vi.fn(() => ({ installed: null }));
+    const withActiveGeneration = vi.fn().mockResolvedValue(undefined);
     const adapter = new LocalOpenFoodFactsAdapter(
-      { read } as unknown as CatalogManagement,
+      { withActiveGeneration } as unknown as CatalogManagement,
       "/unused",
     );
 
     await expect(adapter.search("egg")).rejects.toBeInstanceOf(
       CatalogConfigurationError,
     );
-    expect(read).toHaveBeenCalledOnce();
+    expect(withActiveGeneration).toHaveBeenCalledOnce();
   });
 
   test.each([
@@ -134,6 +134,7 @@ describe("OFF search policy", () => {
   ])("maps an unreadable installed %s generation to catalog unavailability", async (_label, adapterFor) => {
     const management = {
       read: () => ({ installed: { generation: "missing" } }),
+      withActiveGeneration: <T>(read: (generation: string) => T) => read("missing"),
     } as unknown as CatalogManagement;
 
     await expect(adapterFor(management).search("egg")).rejects.toBeInstanceOf(
