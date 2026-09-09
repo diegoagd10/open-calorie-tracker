@@ -3,6 +3,9 @@ import { appendFile, readFile } from "node:fs/promises";
 const originalFetch = globalThis.fetch;
 globalThis.fetch = async (input, init) => {
   const url = String(input);
+  if (url.includes("api.nal.usda.gov")) {
+    throw new Error("Unexpected USDA food API access");
+  }
   if (url.includes("openfoodfacts.org") || url.includes("openfoodfacts-ds.s3.")) {
     await appendFile("data/playwright-tests/off-metadata-requests.jsonl", JSON.stringify({ url, method: init?.method ?? "GET" }) + "\n");
     if (init?.method !== "HEAD" || url !== "https://static.openfoodfacts.org/data/en.openfoodfacts.org.products.csv.gz") throw new Error("Unexpected OFF download or API access");

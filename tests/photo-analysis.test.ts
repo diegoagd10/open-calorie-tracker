@@ -1,7 +1,10 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { Readable } from "node:stream";
 import { afterEach, expect, test, vi } from "vitest";
+import { CatalogManagement } from "../app/catalog-management/catalog-management.server";
+import { LocalUsdaAdapter } from "../app/catalog/local-usda.server";
 import {
   openApplicationDatabase,
   type ApplicationDatabase,
@@ -21,13 +24,16 @@ import {
   PhotoAnalysisService,
   type PhotoAnalyzer,
 } from "../app/photo-analysis/photo-analysis.server";
+import { foundationArchive } from "./support/foundation-archive";
 
 const services: PhotoAnalysisService[] = [];
+const catalogManagers: CatalogManagement[] = [];
 const databases: ApplicationDatabase[] = [];
 const directories: string[] = [];
 afterEach(async () => {
   services.splice(0).forEach((service) => service.shutdown());
   await Promise.resolve();
+  await Promise.all(catalogManagers.splice(0).map(manager => manager.shutdown()));
   databases.splice(0).forEach((db) => db.close());
   await Promise.all(
     directories
@@ -69,6 +75,10 @@ async function setup(
   analyzer: PhotoAnalyzer,
   options: {
     usda?: UsdaAnalysisReader;
+    createUsda?: (context: {
+      client: ReturnType<ApplicationDatabase["getClient"]>;
+      directory: string;
+    }) => Promise<UsdaAnalysisReader>;
     rounds?: number;
     deadlineMs?: number;
   } = {},
@@ -98,14 +108,164 @@ async function setup(
     })
     .run();
   const clock = { instant: new Date(createdAt) };
+  const usda = options.createUsda
+    ? await options.createUsda({ client, directory: dir })
+    : options.usda;
   const service = new PhotoAnalysisService(client, analyzer, {
     now: () => clock.instant,
-    ...options,
+    usda,
+    rounds: options.rounds,
+    deadlineMs: options.deadlineMs,
   });
   services.push(service);
   const log = new FoodLogService(client, () => clock.instant);
   return { service, log, userId, clock, client };
 }
+
+test("photo analysis saves captured local Foundation evidence when USDA is replaced between search and detail", async () => {
+  let management!: CatalogManagement;
+  let searched!: () => void;
+  let continueAnalysis!: () => void;
+  const searchFinished = new Promise<void>(resolve => { searched = resolve; });
+  const replacementFinished = new Promise<void>(resolve => { continueAnalysis = resolve; });
+  let searchedEvidence: Awaited<ReturnType<UsdaAnalysisReader["searchEvidence"]>> = [];
+  const network = vi.fn(() => { throw new Error("Food API access is forbidden"); });
+  vi.stubGlobal("fetch", network);
+  const { service, log, userId } = await setup(
+    {
+      analyze: async ({ usda }) => {
+        searchedEvidence = await usda.search("broccoli", 1);
+        searched();
+        await replacementFinished;
+        expect((await usda.search("broccoli", 1))[0]).toEqual(searchedEvidence[0]);
+        const detail = await usda.detail("747447");
+        expect(detail).toEqual(searchedEvidence[0]);
+        return {
+          ...estimate(),
+          name: "Local broccoli plate",
+          components: [{
+            ...estimate().components[0],
+            name: "Broccoli, raw",
+            quantity: 100,
+            source: { kind: "usda", fdcId: "747447" },
+          }],
+        };
+      },
+    },
+    {
+      createUsda: async ({ client, directory }) => {
+        management = new CatalogManagement(client, {
+          directory,
+          workerPath: path.resolve("app/catalog-management/import-worker.ts"),
+        });
+        catalogManagers.push(management);
+        await management.submitArchive({
+          filename: "foundation.zip",
+          stream: Readable.from(await foundationArchive()),
+        });
+        await vi.waitFor(() => expect(management.read().busy).toBe(false));
+        return new LocalUsdaAdapter(management, directory);
+      },
+    },
+  );
+  const meal = service.start(userId, {
+    photo,
+    foodLogDate: "2026-09-04",
+    idempotencyKey: "captured-local-foundation",
+  });
+  await searchFinished;
+  await management.submitArchive({
+    filename: "replacement.zip",
+    stream: Readable.from(await foundationArchive({
+      "food.csv": "fdc_id,data_type,description,publication_date\n747447,foundation_food,Broccoli revised after review,2026-08-01\n",
+      "food_nutrient.csv": "id,fdc_id,nutrient_id,amount\n1,747447,2048,999\n2,747447,1003,99\n3,747447,1004,88\n4,747447,1005,77\n",
+    })),
+  });
+  await vi.waitFor(() => expect(management.read().busy).toBe(false));
+  continueAnalysis();
+
+  await expect.poll(() => service.status(userId, meal.id).status).toBe("succeeded");
+  expect(log.read(userId, "2026-09-04")?.entries).toMatchObject([{
+    name: "Local broccoli plate",
+    energyMilliKcal: 32_000,
+    proteinMilligrams: 2_570,
+    carbohydrateMilligrams: 6_270,
+    fatMilligrams: 340,
+    sugarMilligrams: null,
+  }]);
+  expect(searchedEvidence[0]).toMatchObject({
+    food: { dataType: "Foundation", providerFoodId: "747447" },
+    record: {
+      description: "Broccoli, raw",
+    },
+  });
+  expect(searchedEvidence[0].record.supportedPortions).toContainEqual({
+    id: "portion:187633",
+    label: "1 cup, chopped (76 g)",
+    gramWeight: 76,
+  });
+  expect(service.view(userId, meal.id).result?.components[0].source).toEqual({
+    kind: "usda",
+    fdcId: "747447",
+    dataType: "Foundation",
+  });
+  expect(network).not.toHaveBeenCalled();
+});
+
+test("a missing local preparation remains an explicit estimate without a fabricated FDC identity", async () => {
+  let management!: CatalogManagement;
+  const network = vi.fn(() => { throw new Error("Food API access is forbidden"); });
+  vi.stubGlobal("fetch", network);
+  const reason = "The installed Foundation catalog has raw tilapia but no suitable cooked preparation";
+  const { service, userId } = await setup(
+    {
+      analyze: async ({ usda }) => {
+        expect(await usda.search("tilapia cooked", 1)).toEqual([]);
+        return {
+          ...estimate(128),
+          name: "Estimated cooked tilapia",
+          components: [{
+            ...estimate(128).components[0],
+            name: "Cooked tilapia",
+            source: { kind: "ai", reason },
+          }],
+        };
+      },
+    },
+    {
+      createUsda: async ({ client, directory }) => {
+        management = new CatalogManagement(client, {
+          directory,
+          workerPath: path.resolve("app/catalog-management/import-worker.ts"),
+        });
+        catalogManagers.push(management);
+        await management.submitArchive({
+          filename: "raw-tilapia.zip",
+          stream: Readable.from(await foundationArchive({
+            "food.csv": "fdc_id,data_type,description,publication_date\n700,foundation_food,Fish tilapia raw,2026-01-01\n",
+            "food_nutrient.csv": "id,fdc_id,nutrient_id,amount\n1,700,2048,96\n2,700,1003,20\n3,700,1004,2\n4,700,1005,0\n",
+            "food_portion.csv": "id,fdc_id,amount,measure_unit_id,gram_weight,modifier,portion_description\n",
+          })),
+        });
+        await vi.waitFor(() => expect(management.read().busy).toBe(false));
+        return new LocalUsdaAdapter(management, directory);
+      },
+    },
+  );
+  const meal = service.start(userId, {
+    photo,
+    foodLogDate: "2026-09-04",
+    idempotencyKey: "missing-local-preparation",
+  });
+
+  await expect.poll(() => service.status(userId, meal.id).status).toBe("succeeded");
+  expect(service.view(userId, meal.id).result?.components[0].source).toEqual({
+    kind: "ai",
+    reason,
+  });
+  expect(service.history(userId, meal.id)[0].evidence).toBe("[]");
+  expect(network).not.toHaveBeenCalled();
+});
 
 test("a photo returns promptly, excludes pending nutrition, and auto-saves one entry on the captured date", async () => {
   let finish!: (value: unknown) => void;
@@ -422,7 +582,7 @@ function piMessage(content: PiMessage["content"]): PiMessage {
   };
 }
 
-test("Pi can use explicit estimates after a USDA outage and exposes only the USDA tools", async () => {
+test("Pi can use an explicit estimate when the local USDA catalog is missing and exposes only food evidence tools", async () => {
   let deliveredError = false;
   let toolNames: string[] = [];
   const analyzer = new PiPhotoAnalyzer(async (context) => {
@@ -441,13 +601,7 @@ test("Pi can use explicit estimates after a USDA outage and exposes only the USD
       },
     ]);
   });
-  const usda = new UsdaFoodDataCentralAdapter({
-    apiKey: "fixture",
-    fetchImplementation: async () => {
-      throw new Error("Network unavailable");
-    },
-  });
-  const { service, log, userId } = await setup(analyzer, { usda });
+  const { service, log, userId } = await setup(analyzer);
   const meal = service.start(userId, {
     photo,
     foodLogDate: "2026-09-04",

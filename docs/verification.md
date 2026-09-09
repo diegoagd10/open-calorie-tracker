@@ -173,7 +173,7 @@ usable without Docker. Credentialed live-provider suites are separate:
 
 ```sh
 pnpm test:deployment # also run by pr:check
-pnpm test:photo-live # requires private PHOTO_PILOT_DATASET and PHOTO_AI_AUTH_PATH
+PHOTO_PILOT_DATASET=... PHOTO_AI_AUTH_PATH=... PHOTO_PILOT_USDA_ARCHIVE=... pnpm test:photo-live
 FDC_API_KEY=... pnpm test:usda-live
 ```
 

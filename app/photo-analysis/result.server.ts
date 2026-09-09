@@ -45,6 +45,9 @@ const resultSchema = z.object({
             z.object({
               kind: z.literal("usda"),
               fdcId: z.string().regex(/^[1-9]\d*$/),
+              dataType: z
+                .enum(["Foundation", "Survey (FNDDS)", "Branded"])
+                .optional(),
             }),
           ]),
           supplements: z
@@ -151,6 +154,9 @@ function validateUsdaComponent(component: Component, evidence: UsdaEvidence[]) {
   )?.food;
   if (!reference || component.unit !== reference.authoritativeBaseUnit)
     throw new Error("Invalid USDA reference or unit");
+  if (reference.dataType === "Open Food Facts")
+    throw new Error("Invalid USDA reference or unit");
+  component.source.dataType = reference.dataType;
   for (const key of nutrientKeys) {
     const value = scaleCatalogNutrient(
       reference.nutritionPerAuthoritativeBase[key],

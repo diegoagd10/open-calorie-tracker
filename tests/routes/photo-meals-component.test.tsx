@@ -55,7 +55,7 @@ const meal: Meal = {
         quantity: 200,
         unit: "g",
         includes: [],
-        source: { kind: "usda", fdcId: "700" },
+        source: { kind: "usda", fdcId: "700", dataType: "Foundation" },
         supplements: [
           {
             nutrient: "proteinGrams",
@@ -384,7 +384,7 @@ test("correction details retain provenance and the repeatable form submits the o
     "0.5",
     "Rice",
     "200",
-    "USDA FDC 700",
+    "USDA Foundation · FDC 700",
     "AI estimate for ",
     "proteinGrams",
     "Missing from reference",

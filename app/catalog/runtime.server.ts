@@ -22,6 +22,10 @@ function environmentSchema() {
 let foodCatalogProvider: SearchFoodCatalogProvider | undefined;
 let foodCatalog: FoodCatalog | undefined;
 
+export function getUsdaAnalysisReader(): LocalUsdaAdapter {
+  return new LocalUsdaAdapter(getCatalogManagement(), catalogDirectory());
+}
+
 export function getFoodCatalogProvider(): SearchFoodCatalogProvider {
   if (foodCatalogProvider) return foodCatalogProvider;
   const environment = environmentSchema().parse(process.env);
@@ -29,7 +33,7 @@ export function getFoodCatalogProvider(): SearchFoodCatalogProvider {
     process.env.NODE_ENV === "test" &&
     environment.FOOD_CATALOG_TEST_FIXTURE === "1"
       ? new TestFoodCatalogProvider()
-      : new LocalUsdaAdapter(getCatalogManagement(), catalogDirectory());
+      : getUsdaAnalysisReader();
   return foodCatalogProvider;
 }
 
