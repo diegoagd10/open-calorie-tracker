@@ -55,7 +55,6 @@ function scannerError(
   title: string,
   message: string,
 ): Extract<ScannerState, { phase: "error" }> {
-  // Stryker disable next-line StringLiteral: every value outside the three active success phases selects the same error rendering arm.
   return { message, phase: "error", title };
 }
 
@@ -72,7 +71,6 @@ const cameraConstraints: MediaStreamConstraints = {
 function validZoomCapability(
   value: unknown,
 ): value is NumericCameraCapability {
-  // Stryker disable next-line ConditionalExpression: non-object primitives expose no finite min/max and therefore reach the same false result through the range checks.
   if (!value || typeof value !== "object") return false;
   const range = value as Partial<NumericCameraCapability>;
   return Number.isFinite(range.min) && Number.isFinite(range.max) &&
@@ -86,7 +84,6 @@ function preferredZoom(capability: NumericCameraCapability): number {
 async function configureCameraTrack(
   track: MediaStreamTrack | undefined,
 ): Promise<CameraEnhancements> {
-  // Stryker disable ConditionalExpression,LogicalOperator,BlockStatement: each missing capability API deliberately selects the same enhancement-free fallback; the runtime combinations are covered as one contract below.
   if (
     !track ||
     typeof track.applyConstraints !== "function" ||
@@ -94,7 +91,6 @@ async function configureCameraTrack(
   ) {
     return noCameraEnhancements;
   }
-  // Stryker restore ConditionalExpression,LogicalOperator,BlockStatement
   let capabilities: EnhancedCameraCapabilities;
   try {
     capabilities = track.getCapabilities();
@@ -125,7 +121,6 @@ async function configureCameraTrack(
 }
 
 function cameraFailure(error: unknown): Extract<ScannerState, { phase: "error" }> {
-  // Stryker disable next-line StringLiteral: every non-Error input takes the same generic failure path regardless of its placeholder name.
   const name = error instanceof Error ? error.name : "";
   if (name === "NotAllowedError") {
     return scannerError(
@@ -182,7 +177,6 @@ export function createBarcodeCameraScanner(ports: ScannerPorts) {
     const activeControlRef = useRef<HTMLButtonElement>(null);
     const cameraTrackRef = useRef<MediaStreamTrack | null>(null);
     const decoderSessionRef = useRef<BarcodeDecoderSession | null>(null);
-    // Stryker disable next-line BooleanLiteral: every scan start resets this value before it can become observable.
     const detectionCompletedRef = useRef(false);
     const generationRef = useRef(0);
     const streamRef = useRef<MediaStream | null>(null);
@@ -198,7 +192,6 @@ export function createBarcodeCameraScanner(ports: ScannerPorts) {
       cameraTrackRef.current = null;
       stream?.getTracks().forEach((track) => track.stop());
 
-      // Stryker disable next-line ConditionalExpression: a missing detached video ref has no srcObject to clear.
       if (videoRef.current) videoRef.current.srcObject = null;
     }
 
@@ -288,7 +281,6 @@ export function createBarcodeCameraScanner(ports: ScannerPorts) {
             if (!hasValidGtinCheckDigit(supportedBarcode)) return;
 
             detectionCompletedRef.current = true;
-            // Stryker disable next-line AssignmentOperator: either arithmetic direction invalidates this terminal scan generation, and this component exposes no detected-state restart.
             generationRef.current += 1;
             stopResources();
             setState({ barcode: supportedBarcode, phase: "detected" });
@@ -296,7 +288,6 @@ export function createBarcodeCameraScanner(ports: ScannerPorts) {
           },
           () => {
             if (generationRef.current !== generation) return;
-            // Stryker disable next-line AssignmentOperator: either arithmetic direction invalidates this terminal decoder generation, and restart establishes a new generation.
             generationRef.current += 1;
             stopResources();
             setState(decoderFailure);
@@ -310,40 +301,31 @@ export function createBarcodeCameraScanner(ports: ScannerPorts) {
         setState({ phase: "scanning" });
       } catch {
         if (generationRef.current !== generation) return;
-        // Stryker disable next-line AssignmentOperator: a rejected decoder session has no valid callback contract; either direction invalidates its generation defensively.
         generationRef.current += 1;
         stopResources();
         setState(decoderFailure);
       }
     }
 
-    // Stryker disable ArrayDeclaration: changing a constant dependency array cannot alter this one-time cleanup effect.
     useEffect(() => () => {
-      // Stryker disable next-line AssignmentOperator: after unmount any arithmetic direction invalidates the sole outstanding generation, and the component cannot restart.
       generationRef.current += 1;
       stopResources();
     }, []);
-    // Stryker restore ArrayDeclaration
 
     useLayoutEffect(() => {
-      // Stryker disable next-line ConditionalExpression: the blocked-navigation browser journey proves the only observable true transition; the false mutation is equivalent on the initial and resumed effects.
       if (!stopRequested) return;
       generationRef.current += 1;
       stopResources();
       if (!detectionCompletedRef.current) setState({ phase: "idle" });
     }, [stopRequested]);
 
-    // Stryker disable ConditionalExpression,LogicalOperator,EqualityOperator,StringLiteral,BlockStatement,OptionalChaining,CallExpression,ArrayDeclaration: focus transfer for both active phases is exercised in the mobile browser journey; remaining mutations are DOM-null or constant-dependency equivalents.
     useEffect(() => {
       if (state.phase === "starting" || state.phase === "scanning") {
         activeControlRef.current?.focus();
       }
     }, [state.phase]);
-    // Stryker restore ConditionalExpression,LogicalOperator,EqualityOperator,StringLiteral,BlockStatement,OptionalChaining,CallExpression,ArrayDeclaration
 
-    // Stryker disable ConditionalExpression,LogicalOperator,EqualityOperator,StringLiteral: preview visibility in idle, active, detected, and error phases is asserted by browser and component tests.
     const active = state.phase === "starting" || state.phase === "scanning";
-    // Stryker restore ConditionalExpression,LogicalOperator,EqualityOperator,StringLiteral
 
     return (
       <section
@@ -445,7 +427,6 @@ export function createBarcodeCameraScanner(ports: ScannerPorts) {
               <button
                 className={styles.cameraButton}
                 onClick={
-                  // Stryker disable next-line ArrowFunction: retry invocation is asserted directly by the decoder-failure unit test.
                   () => void startCamera()
                 }
                 type="button"
@@ -455,7 +436,6 @@ export function createBarcodeCameraScanner(ports: ScannerPorts) {
               <button
                 className={styles.secondaryButton}
                 onClick={
-                  // Stryker disable next-line ArrowFunction,OptionalChaining,StringLiteral: focus recovery is exercised by the mobile browser accessibility journey; a missing manual input is a defensive DOM-null case.
                   () => document.getElementById("food-barcode")?.focus()
                 }
                 type="button"
@@ -470,7 +450,6 @@ export function createBarcodeCameraScanner(ports: ScannerPorts) {
   };
 }
 
-// Stryker disable BlockStatement,ObjectLiteral,BooleanLiteral,ConditionalExpression,OptionalChaining,StringLiteral: the production browser ports are exercised by the Chromium/WebKit camera matrix; unit tests substitute only this explicit boundary.
 export const BarcodeCameraScanner = createBarcodeCameraScanner({
   async loadDecoder() {
     const module = await import("../catalog/barcode-decoder.client");
@@ -486,4 +465,3 @@ export const BarcodeCameraScanner = createBarcodeCameraScanner({
     return navigator.mediaDevices.getUserMedia(constraints);
   },
 });
-// Stryker restore BlockStatement,ObjectLiteral,BooleanLiteral,ConditionalExpression,OptionalChaining,StringLiteral

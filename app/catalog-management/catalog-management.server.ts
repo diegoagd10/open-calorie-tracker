@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
-import { createWriteStream } from "node:fs";
-import { chmod, mkdir, rm, statfs } from "node:fs/promises";
+import { createWriteStream, statSync } from "node:fs";
+import { chmod, mkdir, readdir, rm, stat, statfs } from "node:fs/promises";
 import path from "node:path";
 import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
@@ -8,6 +8,7 @@ import { Worker } from "node:worker_threads";
 import { OffArchiveChecksum } from "./off-archive-checksum.server";
 import { matchOffSnapshot, offUpdateStatus, type OffSnapshotMetadata, type OffSourceTransport } from "./off-snapshot-source.server";
 import type { ApplicationDatabaseClient } from "../database/database.server";
+import { catalogGenerationIsReadable } from "../database/catalog-generation-validation.server";
 import { acknowledgeCatalogOutcome, readCatalogOutcomes, claimCatalogInstallation, readCatalogState, readCatalogUpdateCheck, saveCatalogState, saveCatalogUpdateCheck } from "../database/catalog-state.server";
 
 export type ImportPhase = "uploading" | "queued" | "validating" | "importing" | "indexing" | "activating" | "succeeded" | "failed" | "interrupted";
@@ -22,6 +23,7 @@ export type CatalogImportJob = {
 };
 export type InstalledCatalog = {
   generation: string; filename: string; sha256: string; foodCount: number;
+  databaseBytes?: number;
   installedAt: string; publicationDateRange: { earliest: string; latest: string };
   sourceDateRange?: { earliest: string | null; latest: string | null };
   sourceRelease?: Omit<FoundationReleaseMetadata, "archiveUrl">;
@@ -103,6 +105,7 @@ export class CatalogManagement {
   #operation: Promise<void> | undefined;
   #handoff: Promise<void> | undefined;
   #checking: Promise<void> | undefined;
+  readonly #maintenance: Promise<void>;
   readonly #readers = new Map<string, Set<object>>();
 
   constructor(database: ApplicationDatabaseClient, options: CatalogManagementOptions) {
@@ -120,17 +123,26 @@ export class CatalogManagement {
     };
     const state = this.read();
     this.#save({ installed: state.installed, job: state.job, retiring: state.retiring });
-    if (state.retiring && state.job?.phase === "failed" && state.installed?.generation === state.job.id) {
+    this.#maintenance = this.#recoverOnStartup(state).then(() => this.#cleanupAbandonedArtifacts());
+  }
+
+  #recoverOnStartup(state: CatalogState): Promise<void> {
+    if (!state.job) return Promise.resolve();
+    return state.busy ? this.#recoverBusyJob(state, state.job) : this.#recoverTerminalJob(state, state.job);
+  }
+
+  #recoverTerminalJob(state: CatalogState, job: CatalogImportJob): Promise<void> {
+    if (job.phase === "failed" && state.retiring && state.installed?.generation === job.id) {
       this.#updateJob({ phase: "activating", error: null });
-      void this.#completeHandoff();
-    } else if (state.busy && state.job) {
-      if (state.job.phase === "activating" && state.installed?.generation === state.job.id) {
-        void this.#completeHandoff();
-      } else {
-        this.#updateJob({ phase: "interrupted", error: `${this.#label} installation was interrupted by a server restart. Upload the archive again.` });
-        void this.#cleanup(state.job.id, true);
-      }
+      return this.#recoverPublishedHandoff(this.read());
     }
+    return Promise.resolve();
+  }
+
+  #recoverBusyJob(state: CatalogState, job: CatalogImportJob): Promise<void> {
+    if (job.phase === "activating" && state.installed?.generation === job.id) return this.#recoverPublishedHandoff(state);
+    this.#updateJob({ phase: "interrupted", error: `${this.#label} installation was interrupted by a server restart. Upload the archive again.` });
+    return this.#cleanup(job.id, true);
   }
 
   get #label() { return this.#options.provider === "open-food-facts" ? "Open Food Facts" : "USDA"; }
@@ -210,6 +222,7 @@ export class CatalogManagement {
   }
 
   async submitArchive(input: { filename: string; stream: Readable; size?: number }): Promise<void> {
+    await this.#maintenance;
     if (!input.filename.toLowerCase().endsWith(this.#extension) || input.filename.length > 255) throw new CatalogManagementError(`Choose a ${this.#label} ${this.#extension} archive.`);
     if (input.size !== undefined && (!Number.isSafeInteger(input.size) || input.size <= 0 || input.size > this.#options.maxUploadBytes)) throw new CatalogManagementError("Archive exceeds the configured upload limit or is empty.");
     const id = randomUUID();
@@ -228,7 +241,7 @@ export class CatalogManagement {
     try {
       await mkdir(this.#options.directory, { recursive: true, mode: 0o700 });
       const space = await statfs(this.#options.directory);
-      if (space.bavail * space.bsize < this.#options.maxExpandedBytes * 2 + (input.size ?? this.#options.maxUploadBytes)) throw new CatalogManagementError(`Not enough disk space for ${this.#label} import. Free space and retry.`);
+      if (space.bavail * space.bsize < this.#requiredFreeBytes(input.size)) throw new CatalogManagementError(`Not enough disk space for ${this.#label} import. Free space and retry.`);
       let receivedBytes = 0;
       let lastProgress = 0;
       const hash = createHash("sha256");
@@ -248,7 +261,7 @@ export class CatalogManagement {
       this.#updateJob({ receivedBytes, phase: "queued", sourceReleaseCandidate: this.#releaseForUpload(receivedBytes), archiveCrc64nvme, sourceSnapshotCandidate: matchOffSnapshot(this.read().updateCheck?.availableSnapshot, archiveCrc64nvme, receivedBytes) });
       this.#startWorker(id, archivePath, hash.digest("hex"));
     } catch (error) {
-      this.#updateJob({ phase: "failed", error: error instanceof CatalogManagementError ? error.message : `${this.#label} upload failed. Check available disk space and upload the archive again.` });
+      this.#updateJob(this.#uploadFailure(error, signal.aborted));
       await this.#cleanup(id, true);
     } finally { this.#upload = undefined; }
   }
@@ -277,15 +290,7 @@ export class CatalogManagement {
     const state = this.read();
     try {
       if (result && this.#canActivate(state.job, id)) {
-        this.#updateJob({ phase: "activating" });
-        await chmod(path.join(this.#options.directory, `${id}.sqlite`), 0o444);
-        await this.#cleanup(id, false);
-        this.#worker = undefined;
-        const now = new Date().toISOString();
-        const installed = { generation: id, filename: state.job!.filename, sha256, installedAt: now, ...result, ...this.#installedSourceMetadata(state.job!) };
-        this.#save({ installed, job: { ...this.read().job!, phase: "activating", updatedAt: now }, retiring: state.installed ?? undefined });
-        this.#reconcileUpdateCheck(installed);
-        await this.#completeHandoff();
+        await this.#activate(id, sha256, result, state);
       } else {
         await this.#cleanup(id, true);
         this.#worker = undefined;
@@ -296,6 +301,26 @@ export class CatalogManagement {
       this.#worker = undefined;
       this.#updateJob({ phase: "failed", error: `${this.#label} activation failed. Check server storage and retry the upload.` });
     }
+  }
+
+  async #activate(id: string, sha256: string, result: { foodCount: number; publicationDateRange: InstalledCatalog["publicationDateRange"] }, state: CatalogState) {
+    this.#updateJob({ phase: "activating" });
+    const generationPath = path.join(this.#options.directory, `${id}.sqlite`);
+    await chmod(generationPath, 0o444);
+    const generationFile = await stat(generationPath);
+    if (!generationFile.isFile() || generationFile.size <= 0) throw new Error("Invalid catalog generation");
+    await this.#cleanup(id, false);
+    this.#worker = undefined;
+    const now = new Date().toISOString();
+    const installed = { generation: id, filename: state.job!.filename, sha256, databaseBytes: generationFile.size, installedAt: now, ...result, ...this.#installedSourceMetadata(state.job!) };
+    this.#save({ installed, job: { ...this.read().job!, phase: "activating", updatedAt: now }, retiring: state.installed ?? undefined });
+    this.#reconcileUpdateCheck(installed);
+    await this.#completeHandoff();
+  }
+
+  #uploadFailure(error: unknown, interrupted: boolean): Pick<CatalogImportJob, "phase" | "error"> {
+    if (interrupted) return { phase: "interrupted", error: `${this.#label} installation was interrupted by server shutdown. Upload the archive again.` };
+    return { phase: "failed", error: error instanceof CatalogManagementError ? error.message : `${this.#label} upload failed. Check available disk space and upload the archive again.` };
   }
 
   #save(state: Omit<CatalogState, "busy">) {
@@ -352,6 +377,36 @@ export class CatalogManagement {
       if (this.#handoff === handoff) this.#handoff = undefined;
     }
   }
+  async #recoverPublishedHandoff(state: CatalogState) {
+    const replacement = state.installed!;
+    if (this.#generationIsRecoverable(replacement)) {
+      await this.#completeHandoff();
+      return;
+    }
+    const previous = state.retiring;
+    const previousAvailable = previous && this.#generationIsRecoverable(previous);
+    const job = {
+      ...state.job!,
+      phase: "interrupted" as const,
+      error: previousAvailable
+        ? `${this.#label} replacement could not be confirmed after restart. The previous catalog remains active. Upload the archive again.`
+        : `${this.#label} replacement could not be confirmed after restart and no previous catalog is available. Upload the archive again.`,
+      updatedAt: new Date().toISOString(),
+    };
+    this.#save({ installed: previousAvailable ? previous : null, job });
+    await this.#cleanup(replacement.generation, true);
+  }
+  #generationIsRecoverable(generation: InstalledCatalog) {
+    const generationPath = path.join(this.#options.directory, `${generation.generation}.sqlite`);
+    const actualBytes = statSync(generationPath, { throwIfNoEntry: false })?.size;
+    if (actualBytes === undefined) return false;
+    if (generation.databaseBytes !== undefined && generation.databaseBytes !== actualBytes) return false;
+    return catalogGenerationIsReadable(this.#options.directory, generation.generation, this.#options.provider);
+  }
+  #requiredFreeBytes(uploadBytes: number | undefined) {
+    const stagedBytes = this.#options.maxExpandedBytes * (this.#options.provider === "usda-fdc" ? 2 : 1);
+    return stagedBytes + (uploadBytes ?? this.#options.maxUploadBytes);
+  }
   #handoffReady(state: CatalogState) {
     return state.job?.phase === "activating"
       && state.installed?.generation === state.job.id
@@ -370,7 +425,25 @@ export class CatalogManagement {
     const paths = [`${id}${this.#extension}`, `${id}.staging`, ...(removeGeneration ? [`${id}.sqlite`, `${id}.sqlite-journal`] : [])];
     await Promise.all(paths.map(name => rm(path.join(this.#options.directory, name), { recursive: true, force: true }).catch(() => undefined)));
   }
+  async #cleanupAbandonedArtifacts() {
+    const protectedIds = new Set<string>();
+    for (const provider of ["usda-fdc", "open-food-facts"] as const) {
+      const state = readCatalogState(this.#database, provider);
+      if (state.installed) protectedIds.add(state.installed.generation);
+      if (state.retiring) protectedIds.add(state.retiring.generation);
+      if (state.job && !terminal.has(state.job.phase)) protectedIds.add(state.job.id);
+    }
+    const generationArtifact = /^([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\.(?:sqlite(?:-journal)?|zip|gz|staging)$/i;
+    let names: string[];
+    try { names = await readdir(this.#options.directory); } catch { return; }
+    await Promise.all(names.map(async name => {
+      const generation = generationArtifact.exec(name)?.[1];
+      if (!generation || protectedIds.has(generation)) return;
+      await rm(path.join(this.#options.directory, name), { recursive: true, force: true }).catch(() => undefined);
+    }));
+  }
   async shutdown() {
+    await this.#maintenance;
     this.#upload?.abort();
     await this.#operation;
     if (this.#worker) {

@@ -72,7 +72,6 @@ function defaultValue(value: unknown): string | null {
 
 test("Drizzle schema metadata matches the migrated SQLite contract", async () => {
   // This second module identity is deliberately loaded during the test so
-  // Stryker's static mutants are active before Drizzle builds its metadata.
   // @ts-expect-error Vite supports query-suffixed module identities.
   const schema = (await import("../app/database/schema.server?schema-contract")) as unknown as typeof import("../app/database/schema.server");
   const tables: SQLiteTable[] = [

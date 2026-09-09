@@ -4,7 +4,10 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { PassThrough, Readable } from "node:stream";
 import { afterEach, expect, test, vi } from "vitest";
+import BetterSqlite3 from "better-sqlite3";
 import { CatalogManagement, type CatalogImportJob, type CatalogManagementOptions, type FoundationReleaseMetadata } from "../app/catalog-management/catalog-management.server";
+import { LocalOpenFoodFactsAdapter } from "../app/catalog/local-off.server";
+import { LocalUsdaAdapter } from "../app/catalog/local-usda.server";
 import { openApplicationDatabase } from "../app/database/database.server";
 import { saveCatalogState, saveCatalogUpdateCheck } from "../app/database/catalog-state.server";
 import { foundationArchive } from "./support/foundation-archive";
@@ -53,7 +56,9 @@ test("boundary-sized uppercase uploads preserve metadata and remove private stag
   const state = management.read();
   expect(state.installed).toMatchObject({ filename, sha256: createHash("sha256").update(archive).digest("hex"), foodCount: 1 });
   expect(state.job).toMatchObject({ phase: "succeeded", filename, receivedBytes: archive.length, processedRecords: 1, importedRecords: 1, rejectedRecords: 0, error: null });
-  expect((await fs.stat(path.join(directory, `${state.installed!.generation}.sqlite`))).mode & 0o777).toBe(0o444);
+  const databaseFile = await fs.stat(path.join(directory, `${state.installed!.generation}.sqlite`));
+  expect(state.installed?.databaseBytes).toBe(databaseFile.size);
+  expect(databaseFile.mode & 0o777).toBe(0o444);
   expect((await fs.readdir(directory)).filter(name => name.startsWith(state.job!.id))).toEqual([`${state.job!.id}.sqlite`]);
 });
 
@@ -79,17 +84,17 @@ test("stream errors are reported as upload failures and shutdown cancels an unfi
   await vi.waitFor(() => expect(management.read().job?.receivedBytes).toBe(7));
   expect(management.read().job).toMatchObject({ phase: "uploading", processedRecords: 0, exclusions: {}, error: null });
   await management.shutdown(); await receiving;
-  expect(management.read()).toMatchObject({ busy: false, installed: null, job: { phase: "failed" } });
+  expect(management.read()).toMatchObject({ busy: false, installed: null, job: { phase: "interrupted", error: "Open Food Facts installation was interrupted by server shutdown. Upload the archive again." } });
   expect((await fs.readdir(directory)).filter(name => name.startsWith(management.read().job!.id))).toEqual([]);
 });
 
 test("disk preflight uses expanded reserve plus the advertised upload size", async () => {
   const { management } = await setup({ maxUploadBytes: 1000, maxExpandedBytes: 10000 });
   const real = await fs.statfs(tmpdir());
-  vi.mocked(fs.statfs).mockResolvedValue({ ...real, bavail: 20009, bsize: 1 });
+  vi.mocked(fs.statfs).mockResolvedValue({ ...real, bavail: 10009, bsize: 1 });
   await management.submitArchive({ filename: "off.gz", size: 10, stream: Readable.from(Buffer.alloc(10)) });
   expect(management.read().job?.error).toBe("Not enough disk space for Open Food Facts import. Free space and retry.");
-  vi.mocked(fs.statfs).mockResolvedValue({ ...real, bavail: 20010, bsize: 1 });
+  vi.mocked(fs.statfs).mockResolvedValue({ ...real, bavail: 10010, bsize: 1 });
   await management.submitArchive({ filename: "off.gz", size: 10, stream: Readable.from(Buffer.alloc(10)) });
   await finished(management);
   expect(management.read().job?.error).toBe("Corrupt OFF GZIP or malformed TSV. Download the archive again.");
@@ -98,7 +103,7 @@ test("disk preflight uses expanded reserve plus the advertised upload size", asy
 test.each(["usda-fdc", "open-food-facts"] as const)("%s defaults reserve independent archive sizes", async provider => {
   const { management } = await setup({ provider }, true);
   const real = await fs.statfs(tmpdir());
-  const reserve = provider === "usda-fdc" ? 576 * 1024 ** 2 : 68 * 1024 ** 3;
+  const reserve = provider === "usda-fdc" ? 576 * 1024 ** 2 : 36 * 1024 ** 3;
   vi.mocked(fs.statfs).mockResolvedValue({ ...real, bavail: reserve - 1, bsize: 1 });
   await management.submitArchive({ filename: provider === "usda-fdc" ? "source.zip" : "source.gz", stream: Readable.from("test") });
   expect(management.read().job?.error).toBe(`Not enough disk space for ${provider === "usda-fdc" ? "USDA" : "Open Food Facts"} import. Free space and retry.`);
@@ -108,7 +113,7 @@ test.each(["usda-fdc", "open-food-facts"] as const)("%s defaults reserve indepen
   expect(management.read().job?.error).toBe(provider === "usda-fdc" ? "Invalid or corrupt Foundation CSV ZIP, or insufficient disk space. Verify the download and retry." : "Corrupt OFF GZIP or malformed TSV. Download the archive again.");
 });
 
-test("restart marks only an unfinished provider job interrupted and removes its staging", async () => {
+test.each(["present", "missing"] as const)("restart marks an unfinished provider job interrupted when staging is %s, cleans up, and permits retry", async staging => {
   const { database, settings, directory } = await setup();
   const id = "interrupted-job";
   const job = { id, filename: "off.gz", phase: "importing" as const, receivedBytes: 100, processedRecords: 7, exclusions: {}, error: null, startedAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z" };
@@ -116,12 +121,69 @@ test("restart marks only an unfinished provider job interrupted and removes its 
   await fs.writeFile(path.join(directory, `${id}.gz`), "partial");
   await fs.writeFile(path.join(directory, `${id}.sqlite`), "partial database");
   await fs.writeFile(path.join(directory, `${id}.sqlite-journal`), "partial journal");
-  await fs.mkdir(path.join(directory, `${id}.staging`));
+  if (staging === "present") await fs.mkdir(path.join(directory, `${id}.staging`));
   const recovered = new CatalogManagement(database.getClient(), settings);
   expect(recovered.read()).toMatchObject({ installed: null, busy: false, job: { phase: "interrupted", processedRecords: 7, error: "Open Food Facts installation was interrupted by a server restart. Upload the archive again." } });
   await vi.waitFor(async () => expect((await fs.readdir(directory)).filter(name => name.startsWith(id))).toEqual([]));
   const unchanged = new CatalogManagement(database.getClient(), settings);
   expect(unchanged.read()).toEqual(recovered.read());
+  await recovered.submitArchive({ filename: "retry.gz", stream: Readable.from(offArchive([offWithBasis("serving")])) });
+  await finished(recovered);
+  expect(recovered.read()).toMatchObject({ installed: { filename: "retry.gz" }, job: { phase: "succeeded", error: null } });
+});
+
+test("startup removes abandoned generation artifacts without touching either active catalog or unrelated files", async () => {
+  const { management: usda, database, directory, settings } = await setup({ provider: "usda-fdc" });
+  await usda.submitArchive({ filename: "foundation.zip", stream: Readable.from(await foundationArchive()) });
+  await finished(usda);
+  const off = new CatalogManagement(database.getClient(), { ...settings, provider: "open-food-facts" });
+  cleanups.unshift(() => off.shutdown());
+  await off.submitArchive({ filename: "products.gz", stream: Readable.from(offArchive([offWithBasis("serving")])) });
+  await finished(off);
+  const activeFiles = [usda.read().installed!.generation, off.read().installed!.generation].map(generation => `${generation}.sqlite`);
+  const abandoned = "00000000-0000-4000-8000-000000000099";
+  const retiring = "00000000-0000-4000-8000-000000000097";
+  const inFlight = "00000000-0000-4000-8000-000000000098";
+  await Promise.all([
+    fs.writeFile(path.join(directory, `${abandoned}.sqlite`), "abandoned generation"),
+    fs.writeFile(path.join(directory, `${abandoned}.sqlite-journal`), "abandoned journal"),
+    fs.writeFile(path.join(directory, `${abandoned}.zip`), "abandoned upload"),
+    fs.writeFile(path.join(directory, `${abandoned}.gz`), "abandoned upload"),
+    fs.mkdir(path.join(directory, `${abandoned}.staging`)),
+    fs.writeFile(path.join(directory, `${retiring}.sqlite`), "protected retiring generation"),
+    fs.writeFile(path.join(directory, `${inFlight}.gz`), "protected in-flight upload"),
+    fs.writeFile(path.join(directory, `${inFlight}.sqlite`), "protected in-flight generation"),
+    fs.mkdir(path.join(directory, `${inFlight}.staging`)),
+    fs.writeFile(path.join(directory, "operator-note.txt"), "keep me"),
+    fs.writeFile(path.join(directory, `${abandoned}.sqlite.backup`), "keep me"),
+    fs.writeFile(path.join(directory, `prefix-${abandoned}.sqlite`), "keep me"),
+  ]);
+  const offInstalled = off.read().installed!;
+  saveCatalogState(database.getClient(), {
+    installed: offInstalled,
+    retiring: { ...offInstalled, generation: retiring },
+    job: { ...off.read().job!, id: inFlight, phase: "importing" },
+  }, "open-food-facts");
+
+  const restarted = new CatalogManagement(database.getClient(), settings);
+  cleanups.unshift(() => restarted.shutdown());
+  const abandonedArtifacts = ["sqlite", "sqlite-journal", "zip", "gz", "staging"].map(extension => `${abandoned}.${extension}`);
+  await vi.waitFor(async () => expect((await fs.readdir(directory)).filter(name => abandonedArtifacts.includes(name))).toEqual([]));
+  await restarted.shutdown();
+
+  expect(await fs.readdir(directory)).toEqual(expect.arrayContaining([
+    ...activeFiles,
+    `${retiring}.sqlite`,
+    `${inFlight}.gz`,
+    `${inFlight}.sqlite`,
+    `${inFlight}.staging`,
+    `${abandoned}.sqlite.backup`,
+    `prefix-${abandoned}.sqlite`,
+    "app.sqlite",
+    "operator-note.txt",
+  ]));
+  await expect(restarted.withActiveGeneration(generation => generation)).resolves.toBe(usda.read().installed!.generation);
+  await expect(off.withActiveGeneration(generation => generation)).resolves.toBe(off.read().installed!.generation);
 });
 
 test("worker crashes and activation failures never install a generation", async () => {
@@ -168,6 +230,44 @@ function activatingJob(id: string, filename = "replacement.zip"): CatalogImportJ
     exclusions: {}, error: null, startedAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z",
   };
 }
+type RecoveryProvider = "usda-fdc" | "open-food-facts";
+type BrokenReplacement = (input: { databaseBytes: number; path: string; provider: RecoveryProvider; sourcePath: string }) => Promise<void>;
+async function restartWithBrokenPublishedReplacement(provider: RecoveryProvider, breakReplacement: BrokenReplacement) {
+  const context = await setup({ provider });
+  const archive = provider === "usda-fdc" ? await foundationArchive() : offArchive([offWithBasis("serving")]);
+  const filename = provider === "usda-fdc" ? "foundation.zip" : "products.gz";
+  await context.management.submitArchive({ filename, stream: Readable.from(archive) });
+  await finished(context.management);
+  const previous = context.management.read().installed!;
+  const replacementId = "00000000-0000-4000-8000-000000000009";
+  const replacement = { ...previous, generation: replacementId, filename: `replacement${path.extname(filename)}` };
+  await breakReplacement({ databaseBytes: previous.databaseBytes!, path: path.join(context.directory, `${replacementId}.sqlite`), provider, sourcePath: path.join(context.directory, `${previous.generation}.sqlite`) });
+  saveCatalogState(context.database.getClient(), { installed: replacement, retiring: previous, job: activatingJob(replacementId, replacement.filename) }, provider);
+  const restarted = new CatalogManagement(context.database.getClient(), context.settings);
+  cleanups.unshift(() => restarted.shutdown());
+  return { ...context, previous, restarted };
+}
+const brokenPublishedReplacements: [string, BrokenReplacement][] = [
+  ["missing", async () => undefined],
+  ["empty", async ({ path: replacementPath }) => fs.writeFile(replacementPath, "")],
+  ["a directory", async ({ path: replacementPath }) => fs.mkdir(replacementPath).then(() => undefined)],
+  ["truncated", async ({ databaseBytes, path: replacementPath }) => fs.writeFile(replacementPath, Buffer.alloc(databaseBytes - 1))],
+  ["unreadable", async ({ databaseBytes, path: replacementPath }) => fs.writeFile(replacementPath, Buffer.alloc(databaseBytes))],
+  ["a readable database with an unexpected size", async ({ path: replacementPath, sourcePath }) => {
+    await fs.copyFile(sourcePath, replacementPath);
+    await fs.chmod(replacementPath, 0o600);
+    const generation = new BetterSqlite3(replacementPath);
+    generation.exec("CREATE TABLE recovery_padding (value BLOB); INSERT INTO recovery_padding VALUES (zeroblob(65536))");
+    generation.close();
+  }],
+  ["unusable search index", async ({ path: replacementPath, provider, sourcePath }) => {
+    await fs.copyFile(sourcePath, replacementPath);
+    await fs.chmod(replacementPath, 0o600);
+    const generation = new BetterSqlite3(replacementPath);
+    generation.exec(`DELETE FROM ${provider === "usda-fdc" ? "names" : "product_search"}`);
+    generation.close();
+  }],
+];
 
 test("shutdown interrupts the live worker and removes its partial generation", async () => {
   const { management, directory } = await workerSetup(resultMessage);
@@ -267,7 +367,7 @@ test("restart completes an already-published activation handoff instead of inter
   await management.submitArchive({ filename: "foundation.zip", stream: Readable.from(archive) });
   await finished(management);
   const old = management.read().installed!;
-  const replacement = { ...old, generation: "00000000-0000-4000-8000-000000000001", filename: "replacement.zip" };
+  const replacement = { ...old, generation: "00000000-0000-4000-8000-000000000001", filename: "replacement.zip", databaseBytes: undefined };
   await fs.copyFile(path.join(directory, `${old.generation}.sqlite`), path.join(directory, `${replacement.generation}.sqlite`));
   const activating = activatingJob(replacement.generation, replacement.filename);
   saveCatalogState(database.getClient(), { installed: replacement, retiring: old, job: activating }, "usda-fdc");
@@ -275,11 +375,81 @@ test("restart completes an already-published activation handoff instead of inter
   const restarted = new CatalogManagement(database.getClient(), settings);
   cleanups.unshift(() => restarted.shutdown());
   await vi.waitFor(() => expect(restarted.read().busy).toBe(false));
-  expect(restarted.read()).toMatchObject({ installed: replacement, job: { phase: "succeeded", error: null } });
+  expect(restarted.read()).toMatchObject({
+    installed: { generation: replacement.generation, filename: replacement.filename, foodCount: replacement.foodCount },
+    job: { phase: "succeeded", error: null },
+  });
   expect(restarted.read().retiring).toBeUndefined();
   await expect(fs.access(path.join(directory, `${old.generation}.sqlite`))).rejects.toMatchObject({ code: "ENOENT" });
   await expect(fs.access(path.join(directory, `${replacement.generation}.sqlite`))).resolves.toBeUndefined();
+  await expect(new LocalUsdaAdapter(restarted, directory).getFood("748967")).resolves.toMatchObject({ providerFoodId: "748967" });
 });
+
+test("restart rejects an unconfirmed published generation when no previous catalog is available", async () => {
+  const { database, directory, settings } = await setup({ provider: "usda-fdc" });
+  const replacementId = "00000000-0000-4000-8000-000000000013";
+  const replacement = {
+    generation: replacementId,
+    filename: "missing.zip",
+    sha256: "replacement-sha",
+    databaseBytes: 100,
+    foodCount: 4,
+    installedAt: "2026-01-01T00:00:00.000Z",
+    publicationDateRange: { earliest: "2025-01-01", latest: "2026-01-01" },
+  };
+  await fs.writeFile(path.join(directory, `${replacementId}.sqlite`), "invalid catalog generation");
+  saveCatalogState(database.getClient(), { installed: replacement, job: activatingJob(replacementId, replacement.filename) }, "usda-fdc");
+
+  const restarted = new CatalogManagement(database.getClient(), settings);
+  cleanups.unshift(() => restarted.shutdown());
+
+  expect(restarted.read()).toMatchObject({
+    installed: null,
+    busy: false,
+    job: {
+      phase: "interrupted",
+      error: "USDA replacement could not be confirmed after restart and no previous catalog is available. Upload the archive again.",
+    },
+  });
+  await restarted.shutdown();
+  await expect(fs.access(path.join(directory, `${replacementId}.sqlite`))).rejects.toMatchObject({ code: "ENOENT" });
+});
+
+const recoveryProviders: { provider: RecoveryProvider; label: string; verify: (management: CatalogManagement, directory: string, generation: string) => Promise<void> }[] = [
+  {
+    provider: "usda-fdc",
+    label: "USDA",
+    verify: async (management, directory, generation) => {
+      await expect(new LocalUsdaAdapter(management, directory).search("egg")).resolves.toEqual(expect.arrayContaining([expect.objectContaining({ catalogGeneration: generation })]));
+    },
+  },
+  {
+    provider: "open-food-facts",
+    label: "Open Food Facts",
+    verify: async (management, directory, generation) => {
+      const catalog = new LocalOpenFoodFactsAdapter(management, directory);
+      await expect(catalog.lookupBarcode("0012345678905")).resolves.toMatchObject({ catalogGeneration: generation });
+      await expect(catalog.search("oats")).resolves.toEqual(expect.arrayContaining([expect.objectContaining({ catalogGeneration: generation })]));
+    },
+  },
+];
+for (const { provider, label, verify } of recoveryProviders) {
+  test.each(brokenPublishedReplacements)(`${provider} restart restores the previous generation when the published replacement is %s`, async (_failure, breakReplacement) => {
+    const { previous, restarted, directory } = await restartWithBrokenPublishedReplacement(provider, breakReplacement);
+
+    expect(restarted.read()).toMatchObject({
+      installed: previous,
+      busy: false,
+      job: {
+        phase: "interrupted",
+        error: `${label} replacement could not be confirmed after restart. The previous catalog remains active. Upload the archive again.`,
+      },
+    });
+    expect(restarted.read().retiring).toBeUndefined();
+    await expect(fs.access(path.join(directory, `${previous.generation}.sqlite`))).resolves.toBeUndefined();
+    await verify(restarted, directory, previous.generation);
+  });
+}
 
 test("restart interrupts activation before publication and preserves the previous generation", async () => {
   const { management, directory, database, settings } = await setup({ provider: "usda-fdc" });

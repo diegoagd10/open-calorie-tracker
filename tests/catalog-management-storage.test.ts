@@ -1,10 +1,11 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { Readable } from "node:stream";
 import { afterEach, expect, test, vi } from "vitest";
 import { CatalogManagement } from "../app/catalog-management/catalog-management.server";
 import { openApplicationDatabase } from "../app/database/database.server";
+import { saveCatalogState } from "../app/database/catalog-state.server";
 
 const disk = vi.hoisted(() => vi.fn());
 vi.mock("node:fs/promises", async importOriginal => ({ ...await importOriginal<typeof import("node:fs/promises")>(), statfs: disk }));
@@ -25,4 +26,28 @@ test.each([
   await management.submitArchive({ filename: "archive.zip", size, stream: Readable.from(Buffer.alloc(500)) });
   await vi.waitFor(() => expect(management.read().busy).toBe(false));
   expect(management.read()).toMatchObject({ installed: null, job: { phase: "failed", error } });
+});
+
+test.each([
+  ["usda-fdc", 249, "Not enough disk space for USDA import. Free space and retry."],
+  ["usda-fdc", 250, "Invalid or corrupt Foundation CSV ZIP, or insufficient disk space. Verify the download and retry."],
+  ["open-food-facts", 149, "Not enough disk space for Open Food Facts import. Free space and retry."],
+  ["open-food-facts", 150, "Corrupt OFF GZIP or malformed TSV. Download the archive again."],
+] as const)("%s disk preflight reserves new staged data while available space already reflects the current generation at %i bytes", async (provider, available, error) => {
+  disk.mockResolvedValue({ bavail: available, bsize: 1 });
+  const directory = await mkdtemp(path.join(tmpdir(), "catalog-current-storage-"));
+  const database = openApplicationDatabase({ databasePath: path.join(directory, "app.sqlite"), migrationsFolder: path.resolve("drizzle") });
+  const generation = "00000000-0000-4000-8000-000000000020";
+  await writeFile(path.join(directory, `${generation}.sqlite`), Buffer.alloc(250));
+  saveCatalogState(database.getClient(), {
+    installed: { generation, filename: "installed.zip", sha256: "sha", databaseBytes: 250, foodCount: 1, installedAt: "2026-01-01T00:00:00.000Z", publicationDateRange: { earliest: "2026-01-01", latest: "2026-01-01" } },
+    job: null,
+  }, provider);
+  const management = new CatalogManagement(database.getClient(), { provider, directory, workerPath: path.resolve("app/catalog-management/import-worker.ts"), maxUploadBytes: 1000, maxExpandedBytes: 100 });
+  cleanups.push(async () => { await management.shutdown(); database.close(); await rm(directory, { recursive: true, force: true }); });
+
+  await management.submitArchive({ filename: provider === "usda-fdc" ? "archive.zip" : "archive.gz", size: 50, stream: Readable.from(Buffer.alloc(50)) });
+  await vi.waitFor(() => expect(management.read().busy).toBe(false));
+
+  expect(management.read().job?.error).toBe(error);
 });

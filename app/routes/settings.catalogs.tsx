@@ -81,6 +81,7 @@ function CatalogCard({ catalog, csrfToken, provider }: { catalog: CatalogState; 
   const navigation = useNavigation();
   const [upload, setUpload] = useState<{ bytes: number; total: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const retryable = catalog.job?.phase === "failed" || catalog.job?.phase === "interrupted";
   const checkIntent = off ? "check-off-update" : "check-usda-update";
   const checkLabel = off ? "OFF" : "USDA";
   const checking = navigation.formData?.get("intent") === checkIntent;
@@ -153,9 +154,10 @@ function CatalogCard({ catalog, csrfToken, provider }: { catalog: CatalogState; 
           {catalog.busy && !upload ? <p>You can leave this page. Import continues on the server; return here for the outcome.</p> : null}
         </div>
         {catalog.job && Object.keys(catalog.job.exclusions).length ? <details><summary>Excluded records and unavailable data</summary><ul>{Object.entries(catalog.job.exclusions).map(([reason, count]) => <li key={reason}>{reason.replaceAll("_", " ")}: {count.toLocaleString()}</li>)}</ul><p>These counts describe individual records or values; an archive failure is shown separately above.</p></details> : null}
+        {retryable ? <p>Select the archive again to retry. Partial uploads are not resumed.</p> : null}
         <form onSubmit={submit} className={styles.actions}>
           <label>{archiveLabel}<input type="file" name="archive" accept={off ? ".gz,application/gzip" : ".zip,application/zip"} required disabled={catalog.busy || upload !== null} /></label>
-          <button className={styles.primary} type="submit" disabled={catalog.busy || upload !== null}>{catalog.installed ? `Replace or reimport ${name}` : `Install ${name}`}</button>
+          <button className={styles.primary} type="submit" disabled={catalog.busy || upload !== null}>{retryable ? `Retry ${name} installation` : catalog.installed ? `Replace or reimport ${name}` : `Install ${name}`}</button>
           <noscript>Enable JavaScript to upload a catalog and view import progress.</noscript>
         </form>
         <p className={styles.note}>Saved Food Entries keep their original nutrition and measurements.</p>

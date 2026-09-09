@@ -15,6 +15,11 @@ const coveragePath = path.join(
   "coverage",
   "coverage-final.json",
 );
+const coverageExclusions = new Set([
+  "app/catalog/test-fixture.server.ts",
+  "app/photo-analysis/test-fixture.server.ts",
+  "server/playwright-https.js",
+]);
 
 async function listRuntimeSourceFiles(directory) {
   const entries = await readdir(path.join(repositoryRoot, directory), {
@@ -102,7 +107,7 @@ test("Fallow health consumes Vitest coverage and preserves gating exit codes", a
     ...(await listRuntimeSourceFiles("app")),
     ...(await listRuntimeSourceFiles("server")),
   ]
-    .filter((file) => file !== "app/catalog/test-fixture.server.ts")
+    .filter((file) => !coverageExclusions.has(file))
     .sort();
 
   assert.ok(coveredPaths.length > 0, "Vitest did not report any source files");

@@ -817,7 +817,6 @@ function catalogRouteState(
 
 function formString(formData: FormData, name: string): string {
   const value = formData.get(name);
-  // Stryker disable next-line StringLiteral: any non-string form part normalizes to the same rejected placeholder.
   return typeof value === "string" ? value : "";
 }
 
@@ -835,7 +834,6 @@ export async function action({ request }: Route.ActionArgs) {
   if (
     !getAuthenticationService().verifyCsrfToken(
       session.token,
-      // Stryker disable next-line StringLiteral: every placeholder for a missing opaque token is rejected identically.
       String(formData.get("csrfToken") ?? ""),
     )
   ) {
@@ -1295,7 +1293,6 @@ function CalendarView({
             </span>
           ))}
           {Array.from({ length: calendar.leadingEmptyDays }, (_, index) => (
-            // Stryker disable next-line StringLiteral: the opaque prefix does not change the uniqueness of index-based React keys.
             <span aria-hidden="true" key={`empty-${index}`} />
           ))}
           {calendar.days.map((day) => {
@@ -1396,12 +1393,10 @@ function catalogHref(date: string, food: string, query?: string, provider?: Cata
   return `/?${parameters}`;
 }
 
-// Stryker disable BlockStatement,ObjectLiteral,StringLiteral: the mobile browser scan journey asserts the exact recognized-barcode destination and one resulting lookup request.
 function barcodeCatalogHref(date: string, barcode: string): string {
   const parameters = new URLSearchParams({ barcode, date, food: "barcode" });
   return `/?${parameters}`;
 }
-// Stryker restore BlockStatement,ObjectLiteral,StringLiteral
 
 function formatEnergy(value: number | null): string {
   if (value === null) return "—";
@@ -1411,11 +1406,9 @@ function formatEnergy(value: number | null): string {
 }
 
 function formatCanonicalNutrient(value: number, unit: "g" | "mg"): string {
-  // Stryker disable ObjectLiteral,ConditionalExpression: stored integer milligrams have at most three fractional gram digits and no fractional milligram digits, matching Intl defaults exactly.
   return new Intl.NumberFormat("en-US", {
     maximumFractionDigits: unit === "g" ? 3 : 0,
   }).format(unit === "g" ? value / 1_000 : value);
-  // Stryker restore ObjectLiteral,ConditionalExpression
 }
 
 function progressStyle(known: number, goal: number): CSSProperties {
@@ -1560,7 +1553,6 @@ function DailySummary({
       Math.abs(horizontalDistance) >= Math.min(64, swipe.width * 0.2);
     if (shouldChangePage) {
       setNutrientPage((page) =>
-        // Stryker disable next-line EqualityOperator: shouldChangePage proves the distance is nonzero because its threshold is positive.
         horizontalDistance < 0
           ? Math.min(page + 1, metricPages.length - 1)
           : Math.max(page - 1, 0),
@@ -1598,7 +1590,6 @@ function DailySummary({
         goal: goal?.proteinTargetMilligrams ?? null,
         goalKind: "target",
         isIncomplete: totals.proteinMilligrams.isIncomplete,
-        // Stryker disable next-line StringLiteral: this opaque React key is already unique within its fixed list.
         key: "protein",
         known: totals.proteinMilligrams.known,
         label: "Protein",
@@ -1608,7 +1599,6 @@ function DailySummary({
         goal: goal?.carbohydrateTargetMilligrams ?? null,
         goalKind: "target",
         isIncomplete: totals.carbohydrateMilligrams.isIncomplete,
-        // Stryker disable next-line StringLiteral: this opaque React key is already unique within its fixed list.
         key: "carbohydrate",
         known: totals.carbohydrateMilligrams.known,
         label: "Carbohydrate",
@@ -1618,7 +1608,6 @@ function DailySummary({
         goal: goal?.fatTargetMilligrams ?? null,
         goalKind: "target",
         isIncomplete: totals.fatMilligrams.isIncomplete,
-        // Stryker disable next-line StringLiteral: this opaque React key is already unique within its fixed list.
         key: "fat",
         known: totals.fatMilligrams.known,
         label: "Fat",
@@ -1630,7 +1619,6 @@ function DailySummary({
         goal: goal?.fiberTargetMilligrams ?? null,
         goalKind: "target",
         isIncomplete: totals.fiberMilligrams.isIncomplete,
-        // Stryker disable next-line StringLiteral: this opaque React key is already unique within its fixed list.
         key: "fiber",
         known: totals.fiberMilligrams.known,
         label: "Fiber",
@@ -1640,7 +1628,6 @@ function DailySummary({
         goal: goal?.sugarMaximumMilligrams ?? null,
         goalKind: "maximum",
         isIncomplete: totals.sugarMilligrams.isIncomplete,
-        // Stryker disable next-line StringLiteral: this opaque React key is already unique within its fixed list.
         key: "sugar",
         known: totals.sugarMilligrams.known,
         label: "Sugar",
@@ -1650,7 +1637,6 @@ function DailySummary({
         goal: goal?.sodiumMaximumMilligrams ?? null,
         goalKind: "maximum",
         isIncomplete: totals.sodiumMilligrams.isIncomplete,
-        // Stryker disable next-line StringLiteral: this opaque React key is already unique within its fixed list.
         key: "sodium",
         known: totals.sodiumMilligrams.known,
         label: "Sodium",
@@ -1927,7 +1913,6 @@ function FoodDetailStage({
     food.measurements[0];
   const numericQuantity = Number(quantity);
   const multiplier =
-    // Stryker disable next-line EqualityOperator: accepting zero still produces the identical zero multiplier.
     measurement && Number.isFinite(numericQuantity) && numericQuantity > 0
       ? (measurement.baseQuantityMicrounits /
           food.authoritativeBaseQuantityMicrounits) *
@@ -2151,7 +2136,6 @@ function useModalDialog({
   const navigate = useNavigate();
   const previousFocusRef = useRef<HTMLElement | null>(null);
 
-  // Stryker disable ConditionalExpression,LogicalOperator,BooleanLiteral,BlockStatement,OptionalChaining,CallExpression,ArrayDeclaration: browser focus/cleanup behavior is covered directly; remaining variants are defensive DOM-null and one-shot-effect equivalents.
   useEffect(() => {
     if (
       !previousFocusRef.current &&
@@ -2179,7 +2163,6 @@ function useModalDialog({
       });
     };
   }, [initialFocusSelector, restoreFocusSelector]);
-  // Stryker restore ConditionalExpression,LogicalOperator,BooleanLiteral,BlockStatement,OptionalChaining,CallExpression,ArrayDeclaration
 
   function closeDialog() {
     void navigate(closeHref);
@@ -2192,16 +2175,13 @@ function useModalDialog({
       return;
     }
     if (event.key !== "Tab") return;
-    // Stryker disable MethodExpression,OptionalChaining,ArrayDeclaration,ConditionalExpression: the dialog-ref and visible-element browser invariants are exercised by the keyboard focus-loop tests.
     const focusable = [
       ...(dialogRef.current?.querySelectorAll<HTMLElement>(
         'button:not([disabled]), input:not([type="hidden"]):not([disabled]), select:not([disabled]), a[href]',
       ) ?? []),
     ].filter((element) => element.offsetParent !== null);
-    // Stryker restore MethodExpression,OptionalChaining,ArrayDeclaration,ConditionalExpression
     const first = focusable[0];
     const last = focusable.at(-1);
-    // Stryker disable next-line ConditionalExpression,LogicalOperator: rendered dialogs always contain tested visible controls.
     if (!first || !last) return;
     if (event.shiftKey && document.activeElement === first) {
       event.preventDefault();
@@ -2464,7 +2444,6 @@ function WaterEventDialog({
   dialog: WaterDialogState;
   displayUnits: DisplayUnits;
 }) {
-  // Stryker disable next-line ConditionalExpression: create-mode dialogs have no event property, so forcing the edit arm still yields undefined.
   const event = dialog.mode === "edit" ? dialog.event : undefined;
   const matchingPreset = event
     ? (Object.entries(waterPresetMicroliters).find(
@@ -2559,7 +2538,6 @@ function WaterEventDialog({
                     {formatWaterAmount(
                       waterPresetMicroliters[preset.selection],
                       displayUnits,
-                      // Stryker disable next-line ConditionalExpression: US preset conversions are exact whole fluid ounces, so zero and one maximum fraction digit render identically.
                       displayUnits === "metric" ? 0 : 1,
                     )}
                   </strong>
@@ -2648,7 +2626,6 @@ function WaterEventDialog({
                           : `Add ${formatWaterAmount(
                               waterPresetMicroliters[selection],
                               displayUnits,
-                              // Stryker disable next-line ConditionalExpression: US preset conversions are exact whole fluid ounces, so zero and one maximum fraction digit render identically.
                               displayUnits === "metric" ? 0 : 1,
                             )} ${unit}`}
                 </button>
@@ -3001,7 +2978,6 @@ function BarcodeCatalogStage({
   const [barcode, setBarcode] = useState(catalog.barcode);
   const [clientMessage, setClientMessage] = useState<string>();
   const validBarcode = catalogBarcode(barcode);
-  // Stryker disable next-line ConditionalExpression,LogicalOperator,StringLiteral: this opaque key only controls scanner remount identity across reviewed barcodes.
   const scannerKey = catalog.barcode || "new-scan";
 
   if (catalog.food && !catalog.message && !pending) {
@@ -3069,13 +3045,11 @@ function BarcodeCatalogStage({
       <BarcodeCameraScanner
         key={scannerKey}
         onDetected={
-          // Stryker disable BlockStatement,CallExpression: the mobile browser scan journey asserts the controlled input update, error reset, destination, and one lookup.
           (detectedBarcode) => {
             setBarcode(detectedBarcode);
             setClientMessage(undefined);
             void navigate(barcodeCatalogHref(date, detectedBarcode));
           }
-          // Stryker restore BlockStatement,CallExpression
         }
         stopRequested={navigationPending}
       />
@@ -3131,7 +3105,6 @@ function CatalogDialog({
     navigation.state !== "idle" &&
     !detailPending;
   const barcodePending = pendingFoodStage?.mode === "barcode";
-  // Stryker disable next-line ConditionalExpression: the blocked-navigation browser journey proves the pending-state teardown and restart guard.
   const navigationPending = navigation.state !== "idle";
   const closeHref = foodLogHref(date);
   const initialFocusSelector =
@@ -3922,7 +3895,6 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
                       return entry.kind === "food" ? (
                         <FoodTimelineEntry key={`food-${entry.id}`} entry={entry} photoMeal={photoMeals.find((meal) => meal.entryId === entry.id)} csrfToken={csrfToken} copyKey={copyIdempotencyKeys[entry.id]} />
                       ) : (
-                        // Stryker disable next-line StringLiteral: a single-prefix mutation preserves key uniqueness against the food prefix.
                         <article key={`water-${entry.id}`}>
                           <Link
                             className={`${styles.foodEntryCard} ${styles.waterEventCard}`}
@@ -4035,7 +4007,6 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
         />
       ) : null}
       {activeWaterDialog ? (
-        // Stryker disable ConditionalExpression,StringLiteral: this key controls React remount identity; its literal value is opaque within either dialog mode.
         <WaterEventDialog
           actionData={actionData}
           csrfToken={csrfToken}
@@ -4048,7 +4019,6 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
               : "create"
           }
         />
-        // Stryker restore ConditionalExpression,StringLiteral
       ) : null}
       {copyDialog ? (
         <CopyFoodEntryDialog

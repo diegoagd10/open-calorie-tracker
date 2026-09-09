@@ -48,7 +48,6 @@ export async function action({ request }: Route.ActionArgs) {
   }
 
   const formData = await request.formData();
-  // Stryker disable next-line StringLiteral: every placeholder for a missing opaque token is rejected identically.
   const csrfToken = String(formData.get("csrfToken") ?? "");
   if (!getAuthenticationService().verifyCsrfToken(session.token, csrfToken)) {
     throw new Response("CSRF token rejected.", { status: 403 });
@@ -115,7 +114,6 @@ export default function ChangePassword({
   actionData,
   loaderData,
 }: Route.ComponentProps) {
-  // Stryker disable next-line StringLiteral: these labels are arbitrary; only their distinction is observable.
   const formStateKey = actionData?.changed ? "changed" : "ready";
   return (
     <main className={styles.shell}>

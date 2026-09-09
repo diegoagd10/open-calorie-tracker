@@ -3,7 +3,6 @@ import BetterSqlite3 from "better-sqlite3";
 import type { CatalogFood } from "../catalog/food-catalog.server.ts";
 
 export function readOffGenerationFood(directory: string, generation: string, id: string): CatalogFood | undefined {
-  // Stryker disable next-line BooleanLiteral: either immutable-open option independently prevents a missing catalog from being created; their joint contract is tested.
   const database = new BetterSqlite3(path.join(directory, `${generation}.sqlite`), { readonly: true, fileMustExist: true });
   try {
     const row = database.prepare("SELECT record FROM products WHERE id = ?").get(id) as { record: string } | undefined;
@@ -12,7 +11,6 @@ export function readOffGenerationFood(directory: string, generation: string, id:
 }
 
 export function searchOffGeneration(directory: string, generation: string, expression: string, relevance: (food: CatalogFood) => number | null): CatalogFood[] {
-  // Stryker disable next-line BooleanLiteral: either immutable-open option independently prevents a missing catalog from being created; their joint contract is tested.
   const database = new BetterSqlite3(path.join(directory, `${generation}.sqlite`), { readonly: true, fileMustExist: true });
   try {
     database.function("food_relevance", record => relevance(JSON.parse(record as string) as CatalogFood));
