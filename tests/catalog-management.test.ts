@@ -275,6 +275,7 @@ test("shutdown interrupts the live worker and removes its partial generation", a
   await vi.waitFor(() => expect(management.read().job?.processedRecords).toBe(7));
   expect(management.read().job?.exclusions).toEqual({ invalid_record: 2 });
   await management.shutdown();
+  expect(management.outcomes()).toMatchObject([{ provider: "open-food-facts", phase: "interrupted", installed: null, acknowledgedAt: null }]);
   expect(management.read()).toMatchObject({ installed: null, busy: false, job: { phase: "interrupted", error: "Open Food Facts installation was interrupted by server shutdown. Upload the archive again." } });
   expect((await fs.readdir(directory)).filter(name => name.startsWith(management.read().job!.id))).toEqual([]);
 });
@@ -534,6 +535,7 @@ test("a retirement failure keeps the replacement usable, reports the handoff err
     expect(state.job?.phase).toBe("activating");
   });
   const replacement = management.read().installed!;
+  expect(management.outcomes()).toHaveLength(1);
   vi.mocked(fs.rm).mockRejectedValueOnce(new Error("private retirement failure"));
   release();
 
@@ -546,6 +548,9 @@ test("a retirement failure keeps the replacement usable, reports the handoff err
       job: { phase: "failed", error: "USDA catalog handoff failed. The replacement remains active; check catalog storage and restart the server." },
     });
   });
+  const failure = management.outcomes().find(outcome => outcome.jobId === replacement.generation)!;
+  expect(failure).toMatchObject({ phase: "failed", installed: replacement, acknowledgedAt: null });
+  expect(management.acknowledgeOutcome(failure.jobId, failure.completedAt)).toBe(true);
   await expect(management.submitArchive({ filename: "next.zip", stream: Readable.from(archive) })).rejects.toThrow("A USDA installation is already running.");
 
   const restarted = new CatalogManagement(database.getClient(), settings);
@@ -553,6 +558,9 @@ test("a retirement failure keeps the replacement usable, reports the handoff err
   await finished(restarted);
   expect(restarted.read()).toMatchObject({ installed: replacement, job: { phase: "succeeded", error: null } });
   expect(restarted.read().retiring).toBeUndefined();
+  expect(restarted.outcomes()).toHaveLength(2);
+  expect(restarted.outcomes().find(outcome => outcome.jobId === failure.jobId)).toMatchObject({ phase: "succeeded", installed: replacement, acknowledgedAt: null });
+  expect(restarted.acknowledgeOutcome(failure.jobId, failure.completedAt)).toBe(false);
   await expect(fs.access(path.join(directory, `${old.generation}.sqlite`))).rejects.toMatchObject({ code: "ENOENT" });
 });
 
@@ -669,7 +677,7 @@ test("Open Food Facts ignores the USDA-only update transport", async () => {
   saveCatalogUpdateCheck(database.getClient(), { status: "newer", checkedAt: "2026-09-09T14:30:00.000Z", availableRelease: officialRelease, error: null }, "open-food-facts");
   await management.checkForUpdate({ force: true });
   expect(transport.latestFoundationRelease).not.toHaveBeenCalled();
-  expect(management.read().updateCheck).toBeUndefined();
+  expect(management.read().updateCheck).toMatchObject({ status: "indeterminate", availableSnapshot: null });
 });
 
 test.each([
@@ -834,4 +842,27 @@ test.each([
   await finished(management);
   expect(management.read()).toMatchObject({ installed: { filename }, job: { phase: "succeeded" }, updateCheck: { status: "indeterminate" } });
   expect(management.read().installed?.sourceRelease).toBeUndefined();
+});
+
+
+test("terminal outcomes survive replacement and acknowledgement across management instances", async () => {
+  const { management, database, settings } = await setup();
+  await management.submitArchive({ filename: "products.gz", stream: Readable.from(offArchive()) });
+  expect(management.outcomes()).toEqual([]);
+  await finished(management);
+  const outcome = management.outcomes()[0];
+  expect(outcome).toMatchObject({ provider: "open-food-facts", jobId: management.read().job!.id, phase: "succeeded", filename: "products.gz", installed: { filename: "products.gz", foodCount: 1 }, acknowledgedAt: null });
+  management.acknowledgeOutcome(outcome.jobId, outcome.completedAt);
+  management.acknowledgeOutcome(outcome.jobId, outcome.completedAt);
+  const acknowledged = management.outcomes();
+  expect(acknowledged).toHaveLength(1);
+  expect(acknowledged[0].acknowledgedAt).not.toBeNull();
+  await management.submitArchive({ filename: "broken.gz", stream: Readable.from("invalid gzip") });
+  await finished(management);
+  const restarted = new CatalogManagement(database.getClient(), settings);
+  cleanups.unshift(() => restarted.shutdown());
+  expect(restarted.outcomes()).toHaveLength(2);
+  expect(restarted.outcomes()).toContainEqual(acknowledged[0]);
+  expect(restarted.outcomes().find(item => item.phase === "failed")).toMatchObject({ filename: "broken.gz", installed: outcome.installed, acknowledgedAt: null });
+  expect(restarted.outcomes()).toEqual(restarted.outcomes());
 });

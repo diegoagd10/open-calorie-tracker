@@ -6,6 +6,7 @@
   },
   "dynamicallyLoaded": [
     "server/playwright-https.js",
+    "tests/browser/off-metadata-fixture.mjs",
     "server/app.ts",
     "app/catalog-management/import-worker.ts",
     "tests/support/restored-usda-worker.mjs"

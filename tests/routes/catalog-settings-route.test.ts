@@ -6,7 +6,10 @@ import { afterAll, beforeAll, expect, test, vi } from "vitest";
 import { serializeSessionCookie } from "../../app/auth/http.server";
 import { getAuthenticationService } from "../../app/auth/runtime.server";
 import { getApplicationDatabase, shutdownApplicationDatabase } from "../../app/database/runtime.server";
+import type { CatalogOutcome } from "../../app/catalog-management/catalog-management.server";
 import { getCatalogManagement, shutdownCatalogManagement } from "../../app/catalog-management/runtime.server";
+import { loader as notificationLoader, action as notificationAction } from "../../app/routes/catalog-notifications";
+import { loader as rootLoader } from "../../app/root";
 import { action, loader, headers } from "../../app/routes/settings.catalogs";
 import { seedAuthenticatedAccount } from "../support/authentication";
 import { offArchive, offWithBasis } from "../support/off-archive";
@@ -22,8 +25,8 @@ function get(cookie = adminCookie) { return args(new Request(`${origin}/settings
 function post(body: Uint8Array, cookie = adminCookie, csrf = csrfToken, requestOrigin = origin) {
   return args(new Request(`${origin}/settings/catalogs`, { method: "POST", headers: { Cookie: cookie, Origin: requestOrigin, "X-CSRF-Token": csrf, "X-Archive-Name": "foundation.zip", "Content-Type": "application/zip" }, body: new Uint8Array(body) }));
 }
-function checkAgain(cookie = adminCookie, csrf = csrfToken, requestOrigin = origin) {
-  return args(new Request(`${origin}/settings/catalogs`, { method: "POST", headers: { Cookie: cookie, Origin: requestOrigin, "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8" }, body: new URLSearchParams({ csrfToken: csrf, intent: "check-usda-update" }) }));
+function checkAgain(cookie = adminCookie, csrf = csrfToken, requestOrigin = origin, intent = "check-usda-update") {
+  return args(new Request(`${origin}/settings/catalogs`, { method: "POST", headers: { Cookie: cookie, Origin: requestOrigin, "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8" }, body: new URLSearchParams({ csrfToken: csrf, intent }) }));
 }
 beforeAll(async () => {
   directory = await mkdtemp(path.join(tmpdir(), "catalog-settings-"));
@@ -174,4 +177,59 @@ test("OFF upload and replacement have their own authorization, state and install
   expect(replaced.catalog).toEqual(before);
   expect(replaced.offCatalog).toMatchObject({ installed: { foodCount: 1, filename: "replacement.csv.gz" }, job: { phase: "succeeded", importedRecords: 1, rejectedRecords: 0 } });
   expect(replaced.offCatalog.installed?.generation).not.toBe(firstGeneration);
+});
+
+
+test("administrator notifications consume real independent outcomes, persist acknowledgement and deny members", async () => {
+  await expect(notificationLoader(get(memberCookie))).rejects.toMatchObject({ status: 404 });
+  await expect(notificationLoader(get(""))).rejects.toMatchObject({ status: 302 });
+  expect(await rootLoader(get(memberCookie))).toEqual({ catalogAdministrator: false });
+  expect(await rootLoader(get())).toEqual({ catalogAdministrator: true });
+  const before = await (await notificationLoader(get())).json() as { outcomes: CatalogOutcome[] };
+  const upload = post(new Uint8Array([1, 2]));
+  upload.request.headers.set("X-Catalog-Provider", "open-food-facts");
+  upload.request.headers.set("Content-Type", "application/gzip");
+  upload.request.headers.set("X-Archive-Name", "failure.gz");
+  await action(upload);
+  await vi.waitFor(() => expect(getCatalogManagement("open-food-facts").read().busy).toBe(false));
+  const response = await notificationLoader(get());
+  expect(response.headers.get("Cache-Control")).toBe("no-store");
+  const result = await response.json() as { outcomes: CatalogOutcome[] };
+  expect(result.outcomes).toHaveLength(before.outcomes.length + 1);
+  expect(result.outcomes).toEqual(expect.arrayContaining([
+    expect.objectContaining({ provider: "usda-fdc", phase: "succeeded" }),
+    expect.objectContaining({ provider: "open-food-facts", phase: "succeeded" }),
+    expect.objectContaining({ provider: "open-food-facts", phase: "failed", filename: "failure.gz" }),
+  ]));
+  expect(await (await notificationLoader(get())).json()).toEqual(result);
+  const failed = result.outcomes.find((item: { phase: string }) => item.phase === "failed")!;
+  expect(failed.installed?.filename).toBe("replacement.csv.gz");
+  function acknowledge(cookie = adminCookie, csrf = csrfToken, requestOrigin = origin, jobId = failed.jobId, completedAt = failed.completedAt, provider: string = failed.provider) {
+    return args(new Request(`${origin}/catalog-notifications`, { method: "POST", headers: { Cookie: cookie, Origin: requestOrigin }, body: new URLSearchParams({ csrfToken: csrf, provider, jobId, completedAt }) }));
+  }
+  await expect(notificationAction(acknowledge(memberCookie))).rejects.toMatchObject({ status: 404 });
+  await expect(notificationAction(acknowledge(adminCookie, "wrong"))).rejects.toMatchObject({ status: 403 });
+  await expect(notificationAction(acknowledge(adminCookie, csrfToken, "https://attacker.example"))).rejects.toMatchObject({ status: 403 });
+  expect((await notificationAction(acknowledge(adminCookie, csrfToken, origin, "missing"))).status).toBe(409);
+  expect((await notificationAction(acknowledge(adminCookie, csrfToken, origin, failed.jobId, "stale"))).status).toBe(409);
+  expect((await notificationAction(acknowledge(adminCookie, csrfToken, origin, failed.jobId, failed.completedAt, "unknown"))).status).toBe(400);
+  expect((await notificationAction(acknowledge())).status).toBe(200);
+  expect((await notificationAction(acknowledge())).status).toBe(200);
+  await shutdownCatalogManagement();
+  const reloaded = await (await notificationLoader(get())).json() as { outcomes: CatalogOutcome[] };
+  expect(reloaded.outcomes).toHaveLength(result.outcomes.length);
+  expect(reloaded.outcomes.find((item: { jobId: string }) => item.jobId === failed.jobId)!.acknowledgedAt).not.toBeNull();
+  expect(reloaded.outcomes.filter((item: { acknowledgedAt: string | null }) => item.acknowledgedAt !== null)).toHaveLength(1);
+});
+
+
+test("OFF check-again enforces administrator, origin and CSRF and leaves USDA and imports unchanged", async () => {
+  await expect(action(checkAgain(memberCookie, csrfToken, origin, "check-off-update"))).rejects.toMatchObject({ status: 404 });
+  await expect(action(checkAgain(adminCookie, "invalid", origin, "check-off-update"))).rejects.toMatchObject({ status: 403 });
+  await expect(action(checkAgain(adminCookie, csrfToken, "https://attacker.example", "check-off-update"))).rejects.toMatchObject({ status: 403 });
+  const before = await loader(get());
+  expect((await action(checkAgain(adminCookie, csrfToken, origin, "check-off-update"))).status).toBe(200);
+  const after = await loader(get());
+  expect(after.catalog).toEqual(before.catalog);
+  expect(after.offCatalog).toMatchObject({ installed: before.offCatalog.installed, job: before.offCatalog.job, updateCheck: { status: "indeterminate" } });
 });

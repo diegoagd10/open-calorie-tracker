@@ -216,3 +216,38 @@ test("connection errors refresh the durable server outcome and allow retry", asy
   expect(uploadButton(card("open-food-facts")).props.disabled).toBe(false);
   expect(load).toHaveBeenCalledTimes(2);
 });
+
+test.each([
+  ["newer", "A newer OFF export snapshot is available."],
+  ["unchanged", "No change detected in the OFF export."],
+  ["unavailable", "OFF snapshot metadata is temporarily unavailable."],
+  ["indeterminate", "OFF snapshot metadata cannot be compared safely."],
+] as const)("OFF %s state is visible independently of USDA and unknown uploads", async (status, message) => {
+  const { card } = await render(empty, { ...empty, updateCheck: { status, checkedAt: "2026-09-09T14:30:00.000Z", availableRelease: null, availableSnapshot: null, error: null } });
+  const off = card("open-food-facts");
+  expect(text(off)).toContain(message);
+  expect(text(off)).toContain("Installed official snapshot: Unknown");
+  expect(text(off)).toContain("Last checked: 9/9/2026, 10:30:00 AM");
+  expect(text(off)).toContain("Check OFF updates again");
+  expect(text(card("usda-fdc"))).not.toContain(message);
+  expect(uploadInput(off).props.disabled).toBe(false);
+});
+
+test("OFF displays matched snapshot dates separately from unknown dates and unchecked status", async () => {
+  const snapshot = { lastModified: "2026-09-07T12:00:00.000Z", etag: '"snapshot"', archiveByteLength: 252, crc64nvme: "JX7I3P/MX4I=" };
+  const installed = { generation: "generation", filename: "renamed.gz", sha256: "abc", installedAt: "2026-09-08T13:00:00.000Z", foodCount: 1, publicationDateRange: { earliest: "", latest: "" }, sourceSnapshot: snapshot };
+  const checked = await render(empty, { ...empty, installed, updateCheck: { status: "newer", checkedAt: "2026-09-09T14:30:00.000Z", availableRelease: null, availableSnapshot: { ...snapshot, lastModified: "2026-09-09T12:00:00.000Z" }, error: null } });
+  const off = checked.card("open-food-facts");
+  expect(text(off)).toContain("Installed official snapshot: 2026-09-07T12:00:00.000Z");
+  expect(text(off)).toContain("Available export last modified: 2026-09-09T12:00:00.000Z");
+  expect(text(off)).not.toContain("The uploaded archive has not been matched");
+  expect(off.findByProps({ name: "intent" }).props.value).toBe("check-off-update");
+  expect(checked.card("usda-fdc").findByProps({ name: "intent" }).props.value).toBe("check-usda-update");
+
+  const withoutDate = await render(empty, { ...empty, installed: { ...installed, sourceSnapshot: { ...snapshot, lastModified: null } } });
+  const unknown = withoutDate.card("open-food-facts");
+  expect(text(unknown)).toContain("Installed official snapshot: Matched export; date unknown");
+  expect(text(unknown)).toContain("Available export last modified: Unknown");
+  expect(text(unknown)).toContain("OFF update status has not been checked.");
+  expect(text(unknown.findByProps({ name: "intent" }))).toBe("Check OFF updates");
+});

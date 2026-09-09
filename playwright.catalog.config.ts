@@ -6,5 +6,5 @@ export default defineConfig({
   testIgnore: [],
   testMatch: "catalog-settings.spec.ts",
   projects: [{ name: "chromium", use: { browserName: "chromium" } }],
-  webServer: { ...base.webServer, command: server.command.replace("FOOD_CATALOG_TEST_FIXTURE=1", "FOOD_CATALOG_TEST_FIXTURE=0 CATALOG_BUILT_WORKER=1") },
+  webServer: { ...base.webServer, command: server.command.replace("FOOD_CATALOG_TEST_FIXTURE=1", "FOOD_CATALOG_TEST_FIXTURE=0 CATALOG_BUILT_WORKER=1").replace("--import ./tests/browser/pi-oauth-fixture.mjs", "--import ./tests/browser/pi-oauth-fixture.mjs --import ./tests/browser/off-metadata-fixture.mjs") },
 });
