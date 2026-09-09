@@ -1336,52 +1336,71 @@ function CalendarView({
   );
 }
 
-function EmptyActionForm({
+function QuickLogActionForm({
   className,
   csrfToken,
   date,
+  icon,
   intent,
   label,
-  timelineMarker,
 }: {
   className: string;
   csrfToken: string;
   date: string;
+  icon: "utensils" | "water";
   intent: "add-food" | "add-water";
   label: string;
-  timelineMarker?: "food" | "water";
 }) {
   return (
     <Form method="post">
       <input name="csrfToken" type="hidden" value={csrfToken} />
       <input name="date" type="hidden" value={date} />
       <button
+        aria-label={label}
         className={className}
         data-food-dialog-trigger={intent === "add-food" ? true : undefined}
         data-water-dialog-trigger={intent === "add-water" ? true : undefined}
         name="intent"
+        title={label}
         type="submit"
         value={intent}
       >
-        {timelineMarker ? (
-          <>
-            <span
-              aria-hidden="true"
-              className={`${styles.timelineActionMarker} ${
-                timelineMarker === "food"
-                  ? styles.timelineActionFood
-                  : styles.timelineActionWater
-              }`}
-            >
-              <UiIcon name="plus" />
-            </span>
-            <span>{label}</span>
-          </>
-        ) : (
-          label
-        )}
+        <UiIcon name={icon} />
       </button>
     </Form>
+  );
+}
+
+function QuickLogActions({
+  csrfToken,
+  date,
+}: {
+  csrfToken: string;
+  date: string;
+}) {
+  return (
+    <div
+      aria-label="Quick log"
+      className={styles.quickLogActions}
+      role="group"
+    >
+      <QuickLogActionForm
+        className={`${styles.quickLogButton} ${styles.quickLogFood}`}
+        csrfToken={csrfToken}
+        date={date}
+        icon="utensils"
+        intent="add-food"
+        label="Add Food"
+      />
+      <QuickLogActionForm
+        className={`${styles.quickLogButton} ${styles.quickLogWater}`}
+        csrfToken={csrfToken}
+        date={date}
+        icon="water"
+        intent="add-water"
+        label="Add Water"
+      />
+    </div>
   );
 }
 
@@ -3773,6 +3792,7 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
     ? { event: actionData.waterEventEditor, mode: "edit" as const }
     : waterDialog;
   const navigation = useNavigation();
+  const showQuickLog = !calendar && !foodLog.isFuture;
   const foodLogPending = navigation.formData?.get("intent") === "log-food";
   const pendingFoodName =
     catalog?.mode === "detail"
@@ -3798,6 +3818,14 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
         <AppNavigation
           active={calendar ? "history" : "log"}
           csrfToken={csrfToken}
+          floatingActions={
+            showQuickLog ? (
+              <QuickLogActions
+                csrfToken={csrfToken}
+                date={foodLog.selectedDate}
+              />
+            ) : undefined
+          }
           selectedDate={foodLog.selectedDate}
           today={foodLog.today}
         />
@@ -3869,15 +3897,7 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
                     </p>
                   </div>
                 ) : foodLog.events.length || foodLogPending || photoUpload.feedback || photoMeals.length ? (
-                  <section className={styles.timeline} aria-label="Daily log entries">
-                    <EmptyActionForm
-                      className={styles.timelineAddFood}
-                      csrfToken={csrfToken}
-                      date={foodLog.selectedDate}
-                      intent="add-food"
-                      label="Add Food"
-                      timelineMarker="food"
-                    />
+                  <section className={styles.entryList} aria-label="Daily log entries">
                     {foodLogPending ? (
                       <PendingFoodEntry name={pendingFoodName} />
                     ) : null}
@@ -3931,14 +3951,6 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
                         </article>
                       );
                     })}
-                    <EmptyActionForm
-                      className={styles.timelineAddWater}
-                      csrfToken={csrfToken}
-                      date={foodLog.selectedDate}
-                      intent="add-water"
-                      label="Add Water"
-                      timelineMarker="water"
-                    />
                     {actionData?.message ? (
                       <p className={styles.actionMessage} role="status">
                         {actionData.message}
@@ -3953,25 +3965,9 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
                     <h3>No entries for this day</h3>
                     <p>
                       {foodLog.selectedDate === foodLog.today
-                        ? "Start today’s Food Log with food or water when you’re ready."
-                        : "Past-day entries start at 12:00 PM. Add food or water when you’re ready."}
+                        ? "Use the floating food or water action when you’re ready."
+                        : "Past-day entries start at 12:00 PM. Use the floating food or water action when you’re ready."}
                     </p>
-                    <div className={styles.emptyActions}>
-                      <EmptyActionForm
-                        className={styles.primaryButton}
-                        csrfToken={csrfToken}
-                        date={foodLog.selectedDate}
-                        intent="add-food"
-                        label="Add Food"
-                      />
-                      <EmptyActionForm
-                        className={styles.secondaryButton}
-                        csrfToken={csrfToken}
-                        date={foodLog.selectedDate}
-                        intent="add-water"
-                        label="Add Water"
-                      />
-                    </div>
                     {actionData?.message ? (
                       <p className={styles.actionMessage} role="status">
                         {actionData.message}

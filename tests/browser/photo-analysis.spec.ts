@@ -67,9 +67,10 @@ test("plate capture returns to Daily Log, survives reload, and supports correcti
   await page.getByRole("button", { name: "Add to Food Log", exact: true }).click();
   await expect(meals.getByRole("link", { name: /Timeline egg/ })).toBeVisible();
   await expect(meals.getByRole("link")).toHaveCount(2);
-  const order = await meals.locator("a, button").allTextContents();
-  expect(order[0]).toContain("Add Food");
-  expect(order.at(-1)).toContain("Add Water");
+  const order = await meals.getByRole("link").allTextContents();
+  expect(order[0]).toContain("Timeline egg");
+  expect(order[1]).toContain("Photo rice plate");
+  await expect(meals.getByRole("button", { name: /Add (Food|Water)/ })).toHaveCount(0);
   const photoCard = meals.getByRole("link", { name: /Photo rice plate/ });
   const manualCard = meals.getByRole("link", { name: /Timeline egg/ });
   await expect(photoCard).toBeVisible();
@@ -78,7 +79,6 @@ test("plate capture returns to Daily Log, survives reload, and supports correcti
   expect(photoBox!.x).toBe(manualBox!.x);
   expect(photoBox!.width).toBe(manualBox!.width);
   expect(photoBox!.height).toBe(manualBox!.height);
-  await page.getByRole("button", { name: "Add Water", exact: true }).scrollIntoViewIfNeeded();
   await page.screenshot({ path: testInfo.outputPath("unified-timeline-mobile.png") });
   await meals.getByRole("link", { name: /Photo rice plate/ }).click();
   await expect(page.getByRole("region", { name: "Photo analysis details" }).getByRole("img")).toBeVisible();
@@ -104,7 +104,6 @@ test("plate capture returns to Daily Log, survives reload, and supports correcti
     await expect(updating).toContainText("250 kcal");
     await expect(updating.getByRole("button", { name: /Copy/ })).toHaveCount(0);
     await expect(meals.getByRole("link", { name: /Timeline egg/ })).toBeEnabled();
-    await meals.getByRole("button", { name: "Add Water", exact: true }).scrollIntoViewIfNeeded();
     await page.screenshot({ path: testInfo.outputPath("correcting-same-entry.png") });
   } finally {
     resumeCorrection();
