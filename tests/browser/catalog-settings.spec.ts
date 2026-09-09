@@ -26,6 +26,11 @@ test("administrator installs USDA from mobile Settings, leaves during import, an
   await expect(page.getByText("USDA installation complete", { exact: true })).toBeVisible({ timeout: 15000 });
   await expect(page.getByText(/\d+ foods installed/, { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Install USDA Foundation" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Replace or reimport USDA Foundation" })).toBeVisible();
+  await page.getByLabel("Foundation CSV ZIP").setInputFiles({ name: "foundation-browser-reimport.zip", mimeType: "application/zip", buffer: archive });
+  await page.getByRole("button", { name: "Replace or reimport USDA Foundation" }).click();
+  await expect(page.getByText("USDA installation complete", { exact: true })).toBeVisible({ timeout: 15000 });
+  await expect(page.getByText("Archive: foundation-browser-reimport.zip", { exact: true })).toBeVisible();
   await page.reload();
   await expect(page.getByText("USDA installation complete", { exact: true })).toBeVisible();
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);

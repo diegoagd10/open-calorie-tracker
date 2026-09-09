@@ -10,7 +10,7 @@ import type { CatalogState, ImportPhase } from "../../app/catalog-management/cat
 const renderers: ReactTestRenderer[] = [];
 afterEach(async () => { for (const renderer of renderers.splice(0)) await act(() => renderer.unmount()); vi.useRealTimers(); vi.unstubAllGlobals(); });
 const empty: CatalogState = { installed: null, job: null, busy: false };
-function job(phase: ImportPhase): NonNullable<CatalogState["job"]> { return { id: "job", filename: "archive.gz", phase, receivedBytes: 1234, processedRecords: 5678, exclusions: {}, error: null, startedAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z" }; }
+function job(phase: ImportPhase): NonNullable<CatalogState["job"]> { return { id: "job", filename: "archive.gz", phase, receivedBytes: 1234, processedRecords: 5678, importedRecords: 4321, rejectedRecords: 123, exclusions: {}, error: null, startedAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z" }; }
 function text(node: ReactTestInstance): string { return node.children.map(child => typeof child === "string" ? child : text(child)).join(""); }
 async function render(catalog = empty, offCatalog = empty) {
   const load = vi.fn(() => ({ catalog, offCatalog, today: "2026-09-08", csrfToken: "catalog-csrf" }));
@@ -55,6 +55,12 @@ test.each([
   if (phase === "failed") expect(text(off.findByProps({ role: "alert" }))).toBe("Archive rejected");
 });
 
+test("USDA progress distinguishes imported foods from rejected food records", async () => {
+  const { card } = await render({ ...empty, busy: true, job: job("importing") });
+  expect(text(card("usda-fdc").findByProps({ role: "status" }))).toContain("4,321 foods imported · 123 food records rejected");
+  expect(text(card("open-food-facts").findByProps({ role: "status" }))).not.toContain("foods imported");
+});
+
 test.each([undefined, { earliest: null, latest: null }, { earliest: "2024-01-01", latest: "2025-01-01" }])("installed sources show distinct dates and immutable snapshot metadata %#", async sourceDateRange => {
   const installed = { generation: "generation", filename: "release.csv.gz", sha256: "abc123", installedAt: new Date(2026, 0, 2, 3, 4, 5).toISOString(), foodCount: 1234, publicationDateRange: { earliest: "2020-01-01", latest: "2023-01-01" }, sourceDateRange };
   const { card } = await render({ ...empty, installed, job: job("succeeded") }, { ...empty, installed });
@@ -69,6 +75,9 @@ test.each([undefined, { earliest: null, latest: null }, { earliest: "2024-01-01"
   expect(text(off)).toContain("Installed: 1/2/2026, 3:04:05 AM");
   expect(text(off)).toContain("Catalog replacement is not available yet.");
   expect(off.findAllByType("form")).toHaveLength(0);
+  expect(text(usda)).toContain("Upload a newer Foundation archive, or deliberately reimport this archive, while the installed catalog remains available.");
+  expect(text(usda.findByType("button"))).toBe("Replace or reimport USDA Foundation");
+  expect(usda.findByType("input").props.disabled).toBe(false);
 });
 
 test("busy catalogs poll, stop polling on unmount, and idle catalogs do not poll", async () => {

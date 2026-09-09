@@ -64,6 +64,7 @@ export type FoodCatalogDiagnostic = {
 
 export type CatalogOperationContext = {
   requestId: string;
+  reviewedCatalogGeneration?: string;
 };
 
 export type CatalogFood = CatalogSearchResult & {

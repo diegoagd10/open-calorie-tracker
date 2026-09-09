@@ -27,7 +27,7 @@ test("Foundation uses specific Atwater energy, normalized source names and exact
   expect(imported.search('"creme"*').map(food => food.providerFoodId)).toEqual(["1"]);
   expect(imported.read("99")).toBeUndefined();
   expect(imported.messages.filter(message => message.progress?.phase).map(message => message.progress?.phase)).toEqual(["validating", "importing", "indexing", "indexing"]);
-  expect(imported.messages.at(-2)?.progress).toEqual({ phase: "indexing", processedRecords: 10, exclusions: {} });
+  expect(imported.messages.at(-2)?.progress).toEqual({ phase: "indexing", processedRecords: 10, importedRecords: 1, rejectedRecords: 0, exclusions: {} });
 });
 
 test.each([
@@ -55,7 +55,7 @@ test("Foundation emits progress while skipping a large run of research records",
   const research = Array.from({ length: 1999 }, (_, index) => `${index + 2},sample_food,Research,2024-01-01\n`).join("");
   const imported = await install({ "food.csv": "fdc_id,data_type,description,publication_date\n1,foundation_food,Food,2024-01-01\n" + research });
   expect(imported.messages.filter(message => message.progress?.phase === "importing").map(message => message.progress?.processedRecords)).toEqual([0, 2000]);
-  expect(imported.messages.at(-2)?.progress).toEqual({ phase: "indexing", processedRecords: 2009, exclusions: { research_record: 1999 } });
+  expect(imported.messages.at(-2)?.progress).toEqual({ phase: "indexing", processedRecords: 2009, importedRecords: 1, rejectedRecords: 1999, exclusions: { research_record: 1999 } });
 });
 
 test.each(["bad1", "1bad", "01"])("Foundation rejects malformed source identifier %s", async id => {
@@ -81,6 +81,7 @@ test("research records, invalid foods and invalid subtype IDs are counted, while
   expect(imported.final.result).toEqual({ foodCount: 2, publicationDateRange: { earliest: "2020-01-01", latest: "2025-01-01" } });
   expect(imported.read("1")?.name).toBe("valid");
   expect(imported.read("2")).toMatchObject({ isSelectable: false, measurementSummary: "Calories unavailable" });
+  expect(imported.messages.at(-2)?.progress).toMatchObject({ importedRecords: 2, rejectedRecords: 8 });
   expect(imported.messages.at(-2)?.progress?.exclusions).toEqual({ research_record: 4, invalid_food_record: 4, invalid_subtype_record: 1, food_without_calories: 1 });
 });
 
