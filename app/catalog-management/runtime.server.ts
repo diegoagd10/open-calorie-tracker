@@ -11,6 +11,7 @@ function configuration() {
   return z.object({
     CATALOG_DIRECTORY: z.string().trim().min(1).optional(),
     DATABASE_PATH: z.string().optional(),
+    PORT: z.coerce.number().int().min(1).max(65_535).default(3000),
     OFF_CATALOG_MAX_UPLOAD_BYTES: z.coerce.number().int().positive().default(4 * 1024 ** 3),
     OFF_CATALOG_MAX_EXPANDED_BYTES: z.coerce.number().int().positive().default(32 * 1024 ** 3),
     CATALOG_MAX_UPLOAD_BYTES: z.coerce.number().int().positive().default(64 * 1024 * 1024),
@@ -20,6 +21,10 @@ function configuration() {
 export function catalogDirectory() {
   const config = configuration();
   return path.resolve(config.CATALOG_DIRECTORY ?? path.join(path.dirname(config.DATABASE_PATH ?? "data/open-calory-tracker.sqlite"), "catalogs"));
+}
+
+export function localCatalogImportBaseUrl() {
+  return `http://127.0.0.1:${configuration().PORT}`;
 }
 
 const current = new Map<CatalogProviderId, { database: ApplicationDatabaseClient; management: CatalogManagement }>();

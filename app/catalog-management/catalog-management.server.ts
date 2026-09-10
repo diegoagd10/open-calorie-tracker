@@ -221,7 +221,7 @@ export class CatalogManagement {
     return sameReleaseArtifact(installed, available) ? "unchanged" : "indeterminate";
   }
 
-  async submitArchive(input: { filename: string; stream: Readable; size?: number }): Promise<void> {
+  async submitArchive(input: { filename: string; stream: Readable; size?: number }): Promise<string> {
     await this.#maintenance;
     if (!input.filename.toLowerCase().endsWith(this.#extension) || input.filename.length > 255) throw new CatalogManagementError(`Choose a ${this.#label} ${this.#extension} archive.`);
     if (input.size !== undefined && (!Number.isSafeInteger(input.size) || input.size <= 0 || input.size > this.#options.maxUploadBytes)) throw new CatalogManagementError("Archive exceeds the configured upload limit or is empty.");
@@ -232,6 +232,7 @@ export class CatalogManagement {
     this.#upload = new AbortController();
     this.#operation = this.#receive(input, id, this.#upload.signal);
     await this.#operation;
+    return id;
   }
 
   #uploadChecksum() { return this.#options.provider === "open-food-facts" ? new OffArchiveChecksum() : undefined; }

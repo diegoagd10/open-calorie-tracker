@@ -110,6 +110,7 @@
           "vite.config.ts",
           "vite.recovery.config.ts",
           "vite.catalog.config.ts",
+          "vite.catalog-command.config.ts",
           "vitest.config.ts",
           "scripts/audit-dependencies.mjs",
           "scripts/calibrate-argon2.mjs",

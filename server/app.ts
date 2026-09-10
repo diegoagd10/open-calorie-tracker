@@ -7,6 +7,8 @@ import { resolveClientIp } from "./client-ip";
 import { shutdownApplicationDatabase } from "../app/database/runtime.server";
 import { getPhotoAnalysisService, shutdownPhotoAnalysis } from "../app/photo-analysis/runtime.server";
 import { getCatalogManagement, shutdownCatalogManagement } from "../app/catalog-management/runtime.server";
+import { ensureLocalCatalogImportToken } from "../app/catalog-management/local-import-control.server";
+import { mountLocalCatalogImport } from "./local-catalog-import";
 export async function shutdown() { shutdownPhotoAnalysis(); await shutdownCatalogManagement(); shutdownApplicationDatabase(); }
 
 initializeApplicationDatabase();
@@ -18,6 +20,10 @@ export const app = express();
 if (process.env.TRUST_PROXY) {
   app.set("trust proxy", process.env.TRUST_PROXY);
 }
+
+mountLocalCatalogImport(app, {
+  controlToken: await ensureLocalCatalogImportToken(),
+});
 
 app.use((request, _response, next) => {
   const testClientIp =
