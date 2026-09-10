@@ -32,14 +32,21 @@ async function start() {
   service.start("owner");
   await vi.waitFor(() => expect(sdk.login).toHaveBeenCalled());
 }
-
-test("Pi receives the configured private store without model discovery, and only device-code prompts are accepted", async () => {
+function authorizationUrl(state = "test-state") {
+  const url = new URL("https://auth.openai.com/oauth/authorize");
+  url.searchParams.set("response_type", "code");
+  url.searchParams.set("redirect_uri", "http://localhost:1455/auth/callback");
+  url.searchParams.set("state", state);
+  url.searchParams.set("code_challenge", "test-challenge");
+  return url.toString();
+}
+test("Pi receives the configured private store without model discovery and selects browser login", async () => {
   await start();
   expect(sdk.create).toHaveBeenCalledExactlyOnceWith({ authPath: "/private/app/auth.json", modelsPath: null, allowModelNetwork: false, refreshOnCreate: false });
   expect(sdk.login).toHaveBeenCalledWith("openai-codex", "oauth", expect.any(Object));
-  await expect(interaction.prompt({ type: "select", message: "Method", options: [{ id: "browser", label: "Browser" }, { id: "device_code", label: "Code" }] })).resolves.toBe("device_code");
-  await expect(interaction.prompt({ type: "select", message: "Unknown", options: [{ id: "browser", label: "Browser" }] })).rejects.toThrow("Device sign-in unavailable");
-  await expect(interaction.prompt({ type: "secret", message: "Password" })).rejects.toThrow("Device sign-in unavailable");
+  await expect(interaction.prompt({ type: "select", message: "Method", options: [{ id: "browser", label: "Browser" }, { id: "device_code", label: "Code" }] })).resolves.toBe("browser");
+  await expect(interaction.prompt({ type: "select", message: "Unknown", options: [{ id: "device_code", label: "Code" }] })).rejects.toThrow("Browser sign-in unavailable");
+  await expect(interaction.prompt({ type: "secret", message: "Password" })).rejects.toThrow("Browser sign-in unavailable");
   const state = await service.read("owner");
   expect(state).toMatchObject({ busy: true, attempt: { state: "starting" } });
   expect(state.attempt?.id).toMatch(/^[\da-f-]{36}$/);
@@ -47,24 +54,36 @@ test("Pi receives the configured private store without model discovery, and only
   await service.cancel("owner", state.attempt!.id);
 });
 
-test("provider messages and unsafe verification links never become browser content, and cancellation ignores late notifications", async () => {
+test("provider messages and unsafe authorization links never become browser content, and cancellation ignores late notifications", async () => {
   await start();
   interaction.notify({ type: "info", message: "secret-provider-output" });
-  expect((await service.read("owner")).attempt).not.toHaveProperty("userCode");
-  expect(() => interaction.notify({ type: "device_code", userCode: "1234", verificationUri: "https://evil.example" })).toThrow("Unexpected verification address");
+  expect((await service.read("owner")).attempt).not.toHaveProperty("authorizationUrl");
+  expect(() => interaction.notify({ type: "auth_url", url: "https://evil.example/oauth/authorize" })).toThrow("Unexpected authorization address");
+  expect(() => interaction.notify({ type: "auth_url", url: "https://auth.openai.com/oauth/authorize?redirect_uri=https%3A%2F%2Fattacker.example&state=x&code_challenge=y" })).toThrow("Unexpected authorization address");
   const now = Date.now();
-  interaction.notify({ type: "device_code", userCode: "SAFE-1234", verificationUri: "https://auth.openai.com/codex/device" });
+  interaction.notify({ type: "auth_url", url: authorizationUrl() });
   const state = await service.read("owner");
-  expect(state.attempt).toMatchObject({ userCode: "SAFE-1234", state: "waiting" });
+  expect(state.attempt).toMatchObject({ authorizationUrl: authorizationUrl(), state: "waiting" });
   expect(Date.parse(state.attempt!.expiresAt!)).toBeGreaterThanOrEqual(now + 15 * 60_000);
   expect(Date.parse(state.attempt!.expiresAt!)).toBeLessThan(now + 15 * 60_000 + 1000);
   await service.cancel("owner", state.attempt!.id);
-  interaction.notify({ type: "device_code", userCode: "LATE-1234", verificationUri: "https://auth.openai.com/codex/device" });
+  interaction.notify({ type: "auth_url", url: authorizationUrl("late-state") });
   expect(await service.read("owner")).toMatchObject({ busy: false, attempt: { state: "cancelled" } });
   const cancelled = await service.read("owner");
-  expect(cancelled.attempt?.userCode).toBeUndefined();
-  expect(JSON.stringify(cancelled)).not.toContain("SAFE-1234");
-  expect(JSON.stringify(cancelled)).not.toContain("LATE-1234");
+  expect(cancelled.attempt?.authorizationUrl).toBeUndefined();
+  expect(JSON.stringify(cancelled)).not.toContain("test-state");
+  expect(JSON.stringify(cancelled)).not.toContain("late-state");
+});
+
+test("Pi's manual-code fallback stays pending while the browser callback owns completion", async () => {
+  await start();
+  interaction.notify({ type: "auth_url", url: authorizationUrl() });
+  const response = interaction.prompt({ type: "manual_code", message: "Callback", signal: new AbortController().signal });
+  const id = (await service.read("owner")).attempt!.id;
+  const outcome = response.catch((error: unknown) => error);
+  await Promise.resolve();
+  await service.cancel("owner", id);
+  expect(await outcome).toMatchObject({ message: "Browser sign-in cancelled" });
 });
 
 test("SDK initialization and metadata read failures stay private and can be retried", async () => {

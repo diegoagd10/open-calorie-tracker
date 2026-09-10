@@ -1,11 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { CredentialSynchronizationError, type ModelRuntime } from "@earendil-works/pi-coding-agent";
 
+type AuthInteraction = Parameters<ModelRuntime["login"]>[2];
+type AuthPrompt = Parameters<AuthInteraction["prompt"]>[0];
+type AuthEvent = Parameters<AuthInteraction["notify"]>[0];
 type ConnectionAttempt = {
   id: string;
   state: "starting" | "waiting" | "disconnecting" | "connected" | "cancelled" | "failed";
-  userCode?: string;
-  verificationUri?: string;
+  authorizationUrl?: string;
   expiresAt?: string;
   error?: string;
 };
@@ -18,7 +20,34 @@ type PendingConnection = {
 
 export class PiConnectionConflict extends Error {}
 
-/** Instance-wide provider connection; only its initiating session sees the code. */
+const OPENAI_AUTHORIZATION_ORIGIN = "https://auth.openai.com";
+const OPENAI_AUTHORIZATION_PATH = "/oauth/authorize";
+const PI_CALLBACK_URL = "http://localhost:1455/auth/callback";
+
+function hasExpectedAuthorizationLocation(url: URL) {
+  return url.origin === OPENAI_AUTHORIZATION_ORIGIN
+    && url.pathname === OPENAI_AUTHORIZATION_PATH
+    && url.username === ""
+    && url.password === ""
+    && url.hash === "";
+}
+
+function hasExpectedAuthorizationParameters(url: URL) {
+  return url.searchParams.get("response_type") === "code"
+    && url.searchParams.get("redirect_uri") === PI_CALLBACK_URL
+    && Boolean(url.searchParams.get("state"))
+    && Boolean(url.searchParams.get("code_challenge"));
+}
+
+function trustedAuthorizationUrl(value: string) {
+  const url = new URL(value);
+  if (!hasExpectedAuthorizationLocation(url) || !hasExpectedAuthorizationParameters(url)) {
+    throw new Error("Unexpected authorization address");
+  }
+  return url.toString();
+}
+
+/** Instance-wide provider connection; only its initiating session sees the authorization link. */
 export class PiConnectionService {
   private runtime?: Promise<ModelRuntime>;
   private attempt?: PendingConnection;
@@ -82,6 +111,38 @@ export class PiConnectionService {
     attempt.done = this.login(attempt);
   }
 
+  private waitForBrowserCallback(attempt: PendingConnection, promptSignal?: AbortSignal) {
+    return new Promise<string>((_resolve, reject) => {
+      let settled = false;
+      const abort = () => {
+        if (settled) return;
+        settled = true;
+        attempt.controller.signal.removeEventListener("abort", abort);
+        promptSignal?.removeEventListener("abort", abort);
+        reject(new Error("Browser sign-in cancelled"));
+      };
+      attempt.controller.signal.addEventListener("abort", abort, { once: true });
+      promptSignal?.addEventListener("abort", abort, { once: true });
+      if (attempt.controller.signal.aborted || promptSignal?.aborted) abort();
+    });
+  }
+
+  private answerPrompt(attempt: PendingConnection, prompt: AuthPrompt) {
+    if (prompt.type === "select" && prompt.options.some(option => option.id === "browser")) return Promise.resolve("browser");
+    if (prompt.type === "manual_code") return this.waitForBrowserCallback(attempt, prompt.signal);
+    return Promise.reject(new Error("Browser sign-in unavailable"));
+  }
+
+  private publishAuthorizationUrl(attempt: PendingConnection, event: AuthEvent) {
+    if (event.type !== "auth_url" || attempt.controller.signal.aborted) return;
+    attempt.view = {
+      id: attempt.view.id,
+      state: "waiting",
+      authorizationUrl: trustedAuthorizationUrl(event.url),
+      expiresAt: new Date(Date.now() + 15 * 60_000).toISOString(),
+    };
+  }
+
   private async login(attempt: PendingConnection) {
     const { controller } = attempt;
     const deadline = setTimeout(() => controller.abort("expired"), 15 * 60_000);
@@ -90,26 +151,8 @@ export class PiConnectionService {
       const runtime = await this.getRuntime();
       await runtime.login(this.provider, "oauth", {
         signal: controller.signal,
-        prompt: async prompt => {
-          if (prompt.type === "select" && prompt.options.some(option => option.id === "device_code")) {
-            return "device_code";
-          }
-          throw new Error("Device sign-in unavailable");
-        },
-        notify: event => {
-          if (event.type !== "device_code" || controller.signal.aborted) return;
-          // The only supported flow is OpenAI's device page, never an arbitrary redirect.
-          if (event.verificationUri !== "https://auth.openai.com/codex/device") {
-            throw new Error("Unexpected verification address");
-          }
-          attempt.view = {
-            id: attempt.view.id,
-            state: "waiting",
-            userCode: event.userCode,
-            verificationUri: event.verificationUri,
-            expiresAt: new Date(Date.now() + 15 * 60_000).toISOString(),
-          };
-        },
+        prompt: prompt => this.answerPrompt(attempt, prompt),
+        notify: event => this.publishAuthorizationUrl(attempt, event),
       });
       attempt.view = { id: attempt.view.id, state: "connected" };
     } catch (error) {
@@ -122,9 +165,9 @@ export class PiConnectionService {
         id: attempt.view.id,
         state: controller.signal.aborted && controller.signal.reason !== "expired" ? "cancelled" : "failed",
         error: controller.signal.reason === "expired"
-          ? "The sign-in code expired. Start again to get a new code."
+          ? "The sign-in link expired. Start again to get a new link."
           : controller.signal.aborted ? undefined
-          : "Could not connect to OpenAI. Try again and make sure device code login is enabled in your ChatGPT security settings.",
+          : "Could not connect to OpenAI. Try the browser authorization again.",
       };
     } finally {
       clearTimeout(deadline);

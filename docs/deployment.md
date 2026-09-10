@@ -228,10 +228,16 @@ UUID-named files from the catalog directory.
 
 ## Connect AI from Settings
 
-After deployment, sign in as the administrator and open **Settings → AI photo
-estimates → Connect OpenAI**. Follow the OpenAI link, enter the displayed code,
-and approve. Settings detects completion automatically. This works from a phone
-without opening a container console or exposing an OAuth callback port.
+For a local process, sign in as the administrator and open **Settings → AI photo
+estimates → Connect OpenAI**. Follow the browser authorization link and approve.
+Pi receives the callback on `localhost:1455` and Settings detects completion
+automatically. This does not require entering a code or token or enabling
+device-code login.
+
+The browser and the Pi process must share the same localhost. A browser on a
+different machine, or on the host while Pi runs in the default isolated Compose
+network, cannot reach that callback directly. Do not expose the callback publicly;
+use a trusted loopback tunnel or provision Pi's auth file on the application host.
 
 The default Compose configuration persists the connection at
 `DATA_PATH/pi/auth.json` on the host. Preserve the existing `DATA_PATH` when
