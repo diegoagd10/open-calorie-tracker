@@ -1,10 +1,13 @@
 FROM node:24-bookworm-slim AS base
 
 ENV PNPM_HOME=/pnpm
+ENV COREPACK_HOME=/corepack
 ENV PATH=$PNPM_HOME:$PATH
 
-RUN corepack enable \
-  && corepack prepare pnpm@11.19.0 --activate
+RUN mkdir -p "$COREPACK_HOME" "$PNPM_HOME" \
+  && corepack enable \
+  && corepack prepare pnpm@11.19.0 --activate \
+  && chown -R node:node "$COREPACK_HOME" "$PNPM_HOME"
 
 WORKDIR /app
 
@@ -34,7 +37,7 @@ ENV TZ=UTC
 COPY --from=build --chown=node:node /app/build ./build
 COPY --from=build --chown=node:node /app/drizzle ./drizzle
 COPY --from=build --chown=node:node /app/node_modules ./node_modules
-COPY --from=build --chown=node:node /app/package.json ./package.json
+COPY --from=build --chown=node:node /app/package.json /app/pnpm-lock.yaml /app/pnpm-workspace.yaml ./
 COPY --from=build --chown=node:node /app/scripts ./scripts
 COPY --from=build --chown=node:node /app/server/http-host.js /app/server/operational-logging.js /app/server/startup-configuration.js ./server/
 COPY --from=build --chown=node:node /app/server.js ./server.js

@@ -266,6 +266,23 @@ describe.skipIf(!runDeploymentTests)("production container deployment", () => {
     expect(productionDependencies.stderr).toBe("");
   });
 
+  test("operator commands run through pnpm without repairing production dependencies", async () => {
+    const result = await failedDockerRun([
+      "--network",
+      "none",
+      "--entrypoint",
+      "pnpm",
+      image,
+      "catalog:import:off",
+    ]);
+
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain("Usage:");
+    expect(result.stderr).toContain("pnpm catalog:import:off");
+    expect(result.stderr).not.toContain("pnpm install");
+    expect(result.stderr).not.toContain("EACCES");
+  });
+
   test("fresh install and replacement startup preserve durable SQLite", async () => {
     const firstName = `calory-fresh-${suffix}`;
     const firstUrl = await startContainer({
