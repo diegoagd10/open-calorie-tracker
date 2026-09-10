@@ -196,6 +196,36 @@ administrator access. If the current private password is still known, use the
 authenticated password-change page in Settings instead of this recovery
 command.
 
+## Import food catalogs from the container
+
+Large catalog archives can be imported from a private container terminal instead
+of passing through the public reverse proxy. First copy the archive into the
+persistent data volume. A conventional location is `/app/data/imports`; create
+it if necessary and keep the source archive there until the import succeeds.
+
+Run the provider-specific command inside the running application container:
+
+```sh
+docker compose exec -T application pnpm catalog:import:usda -- /app/data/imports/FoodData_Central_foundation_food_csv.zip
+docker compose exec -T application pnpm catalog:import:off -- /app/data/imports/en.openfoodfacts.org.products.csv.gz
+```
+
+For a Portainer-managed container, open its console and run the corresponding
+`pnpm` command directly, or replace `docker compose exec -T application` with
+`docker exec -i <application-container>`. The path must name a non-empty regular
+file visible inside the container; symbolic links are rejected.
+
+The command uses the same configured database, catalog directory, limits,
+locking, import worker, persisted progress, and atomic generation handoff as the
+Food Catalogs settings page. It stays attached until the import reaches a
+terminal outcome, reports progress to standard output, and exits non-zero on
+failure or interruption. The source archive is never deleted automatically.
+The catalog directory's `.local-import-token` authorizes only this loopback
+control channel; keep it private and do not expose or edit it.
+After success, verify the installed generation in **Settings → Food Catalogs**,
+then remove the copied source archive if it is no longer needed. Do not remove
+UUID-named files from the catalog directory.
+
 ## Connect AI from Settings
 
 After deployment, sign in as the administrator and open **Settings → AI photo

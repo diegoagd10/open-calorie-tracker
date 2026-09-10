@@ -1,6 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { execFile } from "node:child_process";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import net from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -8,6 +8,7 @@ import { promisify } from "node:util";
 import { afterAll, beforeAll, expect, test } from "vitest";
 
 import { waitForHttpResponse } from "./support/deployment";
+import { offArchive, offWithBasis } from "./support/off-archive";
 
 const executeFile = promisify(execFile);
 const temporaryDirectories: string[] = [];
@@ -187,6 +188,39 @@ test("a trusted HTTPS proxy can forward mutation requests", async () => {
 
   expect(response.status).toBe(403);
   expect(await response.text()).toContain("CSRF token rejected.");
+});
+
+test("the compiled OFF command imports through the running application", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "calory-command-"));
+  temporaryDirectories.push(directory);
+  const catalogDirectory = path.join(directory, "catalogs");
+  const archivePath = path.join(directory, "products.csv.gz");
+  await writeFile(archivePath, offArchive([offWithBasis("100g")]));
+  const port = await availablePort();
+  const environment = {
+    ...process.env,
+    APPLICATION_URL: "https://calories.example.test",
+    CATALOG_DIRECTORY: catalogDirectory,
+    DATABASE_PATH: path.join(directory, "application.sqlite"),
+    NODE_ENV: "production",
+    OFF_CATALOG_MAX_EXPANDED_BYTES: String(16 * 1024 * 1024),
+    OFF_CATALOG_MAX_UPLOAD_BYTES: String(2 * 1024 * 1024),
+    PORT: String(port),
+    TRUST_PROXY: "172.30.0.0/16",
+  };
+  const running = startProductionProcess(environment);
+  await waitForHttpResponse(`http://127.0.0.1:${port}/health/ready`);
+
+  const imported = await executeFile(
+    "pnpm",
+    ["catalog:import:off", "--", archivePath],
+    { cwd: process.cwd(), env: environment },
+  );
+
+  expect(imported.stderr).not.toContain("import failed");
+  expect(imported.stdout).toContain("Open Food Facts: succeeded; 1 foods installed");
+  running.child.kill("SIGTERM");
+  await waitForExit(running.child);
 });
 
 test("production health and logs are safe on a configurable internal port", async () => {

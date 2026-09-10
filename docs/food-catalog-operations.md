@@ -33,6 +33,10 @@ browser from its linked official source and upload it to the matching card:
 
 - USDA accepts the official Foundation **CSV ZIP**.
 - Open Food Facts accepts the official product **tab-separated CSV GZIP**.
+- Operators can bypass public proxy upload limits by placing an archive in a
+  container-visible regular file and running `pnpm catalog:import:usda -- PATH`
+  or `pnpm catalog:import:off -- PATH`. These commands use the same installation
+  lifecycle as the settings page and wait for its persisted terminal outcome.
 
 The application never reads a user's Downloads folder and does not download an
 archive on the administrator's behalf. Either catalog can be installed first.
