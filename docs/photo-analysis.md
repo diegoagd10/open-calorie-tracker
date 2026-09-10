@@ -27,23 +27,27 @@ The default subscription path is Pi's `openai-codex` provider, model
 `gpt-5.6-luna`, reasoning `low`. An `OPENAI_API_KEY` is a separately billed API
 credential and does not authenticate a Codex subscription.
 
-After deploying, sign in as the application administrator and open **Settings →
-AI photo estimates → Connect OpenAI**. The application displays a short-lived
-code and a **Continue to OpenAI** link. Open the link (including from a phone),
-sign in to OpenAI, enter the code, and approve. Return to Settings; it updates
-automatically when Pi saves the connection. No terminal, callback port, file
-transfer, or container restart is required.
+On a local installation, sign in as the application administrator and open
+**Settings → AI photo estimates → Connect OpenAI**. The application displays Pi's
+short-lived **Authorize with OpenAI** browser link. Open it, sign in, and approve.
+When Pi receives its callback on `localhost:1455`, Settings updates automatically.
+There is no code, token, or callback address to copy into the application and no
+device-code login setting is required. See the [official authentication
+guide](https://learn.chatgpt.com/docs/auth#sign-in-with-chatgpt).
 
-OpenAI may require enabling device code login in ChatGPT security settings or
-workspace permissions. See the [official authentication guide](https://learn.chatgpt.com/docs/auth#preferred-device-code-authentication-beta).
+This browser flow requires the browser and Pi process to share the same localhost.
+For a remote host or an isolated container, use a trusted loopback tunnel or
+provision Pi's auth file on the application host; never expose the callback port
+publicly.
 Settings supports the default `openai-codex` provider. Other providers retain
 the existing operator-managed Pi credential path.
 
 The connection serves this entire installation. Only the application administrator
-can read or change it; a pending code is visible only in the session that started
-it. A single sign-in can run at a time. Cancel or expiration clears the pending
-code while retaining any previously saved connection. Restarting the application
-interrupts pending sign-ins; request a new code. Completed credentials persist.
+can read or change it; a pending authorization link is visible only in the session
+that started it. A single sign-in can run at a time. Cancel or expiration clears
+the pending link while retaining any previously saved connection. Restarting the
+application interrupts pending sign-ins; request a new link. Completed credentials
+persist.
 
 Use **Reconnect OpenAI** to replace the saved account and **Disconnect** to remove
 its local credentials. Disconnect does not delete meals, revoke provider-side

@@ -9,6 +9,7 @@ import type { PiConnectionService } from "../../app/photo-analysis/pi-connection
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 type Connection = Awaited<ReturnType<PiConnectionService["read"]>>;
 const disconnected: Connection = { supported: true, connected: false, busy: false, error: undefined, attempt: undefined };
+const authorizationUrl = "https://auth.openai.com/oauth/authorize?response_type=code&redirect_uri=http%3A%2F%2Flocalhost%3A1455%2Fauth%2Fcallback&state=test-state&code_challenge=test-challenge";
 async function render(connection: Connection, actionError?: string) {
   const load = vi.fn(() => ({
     csrfToken: "test-csrf", username: "admin", today: "2026-09-06", connection,
@@ -44,17 +45,21 @@ test("Settings explains the shared connection, links to the other settings and o
   await act(() => renderer.unmount());
 });
 
-test("waiting renders the one-time code and external approval link, polls, and only offers cancel", async () => {
+test("waiting renders browser authorization without any manual code or token input, polls, and only offers cancel", async () => {
   vi.useFakeTimers();
-  const { renderer, load } = await render({ ...disconnected, busy: true, attempt: { id: "attempt-1", state: "waiting", userCode: "ABCD-1234", verificationUri: "https://auth.openai.com/codex/device" } });
+  const { renderer, load } = await render({ ...disconnected, busy: true, attempt: { id: "attempt-1", state: "waiting", authorizationUrl } });
   try {
-    expect(text(renderer.root)).toContain("ABCD-1234");
+    expect(text(renderer.root)).toContain("approve access with your OpenAI account");
+    expect(text(renderer.root)).toContain("No device-code login setting is required");
     expect(buttons(renderer)).toContain("Cancel sign-in");
+    expect(buttons(renderer)).not.toContain("Finish authorization");
     expect(renderer.root.findAllByType("button").find(button => text(button) === "Cancel sign-in")?.props.value).toBe("cancel");
     expect(buttons(renderer)).not.toContain("Connect OpenAI");
-    const link = renderer.root.findAllByType("a").find(link => link.props.href === "https://auth.openai.com/codex/device");
+    const link = renderer.root.findAllByType("a").find(link => link.props.href === authorizationUrl);
     expect(link?.props.target).toBe("_blank");
     expect(link?.props.rel).toBe("noreferrer");
+    expect(renderer.root.findAllByProps({ name: "authorizationResponse" })).toHaveLength(0);
+    expect(text(renderer.root)).not.toContain("copy its complete address");
     expect(renderer.root.findAllByType("input").find(input => input.props.name === "attemptId")?.props.value).toBe("attempt-1");
     await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
     expect(load).toHaveBeenCalledTimes(2);
@@ -81,7 +86,7 @@ test.each([
 
 test.each([
   [{ ...disconnected, busy: true }, "another session"],
-  [{ ...disconnected, busy: true, attempt: { id: "1", state: "starting" } }, "Getting your sign-in code"],
+  [{ ...disconnected, busy: true, attempt: { id: "1", state: "starting" } }, "Getting your secure OpenAI link"],
   [{ ...disconnected, busy: true, attempt: { id: "1", state: "disconnecting" } }, "Disconnecting"],
   [{ ...disconnected, supported: false }, "does not support sign-in here"],
   [{ ...disconnected, error: "Storage unavailable." }, "Storage unavailable."],
@@ -113,7 +118,7 @@ test.each([
 });
 
 test.each([false, true])("connection controls stay disabled until a submitted action settles (waiting=%s)", async waiting => {
-  const connection: Connection = waiting ? { ...disconnected, busy: true, attempt: { id: "pending-id", state: "waiting", userCode: "1234", verificationUri: "https://auth.openai.com/codex/device" } } : { ...disconnected, connected: true };
+  const connection: Connection = waiting ? { ...disconnected, busy: true, attempt: { id: "pending-id", state: "waiting", authorizationUrl } } : { ...disconnected, connected: true };
   const data = { csrfToken: "test-csrf", username: "admin", today: "2026-09-06", connection };
   let release!: () => void;
   const gate = new Promise<void>(resolve => { release = resolve; });

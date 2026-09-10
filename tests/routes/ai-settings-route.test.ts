@@ -67,12 +67,15 @@ test("only administrators can read or mutate the instance connection", async () 
   expect(meta()).toEqual([{ title: "AI photo estimates · Open Calorie Tracker" }]);
 });
 
-test("valid actions start, poll and cancel a device flow without exposing credentials", async () => {
-  network.mockImplementation(async input => String(input).endsWith("/deviceauth/usercode") ? Response.json({ device_auth_id: "private-id", user_code: "ROUTE-123", interval: 5 }) : new Response(null, { status: 403 }));
+test("valid actions start, poll and cancel a browser flow without exposing credentials", async () => {
   expect((await action(post({ intent: "connect" }))).data.error).toBeUndefined();
-  await vi.waitFor(async () => expect((await loader(args(request()))).connection.attempt).toMatchObject({ state: "waiting", userCode: "ROUTE-123" }));
+  await vi.waitFor(async () => {
+    const connection = (await loader(args(request()))).connection;
+    expect(connection.attempt).toMatchObject({ state: "waiting" });
+    expect(connection.attempt?.authorizationUrl).toContain("https://auth.openai.com/oauth/authorize?");
+  });
   const state = await loader(args(request()));
-  expect(JSON.stringify(state)).not.toContain("private-id");
+  expect(JSON.stringify(state)).not.toContain("access_token");
   expect((await action(post({ intent: "connect" }))).init?.status).toBe(409);
   expect((await action(post({ intent: "cancel", attemptId: "stale" }))).init?.status).toBe(409);
   expect((await action(post({ intent: "cancel", attemptId: state.connection.attempt!.id }))).data.error).toBeUndefined();

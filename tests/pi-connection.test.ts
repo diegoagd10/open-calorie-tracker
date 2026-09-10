@@ -1,4 +1,5 @@
 import { mkdtemp, readFile, rm, stat, writeFile, mkdir } from "node:fs/promises";
+import { get } from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, expect, test, vi } from "vitest";
@@ -6,6 +7,20 @@ import { PiConnectionService } from "../app/photo-analysis/pi-connection.server"
 
 let directory: string;
 let service: PiConnectionService;
+
+function visitCallback(url: string) {
+  return new Promise<void>((resolve, reject) => {
+    const request = get(url, response => {
+      response.resume();
+      response.on("end", () => {
+        if (response.statusCode === 200) resolve();
+        else reject(new Error(`Callback returned ${response.statusCode}`));
+      });
+    });
+    request.on("error", reject);
+  });
+}
+
 afterEach(async () => {
   service?.shutdown();
   vi.useRealTimers();
@@ -13,21 +28,14 @@ afterEach(async () => {
   if (directory) await rm(directory, { recursive: true, force: true });
 });
 
-test("administrator connects with a device code and the saved connection survives a new service", async () => {
+test("administrator connects in a browser and the saved connection survives a new service", async () => {
   directory = await mkdtemp(path.join(tmpdir(), "pi-connection-"));
   const authPath = path.join(directory, "pi/auth.json");
-  let approved = false;
   const access = `test.${Buffer.from(JSON.stringify({
     "https://api.openai.com/auth": { chatgpt_account_id: "synthetic-account" },
   })).toString("base64")}.test`;
   const network = vi.fn(async (input: string | URL | Request) => {
     const url = String(input);
-    if (url.endsWith("/deviceauth/usercode")) return Response.json({
-      device_auth_id: "private-device-id", user_code: "ABCD-1234", interval: 0.01,
-    });
-    if (url.endsWith("/deviceauth/token")) return approved
-      ? Response.json({ authorization_code: "private-code", code_verifier: "private-verifier" })
-      : new Response(null, { status: 403 });
     if (url.endsWith("/oauth/token")) return Response.json({
       access_token: access, refresh_token: "synthetic-refresh-secret", expires_in: 3600,
     });
@@ -41,20 +49,20 @@ test("administrator connects with a device code and the saved connection survive
   expect(await photoRuntime.getAuth("openai-codex")).toBeUndefined();
   service.start("admin-session");
   await vi.waitFor(async () => {
-    expect(await service.read("admin-session")).toMatchObject({
-      connected: false,
-      attempt: { state: "waiting", userCode: "ABCD-1234", verificationUri: "https://auth.openai.com/codex/device" },
-    });
+    const connection = await service.read("admin-session");
+    expect(connection).toMatchObject({ connected: false, attempt: { state: "waiting" } });
+    expect(connection.attempt?.authorizationUrl).toContain("https://auth.openai.com/oauth/authorize?");
   });
-  approved = true;
+  const pending = (await service.read("admin-session")).attempt!;
+  const state = new URL(pending.authorizationUrl!).searchParams.get("state");
+  await visitCallback(`http://localhost:1455/auth/callback?code=private-code&state=${state}`);
   await vi.waitFor(async () => {
     expect(await service.read("admin-session")).toMatchObject({ connected: true, attempt: { state: "connected" } });
   }, { timeout: 5000 });
   expect((await photoRuntime.getAuth("openai-codex"))?.auth.apiKey).toBe(access);
   const publicState = JSON.stringify(await service.read("admin-session"));
   expect(publicState).not.toContain("synthetic-refresh-secret");
-  expect(publicState).not.toContain("private-device-id");
-  expect(publicState).not.toContain("ABCD-1234");
+  expect(publicState).not.toContain("private-code");
   expect(JSON.parse(await readFile(authPath, "utf8"))).toMatchObject({
     "openai-codex": { type: "oauth", refresh: "synthetic-refresh-secret" },
   });
@@ -69,12 +77,7 @@ test("administrator connects with a device code and the saved connection survive
 
 async function pendingConnection() {
   directory = await mkdtemp(path.join(tmpdir(), "pi-pending-"));
-  vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
-    if (String(input).endsWith("/deviceauth/usercode")) return Response.json({
-      device_auth_id: "hidden-device", user_code: "WXYZ-9876", interval: 5,
-    });
-    return new Response(null, { status: 403 });
-  }));
+  vi.stubGlobal("fetch", vi.fn(async () => new Response(null, { status: 500 })));
   service = new PiConnectionService(path.join(directory, "auth.json"), "openai-codex");
   service.start("owner-session");
   await vi.waitFor(async () => {
@@ -83,7 +86,7 @@ async function pendingConnection() {
   return (await service.read("owner-session")).attempt!.id;
 }
 
-test("only the initiating session sees and cancels its code; repeated starts and disconnect cannot overlap", async () => {
+test("only the initiating session sees and cancels its link; repeated starts and disconnect cannot overlap", async () => {
   const id = await pendingConnection();
   expect(await service.read("other-session")).toMatchObject({ busy: true, attempt: undefined });
   expect(() => service.start("owner-session")).toThrow("already in progress");
@@ -91,16 +94,18 @@ test("only the initiating session sees and cancels its code; repeated starts and
   await expect(service.disconnect("other-session")).rejects.toThrow("Cancel the current sign-in");
   await expect(service.cancel("other-session", id)).rejects.toThrow("no longer available");
   await expect(service.cancel("owner-session", "stale-id")).rejects.toThrow("no longer available");
-  expect(await service.read("owner-session")).toMatchObject({ busy: true, attempt: { userCode: "WXYZ-9876" } });
+  const connection = await service.read("owner-session");
+  expect(connection).toMatchObject({ busy: true });
+  expect(connection.attempt?.authorizationUrl).toContain("https://auth.openai.com/oauth/authorize?");
   await service.cancel("owner-session", id);
   expect(await service.read("owner-session")).toMatchObject({ busy: false, connected: false, attempt: { state: "cancelled", error: undefined } });
-  expect(JSON.stringify(await service.read("owner-session"))).not.toContain("WXYZ-9876");
+  expect(JSON.stringify(await service.read("owner-session"))).not.toContain("oauth/authorize");
   await expect(service.cancel("owner-session", id)).rejects.toThrow("no longer available");
   service.start("owner-session");
   expect((await service.read("owner-session")).attempt?.id).not.toBe(id);
 });
 
-test("expired login clears the code and allows a fresh attempt", async () => {
+test("expired login clears the link and allows a fresh attempt", async () => {
   await pendingConnection();
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
   // A fresh attempt installs its deadline on the controlled clock.
@@ -110,7 +115,7 @@ test("expired login clears the code and allows a fresh attempt", async () => {
   await vi.advanceTimersByTimeAsync(15 * 60_000);
   vi.useRealTimers();
   await vi.waitFor(async () => {
-    expect(await service.read("owner-session")).toMatchObject({ busy: false, attempt: { state: "failed", error: "The sign-in code expired. Start again to get a new code." } });
+    expect(await service.read("owner-session")).toMatchObject({ busy: false, attempt: { state: "failed", error: "The sign-in link expired. Start again to get a new link." } });
   });
 });
 
@@ -119,6 +124,10 @@ test("provider failures do not leak response bodies and remain retryable", async
   vi.stubGlobal("fetch", vi.fn(async () => new Response("sensitive-upstream-detail", { status: 500 })));
   service = new PiConnectionService(path.join(directory, "auth.json"), "openai-codex");
   service.start("owner");
+  await vi.waitFor(async () => expect(await service.read("owner")).toMatchObject({ attempt: { state: "waiting" } }));
+  const pending = (await service.read("owner")).attempt!;
+  const state = new URL(pending.authorizationUrl!).searchParams.get("state");
+  await visitCallback(`http://localhost:1455/auth/callback?code=failed-code&state=${state}`);
   await vi.waitFor(async () => expect(await service.read("owner")).toMatchObject({ busy: false, connected: false, attempt: { state: "failed" } }));
   expect(JSON.stringify(await service.read("owner"))).not.toContain("sensitive-upstream-detail");
   expect((await service.read("owner")).attempt?.error).toContain("Could not connect");

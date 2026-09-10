@@ -81,15 +81,14 @@ export default function AiSettings({ loaderData, actionData }: Route.ComponentPr
           {error ? <p role="alert" className={styles.error}>{error}</p> : null}
           <div role="status" aria-live="polite">
             {connection.busy && !attempt ? <p>A sign-in is in progress in another session.</p> : null}
-            {attempt?.state === "starting" ? <p>Getting your sign-in code…</p> : null}
+            {attempt?.state === "starting" ? <p>Getting your secure OpenAI link…</p> : null}
             {attempt?.state === "disconnecting" ? <p>Disconnecting…</p> : null}
             {attempt?.state === "waiting" ? (
               <div className={styles.instructions}>
-                <p>Enter this code on OpenAI:</p>
-                <strong className={styles.code} aria-label="Sign-in code">{attempt.userCode}</strong>
-                <a className={styles.primary} href={attempt.verificationUri} target="_blank" rel="noreferrer">Continue to OpenAI ↗</a>
-                <p>Return here after approving; your connection saves automatically. The code is valid for up to 15 minutes.</p>
-                <small>If OpenAI asks, enable device code login in your ChatGPT security settings.</small>
+                <p>Open this secure link and approve access with your OpenAI account:</p>
+                <a className={styles.primary} href={attempt.authorizationUrl} target="_blank" rel="noreferrer">Authorize with OpenAI ↗</a>
+                <p>Return here after approving; Pi receives the browser callback and saves the connection automatically.</p>
+                <small>The link is valid for up to 15 minutes. No device-code login setting is required.</small>
               </div>
             ) : null}
             {attempt?.state === "cancelled" ? <p>{connection.connected ? "Sign-in cancelled. Your previous connection is still saved." : "No active sign-in. You can connect whenever you’re ready."}</p> : null}
