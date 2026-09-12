@@ -31,6 +31,6 @@ Plate photos: see [capture, corrections, operator OAuth provisioning, and live p
 
 ## Contributing
 
-Install the [local Git hooks](docs/verification.md#pull-request-gate) with
-`pnpm hooks:install`. Commits and pushes run the verification suites and stop on
-failure. After a successful push, create the PR with `pnpm pr:create`.
+Install the [local Git hook](docs/verification.md#pull-request-gate) with
+`pnpm hooks:install`. Pushes run the deep verification suite and stop on failure.
+After a successful push, create the PR with `pnpm pr:create`.

@@ -5,7 +5,7 @@ The repository exposes fast and deep gates through the package manager pinned in
 Node 24 line before running either gate.
 
 The Codex worktree setup in `.codex/environments/environment.toml` installs the
-pinned dependencies and Git hooks automatically. `devEngines.runtime` in
+pinned dependencies and Git hook automatically. `devEngines.runtime` in
 `package.json` pins Node 24.13.0: pnpm downloads that runtime during installation
 and uses it for project scripts, even when the host shell uses another Node
 version. `pnpm exec node --version` verifies the project runtime. Browser
@@ -80,66 +80,56 @@ preserves the failing exit status.
 ## Pull request gate
 
 GitHub Actions workflows have been removed. Before opening a PR, install the
-pinned dependencies and Playwright browsers, and start Docker with Compose
-available. Use Node 24 as required by `package.json`.
+pinned dependencies and Playwright browsers. Use Node 24 as required by
+`package.json`.
 
-Install the versioned hooks once in each checkout, with Node 24 and the pinned
+Install the versioned hook once in each checkout, with Node 24 and the pinned
 pnpm available on PATH:
 
 ```sh
 pnpm hooks:install
 git add <changed-files>
-git commit -m "Describe the change" # pre-commit runs both suites
-git push -u origin HEAD           # pre-push runs both suites again
+git commit -m "Describe the change"
+git push -u origin HEAD           # pre-push runs verify:deep
 pnpm pr:create --title "Describe the change" --body-file /path/to/pr-body.md
 ```
 
 The installer sets `core.hooksPath` to `.githooks` and preserves an existing
 custom hook setup by refusing to replace it. With Git's `worktreeConfig`
 extension enabled, the setting applies only to the current worktree; otherwise
-it is local to the clone. Hooks are installed explicitly, so dependency installs
+it is local to the clone. The hook is installed explicitly, so dependency installs
 in Docker do not depend on a Git checkout.
-
-`pre-commit` verifies the staged tree before the new commit SHA exists. All
-tracked changes must be staged and untracked files must be staged or removed;
-partial staging is rejected instead of testing content outside the proposed
-commit. `git commit -a` is supported using Git's candidate index. A failure
-preserves the index and working files and prevents the commit. Its report is
-stored under `reports/pr-check/staged/<tree-sha>/summary.json`, with the parent
-commit, staged tree, base, and command results. That report never authorizes a PR.
 
 `pre-push` reads Git's proposed ref updates and verifies the exact SHA to be sent.
 It accepts one update: the checked-out branch at HEAD, sent to the same branch
 name on origin. Pushes of another commit, renamed destinations, tags, or multiple
 refs are rejected. Deleting refs or a push with no updates publishes no code and
 requires no checks. A failed verification prevents Git from sending the update.
-It always reruns both suites, replacing any earlier result for that commit;
+It always reruns `pnpm verify:deep`, replacing any earlier result for that commit;
 a successful push leaves the commit summary required by `pr:create`.
 
-Both hooks stream test stdout/stderr back to the Git caller, preserve a nonzero
-failure status, and print the path to the summary and logs. An AI invoking Git
+The hook streams test stdout/stderr back to the Git caller, preserves a nonzero
+failure status, and prints the path to the summary and logs. An AI invoking Git
 receives those diagnostics in its command result: fix the cause and retry the
-same commit or push command. Hooks do not automatically launch an AI or fix code.
-The complete deep and deployment suites run on every commit and publishing push,
-so both operations need the browser, Docker, registry access, and time for the
-full checks. The first failing suite stops the operation.
+same push command. The hook does not automatically launch an AI or fix code.
+The complete deep suite runs on every publishing push, so it needs the browser,
+registry access, and time for the full checks.
 
 The default base is `main` on `origin`. Set `git config pr.base release` to use
-another base consistently in the hooks and PR commands. `pr:check` and
+another base consistently in the hook and PR commands. `pr:check` and
 `pr:create` also accept `--base release` for a single invocation. The fetch and
 push URLs for origin must match. Authenticate Git and the GitHub CLI before
 publishing. The verification commands never commit or push automatically.
 
 `pnpm pr:check` remains available to explicitly verify an already committed SHA.
-With the hooks installed, a normal push performs this verification itself.
+With the hook installed, a normal push performs this verification itself.
 
 `pr:check` requires an attached feature branch and a clean working tree,
 including staged and untracked files. It fetches the base and records the branch,
 full HEAD SHA, origin URL, base branch, and base SHA. The branch must contain
-commits beyond the base. It then runs `pnpm verify:deep` and
-`pnpm test:deployment` in order, stopping at the first failure. Fallow uses the
-recorded base SHA. The production coverage thresholds run as part of
-`verify:deep`.
+commits beyond the base. It then runs `pnpm verify:deep`, stopping on failure.
+Fallow uses the recorded base SHA. The production coverage thresholds run as
+part of `verify:deep`.
 
 The ignored directory `reports/pr-check/<full-commit-sha>/` contains
 `summary.json` with timestamps, per-command exit status, and the overall result,
@@ -148,7 +138,7 @@ a PR. A rerun replaces the previous result before executing tests. The commands
 use a per-worktree lock; if a forced kill leaves it behind, the error gives the
 lock directory to remove after confirming the old process has stopped.
 
-`pr:create` requires both checks to have passed for the current clean branch,
+`pr:create` requires the check to have passed for the current clean branch,
 commit, origin, and freshly fetched base SHA. It also checks that the branch
 already published on origin points to that exact commit before invoking
 `gh pr create` with an explicit repository, base, and head. Changes to the commit
@@ -161,24 +151,21 @@ Supported PR options are `--title`, `--body`, `--body-file`, `--draft`, `--fill`
 
 This is a local workflow gate, not GitHub branch protection. Git allows hooks
 to be bypassed, and the website or a direct `gh pr create` call bypasses the PR
-wrapper. Agents must keep the hooks enabled and use the documented flow.
+wrapper. Agents must keep the hook enabled and use the documented flow.
 Existing repository rules that require the deleted Actions checks must be updated separately by a maintainer.
 `pr:check` runs tests of the CodeQL report policy through `verify:deep`; it does
 not run a CodeQL scan. See [dependency security](dependency-security.md#codeql-results).
 
-## Explicit external suites
+## Credentialed external suite
 
-The PR gate includes Docker deployment tests. The fast and deep gates remain
-usable without Docker. The credentialed AI photo pilot remains separate:
+The credentialed AI photo pilot remains separate:
 
 ```sh
-pnpm test:deployment # also run by pr:check
 PHOTO_PILOT_DATASET=... PHOTO_AI_AUTH_PATH=... PHOTO_PILOT_USDA_ARCHIVE=... pnpm test:photo-live
 ```
 
-`test:deployment` requires a working Docker daemon and Compose. The photo pilot
-requires its AI-provider credentials, a local USDA Foundation archive, and
-outbound AI access. No GitHub workflow runs these commands automatically.
+The photo pilot requires its AI-provider credentials, a local USDA Foundation
+archive, and outbound AI access. No GitHub workflow runs it automatically.
 
 ## Fallow baselines
 

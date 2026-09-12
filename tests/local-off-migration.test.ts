@@ -7,7 +7,7 @@ import { users, userPreferences, photoMeals } from "../app/database/schema.serve
 import { FoodCatalog } from "../app/catalog/food-catalog.server";
 import { TestFoodCatalogProvider, TestOpenFoodFactsProvider } from "../app/catalog/test-fixture.server";
 import { FoodEntryService } from "../app/food-entry/food-entry.server";
-import { createMigrationFolder } from "./support/deployment";
+import { createMigrationFolder } from "./support/migrations";
 
 test("migrating a populated application preserves USDA/OFF snapshots, supported measures, edits and copies", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "off-migration-"));

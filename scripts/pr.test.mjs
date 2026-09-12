@@ -18,10 +18,8 @@ function fixture(t) {
   mkdirSync(path.join(root, "scripts"));
   mkdirSync(path.join(root, ".githooks"));
   copyFileSync(script, path.join(root, "scripts", "pr.mjs"));
-  for (const name of ["pre-commit", "pre-push"]) {
-    copyFileSync(path.join(import.meta.dirname, "..", ".githooks", name), path.join(root, ".githooks", name));
-    chmodSync(path.join(root, ".githooks", name), 0o755);
-  }
+  copyFileSync(path.join(import.meta.dirname, "..", ".githooks", "pre-push"), path.join(root, ".githooks", "pre-push"));
+  chmodSync(path.join(root, ".githooks", "pre-push"), 0o755);
   const git = (...args) => execFileSync("git", args, { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
   git("init", "--initial-branch=main");
   git("config", "user.name", "PR gate test");
@@ -51,7 +49,6 @@ if (tool === 'pnpm' && args[1] === 'verify:deep') {
   if (process.env.PR_TEST_CHANGE === 'dirty') writeFileSync('source.txt', 'changed during checks');
   if (process.env.PR_TEST_CHANGE === 'commit') git('commit', '--allow-empty', '-m', 'changed during checks');
   if (process.env.PR_TEST_CHANGE === 'branch') git('switch', '-c', 'feature/changed');
-  if (process.env.PR_TEST_CHANGE === 'index') { writeFileSync('source.txt', 'new staged content'); git('add', 'source.txt'); }
   if (process.env.PR_TEST_CHANGE === 'signal') process.kill(process.pid, 'SIGTERM');
 }
 if (tool === 'pnpm' && args[1] === process.env.PR_TEST_FAIL) process.exit(7);
@@ -93,7 +90,7 @@ test("checks the exact commit, stores logs, and creates only the published verif
   assert.equal(report.commit, f.commit);
   assert.equal(report.branch, "feature/test");
   assert.equal(report.baseCommit, f.git("rev-parse", "main"));
-  assert.deepEqual(report.checks.map((check) => check.command), ["verify:deep", "test:deployment"]);
+  assert.deepEqual(report.checks.map((check) => check.command), ["verify:deep"]);
   for (const call of f.invocations()) {
     assert.equal(call.base, report.baseCommit);
   }
@@ -101,7 +98,7 @@ test("checks the exact commit, stores logs, and creates only the published verif
   assert.match(log, /pnpm stdout/);
   assert.match(log, /pnpm stderr/);
   blocked(f.run("create"));
-  assert.equal(f.invocations().length, 2);
+  assert.equal(f.invocations().length, 1);
   f.git("push", "origin", "HEAD");
   passed(f.run("create", ["--draft", "--title", "A reviewed change", "--body", "Checks passed."]));
   const invocation = f.invocations().at(-1);
@@ -109,28 +106,24 @@ test("checks the exact commit, stores logs, and creates only the published verif
   assert.deepEqual(invocation.args, ["pr", "create", "--repo", report.remote.replace(/\.git$/, ""), "--base", "main", "--head", report.branch, "--draft", "--title", "A reviewed change", "--body", "Checks passed."]);
 });
 
-for (const command of ["verify:deep", "test:deployment"]) {
-  test(`a failed ${command} replaces an old pass and blocks creation`, (t) => {
-    const f = fixture(t);
-    passed(f.run());
-    f.git("push", "origin", "HEAD");
-    const result = f.run("check", [], { PR_TEST_FAIL: command });
-    assert.equal(result.status, 7);
-    const report = f.summary();
-    assert.equal(report.status, "failed");
-    assert.equal(report.checks.find((check) => check.command === command).exitCode, 7);
-    if (command === "verify:deep") assert.equal(report.checks[1].status, "skipped");
-    blocked(f.run("create"), /failed, incomplete, or stale/);
-    assert.ok(f.invocations().every((call) => call.tool === "pnpm"));
-  });
-}
+test("a failed verify:deep replaces an old pass and blocks creation", (t) => {
+  const f = fixture(t);
+  passed(f.run());
+  f.git("push", "origin", "HEAD");
+  const result = f.run("check", [], { PR_TEST_FAIL: "verify:deep" });
+  assert.equal(result.status, 7);
+  const report = f.summary();
+  assert.equal(report.status, "failed");
+  assert.equal(report.checks[0].exitCode, 7);
+  blocked(f.run("create"), /failed, incomplete, or stale/);
+  assert.ok(f.invocations().every((call) => call.tool === "pnpm"));
+});
 
 for (const change of ["dirty", "commit", "branch", "signal"]) {
   test(`${change} during verification cannot produce a pass`, (t) => {
     const f = fixture(t);
     blocked(f.run("check", [], { PR_TEST_CHANGE: change }));
     assert.equal(f.summary().status, "failed");
-    assert.equal(f.summary().checks[1].status, "skipped");
     assert.equal(f.invocations().length, 1);
   });
 }
@@ -194,84 +187,35 @@ test("a concurrent invocation cannot reuse or replace a report", (t) => {
   mkdirSync(path.join(f.root, ".git", "pr-check.lock"));
   blocked(f.run(), /Another PR command/);
   blocked(f.run("create"), /Another PR command/);
-  assert.equal(f.invocations().length, 2);
+  assert.equal(f.invocations().length, 1);
 });
 
-for (const command of ["verify:deep", "test:deployment"]) {
-  test(`pre-commit rejects a failing ${command}, preserves staged work, and prints feedback`, (t) => {
-    const f = fixture(t);
-    passed(f.install());
-    writeFileSync(path.join(f.root, "source.txt"), "candidate\n");
-    f.git("add", "source.txt");
-    const tree = f.git("write-tree");
-    const result = f.gitRun(["commit", "-m", "should fail"], { PR_TEST_FAIL: command });
-    blocked(result, /PR blocked/);
-    assert.match(result.stdout + result.stderr, /pnpm stderr/);
-    assert.equal(f.git("rev-parse", "HEAD"), f.commit);
-    assert.equal(f.git("write-tree"), tree);
-    const report = JSON.parse(readFileSync(path.join(f.root, "reports/pr-check/staged", tree, "summary.json")));
-    assert.equal(report.status, "failed");
-    assert.equal(report.tree, tree);
-    assert.equal(report.parentCommit, f.commit);
-    assert.equal(report.commit, undefined);
-  });
-}
-
-test("pre-commit verifies git commit -a's index and push independently verifies the final SHA", (t) => {
+test("commits run no verification and pre-push verifies the final SHA", (t) => {
   const f = fixture(t);
   passed(f.install());
   writeFileSync(path.join(f.root, "source.txt"), "candidate\n");
-  passed(f.gitRun(["commit", "-am", "verified candidate"]));
+  passed(f.gitRun(["commit", "-am", "candidate"]));
   const sha = f.git("rev-parse", "HEAD");
   assert.notEqual(sha, f.commit);
-  const stagedReport = JSON.parse(readFileSync(path.join(f.root, "reports/pr-check/staged", f.git("rev-parse", "HEAD^{tree}"), "summary.json")));
-  assert.equal(stagedReport.status, "passed");
-  assert.equal(f.invocations().length, 2);
-  for (const call of f.invocations()) {
-    assert.equal(call.index, undefined);
-    assert.equal(call.gitDir, undefined);
-  }
+  assert.equal(f.invocations().length, 0);
   blocked(f.run("create"), /No readable/);
   passed(f.gitRun(["push", "origin", "HEAD"]));
-  assert.equal(f.invocations().length, 4);
+  assert.equal(f.invocations().length, 1);
   assert.equal(f.git("ls-remote", "origin", "refs/heads/feature/test").split(/\s+/)[0], sha);
   passed(f.run("create", ["--fill"]));
 });
 
-test("pre-commit rejects partial staging before running checks", (t) => {
+test("pre-push reruns verify:deep after an old pass and blocks the remote on failure", (t) => {
   const f = fixture(t);
+  passed(f.run());
   passed(f.install());
-  writeFileSync(path.join(f.root, "source.txt"), "staged\n");
-  f.git("add", "source.txt");
-  writeFileSync(path.join(f.root, "source.txt"), "unstaged\n");
-  blocked(f.gitRun(["commit", "-m", "partial"]), /Partial staging/);
-  assert.equal(f.git("rev-parse", "HEAD"), f.commit);
-  assert.equal(f.invocations().length, 0);
+  const result = f.gitRun(["push", "origin", "HEAD"], { PR_TEST_FAIL: "verify:deep" });
+  blocked(result, /PR blocked/);
+  assert.match(result.stdout + result.stderr, /pnpm stderr/);
+  assert.equal(f.git("ls-remote", "origin", "refs/heads/feature/test"), "");
+  assert.equal(f.summary().status, "failed");
+  blocked(f.run("create"), /failed, incomplete, or stale/);
 });
-
-test("changing the staged tree during checks rejects the commit", (t) => {
-  const f = fixture(t);
-  passed(f.install());
-  writeFileSync(path.join(f.root, "source.txt"), "candidate\n");
-  f.git("add", "source.txt");
-  blocked(f.gitRun(["commit", "-m", "changed index"], { PR_TEST_CHANGE: "index" }));
-  assert.equal(f.git("rev-parse", "HEAD"), f.commit);
-  assert.equal(f.invocations().length, 1);
-});
-
-for (const command of ["verify:deep", "test:deployment"]) {
-  test(`pre-push runs ${command} even with an old pass and blocks the remote on failure`, (t) => {
-    const f = fixture(t);
-    passed(f.run());
-    passed(f.install());
-    const result = f.gitRun(["push", "origin", "HEAD"], { PR_TEST_FAIL: command });
-    blocked(result, /PR blocked/);
-    assert.match(result.stdout + result.stderr, /pnpm stderr/);
-    assert.equal(f.git("ls-remote", "origin", "refs/heads/feature/test"), "");
-    assert.equal(f.summary().status, "failed");
-    blocked(f.run("create"), /failed, incomplete, or stale/);
-  });
-}
 
 for (const refspec of ["HEAD:other", "main:feature/test", "HEAD:refs/tags/release"]) {
   test(`pre-push refuses an unverified refspec ${refspec}`, (t) => {
@@ -290,7 +234,7 @@ test("pre-push supports the configured base and deletion needs no tests", (t) =>
   passed(f.gitRun(["push", "origin", "HEAD"]));
   assert.equal(f.summary().base, "release");
   passed(f.gitRun(["push", "origin", "--delete", "feature/test"]));
-  assert.equal(f.invocations().length, 2);
+  assert.equal(f.invocations().length, 1);
 });
 
 test("installer is idempotent and preserves an existing hooks setup", (t) => {
@@ -304,7 +248,7 @@ test("installer is idempotent and preserves an existing hooks setup", (t) => {
 
 test("installer respects an existing default hook", (t) => {
   const f = fixture(t);
-  const existing = path.join(f.root, ".git/hooks/pre-commit");
+  const existing = path.join(f.root, ".git/hooks/pre-push");
   writeFileSync(existing, "#!/bin/sh\nexit 0\n");
   blocked(f.install(), /Existing hook at/);
   assert.equal(readFileSync(existing, "utf8"), "#!/bin/sh\nexit 0\n");

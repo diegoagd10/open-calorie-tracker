@@ -207,9 +207,10 @@ test("administrator installs USDA from mobile Settings, leaves during import, an
     await member.getByLabel("Quantity", { exact: true }).fill("2.5");
     await expect(member.getByText("1,000 kcal", { exact: true })).toBeVisible();
     await member.getByRole("button", { name: "Add to Food Log", exact: true }).click();
-    await expect(member.getByText("Local oat drink", { exact: true })).toBeVisible();
+    const dailyLog = member.getByRole("region", { name: "Daily log entries", exact: true });
+    await expect(dailyLog.getByText("Local oat drink", { exact: true })).toBeVisible();
     await member.reload();
-    await expect(member.getByText("Local oat drink", { exact: true })).toBeVisible();
+    await expect(dailyLog.getByText("Local oat drink", { exact: true })).toBeVisible();
     await member.goto("/?food=barcode&barcode=0012345678906");
     await expect(member.getByRole("alert")).toContainText("does not establish whether nutrition is per 100 g or 100 ml");
     await expect(member.getByRole("button", { name: "Add to Food Log", exact: true })).toBeDisabled();

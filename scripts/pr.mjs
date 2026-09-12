@@ -2,7 +2,7 @@ import { execFileSync, spawn } from "node:child_process";
 import { closeSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, writeFileSync, writeSync } from "node:fs";
 import path from "node:path";
 
-const checks = ["verify:deep", "test:deployment"];
+const checks = ["verify:deep"];
 const pnpm = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
 let root;
 
@@ -12,7 +12,7 @@ function git(...args) {
 
 function options() {
   const [mode, ...args] = process.argv.slice(2);
-  if (!["check", "create", "pre-commit", "pre-push"].includes(mode)) throw new Error("Use pnpm pr:check or pnpm pr:create.");
+  if (!["check", "create", "pre-push"].includes(mode)) throw new Error("Use pnpm pr:check or pnpm pr:create.");
   let base = git("config", "--default", "main", "--get", "pr.base");
   if (mode === "pre-push") return { mode, base, forwarded: args };
   const forwarded = [];
@@ -35,22 +35,16 @@ function options() {
   return { mode, base, forwarded };
 }
 
-function checkout(staged = false) {
+function checkout() {
   const branch = git("symbolic-ref", "--quiet", "--short", "HEAD");
-  if (staged) {
-    if (git("diff", "--name-only", "--ignore-submodules=none") || git("ls-files", "--others", "--exclude-standard")) {
-      throw new Error("Stage all intended changes and remove unrelated untracked files before committing. Partial staging is not supported by the verification hook.");
-    }
-  } else if (git("status", "--porcelain", "--untracked-files=all", "--ignore-submodules=none")) {
+  if (git("status", "--porcelain", "--untracked-files=all", "--ignore-submodules=none")) {
     throw new Error("Commit or remove all staged, unstaged, and untracked changes before checking or creating a PR.");
   }
-  return staged
-    ? { branch, parentCommit: git("rev-parse", "HEAD"), tree: git("write-tree") }
-    : { branch, commit: git("rev-parse", "HEAD") };
+  return { branch, commit: git("rev-parse", "HEAD") };
 }
 
-function identity(base, staged = false) {
-  const current = checkout(staged);
+function identity(base) {
+  const current = checkout();
   if (current.branch === base || ["main", "master"].includes(current.branch)) {
     throw new Error("Switch to a feature branch before checking or creating a PR.");
   }
@@ -60,14 +54,14 @@ function identity(base, staged = false) {
   }
   git("fetch", "--no-tags", "origin", `refs/heads/${base}`);
   const baseCommit = git("rev-parse", "FETCH_HEAD");
-  if (!staged && Number(git("rev-list", "--count", `${baseCommit}..${current.commit}`)) === 0) {
+  if (Number(git("rev-list", "--count", `${baseCommit}..${current.commit}`)) === 0) {
     throw new Error("The branch has no commits to propose against the base.");
   }
   return { ...current, remote, base, baseCommit };
 }
 
 function assertCheckout(expected) {
-  const current = checkout(Boolean(expected.tree));
+  const current = checkout();
   if (Object.entries(current).some(([key, value]) => expected[key] !== value) ||
       git("remote", "get-url", "origin") !== expected.remote ||
       git("remote", "get-url", "--push", "origin") !== expected.remote) {
@@ -113,7 +107,7 @@ async function check(expected, directory) {
   };
   // Replace any previous pass before starting; interrupted runs cannot reuse it.
   save(directory, report);
-  console.log(`Checking ${expected.branch} at ${expected.commit ?? `staged tree ${expected.tree}`} against ${expected.base} at ${expected.baseCommit}`);
+  console.log(`Checking ${expected.branch} at ${expected.commit} against ${expected.base} at ${expected.baseCommit}`);
   const env = { ...process.env, FALLOW_AUDIT_BASE: expected.baseCommit };
   // Git hooks can export an alternate index or repository. Keep those for the
   // snapshot checks above, but do not leak them into tests using fixture repos.
@@ -149,7 +143,7 @@ async function check(expected, directory) {
     save(directory, report);
     console.log(`Verification summary: ${path.join(directory, "summary.json")}`);
   }
-  console.log(expected.tree ? "Checks passed for the staged tree. Git may create the commit." : "Checks passed for this commit. After publishing it, use pnpm pr:create.");
+  console.log("Checks passed for this commit. After publishing it, use pnpm pr:create.");
 }
 
 function pushUpdate(args) {
@@ -209,11 +203,11 @@ try {
     if (error.code !== "EEXIST") throw error;
     throw new Error(`Another PR command holds ${lockPath}. If it was killed, remove that directory before retrying.`, { cause: error });
   }
-  const expected = identity(base, mode === "pre-commit");
+  const expected = identity(base);
   if (update && (update.commit !== expected.commit || update.branch !== expected.branch)) {
     throw new Error("The checkout changed after Git prepared the push. Retry the push.");
   }
-  const directory = path.join(root, "reports", "pr-check", expected.commit ?? path.join("staged", expected.tree));
+  const directory = path.join(root, "reports", "pr-check", expected.commit);
   mkdirSync(directory, { recursive: true });
   if (mode === "create") await create(expected, directory, forwarded);
   else await check(expected, directory);
