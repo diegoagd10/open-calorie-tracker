@@ -14,7 +14,7 @@ import {
   type ApplicationDatabaseClient,
   type DatabaseStatus,
 } from "../app/database/database.server";
-import { createMigrationFolder } from "./support/deployment";
+import { createMigrationFolder } from "./support/migrations";
 
 const temporaryDirectories: string[] = [];
 

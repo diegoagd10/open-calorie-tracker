@@ -7,7 +7,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { afterAll, beforeAll, expect, test } from "vitest";
 
-import { waitForHttpResponse } from "./support/deployment";
+import { waitForHttpResponse } from "./support/http";
 import { offArchive, offWithBasis } from "./support/off-archive";
 
 const executeFile = promisify(execFile);
