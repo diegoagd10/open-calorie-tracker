@@ -78,7 +78,6 @@ test("root layout exposes the document and mobile metadata", () => {
 });
 
 test("root app renders its nested route outlet", async () => {
-  expect(App().type).toBe(Outlet);
   const Routes = createRoutesStub([
     {
       Component: App,
@@ -92,6 +91,7 @@ test("root app renders its nested route outlet", async () => {
   });
   expect(renderer!.root.findByType("p").children.join(""))
     .toBe("Nested route");
+  expect(renderer!.root.findByType(Outlet)).toBeDefined();
   renderer!.unmount();
 });
 

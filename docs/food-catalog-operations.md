@@ -55,7 +55,13 @@ rejected food counts, and exclusion reasons. Activation occurs only after the
 new database and indexes validate; readers keep using the prior complete
 generation until the handoff. Persistent in-app outcomes identify USDA or OFF
 separately and remain available to administrators after navigation, reload, and
-restart. Regular members may search and log foods but server authorization and
+restart. Administrators receive a brief toast at the top of the page when an
+unseen outcome is detected. Toasts disappear after six seconds, pause while
+hovered or focused, and can be dismissed manually. Dismissed outcomes do not
+reappear on navigation or reload in that browser tab; dismissal does not mark
+the outcome as acknowledged for other administrators. Installation details
+remain in **Settings → Food Catalogs**. Regular members may search and log
+foods but server authorization and
 CSRF protection deny catalog reads or mutations in Settings.
 
 ## Capacity and proxy limits
