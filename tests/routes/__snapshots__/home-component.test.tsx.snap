@@ -1,6 +1,6 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
-exports[`Add Food offers search, barcode, and manual paths before any provider runs 1`] = `"389c114eac430fef6f34fade1c2b8bd439f31eeb63d7d4a13c0473cef69d5597"`;
+exports[`Add Food offers search, barcode, and manual paths before any provider runs 1`] = `"ea628b118f77176f10f72033d629717e803e6e787601f5f983b1c4f098f75401"`;
 
 exports[`barcode mode separates confirmation from scanning while keeping errors recoverable 1`] = `"ea2e5b6c66b6e9520fc7951d92c5aa40fa04e7f25e93e993c3de1b1d6c698a48"`;
 

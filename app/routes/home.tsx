@@ -32,6 +32,7 @@ import { DateRail } from "../date-rail";
 import { AppNavigation } from "../app-navigation";
 import { isTestEnvironment } from "../runtime.server";
 import { UiIcon } from "../ui-icon";
+import methodStyles from "./add-food-method.module.css";
 import { BarcodeCameraScanner } from "./barcode-camera-scanner";
 import { getAuthenticationService } from "../auth/runtime.server";
 import {
@@ -742,9 +743,6 @@ function noticeMessage(
   if (value === "deleted") {
     return "Food Entry deleted. Daily totals updated.";
   }
-  if (value === "water-created") {
-    return "Water Event added. Daily total updated.";
-  }
   if (value === "water-updated") {
     return "Water Event updated. Daily total refreshed.";
   }
@@ -929,7 +927,7 @@ export async function action({ request }: Route.ActionArgs) {
                 selection: parsed.data.waterSelection,
               },
         );
-        return redirect(`${foodLogHref(parsed.data.date)}&notice=water-created`);
+        return redirect(foodLogHref(parsed.data.date));
       }
       if (parsed.data.intent === "delete-water") {
         waterEventService.delete(session.user.id, eventId, {
@@ -2660,32 +2658,30 @@ function WaterEventDialog({
 function CatalogChoiceStage({ date, photoCapture }: { date: string; photoCapture: ReactNode }) {
   return (
     <>
-    <div className={styles.catalogResults} aria-label="Add Food methods">
+    <div className={methodStyles.methods} aria-label="Add Food methods">
       {photoCapture}
-      <Link to={catalogHref(date, "search")}>
-        <span>
-          <strong>Search for food</strong>
-          <small>Search USDA basic foods and Open Food Facts packaged products.</small>
+      <Link aria-label="Search for food" className={methodStyles.method} to={catalogHref(date, "search")}>
+        <span className={methodStyles.icon}>
+          <UiIcon name="search" />
         </span>
-        <small>Choose ›</small>
+        <span className={methodStyles.label}>Search food</span>
       </Link>
-      <Link to={catalogHref(date, "barcode")}>
-        <span>
-          <strong>Scan barcode</strong>
-          <small>Enter a commercial barcode to review Open Food Facts data.</small>
+      <Link className={methodStyles.method} to={catalogHref(date, "barcode")}>
+        <span className={methodStyles.icon}>
+          <UiIcon name="barcode" />
         </span>
-        <small>Choose ›</small>
+        <span className={methodStyles.label}>Scan barcode</span>
       </Link>
-      <Link to={catalogHref(date, "manual")}>
-        <span>
-          <strong>Manual</strong>
-          <small>Enter a serving and its nutrition yourself.</small>
+      <Link className={methodStyles.method} to={catalogHref(date, "manual")}>
+        <span className={methodStyles.icon}>
+          <UiIcon name="pencil" />
         </span>
-        <small>Choose ›</small>
+        <span className={methodStyles.label}>Manual</span>
       </Link>
     </div>
     <details className={styles.providerAttribution}>
       <summary>Photo privacy</summary>
+      <p>AI estimates calories and saves to your log. You can correct it. Your photo is shared with the AI provider for analysis.</p>
       <p>Deleting a photo meal removes its photo and history from this app. It does not delete data retained by your AI provider.</p>
     </details>
     </>
@@ -3127,20 +3123,18 @@ function CatalogDialog({
         <div className={styles.dialogHead}>
           <div>
             <h2 id="food-dialog-title">Add Food</h2>
-            <span className={styles.dialogChip}>
-              {catalog.mode === "search" || catalog.mode === "detail"
-                ? "Local food catalogs"
-                : catalog.mode === "barcode"
-                  ? "Open Food Facts"
-                  : catalog.mode === "manual"
-                    ? "Manual"
-                  : "Choose a method"}
-            </span>
-            <p>
-              {catalog.mode === "choose"
-                ? "Choose how to add food. Photo estimates save automatically; other methods let you review first."
-                : "Nothing changes in your Food Log until a later confirmation step."}
-            </p>
+            {catalog.mode !== "choose" ? (
+              <>
+                <span className={styles.dialogChip}>
+                  {catalog.mode === "search" || catalog.mode === "detail"
+                    ? "Local food catalogs"
+                    : catalog.mode === "barcode"
+                      ? "Open Food Facts"
+                      : "Manual"}
+                </span>
+                <p>Nothing changes in your Food Log until a later confirmation step.</p>
+              </>
+            ) : null}
           </div>
           <Link
             aria-label="Close food search"

@@ -1,10 +1,14 @@
 export type UiIconName =
+  | "barcode"
   | "calendar"
+  | "camera"
   | "external"
   | "info"
   | "lock"
   | "log"
   | "plus"
+  | "pencil"
+  | "search"
   | "settings"
   | "utensils"
   | "water";
@@ -21,7 +25,21 @@ export function UiIcon({ name }: { name: UiIconName }) {
       strokeWidth="1.8"
       viewBox="0 0 24 24"
     >
-      {name === "lock" ? (
+      {name === "camera" ? (
+        <>
+          <path d="M8 5l1.5-2h5L16 5h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Z" />
+          <circle cx="12" cy="13" r="4" />
+        </>
+      ) : name === "search" ? (
+        <>
+          <circle cx="10.5" cy="10.5" r="6.5" />
+          <path d="m16 16 5 5" />
+        </>
+      ) : name === "barcode" ? (
+        <path d="M3 7V3h4M17 3h4v4M21 17v4h-4M7 21H3v-4M7 8v8M10 8v8M14 8v8M17 8v8" />
+      ) : name === "pencil" ? (
+        <path d="m16 3 5 5L9 20l-6 1 1-6ZM13 6l5 5" />
+      ) : name === "lock" ? (
         <>
           <rect height="10" rx="2" width="14" x="5" y="10" />
           <path d="M8 10V7a4 4 0 0 1 8 0v3" />

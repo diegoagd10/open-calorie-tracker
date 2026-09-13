@@ -242,7 +242,7 @@ test("home publishes metadata and enforces account/setup/date boundaries", async
   for (const [notice, message] of [
     ["updated", "Food Entry updated. Daily totals refreshed."],
     ["deleted", "Food Entry deleted. Daily totals updated."],
-    ["water-created", "Water Event added. Daily total updated."],
+    ["water-created", undefined],
     ["water-updated", "Water Event updated. Daily total refreshed."],
     ["water-deleted", "Water Event deleted. Daily total updated."],
     ["unknown", undefined],
@@ -675,15 +675,15 @@ test("home water actions create, edit, detect conflicts, and delete", async () =
       post({ intent: "create-water", waterAmount: "12.5", waterSelection: "exact" }),
     ),
   );
-  expectRedirect(created, "/?date=2026-08-31&notice=water-created");
+  expectRedirect(created, "/?date=2026-08-31");
   const preset = await homeAction(
     routeArgs(post({ intent: "create-water", waterSelection: "16" })),
   );
-  expectRedirect(preset, "/?date=2026-08-31&notice=water-created");
+  expectRedirect(preset, "/?date=2026-08-31");
   for (const waterSelection of ["8", "24"]) {
     expectRedirect(
       await homeAction(routeArgs(post({ intent: "create-water", waterSelection }))),
-      "/?date=2026-08-31&notice=water-created",
+      "/?date=2026-08-31",
     );
   }
   const previous = await homeAction(
@@ -696,7 +696,7 @@ test("home water actions create, edit, detect conflicts, and delete", async () =
       }),
     ),
   );
-  expectRedirect(previous, "/?date=2026-08-30&notice=water-created");
+  expectRedirect(previous, "/?date=2026-08-30");
   const previousEvent = (await load("/?date=2026-08-30")).data.foodLog.events
     .find((candidate) => candidate.kind === "water")!;
   const wrongDateDialog = await homeLoader(
