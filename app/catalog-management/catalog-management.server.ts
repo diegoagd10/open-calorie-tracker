@@ -17,6 +17,7 @@ export type CatalogImportJob = {
   processedRecords: number; importedRecords?: number; rejectedRecords?: number;
   exclusions: Record<string, number>; error: string | null;
   startedAt: string; updatedAt: string;
+  operation?: "install" | "update";
   sourceReleaseCandidate?: FoundationReleaseMetadata;
   archiveCrc64nvme?: string;
   sourceSnapshotCandidate?: OffSnapshotMetadata;
@@ -36,6 +37,7 @@ export type CatalogOutcome = {
   jobId: string; filename: string; phase: "succeeded" | "failed" | "interrupted";
   completedAt: string; error: string | null; installed: InstalledCatalog | null;
   acknowledgedAt: string | null;
+  operation?: "install" | "update";
 };
 export type FoundationReleaseMetadata = {
   releasePeriod: string;

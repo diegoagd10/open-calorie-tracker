@@ -116,7 +116,8 @@
           "scripts/calibrate-argon2.mjs",
           "scripts/check-codeql-results.mjs",
           "scripts/pr.mjs",
-          "scripts/install-git-hooks.mjs"
+          "scripts/install-git-hooks.mjs",
+          "scripts/catalog-browser-runtime.ts"
         ]
       }
     ],

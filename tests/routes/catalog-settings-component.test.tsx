@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-call -- react-test-renderer host event props are untyped */
 import { createElement } from "react";
 import { createRoutesStub } from "react-router";
 import { act, create, type ReactTestInstance, type ReactTestRenderer } from "react-test-renderer";
@@ -12,9 +11,6 @@ afterEach(async () => { for (const renderer of renderers.splice(0)) await act(()
 const empty: CatalogState = { installed: null, job: null, busy: false };
 function job(phase: ImportPhase): NonNullable<CatalogState["job"]> { return { id: "job", filename: "archive.gz", phase, receivedBytes: 1234, processedRecords: 5678, importedRecords: 4321, rejectedRecords: 123, exclusions: {}, error: null, startedAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z" }; }
 function text(node: ReactTestInstance): string { return node.children.map(child => typeof child === "string" ? child : text(child)).join(""); }
-function uploadInput(card: ReactTestInstance) { return card.findAllByType("input").find(input => input.props.type === "file")!; }
-function uploadButton(card: ReactTestInstance) { return card.findAllByType("button").find(button => /Install|Replace or reimport|Retry/.test(text(button)))!; }
-function uploadForm(card: ReactTestInstance) { return card.findAllByType("form").find(form => form.findAllByProps({ name: "archive" }).length > 0)!; }
 async function render(catalog = empty, offCatalog = empty) {
   const load = vi.fn(() => ({ catalog, offCatalog, today: "2026-09-08", csrfToken: "catalog-csrf" }));
   const Routes = createRoutesStub([{ path: "/settings/catalogs", id: "catalogs", Component: CatalogSettings, loader: load }]);
@@ -24,56 +20,33 @@ async function render(catalog = empty, offCatalog = empty) {
   return { renderer, load, card: (provider: string) => renderer.root.findByProps({ "aria-labelledby": `${provider}-heading` }) };
 }
 
-test("each catalog card identifies its source, archive type, license and independent controls", async () => {
+test("each catalog card shows availability, official downloads and metadata controls without installation controls", async () => {
   expect(meta()).toEqual([{ title: "Food Catalogs · Open Calorie Tracker" }]);
-  const { renderer, card, load } = await render();
+  const { renderer, card } = await render();
   const off = card("open-food-facts"); const usda = card("usda-fdc");
-  expect(text(renderer.root)).toContain("Install shared reference foods for local search and logging.");
-  expect(text(off)).toContain("Open Food FactsNot installedDownload the OFF tab-separated CSV GZIP, then upload it here.");
-  expect(text(off)).toContain("Open Food Facts data is available under the Open Database License (ODbL). Products without an explicit nutrition basis can be reviewed but cannot be used for calculated logging.");
+  expect(text(renderer.root)).toContain("Shared reference foods for local search and logging.");
+  expect(text(off)).toContain("Open Food FactsNot installedDownload the OFF tab-separated CSV GZIP, then install it with the terminal command.");
+  expect(text(off)).toContain("Open Database License (ODbL)");
   expect(text(off)).toContain("Saved Food Entries keep their original nutrition and measurements.");
-  expect(uploadInput(off).props).toMatchObject({ type: "file", name: "archive", accept: ".gz,application/gzip", required: true, disabled: false });
-  expect(uploadInput(usda).props.accept).toBe(".zip,application/zip");
   expect(off.findByType("a").props).toMatchObject({ href: "https://world.openfoodfacts.org/data", target: "_blank", rel: "noreferrer" });
   expect(usda.findByType("a").props.href).toBe("https://fdc.nal.usda.gov/download-datasets/");
-  expect(text(uploadButton(off))).toBe("Install Open Food Facts");
-  expect(text(uploadButton(usda))).toBe("Install USDA Foundation");
-  expect(off.findByProps({ role: "status" }).props["aria-live"]).toBe("polite");
-  expect(text(off.findByType("noscript"))).toBe("Enable JavaScript to upload a catalog and view import progress.");
+  expect(renderer.root.findAllByProps({ type: "file" })).toHaveLength(0);
+  expect(text(off.findByType("button"))).toBe("Check OFF updates");
+  expect(text(usda.findByType("button"))).toBe("Check USDA updates");
+});
+
+test.each(["uploading", "queued", "validating", "importing", "indexing", "activating", "succeeded", "failed", "interrupted"] as const)("%s jobs expose no progress, diagnostic data, reports or polling on either card", async phase => {
+  vi.useFakeTimers();
+  const state = { ...empty, busy: true, job: { ...job(phase), error: "Private archive error", exclusions: { invalid_identity: 2345 } } };
+  const { renderer, load } = await render(state, state);
+  expect(renderer.root.findAllByProps({ type: "file" })).toHaveLength(0);
+  expect(renderer.root.findAllByType("progress")).toHaveLength(0);
+  expect(renderer.root.findAllByProps({ role: "alert" })).toHaveLength(0);
+  expect(renderer.root.findAllByType("details")).toHaveLength(0);
+  expect(text(renderer.root)).not.toMatch(/Private archive error|bytes received|records processed|foods imported|records rejected|invalid identity|installation complete|installation failed|installation interrupted|Receiving archive|Queued for import|Validating archive|Importing foods|Building search index|Activating catalog|Excluded records/);
+  expect(renderer.root.findAllByType("button").filter(button => /Install|Replace|Retry/.test(text(button)))).toHaveLength(0);
+  await act(async () => { await vi.advanceTimersByTimeAsync(9000); });
   expect(load).toHaveBeenCalledTimes(1);
-});
-
-test.each([
-  ["uploading", "Receiving archive"], ["queued", "Queued for import"], ["validating", "Validating archive"], ["importing", "Importing foods and nutrition"], ["indexing", "Building search index"], ["activating", "Activating catalog"], ["succeeded", "Open Food Facts installation complete"], ["failed", "Open Food Facts installation failed"], ["interrupted", "Open Food Facts installation interrupted"],
-] as const)("OFF phase %s exposes progress independently of USDA", async (phase, label) => {
-  const busy = !["succeeded", "failed", "interrupted"].includes(phase);
-  const { card } = await render(empty, { ...empty, busy, job: { ...job(phase), error: phase === "failed" ? "Archive rejected" : null, exclusions: { invalid_identity: 2345 } } });
-  const off = card("open-food-facts");
-  expect(text(off.findByProps({ role: "status" }))).toContain(`${label}1,234 bytes received · 5,678 records processed`);
-  expect(uploadButton(off).props.disabled).toBe(busy);
-  expect(uploadInput(off).props.disabled).toBe(busy);
-  expect(uploadButton(card("usda-fdc")).props.disabled).toBe(false);
-  expect(text(off).includes("You can leave this page. Import continues on the server; return here for the outcome.")).toBe(busy);
-  expect(text(off.findByType("details"))).toBe("Excluded records and unavailable datainvalid identity: 2,345These counts describe individual records or values; an archive failure is shown separately above.");
-  if (phase === "failed") expect(text(off.findByProps({ role: "alert" }))).toBe("Archive rejected");
-});
-
-test.each([
-  ["usda-fdc", "failed", "Retry USDA Foundation installation"],
-  ["open-food-facts", "interrupted", "Retry Open Food Facts installation"],
-] as const)("%s %s state offers a safe archive retry after reload", async (provider, phase, button) => {
-  const retryable = { ...empty, job: { ...job(phase), error: `${provider} recovery message` } };
-  const { card } = await render(provider === "usda-fdc" ? retryable : empty, provider === "open-food-facts" ? retryable : empty);
-  const catalog = card(provider);
-  expect(text(uploadButton(catalog))).toBe(button);
-  expect(text(catalog)).toContain("Select the archive again to retry. Partial uploads are not resumed.");
-  expect(uploadInput(catalog).props.disabled).toBe(false);
-});
-
-test("each catalog reports imported foods separately from rejected food records", async () => {
-  const { card } = await render({ ...empty, busy: true, job: job("importing") }, { ...empty, busy: true, job: job("importing") });
-  expect(text(card("usda-fdc").findByProps({ role: "status" }))).toContain("4,321 foods imported · 123 food records rejected");
-  expect(text(card("open-food-facts").findByProps({ role: "status" }))).toContain("4,321 foods imported · 123 food records rejected");
 });
 
 test.each([
@@ -116,105 +89,11 @@ test.each([undefined, { earliest: null, latest: null }, { earliest: "2024-01-01"
   expect(text(off)).toContain(`Product modification dates: ${sourceDateRange?.earliest ?? "Unknown"} – ${sourceDateRange?.latest ?? "Unknown"}`);
   expect(text(off)).toContain("These dates describe products, not an official dump release.");
   expect(text(usda)).toContain("Food publication dates: 2020-01-01 – 2023-01-01");
-  expect(text(usda)).toContain("USDA installation complete");
+  expect(text(usda)).not.toContain("USDA installation complete");
   expect(text(off.findByType("details"))).toBe("Source snapshot fingerprintSHA-256: abc123");
   expect(text(off)).toContain("Installed: 1/2/2026, 3:04:05 AM");
-  expect(text(off)).toContain("Upload a newer OFF archive, or deliberately reimport this archive, while the installed catalog remains available.");
-  expect(text(uploadButton(off))).toBe("Replace or reimport Open Food Facts");
-  expect(uploadInput(off).props.disabled).toBe(false);
-  expect(text(usda)).toContain("Upload a newer Foundation archive, or deliberately reimport this archive, while the installed catalog remains available.");
-  expect(text(uploadButton(usda))).toBe("Replace or reimport USDA Foundation");
-  expect(uploadInput(usda).props.disabled).toBe(false);
-});
-
-test("busy catalogs poll, stop polling on unmount, and idle catalogs do not poll", async () => {
-  vi.useFakeTimers();
-  const idle = await render();
-  await act(() => { vi.advanceTimersByTime(2000); });
-  expect(idle.load).toHaveBeenCalledTimes(1);
-  const busy = await render(empty, { ...empty, busy: true, job: job("importing") });
-  await act(async () => { await vi.advanceTimersByTimeAsync(999); });
-  expect(busy.load).toHaveBeenCalledTimes(1);
-  await act(async () => { await vi.advanceTimersByTimeAsync(1); });
-  expect(busy.load).toHaveBeenCalledTimes(2);
-  await act(() => busy.renderer.unmount());
-  expect(vi.getTimerCount()).toBe(0);
-});
-
-class UploadRequest {
-  static requests: UploadRequest[] = [];
-  status = 202;
-  responseText = "";
-  upload = { onprogress: null as null | ((event: { loaded: number }) => void) };
-  onload: (() => void) | null = null;
-  onerror: (() => void) | null = null;
-  open = vi.fn(); setRequestHeader = vi.fn(); send = vi.fn();
-  constructor() { UploadRequest.requests.push(this); }
-}
-async function submit(card: ReactTestInstance, file: unknown) {
-  const get = vi.fn(() => file);
-  vi.stubGlobal("FormData", class { get = get; });
-  vi.stubGlobal("XMLHttpRequest", UploadRequest);
-  const preventDefault = vi.fn();
-  await act(() => { uploadForm(card).props.onSubmit({ preventDefault, currentTarget: {} }); });
-  expect(preventDefault).toHaveBeenCalledOnce();
-  expect(get).toHaveBeenCalledWith("archive");
-  return UploadRequest.requests.at(-1)!;
-}
-
-test.each([null, "archive", new File([], "empty.gz")])("empty/non-file submissions stay local %#", async file => {
-  const { card } = await render();
-  await submit(card("open-food-facts"), file);
-  expect(text(card("open-food-facts").findByProps({ role: "alert" }))).toBe("Choose a OFF tab-separated CSV GZIP archive.");
-  expect(uploadButton(card("open-food-facts")).props.disabled).toBe(false);
-});
-
-test.each(["usda-fdc", "open-food-facts"] as const)("%s sends its upload headers, reports bytes, and refreshes after acceptance", async provider => {
-  vi.useFakeTimers();
-  const { card, load } = await render();
-  const file = new File(["1234567890"], "source name.gz");
-  const request = await submit(card(provider), file);
-  expect(request.open).toHaveBeenCalledWith("POST", "/settings/catalogs");
-  expect(request.setRequestHeader.mock.calls).toEqual([["Content-Type", provider === "usda-fdc" ? "application/zip" : "application/gzip"], ["X-Catalog-Provider", provider], ["X-CSRF-Token", "catalog-csrf"], ["X-Archive-Name", "source%20name.gz"]]);
-  expect(request.send).toHaveBeenCalledWith(file);
-  expect(uploadInput(card(provider)).props.disabled).toBe(true);
-  expect(uploadButton(card(provider)).props.disabled).toBe(true);
-  await act(() => request.upload.onprogress!({ loaded: 4 }));
-  expect(text(card(provider))).toContain("Uploading: 4 / 10 bytes");
-  expect(card(provider).findByType("progress").props).toMatchObject({ "aria-label": "Archive upload", value: 4, max: 10 });
-  await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
-  expect(load).toHaveBeenCalledTimes(2);
-  await act(() => request.onload!());
-  expect(card(provider).findAllByProps({ role: "alert" })).toHaveLength(0);
-  expect(uploadButton(card(provider)).props.disabled).toBe(false);
-  expect(card(provider).findAllByType("progress")).toHaveLength(0);
-  expect(load).toHaveBeenCalledTimes(3);
-});
-
-test.each([
-  [409, '{"error":"Busy on another device"}', "Busy on another device"],
-  [201, '{}', "Upload was rejected. Reload Settings and try again."],
-  [203, '<html>Forbidden</html>', "Upload was rejected. Reload Settings and try again."],
-] as const)("upload status %s shows an actionable rejection and permits retry", async (status, responseText, message) => {
-  const { card, load } = await render();
-  const off = card("open-food-facts");
-  const request = await submit(off, new File(["body"], "archive.gz"));
-  request.status = status; request.responseText = responseText;
-  await act(() => request.onload!());
-  expect(text(off.findByProps({ role: "alert" }))).toBe(message);
-  expect(uploadButton(off).props.disabled).toBe(false);
-  await submit(off, new File(["retry"], "retry.gz"));
-  expect(off.findAllByProps({ role: "alert" })).toHaveLength(0);
-  expect(load).toHaveBeenCalledTimes(2);
-});
-
-test("connection errors refresh the durable server outcome and allow retry", async () => {
-  const { card, load } = await render();
-  const request = await submit(card("open-food-facts"), new File(["body"], "archive.gz"));
-  await act(() => request.onerror!());
-  expect(text(card("open-food-facts").findByProps({ role: "alert" }))).toBe("Upload connection failed. Return to Settings to check the server outcome before retrying.");
-  expect(uploadButton(card("open-food-facts")).props.disabled).toBe(false);
-  expect(load).toHaveBeenCalledTimes(2);
+  expect(text(off)).toContain("Import a newer OFF archive, or deliberately reimport this archive, while the installed catalog remains available.");
+  expect(text(usda)).toContain("Import a newer Foundation archive, or deliberately reimport this archive, while the installed catalog remains available.");
 });
 
 test.each([
@@ -230,7 +109,6 @@ test.each([
   expect(text(off)).toContain("Last checked: 9/9/2026, 10:30:00 AM");
   expect(text(off)).toContain("Check OFF updates again");
   expect(text(card("usda-fdc"))).not.toContain(message);
-  expect(uploadInput(off).props.disabled).toBe(false);
 });
 
 test("OFF displays matched snapshot dates separately from unknown dates and unchecked status", async () => {
@@ -240,7 +118,7 @@ test("OFF displays matched snapshot dates separately from unknown dates and unch
   const off = checked.card("open-food-facts");
   expect(text(off)).toContain("Installed official snapshot: 2026-09-07T12:00:00.000Z");
   expect(text(off)).toContain("Available export last modified: 2026-09-09T12:00:00.000Z");
-  expect(text(off)).not.toContain("The uploaded archive has not been matched");
+  expect(text(off)).not.toContain("The installed archive has not been matched");
   expect(off.findByProps({ name: "intent" }).props.value).toBe("check-off-update");
   expect(checked.card("usda-fdc").findByProps({ name: "intent" }).props.value).toBe("check-usda-update");
 
