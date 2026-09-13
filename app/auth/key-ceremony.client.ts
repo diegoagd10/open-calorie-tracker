@@ -83,6 +83,24 @@ export async function signInWithKey(csrf: string, username: string) {
     throw error;
   }
 }
+export async function changeKeyLoginMode(csrf: string, enabled: boolean) {
+  activePrompt = new AbortController();
+  const prompt = activePrompt;
+  const action = enabled ? "re-enable" : "disable";
+  try {
+    const verification = await post<{
+      options: PublicKeyCredentialRequestOptionsJSON;
+    }>(csrf, `${action}-start`);
+    prompt.signal.throwIfAborted();
+    const response = await startAuthentication({
+      optionsJSON: verification.options,
+    });
+    return await post<{ nextPath: string }>(csrf, `${action}-finish`, { response });
+  } catch (error) {
+    await post(csrf, "cancel").catch(() => {});
+    throw error;
+  }
+}
 export function cancelKeyPrompt(): void {
   activePrompt?.abort();
   WebAuthnAbortService.cancelCeremony();

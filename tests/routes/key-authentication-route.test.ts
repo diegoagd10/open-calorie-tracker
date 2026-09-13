@@ -1195,3 +1195,81 @@ test("addition start denies missing names and unauthenticated or cross-site requ
   ).catch((error: unknown) => error);
   expect((forged as Response).status).toBe(403);
 });
+
+test("mode routes disable to password sign-in and re-enable retained keys without a password field", async () => {
+  const { enabledCookie, key } = await enabledAccount("toggle.route");
+  async function settings(cookie: string) {
+    const loaded = await securityLoader(args(new Request(`${origin}/settings/security`, { headers: { Cookie: cookie } }), "/settings/security"));
+    if (loaded instanceof Response) throw new Error("settings redirected");
+    return loaded;
+  }
+  async function toggle(cookie: string, enabled: boolean, counter: number) {
+    const loaded = await settings(cookie);
+    const prefix = enabled ? "re-enable" : "disable";
+    const start = await action(args(post({ action: `${prefix}-start`, csrfToken: loaded.csrfToken }, cookie)));
+    expect(start.status).toBe(200);
+    const { options } = await start.json() as { options: PublicKeyCredentialRequestOptionsJSON };
+    return action(args(post({ action: `${prefix}-finish`, csrfToken: loaded.csrfToken, response: key.assertion(options, counter) }, `${cookie}; ${cookies(start)}`)));
+  }
+  const disabled = await toggle(enabledCookie, false, 2);
+  expect(await disabled.json()).toEqual({ nextPath: "/login" });
+  expect(disabled.headers.get("Set-Cookie")).toContain("__Host-calorie_session=;");
+  const login = await getAuthenticationService().login("toggle.route", password, "192.0.2.70");
+  if (!login.ok) throw new Error("password login failed");
+  const passwordCookie = serializeSessionCookie(login.session).split(";", 1)[0];
+  expect(await settings(passwordCookie)).toMatchObject({ enabled: false, credentials: [{ id: key.id }] });
+  const enabled = await toggle(passwordCookie, true, 3);
+  expect(enabled.status).toBe(200);
+  expect(await enabled.json()).toEqual({ nextPath: "/settings/security" });
+  expect(await settings(cookies(enabled))).toMatchObject({ enabled: true, credentials: [{ id: key.id }] });
+});
+
+test.each([false, true])("mode toggle UI to enabled=%s handles cancellation and retries without a password", async (enabled) => {
+  const owner = await enabledAccount(`toggle.ui.${enabled}`);
+  let cookie = owner.enabledCookie;
+  if (enabled) {
+    const session = await getAuthenticationService().authenticate(parseCookies(cookie).get("__Host-calorie_session"));
+    if (!session) throw new Error("missing session");
+    const proof = await getAuthenticationService().keys.beginModeChange(session.token, "disable-ui", false);
+    await getAuthenticationService().keys.finishModeChange(session.token, "disable-ui", false, owner.key.assertion(proof, 2));
+    const login = await getAuthenticationService().login(`toggle.ui.${enabled}`, password, "192.0.2.72");
+    if (!login.ok) throw new Error("password login failed");
+    cookie = serializeSessionCookie(login.session).split(";", 1)[0];
+  }
+  const loaded = await securityLoader(args(new Request(`${origin}/settings/security`, { headers: { Cookie: cookie } }), "/settings/security"));
+  if (loaded instanceof Response) throw new Error("settings redirected");
+  const renderer = await renderPage(SecuritySettings, "/settings/security", loaded);
+  const transport = browserTransport(cookie);
+  transport.installNavigation();
+  expect(renderer.root.findAllByType("input").some((input) => input.props.type === "password")).toBe(false);
+  const toggle = () => renderer.root.findAllByType("button").find((node) => node.children.includes(enabled ? "Re-enable key login" : "Disable key login"))!;
+  vi.mocked(browserProvider.startAuthentication).mockRejectedValueOnce(new DOMException("cancelled", "NotAllowedError"));
+  await act(async () => {
+    (toggle().props as { onClick(): void }).onClick();
+  });
+  await vi.waitFor(async () => {
+    await act(async () => {});
+    expect(allText(renderer)).toContain("cancelled");
+  });
+  expect(getAuthenticationService().keys.status(parseCookies(transport.cookie()).get("__Host-calorie_session")!).enabled).toBe(!enabled);
+  let finish!: () => void;
+  const proceed = new Promise<void>((resolve) => { finish = resolve; });
+  vi.mocked(browserProvider.startAuthentication).mockImplementation(async ({ optionsJSON }) => { await proceed; return owner.key.assertion(optionsJSON, 3); });
+  await act(async () => { (toggle().props as { onClick(): void }).onClick(); });
+  expect(allText(renderer)).toContain("Verify any saved key");
+  await act(async () => {
+    finish();
+    await vi.waitFor(() => expect(transport.assign).toHaveBeenCalledWith(enabled ? "/settings/security" : "/login"));
+  });
+  await act(async () => renderer.unmount());
+});
+
+test.each(["disable-start", "re-enable-start"])("%s preserves authenticated CSRF, origin and anonymous guards", async (modeAction) => {
+  await expect(action(args(post({ action: modeAction, csrfToken: "bad" })))).rejects.toMatchObject({ status: 401 });
+  const session = await account(`protected.${modeAction}`);
+  const cookie = serializeSessionCookie(session).split(";", 1)[0];
+  await expect(action(args(post({ action: modeAction, csrfToken: "bad" }, cookie)))).rejects.toMatchObject({ status: 403 });
+  const wrongOrigin = post({ action: modeAction, csrfToken: session.csrfToken }, cookie);
+  wrongOrigin.headers.set("Origin", "https://attacker.example");
+  await expect(action(args(wrongOrigin))).rejects.toMatchObject({ status: 403 });
+});

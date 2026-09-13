@@ -27,7 +27,9 @@ function keyEvent(
 ) {
   if (Array.isArray(purpose)) return "key_registration";
   if (purpose === "login") return "key_login";
-  return purpose === "enable" ? "key_login_policy" : "key_registration";
+  return ["enable", "disable", "re-enable"].includes(purpose)
+    ? "key_login_policy"
+    : "key_registration";
 }
 function keyOrigin(): WebAuthnBoundary {
   const url = new URL(applicationOrigin());
@@ -260,6 +262,91 @@ export class KeyAuthenticationService {
       );
     }
   }
+  async beginModeChange(token: string, browser: string, enabled: boolean) {
+    const user = this.#storage.enrollmentAccount(hashOpaqueToken(token));
+    if (!enrollmentPreviewEnabled())
+      throw new KeyAuthenticationError("Key enrollment preview is unavailable.");
+    if (!this.#limits.consume("key-mode", String(user.id), 10, 15 * 60_000))
+      throw new KeyAuthenticationError("Too many key attempts. Try again later.");
+    const credentials = this.#storage.credentials(user.id);
+    if (user.keyLoginEnabled === enabled || !credentials.length)
+      throw new KeyAuthenticationError(
+        "Retry from security settings. Enroll a first key if none are saved.",
+      );
+    const boundary = keyOrigin();
+    const { generateAuthenticationOptions } = await import(
+      "@simplewebauthn/server"
+    );
+    const options = await generateAuthenticationOptions({
+      rpID: boundary.rpId,
+      userVerification: "required",
+      allowCredentials: credentials.map(({ id, transports }) => ({
+        id,
+        transports,
+      })),
+    });
+    this.#storage.save(
+      {
+        browserHash: hashOpaqueToken(browser),
+        userId: user.id,
+        purpose: enabled ? "re-enable" : "disable",
+        challenge: options.challenge,
+        ...boundary,
+        authenticationVersion: user.authenticationVersion,
+        sessionHash: hashOpaqueToken(token),
+        name: "",
+        expiresAt: new Date(this.#now().getTime() + 5 * 60_000).toISOString(),
+      },
+      keyOrigin(),
+    );
+    return options;
+  }
+  async finishModeChange(
+    token: string,
+    browser: string,
+    enabled: boolean,
+    input: unknown,
+  ) {
+    const pending = this.#take(
+      hashOpaqueToken(browser),
+      enabled ? "re-enable" : "disable",
+      keyOrigin(),
+      hashOpaqueToken(token),
+    );
+    try {
+      const verified = await this.#verifyAssertion(pending, input);
+      const session = this.#storage.changeMode(
+        pending,
+        verified,
+        keyOrigin(),
+        (current, absolute) =>
+          prepareIssuedSession(
+            this.#now(),
+            {
+              id: current.id,
+              username: current.usernameNormalized,
+              role: current.role,
+              passwordChangeRequired: current.passwordChangeRequired,
+            },
+            absolute,
+          ),
+      );
+      operationalLog("info", "key_login_policy", {
+        outcome: "succeeded",
+        userId: pending.userId,
+      });
+      return session;
+    } catch {
+      operationalLog("info", "key_login_policy", {
+        outcome: "rejected",
+        userId: pending.userId,
+      });
+      throw new KeyAuthenticationError(
+        "Key verification failed. Your sign-in mode is unchanged. Retry.",
+      );
+    }
+  }
+
   async beginLogin(username: string, browser: string, clientIp: string) {
     if (
       !this.#limits.consume("key-login", clientIp, 20, 15 * 60_000) ||

@@ -6,6 +6,7 @@ import { getAuthenticationService } from "../auth/runtime.server";
 import { enrollmentPreviewEnabled } from "../runtime.server";
 import {
   enrollKey,
+  changeKeyLoginMode,
   keyProviderError,
   cancelKeyPrompt,
 } from "../auth/key-ceremony.client";
@@ -34,6 +35,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 }
 export default function SecuritySettings({ loaderData }: Route.ComponentProps) {
   const [busy, setBusy] = useState(false);
+  const [modeChange, setModeChange] = useState(false);
   const [error, setError] = useState("");
   return (
     <main className={styles.shell}>
@@ -54,6 +56,33 @@ export default function SecuritySettings({ loaderData }: Route.ComponentProps) {
           may ask for its own PIN or biometrics.
         </p>
         {loaderData.credentials.length ? (
+          <p>
+            {loaderData.enabled
+              ? "Saved keys can sign you in. Disabling keeps every key and restores password sign-in."
+              : "Your keys are retained, but cannot sign you in while key login is disabled. Verify a retained key to re-enable; no account password is needed."}
+          </p>
+        ) : null}
+        {loaderData.preview && loaderData.credentials.length ? (
+          <button
+            className={styles.submit}
+            type="button"
+            disabled={busy}
+            onClick={() => {
+              setBusy(true);
+              setModeChange(true);
+              setError("");
+              void changeKeyLoginMode(loaderData.csrfToken, !loaderData.enabled)
+                .then((result) => window.location.assign(result.nextPath))
+                .catch((failure: unknown) => {
+                  setError(keyProviderError(failure));
+                  setBusy(false);
+                });
+            }}
+          >
+            {loaderData.enabled ? "Disable key login" : "Re-enable key login"}
+          </button>
+        ) : null}
+        {loaderData.credentials.length ? (
           <ul>
             {loaderData.credentials.map((key) => (
               <li key={key.id}>{key.name}</li>
@@ -69,6 +98,7 @@ export default function SecuritySettings({ loaderData }: Route.ComponentProps) {
                 new FormData(event.currentTarget).get("name") ?? "",
               );
               setBusy(true);
+              setModeChange(false);
               setError("");
               void (async () => {
                 try {
@@ -127,7 +157,9 @@ export default function SecuritySettings({ loaderData }: Route.ComponentProps) {
         ) : null}
         <p role="status">
           {busy
-            ? loaderData.enabled
+            ? modeChange
+              ? "Verify any saved key to change sign-in mode. This signs out older sessions."
+              : loaderData.enabled
               ? "Verify an existing key, then register and verify the new key."
               : "Complete registration, then verify the new key."
             : ""}

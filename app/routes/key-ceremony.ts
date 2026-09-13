@@ -6,6 +6,7 @@ import {
   getClientIp,
   getSessionForApplicationAccess,
   parseCookies,
+  serializeClearedSessionCookie,
   requirePreAuthenticationCsrf,
   requireValidOrigin,
 } from "../auth/http.server";
@@ -17,6 +18,10 @@ import { usernameSchema } from "../auth/validation";
 const bodySchema = z
   .object({
     action: z.enum([
+      "disable-start",
+      "disable-finish",
+      "re-enable-start",
+      "re-enable-finish",
       "addition-start",
       "addition-finish",
       "register-start",
@@ -72,16 +77,18 @@ export async function action({ request }: Route.ActionArgs) {
     throw new Response("Invalid key request.", { status: 400 });
   }
   const service = getAuthenticationService();
-  const enrollment =
+  const authenticatedAction =
+    input.action.startsWith("disable") ||
+    input.action.startsWith("re-enable") ||
     input.action.startsWith("register") ||
     input.action.startsWith("addition") ||
     input.action === "enable-finish";
-  const session = enrollment
+  const session = authenticatedAction
     ? await getSessionForApplicationAccess(request)
     : undefined;
-  if (enrollment) {
+  if (authenticatedAction) {
     if (!session)
-      throw new Response("Sign in before enrolling a key.", { status: 401 });
+      throw new Response("Sign in before managing keys.", { status: 401 });
     if (!service.verifyCsrfToken(session.token, input.csrfToken))
       throw new Response("CSRF token rejected.", { status: 403 });
   } else if (input.action !== "cancel") {
@@ -115,6 +122,38 @@ export async function action({ request }: Route.ActionArgs) {
   );
   try {
     switch (input.action) {
+      case "disable-start":
+      case "re-enable-start":
+        return Response.json(
+          {
+            options: await service.keys.beginModeChange(
+              session!.token,
+              browser,
+              input.action === "re-enable-start",
+            ),
+          },
+          { headers },
+        );
+      case "disable-finish":
+      case "re-enable-finish": {
+        const issued = await service.keys.finishModeChange(
+          session!.token,
+          browser,
+          input.action === "re-enable-finish",
+          input.response,
+        );
+        if (issued) {
+          for (const cookie of authenticatedSessionHeaders(
+            request,
+            issued,
+          ).getSetCookie())
+            headers.append("Set-Cookie", cookie);
+        } else headers.append("Set-Cookie", serializeClearedSessionCookie());
+        return Response.json(
+          { nextPath: issued ? "/settings/security" : "/login" },
+          { headers },
+        );
+      }
       case "addition-start":
         return Response.json(
           {

@@ -340,7 +340,7 @@ export const webauthnCredentials = sqliteTable("webauthn_credentials", {
 export const webauthnCeremonies = sqliteTable("webauthn_ceremonies", {
   browserHash: text("browser_hash").primaryKey(),
   userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-  purpose: text({ enum: ["register", "enable", "login", "add-proof", "register-add", "add", "register-retained", "retain", "processing"] }).notNull(),
+  purpose: text({ enum: ["register", "enable", "login", "add-proof", "register-add", "add", "register-retained", "retain", "disable", "re-enable", "processing"] }).notNull(),
   challenge: text().notNull(),
   origin: text().notNull(),
   rpId: text("rp_id").notNull(),
