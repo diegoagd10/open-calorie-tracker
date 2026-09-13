@@ -13,9 +13,11 @@ services:
       PHOTO_AI_AUTH_PATH: "${PHOTO_AI_AUTH_PATH:-/app/data/pi/auth.json}"
       PHOTO_AI_USDA_ROUNDS: "${PHOTO_AI_USDA_ROUNDS:-3}"
       PORT: "${PORT:-3000}"
-      TRUST_PROXY: "${TRUST_PROXY:?Set the private reverse-proxy network CIDR}"
+      LAN_URL: "${LAN_URL:-}"
+      LAN_PORT: "${LAN_PORT:-3002}"
     ports:
-      - "${HOST_PORT:-3000}:${PORT:-3000}"
+      - "127.0.0.1:${HOST_PORT:-3001}:${PORT:-3000}"
+      - "${LAN_BIND_IP:-192.168.4.21}:${LAN_HOST_PORT:-3002}:${LAN_PORT:-3002}"
     volumes:
       - type: bind
         source: "${DATA_PATH:?Set DATA_PATH to the host data directory}"

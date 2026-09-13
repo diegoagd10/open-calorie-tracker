@@ -150,7 +150,7 @@ test("administrator installs USDA from mobile Settings, leaves during import, an
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
   await page.screenshot({ path: testInfo.outputPath("both-catalogs-mobile.png"), fullPage: true });
 
-  const context = await browser.newContext({ ignoreHTTPSErrors: true });
+  const context = await browser.newContext({ baseURL: new URL(page.url()).origin, ignoreHTTPSErrors: true });
   try {
     const member = await context.newPage();
     await signInProvisionedMember(member, "catalog.browser.member", password);
@@ -158,9 +158,9 @@ test("administrator installs USDA from mobile Settings, leaves during import, an
     await expect(member).toHaveURL("/");
     await expect(member.getByRole("button", { name: "Dismiss notification" })).toHaveCount(0);
     expect((await context.request.get("/catalog-notifications")).status()).toBe(404);
-    expect((await context.request.post("/catalog-notifications", { headers: { Origin: "https://localhost:4173" }, form: { provider: "usda-fdc", jobId: "denied", completedAt: "denied", csrfToken: "denied" } })).status()).toBe(404);
+    expect((await context.request.post("/catalog-notifications", { headers: { Origin: new URL(page.url()).origin }, form: { provider: "usda-fdc", jobId: "denied", completedAt: "denied", csrfToken: "denied" } })).status()).toBe(404);
     expect((await member.goto("/settings/catalogs"))?.status()).toBe(404);
-    const denied = await context.request.post("/settings/catalogs", { headers: { Origin: "https://localhost:4173", "Content-Type": "application/zip", "X-Archive-Name": "denied.zip" }, data: archive });
+    const denied = await context.request.post("/settings/catalogs", { headers: { Origin: new URL(page.url()).origin, "Content-Type": "application/zip", "X-Archive-Name": "denied.zip" }, data: archive });
     expect(denied.status()).toBe(404);
     await member.goto("/?food=search&query=broccoli");
     await expect(member.getByRole("heading", { name: "Basic foods" })).toBeVisible();
@@ -207,7 +207,7 @@ test("administrator installs USDA from mobile Settings, leaves during import, an
     await expect(member.getByRole("button", { name: "Add to Food Log", exact: true })).toBeDisabled();
     await member.goto("/?food=barcode&barcode=9999999999999");
     await expect(member.getByText("Product not found", { exact: true })).toBeVisible();
-    const deniedOff = await context.request.post("/settings/catalogs", { headers: { Origin: "https://localhost:4173", "Content-Type": "application/gzip", "X-Catalog-Provider": "open-food-facts", "X-Archive-Name": "denied.gz" }, data: products });
+    const deniedOff = await context.request.post("/settings/catalogs", { headers: { Origin: new URL(page.url()).origin, "Content-Type": "application/gzip", "X-Catalog-Provider": "open-food-facts", "X-Archive-Name": "denied.gz" }, data: products });
     expect(deniedOff.status()).toBe(404);
 
     for (const [query, expected] of [

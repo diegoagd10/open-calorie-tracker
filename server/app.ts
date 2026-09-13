@@ -1,8 +1,9 @@
-import { createRequestHandler } from "@react-router/express";
+import { routerHandler } from "./router";
 import express from "express";
 
 import { initializeApplicationDatabase } from "../app/database/runtime.server";
-import { resolveClientIp } from "./client-ip";
+import { entryPolicy } from "./entry-policy";
+import type { RequestEntry } from "../app/runtime.server";
 
 import { shutdownApplicationDatabase } from "../app/database/runtime.server";
 import { getPhotoAnalysisService, shutdownPhotoAnalysis } from "../app/photo-analysis/runtime.server";
@@ -15,33 +16,18 @@ initializeApplicationDatabase();
 getCatalogManagement();
 getPhotoAnalysisService();
 
-export const app = express();
-
-if (process.env.TRUST_PROXY) {
-  app.set("trust proxy", process.env.TRUST_PROXY);
+export function createApplication(entry: RequestEntry, controlToken: string) {
+  const app = express();
+  app.set("trust proxy", false);
+  mountLocalCatalogImport(app, { controlToken });
+  app.use(entryPolicy(entry));
+  app.use("/assets", express.static("build/client/assets", { immutable: true, maxAge: "1y" }));
+  app.use(express.static("build/client", { maxAge: "1h" }));
+  app.use(routerHandler(() => import("virtual:react-router/server-build")));
+  return app;
 }
 
-mountLocalCatalogImport(app, {
-  controlToken: await ensureLocalCatalogImportToken(),
-});
-
-app.use((request, _response, next) => {
-  const testClientIp =
-    process.env.NODE_ENV === "test"
-      ? request.header("X-Test-Client-IP")
-      : undefined;
-
-  request.headers["x-open-calory-client-ip"] = resolveClientIp({
-    nodeEnvironment: process.env.NODE_ENV,
-    proxyClientIp: request.ip,
-    remoteAddress: request.socket.remoteAddress,
-    testClientIp,
-  });
-  next();
-});
-
-app.use(
-  createRequestHandler({
-    build: () => import("virtual:react-router/server-build"),
-  }),
-);
+const controlToken = await ensureLocalCatalogImportToken();
+export function applicationForEntry(entry: RequestEntry) {
+  return createApplication(entry, controlToken);
+}

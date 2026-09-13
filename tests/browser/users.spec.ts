@@ -196,7 +196,7 @@ test("administrator confirms suspension, signs out another device, and reactivat
   await provisionBrowserTestMember("suspended.member", validPassword);
 
   const memberContext = await browser.newContext({
-    baseURL: "https://localhost:4173",
+    baseURL: new URL(page.url()).origin,
     extraHTTPHeaders: { "X-Test-Client-IP": "203.0.113.189" },
   });
   const memberPage = await memberContext.newPage();
@@ -208,7 +208,7 @@ test("administrator confirms suspension, signs out another device, and reactivat
   await finishSetup(memberPage);
 
   const otherMemberContext = await browser.newContext({
-    baseURL: "https://localhost:4173",
+    baseURL: new URL(page.url()).origin,
     extraHTTPHeaders: { "X-Test-Client-IP": "203.0.113.190" },
   });
   const otherMemberPage = await otherMemberContext.newPage();
@@ -309,7 +309,7 @@ test("administrator resets a member password and the member completes private on
   await finishSetup(page);
 
   const memberContext = await browser.newContext({
-    baseURL: "https://localhost:4173",
+    baseURL: new URL(page.url()).origin,
     extraHTTPHeaders: { "X-Test-Client-IP": "203.0.113.196" },
   });
   const memberPage = await memberContext.newPage();
@@ -407,7 +407,7 @@ test("administrator deliberately deletes an active member and its live session",
   await provisionBrowserTestMember("deleted.member", validPassword);
 
   const memberContext = await browser.newContext({
-    baseURL: "https://localhost:4173",
+    baseURL: new URL(page.url()).origin,
     extraHTTPHeaders: { "X-Test-Client-IP": "203.0.113.194" },
   });
   const memberPage = await memberContext.newPage();

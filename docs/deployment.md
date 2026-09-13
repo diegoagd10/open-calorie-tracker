@@ -1,164 +1,119 @@
 # Production deployment
 
-The checked-in `docker-compose.yml` publishes one host port. Traefik terminates
-HTTPS and forwards requests to that port:
+Run one application container with persistent `/app/data`; both entries share
+SQLite, accounts, roles and nutrition data. The supported path on `svc-01` is:
 
 ```text
-browser -> Traefik HTTPS -> Docker host:HOST_PORT -> application:PORT
+public HTTPS -> Cloudflare -> cloudflared on svc-01 -> localhost:3001 -> application:3000
+LAN HTTP -> 192.168.4.21:3002 -> application:3002
 ```
 
-Run one application container. SQLite supports only one writable application
-replica, and `/app/data` must persist across container replacements.
+These are distinct application listeners, even when Docker gives them the same
+socket peer. The Tunnel mapping must stay bound to host loopback. Traefik used
+by other services is not part of this application's path.
 
-## Values to collect
+## Portainer stack values
 
-Configure these Portainer stack variables:
+Create the Git stack from `https://github.com/diegoagd10/open-calory-tracker.git`
+with Compose path `docker-compose.yml` and the intended verified Git reference.
+Before deploying, create `DATA_PATH`, writable by UID/GID 1000, and back up the
+entire directory for existing installations.
 
 | Variable | Value |
 | --- | --- |
-| `APPLICATION_URL` | Exact public HTTPS origin (scheme and host, plus an optional port), for example `https://calories.example.com`. |
-| `DATA_PATH` | Existing host directory that will be mounted at `/app/data`, for example `/srv/open-calory-tracker/data`. Back up this entire directory. |
-| `HOST_PORT` | Unused port on the Docker host that Traefik will target, for example `3001`. Defaults to `3000`. |
-| `TRUST_PROXY` | Subnet CIDR of the application's Docker network. Follow the next section. |
+| `APPLICATION_URL` | Exact public HTTPS origin, initially `https://calorie.dagdappshub.com`. No credentials, path, query or fragment. |
+| `DATA_PATH` | Persistent host directory, for example `/srv/open-calory-tracker/data`. |
+| `LAN_URL` | Optional exact HTTP server IP and port, initially `http://192.168.4.21:3002`. Any client with connectivity may use it. Omit it to disable LAN. |
+| `LAN_BIND_IP` | Host IP for the LAN mapping, initially `192.168.4.21`. Keep it consistent with `LAN_URL`. |
+| `LAN_HOST_PORT` | LAN host port, default `3002`. Keep it consistent with `LAN_URL`. |
+| `HOST_PORT` | Private Tunnel host port, default `3001`; retain cloudflared's `localhost:3001` target. |
+| `PORT` | Internal Tunnel listener port, default `3000`. |
+| `LAN_PORT` | Distinct internal LAN listener port, default `3002`. |
 
-Optional variables:
+`TRUST_PROXY` is obsolete and ignored. Remove it from the stack; a residual value
+only emits a startup deprecation warning. No Docker CIDR discovery is needed.
+The image owns `NODE_ENV`, `DATABASE_PATH` and migration paths; leave them unset.
+If the server IP or external LAN port changes, update `LAN_URL` and its mapping
+together. A disabled LAN listener can retain an unused Docker mapping, but no
+application serves it.
 
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `CATALOG_DIRECTORY` | `catalogs/` beside the application database | Persistent USDA/OFF generations and temporary import files. See [USDA operations](local-usda-catalog.md) and [OFF operations](local-off-catalog.md). |
-| `CATALOG_MAX_UPLOAD_BYTES` | `67108864` | Maximum compressed Foundation upload size (64 MiB). |
-| `CATALOG_MAX_EXPANDED_BYTES` | `268435456` | Maximum expanded archive size (256 MiB). |
-| `OFF_CATALOG_MAX_UPLOAD_BYTES` | 4 GiB | Compressed OFF upload limit. |
-| `OFF_CATALOG_MAX_EXPANDED_BYTES` | 32 GiB | OFF decompressed stream and SQLite size limits; see [capacity and unit limitations](local-off-catalog.md). |
-| `PORT` | `3000` | Internal application port. Keep the default unless Traefik and the published port mapping are updated with it. |
+Photo provider/model/auth settings retain the Compose defaults. Optional catalog
+limits and storage configuration are described in [USDA operations](local-usda-catalog.md),
+[OFF operations](local-off-catalog.md) and the [catalog workflow](food-catalog-operations.md).
+No USDA/OFF lookup API credentials are needed. Barcode and food lookups use the
+installed local SQLite generations.
 
-No USDA or OFF food API credentials, contact address, base URL, or lookup
-timeout are configured. Install both local catalogs in Settings; see the
-[complete food catalog workflow](food-catalog-operations.md).
+## Configure and restrict the Tunnel
 
-The image owns `NODE_ENV`, `DATABASE_PATH`, and the migrations path. Leave them
-unset in Portainer.
+Keep the public hostname's Tunnel service at `http://localhost:3001` on `svc-01`.
+The backend must receive `Host: calorie.dagdappshub.com` (or the exact authority
+of `APPLICATION_URL`). Check the effective **HTTP Host Header** override: remove
+an incompatible override or set it to that authority. Forwarded host/protocol
+headers cannot override the application's configured origin.
 
-Open Food Facts product barcode, detail, and name reads use the installed local
-SQLite generation and make no runtime provider request. Outbound access to the
-official OFF download page is needed only when an administrator chooses to fetch
-an archive outside the application.
+Cloudflare must deliver one valid IPv4/IPv6 `CF-Connecting-IP`. Disable the
+**Remove visitor IP headers** Managed Transform for this hostname. Normal
+requests missing this information return a connection verification error before
+routing; logs distinguish missing and invalid information without printing the
+header. There is no fallback to the connector IP. Health checks remain usable
+without visitor headers; a direct curl to `/login` on the private port is expected
+to fail. `CF-Connecting-IP` identifies a rate-limit subject, not an authenticated
+user. Shared public IPs share existing counters; distributed attacks retain the
+existing limiter's limitations.
 
-Keep `APPLICATION_URL` on HTTPS in production. Barcode camera work requires a
-browser secure context; the manual barcode field remains available without a
-camera. Both camera scanning and manual barcode entry use the local OFF catalog.
-Product images are not uploaded or downloaded.
-
-## Set `TRUST_PROXY` exactly
-
-When running the compiled application directly on the host behind a local HTTPS
-proxy such as Tailscale Serve, use `TRUST_PROXY=127.0.0.1/32` and set
-`APPLICATION_URL` to the external HTTPS origin. This trusts only the proxy's
-IPv4 loopback connection. Build with `pnpm build` and run with `pnpm start` for
-mobile testing; development dependency URLs can become stale during other builds
-or tests and prevent browser hydration.
-
-For Docker deployments, follow the subnet configuration below.
-
-`TRUST_PROXY` is the subnet of the network attached to the **application**
-container. It is not the application IP, the Traefik container's network, the
-Docker host's LAN IP, or a public IP.
-
-On the first deployment, the application network does not exist yet. Use
-`192.168.255.255/32` as a temporary value and keep Traefik disconnected. After
-Portainer creates the stack:
-
-1. Open the application container and note its connected network name.
-2. Open **Networks**, select that network, and copy **IPAM > Subnet**.
-3. Replace the temporary value with that complete CIDR and redeploy the stack.
-
-The same lookup on the Docker host is:
-
-```sh
-docker inspect <application-container> \
-  --format '{{range $name, $network := .NetworkSettings.Networks}}{{println $name}}{{end}}'
-
-docker network inspect <application-network> \
-  --format '{{range .IPAM.Config}}{{println .Subnet}}{{end}}'
-```
-
-Example:
-
-```text
-application IP: 172.22.0.2
-network gateway: 172.22.0.1
-network subnet: 172.22.0.0/16
-TRUST_PROXY: 172.22.0.0/16
-```
-
-Use the subnet exactly as reported before connecting Traefik. A wrong CIDR can
-leave pages and health checks working while registration, login, and other
-mutations fail with `400 Bad Request`: Express then ignores Traefik's forwarded
-HTTPS protocol and React Router rejects the apparent HTTP/HTTPS origin mismatch.
-
-## Create the Portainer stack
-
-Create a Git stack from
-`https://github.com/diegoagd10/open-calory-tracker.git`, reference
-`refs/heads/main`, with Compose path `docker-compose.yml`.
-
-Before deployment, create `DATA_PATH` on the Docker host and make it writable
-by the image's `node` user (UID/GID 1000). Enter the variables from the tables
-above, deploy, discover the application network subnet, and replace the
-temporary `TRUST_PROXY` value.
-
-The container is ready when Portainer reports it healthy and
-`GET /health/ready` returns 200.
+The loopback mapping is only one part of the trust boundary. Verify that LAN and
+Internet cannot reach the internal Tunnel listener through direct container
+routing, alternate mappings, IPv6 exposure or firewall exceptions. Keep Docker
+direct routing disabled or explicitly block remote access to that listener, and
+do not attach untrusted workloads to its Docker network. Host processes and any
+Docker workloads able to reach the listener directly are trusted infrastructure;
+record their inventory during deployment. An unpublished container port remains
+reachable to workloads on the same network. Do not globally trust a Docker gateway
+or assume the container sees a loopback peer.
 
 ## Claim a new instance before public exposure
 
-A database with no users is intentionally unclaimed. The first successful
-registration becomes the sole administrator, receives an authenticated session,
-and closes public registration. There is no bootstrap token or second approval.
-
-Keep Traefik disconnected from a new instance until you have opened the
-application through a trusted local path, registered the administrator, and
-finished the nutrition setup. Afterward, verify that an anonymous request to
-`/register` redirects to `/login`; only then expose the instance publicly.
-
-Existing installations are claimed automatically during migration: the oldest
-user becomes the administrator and all other legacy users become members. Their
-usernames, password hashes, sessions, and nutrition data are preserved.
-
-## Configure Traefik
-
-Route the hostname from `APPLICATION_URL` through the existing `websecure`
-entrypoint. In the Traefik service, use the Docker host's LAN address and
-`HOST_PORT`:
-
-```yaml
-services:
-  open-calory-tracker:
-    loadBalancer:
-      servers:
-        - url: "http://192.168.1.10:3001"
-```
-
-Replace the hostname, Docker host address, and port with the values from your
-environment. Use `/health/ready` for the Traefik service health check when the
-existing Traefik configuration supports one.
+Disconnect the public Tunnel route on an unclaimed database. Enable LAN only on
+a trusted local network (or use a private host-forwarded LAN path with its exact
+configured authority), register the first administrator and finish setup. Confirm
+an anonymous `/register` redirects to `/login`, then enable the public route.
+The first-registration model is unchanged; there is no bootstrap token.
+Existing migrations preserve users, password hashes and public sessions.
 
 ## Verify the deployment
 
-Complete all checks after the initial deployment or a configuration change:
+Implementation tests do not replace these checks on the deployed host. This
+change does not alter live Tunnel or firewall configuration.
 
-1. Confirm Portainer reports the container as healthy.
-2. Confirm `https://<hostname>/health/ready` returns 200.
-3. On a new database, claim the administrator before connecting the public
-   route; on an existing database, sign in with the oldest account. This verifies
-   `TRUST_PROXY`, forwarded HTTPS, cookies, CSRF protection, and writable SQLite
-   storage together.
-4. Confirm the container logs contain a successful POST rather than
-   `singleFetchAction` followed by `400 Bad Request`.
+1. Inspect host bindings (`docker compose port application 3000`, host socket
+   inventory and Docker network/firewall configuration). Verify loopback-only
+   `3001` and the exact LAN IP/port mapped to a different internal listener.
+   From a LAN client, both host port `3001` and direct container Tunnel port must
+   be unreachable; test alternate mappings and IPv6 too. Record trusted workloads.
+2. Confirm Portainer health and public/LAN `/health/ready` return 200. Confirm
+   `/login` works through Cloudflare with the expected Host and visitor header;
+   inspect missing/invalid-header diagnostics if it fails. Health alone does not
+   verify authentication or visitor IP delivery.
+3. In real desktop and phone browsers, register/setup on a new database as
+   appropriate, then independently sign in at the public and LAN URLs. Perform
+   food-log, goals, catalog upload/notifications, AI settings, member management,
+   password and photo actions with appropriate fixtures/permissions. Logout in
+   one browser/entry must leave another independently logged-in session active.
+4. Confirm public cookies retain `__Host-calorie_session` and
+   `__Host-calorie_auth_csrf` with Secure, HttpOnly, SameSite=Lax, Path=/ and no
+   Domain. LAN cookies use separate `calorie_lan_session` and
+   `calorie_lan_auth_csrf` names without Secure. Existing public sessions should
+   remain valid within their normal expiry/revocation lifecycle.
+5. Check rejected external/null origins, unknown authorities and invalid CSRF,
+   and verify member/admin permissions. Forwarded headers on LAN cannot select
+   the public mode or visitor IP and cannot authorize internal imports.
 
-If step 3 fails with `400 Bad Request`, inspect the application's current
-network again. Docker may assign a different subnet when a network is recreated;
-update `TRUST_PROXY` and redeploy.
+HTTP LAN carries credentials and sessions without encryption, as explicitly
+accepted for this deployment. Camera scanning and other secure-context features
+are not guaranteed there; manual barcode input remains available. Cookies do not
+isolate services by port on the same IP. Sessions are independent per entry and
+browser; password changes/recovery still revoke other sessions under the existing
+security policy, while logout only revokes the session used.
 
 ## Recover a forgotten administrator password
 

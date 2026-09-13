@@ -48,7 +48,7 @@ RUN mkdir -p /app/data \
 USER node
 
 VOLUME ["/app/data"]
-EXPOSE 3000
+EXPOSE 3000 3002
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD ["node", "-e", "fetch(`http://127.0.0.1:${process.env.PORT ?? 3000}/health/ready`).then((response) => { if (!response.ok) process.exit(1); }).catch(() => process.exit(1));"]
