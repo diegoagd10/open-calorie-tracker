@@ -47,3 +47,20 @@ export function hasValidGtinCheckDigit(value: string): boolean {
   const expandedUpce = expandUpce(value);
   return expandedUpce !== undefined && matchesGtinCheckDigit(expandedUpce);
 }
+
+export function barcodeLookupCandidates(value: string): string[] {
+  const candidates = [value];
+  if (![12, 13, 14].includes(value.length) || !hasValidGtinCheckDigit(value)) {
+    return candidates;
+  }
+  // GS1 represents shorter GTINs in 14 digits with zero padding. Only remove
+  // that padding; a nonzero packaging indicator identifies a different item.
+  const padded = value.padStart(14, "0");
+  for (const length of [12, 13, 14]) {
+    const candidate = padded.slice(14 - length);
+    if (candidate !== value && candidate.padStart(14, "0") === padded) {
+      candidates.push(candidate);
+    }
+  }
+  return candidates;
+}

@@ -17,6 +17,14 @@ These decisions follow the [OFF field definitions](https://github.com/openfoodfa
 
 ## Parsing and storage
 
+Barcode lookup first checks the exact source identifier, then tries equivalent
+zero-padded 12-, 13-, and 14-digit representations for a valid GTIN. For example,
+the printed UPC `643843715887` finds OFF's `0643843715887`. This follows
+[GS1's leading-zero representation rules](https://www.gs1.org/edi-xml/technical-user-guide/Item_Numbers).
+Significant digits and packaging indicators are preserved. Short identifiers and
+invalid-check-digit manual identifiers retain exact lookup only. Review and
+saving retain the stored OFF identifier; detail lookup remains exact.
+
 The [daily exporter](https://github.com/openfoodfacts/openfoodfacts-server/blob/main/scripts/export_database.pl) sanitizes control characters and joins fields with literal tabs; quotes are ordinary text. Its known ordered identity/date header identifies this dialect. Other projections use the configurable exporter's CSV quoting, including escaped quotes, embedded tabs and embedded newlines. The importer does not guess a dialect from product text. A changed daily header that no longer matches the known schema must be verified against the upstream exporter before support is added.
 
 GZIP decompression and TSV parsing stream directly into 500-product SQLite transactions. Only identity, selected display/English/Spanish names and aliases, brands, countries, required nutrient fields, quantities/units and source dates are retained. An indexed TEXT primary key preserves leading-zero identifiers. A separate FTS5 index covers the displayed name, supported alternate names and brand, using the same accent/case normalization and bounded prefix-query rules as USDA search. Noncommercial identifiers remain in the import report/database but cannot be scanned. Repeated identifiers keep the first source row and are counted; no deduplication by name occurs. Width mismatches and oversized selected fields are rejected and counted. No data archive or generated catalog is committed.
