@@ -7,7 +7,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { afterAll, beforeAll, expect, test } from "vitest";
 
-import { waitForHttpResponse } from "./support/http";
+import { requestHttp, waitForHttpResponse } from "./support/http";
 import { offArchive, offWithBasis } from "./support/off-archive";
 
 const executeFile = promisify(execFile);
@@ -118,50 +118,18 @@ test("missing production configuration exits with a redacted structured log", as
   ]);
 });
 
-test("public forwarded-header trust prevents production startup", async () => {
+test.each([undefined, "0.0.0.0/0", "invalid"])("production starts with obsolete proxy value %s", async (TRUST_PROXY) => {
   const directory = await mkdtemp(path.join(tmpdir(), "calory-config-"));
   temporaryDirectories.push(directory);
-  const running = startProductionProcess({
-    APPLICATION_URL: "https://calories.example.test",
-    DATABASE_PATH: path.join(directory, "application.sqlite"),
-    PORT: String(await availablePort()),
-    TRUST_PROXY: "0.0.0.0/0",
-  });
-
-  const exit = await waitForExit(running.child, 1_000);
-
-  expect(exit.code).not.toBe(0);
-  expect(parseJsonLines(running.stderr())).toEqual([
-    expect.objectContaining({
-      event: "startup_failed",
-      level: "error",
-    }),
-  ]);
+  const port = await availablePort();
+  const running = startProductionProcess({ APPLICATION_URL: "https://calories.example.test", DATABASE_PATH: path.join(directory, "application.sqlite"), PORT: String(port), TRUST_PROXY });
+  expect((await waitForHttpResponse(`http://127.0.0.1:${port}/health/live`)).status).toBe(200);
+  running.child.kill("SIGTERM");
+  await waitForExit(running.child);
+  expect(parseJsonLines(running.stderr()).filter(line => line.event === "configuration_deprecated")).toHaveLength(TRUST_PROXY === undefined ? 0 : 1);
 });
 
-test("missing trusted-proxy configuration prevents production startup", async () => {
-  const directory = await mkdtemp(path.join(tmpdir(), "calory-proxy-config-"));
-  temporaryDirectories.push(directory);
-  const running = startProductionProcess({
-    APPLICATION_URL: "https://calories.example.test",
-    DATABASE_PATH: path.join(directory, "application.sqlite"),
-    PORT: String(await availablePort()),
-    TRUST_PROXY: undefined,
-  });
-
-  const exit = await waitForExit(running.child, 1_000);
-
-  expect(exit.signal).toBeNull();
-  expect(exit.code).not.toBe(0);
-  expect(parseJsonLines(running.stderr())).toEqual([
-    expect.objectContaining({
-      event: "startup_failed",
-      level: "error",
-    }),
-  ]);
-});
-
-test("a trusted HTTPS proxy can forward mutation requests", async () => {
+test("the Tunnel listener resolves HTTPS mutations without trusting forwarded protocol", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "calory-proxy-action-"));
   temporaryDirectories.push(directory);
   const port = await availablePort();
@@ -174,14 +142,15 @@ test("a trusted HTTPS proxy can forward mutation requests", async () => {
   });
 
   await waitForHttpResponse(`http://127.0.0.1:${port}/health/live`);
-  const response = await fetch(`http://127.0.0.1:${port}/register.data`, {
+  const response = await requestHttp(`http://127.0.0.1:${port}/register.data`, {
     body: "",
     headers: {
       "Content-Type": "application/x-www-form-urlencoded",
       Host: "calories.example.test",
       Origin: "https://calories.example.test",
       "X-Forwarded-Host": "calories.example.test:443",
-      "X-Forwarded-Proto": "https",
+      "X-Forwarded-Proto": "http",
+      "CF-Connecting-IP": "2001:db8::10",
     },
     method: "POST",
   });
@@ -246,12 +215,12 @@ test("production health and logs are safe on a configurable internal port", asyn
   expect(liveness.status).toBe(200);
   expect(await liveness.json()).toEqual({ status: "live" });
 
-  const readiness = await fetch(`http://127.0.0.1:${port}/health/ready`);
+  const readiness = await requestHttp(`http://127.0.0.1:${port}/health/ready`);
   expect(readiness.status).toBe(200);
   expect(await readiness.json()).toEqual({ status: "ready" });
 
   const requestId = "deployment-health-request";
-  const loggedRequest = await fetch(
+  const loggedRequest = await requestHttp(
     `http://127.0.0.1:${port}/health/live?username=${searchIdentity}&password=${password}&csrfToken=${csrfToken}`,
     {
       headers: {
@@ -295,4 +264,83 @@ test("production health and logs are safe on a configurable internal port", asyn
       }),
     ]),
   );
+});
+
+ test("Tunnel visitor failures stay separate from LAN and health", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "calory-entries-"));
+  temporaryDirectories.push(directory);
+  const port = await availablePort();
+  const lanPort = await availablePort();
+  const running = startProductionProcess({ APPLICATION_URL: "https://calories.example.test", DATABASE_PATH: path.join(directory, "application.sqlite"), PORT: String(port), LAN_PORT: String(lanPort), LAN_URL: `http://127.0.0.1:${lanPort}`, TRUST_PROXY: "invalid" });
+  await waitForHttpResponse(`http://127.0.0.1:${port}/health/live`);
+  await waitForHttpResponse(`http://127.0.0.1:${lanPort}/health/live`);
+  for (const visitorIp of [undefined, "", "not-an-ip", "203.0.113.1, 203.0.113.2"]) {
+    const response = await requestHttp(`http://127.0.0.1:${port}/login`, { headers: { Host: "calories.example.test", ...(visitorIp === undefined ? {} : { "CF-Connecting-IP": visitorIp }) } });
+    expect(response.status).toBe(503);
+    expect(await response.text()).toContain("Public connection could not be verified.");
+    expect(response.headers.get("set-cookie")).toBeNull();
+  }
+  for (const visitorIp of ["203.0.113.1", "2001:db8::123"]) {
+    const response = await requestHttp(`http://127.0.0.1:${port}/register`, { headers: { Host: "calories.example.test", "CF-Connecting-IP": visitorIp } });
+    expect(response.status).toBe(200);
+    expect(response.headers.get("set-cookie")).toContain("__Host-calorie_auth_csrf=");
+  }
+  const lan = await requestHttp(`http://127.0.0.1:${lanPort}/register`, { headers: { "CF-Connecting-IP": "invalid", "X-Forwarded-For": "203.0.113.50", "X-Forwarded-Proto": "https", "X-Forwarded-Host": "calories.example.test", "X-Open-Calory-Client-IP": "chosen-by-client" } });
+  expect(lan.status).toBe(200);
+  expect(lan.headers.get("set-cookie")).toContain("calorie_lan_auth_csrf=");
+  expect(lan.headers.get("set-cookie")).not.toContain("Secure");
+  for (const [url, Host] of [[`http://127.0.0.1:${port}/login`, `127.0.0.1:${lanPort}`], [`http://127.0.0.1:${lanPort}/login`, "calories.example.test"], [`http://127.0.0.1:${port}/login`, "calories.example.test.attacker.invalid"]]) {
+    expect((await requestHttp(url, { headers: { Host, "CF-Connecting-IP": "203.0.113.10" } })).status).toBe(421);
+  }
+  running.child.kill("SIGTERM");
+  await waitForExit(running.child);
+  expect(parseJsonLines(running.stderr()).filter(line => line.event === "public_connection_rejected").map(line => line.reason)).toEqual(["missing-visitor-ip", "invalid-visitor-ip", "invalid-visitor-ip", "invalid-visitor-ip"]);
+ });
+
+ test("rate limits use visitor IP on Tunnel and ignore all forwarded IPs on LAN", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "calory-entry-limits-"));
+  temporaryDirectories.push(directory);
+  const port = await availablePort();
+  const lanPort = await availablePort();
+  const tunnelUrl = `http://127.0.0.1:${port}`;
+  const lanUrl = `http://127.0.0.1:${lanPort}`;
+  const running = startProductionProcess({ APPLICATION_URL: "https://calories.example.test", DATABASE_PATH: path.join(directory, "application.sqlite"), PORT: String(port), LAN_PORT: String(lanPort), LAN_URL: lanUrl, TRUST_PROXY: undefined });
+  await waitForHttpResponse(`${tunnelUrl}/health/live`);
+  await waitForHttpResponse(`${lanUrl}/health/live`);
+  const claim = await requestHttp(`${tunnelUrl}/register`, { headers: { Host: "calories.example.test", "CF-Connecting-IP": "203.0.113.3" } });
+  const claimCsrf = /name="csrfToken" value="([^"]+)"/.exec(await claim.text())?.[1];
+  if (!claimCsrf) throw new Error("Registration omitted CSRF token");
+  const claimed = await requestHttp(`${tunnelUrl}/register`, { method: "POST", headers: { Host: "calories.example.test", Origin: "https://calories.example.test", "CF-Connecting-IP": "203.0.113.3", Cookie: claim.headers.getSetCookie()[0].split(";", 1)[0], "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ csrfToken: claimCsrf, username: "limit.admin", password: "correct horse battery staple", confirmPassword: "correct horse battery staple" }).toString() });
+  expect(claimed.status).toBe(302);
+  for (const [url, origin, host, username] of [[tunnelUrl, "https://calories.example.test", "calories.example.test", "tunnel.user"], [lanUrl, lanUrl, `127.0.0.1:${lanPort}`, "lan.user"]]) {
+    const initial = await requestHttp(`${url}/login`, { headers: { Host: host, "CF-Connecting-IP": "203.0.113.1" } });
+    const csrfToken = /name="csrfToken" value="([^"]+)"/.exec(await initial.text())?.[1];
+    if (!csrfToken) throw new Error("Registration omitted CSRF token");
+    const Cookie = initial.headers.getSetCookie()[0].split(";", 1)[0];
+    const statuses: number[] = [];
+    for (let attempt = 0; attempt < 11; attempt++) {
+      const response = await requestHttp(`${url}/login`, { method: "POST", headers: { Host: host, Origin: origin, Cookie, "Content-Type": "application/x-www-form-urlencoded", "CF-Connecting-IP": url === tunnelUrl ? "203.0.113.1" : `203.0.113.${attempt + 1}`, "X-Forwarded-For": `203.0.113.${attempt + 1}`, "X-Open-Calory-Client-IP": `spoofed-${attempt}` }, body: new URLSearchParams({ csrfToken, username, password: "incorrect password" }).toString() });
+      statuses.push(response.status);
+    }
+    expect(statuses).toEqual([401, 401, 401, 401, 401, 401, 401, 401, 401, 401, 429]);
+    const otherVisitor = await requestHttp(`${url}/login`, { method: "POST", headers: { Host: host, Origin: origin, Cookie, "Content-Type": "application/x-www-form-urlencoded", "CF-Connecting-IP": "2001:db8::2" }, body: new URLSearchParams({ csrfToken, username, password: "incorrect password" }).toString() });
+    expect(otherVisitor.status).toBe(url === tunnelUrl ? 401 : 429);
+  }
+  running.child.kill("SIGTERM");
+  await waitForExit(running.child);
+ });
+
+test("an accepted IPv6 LAN origin reaches its listener and enforces its authority", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "calory-ipv6-lan-"));
+  temporaryDirectories.push(directory);
+  const port = await availablePort();
+  const lanPort = await availablePort();
+  startProductionProcess({ APPLICATION_URL: "https://calories.example.test", DATABASE_PATH: path.join(directory, "application.sqlite"), PORT: String(port), LAN_PORT: String(lanPort), LAN_URL: `http://[::1]:${lanPort}`, TRUST_PROXY: undefined });
+  await waitForHttpResponse(`http://127.0.0.1:${port}/health/live`);
+  await waitForHttpResponse(`http://[::1]:${lanPort}/health/live`, { timeoutMs: 1000 });
+  const registration = await requestHttp(`http://[::1]:${lanPort}/register`);
+  expect(registration.status).toBe(200);
+  expect(registration.headers.getSetCookie()[0]).toContain("calorie_lan_auth_csrf=");
+  const rejected = await requestHttp(`http://[::1]:${lanPort}/register`, { headers: { Host: `127.0.0.1:${lanPort}` } });
+  expect(rejected.status).toBe(421);
 });

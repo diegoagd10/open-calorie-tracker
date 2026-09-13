@@ -63,7 +63,7 @@ test("administrator cancels, retries, sees provider errors, and members cannot o
   await expect(page.getByRole("alert")).toContainText("Could not connect to OpenAI", { timeout: 10000 });
   await expect(page.getByRole("link", { name: "Authorize with OpenAI" })).toHaveCount(0);
   await expect(page.locator("body")).not.toContainText("synthetic-private-error");
-  const context = await browser.newContext({ ignoreHTTPSErrors: true });
+  const context = await browser.newContext({ baseURL: new URL(page.url()).origin, ignoreHTTPSErrors: true });
   try {
     const member = await context.newPage();
     await signInProvisionedMember(member, "ai.regular.member", password);

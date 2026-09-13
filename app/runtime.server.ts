@@ -1,3 +1,5 @@
+import { AsyncLocalStorage } from "node:async_hooks";
+
 import { z } from "zod";
 
 const applicationUrlSchema = z.string().url();
@@ -16,4 +18,22 @@ export function isProductionEnvironment(): boolean {
 
 export function isTestEnvironment(): boolean {
   return process.env.NODE_ENV === "test";
+}
+
+export type RequestEntry = "tunnel" | "lan" | "development";
+export type RequestPolicy = { entry: RequestEntry; origin: string };
+export const requestPolicyContext = new AsyncLocalStorage<RequestPolicy>();
+
+export function configuredEntryOrigin(entry: RequestEntry): string {
+  if (entry !== "lan") return applicationOrigin();
+  return new URL(z.string().url().parse(process.env.LAN_URL)).origin;
+}
+
+export function effectiveRequestPolicy(): RequestPolicy {
+  // Direct route/service calls retain the public cookie contract. HTTP hosts
+  // always establish a listener-owned context before invoking React Router.
+  return requestPolicyContext.getStore() ?? {
+    entry: "tunnel",
+    origin: applicationOrigin(),
+  };
 }

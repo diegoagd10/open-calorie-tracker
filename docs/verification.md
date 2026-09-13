@@ -73,6 +73,12 @@ Statements, branches, functions, and lines must each exceed 95% in aggregate;
 when any metric falls below it, so the same gate applies anywhere
 `pnpm test:coverage` or `pnpm verify:deep` runs.
 
+The browser gate runs application action journeys over public HTTPS and LAN HTTP.
+The camera matrix stays on the secure entry. `pnpm test:browser:catalog` runs the
+public and LAN catalog projects in separate server lifetimes so each starts with
+a fresh fixture database; when running the catalog config directly, select one
+project with `--project chromium` or `--project lan-chromium`.
+
 Chromium must already be installed; no browser download is hidden inside the
 deep gate. Like the fast gate, the sequence stops on the first failure and
 preserves the failing exit status.

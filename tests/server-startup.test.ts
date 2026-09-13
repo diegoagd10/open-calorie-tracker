@@ -10,7 +10,7 @@ describe("server startup configuration", () => {
     TRUST_PROXY: "172.30.0.0/16",
   };
 
-  test("accepts a private production proxy and returns the listening port", () => {
+  test("accepts production without a proxy CIDR", () => {
     expect(validateServerConfiguration(productionEnvironment)).toEqual({
       port: 4173,
     });
@@ -35,48 +35,11 @@ describe("server startup configuration", () => {
     },
   );
 
-  test.each([
-    "10.0.0.0/16",
-    "127.0.0.1/32",
-    "10.255.255.255/32",
-    "172.16.0.0/16",
-    "172.31.255.255/32",
-    "192.168.0.0/16",
-    " 192.168.255.255/32 ",
-  ])("accepts private production proxy CIDR %s", (TRUST_PROXY) => {
-    expect(
-      validateServerConfiguration({ ...productionEnvironment, TRUST_PROXY }),
-    ).toEqual({ port: 4173 });
-  });
-
-  test.each([
-    undefined,
-    "",
-    "10.0.0.0",
-    "127.0.0.0/8",
-    "127.0.0.1/16",
-    "127.0.0.2/32",
-    "10.0.0.0/15",
-    "10.0.0.0/33",
-    "10.0.0.0/16 trailing",
-    "prefix 10.0.0.0/16",
-    "junk/10.0.0.0/16",
-    "10.0.0/16",
-    "2001:db8::/32",
-    "11.0.0.0/16",
-    "11.16.0.0/16",
-    "11.168.0.0/16",
-    "172.15.0.0/16",
-    "172.32.0.0/16",
-    "192.167.0.0/16",
-    "192.169.0.0/16",
-  ])("rejects unsafe production proxy CIDR %s", (TRUST_PROXY) => {
-    expect(() =>
-      validateServerConfiguration({ ...productionEnvironment, TRUST_PROXY }),
-    ).toThrow(
-      "TRUST_PROXY must be one private IPv4 Docker network CIDR with a prefix from 16 through 32, or 127.0.0.1/32 for a local proxy",
-    );
-  });
+  test.each([undefined, "", "invalid", "0.0.0.0/0", "172.22.0.0/16"])(
+    "ignores obsolete TRUST_PROXY %s", (TRUST_PROXY) => {
+      expect(validateServerConfiguration({ ...productionEnvironment, TRUST_PROXY })).toEqual({ port: 4173 });
+    },
+  );
 
   test("development does not require deployment URL or proxy settings", () => {
     expect(
@@ -134,3 +97,16 @@ describe("server startup configuration", () => {
     ).toThrow("APPLICATION_URL must use HTTPS in production");
   });
 });
+
+ test("LAN_URL enables a distinct listener", () => {
+   expect(validateServerConfiguration({ APPLICATION_URL: "https://calories.example.test", NODE_ENV: "production", LAN_URL: "http://192.168.4.21:3002" })).toEqual({ port: 3000, lanPort: 3002, lanHost: "0.0.0.0" });
+ });
+ test.each(["https://192.168.4.21:3002", "http://lan.example:3002", "http://192.168.4.21", "http://127.1:3002", "http://3232236565:3002", "http://user@192.168.4.21:3002", "http://192.168.4.21:3002/a/..", "http://192.168.4.21:3002?", "http://192.168.4.21:3002#"])("rejects invalid LAN origin %s", (LAN_URL) => {
+   expect(() => validateServerConfiguration({ NODE_ENV: "production", APPLICATION_URL: "https://calories.example.test", LAN_URL })).toThrow(/LAN_URL/);
+ });
+ test.each(["3000", "bad", "65536", "3002junk"])("rejects invalid/conflicting LAN port %s", (LAN_PORT) => {
+   expect(() => validateServerConfiguration({ NODE_ENV: "production", APPLICATION_URL: "https://calories.example.test", LAN_URL: "http://192.168.4.21:3002", LAN_PORT })).toThrow(/LAN_PORT/);
+ });
+ test("LAN accepts an explicit IPv6 server authority", () => {
+   expect(validateServerConfiguration({ NODE_ENV: "production", APPLICATION_URL: "https://calories.example.test", LAN_URL: "http://[fd00::21]:3002", LAN_PORT: "3003" })).toEqual({ port: 3000, lanPort: 3003, lanHost: "::" });
+ });

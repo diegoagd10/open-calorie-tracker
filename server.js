@@ -13,7 +13,10 @@ import { validateServerConfiguration } from "./server/startup-configuration.js";
 const DEVELOPMENT = process.env.NODE_ENV === "development";
 
 async function startServer() {
-  const { port } = validateServerConfiguration(process.env);
+  const { port, lanPort, lanHost } = validateServerConfiguration(process.env);
+  if (process.env.TRUST_PROXY !== undefined) {
+    operationalLog("warn", "configuration_deprecated", { variable: "TRUST_PROXY", message: "TRUST_PROXY is obsolete and ignored" });
+  }
 
   const app = createHttpApplication();
   let shutdownApplication;
@@ -36,7 +39,7 @@ async function startServer() {
     app.use(async (request, response, next) => {
       try {
         const source = await viteDevelopmentServer.ssrLoadModule("./server/app.ts");
-        return await source.app(request, response, next);
+        return await source.applicationForEntry("development")(request, response, next);
       } catch (error) {
         if (error instanceof Error) {
           viteDevelopmentServer.ssrFixStacktrace(error);
@@ -45,7 +48,7 @@ async function startServer() {
       }
     });
   } else {
-    shutdownApplication = await mountProductionApplication(app);
+    shutdownApplication = await mountProductionApplication(app, "tunnel");
   }
 
   mountOperationalErrorHandler(app);
@@ -59,7 +62,18 @@ async function startServer() {
 
   // Allow administrator uploads of multi-gigabyte catalog archives.
   server.requestTimeout = 2 * 60 * 60 * 1000;
-  closeOnProcessSignals(server, shutdownApplication);
+  const servers = [server];
+  if (lanPort) {
+    const lanApp = createHttpApplication();
+    await mountProductionApplication(lanApp, "lan");
+    mountOperationalErrorHandler(lanApp);
+    const lanServer = lanApp.listen(lanPort, lanHost, () => {
+      operationalLog("info", "server_started", { port: lanPort, entry: "lan", environment: process.env.NODE_ENV });
+    });
+    lanServer.requestTimeout = server.requestTimeout;
+    servers.push(lanServer);
+  }
+  closeOnProcessSignals(servers, shutdownApplication);
 }
 
 startServer().catch((error) => {

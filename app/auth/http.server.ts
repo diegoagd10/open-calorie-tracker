@@ -8,14 +8,12 @@ import {
   getAuthenticationService,
   getPreAuthenticationCsrfService,
 } from "./runtime.server";
-import { applicationOrigin } from "../runtime.server";
+import { effectiveRequestPolicy } from "../runtime.server";
 
-function sessionCookieName(): string {
-  return "__Host-calorie_session";
-}
-
-function preAuthenticationCsrfCookieName(): string {
-  return "__Host-calorie_auth_csrf";
+function cookiePolicy() {
+  return effectiveRequestPolicy().entry === "lan"
+    ? { sessionName: "calorie_lan_session", csrfName: "calorie_lan_auth_csrf", secure: false }
+    : { sessionName: "__Host-calorie_session", csrfName: "__Host-calorie_auth_csrf", secure: true };
 }
 
 export function parseCookies(header: string | null): Map<string, string> {
@@ -39,12 +37,12 @@ export function parseCookies(header: string | null): Map<string, string> {
 }
 
 function getSessionToken(request: Request): string | undefined {
-  return parseCookies(request.headers.get("Cookie")).get(sessionCookieName());
+  return parseCookies(request.headers.get("Cookie")).get(cookiePolicy().sessionName);
 }
 
 function getPreAuthenticationCsrfToken(request: Request): string | undefined {
   return parseCookies(request.headers.get("Cookie")).get(
-    preAuthenticationCsrfCookieName(),
+    cookiePolicy().csrfName,
   );
 }
 
@@ -88,18 +86,18 @@ export async function requireAdministratorSession(
 }
 
 export function serializeSessionCookie(session: IssuedSession): string {
-  return serializeHostCookie(
-    sessionCookieName(),
+  return serializeEntryCookie(
+    cookiePolicy().sessionName,
     session.token,
     session.absoluteExpiresAt,
   );
 }
 
 export function serializeClearedSessionCookie(): string {
-  return serializeHostCookie(sessionCookieName(), "", new Date(0));
+  return serializeEntryCookie(cookiePolicy().sessionName, "", new Date(0));
 }
 
-function serializeHostCookie(
+function serializeEntryCookie(
   name: string,
   value: string,
   expiresAt: Date,
@@ -115,7 +113,7 @@ function serializeHostCookie(
     `Max-Age=${maxAgeSeconds}`,
     `Expires=${expiresAt.toUTCString()}`,
     "HttpOnly",
-    "Secure",
+    ...(cookiePolicy().secure ? ["Secure"] : []),
     "SameSite=Lax",
   ].join("; ");
 }
@@ -123,16 +121,16 @@ function serializeHostCookie(
 function serializePreAuthenticationCsrfCookie(
   session: PreAuthenticationCsrfSession,
 ): string {
-  return serializeHostCookie(
-    preAuthenticationCsrfCookieName(),
+  return serializeEntryCookie(
+    cookiePolicy().csrfName,
     session.token,
     session.expiresAt,
   );
 }
 
 function serializeClearedPreAuthenticationCsrfCookie(): string {
-  return serializeHostCookie(
-    preAuthenticationCsrfCookieName(),
+  return serializeEntryCookie(
+    cookiePolicy().csrfName,
     "",
     new Date(0),
   );
@@ -179,7 +177,7 @@ export function authenticatedSessionHeaders(
 }
 
 export function requireValidOrigin(request: Request): void {
-  if (request.headers.get("Origin") !== applicationOrigin()) {
+  if (request.headers.get("Origin") !== effectiveRequestPolicy().origin) {
     throw new Response("Request origin rejected.", { status: 403 });
   }
 }

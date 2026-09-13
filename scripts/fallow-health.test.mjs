@@ -119,7 +119,7 @@ test("Fallow health consumes Vitest coverage and preserves gating exit codes", a
       "validateServerConfiguration",
     ) > 0,
   );
-  assert.ok(functionHits(coverage, "/server/client-ip.ts", "resolveClientIp") > 0);
+  assert.ok(functionHits(coverage, "/server/entry-policy.ts", "entryPolicy") > 0);
   assert.ok(functionHits(coverage, "/app/auth/http.server.ts", "parseCookies") > 0);
 
   const currentGate = runHealthGate("--format", "json", "--quiet", "--no-cache");

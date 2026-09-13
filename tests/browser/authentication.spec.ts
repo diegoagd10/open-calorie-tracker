@@ -4,7 +4,8 @@ import { expect, test } from "./reset-database";
 
 const validPassword = "correct horse 🔐 battery";
 const replacementPassword = "replacement passphrase 🔐";
-const applicationOrigin = "https://localhost:4173";
+let applicationOrigin = "https://localhost:4173";
+test.beforeEach(({ baseURL }) => { applicationOrigin = baseURL!; });
 const administrator = "alice.user";
 
 test.describe.configure({ mode: "serial" });
@@ -30,7 +31,7 @@ async function signIn(
 
 async function sessionCookie(context: BrowserContext) {
   return (await context.cookies()).find(
-    (cookie) => cookie.name === "__Host-calorie_session",
+    (cookie) => cookie.name === (applicationOrigin.startsWith("http:") ? "calorie_lan_session" : "__Host-calorie_session"),
   );
 }
 
@@ -65,7 +66,7 @@ test("a mobile visitor claims an empty instance and completes nutrition setup", 
     page.getByRole("heading", { name: "Today's Food Log" }),
   ).toBeVisible();
   expect((await sessionCookie(context))?.httpOnly).toBe(true);
-  expect((await sessionCookie(context))?.secure).toBe(true);
+  expect((await sessionCookie(context))?.secure).toBe(applicationOrigin.startsWith("https:"));
   expect((await sessionCookie(context))?.sameSite).toBe("Lax");
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
 

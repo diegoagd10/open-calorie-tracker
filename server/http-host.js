@@ -42,15 +42,9 @@ export function createHttpApplication() {
   return app;
 }
 
-export async function mountProductionApplication(app) {
-  app.use(
-    "/assets",
-    express.static("build/client/assets", { immutable: true, maxAge: "1y" }),
-  );
-  app.use(express.static("build/client", { maxAge: "1h" }));
-
+export async function mountProductionApplication(app, entry = "tunnel") {
   const production = await import(BUILD_PATH);
-  app.use(production.app);
+  app.use(production.applicationForEntry(entry));
   return production.shutdown;
 }
 
@@ -66,9 +60,13 @@ export function mountOperationalErrorHandler(app) {
 }
 
 export function closeOnProcessSignals(server, shutdownApplication) {
+  const servers = Array.isArray(server) ? server : [server];
   for (const signal of ["SIGINT", "SIGTERM"]) {
     process.once(signal, () => {
-      server.close(async () => {
+      Promise.all(servers.map((listener) => new Promise((resolve, reject) => {
+        listener.close((error) => error ? reject(error) : resolve());
+        listener.closeIdleConnections();
+      }))).then(async () => {
         try {
           await shutdownApplication();
           operationalLog("info", "server_stopped", { signal });
@@ -77,6 +75,9 @@ export function closeOnProcessSignals(server, shutdownApplication) {
           operationalLog("error", "shutdown_failed", { error: operationalError(error) });
           process.exit(1);
         }
+      }).catch((error) => {
+        operationalLog("error", "shutdown_failed", { error: operationalError(error) });
+        process.exit(1);
       });
     });
   }
