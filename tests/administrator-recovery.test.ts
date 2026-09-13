@@ -311,6 +311,7 @@ test("session issuance rejects a login whose verified credential was recovered f
   expect(
     issueSessionForVerifiedCredential(fixture.database, {
       expectedPasswordHash: verification.user.passwordHash,
+      expectedAuthenticationVersion: verification.user.authenticationVersion,
       session: {
         absoluteExpiresAt: "2026-12-01T00:00:00.000Z",
         createdAt: "2026-09-02T00:00:00.000Z",

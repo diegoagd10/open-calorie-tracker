@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { expect, test } from "vitest";
 import { openApplicationDatabase } from "../app/database/database.server";
-import { users, userPreferences, photoMeals } from "../app/database/schema.server";
+import { userPreferences, photoMeals } from "../app/database/schema.server";
 import { FoodCatalog } from "../app/catalog/food-catalog.server";
 import { TestFoodCatalogProvider, TestOpenFoodFactsProvider } from "../app/catalog/test-fixture.server";
 import { FoodEntryService } from "../app/food-entry/food-entry.server";
@@ -16,7 +16,7 @@ test("migrating a populated application preserves USDA/OFF snapshots, supported 
   let database = openApplicationDatabase({ databasePath, migrationsFolder: oldMigrations });
   try {
     const createdAt = "2026-01-01T00:00:00.000Z";
-    const user = database.getClient().insert(users).values({ usernameNormalized: "old.off.member", createdAt }).returning().get();
+    const user = database.getClient().$client.prepare("INSERT INTO users (username_normalized, created_at) VALUES (?, ?) RETURNING id").get("old.off.member", createdAt) as { id: number };
     database.getClient().insert(userPreferences).values({ userId: user.id, timeZone: "UTC", displayUnits: "metric", createdAt, updatedAt: createdAt }).run();
     const catalog = new FoodCatalog([{ provider: "usda-fdc", capability: "search", service: new TestFoodCatalogProvider() }, { provider: "open-food-facts", capability: "barcode", service: new TestOpenFoodFactsProvider() }]);
     const oldEntries = new FoodEntryService(database.getClient(), catalog);
@@ -35,6 +35,6 @@ test("migrating a populated application preserves USDA/OFF snapshots, supported 
     expect(updated.map(entry => entry.energyMilliKcal)).toEqual([118000, 360000]);
     const copies = updated.map(entry => entries.copyToToday(user.id, entry.id, { foodLogDate: entry.foodLogDate, idempotencyKey: `copy:${entry.id}:migration-test` }));
     expect(copies.map(entry => [entry.authoritativeNutrition, entry.supportedMeasurements, entry.name, entry.energyMilliKcal])).toEqual(updated.map(entry => [entry.authoritativeNutrition, entry.supportedMeasurements, entry.name, entry.energyMilliKcal]));
-    expect(database.getStatus()).toMatchObject({ schemaVersion: "15", foreignKeysEnabled: true });
+    expect(database.getStatus()).toMatchObject({ schemaVersion: "16", foreignKeysEnabled: true });
   } finally { database.close(); await rm(directory, { recursive: true, force: true }); }
 });

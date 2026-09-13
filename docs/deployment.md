@@ -226,3 +226,28 @@ Migrations run before the HTTP listener starts. If startup logs
 directory during recovery; restore a complete backup to a new `DATA_PATH` and
 use the application version that matches it. Never run an older application
 against a database containing newer migrations.
+
+## First-key preview
+
+TKT-a82279ff adds the first WebAuthn enrollment and username/key sign-in path.
+Enrollment is off by default: `WEBAUTHN_ENROLLMENT_PREVIEW=1` enables it only for
+an isolated preview installation. Do not enable it on the production stack until
+the parent spec's key management and recovery tickets are complete. The standard
+Compose stack deliberately does not forward this flag. Already enrolled preview
+accounts continue to require their key if the enrollment flag is removed.
+
+Credentials use the exact HTTPS `APPLICATION_URL` origin and its hostname as the
+RP ID. Development at HTTP localhost uses separate credentials; an HTTP LAN IP
+cannot enroll or authenticate a key. Personal security navigation on LAN redirects
+to public HTTPS without transferring session or proof tokens. Password-mode
+accounts retain their existing LAN access. Enabling key login retains the password
+hash, replaces ordinary password login, revokes older public/LAN sessions and
+pending ceremonies, and rotates the verified current session without extending
+its absolute lifetime. Password reset preserves key mode and mandatory password
+replacement; it does not provide a password-login fallback.
+
+Automated verification uses real signed ES256 protocol fixtures, Chromium virtual
+authenticators, and a non-loopback HTTP listener. Actual YubiKey USB/NFC and
+Proton Pass extension/mobile enrollment and sign-in remain required before a
+parent release compatibility claim. Touch-only U2F keys cannot satisfy the required
+user verification. A key's PIN/biometrics is separate from the account password.

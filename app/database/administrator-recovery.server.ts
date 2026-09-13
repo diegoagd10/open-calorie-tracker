@@ -1,3 +1,4 @@
+import { invalidateAccountProofs } from "./authentication-policy.server";
 import { eq } from "drizzle-orm";
 
 import type { ApplicationDatabaseClient } from "./database.server";
@@ -61,6 +62,7 @@ export function replaceSoleAdministratorCredential(
         .run();
 
       return { ok: true };
+      invalidateAccountProofs(transaction, administratorId);
     },
     { behavior: "immediate" },
   );

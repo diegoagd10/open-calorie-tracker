@@ -111,7 +111,7 @@ describe("login component", () => {
       method: "post",
       noValidate: true,
     });
-    expect(renderer.root.findByType("button").children.join(""))
+    expect(renderer.root.findAllByType("button").find((button) => button.props.type === "submit")!.children.join(""))
       .toBe("Sign in");
     expect(renderer.root.findAllByType("nav")).toHaveLength(0);
     expect(renderer.root.findAllByType("a")).toHaveLength(0);
@@ -174,7 +174,7 @@ describe("registration component", () => {
     expect(text(renderer)).toContain(
       "12–128 characters; spaces, Unicode, paste, and password managers are supported.",
     );
-    expect(renderer.root.findByType("button").children.join(""))
+    expect(renderer.root.findAllByType("button").find((button) => button.props.type === "submit")!.children.join(""))
       .toBe("Create private account");
     expect(
       renderer.root.findAllByProps({ "aria-label": "Account access" }),

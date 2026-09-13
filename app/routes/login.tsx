@@ -1,3 +1,10 @@
+import { useState } from "react";
+import {
+  signInWithKey,
+  keyProviderError,
+  cancelKeyPrompt,
+} from "../auth/key-ceremony.client";
+import { applicationOrigin, effectiveRequestPolicy } from "../runtime.server";
 import { data, Form, redirect } from "react-router";
 
 import type { Route } from "./+types/login";
@@ -46,7 +53,13 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const csrf = loadPreAuthenticationCsrf(request);
   return data(
-    { csrfToken: csrf.csrfToken },
+    {
+      csrfToken: csrf.csrfToken,
+      publicKeyUrl:
+        effectiveRequestPolicy().entry === "lan"
+          ? `${applicationOrigin()}/login`
+          : null,
+    },
     { headers: csrf.headers },
   );
 }
@@ -106,20 +119,21 @@ export async function action({ request }: Route.ActionArgs) {
   return redirect(
     result.session.user.passwordChangeRequired ? "/account/password" : "/",
     {
-    headers: authenticatedSessionHeaders(request, result.session),
+      headers: authenticatedSessionHeaders(request, result.session),
     },
   );
 }
 
-export default function Login({ actionData, loaderData }: Route.ComponentProps) {
+export default function Login({
+  actionData,
+  loaderData,
+}: Route.ComponentProps) {
+  const [keyError, setKeyError] = useState("");
+  const [keyBusy, setKeyBusy] = useState(false);
   return (
     <AuthShell>
       <Form className={styles.form} method="post" noValidate>
-        <input
-          name="csrfToken"
-          type="hidden"
-          value={loaderData.csrfToken}
-        />
+        <input name="csrfToken" type="hidden" value={loaderData.csrfToken} />
         <div className={styles.field}>
           <label htmlFor="login-username">Username</label>
           <input
@@ -151,6 +165,45 @@ export default function Login({ actionData, loaderData }: Route.ComponentProps) 
           </div>
         ) : null}
 
+        {loaderData.publicKeyUrl ? (
+          <a href={loaderData.publicKeyUrl}>Use key sign-in on public HTTPS</a>
+        ) : (
+          <button
+            className={styles.submit}
+            type="button"
+            disabled={keyBusy}
+            onClick={(event) => {
+              const form = event.currentTarget.form!;
+              const username = String(new FormData(form).get("username") ?? "");
+              setKeyBusy(true);
+              setKeyError("");
+              void (async () => {
+                try {
+                  const result = await signInWithKey(
+                    loaderData.csrfToken,
+                    username,
+                  );
+                  window.location.assign(result.nextPath);
+                } catch (error) {
+                  setKeyError(keyProviderError(error));
+                  setKeyBusy(false);
+                }
+              })();
+            }}
+          >
+            {keyBusy ? "Follow your key prompt…" : "Use registered key"}
+          </button>
+        )}
+        {keyBusy ? (
+          <button className={styles.submit} type="button" onClick={cancelKeyPrompt}>
+            Cancel key prompt
+          </button>
+        ) : null}
+        {keyError ? (
+          <p className={styles.error} role="alert">
+            {keyError}
+          </p>
+        ) : null}
         <button className={styles.submit} type="submit">
           Sign in
         </button>

@@ -140,3 +140,25 @@ test("production side effects outside their owners return exit code 1", async (t
     JSON.stringify(report.boundary_call_violations, null, 2),
   );
 });
+
+test("browser ceremony transport may fetch without widening server authentication side effects", async (t) => {
+  const fixtureRoot = await createFixture(t, "app/routes/probe.ts", {
+    "app/routes/probe.ts": 'import { browserTransport } from "../auth/probe.client";\nimport { serverTransport } from "../auth/probe.server";\nexport const probe = [browserTransport, serverTransport];\n',
+    "app/auth/probe.client.ts": 'export function browserTransport() { return fetch("/key-ceremony"); }\n',
+    "app/auth/probe.server.ts": 'export function serverTransport() { return fetch("https://example.test"); }\n',
+  });
+  const report = runFallow(fixtureRoot, "--boundary-violations");
+  assert.equal(report.summary.boundary_call_violations, 1);
+  assert.equal(report.boundary_call_violations[0].path, "app/auth/probe.server.ts");
+});
+
+test("browser ceremony transport cannot import account storage", async (t) => {
+  const fixtureRoot = await createFixture(t, "app/auth/probe.client.ts", {
+    "app/auth/probe.client.ts": 'import { account } from "../database/probe";\nexport const browserAccount = account;\n',
+    "app/database/probe.ts": 'export const account = 1;\n',
+  });
+  const report = runFallow(fixtureRoot, "--boundary-violations");
+  assert.equal(report.summary.boundary_violations, 1);
+  assert.equal(report.boundary_violations[0].from_zone, "browser-auth");
+  assert.equal(report.boundary_violations[0].to_zone, "database");
+});

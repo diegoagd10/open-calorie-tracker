@@ -8,6 +8,9 @@ owners declared in `.fallowrc.json`; change that contract only when the design
 itself changes.
 
 Read environment values through the nearest typed `runtime.server.ts` boundary.
+The `browser-auth` zone owns only the same-origin browser ceremony transport
+in `app/auth/*.client.ts`. It may use browser fetch and WebAuthn APIs; it cannot
+import server/domain zones or access storage/process APIs.
 Keep SQLite and Drizzle access in `app/database/`, and process-level Express
 concerns in `server/`.
 

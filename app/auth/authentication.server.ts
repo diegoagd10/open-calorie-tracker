@@ -1,5 +1,6 @@
-import { randomBytes } from "node:crypto";
-
+import { operationalLog } from "../../server/operational-logging.js";
+import { csrfTokenFor, prepareIssuedSession } from "./session.server";
+import { KeyAuthenticationService } from "./key-authentication.server";
 import { eq } from "drizzle-orm";
 
 import type { ApplicationDatabaseClient } from "../database/database.server";
@@ -29,7 +30,7 @@ import {
   verifyPassword,
 } from "./password.server";
 import { PersistentRateLimiter } from "./rate-limiter.server";
-import { deriveCsrfToken, hashOpaqueToken, safelyEqual } from "./token.server";
+import { hashOpaqueToken, safelyEqual } from "./token.server";
 import {
   logBootstrapFailed,
   logBootstrapRejected,
@@ -43,7 +44,6 @@ import {
 } from "./member-events.server";
 
 const IDLE_SESSION_MS = 5 * 24 * 60 * 60 * 1_000;
-const ABSOLUTE_SESSION_MS = 90 * 24 * 60 * 60 * 1_000;
 function passwordChangeFailureWindowMs(): number {
   return 15 * 60 * 1_000;
 }
@@ -113,12 +113,10 @@ export type MemberAccessChangeResult =
   | { ok: true };
 
 export type MemberPasswordResetResult =
-  | { error: "not-found"; ok: false }
-  | { ok: true };
+  { error: "not-found"; ok: false } | { ok: true };
 
 export type MemberDeletionResult =
-  | { error: "confirmation-mismatch" | "not-found"; ok: false }
-  | { ok: true };
+  { error: "confirmation-mismatch" | "not-found"; ok: false } | { ok: true };
 
 export type IssuedSession = AuthenticatedSession;
 
@@ -140,42 +138,8 @@ export type PasswordChangeResult =
   | { error: "rate-limited"; ok: false }
   | { ok: true; session: IssuedSession };
 
-function csrfTokenFor(sessionToken: string): string {
-  return deriveCsrfToken(sessionToken, "authenticated-session");
-}
-
-function prepareIssuedSession(
-  now: Date,
-  user: AuthenticatedSession["user"],
-  absoluteExpiresAt = new Date(now.getTime() + ABSOLUTE_SESSION_MS),
-): {
-  persisted: typeof sessions.$inferInsert;
-  session: IssuedSession;
-} {
-  const token = randomBytes(32).toString("base64url");
-  const idleExpiresAt = new Date(
-    Math.min(now.getTime() + IDLE_SESSION_MS, absoluteExpiresAt.getTime()),
-  );
-
-  return {
-    persisted: {
-      absoluteExpiresAt: absoluteExpiresAt.toISOString(),
-      createdAt: now.toISOString(),
-      idleExpiresAt: idleExpiresAt.toISOString(),
-      lastSeenAt: now.toISOString(),
-      tokenHash: hashOpaqueToken(token),
-      userId: user.id,
-    },
-    session: {
-      absoluteExpiresAt,
-      csrfToken: csrfTokenFor(token),
-      token,
-      user,
-    },
-  };
-}
-
 export class AuthenticationService {
+  readonly keys: KeyAuthenticationService;
   readonly #database: ApplicationDatabaseClient;
   readonly #now: () => Date;
   readonly #passwordVerifier: typeof verifyPassword;
@@ -186,6 +150,7 @@ export class AuthenticationService {
     now: () => Date = () => new Date(),
     passwordVerifier: typeof verifyPassword = verifyPassword,
   ) {
+    this.keys = new KeyAuthenticationService(database, now);
     this.#database = database;
     this.#now = now;
     this.#passwordVerifier = passwordVerifier;
@@ -262,8 +227,10 @@ export class AuthenticationService {
   }
 
   isRegistrationOpen(): boolean {
-    return this.#database.select({ id: users.id }).from(users).limit(1).get() ===
-      undefined;
+    return (
+      this.#database.select({ id: users.id }).from(users).limit(1).get() ===
+      undefined
+    );
   }
 
   async provisionMember(
@@ -431,11 +398,19 @@ export class AuthenticationService {
       return { error: "account-disabled", ok: false };
     }
 
+    if (verification.user.keyLoginEnabled) {
+      operationalLog("info", "password_login_policy", {
+        outcome: "rejected",
+        userId: verification.user.id,
+      });
+      return { error: "invalid-credentials", ok: false };
+    }
+
     const issued = prepareIssuedSession(this.#now(), {
-        id: verification.user.id,
-        passwordChangeRequired: verification.user.passwordChangeRequired,
-        role: verification.user.role,
-        username: verification.user.usernameNormalized,
+      id: verification.user.id,
+      passwordChangeRequired: verification.user.passwordChangeRequired,
+      role: verification.user.role,
+      username: verification.user.usernameNormalized,
     });
     const replacementPasswordHash = verification.needsRehash
       ? await hashPassword(password)
@@ -450,6 +425,7 @@ export class AuthenticationService {
           }
         : {}),
       expectedPasswordHash: verification.user.passwordHash,
+      expectedAuthenticationVersion: verification.user.authenticationVersion,
       session: issued.persisted,
     });
     if (!sessionIssued) return { error: "invalid-credentials", ok: false };
@@ -465,7 +441,10 @@ export class AuthenticationService {
       .run();
   }
 
-  verifyCsrfToken(sessionToken: string, candidate: string | undefined): boolean {
+  verifyCsrfToken(
+    sessionToken: string,
+    candidate: string | undefined,
+  ): boolean {
     return safelyEqual(csrfTokenFor(sessionToken), candidate);
   }
 
@@ -477,10 +456,7 @@ export class AuthenticationService {
     needsRehash: boolean;
     user?: CredentialUser;
   }> {
-    const user = findCredentialByUsername(
-      this.#database,
-      usernameNormalized,
-    );
+    const user = findCredentialByUsername(this.#database, usernameNormalized);
     const credential = user?.passwordHash ?? createDummyPasswordHash();
     const verification = await this.#passwordVerifier(password, credential);
 
@@ -555,10 +531,12 @@ export class AuthenticationService {
     }
 
     try {
-      if (!deleteMemberAccount(this.#database, {
-        id: target.id,
-        usernameNormalized: target.username,
-      })) {
+      if (
+        !deleteMemberAccount(this.#database, {
+          id: target.id,
+          usernameNormalized: target.username,
+        })
+      ) {
         logMemberDeleted(actor, target.username, "not-found");
         return { error: "not-found", ok: false };
       }
@@ -588,9 +566,8 @@ export class AuthenticationService {
         return { ok: true };
       }
 
-      const error = result === "not-found"
-        ? "not-found"
-        : transition.staleError;
+      const error =
+        result === "not-found" ? "not-found" : transition.staleError;
       logMemberAccessChanged(action, actor, targetUsername, error);
       return { error, ok: false };
     } catch (error) {
