@@ -81,7 +81,7 @@ export function CatalogNotifications() {
     : current?.phase === "interrupted" ? `${name} update interrupted. Retry in Settings.`
       : `${name} update failed. Retry in Settings.`;
 
-  return <div className={styles.region} role="status" aria-live="polite" aria-atomic="true">
+  return <div className={styles.region} role={current ? "status" : undefined} aria-live="polite" aria-atomic="true">
     {current ? <div
       key={outcomeKey(current)}
       className={styles.toast}

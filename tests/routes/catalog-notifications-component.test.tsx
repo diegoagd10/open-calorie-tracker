@@ -39,6 +39,7 @@ test("nothing is visible without an event or for acknowledged outcomes", async (
   const { renderer, fetch, browser } = await render([]);
   expect(text(renderer.root)).toBe("");
   expect(renderer.root.findAllByType("button")).toHaveLength(0);
+  expect(renderer.root.findAllByProps({ role: "status" })).toHaveLength(0);
   fetch.mockResolvedValueOnce(Response.json({ outcomes: [outcome({ acknowledgedAt: "2026-09-09T13:00:00Z" })] }));
   await act(async () => { browser.dispatchEvent(new Event("focus")); });
   expect(text(renderer.root)).toBe("");
@@ -57,6 +58,7 @@ test("a new event produces a brief accessible toast, expires and stays dismissed
   expect(renderer.root.findByProps({ "data-phase": "succeeded" }).props["data-leaving"]).toBe(true);
   await advance(180);
   expect(text(renderer.root)).toBe("");
+  expect(renderer.root.findAllByProps({ role: "status" })).toHaveLength(0);
   await advance(9000);
   await act(async () => { browser.dispatchEvent(new Event("online")); });
   expect(text(renderer.root)).toBe("");

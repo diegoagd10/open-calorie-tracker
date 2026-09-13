@@ -114,9 +114,7 @@ test("today, historical navigation, calendar access, travel, and future rejectio
   await expect(
     quickLog.getByRole("button", { name: "Add Water" }),
   ).toBeVisible();
-  const catalogNotifications = page.getByRole("complementary", {
-    name: "Catalog notifications",
-  });
+  await expect(page.getByRole("button", { name: "Dismiss notification" })).toHaveCount(0);
   expect(
     await quickLog.evaluate((element) =>
       getComputedStyle(element.parentElement!).position,
@@ -142,16 +140,10 @@ test("today, historical navigation, calendar access, travel, and future rejectio
     await page.setViewportSize(viewport);
     await expect(quickLog).toBeVisible();
     const quickLogBox = await quickLog.boundingBox();
-    const notificationsBox = await catalogNotifications.boundingBox();
     expect(quickLogBox).not.toBeNull();
-    expect(notificationsBox).not.toBeNull();
-    if (viewport.width <= 560) {
-      expect(quickLogBox!.y + quickLogBox!.height)
-        .toBeLessThan(notificationsBox!.y);
-    } else {
-      expect(quickLogBox!.x + quickLogBox!.width)
-        .toBeLessThan(notificationsBox!.x);
-    }
+    expect(quickLogBox!.x).toBeGreaterThanOrEqual(0);
+    expect(quickLogBox!.x + quickLogBox!.width).toBeLessThanOrEqual(viewport.width);
+    expect(quickLogBox!.y + quickLogBox!.height).toBeLessThanOrEqual(viewport.height);
     expect(
       await page.evaluate(
         () => document.documentElement.scrollWidth <= window.innerWidth,
