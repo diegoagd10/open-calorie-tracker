@@ -35,12 +35,12 @@ async function render(outcomes: CatalogOutcome[]) {
 async function advance(ms: number) { await act(async () => { await vi.advanceTimersByTimeAsync(ms); }); }
 
 // Polling, expiry and deduplication are temporal behavior, rather than static markup.
-test("nothing is visible without an event or for acknowledged outcomes", async () => {
+test("nothing is visible without an event or for acknowledged operator outcomes", async () => {
   const { renderer, fetch, browser } = await render([]);
   expect(text(renderer.root)).toBe("");
   expect(renderer.root.findAllByType("button")).toHaveLength(0);
   expect(renderer.root.findAllByProps({ role: "status" })).toHaveLength(0);
-  fetch.mockResolvedValueOnce(Response.json({ outcomes: [outcome({ acknowledgedAt: "2026-09-09T13:00:00Z" })] }));
+  fetch.mockResolvedValueOnce(Response.json({ outcomes: [outcome({ phase: "failed", acknowledgedAt: "2026-09-09T13:00:00Z" })] }));
   await act(async () => { browser.dispatchEvent(new Event("focus")); });
   expect(text(renderer.root)).toBe("");
 });
@@ -49,7 +49,7 @@ test("a new event produces a brief accessible toast, expires and stays dismissed
   const { renderer, fetch, browser } = await render([]);
   fetch.mockImplementation(async () => Response.json({ outcomes: [outcome()] }));
   await advance(3000);
-  expect(text(renderer.root)).toBe("USDA catalog updated.");
+  expect(text(renderer.root)).toBe("USDA Foundation catalog updated.");
   expect(renderer.root.findByProps({ role: "status" }).props).toMatchObject({ "aria-live": "polite", "aria-atomic": "true" });
   expect(renderer.root.findAllByType("details")).toHaveLength(0);
   await advance(5819);
@@ -74,17 +74,17 @@ test("multiple outcomes are queued with distinct messages and a changed outcome 
     outcome({ jobId: "failed", provider: "open-food-facts", phase: "failed", error: "Internal archive details" }),
     outcome(),
   ]);
-  expect(text(renderer.root)).toBe("USDA catalog updated.");
+  expect(text(renderer.root)).toBe("USDA Foundation catalog updated.");
   await advance(6000);
-  expect(text(renderer.root)).toBe("Open Food Facts update failed. Retry in Settings.");
+  expect(text(renderer.root)).toBe("Open Food Facts import failed. Inspect the terminal and retry the command.");
   expect(renderer.root.findByProps({ "data-phase": "failed" })).toBeDefined();
   await act(() => { (renderer.root.findByType("button").props as { onClick: () => void }).onClick(); });
-  expect(text(renderer.root)).toBe("USDA update interrupted. Retry in Settings.");
+  expect(text(renderer.root)).toBe("USDA Foundation import interrupted. Inspect the terminal and retry the command.");
   await advance(6000);
   expect(text(renderer.root)).toBe("");
   fetch.mockResolvedValueOnce(Response.json({ outcomes: [outcome({ phase: "failed", completedAt: "2026-09-09T14:00:00Z" })] }));
   await act(async () => { browser.dispatchEvent(new Event("focus")); });
-  expect(text(renderer.root)).toBe("USDA update failed. Retry in Settings.");
+  expect(text(renderer.root)).toBe("USDA Foundation import failed. Inspect the terminal and retry the command.");
 });
 
 test("hovering and keyboard focus keep a toast visible until the reader leaves", async () => {
@@ -98,13 +98,13 @@ test("hovering and keyboard focus keep a toast visible until the reader leaves",
   const toast = () => renderer.root.findByProps({ "data-phase": "succeeded" }).props as ToastEvents;
   await act(() => toast().onMouseEnter());
   await advance(12000);
-  expect(text(renderer.root)).toBe("USDA catalog updated.");
+  expect(text(renderer.root)).toBe("USDA Foundation catalog updated.");
   await act(() => { toast().onFocusCapture(); toast().onMouseLeave(); });
   await advance(12000);
-  expect(text(renderer.root)).toBe("USDA catalog updated.");
+  expect(text(renderer.root)).toBe("USDA Foundation catalog updated.");
   await act(() => toast().onBlurCapture({ currentTarget: { contains: () => true }, relatedTarget: {} }));
   await advance(6000);
-  expect(text(renderer.root)).toBe("USDA catalog updated.");
+  expect(text(renderer.root)).toBe("USDA Foundation catalog updated.");
   await act(() => toast().onBlurCapture({ currentTarget: { contains: () => false }, relatedTarget: null }));
   await advance(6000);
   expect(text(renderer.root)).toBe("");
@@ -114,7 +114,7 @@ test("failed polling is quiet, reconnects and does not repeat an expired event",
   const { renderer, fetch, browser } = await render([outcome()]);
   fetch.mockRejectedValueOnce(new Error("offline"));
   await act(async () => { browser.dispatchEvent(new Event("online")); });
-  expect(text(renderer.root)).toBe("USDA catalog updated.");
+  expect(text(renderer.root)).toBe("USDA Foundation catalog updated.");
   fetch.mockResolvedValueOnce(new Response("unavailable", { status: 503 }));
   await act(async () => { browser.dispatchEvent(new Event("focus")); });
   await advance(6000);
@@ -129,7 +129,7 @@ test("unavailable storage does not break expiry or in-memory deduplication", asy
   const fetch = vi.mocked(globalThis.fetch);
   fetch.mockImplementation(async () => Response.json({ outcomes: [outcome()] }));
   await advance(3000);
-  expect(text(renderer.root)).toBe("USDA catalog updated.");
+  expect(text(renderer.root)).toBe("USDA Foundation catalog updated.");
   await advance(12000);
   expect(text(renderer.root)).toBe("");
 });
@@ -144,4 +144,19 @@ test("an unmounted toast ignores a late poll and removes its timers", async () =
   await act(() => renderer.unmount());
   await act(async () => { resolve(Response.json({ outcomes: [outcome()] })); });
   expect(vi.getTimerCount()).toBe(0);
+});
+
+
+test.each(["usda-fdc", "open-food-facts"] as const)("%s first activation announces installation with only public notification fields", async provider => {
+  const name = provider === "usda-fdc" ? "USDA Foundation" : "Open Food Facts";
+  const { renderer } = await render([outcome({ provider, operation: "install" })]);
+  expect(text(renderer.root)).toBe(`${name} catalog installed.`);
+});
+
+test("shared acknowledgement cannot suppress success and displaying deduplicates even before dismissal on refresh", async () => {
+  const { renderer } = await render([outcome({ operation: "update", acknowledgedAt: "2026-09-09T13:00:00Z" })]);
+  expect(text(renderer.root)).toBe("USDA Foundation catalog updated.");
+  await act(() => renderer.unmount());
+  const refreshed = await mount();
+  expect(text(refreshed.root)).toBe("");
 });

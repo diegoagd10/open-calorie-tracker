@@ -114,6 +114,16 @@ test.each([
       installed: { filename },
       job: { error: null, phase: "succeeded" },
     });
+    expect(management.outcomes()[0]).toMatchObject({ phase: "succeeded", operation: "install" });
+    const firstGeneration = management.read().installed!.generation;
+    expect(await runCatalogImportCommand([provider, archivePath], {
+      baseUrl, controlToken, pollIntervalMs: 1,
+      writeStandardError: value => standardError.push(value),
+      writeStandardOutput: value => standardOutput.push(value),
+    })).toBe(0);
+    expect(management.read().installed!.generation).not.toBe(firstGeneration);
+    expect(management.outcomes().find(outcome => outcome.jobId !== firstGeneration)).toMatchObject({ phase: "succeeded", operation: "update" });
+
   },
 );
 

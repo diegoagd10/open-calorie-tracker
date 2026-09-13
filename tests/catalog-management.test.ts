@@ -116,7 +116,7 @@ test.each(["usda-fdc", "open-food-facts"] as const)("%s defaults reserve indepen
 test.each(["present", "missing"] as const)("restart marks an unfinished provider job interrupted when staging is %s, cleans up, and permits retry", async staging => {
   const { database, settings, directory } = await setup();
   const id = "interrupted-job";
-  const job = { id, filename: "off.gz", phase: "importing" as const, receivedBytes: 100, processedRecords: 7, exclusions: {}, error: null, startedAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z" };
+  const job = { id, operation: "install" as const, filename: "off.gz", phase: "importing" as const, receivedBytes: 100, processedRecords: 7, exclusions: {}, error: null, startedAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z" };
   saveCatalogState(database.getClient(), { installed: null, job }, "open-food-facts");
   await fs.writeFile(path.join(directory, `${id}.gz`), "partial");
   await fs.writeFile(path.join(directory, `${id}.sqlite`), "partial database");
@@ -125,6 +125,7 @@ test.each(["present", "missing"] as const)("restart marks an unfinished provider
   const recovered = new CatalogManagement(database.getClient(), settings);
   expect(recovered.read()).toMatchObject({ installed: null, busy: false, job: { phase: "interrupted", processedRecords: 7, error: "Open Food Facts installation was interrupted by a server restart. Upload the archive again." } });
   await vi.waitFor(async () => expect((await fs.readdir(directory)).filter(name => name.startsWith(id))).toEqual([]));
+  expect(recovered.outcomes()[0]).toMatchObject({ phase: "interrupted", operation: "install" });
   const unchanged = new CatalogManagement(database.getClient(), settings);
   expect(unchanged.read()).toEqual(recovered.read());
   await recovered.submitArchive({ filename: "retry.gz", stream: Readable.from(offArchive([offWithBasis("serving")])) });
@@ -369,7 +370,7 @@ test("restart completes an already-published activation handoff instead of inter
   const old = management.read().installed!;
   const replacement = { ...old, generation: "00000000-0000-4000-8000-000000000001", filename: "replacement.zip", databaseBytes: undefined };
   await fs.copyFile(path.join(directory, `${old.generation}.sqlite`), path.join(directory, `${replacement.generation}.sqlite`));
-  const activating = activatingJob(replacement.generation, replacement.filename);
+  const activating = { ...activatingJob(replacement.generation, replacement.filename), operation: "update" as const };
   saveCatalogState(database.getClient(), { installed: replacement, retiring: old, job: activating }, "usda-fdc");
 
   const restarted = new CatalogManagement(database.getClient(), settings);
@@ -380,6 +381,7 @@ test("restart completes an already-published activation handoff instead of inter
     job: { phase: "succeeded", error: null },
   });
   expect(restarted.read().retiring).toBeUndefined();
+  expect(restarted.outcomes().find(outcome => outcome.jobId === replacement.generation)).toMatchObject({ phase: "succeeded", operation: "update" });
   await expect(fs.access(path.join(directory, `${old.generation}.sqlite`))).rejects.toMatchObject({ code: "ENOENT" });
   await expect(fs.access(path.join(directory, `${replacement.generation}.sqlite`))).resolves.toBeUndefined();
   await expect(new LocalUsdaAdapter(restarted, directory).getFood("748967")).resolves.toMatchObject({ providerFoodId: "748967" });
@@ -559,7 +561,7 @@ test("a retirement failure keeps the replacement usable, reports the handoff err
   expect(restarted.read()).toMatchObject({ installed: replacement, job: { phase: "succeeded", error: null } });
   expect(restarted.read().retiring).toBeUndefined();
   expect(restarted.outcomes()).toHaveLength(2);
-  expect(restarted.outcomes().find(outcome => outcome.jobId === failure.jobId)).toMatchObject({ phase: "succeeded", installed: replacement, acknowledgedAt: null });
+  expect(restarted.outcomes().find(outcome => outcome.jobId === failure.jobId)).toMatchObject({ phase: "succeeded", operation: "update", installed: replacement, acknowledgedAt: null });
   expect(restarted.acknowledgeOutcome(failure.jobId, failure.completedAt)).toBe(false);
   await expect(fs.access(path.join(directory, `${old.generation}.sqlite`))).rejects.toMatchObject({ code: "ENOENT" });
 });
@@ -865,4 +867,20 @@ test("terminal outcomes survive replacement and acknowledgement across managemen
   expect(restarted.outcomes()).toContainEqual(acknowledged[0]);
   expect(restarted.outcomes().find(item => item.phase === "failed")).toMatchObject({ filename: "broken.gz", installed: outcome.installed, acknowledgedAt: null });
   expect(restarted.outcomes()).toEqual(restarted.outcomes());
+});
+
+
+test("legacy terminal state remains readable without claiming first installation", async () => {
+  const { management, database, settings } = await setup();
+  await management.submitArchive({ filename: "products.gz", stream: Readable.from(offArchive()) });
+  await finished(management);
+  const state = management.read();
+  const legacyJob = { ...state.job!, id: "legacy-job" };
+  delete legacyJob.operation;
+  saveCatalogState(database.getClient(), { installed: { ...state.installed!, generation: legacyJob.id }, job: legacyJob }, "open-food-facts");
+  const restarted = new CatalogManagement(database.getClient(), settings);
+  cleanups.unshift(() => restarted.shutdown());
+  const legacy = restarted.outcomes().find(outcome => outcome.jobId === legacyJob.id)!;
+  expect(legacy.phase).toBe("succeeded");
+  expect(legacy.operation).toBeUndefined();
 });

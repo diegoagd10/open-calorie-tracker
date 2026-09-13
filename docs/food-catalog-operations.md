@@ -12,7 +12,7 @@ A persistent installation contains three independent SQLite databases:
 
 1. The application database stores accounts, Food Entries, photo records,
    catalog job state, active-generation references, update checks, and
-   administrator notifications.
+   persisted catalog outcomes.
 2. The active USDA generation stores imported Foundation foods and its search
    index.
 3. The active Open Food Facts generation stores imported products and its
@@ -28,49 +28,45 @@ source attribution remain in each historical entry.
 ## Initial installation and upgrades
 
 For a fresh deployment, claim the administrator account and complete nutrition
-setup, then open **Settings → Food Catalogs**. Download each archive in the
-browser from its linked official source and upload it to the matching card:
+setup. Follow the [README terminal workflow](../README.md#install-food-catalogs-from-the-terminal)
+to download supported official archives, build the command artifacts, start the
+application, and install them from server/container-visible regular files.
+USDA accepts the official Foundation **CSV ZIP**; Open Food Facts accepts the
+official product **JSONL GZIP** (recommended for serving nutrition) or supported **tab-separated CSV GZIP**. Browser archive requests are rejected.
+Either source can be installed first, and the same command deliberately replaces
+or reimports a source independently. A missing source is identified in search.
 
-- USDA accepts the official Foundation **CSV ZIP**.
-- Open Food Facts accepts the official product **JSONL GZIP** (recommended) and the supported existing **tab-separated CSV GZIP** dialects.
-- Operators can bypass public proxy upload limits by placing an archive in a
-  container-visible regular file and running `pnpm catalog:import:usda -- PATH`
-  or `pnpm catalog:import:off -- PATH`. These commands use the same installation
-  lifecycle as the settings page and wait for its persisted terminal outcome.
+Application upgrades run database migrations before readiness. Existing USDA and
+OFF Food Entry snapshots remain viewable, editable with their saved measurements,
+and copyable even before catalogs are installed or when an old source record is
+absent. Use the same terminal commands after upgrading.
 
-The application never reads a user's Downloads folder and does not download an
-archive on the administrator's behalf. Either catalog can be installed first.
-Search and saved entries continue to work with only one installed catalog; the
-missing source is identified in the search UI.
-
-An application upgrade runs application-database migrations before the server
-becomes ready. Existing USDA and OFF Food Entry snapshots remain viewable,
-editable with their saved measurements, and copyable even before catalogs are
-installed or when their old upstream record is absent. After upgrading, use the
-same Food Catalogs UI to install or replace each local generation independently.
-
-Upload and import continue after navigation. The card reports received bytes,
-validation/import/indexing/activation phases, processed records, installed and
-rejected food counts, and exclusion reasons. Activation occurs only after the
+Progress, lifecycle phases, counters and detailed errors stay in the terminal.
+Food Catalogs shows installed information and metadata-only update checks, with
+no upload controls, progress or import reports. Activation occurs only after the
 new database and indexes validate; readers keep using the prior complete
-generation until the handoff. Persistent in-app outcomes identify USDA or OFF
-separately and remain available to administrators after navigation, reload, and
-restart. Administrators receive a brief toast at the top of the page when an
-unseen outcome is detected. Toasts disappear after six seconds, pause while
-hovered or focused, and can be dismissed manually. Dismissed outcomes do not
-reappear on navigation or reload in that browser tab; dismissal does not mark
-the outcome as acknowledged for other administrators. Installation details
-remain in **Settings → Food Catalogs**. Regular members may search and log
-foods but server authorization and
-CSRF protection deny catalog reads or mutations in Settings.
+generation until the handoff. The command waits for the backend's persisted
+terminal outcome; zero means successful activation, while failure/interruption
+and command/connection errors return nonzero. Backend work does not depend on the
+terminal remaining connected after acceptance.
 
-## Capacity and proxy limits
+All connected signed-in administrators and members receive source-specific
+installed/updated toasts on any page. Failures and interruptions are visible only
+to administrators. Toasts disappear after six seconds, pause while hovered or
+focused, and can be dismissed manually. Each browser tab remembers displayed
+outcomes across navigation and reload. Another client's dismissal or shared
+acknowledgement cannot suppress success delivery. Polling retries quietly after
+connection failures and checks on focus/reconnection. Anonymous clients receive
+no notifications; members cannot read private operator diagnostics or use
+management/acknowledgement mutations. Food Catalogs remains administrator-only.
+
+## Capacity and archive limits
 
 | Setting | Default | Purpose |
 | --- | ---: | --- |
-| `CATALOG_MAX_UPLOAD_BYTES` | 64 MiB | USDA compressed upload limit |
+| `CATALOG_MAX_UPLOAD_BYTES` | 64 MiB | USDA compressed archive limit |
 | `CATALOG_MAX_EXPANDED_BYTES` | 256 MiB | USDA extracted tables and staged database limit |
-| `OFF_CATALOG_MAX_UPLOAD_BYTES` | 16 GiB | OFF compressed upload limit |
+| `OFF_CATALOG_MAX_UPLOAD_BYTES` | 16 GiB | OFF compressed archive limit |
 | `OFF_CATALOG_MAX_EXPANDED_BYTES` | 96 GiB | OFF decompressed stream limit |
 | `OFF_CATALOG_MAX_DATABASE_BYTES` | 32 GiB | OFF staged SQLite page limit |
 | `OFF_CATALOG_MAX_DOCUMENT_BYTES` | 8 MiB | Individual JSONL document limit |
@@ -78,12 +74,13 @@ CSRF protection deny catalog reads or mutations in Settings.
 At the defaults, a USDA import can require up to 576 MiB free. An OFF import
 reserves up to 80 GiB beyond storage already occupied by the current generation.
 During replacement, retain capacity for the application database, current
-catalog, staged catalog, compressed upload, proxy buffering, and filesystem
-overhead. Configure the reverse proxy to accept at least the chosen compressed
-limit, allow the two-hour application upload timeout, and disable request
-buffering when practical. The detailed calculations and Nginx examples are in
+catalog, staged catalog, a staged compressed archive and the operator's downloaded
+file, plus filesystem overhead. The downloaded input can consume additional space
+on the same volume before preflight runs. The local API sends only a file path;
+public reverse-proxy upload limits do not apply. The configuration names retain
+`UPLOAD_BYTES` for compatibility, limiting server-side archive staging too. See
 the [USDA guide](local-usda-catalog.md#operations-and-verification) and
-[OFF guide](local-off-catalog.md#resources-and-operations).
+[OFF guide](local-off-catalog.md#resources-and-operations) for detailed limits.
 
 ## Recovery and updates
 
@@ -91,16 +88,15 @@ On restart, an unfinished pre-activation job becomes **interrupted**, partial
 artifacts are removed, and the previous active generation stays available. If
 publication had started, recovery validates the candidate's recorded size,
 provider schema, indexes, and SQLite integrity before completing the handoff;
-otherwise it restores the prior complete generation. Open Food Catalogs and
-choose the same archive again with the source-specific retry action. Partial
-uploads are not resumable. Do not rename or delete UUID-named catalog files by
+otherwise it restores the prior complete generation. Rerun the source-specific terminal command with the complete archive. Partial
+imports are not resumable. Do not rename or delete UUID-named catalog files by
 hand.
 
 Update discovery is independent and metadata-only. USDA checks its official
 Foundation release declaration and archive headers. OFF checks the known daily
 export object's headers and full-object checksum. Unavailable, contradictory,
-or incomparable metadata is reported as uncertain and never blocks manual
-installation or local lookup. The administrator still downloads and uploads
+or incomparable metadata is reported as uncertain and never blocks command
+installation or local lookup. The administrator still downloads and imports
 every replacement deliberately.
 
 ## Coverage, units, and attribution

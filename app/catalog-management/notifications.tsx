@@ -2,21 +2,22 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { CatalogOutcome } from "./catalog-management.server";
 import styles from "./notifications.module.css";
 
-type NotificationData = { outcomes: CatalogOutcome[] };
+type CatalogNotification = Pick<CatalogOutcome, "provider" | "jobId" | "completedAt" | "phase" | "operation"> & Partial<Pick<CatalogOutcome, "acknowledgedAt">>;
+type NotificationData = { outcomes: CatalogNotification[] };
 const endpoint = "/catalog-notifications";
 const duration = 6000;
 
-function outcomeKey(outcome: CatalogOutcome) {
+function outcomeKey(outcome: CatalogNotification) {
   return `catalog-toast:${JSON.stringify([outcome.provider, outcome.jobId, outcome.completedAt, outcome.phase])}`;
 }
 
-function wasDismissed(key: string) {
-  try { return window.sessionStorage.getItem(key) === "dismissed"; }
+function wasDisplayed(key: string) {
+  try { return window.sessionStorage.getItem(key) !== null; }
   catch { return false; }
 }
 
 export function CatalogNotifications() {
-  const [queue, setQueue] = useState<CatalogOutcome[]>([]);
+  const [queue, setQueue] = useState<CatalogNotification[]>([]);
   const [hovered, setHovered] = useState(false);
   const [focused, setFocused] = useState(false);
   const [leaving, setLeaving] = useState(false);
@@ -36,7 +37,7 @@ export function CatalogNotifications() {
         if (controller.signal.aborted) return;
         const fresh = [...data.outcomes].reverse().filter(outcome => {
           const key = outcomeKey(outcome);
-          if (outcome.acknowledgedAt || seen.current.has(key) || wasDismissed(key)) return false;
+          if ((outcome.phase !== "succeeded" && outcome.acknowledgedAt) || seen.current.has(key) || wasDisplayed(key)) return false;
           seen.current.add(key);
           return true;
         });
@@ -58,6 +59,12 @@ export function CatalogNotifications() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!current) return;
+    try { window.sessionStorage.setItem(outcomeKey(current), "displayed"); }
+    catch { /* The in-memory set still deduplicates when storage is unavailable. */ }
+  }, [current]);
+
   const dismiss = useCallback(() => {
     if (!current) return;
     try { window.sessionStorage.setItem(outcomeKey(current), "dismissed"); }
@@ -76,10 +83,10 @@ export function CatalogNotifications() {
     return () => { clearTimeout(fade); clearTimeout(timer); };
   }, [current, dismiss, hovered, focused]);
 
-  const name = current?.provider === "usda-fdc" ? "USDA" : "Open Food Facts";
-  const message = current?.phase === "succeeded" ? `${name} catalog updated.`
-    : current?.phase === "interrupted" ? `${name} update interrupted. Retry in Settings.`
-      : `${name} update failed. Retry in Settings.`;
+  const name = current?.provider === "usda-fdc" ? "USDA Foundation" : "Open Food Facts";
+  const message = current?.phase === "succeeded" ? `${name} catalog ${current.operation === "install" ? "installed" : "updated"}.`
+    : current?.phase === "interrupted" ? `${name} import interrupted. Inspect the terminal and retry the command.`
+      : `${name} import failed. Inspect the terminal and retry the command.`;
 
   return <div className={styles.region} role={current ? "status" : undefined} aria-live="polite" aria-atomic="true">
     {current ? <div
