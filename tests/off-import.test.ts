@@ -116,12 +116,12 @@ test("OFF retains unsupported identifiers but rejects unusable rows and counts d
 });
 
 test.each([
-  [Buffer.from("not gzip"), "Corrupt OFF GZIP or malformed TSV. Download the archive again."],
-  [gzipSync(""), "Incompatible OFF schema. Upload the official tab-separated product CSV GZIP."],
-  [gzipSync("code\tproduct_name\n123\tname\n"), "Incompatible OFF schema. Upload the official tab-separated product CSV GZIP."],
-  [gzipSync("code\tcode\tproduct_name\tenergy-kcal_100g\tproteins_100g\tfat_100g\tcarbohydrates_100g\n"), "Incompatible OFF schema. Upload the official tab-separated product CSV GZIP."],
+  [Buffer.from("not gzip"), "Corrupt OFF GZIP or malformed TSV/JSONL. Download the archive again."],
+  [gzipSync(""), "Incompatible OFF schema. Upload the official product JSONL GZIP or supported tab-separated CSV GZIP."],
+  [gzipSync("code\tproduct_name\n123\tname\n"), "Incompatible OFF schema. Upload the official product JSONL GZIP or supported tab-separated CSV GZIP."],
+  [gzipSync("code\tcode\tproduct_name\tenergy-kcal_100g\tproteins_100g\tfat_100g\tcarbohydrates_100g\n"), "Incompatible OFF schema. Upload the official product JSONL GZIP or supported tab-separated CSV GZIP."],
   [gzipSync("code\tproduct_name\tenergy-kcal_100g\tproteins_100g\tfat_100g\tcarbohydrates_100g\n"), "OFF archive contains no product records. Nothing was installed."],
-  [offArchive().subarray(0, -8), "Corrupt OFF GZIP or malformed TSV. Download the archive again."],
+  [offArchive().subarray(0, -8), "Corrupt OFF GZIP or malformed TSV/JSONL. Download the archive again."],
 ] as const)("OFF returns a specific archive failure %#", async (archive, error) => {
   const imported = await install(archive);
   expect(imported.final).toMatchObject({ error });
@@ -134,7 +134,7 @@ test("a late OFF archive failure reports accepted and rejected staging rows", as
   const imported = await install(archive);
   expect(imported.final).toMatchObject({
     progress: { processedRecords: 501, importedRecords: 500, rejectedRecords: 1, exclusions: { invalid_identity: 1 } },
-    error: "Corrupt OFF GZIP or malformed TSV. Download the archive again.",
+    error: "Corrupt OFF GZIP or malformed TSV/JSONL. Download the archive again.",
   });
 });
 

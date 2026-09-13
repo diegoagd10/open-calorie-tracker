@@ -1,0 +1,318 @@
+{
+  "code": "0643843715887",
+  "product_name": "100% Whey Protein Powder",
+  "brands": "Premier Protein",
+  "serving_size": "2 scoops (41 g)",
+  "serving_quantity": 41,
+  "serving_quantity_unit": "g",
+  "nutrition_data_per": "serving",
+  "nutriments": {},
+  "nutrition": {
+    "aggregated_set": {
+      "nutrients": {
+        "sodium": {
+          "source": "packaging",
+          "value": 0.4146341463414634,
+          "unit": "g",
+          "source_index": 1,
+          "source_per": "serving",
+          "value_computed": 0.17
+        },
+        "potassium": {
+          "source_per": "serving",
+          "source": "packaging",
+          "value": 0.6585365853658537,
+          "unit": "g",
+          "source_index": 1
+        },
+        "saturated-fat": {
+          "value": 2.4390243902439024,
+          "source_index": 1,
+          "unit": "g",
+          "source_per": "serving",
+          "source": "packaging"
+        },
+        "choline": {
+          "source": "packaging",
+          "source_per": "serving",
+          "value": 0.0,
+          "unit": "g",
+          "source_index": 1
+        },
+        "starch": {
+          "source_per": "serving",
+          "source": "packaging",
+          "source_index": 1,
+          "unit": "g",
+          "value": 0.0
+        },
+        "proteins": {
+          "value": 73.17073170731707,
+          "source_index": 1,
+          "unit": "g",
+          "source": "packaging",
+          "source_per": "serving"
+        },
+        "fat": {
+          "source_per": "serving",
+          "source": "packaging",
+          "value": 4.878048780487805,
+          "source_index": 1,
+          "unit": "g"
+        },
+        "calcium": {
+          "value": 0.3902439024390244,
+          "source_index": 1,
+          "unit": "g",
+          "source": "packaging",
+          "source_per": "serving"
+        },
+        "fruits-vegetables-nuts": {
+          "source_per": "100g",
+          "modifier": "~",
+          "source": "estimate",
+          "value": 0,
+          "unit": "%",
+          "source_index": 2
+        },
+        "energy-kj": {
+          "source_per": "serving",
+          "modifier": "~",
+          "source": "packaging",
+          "source_index": 1,
+          "unit": "kJ",
+          "value": 1609.7560975609756
+        },
+        "energy": {
+          "modifier": "~",
+          "value": 1609.7560975609756,
+          "unit": "kJ",
+          "source_index": 1,
+          "source_per": "serving",
+          "source": "packaging"
+        },
+        "salt": {
+          "value": 1.0365853658536586,
+          "source_index": 1,
+          "unit": "g",
+          "source": "packaging",
+          "value_computed": 0.425,
+          "source_per": "serving"
+        },
+        "energy-kcal": {
+          "value": 365.853658536585,
+          "source_index": 0,
+          "unit": "kcal",
+          "source_per": "100g",
+          "source": "packaging"
+        },
+        "fiber": {
+          "source": "packaging",
+          "source_per": "serving",
+          "unit": "g",
+          "source_index": 1,
+          "value": 2.4390243902439024
+        },
+        "nova-group": {
+          "source_per": "serving",
+          "source": "packaging",
+          "value": 9.75609756097561,
+          "unit": "",
+          "source_index": 1
+        },
+        "cholesterol": {
+          "source": "packaging",
+          "source_per": "serving",
+          "unit": "g",
+          "source_index": 1,
+          "value": 0.12195121951219512
+        },
+        "sugars": {
+          "unit": "g",
+          "source_index": 1,
+          "value": 2.4390243902439024,
+          "source": "packaging",
+          "source_per": "serving"
+        },
+        "carbohydrates": {
+          "value": 9.75609756097561,
+          "source_index": 1,
+          "unit": "g",
+          "source": "packaging",
+          "source_per": "serving"
+        },
+        "iron": {
+          "source_index": 0,
+          "unit": "g",
+          "value": 0.0029268292682926803,
+          "source_per": "100g",
+          "source": "packaging"
+        },
+        "fruits-vegetables-legumes": {
+          "modifier": "~",
+          "source_per": "100g",
+          "value": 0,
+          "unit": "%",
+          "source_index": 2,
+          "source": "estimate"
+        },
+        "added-sugars": {
+          "source": "estimate",
+          "value": 0,
+          "unit": "g",
+          "source_index": 2,
+          "source_per": "100g",
+          "modifier": "~"
+        }
+      },
+      "preparation": "as_sold",
+      "per": "100g"
+    },
+    "input_sets": [
+      {
+        "preparation": "as_sold",
+        "nutrients": {
+          "energy-kcal": {
+            "value": 365.853658536585,
+            "unit": "kcal",
+            "value_string": "365.853658536585"
+          },
+          "iron": {
+            "unit": "mg",
+            "value": 2.92682926829268,
+            "value_string": "2.92682926829268"
+          }
+        },
+        "per_quantity": 100,
+        "per": "100g",
+        "source": "packaging",
+        "per_unit": "g"
+      },
+      {
+        "per": "serving",
+        "per_quantity": 41,
+        "source": "packaging",
+        "per_unit": "g",
+        "preparation": "as_sold",
+        "last_updated_t": 1772908425,
+        "nutrients": {
+          "calcium": {
+            "unit": "g",
+            "value": 0.16,
+            "value_string": "0.16"
+          },
+          "fat": {
+            "unit": "g",
+            "value": 2,
+            "value_string": "2"
+          },
+          "proteins": {
+            "value_string": "30",
+            "value": 30,
+            "unit": "g"
+          },
+          "starch": {
+            "value_string": "0",
+            "value": 0,
+            "unit": "g"
+          },
+          "choline": {
+            "value_string": "0",
+            "value": 0,
+            "unit": "g"
+          },
+          "sodium": {
+            "value_string": "0.17",
+            "value": 0.17,
+            "value_computed": 0.17,
+            "unit": "g"
+          },
+          "potassium": {
+            "value_string": "0.27",
+            "value": 0.27,
+            "unit": "g"
+          },
+          "saturated-fat": {
+            "value_string": "1",
+            "unit": "g",
+            "value": 1
+          },
+          "iron": {
+            "value_string": "0.0012",
+            "unit": "g",
+            "value": 0.0012
+          },
+          "sugars": {
+            "unit": "g",
+            "value": 1,
+            "value_string": "1"
+          },
+          "carbohydrates": {
+            "unit": "g",
+            "value": 4,
+            "value_string": "4"
+          },
+          "cholesterol": {
+            "value_string": "0.05",
+            "value": 0.05,
+            "unit": "g"
+          },
+          "nova-group": {
+            "unit": "",
+            "value": 4,
+            "value_string": "4"
+          },
+          "energy-kcal": {
+            "value": 150,
+            "unit": "kcal",
+            "value_computed": 156,
+            "value_string": "150"
+          },
+          "fiber": {
+            "unit": "g",
+            "value": 1,
+            "value_string": "1"
+          },
+          "salt": {
+            "value_computed": 0.425,
+            "unit": "g",
+            "value": 0.425,
+            "value_string": "0.425"
+          },
+          "energy-kj": {
+            "value_computed": 660,
+            "unit": "kJ"
+          }
+        }
+      },
+      {
+        "nutrients": {
+          "fruits-vegetables-nuts": {
+            "value_string": "0",
+            "modifier": "~",
+            "value": 0,
+            "unit": "%"
+          },
+          "added-sugars": {
+            "value_string": "0",
+            "unit": "g",
+            "modifier": "~",
+            "value": 0
+          },
+          "fruits-vegetables-legumes": {
+            "value": 0,
+            "modifier": "~",
+            "unit": "%",
+            "value_string": "0"
+          }
+        },
+        "source_description": "Estimate from ingredients",
+        "source": "estimate",
+        "per_unit": "g",
+        "per": "100g",
+        "per_quantity": 100,
+        "preparation": "as_sold"
+      }
+    ]
+  }
+}

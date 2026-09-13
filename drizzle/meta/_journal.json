@@ -120,6 +120,13 @@
       "when": 1789326313331,
       "tag": "0016_first_key",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "6",
+      "when": 1789329745475,
+      "tag": "0017_remarkable_shotgun",
+      "breakpoints": true
     }
   ]
 }

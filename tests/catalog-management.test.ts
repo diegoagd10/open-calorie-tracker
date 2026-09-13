@@ -91,26 +91,26 @@ test("stream errors are reported as upload failures and shutdown cancels an unfi
 test("disk preflight uses expanded reserve plus the advertised upload size", async () => {
   const { management } = await setup({ maxUploadBytes: 1000, maxExpandedBytes: 10000 });
   const real = await fs.statfs(tmpdir());
-  vi.mocked(fs.statfs).mockResolvedValue({ ...real, bavail: 10009, bsize: 1 });
+  vi.mocked(fs.statfs).mockResolvedValue({ ...real, bavail: 20009, bsize: 1 });
   await management.submitArchive({ filename: "off.gz", size: 10, stream: Readable.from(Buffer.alloc(10)) });
   expect(management.read().job?.error).toBe("Not enough disk space for Open Food Facts import. Free space and retry.");
-  vi.mocked(fs.statfs).mockResolvedValue({ ...real, bavail: 10010, bsize: 1 });
+  vi.mocked(fs.statfs).mockResolvedValue({ ...real, bavail: 20010, bsize: 1 });
   await management.submitArchive({ filename: "off.gz", size: 10, stream: Readable.from(Buffer.alloc(10)) });
   await finished(management);
-  expect(management.read().job?.error).toBe("Corrupt OFF GZIP or malformed TSV. Download the archive again.");
+  expect(management.read().job?.error).toBe("Corrupt OFF GZIP or malformed TSV/JSONL. Download the archive again.");
 });
 
 test.each(["usda-fdc", "open-food-facts"] as const)("%s defaults reserve independent archive sizes", async provider => {
   const { management } = await setup({ provider }, true);
   const real = await fs.statfs(tmpdir());
-  const reserve = provider === "usda-fdc" ? 576 * 1024 ** 2 : 36 * 1024 ** 3;
+  const reserve = provider === "usda-fdc" ? 576 * 1024 ** 2 : 80 * 1024 ** 3;
   vi.mocked(fs.statfs).mockResolvedValue({ ...real, bavail: reserve - 1, bsize: 1 });
   await management.submitArchive({ filename: provider === "usda-fdc" ? "source.zip" : "source.gz", stream: Readable.from("test") });
   expect(management.read().job?.error).toBe(`Not enough disk space for ${provider === "usda-fdc" ? "USDA" : "Open Food Facts"} import. Free space and retry.`);
   vi.mocked(fs.statfs).mockResolvedValue({ ...real, bavail: reserve, bsize: 1 });
   await management.submitArchive({ filename: provider === "usda-fdc" ? "source.zip" : "source.gz", stream: Readable.from("test") });
   await finished(management);
-  expect(management.read().job?.error).toBe(provider === "usda-fdc" ? "Invalid or corrupt Foundation CSV ZIP, or insufficient disk space. Verify the download and retry." : "Corrupt OFF GZIP or malformed TSV. Download the archive again.");
+  expect(management.read().job?.error).toBe(provider === "usda-fdc" ? "Invalid or corrupt Foundation CSV ZIP, or insufficient disk space. Verify the download and retry." : "Corrupt OFF GZIP or malformed TSV/JSONL. Download the archive again.");
 });
 
 test.each(["present", "missing"] as const)("restart marks an unfinished provider job interrupted when staging is %s, cleans up, and permits retry", async staging => {

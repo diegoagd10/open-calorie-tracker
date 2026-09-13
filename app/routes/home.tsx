@@ -23,8 +23,8 @@ import {
 
 import {
   getSessionForApplicationAccess,
-  requireValidOrigin,
-  serializeClearedSessionCookie,
+  getApplicationMutationSession,
+  readApplicationMutationForm,
 } from "../auth/http.server";
 import { getPhotoAnalysisService } from "../photo-analysis/runtime.server";
 import { PhotoMealCard, PhotoMealStatus, PhotoCorrection, usePhotoMealPolling, usePhotoUpload } from "./photo-meals";
@@ -795,24 +795,11 @@ function formString(formData: FormData, name: string): string {
 }
 
 export async function action({ request }: Route.ActionArgs) {
-  requireValidOrigin(request);
-  const session = await getSessionForApplicationAccess(request);
-  if (!session) {
-    return redirect("/login", {
-      headers: { "Set-Cookie": serializeClearedSessionCookie() },
-    });
-  }
+  const session = await getApplicationMutationSession(request);
+  if (session instanceof Response) return session;
   const catalogContext = catalogOperationContext(request);
 
-  const formData = await request.formData();
-  if (
-    !getAuthenticationService().verifyCsrfToken(
-      session.token,
-      String(formData.get("csrfToken") ?? ""),
-    )
-  ) {
-    throw new Response("CSRF token rejected.", { status: 403 });
-  }
+  const formData = await readApplicationMutationForm(request, session);
 
   const formFields = Object.fromEntries([
     "carbohydrateGrams", "date", "destinationDate", "energyKcal", "entryId", "eventId", "expectedUpdatedAt", "fatGrams", "fiberGrams", "idempotencyKey", "intent", "name", "proteinGrams", "providerFoodId", "provider", "quantity", "selectedMeasurementId", "sodiumMilligrams", "sugarGrams", "waterAmount", "waterEventTime", "waterSelection"
@@ -1983,19 +1970,11 @@ function FoodDetailStage({
           </label>
         </div>
         <CatalogNutritionPreview food={food} multiplier={multiplier} />
-        {actionData?.message ? (
-          <p className={styles.catalogError} role="alert">
-            {actionData.message}
-          </p>
-        ) : null}
-        <div className={styles.dialogActions}>
-          <Link className={styles.secondaryButton} to={foodLogHref(date)}>
-            Cancel
-          </Link>
+        <FoodLogFormActions date={date} message={actionData?.message}>
           <button className={styles.primaryButton} type="submit">
             Add to Food Log
           </button>
-        </div>
+        </FoodLogFormActions>
       </Form>
     </>
   );
@@ -2793,29 +2772,34 @@ function ManualFoodStage({
             Nutrition is the total for this quantity. Changing quantity here
             does not change the values you entered.
           </p>
-          {actionData?.message ? (
-            <p className={styles.catalogError} role="alert">
-              {actionData.message}
-            </p>
-          ) : null}
-          <div className={styles.dialogActions}>
-            <Link className={styles.secondaryButton} to={foodLogHref(date)}>
-              Cancel
-            </Link>
+          <FoodLogFormActions date={date} message={actionData?.message}>
             <button className={styles.primaryButton} type="submit">
               {pending ? "Adding…" : "Add to Food Log"}
             </button>
-          </div>
+          </FoodLogFormActions>
         </fieldset>
       </Form>
     </section>
   );
 }
 
+function FoodLogFormActions({ date, message, children }: { date: string; message?: string; children: ReactNode }) {
+  return <>
+    {message ? <p className={styles.catalogError} role="alert">{message}</p> : null}
+    <div className={styles.dialogActions}>
+      <Link className={styles.secondaryButton} to={foodLogHref(date)}>Cancel</Link>
+      {children}
+    </div>
+  </>;
+}
+
 function offCalculationMessage(reason: string | undefined) {
   const messages: Record<string, string> = {
     ambiguous_nutrition_basis: "Calculation unavailable: this export does not establish whether nutrition is per 100 g or 100 ml. Package size and serving text cannot resolve it.",
     conflicting_nutrition_bases: "Calculation unavailable: the product has conflicting nutrition bases.",
+    invalid_nutrition_input_sets: "Calculation unavailable: the source nutrition input sets have an invalid structure.",
+    invalid_nutrition_reference: "Calculation unavailable: the source nutrition reference quantity or unit is invalid.",
+    unsupported_nutrition_authority: "Calculation unavailable: no supported packaging nutrition for the product as sold is provided.",
     calories_unavailable: "Calculation unavailable: calories are missing or have an unsupported unit.",
     nutrition_not_provided: "Calculation unavailable: nutrition is not provided for this product.",
     unsupported_barcode: "This product does not have a supported commercial barcode.",
@@ -2915,15 +2899,7 @@ function BarcodeFoodDetail({
           includeAdditional
           multiplier={multiplier}
         /> : null}
-        {actionData?.message ? (
-          <p className={styles.catalogError} role="alert">
-            {actionData.message}
-          </p>
-        ) : null}
-        <div className={styles.dialogActions}>
-          <Link className={styles.secondaryButton} to={foodLogHref(date)}>
-            Cancel
-          </Link>
+        <FoodLogFormActions date={date} message={actionData?.message}>
           <button
             className={styles.primaryButton}
             disabled={!food.isSelectable || !measurement || quantityMicrounits === undefined}
@@ -2931,7 +2907,7 @@ function BarcodeFoodDetail({
           >
             Add to Food Log
           </button>
-        </div>
+        </FoodLogFormActions>
       </Form>
       <p className={styles.providerAttribution}>
         Food data from{" "}

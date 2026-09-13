@@ -32,7 +32,7 @@ function checkAgain(cookie = adminCookie, csrf = csrfToken, requestOrigin = orig
 beforeAll(async () => {
   directory = await mkdtemp(path.join(tmpdir(), "catalog-settings-"));
   vi.stubEnv("APPLICATION_URL", origin); vi.stubEnv("DATABASE_PATH", path.join(directory, "application.sqlite")); vi.stubEnv("CATALOG_DIRECTORY", path.join(directory, "catalogs"));
-  vi.stubEnv("OFF_CATALOG_MAX_UPLOAD_BYTES", "1000000"); vi.stubEnv("OFF_CATALOG_MAX_EXPANDED_BYTES", "10000000");
+  vi.stubEnv("OFF_CATALOG_MAX_UPLOAD_BYTES", "1000000"); vi.stubEnv("OFF_CATALOG_MAX_EXPANDED_BYTES", "10000000"); vi.stubEnv("OFF_CATALOG_MAX_DATABASE_BYTES", "10000000");
   const auth = getAuthenticationService();
   const admin = await auth.register("catalog.admin", "correct horse battery staple", "203.0.113.181");
   if (!admin.ok) throw new Error("Could not register admin");

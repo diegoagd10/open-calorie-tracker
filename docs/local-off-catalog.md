@@ -1,19 +1,20 @@
 # Local Open Food Facts installation and replacement
 
-Operators download the official tab-separated product CSV GZIP from [Open Food Facts](https://world.openfoodfacts.org/data) and run `pnpm catalog:import:off -- /absolute/path/to/products.csv.gz` on the running server. Follow the [README prerequisites and container examples](../README.md#install-food-catalogs-from-the-terminal). Food Catalogs shows availability, provenance and metadata checks only. The same command accepts a newer archive or deliberate reimport. USDA can be absent, importing, failing, or remain in use throughout this independent operation. Barcode scanning, manual barcode entry, product search, review, and saving use the local OFF database; no OFF API configuration or network fallback is used. OFF data is licensed under the [Open Database License](https://opendatacommons.org/licenses/odbl/1-0/).
+Operators download the official product JSONL GZIP (recommended for source-backed serving nutrition; tab-separated CSV GZIP remains supported) from [Open Food Facts](https://world.openfoodfacts.org/data) and run `pnpm catalog:import:off -- /absolute/path/to/products.jsonl.gz` on the running server. Follow the [README prerequisites and container examples](../README.md#install-food-catalogs-from-the-terminal). Food Catalogs shows availability, provenance and metadata checks only. The same command accepts a newer archive or deliberate reimport. USDA can be absent, importing, failing, or remain in use throughout this independent operation. Barcode scanning, manual barcode entry, product search, review, and saving use the local OFF database; no OFF API configuration or network fallback is used. OFF data is licensed under the [Open Database License](https://opendatacommons.org/licenses/odbl/1-0/).
 
-## Nutrition authority and current export limitation
+## Nutrition authority and CSV limitations
 
-The standard daily export **does not identify whether its `_100g` values describe 100 g or 100 ml**. The supplied September 2026 file also omits explicit per-serving nutrients and normalized serving units. Its products are retained for identification/review but cannot support calculated logging. Neither the package quantity, free-text serving size, food category, nor the ambiguous legacy `nutrition_data_per=100g` is used to guess a basis. No density is inferred and package size never becomes a serving.
+The standard daily CSV export **does not identify whether its `_100g` values describe 100 g or 100 ml**. The supplied September 2026 file also omits explicit per-serving nutrients and normalized serving units. Its products are retained for identification/review but cannot support calculated logging. Neither the package quantity, free-text serving size, food category, nor the ambiguous legacy `nutrition_data_per=100g` is used to guess a basis. No density is inferred and package size never becomes a serving.
 
-Source-backed calculation is supported when a supplied OFF CSV includes either:
+Source-backed calculation is supported by JSONL native nutrition and by compatible CSV projections:
 
+- Native JSON `nutrition.input_sets` arrays: only explicit `source: packaging`, `preparation: as_sold` sets with supported `per` (`100g`, `100ml`, `serving`), positive `per_quantity` and matching `per_unit` (`g`, `ml`) are accepted. A 100-unit declaration must agree with its quantity and dimension. A valid serving is preferred, then mass before volume; compatible equal-priority sets prefer the most complete tracked nutrition, then canonical nutrient order for a deterministic tie. Nutrients come entirely from the selected set. Overlapping values are compared per 100 source units after rounding to integer milli-kcal/milligrams; differing dimensions, serving quantities or overlapping rounded values are conflicts. Calorie-only mass data compatible with a complete serving does not create a conflict. Native serving measures come first, followed by 1/100 g or ml using only the declared quantity, never inferred density. `value_computed`, aggregated sets and macro-derived calories are ignored. Any present native array (including empty/invalid arrays) prevents legacy fallback; an invalid trusted reference blocks calculation rather than hiding its authority. Unsupported prepared/manufacturer/USDA/estimate sets are excluded, counted and never replace packaging values.
 - Direct legacy `*_serving` fields: one serving is the authority, with no conversion to mass or volume. Nutrients use the units defined by OFF: grams, kcal for `energy-kcal`, and kJ for `energy-kj`/`energy`.
 - The official configurable CSV export's explicit `nutrition.input_sets.packaging.as_sold.<per>.nutrients.<nutrient>.value`, `.unit`, and optional `.modifier` fields. Exactly one populated basis, `100g`, `100ml`, or `serving`, is accepted. Only packaging values for the product as sold are used. Conflicting bases, prepared data, inferred/estimated sets, unknown units, and qualified values are not substituted for source authority. Supported nutrient units are g/mg and kcal/kJ. Kilojoules convert using 4.184 kJ/kcal; results use the existing fixed-point snapshot rounding.
 
-For a mass or volume authority, 1 and 100 units are offered. A serving is offered only with a positive `serving_quantity` and explicit `serving_quantity_unit` matching that authority. This provides a measure in the same dimension, never a density conversion. Missing nutrients stay null; explicit zero stays zero. Missing/invalid calories, ambiguous/conflicting bases and an explicit no-nutrition flag have separate calculation-unavailable reasons. Existing one-serving snapshots retain their quantities, nutrition, supported measures, edits and copies without source lookup.
+For a mass or volume authority, 1 and 100 units are offered. A serving is offered only with a positive `serving_quantity` and explicit `serving_quantity_unit` matching that authority. This provides a measure in the same dimension, never a density conversion. Missing nutrients stay null; explicit zero stays zero. Missing/invalid calories, ambiguous/conflicting bases and an explicit no-nutrition flag have separate calculation-unavailable reasons. The application schema allows positive source-declared measured bases such as the native 41 g serving. Migration 0016 copies every stored snapshot field unchanged while extending that constraint; no nutrition is recalculated and dependent photo rows remain intact. Existing one-serving snapshots retain their quantities, nutrition, supported measures, edits and copies without source lookup.
 
-These decisions follow the [OFF field definitions](https://github.com/openfoodfacts/openfoodfacts-server/blob/main/html/data-fields.txt), [explicit nutrition input-set units](https://github.com/openfoodfacts/openfoodfacts-server/blob/main/lib/ProductOpener/Nutrition.pm), and [configurable CSV exporter](https://github.com/openfoodfacts/openfoodfacts-server/blob/main/lib/ProductOpener/Export.pm), inspected September 8, 2026. The explicit input-set format is supported by the exporter; it is **not present in the supplied daily dump**. Adding optional input-set fields to a fixture does not establish their availability in a standard downloaded dump.
+The legacy/CSV decisions follow the [OFF field definitions](https://github.com/openfoodfacts/openfoodfacts-server/blob/main/html/data-fields.txt), [explicit nutrition input-set units](https://github.com/openfoodfacts/openfoodfacts-server/blob/main/lib/ProductOpener/Nutrition.pm), and [configurable CSV exporter](https://github.com/openfoodfacts/openfoodfacts-server/blob/main/lib/ProductOpener/Export.pm), inspected September 8, 2026. The explicit input-set format is supported by the exporter; it is **not present in the September 9 daily CSV dump**. Native arrays are present in the September 13 JSONL snapshot and follow the [native nutrition schema](https://github.com/openfoodfacts/openfoodfacts-server/blob/main/docs/api/ref/schemas/product_nutrition_v3.yaml), inspected September 13, 2026. Adding optional input-set fields to a fixture does not establish their availability in a standard downloaded dump.
 
 ## Parsing and storage
 
@@ -27,7 +28,7 @@ saving retain the stored OFF identifier; detail lookup remains exact.
 
 The [daily exporter](https://github.com/openfoodfacts/openfoodfacts-server/blob/main/scripts/export_database.pl) sanitizes control characters and joins fields with literal tabs; quotes are ordinary text. Its known ordered identity/date header identifies this dialect. Other projections use the configurable exporter's CSV quoting, including escaped quotes, embedded tabs and embedded newlines. The importer does not guess a dialect from product text. A changed daily header that no longer matches the known schema must be verified against the upstream exporter before support is added.
 
-GZIP decompression and TSV parsing stream directly into 500-product SQLite transactions. Only identity, selected display/English/Spanish names and aliases, brands, countries, required nutrient fields, quantities/units and source dates are retained. An indexed TEXT primary key preserves leading-zero identifiers. A separate FTS5 index covers the displayed name, supported alternate names and brand, using the same accent/case normalization and bounded prefix-query rules as USDA search. Noncommercial identifiers remain in the import report/database but cannot be scanned. Repeated identifiers keep the first source row and are counted; no deduplication by name occurs. Width mismatches and oversized selected fields are rejected and counted. No data archive or generated catalog is committed.
+GZIP decompression and JSONL/TSV parsing stream directly into 500-product SQLite transactions. Only identity, selected display/English/Spanish names and aliases, brands, countries, required nutrient fields, quantities/units and source dates are retained. An indexed TEXT primary key preserves leading-zero identifiers. A separate FTS5 index covers the displayed name, supported alternate names and brand, using the same accent/case normalization and bounded prefix-query rules as USDA search. Noncommercial identifiers remain in the import report/database but cannot be scanned. Repeated identifiers keep the first source row and are counted; no deduplication by name occurs. Width mismatches, malformed individual JSON documents, non-object documents, invalid identities and oversized/invalid selected fields are rejected and counted. JSONL handles UTF-8 chunk boundaries, CRLF and a final line without a newline. Native country tags are validated string arrays projected to compact text. Invalid nutrient values and unsupported units/modifiers are excluded and counted while missing optional nutrients remain unknown. An oversized individual JSONL document, invalid UTF-8, unusable archive schema, no valid products, configured stream/database limits, storage failure or corrupt/truncated GZIP is an archive failure: staging never activates. The complete compressed stream and GZIP trailer/CRC must validate before any result can activate. No data archive or generated catalog is committed.
 
 OFF and USDA store separate job state in application metadata and separate immutable SQLite generation files under `CATALOG_DIRECTORY`. Each OFF replacement streams into a staging generation and completes its barcode/name indexes before one provider-scoped active reference, including the validated database size, is published. Existing readers hold a generation lease until their barcode, detail, or search operation finishes; only then is the retired file removed. New readers see the complete replacement after publication. A failed OFF job cannot activate a partial generation or change USDA/personal history, and a slow or failed OFF job cannot block a ready USDA generation from activating. Preview/save carries the reviewed OFF generation and rejects a stale review after activation, while existing Food Entry snapshots remain unchanged. Import runs in a worker, survives navigation, records imported and rejected row counts, and persists a catalog-specific outcome. Shutdown/restart marks unfinished uploads or imports interrupted and permits retry. A published handoff completes only after startup confirms the replacement file's size and OFF schema; otherwise the previous complete generation is restored. Startup removes unreferenced UUID-named upload, staging, database, and journal artifacts without removing either provider's installed, retiring, or active-job files. Update discovery is metadata-only, as described below. Archive filename and SHA-256 identify the supplied snapshot; product modification dates are explicitly **not an official release version**.
 
@@ -35,12 +36,14 @@ OFF and USDA store separate job state in application metadata and separate immut
 
 | Setting | Default | Scope |
 | --- | --- | --- |
-| `OFF_CATALOG_MAX_UPLOAD_BYTES` | 4 GiB | Compressed OFF upload |
-| `OFF_CATALOG_MAX_EXPANDED_BYTES` | 32 GiB | Streamed decompressed bytes and staged SQLite size cap |
+| `OFF_CATALOG_MAX_UPLOAD_BYTES` | 16 GiB | Compressed OFF archive |
+| `OFF_CATALOG_MAX_EXPANDED_BYTES` | 96 GiB | Streamed decompressed bytes only |
+| `OFF_CATALOG_MAX_DATABASE_BYTES` | 32 GiB | Staged SQLite page limit |
+| `OFF_CATALOG_MAX_DOCUMENT_BYTES` | 8 MiB | Individual decompressed JSONL document; exceeding it fails the archive |
 | `CATALOG_MAX_UPLOAD_BYTES` | 64 MiB | USDA only |
 | `CATALOG_MAX_EXPANDED_BYTES` | 256 MiB | USDA only |
 
-The preflight reserves currently available space for one expanded-data limit for the streamed staged database and the compressed upload size (or upload limit if unknown): up to **36 GiB free** at the defaults for either initial installation or replacement. The current generation already consumes filesystem capacity and is reflected in the available-space reading, so it is not counted a second time; its exact size is persisted for handoff recovery. A volume holding the measured 8.90 GiB current catalog therefore needs about 44.90 GiB total capacity before the downloaded input archive, other application data, or filesystem overhead to retain it while providing the 36 GiB replacement reserve. This check reserves capacity; it does not allocate that amount. The uncompressed export is never written to disk. SQLite uses an 8 MiB page cache; an individual parsed record is capped at 2 MiB, headers at 256 KiB/1,000 columns, and selected text fields at 2,000 characters (names/brands 500). Resource-limit failures, insufficient storage, incompatible schemas and corrupt archives have different errors; row rejections appear in the report.
+The supplied September 13 JSONL archive is 12,870,197,024 compressed bytes and 81,761,895,722 expanded bytes; the defaults accommodate it without overrides. The expanded dump is never saved. Preflight requires free space for twice the database limit (staging plus SQLite rollback/index work) and the compressed size, or upload limit when size is unknown: up to **80 GiB free** at defaults. With the known supplied size this is about 76 GiB free. The active generation and the operator's original compressed archive already occupy disk and are reflected in available space; retain both while providing that additional reserve. SQLite enforces its own page cap and uses an 8 MiB cache and 500-product batches. The OFF worker caps its V8 old-generation heap at 512 MiB; native SQLite memory and the application thread also contribute to measured process RSS. TSV records remain capped at 2 MiB, headers at 256 KiB/1,000 columns and selected text at 2,000 characters (names/brands 500). Native input sets are bounded to 100 per document. Raise positive integer byte limits deliberately for future growth.
 
 Persist `CATALOG_DIRECTORY` on a volume with enough free space, including the downloaded input archive and the backend's staged copy. Run only on supported Node 24. Public proxy upload limits do not apply to the loopback command API, which submits a file path rather than a request-body archive. Partial imports are not resumable. After restart, rerun the OFF terminal command with the complete archive. Food Catalogs shows whether a usable OFF catalog is installed; failure/interruption toasts are administrator-only and detailed errors stay in the terminal. Do not remove active generation files manually, and back up the application database together with `CATALOG_DIRECTORY`.
 
@@ -53,14 +56,61 @@ The OFF and Foundation importer modules also accept an archive path and progress
 The opt-in full-archive check is separate from ordinary tests:
 
 ```sh
-OFF_LOCAL_ARCHIVE=/path/to/en.openfoodfacts.org.products.csv.gz \
+pnpm build
+OFF_LOCAL_ARCHIVE=/home/dagd/Downloads/openfoodfacts-products.jsonl.gz \
 OFF_SCALE_DIRECTORY=/path/on/a/large/disk \
 pnpm exec vitest run tests/local-off-scale.test.ts
 ```
 
-It seeds a small OFF generation, replaces it with the full archive through Catalog Management, measures process RSS including its worker, database size and elapsed time, and repeatedly performs old-generation OFF barcode/name reads plus installed USDA reads during the replacement. It then measures local OFF barcode reads plus an exact product name and a prefix of that name against the activated full generation. The budget, established before the run, is p95 lookup below 100 ms and RSS below 1 GiB on the measured host. The opt-in scale test enforces that budget; ordinary deterministic tests contain no wall-clock assertion. The external dataset and temporary database stay outside Git; the test removes its temporary files.
+It seeds a small OFF generation, invokes the unchanged bundled `pnpm catalog:import:off -- PATH` command against the authenticated loopback endpoint, and replaces it with the full archive through persisted Catalog Management, measures process RSS including its worker, database size and elapsed time, and repeatedly performs old-generation OFF barcode/name reads plus installed USDA reads during the replacement. It then measures local OFF barcode reads plus an exact product name and a prefix of that name against the activated full generation. The budget, established before the run, is p95 lookup below 100 ms and RSS below 1 GiB on the measured host. The opt-in scale test enforces that budget; ordinary deterministic tests contain no wall-clock assertion. The external dataset and temporary database stay outside Git; the test removes its temporary files.
 
-Measured September 9, 2026 on Node 24.13.0, Intel Core i7-13700F (24 logical CPUs), 32 GB RAM and a local encrypted Linux filesystem. The full archive replaced a small installed OFF generation while both the old OFF generation and USDA were queried:
+### Complete JSONL benchmark (2026-09-13)
+
+The supplied archive completed through the unchanged bundled operator command, authenticated loopback endpoint and persisted Catalog Management in isolated storage. The host was Node 24.13.0 on Linux 7.1.9-arch1-2, Intel Core i7-13700F (24 logical CPUs), 33,338,925,056 bytes RAM and the local encrypted Linux filesystem. Defaults from the resource table were used, including the 512 MiB worker heap cap. The expanded dump was never saved. The test removed its isolated application/catalog files; the machine-readable evidence remains in ignored `reports/off-jsonl-scale.json`.
+
+| Measurement | Result |
+| --- | ---: |
+| Compressed archive | 12,870,197,024 bytes |
+| Expanded stream | 81,761,895,722 bytes |
+| Installed SQLite | 10,498,605,056 bytes (9.78 GiB) |
+| Command upload, import, indexing and validated activation | 1,917.79 seconds (31m 57.79s) |
+| Peak process RSS including native worker | 396.23 MiB |
+| Source records / installed products / rejected records | 4,745,990 / 4,745,915 / 75 |
+| Installed products usable for calculated logging | 3,022,618 (63.69%) |
+| Rejected duplicate IDs / oversized fields / invalid IDs | 61 / 13 / 1 |
+| OFF barcode-plus-name read p95 before replacement | 0.858 ms |
+| USDA lookup p95 during replacement | 0.820 ms |
+| Prior OFF barcode-plus-name read p95 during replacement | 1.344 ms |
+| OFF barcode lookup p95 after activation | 0.226 ms |
+| Exact `Nutella` search p95 after activation | 24.266 ms |
+| Prefix `Nutell` search p95 after activation | 27.558 ms |
+
+Archive SHA-256: `9f6c5a19666aac27e43060268fdf0fb8d540a1474bef3f88db9b83c5bbd67d0e`; upload CRC-64/NVME: `m93WB/Opev8=`. Both established budgets passed: peak RSS below 1 GiB and every measured local p95 below 100 ms. An independent bounded scan observed 4,745,990 lines and a maximum document of 508,303 bytes, below the 8 MiB document cap.
+
+Actual exclusion counters were:
+
+| Reason | Events |
+| --- | ---: |
+| Unsupported nutrition source/preparation | 828,704 |
+| Ambiguous nutrition basis | 1,473,649 |
+| Unsupported nutrition authority | 40,909 |
+| Conflicting nutrition bases | 52,058 |
+| Invalid nutrition reference | 17,472 |
+| Nutrition not provided | 4,250 |
+| Unsupported nutrient unit/modifier | 34,537 |
+| Calories unavailable | 72,348 |
+| Invalid nutrient value | 40 |
+| Unsupported barcode | 71,382 |
+
+These counters describe records, input sets or nutrient values; a product may contribute multiple events. They are not a partition of installed products. Usable coverage counts selectable products actually stored, after deduplication.
+
+The full generation resolves UPC `643843715887` and EAN `0643843715887` to **100% Whey Protein Powder**, Premier Protein. Its complete packaging/as-sold 41 g serving is selected alongside the compatible calorie-only 100 g set; computed calories and estimate sets do not replace declared values. Native review matches 150 kcal, 30 g protein, 4 g carbohydrate, 2 g fat, 1 g fiber, 1 g sugar and 170 mg sodium per serving. Saving one/two servings verifies 150/300 kcal and 30/60 g protein through Food Entry Service. The compact native-fixture lifecycle test also verifies the full saved two-serving snapshot: 8 g carbohydrate, 4 g fat, 2 g fiber, 2 g sugar and 340 mg sodium. Historical snapshots survive failed JSONL and successful CSV replacements.
+
+Earlier development runs were stopped while correcting country-tag projection, native serving normalization and snapshot constraints; they are not counted as completed scale verification. Combined browser runs exposed canceled setup navigation and upload controls usable before their JavaScript handler attached. Those issues were fixed, and the completed full-archive run plus the final deterministic/browser gates passed. The measured duration is an observation on this host, not an import-time promise.
+
+### Historical CSV benchmark (2026-09-09)
+
+Historical CSV benchmark, measured September 9, 2026 on Node 24.13.0, Intel Core i7-13700F (24 logical CPUs), 32 GB RAM and a local encrypted Linux filesystem. The full archive replaced a small installed OFF generation while both the old OFF generation and USDA were queried:
 
 | Measurement | Result |
 | --- | --- |
@@ -86,9 +136,13 @@ Food Catalogs checks OFF independently of USDA when opened, reuses a persisted
 result for six hours, and provides **Check OFF updates again**. A failed check
 is cached too. Checks cannot start an import or interrupt local lookup. The
 administrator uses [OFF's official downloads page](https://world.openfoodfacts.org/data)
-to download the tab-separated CSV GZIP externally, then imports it through the terminal command.
+to download the recommended JSONL GZIP or supported tab-separated CSV GZIP externally, then imports it through the terminal command.
 
-### Metadata investigation (2026-09-09)
+### Format-aware metadata discovery
+
+Detected content format persists with each installed generation. An installation without that field is an existing CSV installation. New installations discover `https://static.openfoodfacts.org/data/openfoodfacts-products.jsonl.gz`; CSV installations continue to discover their CSV object. Each format follows only its corresponding exact official S3 redirect. Cached metadata for another installed format is refreshed; cross-format checksums, ETags and object dates never establish a comparison. The source snapshot format is persisted alongside validators. Filename extensions do not select nutrition/parser behavior. Settings performs HEAD requests only and never starts a download or import.
+
+### Historical CSV metadata investigation (2026-09-09)
 
 A `HEAD` request to the official supported export,
 `https://static.openfoodfacts.org/data/en.openfoodfacts.org.products.csv.gz`,
@@ -125,7 +179,7 @@ never parsed as hashes or ordered as versions.
 ### Comparison contract
 
 The upload stream computes CRC-64/NVME in bounded memory alongside the existing
-SHA-256 fingerprint. A matching full-object CRC and exact byte length associate
+SHA-256 fingerprint. A matching detected format, full-object CRC and exact byte length associate
 the upload with observed official metadata, regardless of its filename. The
 checksum is an integrity association for administrator-supplied data, not a
 cryptographic authenticity guarantee. Composite, missing, invalid or mismatched

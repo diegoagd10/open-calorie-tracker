@@ -35,7 +35,7 @@ function usage(): string {
   return [
     "Usage:",
     "  pnpm catalog:import:usda -- /absolute/path/to/foundation.zip",
-    "  pnpm catalog:import:off -- /absolute/path/to/products.csv.gz",
+    "  pnpm catalog:import:off -- /absolute/path/to/openfoodfacts-products.jsonl.gz",
   ].join("\n");
 }
 

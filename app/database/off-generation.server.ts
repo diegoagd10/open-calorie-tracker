@@ -33,7 +33,7 @@ export type BuildOffGenerationOptions = {
   maxBytes: number;
   onDuplicate: () => void;
   onIndexing: () => void;
-  onStored: () => void;
+  onStored: (food: CatalogFood) => void;
 };
 
 // Bounded transactions and SQLite cache; the export is never accumulated in memory.
@@ -58,7 +58,7 @@ export async function buildOffGeneration({
     const flush = database.transaction(() => {
       for (const food of batch) {
         const result = insert.run(food.providerFoodId, food.name, aliasesFor(food).join(" "), food.brand ?? "", JSON.stringify(food));
-        if (result.changes) { count++; onStored(); } else onDuplicate();
+        if (result.changes) { count++; onStored(food); } else onDuplicate();
       }
     });
     for await (const food of foods) {

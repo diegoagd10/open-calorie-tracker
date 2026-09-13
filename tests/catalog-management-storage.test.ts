@@ -31,8 +31,8 @@ test.each([
 test.each([
   ["usda-fdc", 249, "Not enough disk space for USDA import. Free space and retry."],
   ["usda-fdc", 250, "Invalid or corrupt Foundation CSV ZIP, or insufficient disk space. Verify the download and retry."],
-  ["open-food-facts", 149, "Not enough disk space for Open Food Facts import. Free space and retry."],
-  ["open-food-facts", 150, "Corrupt OFF GZIP or malformed TSV. Download the archive again."],
+  ["open-food-facts", 249, "Not enough disk space for Open Food Facts import. Free space and retry."],
+  ["open-food-facts", 250, "Corrupt OFF GZIP or malformed TSV/JSONL. Download the archive again."],
 ] as const)("%s disk preflight reserves new staged data while available space already reflects the current generation at %i bytes", async (provider, available, error) => {
   disk.mockResolvedValue({ bavail: available, bsize: 1 });
   const directory = await mkdtemp(path.join(tmpdir(), "catalog-current-storage-"));
