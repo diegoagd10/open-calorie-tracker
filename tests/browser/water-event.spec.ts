@@ -32,9 +32,8 @@ test("a user can add, inspect, edit, and delete one Water Event", async ({
   await addDialog.getByRole("button", { name: /16 fl oz.*Bottle/ }).click();
   await addDialog.getByRole("button", { name: "Add 16 fl oz" }).click();
 
-  await expect(page.getByRole("status")).toContainText(
-    "Water Event added. Daily total updated.",
-  );
+  await expect(addDialog).not.toBeVisible();
+  await expect(page.getByText("Water Event added. Daily total updated.")).toHaveCount(0);
   await expect(page.getByRole("progressbar", { name: "Water progress" })).toHaveAttribute(
     "aria-valuetext",
     /16 of 80 fl oz target/,

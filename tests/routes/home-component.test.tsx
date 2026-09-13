@@ -956,7 +956,7 @@ const barcodeFood = {
 test("Add Food offers search, barcode, and manual paths before any provider runs", async () => {
   const renderer = await renderHome({ catalog: { mode: "choose", query: "" } });
   expect(semanticDom(renderer)).toMatchSnapshot();
-  expect(allText(renderer)).toContain("Search for food");
+  expect(allText(renderer)).toContain("Search food");
   expect(allText(renderer)).toContain("Scan barcode");
   expect(allText(renderer)).toContain("Manual");
   const methods = renderer.root.findByProps({ "aria-label": "Add Food methods" });

@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { Link, useFetcher, useNavigate, useRevalidator } from "react-router";
 import type { PhotoAnalysisService } from "../photo-analysis/photo-analysis.server";
 import styles from "../photo-analysis/photo-meals.module.css";
+import methodStyles from "./add-food-method.module.css";
+import { UiIcon } from "../ui-icon";
 
 type PhotoMeal = ReturnType<PhotoAnalysisService["view"]>;
 type PhotoAction = { error?: string; id?: string };
@@ -26,13 +28,11 @@ export function usePhotoUpload(date: string, csrfToken: string) {
   return {
     pending,
     capture: (
-      <label className={styles.capture}>
-        <span>
-          <strong>Take photo · AI calories</strong>
-          <small>AI estimates calories and saves to your log. You can correct it.</small>
-          <small>Your photo is shared with the AI provider for analysis.</small>
+      <label className={methodStyles.method}>
+        <span className={methodStyles.icon}>
+          <UiIcon name="camera" />
         </span>
-        <small>Choose ›</small>
+        <span className={methodStyles.label}>AI photo</span>
         <input
           aria-label="Take photo · AI calories"
           type="file"

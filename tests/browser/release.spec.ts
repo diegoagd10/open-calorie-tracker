@@ -601,7 +601,7 @@ test("the critical mobile experience is operable with only a keyboard", async ({
   const saveWater = page.getByRole("button", { name: "Add 16 fl oz" });
   await tabTo(page, saveWater);
   await page.keyboard.press("Enter");
-  await expect(page.getByRole("status")).toContainText("Water Event added");
+  await expect(page.getByRole("dialog", { name: "Add Water" })).not.toBeVisible();
 
   const waterEvent = page.getByRole("link", {
     name: /\d+:\d+ [AP]M.*Water.*16 fl oz/,
