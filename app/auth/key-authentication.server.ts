@@ -6,6 +6,7 @@ import {
   type PendingKeyCeremony,
   type StoredKeyCredential,
   type WebAuthnBoundary,
+  type VerifiedKeyAssertion,
 } from "../database/webauthn.server";
 import {
   applicationOrigin,
@@ -21,6 +22,13 @@ import {
 } from "./validation";
 import { PersistentRateLimiter } from "./rate-limiter.server";
 
+function keyEvent(
+  purpose: PendingKeyCeremony["purpose"] | PendingKeyCeremony["purpose"][],
+) {
+  if (Array.isArray(purpose)) return "key_registration";
+  if (purpose === "login") return "key_login";
+  return purpose === "enable" ? "key_login_policy" : "key_registration";
+}
 function keyOrigin(): WebAuthnBoundary {
   const url = new URL(applicationOrigin());
   if (
@@ -42,7 +50,7 @@ export class KeyAuthenticationService {
     this.#now = now;
     this.#limits = new PersistentRateLimiter(database, now);
   }
-  async beginEnrollment(token: string, browser: string, name: string) {
+  #enrollmentAccount(token: string, name: string) {
     if (!enrollmentPreviewEnabled())
       throw new KeyAuthenticationError(
         "Key enrollment preview is unavailable.",
@@ -56,28 +64,49 @@ export class KeyAuthenticationService {
       throw new KeyAuthenticationError(
         "Too many key attempts. Try again later.",
       );
-    const handle = this.#storage.allocateHandle(
-      user.id,
-      user.authenticationVersion,
+    return user;
+  }
+  async #registrationOptions(
+    user: ReturnType<WebAuthnStorage["enrollmentAccount"]>,
+    handle: string,
+    boundary: WebAuthnBoundary,
+  ) {
+    const { generateRegistrationOptions } = await import(
+      "@simplewebauthn/server"
     );
-    const boundary = keyOrigin();
-    const { generateRegistrationOptions } =
-      await import("@simplewebauthn/server");
-    const options = await generateRegistrationOptions({
+    return generateRegistrationOptions({
       rpName: "Open Calorie Tracker",
       rpID: boundary.rpId,
       userName: user.usernameNormalized,
       userID: Buffer.from(handle, "base64url"),
       attestationType: "none",
+      excludeCredentials: this.#storage
+        .credentials(user.id)
+        .map(({ id, transports }) => ({ id, transports })),
       authenticatorSelection: {
         residentKey: "preferred",
         userVerification: "required",
       },
     });
+  }
+  async beginEnrollment(token: string, browser: string, name: string) {
+    const user = this.#enrollmentAccount(token, name);
+    if (user.keyLoginEnabled)
+      throw new KeyAuthenticationError(
+        "Verify an existing key before adding another.",
+      );
+    const handle = this.#storage.allocateHandle(
+      user.id,
+      user.authenticationVersion,
+    );
+    const boundary = keyOrigin();
+    const options = await this.#registrationOptions(user, handle, boundary);
     const pending = {
       browserHash: hashOpaqueToken(browser),
       userId: user.id,
-      purpose: "register" as const,
+      purpose: this.#storage.credentials(user.id).length
+        ? ("register-retained" as const)
+        : ("register" as const),
       challenge: options.challenge,
       ...boundary,
       authenticationVersion: user.authenticationVersion,
@@ -89,10 +118,80 @@ export class KeyAuthenticationService {
     return options;
   }
 
+  async beginAddition(token: string, browser: string, name: string) {
+    const user = this.#enrollmentAccount(token, name);
+    if (!user.keyLoginEnabled)
+      throw new KeyAuthenticationError(
+        "Retry enrollment from security settings.",
+      );
+    const boundary = keyOrigin();
+    const { generateAuthenticationOptions } = await import(
+      "@simplewebauthn/server"
+    );
+    const options = await generateAuthenticationOptions({
+      rpID: boundary.rpId,
+      userVerification: "required",
+      allowCredentials: this.#storage
+        .credentials(user.id)
+        .map(({ id, transports }) => ({ id, transports })),
+    });
+    this.#storage.save(
+      {
+        browserHash: hashOpaqueToken(browser),
+        userId: user.id,
+        purpose: "add-proof",
+        challenge: options.challenge,
+        ...boundary,
+        authenticationVersion: user.authenticationVersion,
+        sessionHash: hashOpaqueToken(token),
+        name: name.trim(),
+        expiresAt: new Date(this.#now().getTime() + 5 * 60_000).toISOString(),
+      },
+      boundary,
+    );
+    return options;
+  }
+  async finishAdditionProof(token: string, browser: string, input: unknown) {
+    const pending = this.#take(
+      hashOpaqueToken(browser),
+      "add-proof",
+      keyOrigin(),
+      hashOpaqueToken(token),
+    );
+    try {
+      const verified = await this.#verifyAssertion(pending, input);
+      const user = this.#storage.accountForPending(pending, keyOrigin());
+      const options = await this.#registrationOptions(
+        user,
+        user.webauthnUserHandle!,
+        { origin: pending.origin, rpId: pending.rpId },
+      );
+      this.#storage.authorizeAddition(
+        pending,
+        verified,
+        options.challenge,
+        keyOrigin(),
+      );
+      operationalLog("info", "key_registration", {
+        outcome: "authorized",
+        userId: pending.userId,
+      });
+      return options;
+    } catch {
+      operationalLog("info", "key_registration", {
+        outcome: "rejected",
+        userId: pending.userId,
+      });
+      throw new KeyAuthenticationError(
+        "Verify an existing registered key before adding another. Retry.",
+      );
+    }
+  }
+
   async finishRegistration(token: string, browser: string, response: unknown) {
     const pending = this.#take(
       hashOpaqueToken(browser),
-      "register",
+      ["register", "register-add", "register-retained"],
       keyOrigin(),
       hashOpaqueToken(token),
     );
@@ -134,11 +233,17 @@ export class KeyAuthenticationService {
       this.#storage.save(
         {
           ...pending,
-          purpose: "enable",
+          purpose:
+            pending.purpose === "register-add"
+              ? "add"
+              : pending.purpose === "register-retained"
+                ? "retain"
+                : "enable",
           challenge: options.challenge,
           stagedCredential,
         },
         keyOrigin(),
+        pending,
       );
       operationalLog("info", "key_registration", {
         outcome: "verified",
@@ -176,8 +281,9 @@ export class KeyAuthenticationService {
         "Key sign-in is unavailable for this account.",
       );
     const boundary = keyOrigin();
-    const { generateAuthenticationOptions } =
-      await import("@simplewebauthn/server");
+    const { generateAuthenticationOptions } = await import(
+      "@simplewebauthn/server"
+    );
     const options = await generateAuthenticationOptions({
       rpID: boundary.rpId,
       userVerification: "required",
@@ -204,7 +310,7 @@ export class KeyAuthenticationService {
     return options;
   }
   finishEnrollment(token: string, browser: string, response: unknown) {
-    return this.#assert(browser, "enable", response, token);
+    return this.#assert(browser, ["enable", "add", "retain"], response, token);
   }
   finishLogin(browser: string, response: unknown) {
     return this.#assert(browser, "login", response);
@@ -217,22 +323,14 @@ export class KeyAuthenticationService {
   }
   #take(
     browserHash: string,
-    purpose: PendingKeyCeremony["purpose"],
+    purpose: PendingKeyCeremony["purpose"] | PendingKeyCeremony["purpose"][],
     boundary: WebAuthnBoundary,
     sessionHash?: string,
   ) {
     try {
       return this.#storage.take(browserHash, purpose, boundary, sessionHash);
     } catch (error) {
-      operationalLog(
-        "info",
-        purpose === "register"
-          ? "key_registration"
-          : purpose === "enable"
-            ? "key_login_policy"
-            : "key_login",
-        { outcome: "rejected" },
-      );
+      operationalLog("info", keyEvent(purpose), { outcome: "rejected" });
       throw error;
     }
   }
@@ -240,10 +338,9 @@ export class KeyAuthenticationService {
     pending: PendingKeyCeremony,
     response: AuthenticationResponseJSON,
   ): StoredKeyCredential {
-    const credential =
-      pending.purpose === "enable"
-        ? pending.stagedCredential
-        : this.#storage.credential(response.id);
+    const credential = pending.stagedCredential
+      ? pending.stagedCredential
+      : this.#storage.credential(response.id);
     const user = this.#storage.accountForPending(pending, keyOrigin());
     if (
       !credential ||
@@ -258,9 +355,41 @@ export class KeyAuthenticationService {
       throw new KeyAuthenticationError("Wrong key owner.");
     return credential;
   }
+  async #verifyAssertion(
+    pending: PendingKeyCeremony,
+    input: unknown,
+  ): Promise<VerifiedKeyAssertion> {
+    const response = keyAssertionResponseSchema.parse(input);
+    const credential = this.#credentialForPending(pending, response);
+    const { verifyAuthenticationResponse } = await import(
+      "@simplewebauthn/server"
+    );
+    const result = await verifyAuthenticationResponse({
+      response,
+      expectedChallenge: pending.challenge,
+      expectedOrigin: pending.origin,
+      expectedRPID: pending.rpId,
+      requireUserVerification: true,
+      credential: {
+        id: credential.id,
+        publicKey: Buffer.from(credential.publicKey, "base64url"),
+        counter: credential.counter,
+        transports: credential.transports,
+      },
+    });
+    if (!result.verified)
+      throw new KeyAuthenticationError("Key signature rejected.");
+    const metadata = {
+      counter: result.authenticationInfo.newCounter,
+      deviceType: result.authenticationInfo.credentialDeviceType,
+      backedUp: result.authenticationInfo.credentialBackedUp,
+      lastUsedAt: this.#now().toISOString(),
+    };
+    return { credential, metadata };
+  }
   async #assert(
     browser: string,
-    purpose: "enable" | "login",
+    purpose: "login" | ("enable" | "add" | "retain")[],
     input: unknown,
     token?: string,
   ) {
@@ -271,35 +400,10 @@ export class KeyAuthenticationService {
       token ? hashOpaqueToken(token) : undefined,
     );
     try {
-      const response = keyAssertionResponseSchema.parse(input);
-      const credential = this.#credentialForPending(pending, response);
-      const { verifyAuthenticationResponse } =
-        await import("@simplewebauthn/server");
-      const result = await verifyAuthenticationResponse({
-        response,
-        expectedChallenge: pending.challenge,
-        expectedOrigin: pending.origin,
-        expectedRPID: pending.rpId,
-        requireUserVerification: true,
-        credential: {
-          id: credential.id,
-          publicKey: Buffer.from(credential.publicKey, "base64url"),
-          counter: credential.counter,
-          transports: credential.transports,
-        },
-      });
-      if (!result.verified)
-        throw new KeyAuthenticationError("Key signature rejected.");
-      const metadata = {
-        counter: result.authenticationInfo.newCounter,
-        deviceType: result.authenticationInfo.credentialDeviceType,
-        backedUp: result.authenticationInfo.credentialBackedUp,
-        lastUsedAt: this.#now().toISOString(),
-      };
+      const verified = await this.#verifyAssertion(pending, input);
       const session = this.#storage.complete(
         pending,
-        credential,
-        metadata,
+        verified,
         keyOrigin(),
         (current, absolute) =>
           prepareIssuedSession(
@@ -313,18 +417,16 @@ export class KeyAuthenticationService {
             absolute,
           ),
       );
-      operationalLog(
-        "info",
-        purpose === "enable" ? "key_login_policy" : "key_login",
-        { outcome: "succeeded", userId: pending.userId },
-      );
+      operationalLog("info", keyEvent(pending.purpose), {
+        outcome: "succeeded",
+        userId: pending.userId,
+      });
       return session;
     } catch {
-      operationalLog(
-        "info",
-        purpose === "enable" ? "key_login_policy" : "key_login",
-        { outcome: "rejected", userId: pending.userId },
-      );
+      operationalLog("info", keyEvent(pending.purpose), {
+        outcome: "rejected",
+        userId: pending.userId,
+      });
       throw new KeyAuthenticationError(
         "Key verification failed. Retry with your registered key and its PIN or biometrics.",
       );

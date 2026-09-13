@@ -227,12 +227,12 @@ directory during recovery; restore a complete backup to a new `DATA_PATH` and
 use the application version that matches it. Never run an older application
 against a database containing newer migrations.
 
-
 OFF imports recommend the official product JSONL GZIP while preserving existing CSV generations. Defaults allow 16 GiB compressed, 96 GiB expanded, 32 GiB staged SQLite and 8 MiB per JSONL document. Set `OFF_CATALOG_MAX_UPLOAD_BYTES`, `OFF_CATALOG_MAX_EXPANDED_BYTES`, `OFF_CATALOG_MAX_DATABASE_BYTES` and `OFF_CATALOG_MAX_DOCUMENT_BYTES` in the application's environment for future archive growth. Provide up to 80 GiB free for the staged compressed archive, staging and rollback/index work in addition to occupied storage. The expanded archive is streamed without an expanded disk copy. The command submits a container-visible local file path, so public reverse-proxy upload limits do not apply; all application resource/schema/integrity checks remain enforced. See [OFF operations](local-off-catalog.md#resources-and-operations).
 
-## First-key preview
+## Key enrollment preview
 
-TKT-a82279ff adds the first WebAuthn enrollment and username/key sign-in path.
+TKT-a82279ff and TKT-352998d7 add WebAuthn enrollment, multiple named keys, and
+username/key sign-in.
 Enrollment is off by default: `WEBAUTHN_ENROLLMENT_PREVIEW=1` enables it only for
 an isolated preview installation. Do not enable it on the production stack until
 the parent spec's key management and recovery tickets are complete. The standard
@@ -248,6 +248,14 @@ hash, replaces ordinary password login, revokes older public/LAN sessions and
 pending ceremonies, and rotates the verified current session without extending
 its absolute lifetime. Password reset preserves key mode and mandatory password
 replacement; it does not provide a password-login fallback.
+
+Security settings list each account's named keys. Adding a key while key login
+is enabled first requires fresh verification with an existing key. Registration
+and verification of the new key must then complete within the original five-minute
+ceremony window. Any saved key can sign in; enrollment order grants no extra
+permissions. Adding to retained keys in password mode preserves password mode
+without an additional account-password prompt. Names identify credentials for the
+user; they do not certify hardware provenance.
 
 Automated verification uses real signed ES256 protocol fixtures, Chromium virtual
 authenticators, and a non-loopback HTTP listener. Actual YubiKey USB/NFC and
