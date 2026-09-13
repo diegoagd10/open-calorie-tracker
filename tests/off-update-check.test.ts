@@ -15,7 +15,7 @@ async function setup(fetcher: typeof fetch) {
   const directory = await mkdtemp(path.join(tmpdir(), "off-update-"));
   const database = openApplicationDatabase({ databasePath: path.join(directory, "app.sqlite"), migrationsFolder: path.resolve("drizzle") });
   let now = new Date("2026-09-09T18:00:00Z");
-  const options = { provider: "open-food-facts" as const, directory, workerPath: path.resolve("app/catalog-management/import-worker.ts"), maxExpandedBytes: 1024 * 1024, offSourceTransport: new OffSnapshotSourceTransport(fetcher), now: () => now };
+  const options = { provider: "open-food-facts" as const, directory, workerPath: path.resolve("app/catalog-management/import-worker.ts"), maxExpandedBytes: 1024 * 1024, offSourceTransport: { latestSnapshot: () => new OffSnapshotSourceTransport(fetcher).latestSnapshot("csv") }, now: () => now };
   const management = new CatalogManagement(database.getClient(), options);
   cleanups.push(async () => { await management.shutdown(); database.close(); await rm(directory, { recursive: true, force: true }); });
   return { management, database, options, advance: () => { now = new Date(now.getTime() + 6 * 60 * 60 * 1000); } };
@@ -181,4 +181,40 @@ test.each([
   headers = { ...headers, "Last-Modified": "Wed, 09 Sep 2026 13:03:41 GMT", "x-amz-checksum-crc64nvme": checksum, ETag: etag };
   await management.checkForUpdate({ force: true });
   expect(management.read().updateCheck).toMatchObject({ status: "indeterminate", availableSnapshot: { crc64nvme: null, etag: null } });
+});
+
+test("native JSONL discovery uses its validated endpoint and cannot compare CSV object metadata", async () => {
+  const requests: string[] = [];
+  const source = new OffSnapshotSourceTransport(async (url, init) => {
+    requests.push(String(url));
+    expect(init?.method).toBe("HEAD");
+    return String(url).startsWith("https://static.") ? new Response(null, { status: 302, headers: { Location: "https://openfoodfacts-ds.s3.eu-west-3.amazonaws.com/openfoodfacts-products.jsonl.gz" } }) : new Response(null, { headers: snapshotHeaders });
+  });
+  const available = await source.latestSnapshot();
+  expect(requests).toEqual(["https://static.openfoodfacts.org/data/openfoodfacts-products.jsonl.gz", "https://openfoodfacts-ds.s3.eu-west-3.amazonaws.com/openfoodfacts-products.jsonl.gz"]);
+  expect(available?.format).toBe("jsonl");
+  const { offUpdateStatus } = await import("../app/catalog-management/off-snapshot-source.server");
+  expect(offUpdateStatus({ ...available!, format: "csv" }, available, "2026-09-13T18:00:00.000Z")).toBe("indeterminate");
+});
+
+test("persisted lifecycle refreshes metadata when the detected import format changes and retains old CSV compatibility", async () => {
+  const requests: string[] = [];
+  const { management: prior, database, options } = await setup(async () => new Response(null, { headers: matchedHeaders }));
+  await prior.shutdown();
+  const management = new CatalogManagement(database.getClient(), { ...options, offSourceTransport: new OffSnapshotSourceTransport(async url => { requests.push(String(url)); return new Response(null, { headers: matchedHeaders }); }) });
+  cleanups.unshift(() => management.shutdown());
+  await install(management);
+  await management.checkForUpdate();
+  expect(requests.at(-1)).toBe("https://static.openfoodfacts.org/data/en.openfoodfacts.org.products.csv.gz");
+  expect(management.read().installed?.sourceSnapshot?.format).toBe("csv");
+  const { offJsonlArchive } = await import("./support/off-archive");
+  const archive = offJsonlArchive([{ code: "3017620422003", product_name: "JSONL serving", nutriments: { "energy-kcal_serving": 150 } }]);
+  await management.submitArchive({ filename: "renamed.csv.gz", stream: Readable.from(archive), size: archive.length });
+  await vi.waitFor(() => expect(management.read().busy).toBe(false));
+  expect(management.read().job?.phase, JSON.stringify(management.read().job)).toBe("succeeded");
+  expect(management.read().installed).toMatchObject({ archiveFormat: "jsonl", filename: "renamed.csv.gz" });
+  await management.checkForUpdate();
+  expect(requests.at(-1)).toBe("https://static.openfoodfacts.org/data/openfoodfacts-products.jsonl.gz");
+  expect(management.read().updateCheck?.availableSnapshot?.format).toBe("jsonl");
+  expect(management.read().updateCheck?.status).toBe("indeterminate");
 });

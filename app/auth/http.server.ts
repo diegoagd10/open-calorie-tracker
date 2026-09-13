@@ -181,3 +181,17 @@ export function requireValidOrigin(request: Request): void {
     throw new Response("Request origin rejected.", { status: 403 });
   }
 }
+
+
+export async function getApplicationMutationSession(request: Request): Promise<AuthenticatedSession | Response> {
+  requireValidOrigin(request);
+  const session = await getSessionForApplicationAccess(request);
+  return session ?? redirect("/login", { headers: { "Set-Cookie": serializeClearedSessionCookie() } });
+}
+export async function readApplicationMutationForm(request: Request, session: AuthenticatedSession): Promise<FormData> {
+  const form = await request.formData();
+  if (!getAuthenticationService().verifyCsrfToken(session.token, String(form.get("csrfToken") ?? ""))) {
+    throw new Response("CSRF token rejected.", { status: 403 });
+  }
+  return form;
+}

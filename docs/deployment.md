@@ -162,7 +162,7 @@ Run the provider-specific command inside the running application container:
 
 ```sh
 docker compose exec -T application pnpm catalog:import:usda -- /app/data/imports/FoodData_Central_foundation_food_csv.zip
-docker compose exec -T application pnpm catalog:import:off -- /app/data/imports/en.openfoodfacts.org.products.csv.gz
+docker compose exec -T application pnpm catalog:import:off -- /app/data/imports/openfoodfacts-products.jsonl.gz
 ```
 
 For a Portainer-managed container, open its console and run the corresponding
@@ -226,3 +226,6 @@ Migrations run before the HTTP listener starts. If startup logs
 directory during recovery; restore a complete backup to a new `DATA_PATH` and
 use the application version that matches it. Never run an older application
 against a database containing newer migrations.
+
+
+OFF imports recommend the official product JSONL GZIP while preserving existing CSV generations. Defaults allow 16 GiB compressed, 96 GiB expanded, 32 GiB staged SQLite and 8 MiB per JSONL document. Set `OFF_CATALOG_MAX_UPLOAD_BYTES`, `OFF_CATALOG_MAX_EXPANDED_BYTES`, `OFF_CATALOG_MAX_DATABASE_BYTES` and `OFF_CATALOG_MAX_DOCUMENT_BYTES` in the application's environment for future archive growth. Provide up to 80 GiB free for the upload copy, staging and rollback/index work in addition to occupied storage. The expanded archive is streamed without an expanded disk copy. Reverse proxies need corresponding upload limits, buffering space and timeouts (for Nginx, `client_max_body_size 16g` and `proxy_request_buffering off`). A container-visible local-path command bypasses proxy upload limits and still uses all application resource/schema/integrity checks. See [OFF operations](local-off-catalog.md#resources-and-operations).

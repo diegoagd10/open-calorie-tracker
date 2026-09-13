@@ -2,7 +2,7 @@ import { readFile, rm, writeFile } from "node:fs/promises";
 import { installSimulatedBarcodeCamera } from "./barcode-camera-fixture";
 import AxeBuilder from "@axe-core/playwright";
 import { bootstrapOrSignInBrowserTestUser, expect, signInProvisionedMember, test } from "./reset-database";
-import { offArchive, offProduct, offWithBasis } from "../support/off-archive";
+import { offArchive, offProduct, offWithBasis, offJsonlArchive } from "../support/off-archive";
 import { basicFoodsArchive } from "../support/basic-foods-archive";
 
 const password = "correct horse 🔐 battery";
@@ -78,7 +78,7 @@ test("administrator installs USDA from mobile Settings, leaves during import, an
     { ...offProduct, code: "0012345678906", product_name: "Ambiguous oats" },
     { ...offWithBasis("100g", "0012345678907"), product_name: "Broccoli crunch", generic_name: "Vegetable chips", brands: "Exact Brand" },
   ]);
-  await page.getByLabel("OFF tab-separated CSV GZIP").setInputFiles({ name: "products.csv.gz", mimeType: "application/gzip", buffer: products });
+  await page.getByLabel("OFF JSONL or tab-separated CSV GZIP").setInputFiles({ name: "products.csv.gz", mimeType: "application/gzip", buffer: products });
   await page.getByRole("button", { name: "Install Open Food Facts" }).click();
   await expect(page.getByText("Open Food Facts installation complete", { exact: true })).toBeVisible({ timeout: 15000 });
   await expect(notifications).toHaveText("Open Food Facts catalog updated.");
@@ -111,7 +111,7 @@ test("administrator installs USDA from mobile Settings, leaves during import, an
     ...offWithBasis("100g", String(1_000_000_000_000 + index)),
     product_name: `Replacement cereal ${index}`,
   }))).subarray(0, -8);
-  await page.getByLabel("OFF tab-separated CSV GZIP").setInputFiles({ name: "corrupt.csv.gz", mimeType: "application/gzip", buffer: failingReplacement });
+  await page.getByLabel("OFF JSONL or tab-separated CSV GZIP").setInputFiles({ name: "corrupt.csv.gz", mimeType: "application/gzip", buffer: failingReplacement });
   const replacementAccepted = page.waitForResponse(response => response.url().endsWith("/settings/catalogs") && response.request().method() === "POST");
   await page.getByRole("button", { name: "Replace or reimport Open Food Facts" }).click();
   expect((await replacementAccepted).status()).toBe(202);
@@ -143,7 +143,7 @@ test("administrator installs USDA from mobile Settings, leaves during import, an
   await expect(page.getByText("52 foods installed", { exact: true })).toBeVisible();
   await expect(page.getByText("Select the archive again to retry. Partial uploads are not resumed.", { exact: true })).toBeVisible();
 
-  await page.getByLabel("OFF tab-separated CSV GZIP").setInputFiles({ name: "products-reimport.csv.gz", mimeType: "application/gzip", buffer: products });
+  await page.getByLabel("OFF JSONL or tab-separated CSV GZIP").setInputFiles({ name: "products-reimport.csv.gz", mimeType: "application/gzip", buffer: products });
   await page.getByRole("button", { name: "Retry Open Food Facts installation" }).click();
   await expect(page.getByText("Open Food Facts installation complete", { exact: true })).toBeVisible({ timeout: 15000 });
   await expect(page.getByText("Archive: products-reimport.csv.gz", { exact: true })).toBeVisible();
@@ -255,12 +255,12 @@ test("administrator checks rolling OFF snapshots independently and always upload
     await expect(off.getByText("Installed official snapshot: Unknown", { exact: true })).toBeVisible();
     await expect(off.getByRole("link", { name: /Official OFF downloads/ })).toHaveAttribute("href", "https://world.openfoodfacts.org/data");
     const unknown = offArchive([{ ...offProduct, product_name: "Unidentified snapshot" }]);
-    await off.getByLabel("OFF tab-separated CSV GZIP").setInputFiles({ name: "unknown.gz", mimeType: "application/gzip", buffer: unknown });
-    await off.getByRole("button", { name: /Install Open Food Facts|Replace or reimport Open Food Facts/ }).click();
+    await off.getByLabel("OFF JSONL or tab-separated CSV GZIP").setInputFiles({ name: "unknown.gz", mimeType: "application/gzip", buffer: unknown });
+    await off.getByRole("button", { name: /Install Open Food Facts|Replace or reimport Open Food Facts|Retry Open Food Facts installation/ }).click();
     await expect(off.getByText("Archive: unknown.gz", { exact: true })).toBeVisible();
     await expect(off.getByText("Open Food Facts installation complete", { exact: true })).toBeVisible();
     await expect(off.getByText("Installed official snapshot: Unknown", { exact: true })).toBeVisible();
-    await off.getByLabel("OFF tab-separated CSV GZIP").setInputFiles({ name: "renamed-snapshot.gz", mimeType: "application/gzip", buffer: offArchive() });
+    await off.getByLabel("OFF JSONL or tab-separated CSV GZIP").setInputFiles({ name: "renamed-snapshot.gz", mimeType: "application/gzip", buffer: offArchive() });
     await off.getByRole("button", { name: "Replace or reimport Open Food Facts" }).click();
     await expect(off.getByText("No change detected in the OFF export.", { exact: true })).toBeVisible();
     await expect(off.getByText("Open Food Facts installation complete", { exact: true })).toBeVisible();
@@ -277,7 +277,7 @@ test("administrator checks rolling OFF snapshots independently and always upload
       await expect(off.getByText(message, { exact: true })).toBeVisible();
       await expect(off.getByText("Archive: renamed-snapshot.gz", { exact: true })).toBeVisible();
       await expect(off.getByText(/^Installed: /)).toHaveText(installedBefore);
-      await expect(off.getByLabel("OFF tab-separated CSV GZIP")).toBeEnabled();
+      await expect(off.getByLabel("OFF JSONL or tab-separated CSV GZIP")).toBeEnabled();
       expect(await usda.innerText()).toBe(usdaBefore);
     }
     const beforeReload = (await readFile(requestsPath, "utf8")).trim().split("\n");
@@ -286,4 +286,43 @@ test("administrator checks rolling OFF snapshots independently and always upload
     expect((await readFile(requestsPath, "utf8")).trim().split("\n")).toEqual(beforeReload);
     expect(beforeReload.map(line => JSON.parse(line) as { method: string; url: string })).toEqual(beforeReload.map(() => ({ method: "HEAD", url: "https://static.openfoodfacts.org/data/en.openfoodfacts.org.products.csv.gz" })));
   } finally { await rm(fixturePath, { force: true }); }
+});
+
+
+test("JSONL import makes native serving nutrition scannable and saves source-backed totals", async ({ page }) => {
+  await bootstrapOrSignInBrowserTestUser(page, "jsonl.browser.admin", password);
+  await page.getByRole("button", { name: "Finish setup" }).click();
+  await expect(page).toHaveURL("/");
+  const target = JSON.parse(await readFile("tests/fixtures/off-native-serving.json", "utf8")) as unknown;
+  const products = offJsonlArchive([target, { code: "0012345678906", product_name: "Incomplete JSONL food", nutriments: { "energy-kcal_100g": 100 } }]);
+  await page.goto("/settings/catalogs");
+  await page.getByLabel("OFF JSONL or tab-separated CSV GZIP").setInputFiles({ name: "products.jsonl.gz", mimeType: "application/gzip", buffer: products });
+  await page.getByRole("button", { name: /Install Open Food Facts|Replace or reimport Open Food Facts|Retry Open Food Facts installation/ }).click();
+  await expect(page.getByText("Archive: products.jsonl.gz", { exact: true })).toBeVisible();
+  await expect(page.getByText("Open Food Facts installation complete", { exact: true })).toBeVisible({ timeout: 15000 });
+  await installSimulatedBarcodeCamera(page);
+  await page.goto("/?food=barcode");
+  await page.getByRole("button", { name: "Use camera" }).click();
+  await page.evaluate(() => {
+    const state = (window as typeof window & { __scannerState: { barcode: string; emit: boolean } }).__scannerState;
+    state.barcode = "643843715887"; state.emit = true;
+  });
+  await expect(page.getByRole("heading", { name: "100% Whey Protein Powder", exact: true })).toBeVisible();
+  await expect(page.getByRole("combobox", { name: /Measurement/ })).toHaveValue("serving");
+  await expect(page.getByText("150 kcal", { exact: true })).toBeVisible();
+  await expect(page.getByText("30 g", { exact: true })).toBeVisible();
+  await page.getByLabel("Quantity", { exact: true }).fill("2");
+  await expect(page.getByText("300 kcal", { exact: true })).toBeVisible();
+  await expect(page.getByText("60 g", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Add to Food Log", exact: true }).click();
+  await expect(page).toHaveURL("/?date=2026-08-29");
+  await page.reload();
+  const log = page.getByRole("region", { name: "Daily log entries", exact: true });
+  await expect(log.getByText("100% Whey Protein Powder", { exact: true })).toBeVisible();
+  await expect(log.getByText("300 kcal", { exact: true })).toBeVisible();
+  await log.getByText("100% Whey Protein Powder", { exact: true }).click();
+  await expect(page.getByLabel("Protein (g)")).toHaveValue("60");
+  await page.goto("/?food=barcode&barcode=0012345678906");
+  await expect(page.getByRole("alert")).toContainText("does not establish whether nutrition is per 100 g or 100 ml");
+  await expect(page.getByRole("button", { name: "Add to Food Log", exact: true })).toBeDisabled();
 });

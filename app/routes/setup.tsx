@@ -4,10 +4,9 @@ import { useEffect, useState } from "react";
 import type { Route } from "./+types/setup";
 import {
   getSessionForApplicationAccess,
-  requireValidOrigin,
-  serializeClearedSessionCookie,
+  getApplicationMutationSession,
+  readApplicationMutationForm,
 } from "../auth/http.server";
-import { getAuthenticationService } from "../auth/runtime.server";
 import styles from "../setup.module.css";
 import { getGoalSetupService } from "../setup/runtime.server";
 import {
@@ -46,24 +45,11 @@ export async function loader({ request }: Route.LoaderArgs) {
 }
 
 export async function action({ request }: Route.ActionArgs) {
-  requireValidOrigin(request);
-  const session = await getSessionForApplicationAccess(request);
-  if (!session) {
-    return redirect("/login", {
-      headers: { "Set-Cookie": serializeClearedSessionCookie() },
-    });
-  }
+  const session = await getApplicationMutationSession(request);
+  if (session instanceof Response) return session;
   if (getGoalSetupService().isComplete(session.user.id)) return redirect("/");
 
-  const formData = await request.formData();
-  if (
-    !getAuthenticationService().verifyCsrfToken(
-      session.token,
-      String(formData.get("csrfToken") ?? ""),
-    )
-  ) {
-    throw new Response("CSRF token rejected.", { status: 403 });
-  }
+  const formData = await readApplicationMutationForm(request, session);
 
   const fields = Object.fromEntries(
     [

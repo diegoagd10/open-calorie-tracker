@@ -9,9 +9,9 @@ import { TestFoodCatalogProvider, TestOpenFoodFactsProvider } from "../app/catal
 import { FoodEntryService } from "../app/food-entry/food-entry.server";
 import { createMigrationFolder } from "./support/migrations";
 
-test("migrating a populated application preserves USDA/OFF snapshots, supported measures, edits and copies", async () => {
+test.each(["0014_breezy_eternals", "0015_outstanding_stature"])("migrating a populated application from %s preserves USDA/OFF snapshots, supported measures, edits and copies", async throughTag => {
   const directory = await mkdtemp(path.join(tmpdir(), "off-migration-"));
-  const oldMigrations = await createMigrationFolder(path.join(directory, "migrations"), { throughTag: "0014_breezy_eternals" });
+  const oldMigrations = await createMigrationFolder(path.join(directory, "migrations"), { throughTag });
   const databasePath = path.join(directory, "app.sqlite");
   let database = openApplicationDatabase({ databasePath, migrationsFolder: oldMigrations });
   try {
@@ -35,6 +35,6 @@ test("migrating a populated application preserves USDA/OFF snapshots, supported 
     expect(updated.map(entry => entry.energyMilliKcal)).toEqual([118000, 360000]);
     const copies = updated.map(entry => entries.copyToToday(user.id, entry.id, { foodLogDate: entry.foodLogDate, idempotencyKey: `copy:${entry.id}:migration-test` }));
     expect(copies.map(entry => [entry.authoritativeNutrition, entry.supportedMeasurements, entry.name, entry.energyMilliKcal])).toEqual(updated.map(entry => [entry.authoritativeNutrition, entry.supportedMeasurements, entry.name, entry.energyMilliKcal]));
-    expect(database.getStatus()).toMatchObject({ schemaVersion: "15", foreignKeysEnabled: true });
+    expect(database.getStatus()).toMatchObject({ schemaVersion: "16", foreignKeysEnabled: true });
   } finally { database.close(); await rm(directory, { recursive: true, force: true }); }
 });

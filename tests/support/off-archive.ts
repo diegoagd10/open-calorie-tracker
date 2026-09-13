@@ -17,3 +17,7 @@ export function offWithBasis(per: "100g" | "100ml" | "serving", code = offProduc
   const prefix = `nutrition.input_sets.packaging.as_sold.${per}.nutrients.`;
   return { ...offProduct, code, ...Object.fromEntries(Object.entries({ "energy-kcal": [400, "kcal"], proteins: [10, "g"], carbohydrates: [60, "g"], fat: [12, "g"], fiber: [0, "g"], sodium: [10, "mg"] }).flatMap(([name, [value, unit]]) => [[`${prefix}${name}.value`, String(value)], [`${prefix}${name}.unit`, String(unit)]])) };
 }
+
+export function offJsonlArchive(rows: unknown[], ending = "\n") {
+  return gzipSync(rows.map(row => JSON.stringify(row)).join("\n") + ending);
+}

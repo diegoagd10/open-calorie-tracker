@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unsafe-call -- react-test-renderer host event props are untyped */
 import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { createRoutesStub } from "react-router";
 import { act, create, type ReactTestInstance, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, expect, test, vi } from "vitest";
@@ -24,12 +25,20 @@ async function render(catalog = empty, offCatalog = empty) {
   return { renderer, load, card: (provider: string) => renderer.root.findByProps({ "aria-labelledby": `${provider}-heading` }) };
 }
 
+test("server-rendered upload controls wait for their JavaScript handler", () => {
+  const Routes = createRoutesStub([{ path: "/settings/catalogs", id: "catalogs", Component: CatalogSettings }]);
+  const html = renderToStaticMarkup(createElement(Routes, { initialEntries: ["/settings/catalogs"], hydrationData: { loaderData: { catalogs: { catalog: empty, offCatalog: empty, today: "2026-09-08", csrfToken: "catalog-csrf" } } } }));
+  const inputs = html.match(/<input[^>]*type="file"[^>]*>/g);
+  expect(inputs).toHaveLength(2);
+  expect(inputs?.every(input => input.includes("disabled="))).toBe(true);
+});
+
 test("each catalog card identifies its source, archive type, license and independent controls", async () => {
   expect(meta()).toEqual([{ title: "Food Catalogs · Open Calorie Tracker" }]);
   const { renderer, card, load } = await render();
   const off = card("open-food-facts"); const usda = card("usda-fdc");
   expect(text(renderer.root)).toContain("Install shared reference foods for local search and logging.");
-  expect(text(off)).toContain("Open Food FactsNot installedDownload the OFF tab-separated CSV GZIP, then upload it here.");
+  expect(text(off)).toContain("Open Food FactsNot installedDownload the official product JSONL GZIP (recommended for serving nutrition)");
   expect(text(off)).toContain("Open Food Facts data is available under the Open Database License (ODbL). Products without an explicit nutrition basis can be reviewed but cannot be used for calculated logging.");
   expect(text(off)).toContain("Saved Food Entries keep their original nutrition and measurements.");
   expect(uploadInput(off).props).toMatchObject({ type: "file", name: "archive", accept: ".gz,application/gzip", required: true, disabled: false });
@@ -165,7 +174,7 @@ async function submit(card: ReactTestInstance, file: unknown) {
 test.each([null, "archive", new File([], "empty.gz")])("empty/non-file submissions stay local %#", async file => {
   const { card } = await render();
   await submit(card("open-food-facts"), file);
-  expect(text(card("open-food-facts").findByProps({ role: "alert" }))).toBe("Choose a OFF tab-separated CSV GZIP archive.");
+  expect(text(card("open-food-facts").findByProps({ role: "alert" }))).toBe("Choose a OFF JSONL or tab-separated CSV GZIP archive.");
   expect(uploadButton(card("open-food-facts")).props.disabled).toBe(false);
 });
 

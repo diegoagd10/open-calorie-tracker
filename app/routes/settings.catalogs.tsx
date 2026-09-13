@@ -76,11 +76,13 @@ function OffSnapshotAvailability({ catalog }: { catalog: CatalogState }) {
 function CatalogCard({ catalog, csrfToken, provider }: { catalog: CatalogState; csrfToken: string; provider: "usda-fdc" | "open-food-facts" }) {
   const off = provider === "open-food-facts";
   const name = off ? "Open Food Facts" : "USDA Foundation";
-  const archiveLabel = off ? "OFF tab-separated CSV GZIP" : "Foundation CSV ZIP";
+  const archiveLabel = off ? "OFF JSONL or tab-separated CSV GZIP" : "Foundation CSV ZIP";
   const revalidator = useRevalidator();
   const navigation = useNavigation();
   const [upload, setUpload] = useState<{ bytes: number; total: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [ready, setReady] = useState(false);
+  useEffect(() => { setReady(true); }, []);
   const retryable = catalog.job?.phase === "failed" || catalog.job?.phase === "interrupted";
   const checkIntent = off ? "check-off-update" : "check-usda-update";
   const checkLabel = off ? "OFF" : "USDA";
@@ -115,7 +117,7 @@ function CatalogCard({ catalog, csrfToken, provider }: { catalog: CatalogState; 
   }
   return <section className={styles.card} aria-labelledby={`${provider}-heading`}>
         <div className={styles.heading}><h2 id={`${provider}-heading`}>{name}</h2><span className={catalog.installed ? styles.connected : styles.disconnected}>{catalog.installed ? "Installed" : "Not installed"}</span></div>
-        <p>Download the {archiveLabel}, then upload it here.</p>
+        <p>{off ? "Download the official product JSONL GZIP (recommended for serving nutrition), then upload it here. Existing tab-separated CSV GZIP imports remain supported." : `Download the ${archiveLabel}, then upload it here.`}</p>
         <a href={off ? "https://world.openfoodfacts.org/data" : "https://fdc.nal.usda.gov/download-datasets/"} target="_blank" rel="noreferrer">Official {off ? "OFF" : "USDA"} downloads ↗</a>
         {off ? <p>Open Food Facts data is available under the Open Database License (ODbL). Products without an explicit nutrition basis can be reviewed but cannot be used for calculated logging.</p> : null}
         {catalog.installed ? <div>
@@ -156,8 +158,8 @@ function CatalogCard({ catalog, csrfToken, provider }: { catalog: CatalogState; 
         {catalog.job && Object.keys(catalog.job.exclusions).length ? <details><summary>Excluded records and unavailable data</summary><ul>{Object.entries(catalog.job.exclusions).map(([reason, count]) => <li key={reason}>{reason.replaceAll("_", " ")}: {count.toLocaleString()}</li>)}</ul><p>These counts describe individual records or values; an archive failure is shown separately above.</p></details> : null}
         {retryable ? <p>Select the archive again to retry. Partial uploads are not resumed.</p> : null}
         <form onSubmit={submit} className={styles.actions}>
-          <label>{archiveLabel}<input type="file" name="archive" accept={off ? ".gz,application/gzip" : ".zip,application/zip"} required disabled={catalog.busy || upload !== null} /></label>
-          <button className={styles.primary} type="submit" disabled={catalog.busy || upload !== null}>{retryable ? `Retry ${name} installation` : catalog.installed ? `Replace or reimport ${name}` : `Install ${name}`}</button>
+          <label>{archiveLabel}<input type="file" name="archive" accept={off ? ".gz,application/gzip" : ".zip,application/zip"} required disabled={!ready || catalog.busy || upload !== null} /></label>
+          <button className={styles.primary} type="submit" disabled={!ready || catalog.busy || upload !== null}>{retryable ? `Retry ${name} installation` : catalog.installed ? `Replace or reimport ${name}` : `Install ${name}`}</button>
           <noscript>Enable JavaScript to upload a catalog and view import progress.</noscript>
         </form>
         <p className={styles.note}>Saved Food Entries keep their original nutrition and measurements.</p>

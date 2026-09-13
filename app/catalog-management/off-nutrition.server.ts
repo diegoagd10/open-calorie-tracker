@@ -71,7 +71,23 @@ function authority(per: string | null) {
   const unit: CatalogMeasurement["unit"] = per === "100g" ? "g" : per === "100ml" ? "ml" : "serving";
   return { authoritativeBaseUnit: unit, authoritativeBaseQuantityMicrounits: unit === "serving" ? 1_000_000 : 100_000_000 };
 }
-export function offNutrition(row: Record<string, string>) {
+function isNutrientValue(key: string, value: string) {
+  return nutrientFields.has(key) && value !== "" && (key.endsWith("_100g") || key.endsWith("_serving") || key.endsWith(".value"));
+}
+function unsupportedNutrient(row: Record<string, string>, key: string) {
+  const prefix = key.slice(0, -5);
+  const units = key.includes(".energy") ? ["kcal", "kJ"] : ["g", "mg"];
+  return !units.includes(row[prefix + "unit"]) || (row[prefix + "modifier"] ?? "").trim() !== "";
+}
+function countInvalidNutrients(row: Record<string, string>, exclude: (reason: string) => void) {
+  for (const [key, value] of Object.entries(row)) {
+    if (!isNutrientValue(key, value)) continue;
+    if (sourceNumber(value) === null) exclude("invalid_nutrient_value");
+    if (key.endsWith(".value") && unsupportedNutrient(row, key)) exclude("unsupported_nutrient_unit_or_modifier");
+  }
+}
+export function offNutrition(row: Record<string, string>, exclude?: (reason: string) => void) {
+  if (exclude) countInvalidNutrients(row, exclude);
   const basis = resolveBasis(row);
   const base = authority(basis.per);
   const reason = row.no_nutrition_data === "on" ? "nutrition_not_provided" : unavailableReason(basis);

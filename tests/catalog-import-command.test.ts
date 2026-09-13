@@ -1,4 +1,4 @@
-import { mkdtemp, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -19,7 +19,7 @@ import {
   mountLocalCatalogImport,
 } from "../server/local-catalog-import";
 import { foundationArchive } from "./support/foundation-archive";
-import { offArchive, offWithBasis } from "./support/off-archive";
+import { offArchive, offWithBasis, offJsonlArchive } from "./support/off-archive";
 
 const controlToken = "a".repeat(64);
 const cleanups: Array<() => Promise<void>> = [];
@@ -80,6 +80,7 @@ async function fixture(provider: "open-food-facts" | "usda-fdc") {
 test.each([
   ["usda-fdc", "foundation.zip"],
   ["open-food-facts", "products.csv.gz"],
+  ["open-food-facts", "products.jsonl.gz"],
 ] as const)(
   "imports a local %s archive through the running application and waits for its outcome",
   async (provider, filename) => {
@@ -89,7 +90,7 @@ test.each([
       archivePath,
       provider === "usda-fdc"
         ? await foundationArchive()
-        : offArchive([offWithBasis("100g")]),
+        : filename.endsWith("jsonl.gz") ? offJsonlArchive([JSON.parse(await readFile("tests/fixtures/off-native-serving.json", "utf8"))]) : offArchive([offWithBasis("100g")]),
     );
     const standardOutput: string[] = [];
     const standardError: string[] = [];

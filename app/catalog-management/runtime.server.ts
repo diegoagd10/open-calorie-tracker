@@ -12,8 +12,10 @@ function configuration() {
     CATALOG_DIRECTORY: z.string().trim().min(1).optional(),
     DATABASE_PATH: z.string().optional(),
     PORT: z.coerce.number().int().min(1).max(65_535).default(3000),
-    OFF_CATALOG_MAX_UPLOAD_BYTES: z.coerce.number().int().positive().default(4 * 1024 ** 3),
-    OFF_CATALOG_MAX_EXPANDED_BYTES: z.coerce.number().int().positive().default(32 * 1024 ** 3),
+    OFF_CATALOG_MAX_UPLOAD_BYTES: z.coerce.number().int().positive().default(16 * 1024 ** 3),
+    OFF_CATALOG_MAX_EXPANDED_BYTES: z.coerce.number().int().positive().default(96 * 1024 ** 3),
+    OFF_CATALOG_MAX_DATABASE_BYTES: z.coerce.number().int().positive().default(32 * 1024 ** 3),
+    OFF_CATALOG_MAX_DOCUMENT_BYTES: z.coerce.number().int().positive().default(8 * 1024 ** 2),
     CATALOG_MAX_UPLOAD_BYTES: z.coerce.number().int().positive().default(64 * 1024 * 1024),
     CATALOG_MAX_EXPANDED_BYTES: z.coerce.number().int().positive().default(256 * 1024 * 1024),
   }).parse(process.env);
@@ -35,6 +37,7 @@ export function getCatalogManagement(provider: CatalogProviderId = "usda-fdc") {
   const config = configuration();
   const management = new CatalogManagement(database, {
     provider, directory: catalogDirectory(), maxUploadBytes: provider === "open-food-facts" ? config.OFF_CATALOG_MAX_UPLOAD_BYTES : config.CATALOG_MAX_UPLOAD_BYTES, maxExpandedBytes: provider === "open-food-facts" ? config.OFF_CATALOG_MAX_EXPANDED_BYTES : config.CATALOG_MAX_EXPANDED_BYTES,
+    ...(provider === "open-food-facts" ? { maxDatabaseBytes: config.OFF_CATALOG_MAX_DATABASE_BYTES, maxDocumentBytes: config.OFF_CATALOG_MAX_DOCUMENT_BYTES } : {}),
     workerPath: path.resolve(process.env.NODE_ENV === "production" || process.env.CATALOG_BUILT_WORKER === "1" ? "build/catalog/import-worker.js" : "app/catalog-management/import-worker.ts"),
     ...(provider === "open-food-facts" && (process.env.NODE_ENV !== "test" || process.env.CATALOG_BUILT_WORKER === "1") ? { offSourceTransport: new OffSnapshotSourceTransport() } : {}),
     ...(provider === "usda-fdc" && process.env.NODE_ENV !== "test" ? { sourceTransport: new UsdaFoundationSourceTransport() } : {}),

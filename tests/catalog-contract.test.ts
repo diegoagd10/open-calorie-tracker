@@ -578,7 +578,7 @@ describe("catalog runtime selection", () => {
     vi.stubEnv("NODE_ENV", "test");
     vi.stubEnv("FOOD_CATALOG_TEST_FIXTURE", "0");
     vi.stubEnv("OFF_CATALOG_MAX_UPLOAD_BYTES", "1000000");
-    vi.stubEnv("OFF_CATALOG_MAX_EXPANDED_BYTES", "10000000");
+    vi.stubEnv("OFF_CATALOG_MAX_EXPANDED_BYTES", "10000000"); vi.stubEnv("OFF_CATALOG_MAX_DATABASE_BYTES", "10000000");
     const network = vi.fn(() => { throw new Error("Food API access is forbidden"); });
     vi.stubGlobal("fetch", network);
     const management = getCatalogManagement("open-food-facts");
