@@ -1004,3 +1004,112 @@ test("fresh addition authorization is unavailable in password mode", async () =>
     credentials: [],
   });
 });
+
+test("fresh key proof disables login with keys retained, and explicitly re-enables from password mode", async () => {
+  const { service, session } = await fixture();
+  const { key, session: enabled } = await enroll(service, session.token);
+  const pendingLogin = await service.keys.beginLogin("owner", "stale-login", "192.0.2.3");
+  const disable = await service.keys.beginModeChange(enabled.token, "disable", false);
+  await service.keys.finishModeChange(enabled.token, "disable", false, key.assertion(disable, 2));
+  expect(await service.authenticate(enabled.token)).toBeUndefined();
+  await expect(service.keys.finishLogin("stale-login", key.assertion(pendingLogin, 3))).rejects.toThrow();
+  await expect(service.keys.beginLogin("owner", "disabled-login", "192.0.2.3")).rejects.toThrow();
+  const passwordLogin = await service.login("owner", password, "192.0.2.4");
+  if (!passwordLogin.ok) throw new Error("password login failed");
+  expect(service.keys.status(passwordLogin.session.token)).toMatchObject({ enabled: false, credentials: [{ id: key.id }] });
+  const proof = await service.keys.beginModeChange(passwordLogin.session.token, "enable", true);
+  const restored = await service.keys.finishModeChange(passwordLogin.session.token, "enable", true, key.assertion(proof, 3));
+  if (!restored) throw new Error("no rotated session");
+  expect(restored.absoluteExpiresAt).toEqual(passwordLogin.session.absoluteExpiresAt);
+  expect(await service.authenticate(passwordLogin.session.token)).toBeUndefined();
+  expect(service.keys.status(restored.token)).toMatchObject({ enabled: true, credentials: [{ id: key.id }] });
+  expect((await service.login("owner", password, "192.0.2.5")).ok).toBe(false);
+  const login = await service.keys.beginLogin("owner", "login", "192.0.2.3");
+  expect((await service.keys.finishLogin("login", key.assertion(login, 4))).user.username).toBe("owner");
+});
+
+async function passwordMode() {
+  const f = await fixture();
+  const { key, session: enabled } = await enroll(f.service, f.session.token);
+  const proof = await f.service.keys.beginModeChange(enabled.token, "disable", false);
+  await f.service.keys.finishModeChange(enabled.token, "disable", false, key.assertion(proof, 2));
+  const login = await f.service.login("owner", password, "192.0.2.2");
+  if (!login.ok) throw new Error("password login failed");
+  return { ...f, key, current: login.session };
+}
+
+test.each(["cancel", "expire", "bad-signature", "wrong-purpose", "enrollment-purpose", "wrong-session", "credential-change", "account-change"])(
+  "failed re-enable (%s) preserves password mode and consumes the attempt", async (failure) => {
+    const f = await passwordMode();
+    const proof = await f.service.keys.beginModeChange(f.current.token, "enable", true);
+    const response = f.key.assertion(proof, 3, { badSignature: failure === "bad-signature" });
+    if (failure === "cancel") f.service.keys.cancel("enable");
+    if (failure === "expire") f.advance(300_001);
+    if (failure === "account-change") {
+      f.database.getClient().update(users).set({ authenticationVersion: 99 }).where(eq(users.id, f.current.user.id)).run();
+    }
+    let finishing: Promise<unknown>;
+    if (failure === "credential-change") {
+      const other = openApplicationDatabase({ databasePath: f.database.getClient().$client.name, migrationsFolder: path.resolve("drizzle") });
+      try {
+        finishing = f.service.keys.finishModeChange(f.current.token, "enable", true, response);
+        other.getClient().$client.prepare("UPDATE webauthn_credentials SET revision = revision + 1 WHERE id = ?").run(f.key.id);
+      } finally { other.close(); }
+    } else if (failure === "wrong-purpose") {
+      finishing = f.service.keys.finishLogin("enable", response);
+    } else if (failure === "enrollment-purpose") {
+      finishing = f.service.keys.finishEnrollment(f.current.token, "enable", response);
+    } else {
+      finishing = f.service.keys.finishModeChange(failure === "wrong-session" ? "foreign" : f.current.token, "enable", true, response);
+    }
+    await expect(finishing).rejects.toThrow();
+    expect(f.service.keys.status(f.current.token).enabled).toBe(false);
+    await expect(f.service.keys.finishModeChange(f.current.token, "enable", true, response)).rejects.toThrow();
+    expect((await f.service.login("owner", password, "192.0.2.3")).ok).toBe(true);
+  },
+);
+
+test("concurrent re-enable attempts commit once, revoke password sessions and pending registration, and burn replay", async () => {
+  const f = await passwordMode();
+  const other = await f.service.login("owner", password, "192.0.2.3");
+  if (!other.ok) throw new Error("password login failed");
+  const a = await f.service.keys.beginModeChange(f.current.token, "a", true);
+  const b = await f.service.keys.beginModeChange(other.session.token, "b", true);
+  const registration = await f.service.keys.beginEnrollment(other.session.token, "register", "Pending backup");
+  const results = await Promise.allSettled([
+    f.service.keys.finishModeChange(f.current.token, "a", true, f.key.assertion(a, 3)),
+    f.service.keys.finishModeChange(other.session.token, "b", true, f.key.assertion(b, 4)),
+  ]);
+  expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+  expect(await f.service.authenticate(other.session.token)).toBeUndefined();
+  await expect(f.service.keys.finishRegistration(other.session.token, "register", authenticator().registration(registration))).rejects.toThrow();
+  await expect(f.service.keys.finishModeChange(f.current.token, "a", true, f.key.assertion(a, 3))).rejects.toThrow();
+});
+
+test.each([true, false])("storage failure during mode change to %s rolls back and burns submitted proof", async (enabled) => {
+  const f = await passwordMode();
+  const key = f.key;
+  let current = f.current;
+  if (!enabled) {
+    const enable = await f.service.keys.beginModeChange(current.token, "enable", true);
+    current = (await f.service.keys.finishModeChange(current.token, "enable", true, key.assertion(enable, 3)))!;
+  }
+  const proof = await f.service.keys.beginModeChange(current.token, "mode", enabled);
+  f.database.getClient().$client.exec("CREATE TRIGGER refuse_mode BEFORE UPDATE OF key_login_enabled ON users BEGIN SELECT RAISE(ABORT, 'storage failure'); END");
+  await expect(f.service.keys.finishModeChange(current.token, "mode", enabled, key.assertion(proof, 4))).rejects.toThrow();
+  f.database.getClient().$client.exec("DROP TRIGGER refuse_mode");
+  expect(f.service.keys.status(current.token).enabled).toBe(!enabled);
+  await expect(f.service.keys.finishModeChange(current.token, "mode", enabled, key.assertion(proof, 4))).rejects.toThrow();
+});
+
+test("mode changes require saved credentials, matching current mode, preview and durable rate limits", async () => {
+  const f = await fixture();
+  await expect(f.service.keys.beginModeChange(f.session.token, "mode", true)).rejects.toThrow("first key");
+  const { session: current } = await enroll(f.service, f.session.token);
+  await expect(f.service.keys.beginModeChange(current.token, "mode", true)).rejects.toThrow();
+  vi.stubEnv("WEBAUTHN_ENROLLMENT_PREVIEW", "");
+  await expect(f.service.keys.beginModeChange(current.token, "mode", false)).rejects.toThrow("preview");
+  vi.stubEnv("WEBAUTHN_ENROLLMENT_PREVIEW", "1");
+  for (let n = 0; n < 8; n++) await f.service.keys.beginModeChange(current.token, "mode", false);
+  await expect(new AuthenticationService(f.database.getClient(), () => new Date("2026-09-13T19:00:00.000Z")).keys.beginModeChange(current.token, "mode", false)).rejects.toThrow("Too many");
+});

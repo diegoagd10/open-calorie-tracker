@@ -140,6 +140,7 @@ test("cancelled enrollment leaves password mode usable and permits retry", async
 test("six virtual authenticators enroll with fresh proof, reject duplicate/cross-account enrollment, and each signs in", async ({
   context,
   page,
+  browser,
 }, testInfo) => {
   test.skip(
     testInfo.project.name !== "chromium",
@@ -260,6 +261,55 @@ test("six virtual authenticators enroll with fresh proof, reject duplicate/cross
       .getByRole("button", { name: "Use registered key", exact: true })
       .click();
     await expect(page).toHaveURL("/");
+    saved[n] = await rememberKey();
+  }
+  // Repeat the lifecycle with the first and sixth saved keys.
+  for (const n of [0, 5]) {
+    await addKey();
+    await cdp.send("WebAuthn.addCredential", { authenticatorId: activeId, credential: saved[n] });
+    await page.goto("/settings/security");
+    const olderKey = await browser.newContext({ storageState: await context.storageState(), baseURL: "https://localhost:4173", ignoreHTTPSErrors: true });
+    const olderKeyPage = await olderKey.newPage();
+    await page.getByRole("button", { name: "Disable key login", exact: true }).focus();
+    await page.keyboard.press("Enter");
+    await expect(page).toHaveURL("/login");
+    await olderKeyPage.goto("/");
+    await expect(olderKeyPage).toHaveURL("/login");
+    await olderKey.close();
+    await page.getByLabel("Username").fill("multiple.owner");
+    await page.getByRole("button", { name: "Use registered key", exact: true }).click();
+    await expect(page.getByRole("alert")).toContainText("unavailable");
+    await page.getByLabel("Password", { exact: true }).fill(password);
+    await page.getByRole("button", { name: "Sign in", exact: true }).click();
+    await expect(page).toHaveURL("/");
+    await page.goto("/settings/security");
+    await expect(page.getByText(/Your keys are retained/)).toBeVisible();
+    await expect(page.locator("main li")).toHaveCount(6);
+    await expect(page.locator('input[type="password"]')).toHaveCount(0);
+    expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+    const olderPassword = await browser.newContext({ storageState: await context.storageState(), baseURL: "https://localhost:4173", ignoreHTTPSErrors: true });
+    const olderPasswordPage = await olderPassword.newPage();
+    const lanPassword = await browser.newContext({ baseURL: "http://127.0.0.1:4174" });
+    const lanPage = await lanPassword.newPage();
+    await lanPage.goto("/login");
+    await lanPage.getByLabel("Username").fill("multiple.owner");
+    await lanPage.getByLabel("Password", { exact: true }).fill(password);
+    await lanPage.getByRole("button", { name: "Sign in", exact: true }).click();
+    await expect(lanPage).toHaveURL("/");
+    await cdp.send("WebAuthn.setAutomaticPresenceSimulation", { authenticatorId: activeId, enabled: false });
+    await page.getByRole("button", { name: "Re-enable key login", exact: true }).click();
+    await page.getByRole("button", { name: "Cancel key prompt" }).click();
+    await expect(page.getByRole("alert")).toContainText(/cancelled|retry/i);
+    await expect(page.getByRole("heading", { name: "Password login is enabled" })).toBeVisible();
+    await cdp.send("WebAuthn.setAutomaticPresenceSimulation", { authenticatorId: activeId, enabled: true });
+    await page.getByRole("button", { name: "Re-enable key login", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Key login is enabled" })).toBeVisible();
+    await olderPasswordPage.goto("/");
+    await expect(olderPasswordPage).toHaveURL("/login");
+    await lanPage.goto("/");
+    await expect(lanPage).toHaveURL("/login");
+    await olderPassword.close();
+    await lanPassword.close();
     saved[n] = await rememberKey();
   }
   // Ask the member's browser for an owner's key, then submit its real signature

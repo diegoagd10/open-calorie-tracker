@@ -8,6 +8,7 @@ import {
   webauthnCredentials,
 } from "./schema.server";
 import { findActiveSessionByTokenHash } from "./credential-sessions.server";
+import { invalidateAccountProofs } from "./authentication-policy.server";
 import { isAccountSetupComplete } from "./account-setup.server";
 
 export class KeyAuthenticationError extends Error {}
@@ -106,7 +107,9 @@ export class WebAuthnStorage {
       !user ||
       user.accessState !== "active" ||
       user.authenticationVersion !== pending.authenticationVersion ||
-      (["login", "add-proof", "register-add", "add"].includes(pending.purpose)
+      (["login", "add-proof", "register-add", "add", "disable"].includes(
+        pending.purpose,
+      )
         ? !user.keyLoginEnabled
         : user.keyLoginEnabled)
     )
@@ -287,6 +290,45 @@ export class WebAuthnStorage {
           boundary,
           pending,
         );
+      },
+      { behavior: "immediate" },
+    );
+  }
+  changeMode<T>(
+    pending: PendingKeyCeremony,
+    verified: VerifiedKeyAssertion,
+    boundary: WebAuthnBoundary,
+    issue: (
+      user: typeof users.$inferSelect,
+      absolute: Date,
+    ) => { persisted: typeof sessions.$inferInsert; session: T },
+  ): T | undefined {
+    return this.database.transaction(
+      (tx) => {
+        this.#requireProcessing(pending);
+        const current = this.accountForPending(pending, boundary);
+        if (
+          !pending.sessionHash ||
+          !["disable", "re-enable"].includes(pending.purpose) ||
+          verified.credential.userId !== current.id ||
+          !this.credentials(current.id).length
+        )
+          throw new KeyAuthenticationError("Wrong key owner or action.");
+        const absolute = new Date(
+          this.session(pending.sessionHash).absoluteExpiresAt,
+        );
+        this.#updateCredential(verified);
+        const enabled = pending.purpose === "re-enable";
+        tx.update(users)
+          .set({ keyLoginEnabled: enabled })
+          .where(eq(users.id, current.id))
+          .run();
+        tx.delete(sessions).where(eq(sessions.userId, current.id)).run();
+        invalidateAccountProofs(tx, current.id);
+        if (!enabled) return undefined;
+        const issued = issue(current, absolute);
+        tx.insert(sessions).values(issued.persisted).run();
+        return issued.session;
       },
       { behavior: "immediate" },
     );

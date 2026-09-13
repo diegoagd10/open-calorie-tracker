@@ -231,8 +231,8 @@ OFF imports recommend the official product JSONL GZIP while preserving existing 
 
 ## Key enrollment preview
 
-TKT-a82279ff and TKT-352998d7 add WebAuthn enrollment, multiple named keys, and
-username/key sign-in.
+TKT-a82279ff, TKT-352998d7, and TKT-647394a7 add WebAuthn enrollment, multiple
+named keys, username/key sign-in, and an account-level key-login toggle.
 Enrollment is off by default: `WEBAUTHN_ENROLLMENT_PREVIEW=1` enables it only for
 an isolated preview installation. Do not enable it on the production stack until
 the parent spec's key management and recovery tickets are complete. The standard
@@ -256,6 +256,16 @@ ceremony window. Any saved key can sign in; enrollment order grants no extra
 permissions. Adding to retained keys in password mode preserves password mode
 without an additional account-password prompt. Names identify credentials for the
 user; they do not certify hardware provenance.
+
+Disabling key login requires fresh verification with any saved key, preserves all
+keys and password material, invalidates sessions and pending ceremonies, and
+returns to password sign-in. Saved keys cannot sign in while disabled. After
+password sign-in, re-enable explicitly by verifying a retained key; there is no
+additional account-password prompt. That proof authorizes only re-enabling.
+Successful re-enabling invalidates older public/LAN sessions and pending attempts
+and rotates the current session with its original absolute expiry. Failed,
+canceled, expired, replayed, or superseded attempts leave the mode unchanged.
+Accounts with no keys must enroll their first key instead.
 
 Automated verification uses real signed ES256 protocol fixtures, Chromium virtual
 authenticators, and a non-loopback HTTP listener. Actual YubiKey USB/NFC and
