@@ -1,3 +1,4 @@
+import { invalidateAccountProofs } from "./authentication-policy.server";
 import { and, eq } from "drizzle-orm";
 
 import type { ApplicationDatabaseClient } from "./database.server";
@@ -17,6 +18,7 @@ export type VerifiedCredentialSession = {
     updatedAt: string;
   };
   expectedPasswordHash: string;
+  expectedAuthenticationVersion: number;
   session: typeof sessions.$inferInsert;
 };
 
@@ -35,6 +37,18 @@ export function issueSessionForVerifiedCredential(
         return false;
       }
 
+      const account = transaction
+        .select()
+        .from(users)
+        .where(eq(users.id, issuance.session.userId))
+        .get();
+      if (
+        !account ||
+        account.accessState !== "active" ||
+        account.keyLoginEnabled ||
+        account.authenticationVersion !== issuance.expectedAuthenticationVersion
+      )
+        return false;
       if (issuance.credentialReplacement) {
         transaction
           .update(passwordCredentials)
@@ -69,6 +83,8 @@ export type ActiveSessionRecord = Pick<
 
 export type CredentialRecord = Pick<
   typeof users.$inferSelect,
+  | "keyLoginEnabled"
+  | "authenticationVersion"
   | "accessState"
   | "id"
   | "passwordChangeRequired"
@@ -93,10 +109,7 @@ export function findActiveSessionByTokenHash(
     .from(sessions)
     .innerJoin(users, eq(users.id, sessions.userId))
     .where(
-      and(
-        eq(sessions.tokenHash, tokenHash),
-        eq(users.accessState, "active"),
-      ),
+      and(eq(sessions.tokenHash, tokenHash), eq(users.accessState, "active")),
     )
     .get();
 }
@@ -107,6 +120,8 @@ export function findCredentialByUsername(
 ): CredentialRecord | undefined {
   return database
     .select({
+      keyLoginEnabled: users.keyLoginEnabled,
+      authenticationVersion: users.authenticationVersion,
       accessState: users.accessState,
       id: users.id,
       passwordChangeRequired: users.passwordChangeRequired,
@@ -115,10 +130,7 @@ export function findCredentialByUsername(
       usernameNormalized: users.usernameNormalized,
     })
     .from(users)
-    .innerJoin(
-      passwordCredentials,
-      eq(passwordCredentials.userId, users.id),
-    )
+    .innerJoin(passwordCredentials, eq(passwordCredentials.userId, users.id))
     .where(eq(users.usernameNormalized, usernameNormalized))
     .get();
 }
@@ -158,6 +170,7 @@ export function replacePasswordAndSessions(
       .where(eq(sessions.userId, replacement.userId))
       .run();
     transaction.insert(sessions).values(replacement.nextSession).run();
+    invalidateAccountProofs(transaction, replacement.userId);
     return true;
   });
 }
@@ -198,6 +211,7 @@ export function resetMemberPasswordAndSessions(
         .where(eq(users.id, target.id))
         .run();
       transaction.delete(sessions).where(eq(sessions.userId, target.id)).run();
+      invalidateAccountProofs(transaction, target.id);
       return true;
     },
     { behavior: "immediate" },

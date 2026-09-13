@@ -1,5 +1,4 @@
-import { and, eq } from "drizzle-orm";
-
+import { isAccountSetupComplete } from "../database/account-setup.server";
 import type { ApplicationDatabaseClient } from "../database/database.server";
 import { goalVersions, userPreferences } from "../database/schema.server";
 import { localDateAt, type SetupSubmission } from "./validation";
@@ -21,27 +20,10 @@ export class GoalSetupService {
   }
 
   isComplete(userId: number): boolean {
-    return Boolean(
-      this.#database
-        .select({ userId: userPreferences.userId })
-        .from(userPreferences)
-        .innerJoin(
-          goalVersions,
-          and(
-            eq(goalVersions.userId, userPreferences.userId),
-            eq(goalVersions.userId, userId),
-          ),
-        )
-        .where(eq(userPreferences.userId, userId))
-        .limit(1)
-        .get(),
-    );
+    return isAccountSetupComplete(this.#database, userId);
   }
 
-  completeInitial(
-    userId: number,
-    setup: SetupSubmission,
-  ): CompleteSetupResult {
+  completeInitial(userId: number, setup: SetupSubmission): CompleteSetupResult {
     const now = this.#now();
     const createdAt = now.toISOString();
     const effectiveDate = localDateAt(now, setup.timeZone);
@@ -62,8 +44,7 @@ export class GoalSetupService {
           .insert(goalVersions)
           .values({
             calorieTargetMilliKcal: setup.calorieTargetMilliKcal,
-            carbohydrateTargetMilligrams:
-              setup.carbohydrateTargetMilligrams,
+            carbohydrateTargetMilligrams: setup.carbohydrateTargetMilligrams,
             createdAt,
             effectiveDate,
             fatTargetMilligrams: setup.fatTargetMilligrams,

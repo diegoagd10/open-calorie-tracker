@@ -36,6 +36,8 @@ describe("static route contracts", () => {
       { file: "./routes/home.tsx", index: true },
       { children: undefined, file: "./routes/catalog-notifications.ts", path: "catalog-notifications" },
       { children: undefined, file: "./routes/photo-analysis.ts", path: "photo-analysis" },
+      { children: undefined, file: "./routes/key-ceremony.ts", path: "key-ceremony" },
+      { children: undefined, file: "./routes/settings.security.tsx", path: "settings/security" },
       { children: undefined, file: "./routes/login.tsx", path: "login" },
       { children: undefined, file: "./routes/logout.tsx", path: "logout" },
       { children: undefined, file: "./routes/register.tsx", path: "register" },

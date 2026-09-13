@@ -57,13 +57,13 @@ export function SettingsDestinations({
             <span aria-hidden="true">›</span>
           </Link>
         ) : null}
-        <Link className={styles.accountAccessRow} to="/account/password">
+        <Link className={styles.accountAccessRow} to="/settings/security">
           <span className={styles.accountAccessIcon} aria-hidden="true">
             ◇
           </span>
           <span>
             <strong>Account security</strong>
-            <small>Change your password and rotate active sessions.</small>
+            <small>Manage your password and key sign-in.</small>
           </span>
           <span aria-hidden="true">›</span>
         </Link>

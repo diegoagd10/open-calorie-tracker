@@ -52,6 +52,7 @@
           "app/users.module.css"
         ]
       },
+      { "name": "browser-auth", "patterns": ["app/auth/**/*.client.ts"] },
       {
         "name": "auth",
         "patterns": [
@@ -126,6 +127,7 @@
         "from": "web",
         "allow": [
           "auth",
+          "browser-auth",
           "catalog",
           "catalog-management",
           "database",
@@ -139,6 +141,7 @@
         ]
       },
       { "from": "auth", "allow": ["database", "server"] },
+      { "from": "browser-auth", "allow": [] },
       { "from": "catalog", "allow": ["server", "database", "catalog-management"] },
       { "from": "database", "allow": [], "allowTypeOnly": ["catalog", "catalog-management"] },
       { "from": "catalog-management", "allow": ["database", "catalog"] },
@@ -184,6 +187,7 @@
     },
     "calls": {
       "forbidden": [
+        { "from": "browser-auth", "callee": ["fs.*", "child_process.*", "process.exit", "better-sqlite3", "better-sqlite3.*", "drizzle-orm.*"] },
         {
           "from": "web",
           "callee": [

@@ -37,3 +37,7 @@ export function effectiveRequestPolicy(): RequestPolicy {
     origin: applicationOrigin(),
   };
 }
+
+export function enrollmentPreviewEnabled(): boolean {
+  return process.env.WEBAUTHN_ENROLLMENT_PREVIEW === "1";
+}

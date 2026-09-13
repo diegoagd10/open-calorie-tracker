@@ -4,6 +4,8 @@ export default [
   index("./routes/home.tsx"),
   route("catalog-notifications", "./routes/catalog-notifications.ts"),
   route("photo-analysis", "./routes/photo-analysis.ts"),
+  route("key-ceremony", "./routes/key-ceremony.ts"),
+  route("settings/security", "./routes/settings.security.tsx"),
   route("login", "./routes/login.tsx"),
   route("logout", "./routes/logout.tsx"),
   route("register", "./routes/register.tsx"),

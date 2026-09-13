@@ -12,8 +12,16 @@ import { effectiveRequestPolicy } from "../runtime.server";
 
 function cookiePolicy() {
   return effectiveRequestPolicy().entry === "lan"
-    ? { sessionName: "calorie_lan_session", csrfName: "calorie_lan_auth_csrf", secure: false }
-    : { sessionName: "__Host-calorie_session", csrfName: "__Host-calorie_auth_csrf", secure: true };
+    ? {
+        sessionName: "calorie_lan_session",
+        csrfName: "calorie_lan_auth_csrf",
+        secure: false,
+      }
+    : {
+        sessionName: "__Host-calorie_session",
+        csrfName: "__Host-calorie_auth_csrf",
+        secure: true,
+      };
 }
 
 export function parseCookies(header: string | null): Map<string, string> {
@@ -37,7 +45,9 @@ export function parseCookies(header: string | null): Map<string, string> {
 }
 
 function getSessionToken(request: Request): string | undefined {
-  return parseCookies(request.headers.get("Cookie")).get(cookiePolicy().sessionName);
+  return parseCookies(request.headers.get("Cookie")).get(
+    cookiePolicy().sessionName,
+  );
 }
 
 function getPreAuthenticationCsrfToken(request: Request): string | undefined {
@@ -53,9 +63,7 @@ export function getClientIp(request: Request): string {
 async function authenticateRequest(
   request: Request,
 ): Promise<AuthenticatedSession | undefined> {
-  return getAuthenticationService().authenticate(
-    getSessionToken(request),
-  );
+  return getAuthenticationService().authenticate(getSessionToken(request));
 }
 
 export function getSessionForAccountAccess(
@@ -74,11 +82,18 @@ export async function getSessionForApplicationAccess(
   return session;
 }
 
-export async function requireAdministratorSession(
+export async function requireApplicationSession(
   request: Request,
 ): Promise<AuthenticatedSession> {
   const session = await getSessionForApplicationAccess(request);
   if (!session) throw redirect("/login");
+  return session;
+}
+
+export async function requireAdministratorSession(
+  request: Request,
+): Promise<AuthenticatedSession> {
+  const session = await requireApplicationSession(request);
   if (session.user.role !== "admin") {
     throw new Response("Not Found", { status: 404 });
   }
@@ -129,11 +144,7 @@ function serializePreAuthenticationCsrfCookie(
 }
 
 function serializeClearedPreAuthenticationCsrfCookie(): string {
-  return serializeEntryCookie(
-    cookiePolicy().csrfName,
-    "",
-    new Date(0),
-  );
+  return serializeEntryCookie(cookiePolicy().csrfName, "", new Date(0));
 }
 
 export function loadPreAuthenticationCsrf(request: Request): {
@@ -169,10 +180,7 @@ export function authenticatedSessionHeaders(
 
   const headers = new Headers();
   headers.append("Set-Cookie", serializeSessionCookie(session));
-  headers.append(
-    "Set-Cookie",
-    serializeClearedPreAuthenticationCsrfCookie(),
-  );
+  headers.append("Set-Cookie", serializeClearedPreAuthenticationCsrfCookie());
   return headers;
 }
 
