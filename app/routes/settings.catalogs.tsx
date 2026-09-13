@@ -63,14 +63,14 @@ function OffSnapshotAvailability({ catalog }: { catalog: CatalogInformation }) {
 function CatalogCard({ catalog, csrfToken, provider }: { catalog: CatalogInformation; csrfToken: string; provider: "usda-fdc" | "open-food-facts" }) {
   const off = provider === "open-food-facts";
   const name = off ? "Open Food Facts" : "USDA Foundation";
-  const archiveLabel = off ? "OFF tab-separated CSV GZIP" : "Foundation CSV ZIP";
+  const archiveLabel = "Foundation CSV ZIP";
   const navigation = useNavigation();
   const checkIntent = off ? "check-off-update" : "check-usda-update";
   const checkLabel = off ? "OFF" : "USDA";
   const checking = navigation.formData?.get("intent") === checkIntent;
   return <section className={styles.card} aria-labelledby={`${provider}-heading`}>
         <div className={styles.heading}><h2 id={`${provider}-heading`}>{name}</h2><span className={catalog.installed ? styles.connected : styles.disconnected}>{catalog.installed ? "Installed" : "Not installed"}</span></div>
-        <p>Download the {archiveLabel}, then install it with the terminal command.</p>
+        <p>{off ? "Download the official product JSONL GZIP (recommended for serving nutrition), then install it with the terminal command. Existing tab-separated CSV GZIP imports remain supported." : `Download the ${archiveLabel}, then install it with the terminal command.`}</p>
         <a href={off ? "https://world.openfoodfacts.org/data" : "https://fdc.nal.usda.gov/download-datasets/"} target="_blank" rel="noreferrer">Official {off ? "OFF" : "USDA"} downloads ↗</a>
         {off ? <p>Open Food Facts data is available under the Open Database License (ODbL). Products without an explicit nutrition basis can be reviewed but cannot be used for calculated logging.</p> : null}
         {catalog.installed ? <div>

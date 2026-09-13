@@ -1,5 +1,5 @@
 import { gzipSync } from "node:zlib";
-import { mkdtemp, rm, stat, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { Readable } from "node:stream";
@@ -13,7 +13,7 @@ import { users, userPreferences } from "../app/database/schema.server";
 import { FoodEntryService } from "../app/food-entry/food-entry.server";
 import { foundationArchive } from "./support/foundation-archive";
 import { LocalUsdaAdapter } from "../app/catalog/local-usda.server";
-import { offArchive, offProduct, offWithBasis } from "./support/off-archive";
+import { offArchive, offProduct, offWithBasis, offJsonlArchive } from "./support/off-archive";
 
 const cleanups: (() => Promise<void>)[] = [];
 afterEach(async () => { for (const cleanup of cleanups.splice(0)) await cleanup(); vi.unstubAllGlobals(); });
@@ -458,4 +458,24 @@ test("the official daily export treats unescaped quotes as literal text, without
   expect(management.read().installed?.foodCount).toBe(2);
   expect((await catalog.lookupBarcode("open-food-facts", offProduct.code)).name).toBe('"Oats with bran');
   expect((await catalog.lookupBarcode("open-food-facts", "0012345678906")).name).toBe('Cereal "quoted"');
+});
+
+
+test("native JSONL serving saves declared totals and survives failed and successful generation replacement", async () => {
+  const { management, catalog, entries, userId, directory } = await setup();
+  const target = JSON.parse(await readFile("tests/fixtures/off-native-serving.json", "utf8")) as unknown;
+  await install(management, offJsonlArchive([target]));
+  const food = await catalog.lookupBarcode("open-food-facts", "643843715887");
+  const input = { provider: food.provider, providerFoodId: food.providerFoodId, catalogGeneration: food.catalogGeneration, foodLogDate: "2026-09-06", idempotencyKey: "native-serving-save", selectedMeasurementId: "serving", quantity: "2" };
+  const saved = await entries.log(userId, input);
+  expect(saved).toMatchObject({ energyMilliKcal: 300_000, proteinMilligrams: 60_000, carbohydrateMilligrams: 8_000, fatMilligrams: 4_000, fiberMilligrams: 2_000, sugarMilligrams: 2_000, sodiumMilligrams: 340 });
+  await expect(new LocalOpenFoodFactsAdapter(management, directory).search("premier protein")).resolves.toMatchObject([{ providerFoodId: food.providerFoodId }]);
+  const installed = management.read().installed;
+  expect(installed).toMatchObject({ archiveFormat: "jsonl" });
+  await install(management, offJsonlArchive([target]).subarray(0, -8));
+  expect(management.read()).toMatchObject({ installed, job: { phase: "failed" } });
+  expect(entries.read(userId, saved.id)).toEqual(saved);
+  await install(management, offArchive([offWithBasis("100g")]));
+  await expect(entries.log(userId, { ...input, idempotencyKey: "stale-native-serving" })).rejects.toThrow("catalog changed");
+  expect(entries.read(userId, saved.id)).toEqual(saved);
 });

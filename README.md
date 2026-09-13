@@ -36,7 +36,8 @@ sources, official downloads and metadata-only update checks.
 3. Download the **Foundation Foods CSV ZIP** from [USDA's official
    downloads](https://fdc.nal.usda.gov/download-datasets/). Keep the ZIP compressed;
    JSON, Branded, FNDDS, SR Legacy and full-dataset archives are unsupported.
-   Download the **product tab-separated CSV GZIP** from [Open Food Facts's
+   Download the **product JSONL GZIP** (recommended for source-backed serving
+   nutrition; tab-separated CSV GZIP remains supported) from [Open Food Facts's
    official data page](https://world.openfoodfacts.org/data); keep the `.gz`
    compressed. Place each archive in a non-empty, readable regular file (no
    symlinks), visible at the same absolute path to both command and server.
@@ -44,7 +45,7 @@ sources, official downloads and metadata-only update checks.
 
 ```sh
 pnpm catalog:import:usda -- /absolute/path/to/Foundation.zip
-pnpm catalog:import:off -- /absolute/path/to/en.openfoodfacts.org.products.csv.gz
+pnpm catalog:import:off -- /absolute/path/to/openfoodfacts-products.jsonl.gz
 ```
 
 For Docker Compose, download into an `imports/` subdirectory of the host
@@ -54,7 +55,7 @@ container paths, rather than the host's Downloads path:
 
 ```sh
 docker compose exec -T application pnpm catalog:import:usda -- /app/data/imports/Foundation.zip
-docker compose exec -T application pnpm catalog:import:off -- /app/data/imports/en.openfoodfacts.org.products.csv.gz
+docker compose exec -T application pnpm catalog:import:off -- /app/data/imports/openfoodfacts-products.jsonl.gz
 ```
 
 For another container manager, use `docker exec <application-container>` with

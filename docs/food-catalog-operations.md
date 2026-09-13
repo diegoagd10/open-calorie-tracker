@@ -32,7 +32,7 @@ setup. Follow the [README terminal workflow](../README.md#install-food-catalogs-
 to download supported official archives, build the command artifacts, start the
 application, and install them from server/container-visible regular files.
 USDA accepts the official Foundation **CSV ZIP**; Open Food Facts accepts the
-official product **tab-separated CSV GZIP**. Browser archive requests are rejected.
+official product **JSONL GZIP** (recommended for serving nutrition) or supported **tab-separated CSV GZIP**. Browser archive requests are rejected.
 Either source can be installed first, and the same command deliberately replaces
 or reimports a source independently. A missing source is identified in search.
 
@@ -66,11 +66,13 @@ management/acknowledgement mutations. Food Catalogs remains administrator-only.
 | --- | ---: | --- |
 | `CATALOG_MAX_UPLOAD_BYTES` | 64 MiB | USDA compressed archive limit |
 | `CATALOG_MAX_EXPANDED_BYTES` | 256 MiB | USDA extracted tables and staged database limit |
-| `OFF_CATALOG_MAX_UPLOAD_BYTES` | 4 GiB | OFF compressed archive limit |
-| `OFF_CATALOG_MAX_EXPANDED_BYTES` | 32 GiB | OFF decompressed stream and staged database limit |
+| `OFF_CATALOG_MAX_UPLOAD_BYTES` | 16 GiB | OFF compressed archive limit |
+| `OFF_CATALOG_MAX_EXPANDED_BYTES` | 96 GiB | OFF decompressed stream limit |
+| `OFF_CATALOG_MAX_DATABASE_BYTES` | 32 GiB | OFF staged SQLite page limit |
+| `OFF_CATALOG_MAX_DOCUMENT_BYTES` | 8 MiB | Individual JSONL document limit |
 
 At the defaults, a USDA import can require up to 576 MiB free. An OFF import
-reserves up to 36 GiB beyond storage already occupied by the current generation.
+reserves up to 80 GiB beyond storage already occupied by the current generation.
 During replacement, retain capacity for the application database, current
 catalog, staged catalog, a staged compressed archive and the operator's downloaded
 file, plus filesystem overhead. The downloaded input can consume additional space
@@ -130,7 +132,7 @@ suite:
 USDA_LOCAL_ARCHIVE=/absolute/path/to/Foundation.zip \
   pnpm exec vitest run tests/local-usda-scale.test.ts
 
-OFF_LOCAL_ARCHIVE=/absolute/path/to/en.openfoodfacts.org.products.csv.gz \
+OFF_LOCAL_ARCHIVE=/home/dagd/Downloads/openfoodfacts-products.jsonl.gz \
   pnpm exec vitest run tests/local-off-scale.test.ts
 ```
 

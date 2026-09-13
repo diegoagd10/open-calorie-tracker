@@ -8,12 +8,14 @@ import { Worker } from "node:worker_threads";
 import { OffArchiveChecksum } from "./off-archive-checksum.server";
 import { matchOffSnapshot, offUpdateStatus, type OffSnapshotMetadata, type OffSourceTransport } from "./off-snapshot-source.server";
 import type { ApplicationDatabaseClient } from "../database/database.server";
+import type { ImportMessage } from "./import-contract";
 import { catalogGenerationIsReadable } from "../database/catalog-generation-validation.server";
 import { acknowledgeCatalogOutcome, readCatalogOutcomes, claimCatalogInstallation, readCatalogState, readCatalogUpdateCheck, saveCatalogState, saveCatalogUpdateCheck } from "../database/catalog-state.server";
 
 export type ImportPhase = "uploading" | "queued" | "validating" | "importing" | "indexing" | "activating" | "succeeded" | "failed" | "interrupted";
 export type CatalogImportJob = {
   id: string; filename: string; phase: ImportPhase; receivedBytes: number;
+  usableNutritionRecords?: number;
   processedRecords: number; importedRecords?: number; rejectedRecords?: number;
   exclusions: Record<string, number>; error: string | null;
   startedAt: string; updatedAt: string;
@@ -25,6 +27,8 @@ export type CatalogImportJob = {
 export type InstalledCatalog = {
   generation: string; filename: string; sha256: string; foodCount: number;
   databaseBytes?: number;
+  archiveFormat?: "csv" | "jsonl";
+  expandedBytes?: number;
   installedAt: string; publicationDateRange: { earliest: string; latest: string };
   sourceDateRange?: { earliest: string | null; latest: string | null };
   sourceRelease?: Omit<FoundationReleaseMetadata, "archiveUrl">;
@@ -62,6 +66,8 @@ export type CatalogManagementOptions = {
   workerPath: string;
   maxUploadBytes?: number;
   maxExpandedBytes?: number;
+  maxDatabaseBytes?: number;
+  maxDocumentBytes?: number;
   sourceTransport?: CatalogSourceTransport;
   offSourceTransport?: OffSourceTransport;
   now?: () => Date;
@@ -115,8 +121,10 @@ export class CatalogManagement {
     const off = options.provider === "open-food-facts";
     this.#options = {
       provider: "usda-fdc",
-      maxUploadBytes: (off ? 4096 : 64) * 1024 * 1024,
-      maxExpandedBytes: (off ? 32768 : 256) * 1024 * 1024,
+      maxUploadBytes: (off ? 16384 : 64) * 1024 * 1024,
+      maxExpandedBytes: (off ? 98304 : 256) * 1024 * 1024,
+      maxDatabaseBytes: options.maxExpandedBytes ?? (off ? 32768 : 256) * 1024 * 1024,
+      maxDocumentBytes: 8 * 1024 * 1024,
       sourceTransport: { latestFoundationRelease: async () => null },
       offSourceTransport: unavailableOffSource,
       now: () => new Date(),
@@ -167,13 +175,21 @@ export class CatalogManagement {
   async checkForUpdate(options: { force?: boolean } = {}): Promise<void> {
     const now = this.#options.now();
     const cached = readCatalogUpdateCheck(this.#database, this.#options.provider);
-    if (!options.force && cached && now.getTime() - Date.parse(cached.checkedAt) < this.#options.updateCheckCacheMs) return;
+    if (!options.force && this.#sameUpdateFormat(cached) && cached && now.getTime() - Date.parse(cached.checkedAt) < this.#options.updateCheckCacheMs) return;
     if (this.#checking) return this.#checking;
     const checking = this.#performUpdateCheck(now);
     this.#checking = checking;
     try { await checking; } finally { if (this.#checking === checking) this.#checking = undefined; }
   }
 
+  #installedOffFormat() {
+    const installed = this.read().installed;
+    return installed?.archiveFormat ?? (installed ? "csv" : "jsonl");
+  }
+  #sameUpdateFormat(cached: CatalogUpdateCheck | undefined) {
+    if (this.#options.provider !== "open-food-facts" || !this.read().installed || !cached?.availableSnapshot) return true;
+    return (cached.availableSnapshot.format ?? "csv") === this.#installedOffFormat();
+  }
   async #performUpdateCheck(now: Date): Promise<void> {
     const checkedAt = now.toISOString();
     if (this.#options.provider === "open-food-facts") {
@@ -195,9 +211,10 @@ export class CatalogManagement {
 
   async #performOffCheck(checkedAt: string): Promise<void> {
     try {
-      const availableSnapshot = await this.#options.offSourceTransport.latestSnapshot();
+      const format = this.#installedOffFormat();
+      const availableSnapshot = await this.#options.offSourceTransport.latestSnapshot(format);
       const state = this.read();
-      const matched = matchOffSnapshot(availableSnapshot, state.installed?.archiveCrc64nvme, state.installed?.archiveByteLength);
+      const matched = this.#matchInstalledSnapshot(availableSnapshot, state.installed);
       if (state.installed && !state.installed.sourceSnapshot && matched) {
         state.installed = { ...state.installed, sourceSnapshot: matched };
         this.#save({ installed: state.installed, job: state.job, retiring: state.retiring });
@@ -209,6 +226,10 @@ export class CatalogManagement {
     }
   }
 
+  #matchInstalledSnapshot(available: OffSnapshotMetadata | null, installed: InstalledCatalog | null) {
+    if (!installed) return undefined;
+    return matchOffSnapshot(available, installed.archiveCrc64nvme, installed.archiveByteLength, installed.archiveFormat ?? "csv");
+  }
   #validRelease(release: FoundationReleaseMetadata | null): FoundationReleaseMetadata | null {
     try {
       if (!release || !validDeclaredRelease(release) || !validArchiveDescriptor(release) || !trustedArchiveUrl(release.archiveUrl)) return null;
@@ -270,9 +291,9 @@ export class CatalogManagement {
   }
 
   #startWorker(id: string, archivePath: string, sha256: string) {
-    const worker = new Worker(this.#options.workerPath, { workerData: { provider: this.#options.provider, archivePath, directory: this.#options.directory, generation: id, maxExpandedBytes: this.#options.maxExpandedBytes }, execArgv: [] });
+    const worker = new Worker(this.#options.workerPath, { ...(this.#options.provider === "open-food-facts" ? { resourceLimits: { maxOldGenerationSizeMb: 512 } } : {}), workerData: { provider: this.#options.provider, archivePath, directory: this.#options.directory, generation: id, maxExpandedBytes: this.#options.maxExpandedBytes, maxDatabaseBytes: this.#options.maxDatabaseBytes, maxDocumentBytes: this.#options.maxDocumentBytes }, execArgv: [] });
     this.#worker = worker;
-    let result: { foodCount: number; publicationDateRange: InstalledCatalog["publicationDateRange"] } | undefined;
+    let result: ImportMessage["result"];
     worker.on("message", (message: { progress?: Partial<CatalogImportJob>; result?: typeof result; error?: string }) => {
       if (message.progress) this.#updateJob(message.progress);
       if (message.result) result = message.result;
@@ -289,7 +310,7 @@ export class CatalogManagement {
     return !job.error && !terminal.has(job.phase);
   }
 
-  async #finish(id: string, sha256: string, result: { foodCount: number; publicationDateRange: InstalledCatalog["publicationDateRange"] } | undefined) {
+  async #finish(id: string, sha256: string, result: ImportMessage["result"]) {
     const state = this.read();
     try {
       if (result && this.#canActivate(state.job, id)) {
@@ -306,7 +327,7 @@ export class CatalogManagement {
     }
   }
 
-  async #activate(id: string, sha256: string, result: { foodCount: number; publicationDateRange: InstalledCatalog["publicationDateRange"] }, state: CatalogState) {
+  async #activate(id: string, sha256: string, result: NonNullable<ImportMessage["result"]>, state: CatalogState) {
     this.#updateJob({ phase: "activating" });
     const generationPath = path.join(this.#options.directory, `${id}.sqlite`);
     await chmod(generationPath, 0o444);
@@ -315,7 +336,9 @@ export class CatalogManagement {
     await this.#cleanup(id, false);
     this.#worker = undefined;
     const now = new Date().toISOString();
-    const installed = { generation: id, filename: state.job!.filename, sha256, databaseBytes: generationFile.size, installedAt: now, ...result, ...this.#installedSourceMetadata(state.job!) };
+    const source = this.#installedSourceMetadata(state.job!);
+    if (source.sourceSnapshot && (source.sourceSnapshot.format ?? "csv") !== (result.archiveFormat ?? "csv")) delete source.sourceSnapshot;
+    const installed = { generation: id, filename: state.job!.filename, sha256, databaseBytes: generationFile.size, installedAt: now, ...result, ...source };
     this.#save({ installed, job: { ...this.read().job!, phase: "activating", updatedAt: now }, retiring: state.installed ?? undefined });
     this.#reconcileUpdateCheck(installed);
     await this.#completeHandoff();
@@ -407,7 +430,7 @@ export class CatalogManagement {
     return catalogGenerationIsReadable(this.#options.directory, generation.generation, this.#options.provider);
   }
   #requiredFreeBytes(uploadBytes: number | undefined) {
-    const stagedBytes = this.#options.maxExpandedBytes * (this.#options.provider === "usda-fdc" ? 2 : 1);
+    const stagedBytes = this.#options.provider === "usda-fdc" ? this.#options.maxExpandedBytes * 2 : this.#options.maxDatabaseBytes * 2;
     return stagedBytes + (uploadBytes ?? this.#options.maxUploadBytes);
   }
   #handoffReady(state: CatalogState) {

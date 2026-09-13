@@ -25,7 +25,7 @@ test("each catalog card shows availability, official downloads and metadata cont
   const { renderer, card } = await render();
   const off = card("open-food-facts"); const usda = card("usda-fdc");
   expect(text(renderer.root)).toContain("Shared reference foods for local search and logging.");
-  expect(text(off)).toContain("Open Food FactsNot installedDownload the OFF tab-separated CSV GZIP, then install it with the terminal command.");
+  expect(text(off)).toContain("Open Food FactsNot installedDownload the official product JSONL GZIP (recommended for serving nutrition), then install it with the terminal command. Existing tab-separated CSV GZIP imports remain supported.");
   expect(text(off)).toContain("Open Database License (ODbL)");
   expect(text(off)).toContain("Saved Food Entries keep their original nutrition and measurements.");
   expect(off.findByType("a").props).toMatchObject({ href: "https://world.openfoodfacts.org/data", target: "_blank", rel: "noreferrer" });

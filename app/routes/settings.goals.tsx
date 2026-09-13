@@ -6,10 +6,9 @@ import { AppNavigation } from "../app-navigation";
 import { SettingsDestinations } from "../settings-destinations";
 import {
   getSessionForApplicationAccess,
-  requireValidOrigin,
-  serializeClearedSessionCookie,
+  getApplicationMutationSession,
+  readApplicationMutationForm,
 } from "../auth/http.server";
-import { getAuthenticationService } from "../auth/runtime.server";
 import shellStyles from "../food-log.module.css";
 import styles from "../goals.module.css";
 import {
@@ -117,23 +116,10 @@ export async function loader({ request }: Route.LoaderArgs) {
 }
 
 export async function action({ request }: Route.ActionArgs) {
-  requireValidOrigin(request);
-  const session = await getSessionForApplicationAccess(request);
-  if (!session) {
-    return redirect("/login", {
-      headers: { "Set-Cookie": serializeClearedSessionCookie() },
-    });
-  }
+  const session = await getApplicationMutationSession(request);
+  if (session instanceof Response) return session;
 
-  const formData = await request.formData();
-  if (
-    !getAuthenticationService().verifyCsrfToken(
-      session.token,
-      String(formData.get("csrfToken") ?? ""),
-    )
-  ) {
-    throw new Response("CSRF token rejected.", { status: 403 });
-  }
+  const formData = await readApplicationMutationForm(request, session);
 
   const service = getGoalVersionService();
   const requestedEffectiveDate = new URL(request.url).searchParams.get(

@@ -13,7 +13,7 @@ import { promisify } from "node:util";
 import { afterAll, beforeAll, expect, test } from "vitest";
 
 import { requestHttp, waitForHttpResponse } from "./support/http";
-import { offArchive, offWithBasis } from "./support/off-archive";
+import { offArchive, offWithBasis, offJsonlArchive } from "./support/off-archive";
 
 const executeFile = promisify(execFile);
 const temporaryDirectories: string[] = [];
@@ -164,12 +164,12 @@ test("the Tunnel listener resolves HTTPS mutations without trusting forwarded pr
   expect(await response.text()).toContain("CSRF token rejected.");
 });
 
-test("the compiled OFF command imports through the running application", async () => {
+test.each(["csv", "jsonl"])("the compiled OFF command imports %s through the running application", async format => {
   const directory = await mkdtemp(path.join(tmpdir(), "calory-command-"));
   temporaryDirectories.push(directory);
   const catalogDirectory = path.join(directory, "catalogs");
-  const archivePath = path.join(directory, "products.csv.gz");
-  await writeFile(archivePath, offArchive([offWithBasis("100g")]));
+  const archivePath = path.join(directory, `products.${format}.gz`);
+  await writeFile(archivePath, format === "csv" ? offArchive([offWithBasis("100g")]) : offJsonlArchive([{ code: "0643843715887", product_name: "Native serving", nutriments: { "energy-kcal_serving": 150, proteins_serving: 30 } }]));
   const port = await availablePort();
   const environment = {
     ...process.env,
@@ -177,6 +177,7 @@ test("the compiled OFF command imports through the running application", async (
     CATALOG_DIRECTORY: catalogDirectory,
     DATABASE_PATH: path.join(directory, "application.sqlite"),
     NODE_ENV: "production",
+    OFF_CATALOG_MAX_DATABASE_BYTES: String(16 * 1024 * 1024),
     OFF_CATALOG_MAX_EXPANDED_BYTES: String(16 * 1024 * 1024),
     OFF_CATALOG_MAX_UPLOAD_BYTES: String(2 * 1024 * 1024),
     PORT: String(port),
