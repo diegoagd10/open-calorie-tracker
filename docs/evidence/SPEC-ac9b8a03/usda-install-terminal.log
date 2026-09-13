@@ -1,0 +1,5 @@
+$ node build/catalog-command/import-catalog.js usda-fdc -- /home/dagd/Downloads/FoodData_Central_foundation_food_csv_2026-04-30.zip
+USDA Foundation: submitting /home/dagd/Downloads/FoodData_Central_foundation_food_csv_2026-04-30.zip (3,825,741 bytes)
+USDA Foundation: queued
+USDA Foundation: importing; processed=258,000; imported=469; rejected=87,521
+USDA Foundation: succeeded; 469 foods installed

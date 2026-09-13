@@ -1,15 +1,19 @@
+import { redirect } from "react-router";
 import type { Route } from "./+types/catalog-notifications";
-import { requireAdministratorSession, requireValidOrigin } from "../auth/http.server";
+import { getSessionForApplicationAccess, requireAdministratorSession, requireValidOrigin } from "../auth/http.server";
 import { getAuthenticationService } from "../auth/runtime.server";
 import { getCatalogManagement } from "../catalog-management/runtime.server";
 
 const privateHeaders = { "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" };
 export async function loader({ request }: Route.LoaderArgs) {
-  const session = await requireAdministratorSession(request);
+  const session = await getSessionForApplicationAccess(request);
+  if (!session) throw redirect("/login");
   const outcomes = [getCatalogManagement(), getCatalogManagement("open-food-facts")]
     .flatMap(catalog => catalog.outcomes())
     .sort((a, b) => b.completedAt.localeCompare(a.completedAt) || a.jobId.localeCompare(b.jobId));
-  const notifications = { csrfToken: session.csrfToken, outcomes };
+  const notifications = session.user.role === "admin"
+    ? { csrfToken: session.csrfToken, outcomes }
+    : { outcomes: outcomes.filter(outcome => outcome.phase === "succeeded").map(({ provider, jobId, phase, completedAt, operation }) => ({ provider, jobId, phase, completedAt, operation })) };
   return Response.json(notifications, { headers: privateHeaders });
 }
 export async function action({ request }: Route.ActionArgs) {

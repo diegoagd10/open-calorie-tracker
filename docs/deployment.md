@@ -96,7 +96,7 @@ change does not alter live Tunnel or firewall configuration.
    verify authentication or visitor IP delivery.
 3. In real desktop and phone browsers, register/setup on a new database as
    appropriate, then independently sign in at the public and LAN URLs. Perform
-   food-log, goals, catalog upload/notifications, AI settings, member management,
+   food-log, goals, terminal catalog imports/notifications, AI settings, member management,
    password and photo actions with appropriate fixtures/permissions. Logout in
    one browser/entry must leave another independently logged-in session active.
 4. Confirm public cookies retain `__Host-calorie_session` and
@@ -197,7 +197,7 @@ use a trusted loopback tunnel or provision Pi's auth file on the application hos
 The default Compose configuration persists the connection at
 `DATA_PATH/pi/auth.json` on the host. Preserve the existing `DATA_PATH` when
 updating. No extra AI variables are required for the default provider and model;
-Install USDA Foundation in **Settings → Food Catalogs** for local food search, photo evidence, and logging; see [installation and source policy](local-usda-catalog.md). No USDA API key is used at runtime.
+Install USDA Foundation with the [terminal workflow](../README.md#install-food-catalogs-from-the-terminal) for local food search, photo evidence, and logging; Food Catalogs shows availability and update checks. No USDA API key is used at runtime.
 See [photo-analysis.md](photo-analysis.md#operator-setup) for reconnect,
 disconnect, and provider prerequisites.
 
@@ -209,10 +209,10 @@ Catalog imports run inside the single application process; there is no separate 
 
 1. A job interrupted before publication keeps the prior catalog active and removes its partial upload, staging data, database, and journal.
 2. A job interrupted after publication confirms the replacement database's recorded size and provider schema before removing the prior generation. If confirmation fails, the prior complete generation is restored.
-3. Select the same archive again with **Retry USDA Foundation installation** or **Retry Open Food Facts installation**. Upload bytes cannot be resumed.
-4. If the page reports that no prior catalog is available, restore the application database and catalog directory from the same backup or perform a fresh catalog installation.
+3. Rerun `pnpm catalog:import:usda -- PATH` or `pnpm catalog:import:off -- PATH` on the running server with the full server-visible archive, following the [README workflow](../README.md#install-food-catalogs-from-the-terminal). Partial imports cannot be resumed.
+4. If Food Catalogs shows the source as not installed, restore the application database and catalog directory from the same backup or perform a fresh catalog installation.
 
-Do not delete UUID-named catalog files by hand. Startup removes abandoned artifacts while preserving both providers' active, retiring, and in-progress generations. A failed/interrupted catalog job does not rewrite Food Entries. See the [USDA](local-usda-catalog.md#operations-and-verification) and [OFF](local-off-catalog.md#resources-and-operations) guides for archive formats, free-space calculations, proxy limits, and source-specific errors.
+Do not delete UUID-named catalog files by hand. Startup removes abandoned artifacts while preserving both providers' active, retiring, and in-progress generations. A failed/interrupted catalog job does not rewrite Food Entries. See the [USDA](local-usda-catalog.md#operations-and-verification) and [OFF](local-off-catalog.md#resources-and-operations) guides for archive formats, free-space calculations, archive limits, and source-specific errors.
 
 Use a short maintenance window:
 

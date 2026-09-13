@@ -1,0 +1,4 @@
+$ node build/catalog-command/import-catalog.js open-food-facts -- /tmp/catalog-axi-demo.fi5f6A/off-demo.csv.gz
+Open Food Facts: submitting /tmp/catalog-axi-demo.fi5f6A/off-demo.csv.gz (359 bytes)
+Open Food Facts import failed: Not enough disk space for Open Food Facts import. Free space and retry.
+[ELIFECYCLE] Command failed with exit code 1.

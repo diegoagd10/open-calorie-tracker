@@ -31,7 +31,7 @@ export function SettingsDestinations({
         {isAdministrator && active !== "catalogs" ? (
           <Link className={styles.accountAccessRow} to="/settings/catalogs">
             <span className={styles.accountAccessIcon} aria-hidden="true">▤</span>
-            <span><strong>Food Catalogs</strong><small>Install USDA foods for local search and logging.</small></span>
+            <span><strong>Food Catalogs</strong><small>View installed catalogs and check for updates.</small></span>
             <span aria-hidden="true">›</span>
           </Link>
         ) : null}

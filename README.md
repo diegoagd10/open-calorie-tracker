@@ -20,9 +20,67 @@ coaching, judgment, or gamification.
 For production configuration, deployment, updates, and backups, follow the
 [production deployment guide](docs/deployment.md).
 
-Local USDA and Open Food Facts installation, storage, recovery, limits, and
-end-to-end verification are covered in the [food catalog operations
-guide](docs/food-catalog-operations.md).
+## Install food catalogs from the terminal
+
+Catalog installation is command-only. Food Catalogs in Settings shows installed
+sources, official downloads and metadata-only update checks.
+
+1. Use Node 24 and the pinned pnpm. Run `pnpm install --frozen-lockfile` and
+   `pnpm build` to build the server, import worker and command artifacts.
+2. Start the application with `pnpm start` and your deployment configuration.
+   In another terminal, use the same `DATABASE_PATH`, `CATALOG_DIRECTORY` (if
+   overridden), and `PORT`, from the same application working directory. The
+   command reads the running server's private `.local-import-token` in the
+   catalog directory and uses its loopback-only authenticated API. No food API
+   key or browser session is needed; the command must run on the server host.
+3. Download the **Foundation Foods CSV ZIP** from [USDA's official
+   downloads](https://fdc.nal.usda.gov/download-datasets/). Keep the ZIP compressed;
+   JSON, Branded, FNDDS, SR Legacy and full-dataset archives are unsupported.
+   Download the **product tab-separated CSV GZIP** from [Open Food Facts's
+   official data page](https://world.openfoodfacts.org/data); keep the `.gz`
+   compressed. Place each archive in a non-empty, readable regular file (no
+   symlinks), visible at the same absolute path to both command and server.
+4. Run either command, independently:
+
+```sh
+pnpm catalog:import:usda -- /absolute/path/to/Foundation.zip
+pnpm catalog:import:off -- /absolute/path/to/en.openfoodfacts.org.products.csv.gz
+```
+
+For Docker Compose, download into an `imports/` subdirectory of the host
+`DATA_PATH` bind mount and make the files readable by the container's `node`
+user. The image already includes the build and application configuration. Use
+container paths, rather than the host's Downloads path:
+
+```sh
+docker compose exec -T application pnpm catalog:import:usda -- /app/data/imports/Foundation.zip
+docker compose exec -T application pnpm catalog:import:off -- /app/data/imports/en.openfoodfacts.org.products.csv.gz
+```
+
+For another container manager, use `docker exec <application-container>` with
+those same commands and container-visible paths. Installing from a terminal
+outside the container does not make a host file visible inside it.
+
+Run the same command with a newer archive or the same archive for deliberate
+replacement/reimport. Progress and detailed errors appear in the terminal;
+exit status is zero only for a persisted successful activation and nonzero for
+failure, interruption or command/connection errors. Once accepted, backend work
+continues independently of the command process. Losing the command connection
+is not proof of failure: check catalog availability and server diagnostics before
+retrying. On server restart, unfinished pre-activation work is interrupted and
+partial artifacts are removed; run the command again with the full archive.
+A published handoff is validated and recovered using the existing lifecycle.
+
+All connected signed-in clients receive source-specific installed/updated
+toasts on any application page. Failure/interruption toasts are administrator-only
+and direct the operator back to the terminal. Each browser tab deduplicates its
+own displayed outcomes across navigation/refresh; one client's dismissal or
+shared acknowledgement of success does not hide success from another client.
+Prior valid catalogs remain available during replacement and after a failed
+replacement; saved Food Entries retain their original nutrition and measurements.
+
+See the [food catalog operations guide](docs/food-catalog-operations.md) for
+storage, capacity, recovery, update uncertainty and end-to-end verification.
 
 Camera barcode scanning requirements and privacy behavior are documented in
 [the camera scanning guide](docs/barcode-scanning.md).

@@ -1,0 +1,4 @@
+$ node build/catalog-command/import-catalog.js open-food-facts -- /tmp/catalog-axi-demo.fi5f6A/off-demo.csv.gz
+Open Food Facts: submitting /tmp/catalog-axi-demo.fi5f6A/off-demo.csv.gz (359 bytes)
+Open Food Facts: queued
+Open Food Facts: succeeded; 1 foods installed

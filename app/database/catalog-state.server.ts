@@ -29,7 +29,7 @@ export function claimCatalogInstallation(database: ApplicationDatabaseClient, jo
     const state = readCatalogState(database, provider);
     if (state.retiring) return "busy";
     if (state.job && !["succeeded", "failed", "interrupted"].includes(state.job.phase)) return "busy";
-    saveCatalogState(database, { installed: state.installed, job }, provider);
+    saveCatalogState(database, { installed: state.installed, job: { ...job, operation: state.installed ? "update" : "install" } }, provider);
     return null;
   }, { behavior: "immediate" });
 }
@@ -47,7 +47,7 @@ function saveTerminalOutcome(database: ApplicationDatabaseClient, state: Omit<Ca
   // Redelivery keeps the original snapshot and shared acknowledgement. Recovery
   // updates this same job's outcome and makes the changed result unread again.
   if (existing && (JSON.parse(existing.value) as CatalogOutcome).phase === job.phase) return;
-  const outcome: CatalogOutcome = { provider, jobId: job.id, filename: job.filename, phase: job.phase, completedAt: job.updatedAt, error: job.error, installed: state.installed, acknowledgedAt: null };
+  const outcome: CatalogOutcome = { provider, jobId: job.id, filename: job.filename, phase: job.phase, completedAt: job.updatedAt, operation: job.operation, error: job.error, installed: state.installed, acknowledgedAt: null };
   const row = { key, value: JSON.stringify(outcome), updatedAt: outcome.completedAt };
   database.insert(applicationMetadata).values(row).onConflictDoUpdate({ target: applicationMetadata.key, set: row }).run();
 }
