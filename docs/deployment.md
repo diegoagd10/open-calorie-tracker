@@ -229,3 +229,28 @@ against a database containing newer migrations.
 
 
 OFF imports recommend the official product JSONL GZIP while preserving existing CSV generations. Defaults allow 16 GiB compressed, 96 GiB expanded, 32 GiB staged SQLite and 8 MiB per JSONL document. Set `OFF_CATALOG_MAX_UPLOAD_BYTES`, `OFF_CATALOG_MAX_EXPANDED_BYTES`, `OFF_CATALOG_MAX_DATABASE_BYTES` and `OFF_CATALOG_MAX_DOCUMENT_BYTES` in the application's environment for future archive growth. Provide up to 80 GiB free for the staged compressed archive, staging and rollback/index work in addition to occupied storage. The expanded archive is streamed without an expanded disk copy. The command submits a container-visible local file path, so public reverse-proxy upload limits do not apply; all application resource/schema/integrity checks remain enforced. See [OFF operations](local-off-catalog.md#resources-and-operations).
+
+## First-key preview
+
+TKT-a82279ff adds the first WebAuthn enrollment and username/key sign-in path.
+Enrollment is off by default: `WEBAUTHN_ENROLLMENT_PREVIEW=1` enables it only for
+an isolated preview installation. Do not enable it on the production stack until
+the parent spec's key management and recovery tickets are complete. The standard
+Compose stack deliberately does not forward this flag. Already enrolled preview
+accounts continue to require their key if the enrollment flag is removed.
+
+Credentials use the exact HTTPS `APPLICATION_URL` origin and its hostname as the
+RP ID. Development at HTTP localhost uses separate credentials; an HTTP LAN IP
+cannot enroll or authenticate a key. Personal security navigation on LAN redirects
+to public HTTPS without transferring session or proof tokens. Password-mode
+accounts retain their existing LAN access. Enabling key login retains the password
+hash, replaces ordinary password login, revokes older public/LAN sessions and
+pending ceremonies, and rotates the verified current session without extending
+its absolute lifetime. Password reset preserves key mode and mandatory password
+replacement; it does not provide a password-login fallback.
+
+Automated verification uses real signed ES256 protocol fixtures, Chromium virtual
+authenticators, and a non-loopback HTTP listener. Actual YubiKey USB/NFC and
+Proton Pass extension/mobile enrollment and sign-in remain required before a
+parent release compatibility claim. Touch-only U2F keys cannot satisfy the required
+user verification. A key's PIN/biometrics is separate from the account password.

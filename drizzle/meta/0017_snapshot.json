@@ -1,8 +1,8 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "5a2c8124-5744-46b8-a447-7e5a05211b1b",
-  "prevId": "a24f959f-0dea-4a95-b979-a7d98afde945",
+  "id": "d95c28f8-c864-418d-8db7-afc8ba1b8c05",
+  "prevId": "5a2c8124-5744-46b8-a447-7e5a05211b1b",
   "tables": {
     "application_metadata": {
       "name": "application_metadata",
@@ -325,7 +325,7 @@
         },
         "food_entries_provider_semantics_check": {
           "name": "food_entries_provider_semantics_check",
-          "value": "(\"food_entries\".\"provider\" = 'usda-fdc'\n          AND \"food_entries\".\"source_data_type\" IN ('Branded', 'Survey (FNDDS)', 'Foundation')\n          AND \"food_entries\".\"authoritative_base_unit\" IN ('g', 'ml')\n          AND \"food_entries\".\"selected_measurement_unit\" IN ('g', 'ml'))\n        OR (\"food_entries\".\"provider\" = 'open-food-facts'\n          AND \"food_entries\".\"source_data_type\" = 'Open Food Facts'\n          AND \"food_entries\".\"selected_measurement_unit\" = \"food_entries\".\"authoritative_base_unit\"\n          AND ((\"food_entries\".\"authoritative_base_unit\" = 'serving' AND \"food_entries\".\"authoritative_base_quantity_microunits\" = 1000000)\n            OR (\"food_entries\".\"authoritative_base_unit\" IN ('g', 'ml') AND \"food_entries\".\"authoritative_base_quantity_microunits\" = 100000000)))\n        OR (\"food_entries\".\"provider\" = 'manual'\n          AND \"food_entries\".\"source_data_type\" = 'User entered'\n          AND \"food_entries\".\"authoritative_base_unit\" = 'serving'\n          AND \"food_entries\".\"selected_measurement_unit\" = 'serving')\n        OR (\"food_entries\".\"provider\" = 'ai-photo'\n          AND \"food_entries\".\"source_data_type\" = 'AI analysis'\n          AND \"food_entries\".\"authoritative_base_unit\" = 'serving'\n          AND \"food_entries\".\"selected_measurement_unit\" = 'serving')"
+          "value": "(\"food_entries\".\"provider\" = 'usda-fdc'\n          AND \"food_entries\".\"source_data_type\" IN ('Branded', 'Survey (FNDDS)', 'Foundation')\n          AND \"food_entries\".\"authoritative_base_unit\" IN ('g', 'ml')\n          AND \"food_entries\".\"selected_measurement_unit\" IN ('g', 'ml'))\n        OR (\"food_entries\".\"provider\" = 'open-food-facts'\n          AND \"food_entries\".\"source_data_type\" = 'Open Food Facts'\n          AND \"food_entries\".\"selected_measurement_unit\" = \"food_entries\".\"authoritative_base_unit\"\n          AND ((\"food_entries\".\"authoritative_base_unit\" = 'serving' AND \"food_entries\".\"authoritative_base_quantity_microunits\" = 1000000)\n            OR (\"food_entries\".\"authoritative_base_unit\" IN ('g', 'ml') AND \"food_entries\".\"authoritative_base_quantity_microunits\" > 0)))\n        OR (\"food_entries\".\"provider\" = 'manual'\n          AND \"food_entries\".\"source_data_type\" = 'User entered'\n          AND \"food_entries\".\"authoritative_base_unit\" = 'serving'\n          AND \"food_entries\".\"selected_measurement_unit\" = 'serving')\n        OR (\"food_entries\".\"provider\" = 'ai-photo'\n          AND \"food_entries\".\"source_data_type\" = 'AI analysis'\n          AND \"food_entries\".\"authoritative_base_unit\" = 'serving'\n          AND \"food_entries\".\"selected_measurement_unit\" = 'serving')"
         },
         "food_entries_positive_quantities_check": {
           "name": "food_entries_positive_quantities_check",

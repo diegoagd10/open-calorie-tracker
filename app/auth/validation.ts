@@ -64,3 +64,29 @@ export const registrationSchema = z
       });
     }
   });
+
+const credentialIdentifier = z.string().regex(/^[A-Za-z0-9_-]+$/).max(1024);
+const encodedClientData = z.string().regex(/^[A-Za-z0-9_-]+$/).max(8192);
+const credentialEnvelope = {
+  id: credentialIdentifier,
+  rawId: credentialIdentifier,
+  type: z.literal("public-key"),
+  clientExtensionResults: z.record(z.string(), z.unknown()),
+};
+export const keyRegistrationResponseSchema = z.object({
+  ...credentialEnvelope,
+  response: z.object({
+    clientDataJSON: encodedClientData,
+    attestationObject: z.string().regex(/^[A-Za-z0-9_-]+$/).max(24_000),
+    transports: z.array(z.string().max(32)).max(8).optional(),
+  }),
+});
+export const keyAssertionResponseSchema = z.object({
+  ...credentialEnvelope,
+  response: z.object({
+    clientDataJSON: encodedClientData,
+    authenticatorData: z.string().regex(/^[A-Za-z0-9_-]+$/).max(8192),
+    signature: z.string().regex(/^[A-Za-z0-9_-]+$/).max(2048),
+    userHandle: z.string().regex(/^[A-Za-z0-9_-]+$/).max(128).optional(),
+  }),
+});

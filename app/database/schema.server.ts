@@ -30,6 +30,9 @@ export const users = sqliteTable(
     })
       .notNull()
       .default(false),
+    keyLoginEnabled: integer("key_login_enabled", { mode: "boolean" }).notNull().default(false),
+    authenticationVersion: integer("authentication_version").notNull().default(0),
+    webauthnUserHandle: text("webauthn_user_handle"),
     createdAt: text("created_at").notNull(),
   },
   (table) => [
@@ -153,13 +156,15 @@ export const goalVersions = sqliteTable(
   ],
 );
 
+function requiredUserId() {
+  return integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" });
+}
+
 export const foodEntries = sqliteTable(
   "food_entries",
   {
     id: integer().primaryKey({ autoIncrement: true }),
-    userId: integer("user_id")
-      .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
+    userId: requiredUserId(),
     foodLogDate: text("food_log_date").notNull(),
     localEventTime: text("local_event_time").notNull(),
     provider: text().notNull(),
@@ -260,9 +265,7 @@ export const waterEvents = sqliteTable(
   "water_events",
   {
     id: integer().primaryKey({ autoIncrement: true }),
-    userId: integer("user_id")
-      .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
+    userId: requiredUserId(),
     foodLogDate: text("food_log_date").notNull(),
     amountMicroliters: integer("amount_microliters").notNull(),
     localEventTime: text("local_event_time").notNull(),
@@ -318,3 +321,32 @@ export const photoAttempts = sqliteTable("photo_attempts", {
   check("photo_attempts_status", sql`${table.status} IN ('active', 'succeeded', 'failed', 'canceled', 'interrupted')`),
   check("photo_attempts_terminal", sql`(${table.status} = 'active' AND ${table.finishedAt} IS NULL) OR (${table.status} != 'active' AND ${table.finishedAt} IS NOT NULL)`),
 ]);
+
+// Mode belongs to the account; credential identifiers are unique across all owners.
+export const webauthnCredentials = sqliteTable("webauthn_credentials", {
+  id: text().primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  publicKey: text("public_key").notNull(),
+  counter: integer().notNull(),
+  revision: integer().notNull().default(0),
+  transports: text({ mode: "json" }).$type<string[]>().notNull(),
+  name: text().notNull(),
+  deviceType: text("device_type", { enum: ["singleDevice", "multiDevice"] }).notNull(),
+  backedUp: integer("backed_up", { mode: "boolean" }).notNull(),
+  createdAt: text("created_at").notNull(),
+  lastUsedAt: text("last_used_at").notNull(),
+}, (table) => [index("webauthn_credentials_owner").on(table.userId)]);
+
+export const webauthnCeremonies = sqliteTable("webauthn_ceremonies", {
+  browserHash: text("browser_hash").primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  purpose: text({ enum: ["register", "enable", "login"] }).notNull(),
+  challenge: text().notNull(),
+  origin: text().notNull(),
+  rpId: text("rp_id").notNull(),
+  authenticationVersion: integer("authentication_version").notNull(),
+  sessionHash: text("session_hash"),
+  stagedCredential: text("staged_credential", { mode: "json" }).$type<typeof webauthnCredentials.$inferSelect>(),
+  name: text().notNull(),
+  expiresAt: text("expires_at").notNull(),
+}, (table) => [index("webauthn_ceremonies_owner").on(table.userId)]);

@@ -281,7 +281,7 @@ test("one mobile Chromium journey verifies the complete private MVP", async ({
   await expect(page).toHaveURL("/");
 
   await page.getByRole("link", { name: "Settings" }).click();
-  await page.getByRole("link", { name: /Account security/ }).click();
+  await page.goto("/account/password");
   await page.getByLabel("Current password").fill(validPassword);
   await page
     .getByLabel("New password", { exact: true })

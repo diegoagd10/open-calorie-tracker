@@ -67,4 +67,4 @@ PRAGMA foreign_keys=ON;--> statement-breakpoint
 CREATE UNIQUE INDEX `food_entries_user_idempotency_unique` ON `food_entries` (`user_id`,`idempotency_key`);--> statement-breakpoint
 CREATE INDEX `food_entries_user_date_order_index` ON `food_entries` (`user_id`,`food_log_date`,`local_event_time`,`created_at`,`id`);
 --> statement-breakpoint
-UPDATE application_metadata SET value = '16', updated_at = '2026-09-13T00:00:00.000Z' WHERE key = 'schema_version';
+UPDATE application_metadata SET value = '17', updated_at = '2026-09-13T20:02:00.000Z' WHERE key = 'schema_version';

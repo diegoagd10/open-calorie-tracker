@@ -1,8 +1,13 @@
+import { AuthenticationService } from "../app/auth/authentication.server";
+import { openApplicationDatabase } from "../app/database/database.server";
+import { GoalSetupService } from "../app/setup/goal-setup.server";
+import { seedAuthenticatedAccount } from "./support/authentication";
+import { authenticator } from "./support/webauthn";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { execFile } from "node:child_process";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import net from "node:net";
-import { tmpdir } from "node:os";
+import { networkInterfaces, tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { afterAll, beforeAll, expect, test } from "vitest";
@@ -344,4 +349,56 @@ test("an accepted IPv6 LAN origin reaches its listener and enforces its authorit
   expect(registration.headers.getSetCookie()[0]).toContain("calorie_lan_auth_csrf=");
   const rejected = await requestHttp(`http://[::1]:${lanPort}/register`, { headers: { Host: `127.0.0.1:${lanPort}` } });
   expect(rejected.status).toBe(421);
+});
+
+
+test("key mode rejects password bypass on a real non-loopback HTTP LAN listener", async () => {
+  const address = Object.values(networkInterfaces()).flat().find((entry) => entry && !entry.internal && entry.family === "IPv4")?.address;
+  if (!address) throw new Error("The LAN boundary test requires a non-loopback IPv4 interface.");
+  const directory = await mkdtemp(path.join(tmpdir(), "key-lan-wire-"));
+  temporaryDirectories.push(directory);
+  const port = await availablePort();
+  const lanPort = await availablePort();
+  const lanUrl = `http://${address}:${lanPort}`;
+  const publicOrigin = "https://calories.example.test";
+  const databasePath = path.join(directory, "application.sqlite");
+  const database = openApplicationDatabase({ databasePath, migrationsFolder: path.resolve("drizzle") });
+  const savedOrigin = process.env.APPLICATION_URL;
+  const savedPreview = process.env.WEBAUTHN_ENROLLMENT_PREVIEW;
+  process.env.APPLICATION_URL = publicOrigin;
+  process.env.WEBAUTHN_ENROLLMENT_PREVIEW = "1";
+  const password = "correct horse battery staple";
+  let currentToken: string;
+  try {
+    const service = new AuthenticationService(database.getClient());
+    const account = await seedAuthenticatedAccount(service, database.getClient(), "lan.key.owner", password, "192.0.2.1", "admin");
+    new GoalSetupService(database.getClient()).completeInitial(account.user.id, { displayUnits: "us", timeZone: "UTC", calorieTargetMilliKcal: 2_000_000, carbohydrateTargetMilligrams: 200_000, fatTargetMilligrams: 60_000, fiberTargetMilligrams: 30_000, proteinTargetMilligrams: 100_000, sodiumMaximumMilligrams: 2_000, sugarMaximumMilligrams: 40_000, waterTargetMicroliters: 2_000_000 });
+    const key = authenticator();
+    const options = await service.keys.beginEnrollment(account.token, "browser", "Wire test key");
+    const proof = await service.keys.finishRegistration(account.token, "browser", key.registration(options, { origin: publicOrigin }));
+    currentToken = (await service.keys.finishEnrollment(account.token, "browser", key.assertion(proof, 1, { origin: publicOrigin }))).token;
+  } finally {
+    if (savedOrigin === undefined) delete process.env.APPLICATION_URL; else process.env.APPLICATION_URL = savedOrigin;
+    if (savedPreview === undefined) delete process.env.WEBAUTHN_ENROLLMENT_PREVIEW; else process.env.WEBAUTHN_ENROLLMENT_PREVIEW = savedPreview;
+    database.close();
+  }
+  const running = startProductionProcess({ APPLICATION_URL: publicOrigin, DATABASE_PATH: databasePath, PORT: String(port), LAN_URL: lanUrl, LAN_PORT: String(lanPort), TRUST_PROXY: undefined });
+  await waitForHttpResponse(`${lanUrl}/health/live`);
+  const login = await requestHttp(`${lanUrl}/login`);
+  const html = await login.text();
+  expect(html).toContain(`href="${publicOrigin}/login"`);
+  const csrfToken = /name="csrfToken" value="([^"]+)"/.exec(html)?.[1];
+  if (!csrfToken) throw new Error("LAN login omitted CSRF token");
+  const Cookie = login.headers.getSetCookie()[0].split(";", 1)[0];
+  const bypass = await requestHttp(`${lanUrl}/login`, { method: "POST", headers: { Origin: lanUrl, Cookie, "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ csrfToken, username: "lan.key.owner", password }).toString() });
+  expect(bypass.status).toBe(401);
+  expect(bypass.headers.get("Set-Cookie")).toBeNull();
+  const ceremony = await requestHttp(`${lanUrl}/key-ceremony`, { method: "POST", headers: { Origin: lanUrl, Cookie, "Content-Type": "application/json" }, body: JSON.stringify({ action: "login-start", username: "lan.key.owner", csrfToken }) });
+  expect(ceremony.status).toBe(403);
+  const settings = await requestHttp(`${lanUrl}/settings/security`, { headers: { Cookie: `calorie_lan_session=${currentToken}` } });
+  expect(settings.status).toBe(302);
+  expect(settings.headers.get("Location")).toBe(`${publicOrigin}/settings/security`);
+  expect(settings.headers.get("Location")).not.toContain(currentToken);
+  running.child.kill("SIGTERM");
+  await waitForExit(running.child);
 });

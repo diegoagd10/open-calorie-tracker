@@ -1,3 +1,4 @@
+import { invalidateAccountProofs } from "./authentication-policy.server";
 import { and, eq } from "drizzle-orm";
 
 import type { ApplicationDatabaseClient } from "./database.server";
@@ -38,6 +39,7 @@ export function transitionMemberAccess(
         .run();
       if (nextState === "disabled") {
         transaction.delete(sessions).where(eq(sessions.userId, target.id)).run();
+        invalidateAccountProofs(transaction, target.id);
       }
       return "changed";
     },

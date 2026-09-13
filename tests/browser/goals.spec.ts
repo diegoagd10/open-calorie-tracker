@@ -36,7 +36,7 @@ test("an authenticated user replaces complete effective-dated goals", async ({
   await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
   await expect(
     page.getByRole("link", { name: /Account security/ }),
-  ).toHaveAttribute("href", "/account/password");
+  ).toHaveAttribute("href", "/settings/security");
   await expect(page.getByLabel("Calories target")).toHaveValue("2050");
   await expect(page.getByLabel("Water target")).toHaveValue("80");
   await expect(page.getByLabel("Effective date")).toHaveAttribute(

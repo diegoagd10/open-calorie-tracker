@@ -61,6 +61,8 @@
   "dependencies": {
     "@earendil-works/pi-coding-agent": "0.85.1",
     "@react-router/node": "8.3.1",
+    "@simplewebauthn/browser": "14.0.0",
+    "@simplewebauthn/server": "14.0.2",
     "@zxing/browser": "0.2.1",
     "@zxing/library": "0.23.0",
     "better-sqlite3": "13.0.3",
