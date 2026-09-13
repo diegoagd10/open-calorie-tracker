@@ -1,5 +1,4 @@
 import { createElement } from "react";
-import { createRoutesStub } from "react-router";
 import { act, create, type ReactTestInstance, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, expect, test, vi } from "vitest";
 import { CatalogNotifications } from "../../app/catalog-management/notifications";
@@ -16,61 +15,133 @@ function outcome(patch: Partial<CatalogOutcome> = {}): CatalogOutcome {
   return { provider: "usda-fdc", jobId: "job", filename: "foundation.zip", phase: "succeeded", completedAt: "2026-09-09T12:00:00Z", error: null, acknowledgedAt: null,
     installed: { generation: "job", filename: "foundation.zip", sha256: "snapshot-fingerprint", installedAt: "2026-09-09T12:00:00Z", foodCount: 469, publicationDateRange: { earliest: "2020-01-01", latest: "2026-04-30" } }, ...patch };
 }
-async function render(outcomes: CatalogOutcome[]) {
-  const browser = new EventTarget();
-  vi.stubGlobal("window", browser);
-  const fetch = vi.fn<typeof globalThis.fetch>().mockImplementation(async () => Response.json({ csrfToken: "csrf", outcomes }));
-  vi.stubGlobal("fetch", fetch);
-  const Routes = createRoutesStub([{ path: "/", Component: CatalogNotifications }]);
+async function mount() {
   let renderer!: ReactTestRenderer;
-  await act(async () => { renderer = create(createElement(Routes, { initialEntries: ["/"] })); });
+  await act(async () => { renderer = create(createElement(CatalogNotifications)); });
   renderers.push(renderer);
-  return { renderer, fetch, browser };
+  return renderer;
 }
+async function render(outcomes: CatalogOutcome[]) {
+  vi.useFakeTimers();
+  const storage = new Map<string, string>();
+  const browser = Object.assign(new EventTarget(), {
+    sessionStorage: { getItem: (key: string) => storage.get(key) ?? null, setItem: (key: string, value: string) => { storage.set(key, value); } },
+  });
+  vi.stubGlobal("window", browser);
+  const fetch = vi.fn<typeof globalThis.fetch>().mockImplementation(async () => Response.json({ outcomes }));
+  vi.stubGlobal("fetch", fetch);
+  return { renderer: await mount(), fetch, browser };
+}
+async function advance(ms: number) { await act(async () => { await vi.advanceTimersByTimeAsync(ms); }); }
 
-test("the notification control distinguishes source outcomes, snapshots, absent catalogs and acknowledged history", async () => {
-  const success = outcome();
-  const { renderer } = await render([
-    success,
-    outcome({ jobId: "failed", provider: "open-food-facts", phase: "failed", filename: "broken.gz", error: "Invalid archive" }),
-    outcome({ jobId: "interrupted", phase: "interrupted", installed: null }),
-    outcome({ jobId: "acknowledged", acknowledgedAt: "2026-09-09T13:00:00Z" }),
-  ]);
-  const content = text(renderer.root);
-  expect(content).toContain("(3 unread)");
-  expect(content).toContain("USDA update succeeded");
-  expect(content).toContain("Open Food Facts update failed");
-  expect(content).toContain("The previous catalog remains active.");
-  expect(content).toContain("Invalid archive");
-  expect(content).toContain("No catalog was active at completion.");
-  expect(content).toContain("Installed snapshot: foundation.zip");
-  expect(content).toContain("469 foods");
-  expect(content).toContain("SHA-256: snapshot-fingerprint");
-  expect(content).toContain("Acknowledged updates (1)");
-  expect(renderer.root.findAllByType("button")).toHaveLength(3);
-  expect(renderer.root.findAllByType("a").map(link => link.props.href as string)).toContain("/settings/catalogs#open-food-facts-heading");
+// Polling, expiry and deduplication are temporal behavior, rather than static markup.
+test("nothing is visible without an event or for acknowledged outcomes", async () => {
+  const { renderer, fetch, browser } = await render([]);
+  expect(text(renderer.root)).toBe("");
+  expect(renderer.root.findAllByType("button")).toHaveLength(0);
+  expect(renderer.root.findAllByProps({ role: "status" })).toHaveLength(0);
+  fetch.mockResolvedValueOnce(Response.json({ outcomes: [outcome({ acknowledgedAt: "2026-09-09T13:00:00Z" })] }));
+  await act(async () => { browser.dispatchEvent(new Event("focus")); });
+  expect(text(renderer.root)).toBe("");
 });
 
-test("failed polling preserves outcomes and reconnect refreshes without duplicate notifications", async () => {
+test("a new event produces a brief accessible toast, expires and stays dismissed after polls and reload", async () => {
+  const { renderer, fetch, browser } = await render([]);
+  fetch.mockImplementation(async () => Response.json({ outcomes: [outcome()] }));
+  await advance(3000);
+  expect(text(renderer.root)).toBe("USDA catalog updated.");
+  expect(renderer.root.findByProps({ role: "status" }).props).toMatchObject({ "aria-live": "polite", "aria-atomic": "true" });
+  expect(renderer.root.findAllByType("details")).toHaveLength(0);
+  await advance(5819);
+  expect(renderer.root.findByProps({ "data-phase": "succeeded" }).props["data-leaving"]).toBe(false);
+  await advance(1);
+  expect(renderer.root.findByProps({ "data-phase": "succeeded" }).props["data-leaving"]).toBe(true);
+  await advance(180);
+  expect(text(renderer.root)).toBe("");
+  expect(renderer.root.findAllByProps({ role: "status" })).toHaveLength(0);
+  await advance(9000);
+  await act(async () => { browser.dispatchEvent(new Event("online")); });
+  expect(text(renderer.root)).toBe("");
+  await act(() => renderer.unmount());
+  const reloaded = await mount();
+  expect(text(reloaded.root)).toBe("");
+  expect(fetch.mock.calls.every(([, options]) => !options?.method || options.method === "GET")).toBe(true);
+});
+
+test("multiple outcomes are queued with distinct messages and a changed outcome can notify again", async () => {
+  const { renderer, fetch, browser } = await render([
+    outcome({ jobId: "interrupted", phase: "interrupted", installed: null }),
+    outcome({ jobId: "failed", provider: "open-food-facts", phase: "failed", error: "Internal archive details" }),
+    outcome(),
+  ]);
+  expect(text(renderer.root)).toBe("USDA catalog updated.");
+  await advance(6000);
+  expect(text(renderer.root)).toBe("Open Food Facts update failed. Retry in Settings.");
+  expect(renderer.root.findByProps({ "data-phase": "failed" })).toBeDefined();
+  await act(() => { (renderer.root.findByType("button").props as { onClick: () => void }).onClick(); });
+  expect(text(renderer.root)).toBe("USDA update interrupted. Retry in Settings.");
+  await advance(6000);
+  expect(text(renderer.root)).toBe("");
+  fetch.mockResolvedValueOnce(Response.json({ outcomes: [outcome({ phase: "failed", completedAt: "2026-09-09T14:00:00Z" })] }));
+  await act(async () => { browser.dispatchEvent(new Event("focus")); });
+  expect(text(renderer.root)).toBe("USDA update failed. Retry in Settings.");
+});
+
+test("hovering and keyboard focus keep a toast visible until the reader leaves", async () => {
+  const { renderer } = await render([outcome()]);
+  type ToastEvents = {
+    onMouseEnter: () => void;
+    onMouseLeave: () => void;
+    onFocusCapture: () => void;
+    onBlurCapture: (event: { currentTarget: { contains: () => boolean }; relatedTarget: object | null }) => void;
+  };
+  const toast = () => renderer.root.findByProps({ "data-phase": "succeeded" }).props as ToastEvents;
+  await act(() => toast().onMouseEnter());
+  await advance(12000);
+  expect(text(renderer.root)).toBe("USDA catalog updated.");
+  await act(() => { toast().onFocusCapture(); toast().onMouseLeave(); });
+  await advance(12000);
+  expect(text(renderer.root)).toBe("USDA catalog updated.");
+  await act(() => toast().onBlurCapture({ currentTarget: { contains: () => true }, relatedTarget: {} }));
+  await advance(6000);
+  expect(text(renderer.root)).toBe("USDA catalog updated.");
+  await act(() => toast().onBlurCapture({ currentTarget: { contains: () => false }, relatedTarget: null }));
+  await advance(6000);
+  expect(text(renderer.root)).toBe("");
+});
+
+test("failed polling is quiet, reconnects and does not repeat an expired event", async () => {
   const { renderer, fetch, browser } = await render([outcome()]);
   fetch.mockRejectedValueOnce(new Error("offline"));
   await act(async () => { browser.dispatchEvent(new Event("online")); });
-  expect(text(renderer.root)).toContain("Catalog updates could not refresh. Reconnecting automatically.");
-  expect(text(renderer.root)).toContain("USDA update succeeded");
-  fetch.mockResolvedValueOnce(Response.json({ csrfToken: "csrf", outcomes: [outcome({ acknowledgedAt: "2026-09-09T13:00:00Z" })] }));
-  await act(async () => { browser.dispatchEvent(new Event("online")); });
-  expect(text(renderer.root)).not.toContain("could not refresh");
-  expect(text(renderer.root)).toContain("(0 unread)");
-  expect(text(renderer.root)).toContain("No unread catalog updates.");
-  expect(renderer.root.findAllByType("h3")).toHaveLength(1);
-});
-
-test("handoff failure identifies the active replacement and renders official release metadata", async () => {
-  const installed = outcome().installed!;
-  const { renderer, fetch, browser } = await render([outcome({ phase: "failed", installed: { ...installed, sourceRelease: { identifier: "FoodData Central 15.0", releasedOn: "2026-04-30", releasePeriod: "2026-04", archiveFilename: "foundation.zip", archiveByteLength: 100 } } })]);
-  expect(text(renderer.root)).toContain("The replacement catalog is active.");
-  expect(text(renderer.root)).toContain("Official release: FoodData Central 15.0");
+  expect(text(renderer.root)).toBe("USDA catalog updated.");
   fetch.mockResolvedValueOnce(new Response("unavailable", { status: 503 }));
   await act(async () => { browser.dispatchEvent(new Event("focus")); });
-  expect(text(renderer.root)).toContain("could not refresh");
+  await advance(6000);
+  expect(text(renderer.root)).toBe("");
+  await act(async () => { browser.dispatchEvent(new Event("online")); });
+  expect(text(renderer.root)).toBe("");
+});
+
+test("unavailable storage does not break expiry or in-memory deduplication", async () => {
+  const { renderer, browser } = await render([]);
+  Object.defineProperty(browser, "sessionStorage", { get: () => { throw new Error("storage disabled"); } });
+  const fetch = vi.mocked(globalThis.fetch);
+  fetch.mockImplementation(async () => Response.json({ outcomes: [outcome()] }));
+  await advance(3000);
+  expect(text(renderer.root)).toBe("USDA catalog updated.");
+  await advance(12000);
+  expect(text(renderer.root)).toBe("");
+});
+
+test("an unmounted toast ignores a late poll and removes its timers", async () => {
+  const { renderer, fetch, browser } = await render([]);
+  let resolve!: (response: Response) => void;
+  fetch.mockImplementationOnce(() => new Promise<Response>(done => { resolve = done; }));
+  await act(async () => { browser.dispatchEvent(new Event("focus")); });
+  await act(async () => { browser.dispatchEvent(new Event("online")); });
+  expect(fetch).toHaveBeenCalledTimes(2);
+  await act(() => renderer.unmount());
+  await act(async () => { resolve(Response.json({ outcomes: [outcome()] })); });
+  expect(vi.getTimerCount()).toBe(0);
 });

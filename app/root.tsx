@@ -5,10 +5,12 @@ import {
   Scripts,
   ScrollRestoration,
   isRouteErrorResponse,
+  useRouteLoaderData,
 } from "react-router";
 
 import type { Route } from "./+types/root";
 import { getSessionForAccountAccess } from "./auth/http.server";
+import { CatalogNotifications } from "./catalog-management/notifications";
 
 import stylesheet from "./styles.css?url";
 import readinessStyles from "./readiness.module.css";
@@ -59,7 +61,11 @@ export function Layout({ children }: { children: React.ReactNode }) {
 }
 
 export default function App() {
-  return <Outlet />;
+  const root = useRouteLoaderData<typeof loader>("root");
+  return <>
+    <Outlet />
+    {root?.catalogAdministrator ? <CatalogNotifications /> : null}
+  </>;
 }
 
 export function ErrorBoundary({ error }: { error: unknown }) {

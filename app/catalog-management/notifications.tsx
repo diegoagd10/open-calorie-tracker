@@ -1,47 +1,28 @@
-import { useCallback, useEffect, useState } from "react";
-import { Link, useFetcher } from "react-router";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { CatalogOutcome } from "./catalog-management.server";
 import styles from "./notifications.module.css";
 
-type NotificationData = { csrfToken: string; outcomes: CatalogOutcome[] };
+type NotificationData = { outcomes: CatalogOutcome[] };
 const endpoint = "/catalog-notifications";
+const duration = 6000;
 
-function Outcome({ outcome, csrfToken, onAcknowledged }: { outcome: CatalogOutcome; csrfToken: string; onAcknowledged: () => void }) {
-  const acknowledgement = useFetcher<{ error?: string; acknowledged?: boolean }>();
-  useEffect(() => { if (acknowledgement.data?.acknowledged) onAcknowledged(); }, [acknowledgement.data, onAcknowledged]);
-  const name = outcome.provider === "usda-fdc" ? "USDA" : "Open Food Facts";
-  const installed = outcome.installed;
-  const succeeded = outcome.phase === "succeeded";
-  const activeDescription = !installed ? "No catalog was active at completion."
-    : installed.generation === outcome.jobId ? "The replacement catalog is active."
-      : "The previous catalog remains active.";
-  return <li className={styles.outcome}>
-    <h3>{name} update {outcome.phase}</h3>
-    <p>{outcome.filename} · {new Date(outcome.completedAt).toLocaleString()}</p>
-    <p>{succeeded ? "This snapshot activated successfully." : activeDescription}</p>
-    {outcome.error ? <p>{outcome.error}</p> : null}
-    {installed ? <details><summary>{succeeded ? "Installed snapshot" : "Active snapshot at completion"}: {installed.filename}</summary>
-      <p>{installed.foodCount.toLocaleString()} foods · Installed {new Date(installed.installedAt).toLocaleString()}</p>
-      {installed.sourceRelease ? <p>Official release: {installed.sourceRelease.identifier ?? installed.sourceRelease.releasePeriod}</p> : null}
-      <p>SHA-256: {installed.sha256}</p>
-    </details> : null}
-    <Link to={`/settings/catalogs#${outcome.provider}-heading`}>Manage {name} catalog</Link>
-    {outcome.acknowledgedAt ? <p>Acknowledged</p> : <acknowledgement.Form method="post" action={endpoint}>
-      <input type="hidden" name="csrfToken" value={csrfToken} />
-      <input type="hidden" name="provider" value={outcome.provider} />
-      <input type="hidden" name="jobId" value={outcome.jobId} />
-      <input type="hidden" name="completedAt" value={outcome.completedAt} />
-      <button disabled={acknowledgement.state !== "idle"}>Acknowledge {name} update</button>
-    </acknowledgement.Form>}
-    {acknowledgement.data?.error ? <p role="alert">{acknowledgement.data.error}</p> : null}
-  </li>;
+function outcomeKey(outcome: CatalogOutcome) {
+  return `catalog-toast:${JSON.stringify([outcome.provider, outcome.jobId, outcome.completedAt, outcome.phase])}`;
 }
 
-function useNotifications() {
-  const [data, setData] = useState<NotificationData>();
-  const [error, setError] = useState(false);
-  const [revision, setRevision] = useState(0);
-  const refresh = useCallback(() => setRevision(value => value + 1), []);
+function wasDismissed(key: string) {
+  try { return window.sessionStorage.getItem(key) === "dismissed"; }
+  catch { return false; }
+}
+
+export function CatalogNotifications() {
+  const [queue, setQueue] = useState<CatalogOutcome[]>([]);
+  const [hovered, setHovered] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const [leaving, setLeaving] = useState(false);
+  const seen = useRef(new Set<string>());
+  const current = queue[0];
+
   useEffect(() => {
     const controller = new AbortController();
     let pending = false;
@@ -50,11 +31,18 @@ function useNotifications() {
       pending = true;
       try {
         const response = await fetch(endpoint, { signal: controller.signal, cache: "no-store" });
-        if (!response.ok) throw new Error("Notifications unavailable");
-        const next = await response.json() as NotificationData;
-        if (!controller.signal.aborted) { setData(next); setError(false); }
+        if (!response.ok) return;
+        const data = await response.json() as NotificationData;
+        if (controller.signal.aborted) return;
+        const fresh = [...data.outcomes].reverse().filter(outcome => {
+          const key = outcomeKey(outcome);
+          if (outcome.acknowledgedAt || seen.current.has(key) || wasDismissed(key)) return false;
+          seen.current.add(key);
+          return true;
+        });
+        if (fresh.length) setQueue(previous => [...previous, ...fresh]);
       } catch {
-        if (!controller.signal.aborted) setError(true);
+        // Retry quietly: a connection problem is not a catalog update event.
       } finally { pending = false; }
     };
     const pollNow = () => { void poll(); };
@@ -62,27 +50,61 @@ function useNotifications() {
     const timer = setInterval(pollNow, 3000);
     window.addEventListener("online", pollNow);
     window.addEventListener("focus", pollNow);
-    return () => { controller.abort(); clearInterval(timer); window.removeEventListener("online", pollNow); window.removeEventListener("focus", pollNow); };
-  }, [revision]);
-  return { data, error, refresh };
-}
+    return () => {
+      controller.abort();
+      clearInterval(timer);
+      window.removeEventListener("online", pollNow);
+      window.removeEventListener("focus", pollNow);
+    };
+  }, []);
 
-export function CatalogNotifications() {
-  const { data, error, refresh } = useNotifications();
-  const unread = data?.outcomes.filter(outcome => !outcome.acknowledgedAt) ?? [];
-  const acknowledged = data?.outcomes.filter(outcome => outcome.acknowledgedAt) ?? [];
-  return <aside className={styles.notifications} aria-label="Catalog notifications">
-    <details>
-      <summary>Catalog updates <span aria-live="polite">({unread.length} unread)</span></summary>
-      <div className={styles.panel}>
-        <h2>Catalog updates</h2>
-        <p>Outcomes and acknowledgements are shared by installation administrators. Older outcomes describe the catalog at that time.</p>
-        {error ? <p role="status">Catalog updates could not refresh. Reconnecting automatically.</p> : null}
-        {data ? <>
-          {unread.length ? <ul>{unread.map(outcome => <Outcome key={`${outcome.provider}:${outcome.jobId}`} outcome={outcome} csrfToken={data.csrfToken} onAcknowledged={refresh} />)}</ul> : <p>No unread catalog updates.</p>}
-          {acknowledged.length ? <details><summary>Acknowledged updates ({acknowledged.length})</summary><ul>{acknowledged.map(outcome => <Outcome key={`${outcome.provider}:${outcome.jobId}`} outcome={outcome} csrfToken={data.csrfToken} onAcknowledged={refresh} />)}</ul></details> : null}
-        </> : <p>Loading catalog updates…</p>}
-      </div>
-    </details>
-  </aside>;
+  const dismiss = useCallback(() => {
+    if (!current) return;
+    try { window.sessionStorage.setItem(outcomeKey(current), "dismissed"); }
+    catch { /* The in-memory set still prevents repeats when storage is unavailable. */ }
+    setQueue(previous => previous.slice(1));
+    setHovered(false);
+    setFocused(false);
+    setLeaving(false);
+  }, [current]);
+
+  useEffect(() => {
+    setLeaving(false);
+    if (!current || hovered || focused) return;
+    const fade = setTimeout(() => setLeaving(true), duration - 180);
+    const timer = setTimeout(dismiss, duration);
+    return () => { clearTimeout(fade); clearTimeout(timer); };
+  }, [current, dismiss, hovered, focused]);
+
+  const name = current?.provider === "usda-fdc" ? "USDA" : "Open Food Facts";
+  const message = current?.phase === "succeeded" ? `${name} catalog updated.`
+    : current?.phase === "interrupted" ? `${name} update interrupted. Retry in Settings.`
+      : `${name} update failed. Retry in Settings.`;
+
+  return <div className={styles.region} role={current ? "status" : undefined} aria-live="polite" aria-atomic="true">
+    {current ? <div
+      key={outcomeKey(current)}
+      className={styles.toast}
+      data-phase={current.phase}
+      data-leaving={leaving}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      onFocusCapture={() => setFocused(true)}
+      onBlurCapture={event => {
+        if (!event.currentTarget.contains(event.relatedTarget)) setFocused(false);
+      }}
+    >
+      <span className={styles.icon} aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          {current.phase === "succeeded" ? <path d="m6 12 4 4 8-8" /> : <><path d="M12 7v6" /><path d="M12 17h.01" /></>}
+        </svg>
+      </span>
+      <p>{message}</p>
+      <button type="button" aria-label="Dismiss notification" onClick={dismiss}>
+        <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+          <path d="m7 7 10 10M17 7 7 17" />
+        </svg>
+      </button>
+    </div> : null}
+  </div>;
 }
