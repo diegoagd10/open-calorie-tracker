@@ -1,4 +1,6 @@
 .shell {
+  --page-width: 100%;
+  --surface-gutter: 1rem;
   --blue: #1f65bd;
   --blue-soft: #eaf3ff;
   --ground: #fafbfd;
@@ -39,7 +41,7 @@
 
 .appSurface {
   min-height: 100dvh;
-  padding: 1.15rem 1rem 6rem;
+  padding: 1.15rem var(--surface-gutter) 6rem;
 }
 
 .mobileHeader {
@@ -58,7 +60,10 @@
 .floatingUtilities {
   position: fixed;
   z-index: 40;
-  right: 1rem;
+  right: max(
+    env(safe-area-inset-right),
+    calc((100% - min(100%, var(--page-width))) / 2 + var(--surface-gutter))
+  );
   bottom: 1rem;
   display: flex;
   align-items: flex-end;
@@ -1989,8 +1994,8 @@
 }
 
 @media (max-width: 420px) {
-  .appSurface {
-    padding-inline: 0.75rem;
+  .shell {
+    --surface-gutter: 0.75rem;
   }
 
   .dateRailWrap {
@@ -2106,15 +2111,20 @@
 }
 
 @media (min-width: 760px) {
+  .shell {
+    --page-width: 47.5rem;
+    --surface-gutter: 1.5rem;
+  }
+
   .appSurface {
-    width: min(100%, 47.5rem);
+    width: min(100%, var(--page-width));
     margin-inline: auto;
-    padding: 1.5rem 1.5rem 6rem;
+    padding: 1.5rem var(--surface-gutter) 6rem;
   }
 
   .mobileNav {
     left: 50%;
-    width: 47.5rem;
+    width: var(--page-width);
     transform: translateX(-50%);
     border-inline: 1px solid var(--rule);
   }
@@ -2131,10 +2141,12 @@
 
 @media (min-width: 1120px) {
   .shell {
+    --page-width: 77.5rem;
+    --surface-gutter: 2.25rem;
     display: grid;
     grid-template-columns: 15.5rem minmax(35rem, 41.25rem) 16.5rem;
     gap: 1px;
-    width: min(77.5rem, 100%);
+    width: min(var(--page-width), 100%);
     min-height: 100dvh;
     margin-inline: auto;
     padding: 0;
@@ -2143,8 +2155,8 @@
   }
 
   .foodLogShell {
+    --page-width: 63.5rem;
     grid-template-columns: 15.5rem minmax(0, 48rem);
-    width: min(63.5rem, 100%);
   }
 
   .desktopRail,
@@ -2169,7 +2181,7 @@
   .appSurface {
     width: 100%;
     margin-inline: 0;
-    padding: 1.5rem 2.25rem 2.5rem;
+    padding: 1.5rem var(--surface-gutter) 2.5rem;
     background: var(--ground);
   }
 
