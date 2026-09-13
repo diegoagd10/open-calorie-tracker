@@ -2,7 +2,8 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { eq } from "drizzle-orm";
-import { users } from "../app/database/schema.server";
+import { users, webauthnCeremonies } from "../app/database/schema.server";
+import { AdministratorRecoveryService } from "../app/auth/administrator-recovery.server";
 import { afterEach, expect, test, vi } from "vitest";
 import { AuthenticationService } from "../app/auth/authentication.server";
 import { openApplicationDatabase } from "../app/database/database.server";
@@ -444,6 +445,36 @@ test("password changes, disablement and deletion supersede in-flight ceremonies"
   await expect(
     service.keys.beginLogin("owner", "new", "192.0.2.1"),
   ).rejects.toThrow();
+});
+
+test("administrator password recovery burns pending key proofs while preserving key mode and replacement restrictions", async () => {
+  const { service, database, session } = await fixture();
+  const { key } = await enroll(service, session.token);
+  const pending = await service.keys.beginLogin("owner", "stale", "192.0.2.1");
+  const before = database.getClient().select().from(users).get()!;
+  await expect(
+    new AdministratorRecoveryService(
+      database.getClient(),
+      undefined,
+      () => "administrator recovery temporary password",
+    ).recover(),
+  ).resolves.toMatchObject({ ok: true });
+  expect(database.getClient().select().from(webauthnCeremonies).all()).toEqual([]);
+  expect(database.getClient().select().from(users).get()).toMatchObject({
+    keyLoginEnabled: true,
+    passwordChangeRequired: true,
+    authenticationVersion: before.authenticationVersion + 1,
+  });
+  await expect(
+    service.keys.finishLogin("stale", key.assertion(pending, 2)),
+  ).rejects.toThrow();
+  expect(
+    await service.login("owner", "administrator recovery temporary password", "192.0.2.2"),
+  ).toMatchObject({ ok: false });
+  const fresh = await service.keys.beginLogin("owner", "fresh", "192.0.2.1");
+  await expect(
+    service.keys.finishLogin("fresh", key.assertion(fresh, 2)),
+  ).resolves.toMatchObject({ user: { passwordChangeRequired: true } });
 });
 
 test("rate limits survive service recreation and enrollment preview is off by default", async () => {

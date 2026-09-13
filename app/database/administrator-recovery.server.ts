@@ -61,8 +61,8 @@ export function replaceSoleAdministratorCredential(
         .where(eq(sessions.userId, administratorId))
         .run();
 
-      return { ok: true };
       invalidateAccountProofs(transaction, administratorId);
+      return { ok: true };
     },
     { behavior: "immediate" },
   );
