@@ -273,7 +273,14 @@ test("administrator checks rolling OFF snapshots independently of terminal impor
     const usda = page.locator('section[aria-labelledby="usda-fdc-heading"]');
     const usdaBefore = await usda.innerText();
     const check = off.getByRole("button", { name: "Check OFF updates again" });
-    await check.click();
+    const checkUpdates = async () => {
+      await Promise.all([
+        page.waitForResponse(response => new URL(response.url()).pathname === "/settings/catalogs.data" && response.request().method() === "GET" && response.ok()),
+        check.click(),
+      ]);
+      await expect(check).toBeEnabled();
+    };
+    await checkUpdates();
     await expect(off.getByText("OFF snapshot metadata cannot be compared safely.", { exact: true })).toBeVisible();
     await expect(off.getByText("Installed official snapshot: Unknown", { exact: true })).toBeVisible();
     await expect(off.getByRole("link", { name: /Official OFF downloads/ })).toHaveAttribute("href", "https://world.openfoodfacts.org/data");
@@ -294,7 +301,7 @@ test("administrator checks rolling OFF snapshots independently of terminal impor
       [{ status: 503 }, "OFF snapshot metadata is temporarily unavailable."],
     ] as const) {
       await writeFile(fixturePath, JSON.stringify(fixture));
-      await check.click();
+      await checkUpdates();
       await expect(off.getByText(message, { exact: true })).toBeVisible();
       await expect(off.getByText("Archive: renamed-snapshot.gz", { exact: true })).toBeVisible();
       await expect(off.getByText(/^Installed: /)).toHaveText(installedBefore);
