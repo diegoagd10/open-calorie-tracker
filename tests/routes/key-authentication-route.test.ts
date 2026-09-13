@@ -636,7 +636,7 @@ test("security page shows enabled credential names and omits preview enrollment 
     {
       enabled: true,
       preview: true,
-      credentials: [{ name: "My YubiKey", createdAt: "2026-09-13" }],
+      credentials: [{ id: "key", name: "My YubiKey", createdAt: "2026-09-13" }],
     },
     { enabled: false, preview: false, credentials: [] },
   ]) {
@@ -645,7 +645,9 @@ test("security page shows enabled credential names and omits preview enrollment 
       username: "owner",
       csrfToken: "csrf",
     });
-    expect(renderer.root.findAllByType("form")).toHaveLength(0);
+    expect(renderer.root.findAllByType("form")).toHaveLength(
+      pageData.preview ? 1 : 0,
+    );
     expect(allText(renderer)).toContain(
       pageData.enabled ? "Key login is enabled" : "Password login is enabled",
     );
@@ -852,4 +854,344 @@ test("a key assertion after password reset keeps mandatory password replacement 
       ),
     ),
   ).rejects.toMatchObject({ status: 302 });
+});
+
+test("adding a key through the route requires a scoped fresh assertion", async () => {
+  const { enabledCookie, key } = await enabledAccount("route.addition");
+  const loaded = await securityLoader(
+    args(
+      new Request(`${origin}/settings/security`, {
+        headers: { Cookie: enabledCookie },
+      }),
+      "/settings/security",
+    ),
+  );
+  if (loaded instanceof Response) throw new Error("settings redirected");
+  const start = await action(
+    args(
+      post(
+        {
+          action: "addition-start",
+          csrfToken: loaded.csrfToken,
+          name: "Backup",
+        },
+        enabledCookie,
+      ),
+    ),
+  );
+  expect(start.status).toBe(200);
+  const proof = (await start.json()) as {
+    options: PublicKeyCredentialRequestOptionsJSON;
+  };
+  const cookie = `${enabledCookie}; ${cookies(start)}`;
+  const authorized = await action(
+    args(
+      post(
+        {
+          action: "addition-finish",
+          csrfToken: loaded.csrfToken,
+          response: key.assertion(proof.options, 2),
+        },
+        cookie,
+      ),
+    ),
+  );
+  expect(authorized.status).toBe(200);
+  const options = (await authorized.json()) as {
+    options: PublicKeyCredentialCreationOptionsJSON;
+  };
+  const backup = authenticator();
+  const registered = await action(
+    args(
+      post(
+        {
+          action: "register-finish",
+          csrfToken: loaded.csrfToken,
+          response: backup.registration(options.options),
+        },
+        cookie,
+      ),
+    ),
+  );
+  expect(registered.status).toBe(200);
+  const verification = (await registered.json()) as {
+    options: PublicKeyCredentialRequestOptionsJSON;
+  };
+  const finished = await action(
+    args(
+      post(
+        {
+          action: "enable-finish",
+          csrfToken: loaded.csrfToken,
+          response: backup.assertion(verification.options),
+        },
+        cookie,
+      ),
+    ),
+  );
+  expect(finished.status).toBe(200);
+  const settings = await securityLoader(
+    args(
+      new Request(`${origin}/settings/security`, {
+        headers: { Cookie: cookies(finished) },
+      }),
+      "/settings/security",
+    ),
+  );
+  expect(settings).toMatchObject({
+    enabled: true,
+    credentials: [{ name: "My key" }, { name: "Backup" }],
+  });
+});
+
+test("another account cannot list or complete a signed-in enrollment ceremony", async () => {
+  const owner = await account("addition.owner");
+  const other = await account("addition.other");
+  const cookie = serializeSessionCookie(owner).split(";", 1)[0];
+  const otherCookie = serializeSessionCookie(other).split(";", 1)[0];
+  const start = await action(
+    args(
+      post(
+        {
+          action: "register-start",
+          csrfToken: owner.csrfToken,
+          name: "Private key",
+        },
+        cookie,
+      ),
+    ),
+  );
+  const { options } = (await start.json()) as {
+    options: PublicKeyCredentialCreationOptionsJSON;
+  };
+  const key = authenticator();
+  const rejected = await action(
+    args(
+      post(
+        {
+          action: "register-finish",
+          csrfToken: other.csrfToken,
+          response: key.registration(options),
+        },
+        `${otherCookie}; ${cookies(start)}`,
+      ),
+    ),
+  );
+  expect(rejected.status).toBe(400);
+  for (const userCookie of [cookie, otherCookie]) {
+    const settings = await securityLoader(
+      args(
+        new Request(`${origin}/settings/security`, {
+          headers: { Cookie: userCookie },
+        }),
+        "/settings/security",
+      ),
+    );
+    expect(settings).toMatchObject({ enabled: false, credentials: [] });
+  }
+  const targeted = await action(
+    args(
+      post(
+        {
+          action: "register-start",
+          csrfToken: other.csrfToken,
+          name: "Foreign target",
+          userId: owner.user.id,
+        },
+        otherCookie,
+      ),
+    ),
+  ).catch((error: unknown) => error);
+  expect(targeted).toBeInstanceOf(Response);
+  expect((targeted as Response).status).toBe(400);
+});
+
+test("a credential already owned by another account cannot be saved through verified enrollment", async () => {
+  const { key } = await enabledAccount("credential.owner");
+  const other = await account("credential.other");
+  const cookie = serializeSessionCookie(other).split(";", 1)[0];
+  const start = await action(
+    args(
+      post(
+        {
+          action: "register-start",
+          csrfToken: other.csrfToken,
+          name: "Copied credential",
+        },
+        cookie,
+      ),
+    ),
+  );
+  const { options } = (await start.json()) as {
+    options: PublicKeyCredentialCreationOptionsJSON;
+  };
+  const pendingCookie = `${cookie}; ${cookies(start)}`;
+  const registered = await action(
+    args(
+      post(
+        {
+          action: "register-finish",
+          csrfToken: other.csrfToken,
+          response: key.registration(options),
+        },
+        pendingCookie,
+      ),
+    ),
+  );
+  const verification = (await registered.json()) as {
+    options: PublicKeyCredentialRequestOptionsJSON;
+  };
+  const rejected = await action(
+    args(
+      post(
+        {
+          action: "enable-finish",
+          csrfToken: other.csrfToken,
+          response: key.assertion(verification.options),
+        },
+        pendingCookie,
+      ),
+    ),
+  );
+  expect(rejected.status).toBe(400);
+  const settings = await securityLoader(
+    args(
+      new Request(`${origin}/settings/security`, {
+        headers: { Cookie: cookie },
+      }),
+      "/settings/security",
+    ),
+  );
+  expect(settings).toMatchObject({ enabled: false, credentials: [] });
+});
+
+test.each([true, false])(
+  "security UI adds a verified key while preserving enabled=%s",
+  async (enabled) => {
+    const { session, key, enabledCookie } = await enabledAccount(
+      `ui.addition.${enabled}`,
+    );
+    if (!enabled) {
+      // Disabled-key fixture: the explicit enable/disable toggle ships in the next slice.
+      getApplicationDatabase()
+        .getClient()
+        .$client.prepare(
+          "UPDATE users SET key_login_enabled = 0, authentication_version = authentication_version + 1 WHERE id = ?",
+        )
+        .run(session.user.id);
+    }
+    const loaded = await securityLoader(
+      args(
+        new Request(`${origin}/settings/security`, {
+          headers: { Cookie: enabledCookie },
+        }),
+        "/settings/security",
+      ),
+    );
+    if (loaded instanceof Response) throw new Error("settings redirected");
+    const renderer = await renderPage(
+      SecuritySettings,
+      "/settings/security",
+      loaded,
+    );
+    const transport = browserTransport(enabledCookie);
+    transport.installNavigation();
+    const backup = authenticator();
+    let registrationStarted!: () => void;
+    let continueRegistration!: () => void;
+    const started = new Promise<void>((resolve) => {
+      registrationStarted = resolve;
+    });
+    const proceed = new Promise<void>((resolve) => {
+      continueRegistration = resolve;
+    });
+    vi.mocked(browserProvider.startRegistration).mockImplementation(
+      async ({ optionsJSON }) => {
+        registrationStarted();
+        await proceed;
+        return backup.registration(optionsJSON);
+      },
+    );
+    vi.mocked(browserProvider.startAuthentication).mockImplementation(
+      async ({ optionsJSON }) =>
+        optionsJSON.allowCredentials?.some(
+          (credential) => credential.id === backup.id,
+        )
+          ? backup.assertion(optionsJSON)
+          : key.assertion(optionsJSON, 2),
+    );
+    await act(async () => {
+      formSubmit(renderer)({
+        preventDefault() {},
+        currentTarget: { name: "UI backup" },
+      });
+      await started;
+    });
+    expect(allText(renderer)).toContain(
+      enabled ? "Verify an existing key" : "Password login stays enabled",
+    );
+    await act(async () => {
+      continueRegistration();
+      await vi.waitFor(() =>
+        expect(transport.assign).toHaveBeenCalledWith("/settings/security"),
+      );
+    });
+    const settings = await securityLoader(
+      args(
+        new Request(`${origin}/settings/security`, {
+          headers: { Cookie: transport.cookie() },
+        }),
+        "/settings/security",
+      ),
+    );
+    expect(settings).toMatchObject({
+      enabled,
+      credentials: [{ name: "My key" }, { name: "UI backup" }],
+    });
+    await act(async () => renderer.unmount());
+  },
+);
+
+test("addition start denies missing names and unauthenticated or cross-site requests", async () => {
+  const { enabledCookie } = await enabledAccount("addition.protected");
+  const settings = await securityLoader(
+    args(
+      new Request(`${origin}/settings/security`, {
+        headers: { Cookie: enabledCookie },
+      }),
+      "/settings/security",
+    ),
+  );
+  if (settings instanceof Response) throw new Error("settings redirected");
+  const unnamed = await action(
+    args(
+      post(
+        { action: "addition-start", csrfToken: settings.csrfToken },
+        enabledCookie,
+      ),
+    ),
+  );
+  expect(unnamed.status).toBe(400);
+  expect(await unnamed.json()).toMatchObject({
+    error: "Name your key using 1–80 characters.",
+  });
+  const anonymous = await action(
+    args(
+      post({
+        action: "addition-start",
+        csrfToken: settings.csrfToken,
+        name: "Backup",
+      }),
+    ),
+  ).catch((error: unknown) => error);
+  expect((anonymous as Response).status).toBe(401);
+  const forged = await action(
+    args(
+      post(
+        { action: "addition-start", csrfToken: "forged", name: "Backup" },
+        enabledCookie,
+      ),
+    ),
+  ).catch((error: unknown) => error);
+  expect((forged as Response).status).toBe(403);
 });

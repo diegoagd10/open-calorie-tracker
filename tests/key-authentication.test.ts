@@ -459,7 +459,9 @@ test("administrator password recovery burns pending key proofs while preserving 
       () => "administrator recovery temporary password",
     ).recover(),
   ).resolves.toMatchObject({ ok: true });
-  expect(database.getClient().select().from(webauthnCeremonies).all()).toEqual([]);
+  expect(database.getClient().select().from(webauthnCeremonies).all()).toEqual(
+    [],
+  );
   expect(database.getClient().select().from(users).get()).toMatchObject({
     keyLoginEnabled: true,
     passwordChangeRequired: true,
@@ -469,7 +471,11 @@ test("administrator password recovery burns pending key proofs while preserving 
     service.keys.finishLogin("stale", key.assertion(pending, 2)),
   ).rejects.toThrow();
   expect(
-    await service.login("owner", "administrator recovery temporary password", "192.0.2.2"),
+    await service.login(
+      "owner",
+      "administrator recovery temporary password",
+      "192.0.2.2",
+    ),
   ).toMatchObject({ ok: false });
   const fresh = await service.keys.beginLogin("owner", "fresh", "192.0.2.1");
   await expect(
@@ -704,11 +710,297 @@ test("credentials without transport hints or assertion user handles still requir
   );
   await expect(
     service.keys.beginEnrollment(enabled.token, "enroll", "Another"),
-  ).rejects.toThrow("already enabled");
+  ).rejects.toThrow("Verify an existing key");
   const request = await service.keys.beginLogin("owner", "login", "192.0.2.1");
   const login = key.assertion(request, 2);
   delete login.response.userHandle;
   expect((await service.keys.finishLogin("login", login)).user.username).toBe(
     "owner",
   );
+});
+
+test("six named keys require fresh addition proof and every key can sign in", async () => {
+  const { service, session } = await fixture();
+  const first = await enroll(service, session.token);
+  let current = first.session;
+  const keys = [first.key];
+  await expect(
+    service.keys.beginEnrollment(current.token, "unproved", "Backup"),
+  ).rejects.toThrow();
+  for (let i = 1; i < 6; i++) {
+    const authorization = await service.keys.beginAddition(
+      current.token,
+      "addition",
+      `Backup ${i}`,
+    );
+    const registration = await service.keys.finishAdditionProof(
+      current.token,
+      "addition",
+      keys[i - 1].assertion(authorization, 2),
+    );
+    const key = authenticator();
+    const verification = await service.keys.finishRegistration(
+      current.token,
+      "addition",
+      key.registration(registration),
+    );
+    current = await service.keys.finishEnrollment(
+      current.token,
+      "addition",
+      key.assertion(verification),
+    );
+    keys.push(key);
+  }
+  expect(
+    service.keys.status(current.token).credentials.map((key) => key.name),
+  ).toEqual([
+    "Proton Pass",
+    "Backup 1",
+    "Backup 2",
+    "Backup 3",
+    "Backup 4",
+    "Backup 5",
+  ]);
+  for (const key of keys) {
+    const options = await service.keys.beginLogin(
+      "owner",
+      "login",
+      "192.0.2.3",
+    );
+    expect(options.allowCredentials).toHaveLength(6);
+    const signedIn = await service.keys.finishLogin(
+      "login",
+      key.assertion(options, 3),
+    );
+    expect((await service.authenticate(signedIn.token))?.user.id).toBe(
+      session.user.id,
+    );
+  }
+});
+
+test("cancellation during registration verification cannot recreate addition authority", async () => {
+  const { service, session } = await fixture();
+  const { key, session: current } = await enroll(service, session.token);
+  const proof = await service.keys.beginAddition(
+    current.token,
+    "addition",
+    "Cancelled backup",
+  );
+  const options = await service.keys.finishAdditionProof(
+    current.token,
+    "addition",
+    key.assertion(proof, 2),
+  );
+  const backup = authenticator();
+  const finishing = service.keys.finishRegistration(
+    current.token,
+    "addition",
+    backup.registration(options),
+  );
+  service.keys.cancel("addition");
+  await expect(finishing).rejects.toThrow();
+  expect(service.keys.status(current.token).credentials).toHaveLength(1);
+});
+
+test("addition rejects unrelated proofs, another account's key, and reused or expired authorization", async () => {
+  const f = await fixture();
+  const { service, session } = f;
+  const { key, session: current } = await enroll(service, session.token);
+  const foreign = authenticator();
+  const login = await service.keys.beginLogin("owner", "login", "192.0.2.4");
+  await expect(
+    service.keys.finishAdditionProof(
+      current.token,
+      "login",
+      key.assertion(login, 2),
+    ),
+  ).rejects.toThrow();
+  const proof = await service.keys.beginAddition(
+    current.token,
+    "foreign",
+    "Foreign",
+  );
+  await expect(
+    service.keys.finishAdditionProof(
+      current.token,
+      "foreign",
+      foreign.assertion(proof),
+    ),
+  ).rejects.toThrow();
+  const fresh = await service.keys.beginAddition(
+    current.token,
+    "fresh",
+    "Expired",
+  );
+  const assertion = key.assertion(fresh, 2);
+  await service.keys.finishAdditionProof(current.token, "fresh", assertion);
+  await expect(
+    service.keys.finishAdditionProof(current.token, "fresh", assertion),
+  ).rejects.toThrow();
+  const expiring = await service.keys.beginAddition(
+    current.token,
+    "expired",
+    "Expired",
+  );
+  const options = await service.keys.finishAdditionProof(
+    current.token,
+    "expired",
+    key.assertion(expiring, 3),
+  );
+  f.advance(5 * 60_000);
+  await expect(
+    service.keys.finishRegistration(
+      current.token,
+      "expired",
+      foreign.registration(options),
+    ),
+  ).rejects.toThrow();
+  expect(service.keys.status(current.token).credentials).toHaveLength(1);
+});
+
+test("duplicate credentials and policy changes cannot partially add a key", async () => {
+  const { service, session, database } = await fixture();
+  const { key, session: current } = await enroll(service, session.token);
+  const proof = await service.keys.beginAddition(
+    current.token,
+    "duplicate",
+    "Duplicate",
+  );
+  const options = await service.keys.finishAdditionProof(
+    current.token,
+    "duplicate",
+    key.assertion(proof, 2),
+  );
+  expect(options.excludeCredentials?.map((key) => key.id)).toEqual([key.id]);
+  const verification = await service.keys.finishRegistration(
+    current.token,
+    "duplicate",
+    key.registration(options),
+  );
+  await expect(
+    service.keys.finishEnrollment(
+      current.token,
+      "duplicate",
+      key.assertion(verification, 3),
+    ),
+  ).rejects.toThrow();
+  expect(service.keys.status(current.token).credentials).toHaveLength(1);
+  const next = await service.keys.beginAddition(
+    current.token,
+    "changed",
+    "Backup",
+  );
+  const registration = await service.keys.finishAdditionProof(
+    current.token,
+    "changed",
+    key.assertion(next, 3),
+  );
+  const backup = authenticator();
+  const pending = await service.keys.finishRegistration(
+    current.token,
+    "changed",
+    backup.registration(registration),
+  );
+  database
+    .getClient()
+    .update(users)
+    .set({ authenticationVersion: 2 })
+    .where(eq(users.id, current.user.id))
+    .run();
+  await expect(
+    service.keys.finishEnrollment(
+      current.token,
+      "changed",
+      backup.assertion(pending),
+    ),
+  ).rejects.toThrow();
+  expect(service.keys.status(current.token).credentials).toHaveLength(1);
+});
+
+test("adding a retained credential in password mode preserves that mode without another password", async () => {
+  const { service, session, database } = await fixture();
+  const { session: current } = await enroll(service, session.token);
+  // Fixture for the disabled-key state, whose user-facing toggle belongs to the next slice.
+  database
+    .getClient()
+    .update(users)
+    .set({ keyLoginEnabled: false, authenticationVersion: 2 })
+    .where(eq(users.id, current.user.id))
+    .run();
+  const key = authenticator();
+  const options = await service.keys.beginEnrollment(
+    current.token,
+    "retained",
+    "Password-mode backup",
+  );
+  const proof = await service.keys.finishRegistration(
+    current.token,
+    "retained",
+    key.registration(options),
+  );
+  const saved = await service.keys.finishEnrollment(
+    current.token,
+    "retained",
+    key.assertion(proof),
+  );
+  expect(service.keys.status(saved.token)).toMatchObject({
+    enabled: false,
+    credentials: [{ name: "Proton Pass" }, { name: "Password-mode backup" }],
+  });
+  expect((await service.login("owner", password, "192.0.2.7")).ok).toBe(true);
+  await expect(
+    service.keys.beginLogin("owner", "login", "192.0.2.8"),
+  ).rejects.toThrow();
+});
+
+test("cancelling in-flight addition proof or final verification changes no saved keys", async () => {
+  const { service, session } = await fixture();
+  const { key, session: current } = await enroll(service, session.token);
+  let proof = await service.keys.beginAddition(
+    current.token,
+    "proof",
+    "Cancelled proof",
+  );
+  const authorizing = service.keys.finishAdditionProof(
+    current.token,
+    "proof",
+    key.assertion(proof, 2),
+  );
+  service.keys.cancel("proof");
+  await expect(authorizing).rejects.toThrow();
+  proof = await service.keys.beginAddition(
+    current.token,
+    "final",
+    "Cancelled final",
+  );
+  const registration = await service.keys.finishAdditionProof(
+    current.token,
+    "final",
+    key.assertion(proof, 2),
+  );
+  const backup = authenticator();
+  const verification = await service.keys.finishRegistration(
+    current.token,
+    "final",
+    backup.registration(registration),
+  );
+  const finishing = service.keys.finishEnrollment(
+    current.token,
+    "final",
+    backup.assertion(verification),
+  );
+  service.keys.cancel("final");
+  await expect(finishing).rejects.toThrow();
+  expect(service.keys.status(current.token).credentials).toHaveLength(1);
+});
+
+test("fresh addition authorization is unavailable in password mode", async () => {
+  const { service, session } = await fixture();
+  await expect(
+    service.keys.beginAddition(session.token, "proof", "Backup"),
+  ).rejects.toThrow("Retry enrollment");
+  expect(service.keys.status(session.token)).toEqual({
+    enabled: false,
+    credentials: [],
+  });
 });

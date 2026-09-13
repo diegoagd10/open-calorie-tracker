@@ -21,18 +21,32 @@ async function post<T>(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ action, csrfToken, ...fields }),
   });
-  const result = (await response.json().catch(() => ({ error: "Key request failed. Retry." }))) as T & { error?: string };
+  const result = (await response
+    .json()
+    .catch(() => ({ error: "Key request failed. Retry." }))) as T & {
+    error?: string;
+  };
   if (!response.ok)
     throw new Error(result.error ?? "Key request failed. Retry.");
   return result;
 }
-export async function enrollKey(csrf: string, name: string) {
+export async function enrollKey(csrf: string, name: string, enabled = false) {
   activePrompt = new AbortController();
   const prompt = activePrompt;
   try {
-    const registration = await post<{
-      options: PublicKeyCredentialCreationOptionsJSON;
-    }>(csrf, "register-start", { name });
+    let registration: { options: PublicKeyCredentialCreationOptionsJSON };
+    if (enabled) {
+      const proof = await post<{
+        options: PublicKeyCredentialRequestOptionsJSON;
+      }>(csrf, "addition-start", { name });
+      prompt.signal.throwIfAborted();
+      const response = await startAuthentication({
+        optionsJSON: proof.options,
+      });
+      registration = await post(csrf, "addition-finish", { response });
+    } else {
+      registration = await post(csrf, "register-start", { name });
+    }
     prompt.signal.throwIfAborted();
     const response = await startRegistration({
       optionsJSON: registration.options,

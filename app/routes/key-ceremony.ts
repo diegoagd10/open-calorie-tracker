@@ -17,6 +17,8 @@ import { usernameSchema } from "../auth/validation";
 const bodySchema = z
   .object({
     action: z.enum([
+      "addition-start",
+      "addition-finish",
       "register-start",
       "register-finish",
       "enable-finish",
@@ -71,7 +73,9 @@ export async function action({ request }: Route.ActionArgs) {
   }
   const service = getAuthenticationService();
   const enrollment =
-    input.action.startsWith("register") || input.action === "enable-finish";
+    input.action.startsWith("register") ||
+    input.action.startsWith("addition") ||
+    input.action === "enable-finish";
   const session = enrollment
     ? await getSessionForApplicationAccess(request)
     : undefined;
@@ -102,11 +106,37 @@ export async function action({ request }: Route.ActionArgs) {
   headers.append(
     "Set-Cookie",
     ceremonyCookie(
-      starting || input.action === "register-finish" ? browser : "",
+      starting ||
+        input.action === "register-finish" ||
+        input.action === "addition-finish"
+        ? browser
+        : "",
     ),
   );
   try {
     switch (input.action) {
+      case "addition-start":
+        return Response.json(
+          {
+            options: await service.keys.beginAddition(
+              session!.token,
+              browser,
+              input.name ?? "",
+            ),
+          },
+          { headers },
+        );
+      case "addition-finish":
+        return Response.json(
+          {
+            options: await service.keys.finishAdditionProof(
+              session!.token,
+              browser,
+              input.response,
+            ),
+          },
+          { headers },
+        );
       case "register-start":
         return Response.json(
           {

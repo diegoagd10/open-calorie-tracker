@@ -13,6 +13,13 @@ import { isAccountSetupComplete } from "./account-setup.server";
 export class KeyAuthenticationError extends Error {}
 export type PendingKeyCeremony = typeof webauthnCeremonies.$inferSelect;
 export type StoredKeyCredential = typeof webauthnCredentials.$inferSelect;
+export type VerifiedKeyAssertion = {
+  credential: StoredKeyCredential;
+  metadata: Pick<
+    StoredKeyCredential,
+    "counter" | "deviceType" | "backedUp" | "lastUsedAt"
+  >;
+};
 export type WebAuthnBoundary = { origin: string; rpId: string };
 export class WebAuthnStorage {
   constructor(
@@ -64,8 +71,6 @@ export class WebAuthnStorage {
       .from(users)
       .where(eq(users.id, session.userId))
       .get()!;
-    if (user.keyLoginEnabled)
-      throw new KeyAuthenticationError("Key login is already enabled.");
     return user;
   }
   allocateHandle(userId: number, version: number) {
@@ -101,7 +106,7 @@ export class WebAuthnStorage {
       !user ||
       user.accessState !== "active" ||
       user.authenticationVersion !== pending.authenticationVersion ||
-      (pending.purpose === "login"
+      (["login", "add-proof", "register-add", "add"].includes(pending.purpose)
         ? !user.keyLoginEnabled
         : user.keyLoginEnabled)
     )
@@ -138,9 +143,11 @@ export class WebAuthnStorage {
   save(
     pending: typeof webauthnCeremonies.$inferInsert,
     boundary: WebAuthnBoundary,
+    previous?: PendingKeyCeremony,
   ) {
     this.database.transaction(
       (tx) => {
+        if (previous) this.#requireProcessing(previous);
         this.accountForPending(
           {
             ...pending,
@@ -176,19 +183,34 @@ export class WebAuthnStorage {
   }
   take(
     browserHash: string,
-    purpose: PendingKeyCeremony["purpose"],
+    purpose: PendingKeyCeremony["purpose"] | PendingKeyCeremony["purpose"][],
     boundary: WebAuthnBoundary,
     sessionHash?: string,
   ) {
-    // Consumption commits before async crypto: failed and racing submissions burn the challenge.
-    const pending = this.database
-      .delete(webauthnCeremonies)
-      .where(eq(webauthnCeremonies.browserHash, browserHash))
-      .returning()
-      .get();
+    // Mark before async crypto: failed/replayed submissions cannot reuse a challenge,
+    // while cancellation or a newer ceremony can still invalidate the in-flight result.
+    const pending = this.database.transaction(
+      (tx) => {
+        const current = tx
+          .select()
+          .from(webauthnCeremonies)
+          .where(eq(webauthnCeremonies.browserHash, browserHash))
+          .get();
+        if (current?.purpose === "processing") return undefined;
+        if (current)
+          tx.update(webauthnCeremonies)
+            .set({ purpose: "processing" })
+            .where(eq(webauthnCeremonies.browserHash, browserHash))
+            .run();
+        return current;
+      },
+      { behavior: "immediate" },
+    );
     if (
       !pending ||
-      pending.purpose !== purpose ||
+      !(Array.isArray(purpose) ? purpose : [purpose]).includes(
+        pending.purpose,
+      ) ||
       (pending.sessionHash && pending.sessionHash !== sessionHash)
     )
       throw new KeyAuthenticationError(
@@ -206,27 +228,82 @@ export class WebAuthnStorage {
       .get()!;
     return {
       enabled: user.keyLoginEnabled,
-      credentials: this.credentials(user.id).map(({ name, createdAt }) => ({
+      credentials: this.credentials(user.id).map(({ id, name, createdAt }) => ({
+        id,
         name,
         createdAt,
       })),
     };
   }
+  #requireProcessing(pending: PendingKeyCeremony) {
+    const current = this.database
+      .select()
+      .from(webauthnCeremonies)
+      .where(eq(webauthnCeremonies.browserHash, pending.browserHash))
+      .get();
+    if (
+      !current ||
+      current.purpose !== "processing" ||
+      current.challenge !== pending.challenge
+    )
+      throw new KeyAuthenticationError(
+        "Key request was cancelled or superseded. Retry.",
+      );
+  }
+  #updateCredential(verified: VerifiedKeyAssertion) {
+    const { credential, metadata } = verified;
+    const updated = this.database
+      .update(webauthnCredentials)
+      .set({ ...metadata, revision: credential.revision + 1 })
+      .where(
+        and(
+          eq(webauthnCredentials.id, credential.id),
+          eq(webauthnCredentials.userId, credential.userId),
+          eq(webauthnCredentials.revision, credential.revision),
+        ),
+      )
+      .returning({ id: webauthnCredentials.id })
+      .get();
+    if (!updated)
+      throw new KeyAuthenticationError("Key changed during sign-in. Retry.");
+  }
+  authorizeAddition(
+    pending: PendingKeyCeremony,
+    verified: VerifiedKeyAssertion,
+    challenge: string,
+    boundary: WebAuthnBoundary,
+  ) {
+    const { credential } = verified;
+    this.database.transaction(
+      () => {
+        const current = this.accountForPending(pending, boundary);
+        if (pending.purpose !== "add-proof" || credential.userId !== current.id)
+          throw new KeyAuthenticationError("Wrong key owner or action.");
+        this.#updateCredential(verified);
+        // This browser/session-bound registration challenge is the single-use addition authorization.
+        // Keep the original expiry so later prompts cannot extend the freshness window.
+        this.save(
+          { ...pending, purpose: "register-add", challenge },
+          boundary,
+          pending,
+        );
+      },
+      { behavior: "immediate" },
+    );
+  }
   complete<T>(
     pending: PendingKeyCeremony,
-    credential: StoredKeyCredential,
-    metadata: Pick<
-      StoredKeyCredential,
-      "counter" | "deviceType" | "backedUp" | "lastUsedAt"
-    >,
+    verified: VerifiedKeyAssertion,
     boundary: WebAuthnBoundary,
     issue: (
       user: typeof users.$inferSelect,
       absolute?: Date,
     ) => { persisted: typeof sessions.$inferInsert; session: T },
   ): T {
+    const { credential, metadata } = verified;
     return this.database.transaction(
       (tx) => {
+        this.#requireProcessing(pending);
         const current = this.accountForPending(pending, boundary);
         if (credential.userId !== current.id)
           throw new KeyAuthenticationError("Wrong key owner.");
@@ -234,7 +311,7 @@ export class WebAuthnStorage {
           ? new Date(this.session(pending.sessionHash).absoluteExpiresAt)
           : undefined;
         const issued = issue(current, absolute);
-        if (pending.purpose === "enable") {
+        if (pending.stagedCredential) {
           if (
             tx
               .select({ id: webauthnCredentials.id })
@@ -246,35 +323,25 @@ export class WebAuthnStorage {
           tx.insert(webauthnCredentials)
             .values({ ...credential, ...metadata })
             .run();
-          tx.update(users)
-            .set({
-              keyLoginEnabled: true,
-              authenticationVersion: current.authenticationVersion + 1,
-            })
-            .where(eq(users.id, current.id))
-            .run();
-          tx.delete(sessions).where(eq(sessions.userId, current.id)).run();
-          tx.delete(webauthnCeremonies)
-            .where(eq(webauthnCeremonies.userId, current.id))
-            .run();
+          if (pending.purpose === "enable") {
+            tx.update(users)
+              .set({
+                keyLoginEnabled: true,
+                authenticationVersion: current.authenticationVersion + 1,
+              })
+              .where(eq(users.id, current.id))
+              .run();
+            tx.delete(sessions).where(eq(sessions.userId, current.id)).run();
+            tx.delete(webauthnCeremonies)
+              .where(eq(webauthnCeremonies.userId, current.id))
+              .run();
+          }
         } else {
-          const updated = tx
-            .update(webauthnCredentials)
-            .set({ ...metadata, revision: credential.revision + 1 })
-            .where(
-              and(
-                eq(webauthnCredentials.id, credential.id),
-                eq(webauthnCredentials.userId, current.id),
-                eq(webauthnCredentials.revision, credential.revision),
-              ),
-            )
-            .returning({ id: webauthnCredentials.id })
-            .get();
-          if (!updated)
-            throw new KeyAuthenticationError(
-              "Key changed during sign-in. Retry.",
-            );
+          this.#updateCredential(verified);
         }
+        tx.delete(webauthnCeremonies)
+          .where(eq(webauthnCeremonies.browserHash, pending.browserHash))
+          .run();
         tx.insert(sessions).values(issued.persisted).run();
         return issued.session;
       },

@@ -56,11 +56,11 @@ export default function SecuritySettings({ loaderData }: Route.ComponentProps) {
         {loaderData.credentials.length ? (
           <ul>
             {loaderData.credentials.map((key) => (
-              <li key={key.createdAt}>{key.name}</li>
+              <li key={key.id}>{key.name}</li>
             ))}
           </ul>
         ) : null}
-        {!loaderData.enabled && loaderData.preview ? (
+        {loaderData.preview ? (
           <form
             className={styles.form}
             onSubmit={(event) => {
@@ -72,7 +72,11 @@ export default function SecuritySettings({ loaderData }: Route.ComponentProps) {
               setError("");
               void (async () => {
                 try {
-                  const result = await enrollKey(loaderData.csrfToken, name);
+                  const result = await enrollKey(
+                    loaderData.csrfToken,
+                    name,
+                    loaderData.enabled,
+                  );
                   window.location.assign(result.nextPath);
                 } catch (failure) {
                   setError(keyProviderError(failure));
@@ -92,17 +96,25 @@ export default function SecuritySettings({ loaderData }: Route.ComponentProps) {
               />
             </div>
             <p>
-              Enrollment creates a key and then verifies it. Password login
-              stays available until both prompts succeed. Enabling signs out
-              your other sessions.
+              {loaderData.enabled
+                ? "First verify an existing key, then register and verify your new key."
+                : loaderData.credentials.length
+                  ? "Register and verify another key. Password login stays enabled."
+                  : "Enrollment creates a key and then verifies it. Password login stays available until both prompts succeed. Enabling signs out your other sessions."}
             </p>
             <button className={styles.submit} disabled={busy} type="submit">
               {busy
                 ? "Follow your key prompts…"
-                : "Enroll and enable key login"}
+                : loaderData.credentials.length
+                  ? "Add another key"
+                  : "Enroll and enable key login"}
             </button>
             {busy ? (
-              <button className={styles.submit} type="button" onClick={cancelKeyPrompt}>
+              <button
+                className={styles.submit}
+                type="button"
+                onClick={cancelKeyPrompt}
+              >
                 Cancel key prompt
               </button>
             ) : null}
@@ -115,7 +127,9 @@ export default function SecuritySettings({ loaderData }: Route.ComponentProps) {
         ) : null}
         <p role="status">
           {busy
-            ? "Complete registration, then verify the new key to enable key login."
+            ? loaderData.enabled
+              ? "Verify an existing key, then register and verify the new key."
+              : "Complete registration, then verify the new key."
             : ""}
         </p>
         <Link to="/account/password">Change account password</Link>
