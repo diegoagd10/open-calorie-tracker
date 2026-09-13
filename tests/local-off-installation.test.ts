@@ -34,6 +34,83 @@ async function install(management: CatalogManagement, archive = offArchive()) {
   await vi.waitFor(() => expect(management.read().busy).toBe(false), { timeout: 10000 });
 }
 
+test("OFF barcode lookup finds Premier Protein's zero-prefixed EAN using its printed UPC", async () => {
+  const { management, catalog } = await setup();
+  await install(management, offArchive([{
+    ...offProduct,
+    code: "0643843715887",
+    product_name: "Chocolate Milkshake",
+    brands: "premier protein",
+  }]));
+  await expect(catalog.lookupBarcode("open-food-facts", "0643843715887"))
+    .resolves.toMatchObject({ providerFoodId: "0643843715887", name: "Chocolate Milkshake" });
+  await expect(catalog.lookupBarcode("open-food-facts", "643843715887"))
+    .resolves.toMatchObject({ providerFoodId: "0643843715887", name: "Chocolate Milkshake" });
+  await expect(catalog.getFood("open-food-facts", "643843715887"))
+    .rejects.toThrow("no longer available");
+});
+
+test.each(["643843715887", "0643843715887", "00643843715887"])(
+  "OFF barcode lookup recognizes equivalent representations when %s is stored",
+  async code => {
+    const { management, catalog } = await setup();
+    await install(management, offArchive([{ ...offProduct, code }]));
+    for (const barcode of ["643843715887", "0643843715887", "00643843715887"]) {
+      await expect(catalog.lookupBarcode("open-food-facts", barcode))
+        .resolves.toMatchObject({ providerFoodId: code, barcode: code });
+    }
+  },
+);
+
+test("OFF barcode equivalence preserves exact matches, significant digits, and legacy manual identifiers", async () => {
+  const { management, catalog } = await setup();
+  await install(management, offArchive([
+    { ...offProduct, code: "643843715887", product_name: "Exact UPC" },
+    { ...offProduct, code: "0643843715887", product_name: "Exact EAN" },
+    { ...offProduct, code: "10643843715884", product_name: "Different packaging" },
+    { ...offProduct, code: "034000470694", product_name: "Legacy invalid check digit" },
+    { ...offProduct, code: "1234567", product_name: "Legacy short code" },
+  ]));
+  await expect(catalog.lookupBarcode("open-food-facts", "643843715887"))
+    .resolves.toMatchObject({ name: "Exact UPC" });
+  await expect(catalog.lookupBarcode("open-food-facts", "0643843715887"))
+    .resolves.toMatchObject({ name: "Exact EAN" });
+  await expect(catalog.lookupBarcode("open-food-facts", "10643843715884"))
+    .resolves.toMatchObject({ name: "Different packaging" });
+  for (const barcode of ["034000470694", "1234567"]) {
+    await expect(catalog.lookupBarcode("open-food-facts", barcode))
+      .resolves.toMatchObject({ barcode });
+  }
+  for (const barcode of ["0034000470694", "643843715884", "01234567"]) {
+    await expect(catalog.lookupBarcode("open-food-facts", barcode))
+      .rejects.toThrow("no longer available");
+  }
+});
+
+test("an equivalent UPC review retains source identity for saving and rejects a stale generation", async () => {
+  const { management, catalog, entries, userId } = await setup();
+  await install(management, offArchive([offWithBasis("serving", "0643843715887")]));
+  const food = await catalog.lookupBarcode("open-food-facts", "643843715887");
+  const input = {
+    provider: food.provider,
+    providerFoodId: food.providerFoodId,
+    catalogGeneration: food.catalogGeneration,
+    foodLogDate: "2026-09-06",
+    idempotencyKey: "equivalent-upc",
+    selectedMeasurementId: "serving",
+    quantity: "1",
+  };
+  await expect(entries.log(userId, input)).resolves.toMatchObject({
+    providerFoodId: "0643843715887",
+    barcode: "0643843715887",
+  });
+  await install(management, offArchive([offWithBasis("serving", "0643843715887")]));
+  await expect(catalog.lookupBarcode("open-food-facts", "643843715887", {
+    requestId: "stale-equivalent-upc",
+    reviewedCatalogGeneration: food.catalogGeneration,
+  })).rejects.toThrow("catalog changed");
+});
+
 test("OFF installation preserves quoted names and leading zeros, retaining ambiguous products with a calculation reason", async () => {
   const { management, catalog, entries, userId } = await setup();
   const network = vi.fn(() => { throw new Error("Food API forbidden"); }); vi.stubGlobal("fetch", network);
