@@ -10,21 +10,21 @@ exports[`barcode mode separates confirmation from scanning while keeping errors 
 
 exports[`barcode mode separates confirmation from scanning while keeping errors recoverable 4`] = `"c898d21c986b66faedc890a4d77be4d1118aab3178190823bfc19f3e96d39390"`;
 
-exports[`home catalog detail recalculates previews and exposes the log contract 1`] = `"f362fcd00276d0505b5f10cffd17908ff6ead9e9b20557508a67562a388f438e"`;
+exports[`home catalog detail recalculates previews and exposes the log contract 1`] = `"d6e97e3e2be2aad46897172a0b5615ccfc75b76ce018927651a4d1353fb59502"`;
 
-exports[`home catalog detail recalculates previews and exposes the log contract 2`] = `"e21f3147130d4f874f1c0c12d00e3010c200ba09cd97a0d94d268430baa095ca"`;
+exports[`home catalog detail recalculates previews and exposes the log contract 2`] = `"70573942e0899fd3c390e1b6e7823b9c633743d07d0cad17fc68045bae1890c6"`;
 
-exports[`home catalog detail recalculates previews and exposes the log contract 3`] = `"dae03a9076244e2bb75dc91e2c1e98b3ea63c09da024bde9b826efb88ed13fb5"`;
+exports[`home catalog detail recalculates previews and exposes the log contract 3`] = `"0ba1a30429561190517bf701501bcad3f02f16801d2a4d0984d2e17888d85f56"`;
 
-exports[`home catalog renders initial, empty, failure, and selectable result states 1`] = `"20668c1a355d22a4400f49d1a44cd0bd7b56789c22481df3dd7312e5b10a605d"`;
+exports[`home catalog renders initial, empty, failure, and selectable result states 1`] = `"56b232539f86b5a7f88da0bf6c01f52040cc8ae45f1c9bb879e5f0ed1d814e9f"`;
 
-exports[`home catalog renders initial, empty, failure, and selectable result states 2`] = `"506ac11c3aa770c2c8b244f85d74fd10f20ddd5cde9ef3bef988af9a3ffc782e"`;
+exports[`home catalog renders initial, empty, failure, and selectable result states 2`] = `"7b6c1ebd2c21769516cf219fe98bdb0f14058ef026d97a8c78ebae90dec24024"`;
 
-exports[`home catalog renders initial, empty, failure, and selectable result states 3`] = `"3ba4b2aaabe8883d7cdec53756445adff20fb5cf1ea30be93e4767be2d45a13a"`;
+exports[`home catalog renders initial, empty, failure, and selectable result states 3`] = `"09a03efb45f03d77417d116beef7bd8534a3425b244b4604157921ca9deace01"`;
 
-exports[`home catalog renders initial, empty, failure, and selectable result states 4`] = `"d475641f10179d33811b84e01ad0f1c2fa1163c3d5c362459942d76e1894e096"`;
+exports[`home catalog renders initial, empty, failure, and selectable result states 4`] = `"54b88d5bb5c52d25d322a5771a73c9259c95a55783bb06c1f5a662a38d72c95c"`;
 
-exports[`home catalog renders initial, empty, failure, and selectable result states 5`] = `"edbfca5c0fefc7642dd07aebc6bb5325e7d092b676f133795e1fe8a8292cfd6e"`;
+exports[`home catalog renders initial, empty, failure, and selectable result states 5`] = `"a68253f2837c76b1373265b72db0fd1050d43a9b4b92daf3457c3bfd3ca74bd9"`;
 
 exports[`home distinguishes past, future, no-goal, and incomplete summaries 1`] = `"7b47a9d9616dc10a2a834bfffa79cfdf9ba710f5b5552b98e5e0440f32c7b1ed"`;
 
@@ -48,9 +48,9 @@ exports[`home renders submission and navigation pending states 2`] = `"1041e8e14
 
 exports[`home renders submission and navigation pending states 3`] = `"ae477d1e29e8470676507bca710f8e652f77303b89ef3ddbcb8e82229c9fee1c"`;
 
-exports[`home renders submission and navigation pending states 4`] = `"e382ed7a5c2e8eb3169cd95133ffcf0b7f2928b1ec41312c5b1dc5d790b5f787"`;
+exports[`home renders submission and navigation pending states 4`] = `"b773f0be369a4bd3036f68a63fb6d25895f01089bea8882fba496269c73b2cd5"`;
 
-exports[`home renders submission and navigation pending states 5`] = `"29b55903ed47ab6718a2193c28db043be4def109f41d1cb0c89cbf0d32858786"`;
+exports[`home renders submission and navigation pending states 5`] = `"f6ce6d80e90a2ca80296f4106a3b8725d5322b1990124a95852d2d2892f29a0a"`;
 
 exports[`home renders today's empty log and all goal progress contracts 1`] = `"1c1d911000507d172cbdb832779da6aaa3e5fb4d9a15607219cba4a39bca2117"`;
 

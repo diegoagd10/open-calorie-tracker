@@ -261,11 +261,11 @@ const brokenPublishedReplacements: [string, BrokenReplacement][] = [
     generation.exec("CREATE TABLE recovery_padding (value BLOB); INSERT INTO recovery_padding VALUES (zeroblob(65536))");
     generation.close();
   }],
-  ["unusable search index", async ({ path: replacementPath, provider, sourcePath }) => {
+  ["unusable required records", async ({ path: replacementPath, provider, sourcePath }) => {
     await fs.copyFile(sourcePath, replacementPath);
     await fs.chmod(replacementPath, 0o600);
     const generation = new BetterSqlite3(replacementPath);
-    generation.exec(`DELETE FROM ${provider === "usda-fdc" ? "names" : "product_search"}`);
+    generation.exec(`DELETE FROM ${provider === "usda-fdc" ? "names" : "products"}`);
     generation.close();
   }],
 ];
@@ -431,7 +431,6 @@ const recoveryProviders: { provider: RecoveryProvider; label: string; verify: (m
     verify: async (management, directory, generation) => {
       const catalog = new LocalOpenFoodFactsAdapter(management, directory);
       await expect(catalog.lookupBarcode("0012345678905")).resolves.toMatchObject({ catalogGeneration: generation });
-      await expect(catalog.search("oats")).resolves.toEqual(expect.arrayContaining([expect.objectContaining({ catalogGeneration: generation })]));
     },
   },
 ];

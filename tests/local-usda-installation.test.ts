@@ -71,7 +71,7 @@ test("an installed real Foundation archive supports local search, source portion
   await vi.waitFor(() => expect(management.read().busy).toBe(false), { timeout: 10000 });
   expect(management.read().job).toMatchObject({ phase: "succeeded", error: null });
   expect(management.read()).toMatchObject({ installed: { foodCount: 4 }, job: { exclusions: { research_record: 1 } } });
-  const results = await catalog.search("usda-fdc", "BROCC");
+  const results = await catalog.search("BROCC");
   expect(results.map(food => food.providerFoodId)).toEqual(["747447", "321900"]);
   const food = await catalog.getFood("usda-fdc", "747447");
   expect(food.catalogGeneration).toBe(management.read().installed?.generation);
@@ -188,7 +188,7 @@ test("restart restores the prior USDA catalog and personal entries before a succ
     busy: false,
     job: { phase: "interrupted", error: "USDA replacement could not be confirmed after restart. The previous catalog remains active. Upload the archive again." },
   });
-  await expect(restartedCatalog.search("usda-fdc", "egg")).resolves.toEqual(expect.arrayContaining([expect.objectContaining({ providerFoodId: food.providerFoodId })]));
+  await expect(restartedCatalog.search("egg")).resolves.toEqual(expect.arrayContaining([expect.objectContaining({ providerFoodId: food.providerFoodId })]));
   await expect(restartedCatalog.getFood("usda-fdc", food.providerFoodId)).resolves.toMatchObject({ name: food.name, catalogGeneration: previous.generation });
   expect(restartedEntries.read(userId, saved.id)).toEqual(saved);
   const updated = restartedEntries.update(userId, saved.id, {
@@ -235,7 +235,7 @@ await importFoundation(workerData, publish);
   let loggedDuringImport: ReturnType<FoodEntryService["read"]> | undefined;
   for (const phase of ["validating", "importing", "indexing"] as const) {
     await vi.waitFor(() => expect(replacement.read().job?.phase).toBe(phase));
-    expect((await catalog.search("usda-fdc", "egg"))[0]).toMatchObject({ providerFoodId: original.providerFoodId, catalogGeneration: original.catalogGeneration });
+    expect((await catalog.search("egg"))[0]).toMatchObject({ providerFoodId: original.providerFoodId, catalogGeneration: original.catalogGeneration });
     expect(await catalog.getFood("usda-fdc", original.providerFoodId)).toMatchObject({ name: original.name, catalogGeneration: original.catalogGeneration });
     if (phase === "importing") {
       loggedDuringImport = await entries.log(userId, {
@@ -301,7 +301,7 @@ test("a validation failure leaves the previous USDA catalog searchable and logga
   })) });
   await vi.waitFor(() => expect(management.read().busy).toBe(false));
   expect(management.read()).toMatchObject({ installed: working, job: { phase: "failed", error: "Wrong USDA dataset. Only a Foundation CSV archive is supported." } });
-  await expect(catalog.search("usda-fdc", "egg")).resolves.toEqual(expect.arrayContaining([expect.objectContaining({ catalogGeneration: working.generation })]));
+  await expect(catalog.search("egg")).resolves.toEqual(expect.arrayContaining([expect.objectContaining({ catalogGeneration: working.generation })]));
   await expect(entries.log(userId, {
     provider: food.provider,
     providerFoodId: food.providerFoodId,
@@ -421,7 +421,7 @@ test("an archive accepts BOMs, blank rows, harmless extra files and explicit dir
   })) });
   await vi.waitFor(() => expect(management.read().busy).toBe(false));
   expect(management.read().job?.phase).toBe("succeeded");
-  expect((await catalog.search("usda-fdc", "egg"))[0].providerFoodId).toBe("748967");
+  expect((await catalog.search("egg"))[0].providerFoodId).toBe("748967");
 });
 
 test("expanded-size and entry-count limits reject an archive before activation", async () => {
@@ -504,7 +504,7 @@ test("invalid values, duplicate nutrients and unsupported portions stay unknown 
 
 test("a missing catalog, conflicting replacement, deliberate reimport and stale review have explicit outcomes", async () => {
   const { management, catalog, entries, userId } = await setup();
-  await expect(catalog.search("usda-fdc", "egg")).rejects.toThrow("not installed");
+  await expect(catalog.search("egg")).rejects.toThrow("not installed");
   for (const id of ["0", "x748967", "748967x"]) await expect(catalog.getFood("usda-fdc", id)).rejects.toThrow("no longer available");
   await management.submitArchive({ filename: "foundation.zip", stream: Readable.from(await foundationArchive()) });
   await expect(management.submitArchive({ filename: "second.zip", stream: Readable.from("unused") })).rejects.toThrow("already running");
@@ -522,16 +522,16 @@ test("a missing catalog, conflicting replacement, deliberate reimport and stale 
 
 test("local USDA search normalizes Unicode, bounds terms, and keeps punctuation out of FTS syntax", async () => {
   const { management, catalog } = await setup();
-  for (const query of ["", " ", "a", " a ", "?!", "x".repeat(101)]) expect(await catalog.search("usda-fdc", query)).toEqual([]);
+  for (const query of ["", " ", "a", " a ", "?!", "x".repeat(101)]) expect(await catalog.search(query)).toEqual([]);
   await management.submitArchive({ filename: "foundation.zip", stream: Readable.from(await foundationArchive()) });
   await vi.waitFor(() => expect(management.read().busy).toBe(false));
-  expect((await catalog.search("usda-fdc", "ｅｇｇ")).map(food => food.providerFoodId)).toEqual(["748967"]);
-  expect((await catalog.search("usda-fdc", "EG")).map(food => food.providerFoodId)).toEqual(["748967"]);
-  expect((await catalog.search("usda-fdc", "egg" + " ".repeat(97))).map(food => food.providerFoodId)).toEqual(["748967"]);
-  expect((await catalog.search("usda-fdc", "egg-Grade/A,Large.whole")).map(food => food.providerFoodId)).toEqual(["748967"]);
-  expect((await catalog.search("usda-fdc", "egg egg egg egg egg egg egg egg nonexistent")).map(food => food.providerFoodId)).toEqual([]);
-  expect(await catalog.search("usda-fdc", "egg OR broccoli")).toEqual([]);
-  expect(await catalog.search("usda-fdc", "egg 999999")).toEqual([]);
+  expect((await catalog.search("ｅｇｇ")).map(food => food.providerFoodId)).toEqual(["748967"]);
+  expect((await catalog.search("EG")).map(food => food.providerFoodId)).toEqual(["748967"]);
+  expect((await catalog.search("egg" + " ".repeat(97))).map(food => food.providerFoodId)).toEqual(["748967"]);
+  expect((await catalog.search("egg-Grade/A,Large.whole")).map(food => food.providerFoodId)).toEqual(["748967"]);
+  expect((await catalog.search("egg egg egg egg egg egg egg egg nonexistent")).map(food => food.providerFoodId)).toEqual([]);
+  expect(await catalog.search("egg OR broccoli")).toEqual([]);
+  expect(await catalog.search("egg 999999")).toEqual([]);
   for (const id of ["0", "bad1", "1bad", "0748967", "9999999"]) await expect(catalog.getFood("usda-fdc", id)).rejects.toThrow("no longer available");
 });
 
@@ -539,11 +539,11 @@ test("Spanish egg aliases find the original USDA egg record without confusing eg
   const { management, catalog } = await setup();
   await management.submitArchive({ filename: "foundation.zip", stream: Readable.from(await foundationArchive()) });
   await vi.waitFor(() => expect(management.read().busy).toBe(false));
-  const results = await catalog.search("usda-fdc", "HUÉVOS");
+  const results = await catalog.search("HUÉVOS");
   expect(results[0]).toMatchObject({ providerFoodId: "748967", name: "Eggs, Grade A, Large, egg whole", isSelectable: true });
   expect(await catalog.getFood("usda-fdc", results[0].providerFoodId)).toMatchObject({ originalName: "Eggs, Grade A, Large, egg whole", providerPublishedDate: "2019-12-16" });
-  expect((await catalog.search("usda-fdc", "Eggs, Grade A, Large, egg whole"))[0]?.providerFoodId).toBe("748967");
-  expect((await catalog.search("usda-fdc", "eggs grade A"))[0]?.providerFoodId).toBe("748967");
+  expect((await catalog.search("Eggs, Grade A, Large, egg whole"))[0]?.providerFoodId).toBe("748967");
+  expect((await catalog.search("eggs grade A"))[0]?.providerFoodId).toBe("748967");
 });
 
 test("basic-food names, aliases and prefixes rank useful foods above noisy partial matches", async () => {
@@ -559,16 +559,16 @@ test("basic-food names, aliases and prefixes rank useful foods above noisy parti
     ["tomato", /^Tomatoes,/], ["tomates", /^Tomatoes,/], ["lechuga", /^Lettuce,/], ["calabacín", /^Squash, summer, green, zucchini,/],
     ["epinard", /^Épinard,/],
   ] as const) {
-    const results = await catalog.search("usda-fdc", query);
+    const results = await catalog.search(query);
     expect(results[0]?.name, query).toMatch(expectedName);
     expect(results[0]?.isSelectable, query).toBe(true);
     expect(results.length).toBeLessThanOrEqual(25);
   }
-  const eggs = await catalog.search("usda-fdc", "huevos");
+  const eggs = await catalog.search("huevos");
   expect(eggs.map(food => food.name)).not.toContain("Eggplant, raw");
   expect(eggs.map(food => food.name)).not.toContain("Egg substitute, liquid");
   expect(eggs.filter(food => food.name === "Eggs, whole, raw")[0].providerFoodId).toBe("998");
-  expect(await catalog.search("usda-fdc", "huevos")).toEqual(eggs);
+  expect(await catalog.search("huevos")).toEqual(eggs);
 });
 
 test("exact names and aliases outrank repeated-keyword partial matches", async () => {
@@ -578,14 +578,14 @@ test("exact names and aliases outrank repeated-keyword partial matches", async (
     "food_nutrient.csv": "id,fdc_id,nutrient_id,amount\n1,1,2048,23\n2,2,2048,23\n3,3,2048,100\n4,4,2048,100\n5,5,2048,23\n",
   })) });
   await vi.waitFor(() => expect(management.read().busy).toBe(false));
-  const names = (await catalog.search("usda-fdc", "spinach")).map(food => food.providerFoodId);
+  const names = (await catalog.search("spinach")).map(food => food.providerFoodId);
   expect(names).toEqual(expect.arrayContaining(["1", "2", "3"]));
   expect(names[0]).toBe("1");
   expect(names.indexOf("2")).toBeLessThan(names.indexOf("3"));
-  const prefixes = (await catalog.search("usda-fdc", "spin")).map(food => food.providerFoodId);
+  const prefixes = (await catalog.search("spin")).map(food => food.providerFoodId);
   expect(prefixes).toEqual(expect.arrayContaining(["2", "3"]));
   expect(prefixes.indexOf("2")).toBeLessThan(prefixes.indexOf("3"));
-  const words = (await catalog.search("usda-fdc", "spinach raw")).map(food => food.providerFoodId);
+  const words = (await catalog.search("spinach raw")).map(food => food.providerFoodId);
   expect(words).toEqual(expect.arrayContaining(["2", "4", "5"]));
   expect(words[0]).toBe("5");
   expect(words.indexOf("2")).toBeLessThan(words.indexOf("4"));
@@ -615,15 +615,15 @@ test("new and restored name-only generations resolve the same basic-food aliases
       [["zucchini", "zucchinis", "calabacín", "calabacines", "calab"], ["12", "13", "14"]],
     ]) {
       for (const query of aliases) {
-        const results = (await catalog.search("usda-fdc", query)).map(food => food.providerFoodId);
+        const results = (await catalog.search(query)).map(food => food.providerFoodId);
         expect(results, query).toEqual(expect.arrayContaining(ids));
       }
     }
-    for (const query of ["calabacín", "calabacines", "calab"]) expect(await catalog.search("usda-fdc", query), query).toHaveLength(3);
-    for (const query of ["huevo", "huevos"]) expect(await catalog.search("usda-fdc", query), query).toHaveLength(4);
-    expect((await catalog.search("usda-fdc", "eggs grade A")).map(food => food.providerFoodId)).toEqual(["19"]);
-    expect(await catalog.search("usda-fdc", "calabacín winter")).toEqual([]);
-    expect(await catalog.search("usda-fdc", "huevos plant")).toEqual([]);
+    for (const query of ["calabacín", "calabacines", "calab"]) expect(await catalog.search(query), query).toHaveLength(3);
+    for (const query of ["huevo", "huevos"]) expect(await catalog.search(query), query).toHaveLength(4);
+    expect((await catalog.search("eggs grade A")).map(food => food.providerFoodId)).toEqual(["19"]);
+    expect(await catalog.search("calabacín winter")).toEqual([]);
+    expect(await catalog.search("huevos plant")).toEqual([]);
     expect(await readFile(filename)).toEqual(before);
   }
 });
@@ -751,8 +751,8 @@ test("local lookup accepts bounded queries and rejects invalid or absent source 
   const { management, catalog } = await setup();
   await management.submitArchive({ filename: "basics.zip", stream: Readable.from(await basicFoodsArchive()) });
   await vi.waitFor(() => expect(management.read().busy).toBe(false));
-  for (const query of ["eg", "egg " + " ".repeat(96), "egg egg egg egg egg egg egg egg"]) expect((await catalog.search("usda-fdc", query)).length).toBeGreaterThan(0);
-  for (const query of ["egg " + " ".repeat(97), "egg egg egg egg egg egg egg egg egg", "a a a", "a ", "  "]) expect(await catalog.search("usda-fdc", query)).toEqual([]);
+  for (const query of ["eg", "egg " + " ".repeat(96), "egg egg egg egg egg egg egg egg"]) expect((await catalog.search(query)).length).toBeGreaterThan(0);
+  for (const query of ["egg " + " ".repeat(97), "egg egg egg egg egg egg egg egg egg", "a a a", "a ", "  "]) expect(await catalog.search(query)).toEqual([]);
   for (const id of ["0", "01", "-1", "x748967", "748967x", "1.5", "1e3", "0x10", "999999999"])
     await expect(catalog.getFood("usda-fdc", id)).rejects.toThrow("no longer available");
 });
@@ -797,21 +797,21 @@ test("literal punctuation and operators cannot broaden or break bounded local se
   await management.submitArchive({ filename: "basics.zip", stream: Readable.from(await basicFoodsArchive()) });
   await vi.waitFor(() => expect(management.read().busy).toBe(false));
   for (const query of ["", "a", "*", "\"", "---", "OR", "egg OR spinach", "NOT eggs", "NEAR(eggs spinach)", "name:egg", "egg ".repeat(9), "e".repeat(101)]) {
-    expect(await catalog.search("usda-fdc", query), query).toEqual([]);
+    expect(await catalog.search(query), query).toEqual([]);
   }
-  expect(await catalog.search("usda-fdc", '"huevos"*')).toEqual(await catalog.search("usda-fdc", "huevos"));
-  expect((await catalog.search("usda-fdc", "huevos, cooked")).map(food => food.name)).toEqual(["Eggs, whole, cooked, scrambled"]);
-  expect(await catalog.search("usda-fdc", "huevoss")).toEqual([]);
-  expect((await catalog.search("usda-fdc", "eggplant"))[0].name).toBe("Eggplant, raw");
+  expect(await catalog.search('"huevos"*')).toEqual(await catalog.search("huevos"));
+  expect((await catalog.search("huevos, cooked")).map(food => food.name)).toEqual(["Eggs, whole, cooked, scrambled"]);
+  expect(await catalog.search("huevoss")).toEqual([]);
+  expect((await catalog.search("eggplant"))[0].name).toBe("Eggplant, raw");
 });
 
 test("preparations remain distinct and gram-only results retain unknown nutrients through logging", async () => {
   const { management, catalog, entries, userId } = await setup();
   await management.submitArchive({ filename: "basics.zip", stream: Readable.from(await basicFoodsArchive()) });
   await vi.waitFor(() => expect(management.read().busy).toBe(false));
-  expect((await catalog.search("usda-fdc", "tilapia")).map(food => food.name)).toEqual(expect.arrayContaining(["Fish, tilapia, raw", "Fish, tilapia, cooked, dry heat"]));
-  expect((await catalog.search("usda-fdc", "broccoli")).slice(0, 4).map(food => food.name)).toEqual(expect.arrayContaining(["Broccoli, raw", "Broccoli, frozen, chopped, unprepared"]));
-  const eggs = await catalog.search("usda-fdc", "huevos");
+  expect((await catalog.search("tilapia")).map(food => food.name)).toEqual(expect.arrayContaining(["Fish, tilapia, raw", "Fish, tilapia, cooked, dry heat"]));
+  expect((await catalog.search("broccoli")).slice(0, 4).map(food => food.name)).toEqual(expect.arrayContaining(["Broccoli, raw", "Broccoli, frozen, chopped, unprepared"]));
+  const eggs = await catalog.search("huevos");
   expect(eggs.find(food => food.providerFoodId === "999")).toMatchObject({ isSelectable: false, measurementSummary: "Calories unavailable" });
   const cooked = eggs.find(food => food.providerFoodId === "102")!;
   const food = await catalog.getFood(cooked.provider, cooked.providerFoodId);

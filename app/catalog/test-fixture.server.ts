@@ -147,15 +147,7 @@ function barcodeProduct(barcode: string, unnamed = false): CatalogFood {
   };
 }
 
-export class TestOpenFoodFactsProvider implements BarcodeFoodCatalogProvider, SearchFoodCatalogProvider {
-  async search(query: string): Promise<CatalogSearchResult[]> {
-    const normalized = query.trim().toLowerCase();
-    if (normalized === "none") return [];
-    const food = barcodeProduct("0034000470693");
-    return normalized.includes("cereal") || normalized === "example foods"
-      ? [searchResult(food)]
-      : [];
-  }
+export class TestOpenFoodFactsProvider implements BarcodeFoodCatalogProvider {
   async getFood(providerFoodId: string): Promise<CatalogFood> {
     return await this.lookupBarcode(providerFoodId);
   }

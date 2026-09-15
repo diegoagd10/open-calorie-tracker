@@ -9,7 +9,6 @@ import { buildOffGeneration } from "../database/off-generation.server.ts";
 import type { CatalogFood } from "../catalog/food-catalog.server.ts";
 import { offNutrition, requiredOffField } from "./off-nutrition.server.ts";
 import { offJsonRow, offNativeNutrition, offObject, offJsonLines } from "./off-jsonl.server.ts";
-import { offSearchAliases } from "../catalog/off-search.server.ts";
 
 function jsonlPrefix(prefix: Buffer): boolean {
   const firstLine = prefix.toString("utf8").split("\n", 1)[0].trimStart();
@@ -27,7 +26,7 @@ export async function importOff(options: ImportOptions, publish: (message: Impor
   let latest: string | null = null;
   function exclude(reason: string) { exclusions[reason] = (exclusions[reason] ?? 0) + 1; }
   function reject(reason: string) { exclude(reason); rejectedRecords++; }
-  function progress(phase: "validating" | "importing" | "indexing") { publish({ progress: { phase, processedRecords, importedRecords, usableNutritionRecords, rejectedRecords, exclusions } }); }
+  function progress(phase: "validating" | "importing") { publish({ progress: { phase, processedRecords, importedRecords, usableNutritionRecords, rejectedRecords, exclusions } }); }
   function date(value: string | undefined) {
     if (!value || !/^\d{1,11}$/.test(value)) return null;
     const timestamp = Number(value) * 1000;
@@ -54,7 +53,6 @@ export async function importOff(options: ImportOptions, publish: (message: Impor
       brand: text(row.brands), marketCountry: text(row.countries),
       ...sourceDates(row),
       ...nutrition, isSelectable: !reason, calculationUnavailableReason: reason,
-      offSourceFields: row,
     };
   }
   function validateHeader(header: string[]) {
@@ -130,7 +128,7 @@ export async function importOff(options: ImportOptions, publish: (message: Impor
     }
     const jsonl = jsonlPrefix(prefix);
     archiveFormat = jsonl ? "jsonl" : "csv";
-    const build = (foods: AsyncIterable<CatalogFood>) => buildOffGeneration({ aliasesFor: offSearchAliases, directory: options.directory, foods, generation: options.generation, maxBytes: options.maxDatabaseBytes ?? options.maxExpandedBytes, onDuplicate: () => reject("duplicate_identity"), onIndexing: () => progress("indexing"), onStored: food => { importedRecords++; if (food.isSelectable) usableNutritionRecords++; } });
+    const build = (foods: AsyncIterable<CatalogFood>) => buildOffGeneration({ directory: options.directory, foods, generation: options.generation, maxBytes: options.maxDatabaseBytes ?? options.maxExpandedBytes, onDuplicate: () => reject("duplicate_identity"), onStored: food => { importedRecords++; if (food.isSelectable) usableNutritionRecords++; } });
     if (jsonl) return build(jsonFoods(replay()));
     let count = 0;
     await pipeline(replay(), parse({ delimiter: "\t", bom: true, quote: daily ? false : '"', relax_column_count: true, skip_empty_lines: true, max_record_size: 2 * 1024 * 1024 }), async rows => {

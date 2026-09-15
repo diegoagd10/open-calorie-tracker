@@ -254,12 +254,11 @@ test("home publishes metadata and enforces account/setup/date boundaries", async
 
 test("home loader maps every catalog search and detail state", async () => {
   const empty = await load("/?food=search");
-  expect(empty.data.catalog).toEqual({ groups: [], mode: "search", query: "", results: [] });
+  expect(empty.data.catalog).toEqual({ mode: "search", query: "", results: [] });
 
   const invalid = await load("/?food=search&query=a");
   expect(invalid.init?.status).toBe(400);
   expect(invalid.data.catalog).toEqual({
-    groups: [],
     message: "Enter a food search from 2 to 100 characters.",
     mode: "search",
     query: "a",
@@ -275,6 +274,16 @@ test("home loader maps every catalog search and detail state", async () => {
     results: [{ name: "Plain nonfat Greek yogurt", providerFoodId: "1001" }],
   });
 
+  const legacyFilter = await load(
+    "/?food=search&query=yogurt&filter=packaged&unknown=ignored",
+  );
+  expect(legacyFilter.data.catalog).toMatchObject({
+    mode: "search",
+    query: "yogurt",
+    results: [{ name: "Plain nonfat Greek yogurt", providerFoodId: "1001" }],
+  });
+  expect(legacyFilter.data.catalog).not.toHaveProperty("filter");
+
   for (const [query, expectedQuery, expectedStatus] of [
     ["ok", "ok", 200],
     [`${"a".repeat(100)}`, "a".repeat(100), 200],
@@ -287,31 +296,25 @@ test("home loader maps every catalog search and detail state", async () => {
   }
 
   for (const [query, status] of [
-    ["not-installed", "not-installed"],
-    ["malformed", "unavailable"],
-    ["unavailable", "unavailable"],
+    ["not-installed", 503],
+    ["malformed", 500],
+    ["unavailable", 503],
   ] as const) {
     const result = await load(`/?food=search&query=${query}`);
-    expect(result.init?.status).toBe(200);
+    expect(result.init?.status).toBe(status);
     expect(result.data.catalog).toMatchObject({
       mode: "search",
       query,
       results: [],
-      groups: [
-        { provider: "usda-fdc", status },
-        { provider: "open-food-facts", status: "available" },
-      ],
     });
   }
 
-  const packaged = await load("/?food=search&query=example%20foods&filter=packaged");
+  const packaged = await load("/?food=search&query=yogurt&filter=packaged");
   expect(packaged.data.catalog).toMatchObject({
-    filter: "packaged",
-    groups: [{ kind: "packaged", results: [{ provider: "open-food-facts", providerFoodId: "0034000470693" }] }],
+    results: [{ provider: "usda-fdc", providerFoodId: "1001" }],
   });
   const packagedDetail = await load("/?food=0034000470693&provider=open-food-facts&query=example%20foods&filter=packaged");
   expect(packagedDetail.data.catalog).toMatchObject({
-    filter: "packaged",
     food: { provider: "open-food-facts", providerFoodId: "0034000470693" },
     mode: "detail",
   });
@@ -341,16 +344,11 @@ test("home loader maps every catalog search and detail state", async () => {
   if (vanishedWithoutRefresh.data.catalog?.mode !== "search") {
     throw new Error("Expected search fallback");
   }
-  expect(vanishedWithoutRefresh.data.catalog.groups).toMatchObject([
-    { kind: "basic", provider: "usda-fdc", results: [], status: "unavailable" },
-    { kind: "packaged", provider: "open-food-facts", results: [], status: "available" },
-  ]);
   expect(vanishedWithoutRefresh.data.catalog.results).toEqual([]);
   const vanishedInvalidQuery = await load("/?food=4040&query=a");
   if (vanishedInvalidQuery.data.catalog?.mode !== "search") {
     throw new Error("Expected search fallback");
   }
-  expect(vanishedInvalidQuery.data.catalog.groups).toEqual([]);
   expect(vanishedInvalidQuery.data.catalog.results).toEqual([]);
 
   const unsafe = await load("/?food=9999&query=unsafe");

@@ -21,8 +21,8 @@ async function generation(provider: CatalogProviderId, options: { records?: Tabl
   const recordsState = options.records ?? "populated";
   const searchState = options.search ?? "populated";
   if (recordsState !== "missing") {
-    database.exec(`CREATE TABLE ${records} (value TEXT)`);
-    if (recordsState === "populated") database.prepare(`INSERT INTO ${records} (value) VALUES (?)`).run("record");
+    database.exec(`CREATE TABLE ${records} (record TEXT)`);
+    if (recordsState === "populated") database.prepare(`INSERT INTO ${records} (record) VALUES (?)`).run("record");
   }
   if (searchState !== "missing") {
     database.exec(`CREATE TABLE ${search} (value TEXT)`);
@@ -37,15 +37,29 @@ test.each(["usda-fdc", "open-food-facts"] as const)("a complete %s generation is
   expect(catalogGenerationIsReadable(created.directory, created.id, provider)).toBe(true);
 });
 
+test("a barcode-only OFF generation is readable without a search index", async () => {
+  const created = await generation("open-food-facts", { search: "missing" });
+  expect(catalogGenerationIsReadable(created.directory, created.id, "open-food-facts"))
+    .toBe(true);
+});
+
+test("an OFF generation without stored product records is rejected", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "catalog-generation-validation-"));
+  directories.push(directory);
+  const id = "00000000-0000-4000-8000-000000000043";
+  const database = new BetterSqlite3(path.join(directory, `${id}.sqlite`));
+  database.exec("CREATE TABLE products (value TEXT); INSERT INTO products VALUES ('record')");
+  database.close();
+  expect(catalogGenerationIsReadable(directory, id, "open-food-facts")).toBe(false);
+});
+
 test.each([
   ["usda-fdc", { records: "missing" }],
   ["usda-fdc", { search: "missing" }],
   ["usda-fdc", { records: "empty" }],
   ["usda-fdc", { search: "empty" }],
   ["open-food-facts", { records: "missing" }],
-  ["open-food-facts", { search: "missing" }],
   ["open-food-facts", { records: "empty" }],
-  ["open-food-facts", { search: "empty" }],
 ] as const)("an incomplete %s generation is rejected (%#)", async (provider, options) => {
   const created = await generation(provider, options);
   expect(catalogGenerationIsReadable(created.directory, created.id, provider)).toBe(false);

@@ -22,7 +22,6 @@ test("the OFF importer publishes a retrievable source-backed product and complet
   expect(messages).toEqual([
     { progress: { phase: "validating", processedRecords: 0, importedRecords: 0, usableNutritionRecords: 0, rejectedRecords: 0, exclusions: {} } },
     { progress: { phase: "importing", processedRecords: 0, importedRecords: 0, usableNutritionRecords: 0, rejectedRecords: 0, exclusions: {} } },
-    { progress: { phase: "indexing", processedRecords: 1, importedRecords: 1, usableNutritionRecords: 1, rejectedRecords: 0, exclusions: {} } },
     { progress: { processedRecords: 1, importedRecords: 1, usableNutritionRecords: 1, rejectedRecords: 0, exclusions: {} } },
     { result: { archiveFormat: "csv", expandedBytes: gunzipSync(offArchive([offWithBasis("100ml")])).length, foodCount: 1, publicationDateRange: { earliest: "", latest: "" }, sourceDateRange: { earliest: "2025-01-01T00:00:00.000Z", latest: "2025-01-01T00:00:00.000Z" } } },
   ]);
