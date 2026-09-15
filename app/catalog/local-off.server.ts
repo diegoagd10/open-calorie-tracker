@@ -3,6 +3,10 @@ import type { CatalogManagement } from "../catalog-management/catalog-management
 import { barcodeLookupCandidates, isSupportedCommercialBarcode } from "./barcode";
 import { CatalogNotInstalledError, CatalogFoodNotFoundError, CatalogStaleReviewError, type BarcodeFoodCatalogProvider, type CatalogOperationContext } from "./food-catalog.server";
 
+function isPublishedOffFood(food: { calculationUnavailableReason?: string; isSelectable: boolean }) {
+  return food.isSelectable || food.calculationUnavailableReason === "conflicting_nutrition_bases";
+}
+
 export class LocalOpenFoodFactsAdapter implements BarcodeFoodCatalogProvider {
   constructor(private readonly management: CatalogManagement, private readonly directory: string) {}
   async lookupBarcode(barcode: string, context?: CatalogOperationContext) {
@@ -18,7 +22,7 @@ export class LocalOpenFoodFactsAdapter implements BarcodeFoodCatalogProvider {
       if (context?.reviewedCatalogGeneration !== undefined && context.reviewedCatalogGeneration !== generation) throw new CatalogStaleReviewError();
       for (const id of ids) {
         const candidate = readOffGenerationFood(this.directory, generation, id);
-        if (candidate) return candidate;
+        if (candidate && isPublishedOffFood(candidate)) return candidate;
       }
       return undefined;
     });

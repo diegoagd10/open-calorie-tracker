@@ -217,8 +217,8 @@ test("terminal imports notify connected clients while a member searches and logs
     await member.reload();
     await expect(dailyLog.getByText("Local oat drink", { exact: true })).toBeVisible();
     await member.goto("/?food=barcode&barcode=0012345678906");
-    await expect(member.getByRole("alert")).toContainText("does not establish whether nutrition is per 100 g or 100 ml");
-    await expect(member.getByRole("button", { name: "Add to Food Log", exact: true })).toBeDisabled();
+    await expect(member.getByRole("alert")).toContainText("Product not found");
+    await expect(member.getByRole("button", { name: "Add to Food Log", exact: true })).toHaveCount(0);
     await member.goto("/?food=barcode&barcode=9999999999999");
     await expect(member.getByText("Product not found", { exact: true })).toBeVisible();
     const deniedOff = await context.request.post("/settings/catalogs", { headers: { Origin: new URL(page.url()).origin, "Content-Type": "application/gzip", "X-Catalog-Provider": "open-food-facts", "X-Archive-Name": "denied.gz" }, data: products });
@@ -433,6 +433,6 @@ test("JSONL import makes native serving nutrition scannable and saves source-bac
   await log.getByText("100% Whey Protein Powder", { exact: true }).click();
   await expect(page.getByLabel("Protein (g)")).toHaveValue("60");
   await page.goto("/?food=barcode&barcode=0012345678906");
-  await expect(page.getByRole("alert")).toContainText("does not establish whether nutrition is per 100 g or 100 ml");
-  await expect(page.getByRole("button", { name: "Add to Food Log", exact: true })).toBeDisabled();
+  await expect(page.getByRole("alert")).toContainText("Product not found");
+  await expect(page.getByRole("button", { name: "Add to Food Log", exact: true })).toHaveCount(0);
 });
