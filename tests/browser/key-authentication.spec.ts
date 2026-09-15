@@ -5,8 +5,11 @@ import {
   expect,
   test,
 } from "./reset-database";
+import { playwrightBrowserPorts } from "../../scripts/catalog-browser-runtime";
 
 const password = "correct horse battery staple";
+const publicOrigin = `https://localhost:${playwrightBrowserPorts.public}`;
+const lanOrigin = `http://127.0.0.1:${playwrightBrowserPorts.lan}`;
 test("first key enrollment and username/key login use real WebAuthn and replace password access", async ({
   context,
   page,
@@ -36,7 +39,7 @@ test("first key enrollment and username/key login use real WebAuthn and replace 
   await page.getByRole("button", { name: "Finish setup" }).click();
   await expect(page).toHaveURL("/");
   const older = await browser.newContext({
-    baseURL: "https://localhost:4173",
+    baseURL: publicOrigin,
     ignoreHTTPSErrors: true,
   });
   const otherPage = await older.newPage();
@@ -76,10 +79,10 @@ test("first key enrollment and username/key login use real WebAuthn and replace 
     (await cdp.send("WebAuthn.getCredentials", { authenticatorId }))
       .credentials,
   ).toHaveLength(1);
-  await page.goto("http://127.0.0.1:4174/login");
+  await page.goto(`${lanOrigin}/login`);
   await expect(
     page.getByRole("link", { name: "Use key sign-in on public HTTPS" }),
-  ).toHaveAttribute("href", "https://localhost:4173/login");
+  ).toHaveAttribute("href", `${publicOrigin}/login`);
   await expect(
     page.getByRole("button", { name: "Use registered key" }),
   ).toHaveCount(0);
@@ -268,7 +271,7 @@ test("six virtual authenticators enroll with fresh proof, reject duplicate/cross
     await addKey();
     await cdp.send("WebAuthn.addCredential", { authenticatorId: activeId, credential: saved[n] });
     await page.goto("/settings/security");
-    const olderKey = await browser.newContext({ storageState: await context.storageState(), baseURL: "https://localhost:4173", ignoreHTTPSErrors: true });
+    const olderKey = await browser.newContext({ storageState: await context.storageState(), baseURL: publicOrigin, ignoreHTTPSErrors: true });
     const olderKeyPage = await olderKey.newPage();
     await page.getByRole("button", { name: "Disable key login", exact: true }).focus();
     await page.keyboard.press("Enter");
@@ -287,9 +290,9 @@ test("six virtual authenticators enroll with fresh proof, reject duplicate/cross
     await expect(page.locator("main li")).toHaveCount(6);
     await expect(page.locator('input[type="password"]')).toHaveCount(0);
     expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
-    const olderPassword = await browser.newContext({ storageState: await context.storageState(), baseURL: "https://localhost:4173", ignoreHTTPSErrors: true });
+    const olderPassword = await browser.newContext({ storageState: await context.storageState(), baseURL: publicOrigin, ignoreHTTPSErrors: true });
     const olderPasswordPage = await olderPassword.newPage();
-    const lanPassword = await browser.newContext({ baseURL: "http://127.0.0.1:4174" });
+    const lanPassword = await browser.newContext({ baseURL: lanOrigin });
     const lanPage = await lanPassword.newPage();
     await lanPage.goto("/login");
     await lanPage.getByLabel("Username").fill("multiple.owner");

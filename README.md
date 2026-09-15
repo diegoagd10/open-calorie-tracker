@@ -25,6 +25,10 @@ For production configuration, deployment, updates, and backups, follow the
 Catalog installation is command-only. Food Catalogs in Settings shows installed
 sources, official downloads and metadata-only update checks.
 
+USDA Foundation powers **Search food**. Open Food Facts is installed only for
+camera scans and manually entered barcode lookup; it is not included in text
+search results.
+
 1. Use Node 24 and the pinned pnpm. Run `pnpm install --frozen-lockfile` and
    `pnpm build` to build the server, import worker and command artifacts.
 2. Start the application with `pnpm start` and your deployment configuration.

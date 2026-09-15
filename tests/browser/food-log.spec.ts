@@ -664,7 +664,7 @@ test("authenticated USDA search and idempotent logging preserve a local Nutritio
     page.getByRole("searchbox", { name: "Search local foods" }),
   ).toBeFocused();
   const providerLink = page.getByRole("link", {
-    name: "Open Food Facts",
+    name: "USDA FoodData Central",
     exact: true,
   });
   await providerLink.focus();
@@ -722,7 +722,7 @@ test("authenticated USDA search and idempotent logging preserve a local Nutritio
     .fill("yogurt");
   const searchClick = page.getByRole("button", { name: "Search" }).click();
   await expect(
-    page.getByRole("status").getByText("Searching local food catalogs"),
+    page.getByRole("status").getByText("Searching USDA foods"),
   ).toBeVisible();
   await expectCatalogResponsive(page);
   releaseSearch();
@@ -738,15 +738,15 @@ test("authenticated USDA search and idempotent logging preserve a local Nutritio
   await expect(page.getByText("Plain nonfat Greek yogurt")).toHaveCount(0);
   await expectCatalogResponsive(page);
 
-  for (const [query, state] of [
-    ["not-installed", "catalog is not installed"],
-    ["malformed", "catalog is temporarily unavailable"],
+  for (const [query, status, title] of [
+    ["not-installed", 503, "USDA Foundation is not installed"],
+    ["malformed", 500, "USDA catalog data could not be used"],
   ] as const) {
     const response = await page.goto(
       `/?date=2026-08-29&food=search&query=${query}`,
     );
-    expect(response?.status()).toBe(200);
-    await expect(page.getByRole("status").filter({ hasText: "Basic foods" })).toContainText(state);
+    expect(response?.status()).toBe(status);
+    await expect(page.getByRole("heading", { name: title })).toBeVisible();
   }
   await expectCatalogResponsive(page);
 
@@ -769,7 +769,7 @@ test("authenticated USDA search and idempotent logging preserve a local Nutritio
   await expect(
     page.getByText("Example Dairy Co. · 1 container · 170 g"),
   ).toBeVisible();
-  await expect(page.getByText("Basic food · USDA", { exact: true })).toBeVisible();
+  await expect(page.getByText("Basic food · USDA", { exact: true })).toHaveCount(0);
   await expect(
     page.getByRole("link", { name: "USDA FoodData Central" }),
   ).toBeVisible();

@@ -51,7 +51,7 @@ test.skipIf(!process.env.OFF_LOCAL_ARCHIVE)("full OFF export imports with bounde
     const previousOffGeneration = off.read().installed!.generation;
     for (let index = 0; index < 30; index++) {
       const started = performance.now();
-      await Promise.all([packaged.lookupBarcode("0012345678905"), packaged.search("installed oats")]);
+      await packaged.lookupBarcode("0012345678905");
       offBeforeReplacement.push(performance.now() - started);
     }
     timer = setInterval(() => {
@@ -62,7 +62,7 @@ test.skipIf(!process.env.OFF_LOCAL_ARCHIVE)("full OFF export imports with bounde
         await basic.getFood("748967");
         usdaResponsiveness.push(performance.now() - usdaStarted);
         const offStarted = performance.now();
-        await Promise.all([packaged.lookupBarcode("0012345678905"), packaged.search("installed oats")]);
+        await packaged.lookupBarcode("0012345678905");
         offResponsiveness.push(performance.now() - offStarted);
       })().catch(error => { sampleError = error; }).finally(() => { sample = undefined; });
     }, 100);
@@ -94,30 +94,11 @@ test.skipIf(!process.env.OFF_LOCAL_ARCHIVE)("full OFF export imports with bounde
       expect(entries.read(user.id, saved.id)).toMatchObject({ energyMilliKcal: quantity === "1" ? 150_000 : 300_000, proteinMilligrams: quantity === "1" ? 30_000 : 60_000 });
     }
     const lookups: number[] = [];
-    const exactSearches: number[] = [];
-    const prefixSearches: number[] = [];
-    const knownProduct = await packaged.lookupBarcode("3017620422003");
-    const exactProductQuery = knownProduct.name;
-    const prefixProductQuery = knownProduct.name.slice(0, Math.max(2, Math.min(6, knownProduct.name.length - 1)));
-    let exactProductNameMatched = false;
-    let prefixProductNameMatched = false;
-    const normalizedExactProductQuery = exactProductQuery.toLocaleLowerCase("en");
-    const normalizedPrefixProductQuery = prefixProductQuery.toLocaleLowerCase("en");
     for (let index = 0; index < 100; index++) {
       const started = performance.now();
-      // Missing as well as present indexed text identifiers exercise the local lookup path.
+      // Missing as well as present identifiers exercise the local barcode lookup path.
       await packaged.lookupBarcode(["3017620422003", "5449000000996", "0000000000000"][index % 3]).catch(() => undefined);
       lookups.push(performance.now() - started);
-    }
-    for (let index = 0; index < 40; index++) {
-      const started = performance.now();
-      const exactResults = await packaged.search(exactProductQuery);
-      exactProductNameMatched ||= exactResults.some(result => result.name.toLocaleLowerCase("en") === normalizedExactProductQuery);
-      exactSearches.push(performance.now() - started);
-      const prefixStarted = performance.now();
-      const prefixResults = await packaged.search(prefixProductQuery);
-      prefixProductNameMatched ||= prefixResults.some(result => result.name.toLocaleLowerCase("en").startsWith(normalizedPrefixProductQuery));
-      prefixSearches.push(performance.now() - prefixStarted);
     }
     const p95 = (values: number[]) => values.sort((a, b) => a - b)[Math.floor(values.length * 0.95)];
     const state = off.read();
@@ -127,19 +108,13 @@ test.skipIf(!process.env.OFF_LOCAL_ARCHIVE)("full OFF export imports with bounde
       usdaDuringReplacementP95Ms: p95(usdaResponsiveness),
       offDuringReplacementP95Ms: p95(offResponsiveness),
       offLookupP95Ms: p95(lookups),
-      offExactSearchP95Ms: p95(exactSearches),
-      offPrefixSearchP95Ms: p95(prefixSearches),
     };
-    const report = { hardware: { cpu: cpus()[0].model, logicalCpus: cpus().length, memoryBytes: totalmem(), os: `${platform()} ${release()}`, runtime: process.version }, elapsedMs, peakRssMiB: peakRss / 1024 ** 2, catalogBytes: bytes, compressedBytes: (await stat(process.env.OFF_LOCAL_ARCHIVE!)).size, exactProductQuery, prefixProductQuery, ...measurements, state };
+    const report = { hardware: { cpu: cpus()[0].model, logicalCpus: cpus().length, memoryBytes: totalmem(), os: `${platform()} ${release()}`, runtime: process.version }, elapsedMs, peakRssMiB: peakRss / 1024 ** 2, catalogBytes: bytes, compressedBytes: (await stat(process.env.OFF_LOCAL_ARCHIVE!)).size, ...measurements, state };
     await mkdir("reports", { recursive: true });
     await writeFile("reports/off-jsonl-scale.json", JSON.stringify(report, null, 2) + "\n");
     process.stdout.write(JSON.stringify(report));
     // Opt-in benchmark budget: p95 local lookup <100ms, process RSS <1GiB.
     expect(Object.values(measurements).every(value => value < 100)).toBe(true);
-    expect(exactProductNameMatched).toBe(true);
-    expect(prefixProductNameMatched).toBe(true);
-    expect(exactSearches).toHaveLength(40);
-    expect(prefixSearches).toHaveLength(40);
     expect(peakRss).toBeLessThan(1024 ** 3);
   } finally {
     clearInterval(timer); await new Promise<void>((resolve, reject) => { server.close(error => error ? reject(error) : resolve()); }); await off.shutdown(); await usda.shutdown(); database.close(); await rm(directory, { recursive: true, force: true });

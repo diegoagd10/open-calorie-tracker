@@ -215,11 +215,8 @@ test("one mobile Chromium journey verifies the complete private MVP", async ({
     .getByRole("searchbox", { name: "Search local foods" })
     .fill("timeout");
   await page.getByRole("button", { name: "Search" }).click();
-  await expect(page.getByRole("status").filter({ hasText: "Basic foods" }))
-    .toContainText("catalog is temporarily unavailable");
-  await expect(
-    page.getByText("Plain nonfat Greek yogurt", { exact: true }),
-  ).toBeAttached();
+  await expect(page.getByRole("heading", { name: "USDA is unavailable" }))
+    .toBeVisible();
   await page.getByRole("link", { name: "Close food search" }).click();
 
   await foodEntry.click();

@@ -48,8 +48,6 @@ import {
   type CatalogFood,
   type CatalogNutrientValue,
   type CatalogProviderId,
-  type CatalogSearchFilter,
-  type CatalogSearchGroup,
   type CatalogSearchResult,
 } from "../catalog/food-catalog.server";
 import { isSupportedCommercialBarcode } from "../catalog/barcode";
@@ -99,10 +97,6 @@ function catalogQuery(value: string): string | undefined {
 function catalogBarcode(value: string): string | undefined {
   const barcode = value.trim();
   return isSupportedCommercialBarcode(barcode) ? barcode : undefined;
-}
-
-function catalogSearchFilter(value: string | null): CatalogSearchFilter {
-  return value === "basic" || value === "packaged" ? value : "all";
 }
 
 function foodLogIntentSchema() {
@@ -539,7 +533,6 @@ export async function loader({ request }: Route.LoaderArgs) {
     url.searchParams.get("provider"),
   );
   const requestedQuery = url.searchParams.get("query") ?? "";
-  const requestedFilter = catalogSearchFilter(url.searchParams.get("filter"));
   let responseStatus = 200;
   let catalog:
     | {
@@ -570,8 +563,6 @@ export async function loader({ request }: Route.LoaderArgs) {
         title?: string;
       }
     | {
-        filter?: CatalogSearchFilter;
-        groups: CatalogSearchGroup[];
         mode: "search";
         query: string;
         results: CatalogSearchResult[];
@@ -579,7 +570,6 @@ export async function loader({ request }: Route.LoaderArgs) {
         title?: string;
       }
     | {
-        filter?: CatalogSearchFilter;
         mode: "detail";
         query: string;
         food: CatalogFood;
@@ -636,12 +626,10 @@ export async function loader({ request }: Route.LoaderArgs) {
     } else if (foodStage.mode === "search") {
       const parsedQuery = catalogQuery(requestedQuery);
       if (!requestedQuery) {
-        catalog = { ...(requestedFilter === "all" ? {} : { filter: requestedFilter }), groups: [], mode: "search", query: "", results: [] };
+        catalog = { mode: "search", query: "", results: [] };
       } else if (parsedQuery === undefined) {
         responseStatus = 400;
         catalog = {
-          ...(requestedFilter === "all" ? {} : { filter: requestedFilter }),
-          groups: [],
           message: "Enter a food search from 2 to 100 characters.",
           mode: "search",
           query: requestedQuery,
@@ -649,21 +637,30 @@ export async function loader({ request }: Route.LoaderArgs) {
           title: "Search not sent",
         };
       } else {
-        const search = await getFoodCatalog().searchAll(parsedQuery, requestedFilter, catalogContext);
-        catalog = {
-          ...(requestedFilter === "all" ? {} : { filter: requestedFilter }),
-          groups: search.groups,
-          mode: "search",
-          query: parsedQuery,
-          results: search.groups.flatMap(group => group.results),
-        };
+        try {
+          catalog = {
+            mode: "search",
+            query: parsedQuery,
+            results: await getFoodCatalog().search(parsedQuery, catalogContext),
+          };
+        } catch (error) {
+          const failure = catalogFailure(error);
+          if (!failure) throw error;
+          responseStatus = failure.status;
+          catalog = {
+            message: failure.message,
+            mode: "search",
+            query: parsedQuery,
+            results: [],
+            title: failure.title,
+          };
+        }
       }
     } else {
-      const provider = getFoodCatalog();
+      const foodCatalog = getFoodCatalog();
       try {
         catalog = {
-          food: await provider.getFood(foodStage.provider, foodStage.providerFoodId, catalogContext),
-          ...(requestedFilter === "all" ? {} : { filter: requestedFilter }),
+          food: await foodCatalog.getFood(foodStage.provider, foodStage.providerFoodId, catalogContext),
           idempotencyKey: randomUUID(),
           mode: "detail",
           query: requestedQuery,
@@ -675,28 +672,21 @@ export async function loader({ request }: Route.LoaderArgs) {
         if (!failure) throw error;
         responseStatus = failure.status;
         let results: CatalogSearchResult[] = [];
-        let groups: CatalogSearchGroup[] | undefined;
         const parsedQuery = catalogQuery(requestedQuery);
         if (
           error instanceof CatalogFoodNotFoundError &&
           parsedQuery !== undefined
         ) {
           try {
-            const refreshed = await provider.searchAll(parsedQuery, requestedFilter, catalogContext);
-            groups = refreshed.groups.map(group => ({
-              ...group,
-              results: group.results.filter(result =>
-                result.provider !== foodStage.provider || result.providerFoodId !== foodStage.providerFoodId),
-            }));
-            results = groups.flatMap(group => group.results);
+            results = (await foodCatalog.search(parsedQuery, catalogContext))
+              .filter(result =>
+                result.provider !== foodStage.provider || result.providerFoodId !== foodStage.providerFoodId);
           } catch {
             // The original detail failure remains the useful response when
             // refreshing the surrounding search results also fails.
           }
         }
         catalog = {
-          ...(requestedFilter === "all" ? {} : { filter: requestedFilter }),
-          groups: groups ?? [],
           message: failure.message,
           mode: "search",
           query: requestedQuery,
@@ -1365,11 +1355,10 @@ function QuickLogActions({
   );
 }
 
-function catalogHref(date: string, food: string, query?: string, provider?: CatalogProviderId, filter?: CatalogSearchFilter): string {
+function catalogHref(date: string, food: string, query?: string, provider?: CatalogProviderId): string {
   const parameters = new URLSearchParams({ date, food });
   if (query) parameters.set("query", query);
   if (provider) parameters.set("provider", provider);
-  if (filter && filter !== "all") parameters.set("filter", filter);
   return `/?${parameters}`;
 }
 
@@ -1902,7 +1891,7 @@ function FoodDetailStage({
     <>
       <Link
         className={styles.backToResults}
-        to={catalogHref(date, "search", catalog.query, undefined, catalog.filter)}
+        to={catalogHref(date, "search", catalog.query)}
       >
         ‹ Back to results
       </Link>
@@ -3083,9 +3072,6 @@ function CatalogDialog({
     initialFocusSelector,
     restoreFocusSelector: "[data-food-dialog-trigger]",
   });
-  const searchFilter = catalog.mode === "search" ? catalog.filter ?? "all" : "all";
-  const searchGroups = catalog.mode === "search" ? catalog.groups ?? [] : [];
-
   return (
     <DialogBackdrop onClose={closeDialog}>
       <section
@@ -3103,7 +3089,7 @@ function CatalogDialog({
               <>
                 <span className={styles.dialogChip}>
                   {catalog.mode === "search" || catalog.mode === "detail"
-                    ? "Local food catalogs"
+                    ? "USDA food catalog"
                     : catalog.mode === "barcode"
                       ? "Open Food Facts"
                       : "Manual"}
@@ -3125,7 +3111,7 @@ function CatalogDialog({
         ) : catalog.mode === "detail" && catalog.food.provider === "open-food-facts" ? (
           <BarcodeFoodDetail
             actionData={actionData}
-            backHref={catalogHref(date, "search", catalog.query, undefined, catalog.filter)}
+            backHref={catalogHref(date, "search", catalog.query)}
             backLabel="‹ Back to results"
             csrfToken={csrfToken}
             date={date}
@@ -3175,7 +3161,6 @@ function CatalogDialog({
             >
               <input name="date" type="hidden" value={date} />
               <input name="food" type="hidden" value="search" />
-              {searchFilter === "all" ? null : <input name="filter" type="hidden" value={searchFilter} />}
               <label htmlFor="food-query">Search local foods</label>
               <div className={styles.searchControl}>
                 <input
@@ -3203,20 +3188,9 @@ function CatalogDialog({
                 </button>
               </div>
             </Form>
-            <nav aria-label="Food type filter" className={styles.catalogFilters}>
-              {(["all", "basic", "packaged"] as const).map(filter => (
-                <Link
-                  aria-current={searchFilter === filter ? "page" : undefined}
-                  key={filter}
-                  to={catalogHref(date, "search", catalog.query, undefined, filter)}
-                >
-                  {filter === "all" ? "All" : filter === "basic" ? "Basic foods" : "Packaged products"}
-                </Link>
-              ))}
-            </nav>
             {searchPending ? (
               <div className={styles.catalogState} role="status">
-                <h3>Searching local food catalogs</h3>
+                <h3>Searching USDA foods</h3>
                 <p>Your deliberate catalog request is in progress.</p>
               </div>
             ) : clientSearchMessage ? (
@@ -3236,20 +3210,14 @@ function CatalogDialog({
                     <p>{catalog.message}</p>
                   </div>
                 ) : null}
-                {searchGroups.some(group => group.results.length > 0) ? (
+                {catalog.results.length > 0 ? (
                   <div
                     className={styles.catalogResults}
                     aria-label="Food search results"
                   >
-                    {searchGroups.map(group => (
-                      <section className={styles.catalogResultGroup} key={group.provider}>
-                        <h3>{group.kind === "basic" ? "Basic foods" : "Packaged products"}</h3>
-                        {group.results.map((result) => {
+                    {catalog.results.map((result) => {
                       const identity = (
                         <span>
-                          <span className={styles.catalogType}>
-                            {result.provider === "usda-fdc" ? "Basic food · USDA" : "Packaged product · Open Food Facts"}
-                          </span>
                           <strong>{result.name}</strong>
                           <small>
                             {[result.brand, result.measurementSummary, result.catalogGeneration ? result.providerPublishedDate : null]
@@ -3266,7 +3234,6 @@ function CatalogDialog({
                             result.providerFoodId,
                             catalog.query,
                             result.provider,
-                            searchFilter,
                           )}
                         >
                           {identity}
@@ -3276,15 +3243,11 @@ function CatalogDialog({
                         <div aria-disabled="true" key={`${result.provider}:${result.providerFoodId}`}>
                           {identity}
                           <small>{result.catalogGeneration
-                            ? result.provider === "open-food-facts"
-                              ? offCalculationMessage(result.calculationUnavailableReason)
-                              : "Nutrition unavailable"
+                            ? "Nutrition unavailable"
                             : "Hidden in production"}</small>
                         </div>
                       );
-                        })}
-                      </section>
-                    ))}
+                    })}
                   </div>
                 ) : catalog.message ? null : catalog.query ? (
                   <div className={styles.catalogState} role="status">
@@ -3298,17 +3261,10 @@ function CatalogDialog({
                   <div className={styles.catalogState}>
                     <h3>Find a food</h3>
                     <p>
-                      Search basic ingredients from USDA Foundation and packaged
-                      products from Open Food Facts.
+                      Search ingredients from USDA Foundation.
                     </p>
                   </div>
                 )}
-                {searchGroups.filter(group => group.status !== "available").map(group => (
-                  <div className={styles.catalogSourceState} key={group.provider} role="status">
-                    <strong>{group.kind === "basic" ? "Basic foods" : "Packaged products"}</strong>
-                    <span>{group.status === "not-installed" ? "catalog is not installed" : "catalog is temporarily unavailable"}</span>
-                  </div>
-                ))}
               </>
             )}
             <p className={styles.providerAttribution}>
@@ -3319,10 +3275,6 @@ function CatalogDialog({
                 target="_blank"
               >
                 USDA FoodData Central
-              </a>{" "}
-              and{" "}
-              <a href="https://world.openfoodfacts.org/" rel="noreferrer" target="_blank">
-                Open Food Facts
               </a>
             </p>
           </>

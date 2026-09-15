@@ -1,10 +1,11 @@
 import AxeBuilder from "@axe-core/playwright";
 import type { BrowserContext, Page } from "@playwright/test";
 import { expect, test } from "./reset-database";
+import { playwrightBrowserPorts } from "../../scripts/catalog-browser-runtime";
 
 const validPassword = "correct horse 🔐 battery";
 const replacementPassword = "replacement passphrase 🔐";
-let applicationOrigin = "https://localhost:4173";
+let applicationOrigin = `https://localhost:${playwrightBrowserPorts.public}`;
 test.beforeEach(({ baseURL }) => { applicationOrigin = baseURL!; });
 const administrator = "alice.user";
 

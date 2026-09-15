@@ -4,6 +4,10 @@ import {
   expect,
   test,
 } from "./reset-database";
+import { playwrightBrowserPorts } from "../../scripts/catalog-browser-runtime";
+
+const publicOrigin = `https://localhost:${playwrightBrowserPorts.public}`;
+const escapedPublicOrigin = publicOrigin.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 const photo = {
   name: "plate.png",
@@ -43,7 +47,10 @@ test("plate capture returns to Daily Log, survives reload, and supports correcti
     await expect(page.getByRole("dialog")).toHaveCount(0);
     const preview = meals.getByRole("img", { name: "Plate being uploaded" });
     await expect(preview).toBeVisible();
-    await expect(preview).toHaveAttribute("src", /^blob:https:\/\/localhost:4173\//);
+    await expect(preview).toHaveAttribute(
+      "src",
+      new RegExp(`^blob:${escapedPublicOrigin}/`),
+    );
     await expect.poll(() => preview.evaluate((image: HTMLImageElement) => image.naturalWidth)).toBe(16);
     await expect(meals.getByRole("progressbar", { name: "Uploading photo", exact: true })).toBeVisible();
   } finally {
