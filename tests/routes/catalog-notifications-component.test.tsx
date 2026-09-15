@@ -47,6 +47,26 @@ test("nothing is visible without an event or for acknowledged operator outcomes"
   expect(text(renderer.root)).toBe("");
 });
 
+test("no catalog change stays quiet through polling, focus and refresh", async () => {
+  const { renderer, browser } = await render([]);
+  await advance(9000);
+  await act(async () => { browser.dispatchEvent(new Event("focus")); });
+  expect(text(renderer.root)).toBe("");
+  await act(() => renderer.unmount());
+  const refreshed = await mount();
+  expect(text(refreshed.root)).toBe("");
+});
+
+test.each([
+  ["usda-fdc", "USDA Foundation"],
+  ["open-food-facts", "Open Food Facts"],
+] as const)("a new %s catalog activation notifies a connected user", async (provider, name) => {
+  const { renderer, fetch, browser } = await render([]);
+  fetch.mockResolvedValueOnce(Response.json({ outcomes: [outcome({ provider, jobId: `${provider}-new`, operation: "update" })] }));
+  await act(async () => { browser.dispatchEvent(new Event("focus")); });
+  expect(text(renderer.root)).toBe(`${name} catalog updated.`);
+});
+
 test("a new event produces a brief accessible toast, expires and stays dismissed after polls and reload", async () => {
   const { renderer, fetch, browser } = await render([]);
   fetch.mockImplementation(async () => Response.json({ outcomes: [outcome()] }));
@@ -164,19 +184,26 @@ test("shared acknowledgement cannot suppress success and displaying deduplicates
   expect(text(refreshed.root)).toBe("");
 });
 
-test("refresh does not replay an already displayed success when page session storage is reset", async () => {
-  const { renderer, browser } = await render([outcome({ operation: "update" })]);
+test("a catalog update delivered ten days ago stays quiet through repeated refreshes", async () => {
+  vi.setSystemTime(new Date("2026-09-05T12:00:00Z"));
+  const { renderer, browser } = await render([outcome({ completedAt: "2026-09-05T12:00:00Z", operation: "update" })]);
   expect(text(renderer.root)).toBe("USDA Foundation catalog updated.");
   await act(() => renderer.unmount());
-  const refreshedSession = new Map<string, string>();
+  vi.setSystemTime(new Date("2026-09-15T12:00:00Z"));
+  let refreshedSession = new Map<string, string>();
   Object.defineProperty(browser, "sessionStorage", {
+    configurable: true,
     value: {
       getItem: (key: string) => refreshedSession.get(key) ?? null,
       setItem: (key: string, value: string) => { refreshedSession.set(key, value); },
     },
   });
-  const refreshed = await mount();
-  expect(text(refreshed.root)).toBe("");
+  const firstRefresh = await mount();
+  expect(text(firstRefresh.root)).toBe("");
+  await act(() => firstRefresh.unmount());
+  refreshedSession = new Map<string, string>();
+  const secondRefresh = await mount();
+  expect(text(secondRefresh.root)).toBe("");
 });
 
 test("refresh does not advance through a backlog of catalog success outcomes", async () => {
