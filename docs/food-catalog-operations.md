@@ -53,12 +53,16 @@ terminal remaining connected after acceptance.
 All connected signed-in administrators and members receive source-specific
 installed/updated toasts on any page. Failures and interruptions are visible only
 to administrators. Toasts disappear after six seconds, pause while hovered or
-focused, and can be dismissed manually. Each browser tab remembers displayed
-outcomes across navigation and reload. Another client's dismissal or shared
-acknowledgement cannot suppress success delivery. Polling retries quietly after
-connection failures and checks on focus/reconnection. Anonymous clients receive
-no notifications; members cannot read private operator diagnostics or use
-management/acknowledgement mutations. Food Catalogs remains administrator-only.
+focused, and can be dismissed manually. Each browser profile remembers delivered
+outcomes for the signed-in account across navigation, reload, and browser restart.
+All outcomes accepted in one poll are recorded together, so refreshing cannot
+advance through an old queue. Only the newest successful outcome for each catalog
+is queued; a later install or replacement has a distinct identity and can notify
+again. Another account or client retains independent delivery. Polling retries
+quietly after connection failures and checks on focus/reconnection. Anonymous
+clients receive no notifications; members cannot read private operator diagnostics
+or use management/acknowledgement mutations. Food Catalogs remains
+administrator-only.
 
 ## Capacity and archive limits
 

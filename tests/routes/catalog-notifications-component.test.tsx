@@ -15,16 +15,18 @@ function outcome(patch: Partial<CatalogOutcome> = {}): CatalogOutcome {
   return { provider: "usda-fdc", jobId: "job", filename: "foundation.zip", phase: "succeeded", completedAt: "2026-09-09T12:00:00Z", error: null, acknowledgedAt: null,
     installed: { generation: "job", filename: "foundation.zip", sha256: "snapshot-fingerprint", installedAt: "2026-09-09T12:00:00Z", foodCount: 469, publicationDateRange: { earliest: "2020-01-01", latest: "2026-04-30" } }, ...patch };
 }
-async function mount() {
+async function mount(viewerId = 7) {
   let renderer!: ReactTestRenderer;
-  await act(async () => { renderer = create(createElement(CatalogNotifications)); });
+  await act(async () => { renderer = create(createElement(CatalogNotifications, { viewerId })); });
   renderers.push(renderer);
   return renderer;
 }
 async function render(outcomes: CatalogOutcome[]) {
   vi.useFakeTimers();
   const storage = new Map<string, string>();
+  const durableStorage = new Map<string, string>();
   const browser = Object.assign(new EventTarget(), {
+    localStorage: { getItem: (key: string) => durableStorage.get(key) ?? null, setItem: (key: string, value: string) => { durableStorage.set(key, value); } },
     sessionStorage: { getItem: (key: string) => storage.get(key) ?? null, setItem: (key: string, value: string) => { storage.set(key, value); } },
   });
   vi.stubGlobal("window", browser);
@@ -125,6 +127,7 @@ test("failed polling is quiet, reconnects and does not repeat an expired event",
 
 test("unavailable storage does not break expiry or in-memory deduplication", async () => {
   const { renderer, browser } = await render([]);
+  Object.defineProperty(browser, "localStorage", { get: () => { throw new Error("storage disabled"); } });
   Object.defineProperty(browser, "sessionStorage", { get: () => { throw new Error("storage disabled"); } });
   const fetch = vi.mocked(globalThis.fetch);
   fetch.mockImplementation(async () => Response.json({ outcomes: [outcome()] }));
@@ -159,4 +162,48 @@ test("shared acknowledgement cannot suppress success and displaying deduplicates
   await act(() => renderer.unmount());
   const refreshed = await mount();
   expect(text(refreshed.root)).toBe("");
+});
+
+test("refresh does not replay an already displayed success when page session storage is reset", async () => {
+  const { renderer, browser } = await render([outcome({ operation: "update" })]);
+  expect(text(renderer.root)).toBe("USDA Foundation catalog updated.");
+  await act(() => renderer.unmount());
+  const refreshedSession = new Map<string, string>();
+  Object.defineProperty(browser, "sessionStorage", {
+    value: {
+      getItem: (key: string) => refreshedSession.get(key) ?? null,
+      setItem: (key: string, value: string) => { refreshedSession.set(key, value); },
+    },
+  });
+  const refreshed = await mount();
+  expect(text(refreshed.root)).toBe("");
+});
+
+test("refresh does not advance through a backlog of catalog success outcomes", async () => {
+  const { renderer } = await render([
+    outcome({ jobId: "usda-update", operation: "update" }),
+    outcome({ provider: "open-food-facts", jobId: "off-update", operation: "update" }),
+  ]);
+  expect(text(renderer.root)).toBe("Open Food Facts catalog updated.");
+  await act(() => renderer.unmount());
+  const refreshed = await mount();
+  expect(text(refreshed.root)).toBe("");
+});
+
+test("only the newest successful version of each catalog is queued", async () => {
+  const { renderer } = await render([
+    outcome({ jobId: "new-version", completedAt: "2026-09-09T14:00:00Z", operation: "update" }),
+    outcome({ jobId: "old-version", completedAt: "2026-09-09T12:00:00Z", operation: "install" }),
+  ]);
+  expect(text(renderer.root)).toBe("USDA Foundation catalog updated.");
+  await act(() => { (renderer.root.findByType("button").props as { onClick: () => void }).onClick(); });
+  expect(text(renderer.root)).toBe("");
+});
+
+test("delivery receipts are isolated between signed-in users in the same browser", async () => {
+  const { renderer } = await render([outcome({ operation: "update" })]);
+  expect(text(renderer.root)).toBe("USDA Foundation catalog updated.");
+  await act(() => renderer.unmount());
+  const otherUser = await mount(8);
+  expect(text(otherUser.root)).toBe("USDA Foundation catalog updated.");
 });
