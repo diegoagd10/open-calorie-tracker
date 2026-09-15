@@ -277,17 +277,6 @@ test("home loader maps every catalog search and detail state", async () => {
     results: [{ name: "Plain nonfat Greek yogurt", providerFoodId: "1001" }],
   });
 
-  const legacyFilter = await load(
-    `/?food=search&query=yogurt&provider=open-food-facts&filter=packaged&userId=${otherUserId}&barcode=0034000470693&unknown=ignored`,
-  );
-  expect(legacyFilter.data.catalog).toMatchObject({
-    mode: "search",
-    query: "yogurt",
-    results: [{ name: "Plain nonfat Greek yogurt", providerFoodId: "1001" }],
-  });
-  expect(legacyFilter.data.catalog).not.toHaveProperty("filter");
-  expect(legacyFilter.data.catalog).not.toHaveProperty("provider");
-
   for (const [query, expectedQuery, expectedStatus] of [
     ["ok", "ok", 200],
     [`${"a".repeat(100)}`, "a".repeat(100), 200],
@@ -312,13 +301,6 @@ test("home loader maps every catalog search and detail state", async () => {
       results: [],
     });
   }
-  const notInstalled = await load("/?food=search&query=not-installed");
-  expect(notInstalled.data.catalog).toMatchObject({
-    message:
-      "USDA Foundation is not installed. Ask your administrator to install it in Food Catalogs Settings. Your saved Food Entries remain available.",
-    title: "USDA Foundation is not installed",
-  });
-
   const packaged = await load("/?food=search&query=yogurt&filter=packaged");
   expect(packaged.data.catalog).toMatchObject({
     results: [{ provider: "usda-fdc", providerFoodId: "1001" }],
@@ -386,6 +368,38 @@ test("home loader maps every catalog search and detail state", async () => {
   }
   const futureStage = await load("/?date=2026-09-01&food=search&query=yogurt");
   expect(futureStage.data.catalog).toBeUndefined();
+});
+
+test("food search ignores unrelated and legacy URL parameters", async () => {
+  const result = await load(
+    `/?food=search&query=yogurt&provider=open-food-facts&filter=packaged&userId=${otherUserId}&barcode=0034000470693&unknown=ignored`,
+  );
+
+  expect(result.data.catalog).toMatchObject({
+    mode: "search",
+    query: "yogurt",
+    results: [{
+      name: "Plain nonfat Greek yogurt",
+      provider: "usda-fdc",
+      providerFoodId: "1001",
+    }],
+  });
+  expect(result.data.catalog).not.toHaveProperty("filter");
+  expect(result.data.catalog).not.toHaveProperty("provider");
+});
+
+test("missing USDA search returns a friendly user-safe response", async () => {
+  const result = await load("/?food=search&query=not-installed");
+
+  expect(result.init?.status).toBe(503);
+  expect(result.data.catalog).toMatchObject({
+    message:
+      "USDA Foundation is not installed. Ask your administrator to install it in Food Catalogs Settings. Your saved Food Entries remain available.",
+    mode: "search",
+    query: "not-installed",
+    results: [],
+    title: "USDA Foundation is not installed",
+  });
 });
 
 test("home loader exposes barcode lookup without creating a Food Entry", async () => {

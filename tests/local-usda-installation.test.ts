@@ -567,6 +567,18 @@ test("basic-food names, aliases and prefixes rank useful foods above noisy parti
   const eggs = await catalog.search("huevos");
   expect(eggs.map(food => food.name)).not.toContain("Eggplant, raw");
   expect(eggs.map(food => food.name)).not.toContain("Egg substitute, liquid");
+  expect(eggs.filter(food => food.name === "Eggs, whole, raw")[0].providerFoodId).toBe("998");
+  expect(await catalog.search("huevos")).toEqual(eggs);
+});
+
+test("egg and huevo searches never return fish results", async () => {
+  const { management, catalog } = await setup();
+  await management.submitArchive({
+    filename: "egg-risk.zip",
+    stream: Readable.from(await basicFoodsArchive()),
+  });
+  await vi.waitFor(() => expect(management.read().busy).toBe(false));
+
   for (const query of ["egg", "huevo"]) {
     const names = (await catalog.search(query)).map(food => food.name);
     expect(names[0], query).toMatch(/^Eggs,/);
@@ -574,8 +586,6 @@ test("basic-food names, aliases and prefixes rank useful foods above noisy parti
       expect.arrayContaining([expect.stringMatching(/^Fish,/i)]),
     );
   }
-  expect(eggs.filter(food => food.name === "Eggs, whole, raw")[0].providerFoodId).toBe("998");
-  expect(await catalog.search("huevos")).toEqual(eggs);
 });
 
 test("exact names and aliases outrank repeated-keyword partial matches", async () => {
