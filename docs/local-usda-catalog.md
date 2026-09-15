@@ -74,6 +74,6 @@ The backend records install/update classification when claiming the job and reta
 it through recovery. Legacy outcomes without classification retain updated wording.
 Failure/interruption outcomes remain administrator-only. Notification reads filter
 member payloads to the fields needed for success toasts and deduplication; management
-and acknowledgement permissions remain administrator-only. Polling and per-tab
-deduplication work throughout the app, independently of the terminal and Food
-Catalogs. See [notification behavior](food-catalog-operations.md#initial-installation-and-upgrades).
+and acknowledgement permissions remain administrator-only. Polling and durable,
+account-namespaced browser deduplication work throughout the app, independently
+of the terminal and Food Catalogs. See [notification behavior](food-catalog-operations.md#initial-installation-and-upgrades).

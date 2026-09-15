@@ -268,8 +268,8 @@ candidates. They do not make every native product selectable.
 The fallback example immediately below re-enters the tree through its usable
 per-100 candidate and remains public. When the final result stays outside the
 tree, barcode and detail reads produce the catalog not-found error (HTTP 404),
-and search removes the record before its result limit is applied. The imported
-generation retains the record and reason for diagnostics.
+while Search food remains USDA-only. The imported generation retains the
+projected product and reason for diagnostics.
 `conflicting_nutrition_bases` is the exception because it is reached inside the
 priority tree and remains visible as an explicit, non-selectable conflict.
 

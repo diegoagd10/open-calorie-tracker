@@ -1,62 +1,14 @@
-import { describe, expect, test, vi } from "vitest";
+import { describe, expect, test } from "vitest";
 
 import type { CatalogManagement } from "../app/catalog-management/catalog-management.server";
-import {
-  CatalogNotInstalledError,
-  CatalogUnavailableError,
-  type CatalogFood,
-} from "../app/catalog/food-catalog.server";
-import { LocalOpenFoodFactsAdapter } from "../app/catalog/local-off.server";
+import { CatalogUnavailableError } from "../app/catalog/food-catalog.server";
 import { LocalUsdaAdapter } from "../app/catalog/local-usda.server";
-import {
-  offSearchAliases,
-  offSearchRelevance,
-} from "../app/catalog/off-search.server";
 import {
   boundedSearchTokens,
   controlledSingularPluralAliases,
   normalizedSearchWords,
   prefixSearchExpression,
 } from "../app/catalog/search-normalization";
-
-function packagedFood(overrides: Partial<CatalogFood> = {}): CatalogFood {
-  return {
-    authoritativeBaseQuantityMicrounits: 100_000_000,
-    authoritativeBaseUnit: "g",
-    barcode: "0012345678905",
-    brand: "Maison Test",
-    catalogGeneration: "generation-1",
-    dataType: "Open Food Facts",
-    isSelectable: true,
-    marketCountry: null,
-    measurementSummary: "100 g",
-    measurements: [],
-    name: "Crème brûlée",
-    nutritionPerAuthoritativeBase: {
-      carbohydrateMilligrams: null,
-      energyMilliKcal: null,
-      fatMilligrams: null,
-      fiberMilligrams: null,
-      proteinMilligrams: null,
-      sodiumMilligrams: null,
-      sugarMilligrams: null,
-    },
-    offSourceFields: {
-      abbreviated_product_name: "Crème brûlée",
-      abbreviated_product_name_en: "Custard",
-      generic_name: "Dessert custard",
-      generic_name_es: "Crema catalana",
-      product_name_en: "  Creme brulee  ",
-      product_name_es: "Crema quemada",
-    },
-    originalName: "Crème brûlée",
-    provider: "open-food-facts",
-    providerFoodId: "0012345678905",
-    providerModifiedDate: null,
-    providerPublishedDate: null,
-    ...overrides,
-  };
-}
 
 describe("catalog search normalization", () => {
   test("normalizes accents, case, punctuation, and numbers into words", () => {
@@ -114,79 +66,15 @@ describe("catalog search normalization", () => {
   });
 });
 
-describe("OFF search policy", () => {
-  test("requires an installed local catalog for a valid query", async () => {
-    const withActiveGeneration = vi.fn().mockResolvedValue(undefined);
-    const adapter = new LocalOpenFoodFactsAdapter(
-      { withActiveGeneration } as unknown as CatalogManagement,
-      "/unused",
-    );
-
-    await expect(adapter.search("egg")).rejects.toBeInstanceOf(
-      CatalogNotInstalledError,
-    );
-    expect(withActiveGeneration).toHaveBeenCalledOnce();
-  });
-
-  test.each([
-    ["OFF", (management: CatalogManagement) => new LocalOpenFoodFactsAdapter(management, "/missing-catalog-directory")],
-    ["USDA", (management: CatalogManagement) => new LocalUsdaAdapter(management, "/missing-catalog-directory")],
-  ])("maps an unreadable installed %s generation to catalog unavailability", async (_label, adapterFor) => {
+describe("USDA search policy", () => {
+  test("maps an unreadable installed generation to catalog unavailability", async () => {
     const management = {
       read: () => ({ installed: { generation: "missing" } }),
       withActiveGeneration: <T>(read: (generation: string) => T) => read("missing"),
     } as unknown as CatalogManagement;
 
-    await expect(adapterFor(management).search("egg")).rejects.toBeInstanceOf(
+    await expect(new LocalUsdaAdapter(management, "/missing-catalog-directory").search("egg")).rejects.toBeInstanceOf(
       CatalogUnavailableError,
     );
-  });
-
-  test("collects non-empty, distinct source aliases without repeating the display name", () => {
-    expect(offSearchAliases(packagedFood())).toEqual([
-      "Creme brulee",
-      "Crema quemada",
-      "Dessert custard",
-      "Crema catalana",
-      "Custard",
-    ]);
-    expect(offSearchAliases(packagedFood({ offSourceFields: undefined }))).toEqual([]);
-    expect(offSearchAliases(packagedFood({
-      name: "Egg noodles",
-      offSourceFields: { product_name_en: "Egg noodles" },
-    }))).toEqual(["eggs noodles"]);
-  });
-
-  test.each([
-    ["exact normalized name", ["creme", "brulee"], 0],
-    ["exact alias", ["dessert", "custard"], 1],
-    ["exact brand", ["maison", "test"], 2],
-    ["exact words", ["creme", "test"], 3],
-    ["prefix words", ["cre", "mai"], 4],
-  ] as const)("ranks %s", (_label, tokens, expected) => {
-    expect(offSearchRelevance(packagedFood(), [...tokens])).toBe(expected);
-  });
-
-  test("requires every token and treats a one-letter token as an exact word", () => {
-    expect(offSearchRelevance(packagedFood(), ["cre", "missing"])).toBeNull();
-    expect(offSearchRelevance(packagedFood(), ["c"])).toBeNull();
-    expect(offSearchRelevance(packagedFood(), ["creme", "mai"])).toBe(4);
-    expect(
-      offSearchRelevance(packagedFood({ name: "Vitamin A" }), ["a"]),
-    ).toBe(3);
-    expect(
-      offSearchRelevance(packagedFood({ brand: null }), ["unknown"]),
-    ).toBeNull();
-  });
-
-  test("does not confuse exact name, alias, and brand tiers", () => {
-    const food = packagedFood({
-      brand: "Brand phrase",
-      name: "Name phrase",
-      offSourceFields: { generic_name: "Alias phrase" },
-    });
-    expect(offSearchRelevance(food, ["name", "phrase"])).toBe(0);
-    expect(offSearchRelevance(food, ["alias", "phrase"])).toBe(1);
-    expect(offSearchRelevance(food, ["brand", "phrase"])).toBe(2);
   });
 });

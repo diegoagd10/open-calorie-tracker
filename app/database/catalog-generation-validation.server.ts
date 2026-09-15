@@ -6,11 +6,13 @@ export function catalogGenerationIsReadable(directory: string, generation: strin
   let database: BetterSqlite3.Database | undefined;
   try {
     database = new BetterSqlite3(path.join(directory, `${generation}.sqlite`), { readonly: true });
-    const required = provider === "open-food-facts" ? ["products", "product_search"] : ["foods", "names"];
     if (database.pragma("quick_check", { simple: true }) !== "ok") return false;
-    const [records, search] = required;
-    return database.prepare(`SELECT 1 FROM ${records} LIMIT 1`).get() !== undefined
-      && database.prepare(`SELECT rowid FROM ${search} LIMIT 1`).get() !== undefined;
+    const records = provider === "open-food-facts" ? "products" : "foods";
+    if (database.prepare(`SELECT record FROM ${records} LIMIT 1`).get() === undefined) {
+      return false;
+    }
+    return provider === "open-food-facts"
+      || database.prepare("SELECT rowid FROM names LIMIT 1").get() !== undefined;
   } catch {
     return false;
   } finally {

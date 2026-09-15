@@ -1,6 +1,7 @@
 import { access, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import BetterSqlite3 from "better-sqlite3";
 
 import { afterEach, expect, test, vi } from "vitest";
 
@@ -9,7 +10,6 @@ import { TestOpenFoodFactsProvider } from "../app/catalog/test-fixture.server";
 import {
   buildOffGeneration,
   readOffGenerationFood,
-  searchOffGeneration,
 } from "../app/database/off-generation.server";
 
 const cleanups: Array<() => Promise<void>> = [];
@@ -35,12 +35,9 @@ test("generation readers never create a missing immutable catalog", async () => 
   expect(() => readOffGenerationFood(directory, "missing", "123"))
     .toThrow();
   await expect(access(databasePath)).rejects.toThrow();
-  expect(() => searchOffGeneration(directory, "missing", '"food"*', () => 0))
-    .toThrow();
-  await expect(access(databasePath)).rejects.toThrow();
 });
 
-test("generation build persists aliases, indexes once, de-duplicates, and caps ranked results", async () => {
+test("generation build persists de-duplicated barcode records without a search index", async () => {
   const directory = await temporaryDirectory();
   const fixture = new TestOpenFoodFactsProvider();
   const base = await fixture.getFood("0012345678905");
@@ -53,59 +50,29 @@ test("generation build persists aliases, indexes once, de-duplicates, and caps r
   }));
   foods.push({ ...foods[0], name: "Ignored duplicate" });
   const duplicate = vi.fn();
-  const indexing = vi.fn();
   const stored = vi.fn();
-  const aliasesFor = vi.fn((food: CatalogFood) => [
-    `Hidden alias ${food.providerFoodId}`,
-  ]);
 
   await expect(buildOffGeneration({
-    aliasesFor,
     directory,
     foods: asFoods(foods),
     generation: "built",
     maxBytes: 16 * 1024 * 1024,
     onDuplicate: duplicate,
-    onIndexing: indexing,
     onStored: stored,
   })).resolves.toBe(30);
   expect(duplicate).toHaveBeenCalledTimes(1);
-  expect(indexing).toHaveBeenCalledTimes(1);
   expect(stored).toHaveBeenCalledTimes(30);
-  expect(aliasesFor).toHaveBeenCalledTimes(31);
   expect(readOffGenerationFood(directory, "built", "0000000000001"))
     .toEqual(foods[0]);
   expect(readOffGenerationFood(directory, "built", "9999999999999"))
     .toBeUndefined();
-
-  const relevance = vi.fn((food: CatalogFood) =>
-    food.providerFoodId === "0000000000002" ? null : 7
-  );
-  const results = searchOffGeneration(
-    directory,
-    "built",
-    '"indexed"*',
-    relevance,
-  );
-  expect(results).toHaveLength(25);
-  expect(results.map(food => food.providerFoodId)).not.toContain("0000000000002");
-  expect(results[0]).toMatchObject({
-    isSelectable: true,
-    providerFoodId: "0000000000003",
+  const database = new BetterSqlite3(path.join(directory, "built.sqlite"), {
+    readonly: true,
   });
-  expect(results.at(-1)?.isSelectable).toBe(true);
-  expect(relevance).toHaveBeenCalled();
-
-  expect(searchOffGeneration(
-    directory,
-    "built",
-    'aliases:"hidden alias 0000000000005"',
-    () => 0,
-  )).toMatchObject([{ providerFoodId: "0000000000005" }]);
-  expect(searchOffGeneration(
-    directory,
-    "built",
-    'brands:"indexed brand"',
-    () => 0,
-  )).toHaveLength(25);
+  expect(database.prepare(
+    "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name",
+  ).all()).toEqual([{ name: "products" }]);
+  expect(database.prepare("PRAGMA table_info(products)").all())
+    .toMatchObject([{ name: "id" }, { name: "record" }]);
+  database.close();
 });

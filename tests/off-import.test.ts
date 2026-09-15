@@ -155,7 +155,7 @@ test("daily OFF quotes are literal and configurable exports preserve embedded ne
   expect(quoted.read(offProduct.code)?.name).toBe('First\nsecond\t"quoted"');
 });
 
-test.each(["100g", "100ml", "serving"] as const)("explicit %s preserves every nutrient, identity field and supported measure", async per => {
+test.each(["100g", "100ml", "serving"] as const)("explicit %s preserves projected identity, nutrients, and supported measures", async per => {
   const prefix = `nutrition.input_sets.packaging.as_sold.${per}.nutrients.`;
   const row = { ...offWithBasis(per), [`${prefix}sugars.value`]: "2.5", [`${prefix}sugars.unit`]: "g", [`${prefix}fat.modifier`]: "", serving_quantity_unit: per === "100g" ? "g" : "ml", serving_quantity: "12.3456786", generic_name: "cereal", countries_tags: "en:united-states", product_quantity_unit: "g", unrelated_column: "must not persist" };
   const imported = await install(offArchive([row]));
@@ -176,8 +176,7 @@ test.each(["100g", "100ml", "serving"] as const)("explicit %s preserves every nu
     { id: "serving", label: `1 serving (12.3456786 ${unit})`, unit, baseQuantityMicrounits: 12_345_679 },
   ]);
   expect(food).toMatchObject({ originalName: offProduct.product_name, dataType: "Open Food Facts", providerPublishedDate: "2024-01-01T00:00:00.000Z", providerModifiedDate: "2025-01-01T00:00:00.000Z", measurementSummary: per === "serving" ? "1 serving" : `100 ${unit}` });
-  const retained: Record<string, string> = { ...row }; delete retained.unrelated_column;
-  expect(food.offSourceFields).toEqual(retained);
+  expect(food).not.toHaveProperty("offSourceFields");
 });
 
 test.each([

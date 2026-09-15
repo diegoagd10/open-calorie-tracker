@@ -17,7 +17,7 @@ import readinessStyles from "./readiness.module.css";
 
 export async function loader({ request }: Route.LoaderArgs) {
   const session = await getSessionForAccountAccess(request);
-  const navigation = { catalogNotifications: Boolean(session && !session.user.passwordChangeRequired) };
+  const navigation = { catalogNotifications: session && !session.user.passwordChangeRequired ? { viewerId: session.user.id } : null };
   return navigation;
 }
 export function headers() { return { "Cache-Control": "no-store" }; }
@@ -64,7 +64,7 @@ export default function App() {
   const root = useRouteLoaderData<typeof loader>("root");
   return <>
     <Outlet />
-    {root?.catalogNotifications ? <CatalogNotifications /> : null}
+    {root?.catalogNotifications ? <CatalogNotifications viewerId={root.catalogNotifications.viewerId} /> : null}
   </>;
 }
 

@@ -7,7 +7,7 @@ const nutrientNames: Record<keyof CatalogNutrition, string> = {
 };
 const bases = ["100g", "100ml", "serving"] as const;
 const root = "nutrition.input_sets.packaging.as_sold.";
-const identityFields = new Set(["code", "product_name", "product_name_en", "product_name_es", "generic_name", "generic_name_en", "generic_name_es", "abbreviated_product_name", "abbreviated_product_name_en", "abbreviated_product_name_es", "brands", "countries", "countries_tags", "quantity", "product_quantity", "product_quantity_unit", "serving_size", "serving_quantity", "serving_quantity_unit", "created_t", "last_modified_t", "no_nutrition_data"]);
+const identityFields = new Set(["code", "product_name", "product_name_en", "product_name_es", "brands", "countries", "countries_tags", "quantity", "product_quantity", "product_quantity_unit", "serving_size", "serving_quantity", "serving_quantity_unit", "created_t", "last_modified_t", "no_nutrition_data"]);
 const nutrientFields = new Set([...Object.values(nutrientNames), "energy", "energy-kj"].flatMap(name => [`${name}_100g`, `${name}_serving`, ...bases.flatMap(per => ["value", "unit", "modifier"].map(field => `${root}${per}.nutrients.${name}.${field}`))]));
 export function requiredOffField(field: string) { return identityFields.has(field) || nutrientFields.has(field); }
 const numericSchema = z.string().regex(/^(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/).transform(Number).pipe(z.number().nonnegative().max(Number.MAX_SAFE_INTEGER / 1_000_000));

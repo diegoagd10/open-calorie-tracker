@@ -1,33 +1,14 @@
-import { readOffGenerationFood, searchOffGeneration } from "../database/off-generation.server";
+import { readOffGenerationFood } from "../database/off-generation.server";
 import type { CatalogManagement } from "../catalog-management/catalog-management.server";
 import { barcodeLookupCandidates, isSupportedCommercialBarcode } from "./barcode";
-import { CatalogNotInstalledError, CatalogFoodNotFoundError, CatalogStaleReviewError, CatalogUnavailableError, type BarcodeFoodCatalogProvider, type CatalogOperationContext, type SearchFoodCatalogProvider } from "./food-catalog.server";
-import { offSearchRelevance } from "./off-search.server";
-import { boundedSearchTokens, prefixSearchExpression } from "./search-normalization";
+import { CatalogNotInstalledError, CatalogFoodNotFoundError, CatalogStaleReviewError, type BarcodeFoodCatalogProvider, type CatalogOperationContext } from "./food-catalog.server";
 
 function isPublishedOffFood(food: { calculationUnavailableReason?: string; isSelectable: boolean }) {
   return food.isSelectable || food.calculationUnavailableReason === "conflicting_nutrition_bases";
 }
 
-export class LocalOpenFoodFactsAdapter implements BarcodeFoodCatalogProvider, SearchFoodCatalogProvider {
+export class LocalOpenFoodFactsAdapter implements BarcodeFoodCatalogProvider {
   constructor(private readonly management: CatalogManagement, private readonly directory: string) {}
-  async search(query: string) {
-    const tokens = boundedSearchTokens(query);
-    if (!tokens) return [];
-    let results;
-    try {
-      results = await this.management.withActiveGeneration(generation => searchOffGeneration(
-        this.directory,
-        generation,
-        prefixSearchExpression(tokens),
-        food => isPublishedOffFood(food) ? offSearchRelevance(food, tokens) : null,
-      ));
-    } catch {
-      throw new CatalogUnavailableError();
-    }
-    if (!results) throw new CatalogNotInstalledError();
-    return results;
-  }
   async lookupBarcode(barcode: string, context?: CatalogOperationContext) {
     if (!isSupportedCommercialBarcode(barcode)) throw new CatalogFoodNotFoundError();
     return this.#readFood(barcodeLookupCandidates(barcode), context);

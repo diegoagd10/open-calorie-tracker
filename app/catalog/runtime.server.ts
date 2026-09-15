@@ -73,11 +73,6 @@ export function getFoodCatalog(): FoodCatalog {
       provider: "open-food-facts",
       service: openFoodFacts,
     },
-    {
-      capability: "search",
-      provider: "open-food-facts",
-      service: openFoodFacts,
-    },
   ]);
   return foodCatalog;
 }

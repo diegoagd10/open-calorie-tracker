@@ -35,11 +35,11 @@ test("native nutriments cannot overwrite product identity or display fields", as
   expect(imported.read("0643843715887")).toBeUndefined();
 });
 
-test("JSONL accepts UTF-8, CRLF, no final newline and legacy serving numbers without retaining images", async () => {
+test("JSONL accepts UTF-8, CRLF, no final newline and legacy serving numbers without retaining source fields", async () => {
   const archive = offJsonlArchive([{ code: "0012345678905", product_name: "Crème 燕麦", countries_tags: ["en:france"], nutriments: { "energy-kcal_serving": "123.5", proteins_serving: 0, sodium_serving: "0.009" }, images: { huge: "x".repeat(70_000) } }], "");
   const imported = await runArchive("off", archive, cleanup => cleanups.push(cleanup));
   expect(imported.read("0012345678905")).toMatchObject({ name: "Crème 燕麦", authoritativeBaseUnit: "serving", isSelectable: true, nutritionPerAuthoritativeBase: { energyMilliKcal: { amount: 123.5 }, proteinMilligrams: { amount: 0 }, sodiumMilligrams: { amount: 0.009 }, fatMilligrams: null } });
-  expect(imported.read("0012345678905")?.offSourceFields).not.toHaveProperty("images");
+  expect(imported.read("0012345678905")).not.toHaveProperty("offSourceFields");
 });
 
 function nativeProduct(sets: unknown, extra = {}) {

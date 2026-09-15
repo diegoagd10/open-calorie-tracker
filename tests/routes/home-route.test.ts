@@ -2,7 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import { sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { RouterContextProvider } from "react-router";
 import { afterAll, beforeAll, expect, test } from "vitest";
 
@@ -23,6 +23,7 @@ import {
   initializeApplicationDatabase,
   shutdownApplicationDatabase,
 } from "../../app/database/runtime.server";
+import { foodEntries } from "../../app/database/schema.server";
 import {
   action as homeAction,
   headers,
@@ -44,6 +45,7 @@ let temporaryDirectory: string;
 let cookie: string;
 let csrfToken: string;
 let incompleteCookie: string;
+let otherUserId: number;
 let userId: number;
 
 function routeArgs(request: Request) {
@@ -149,6 +151,7 @@ beforeAll(async () => {
     "203.0.113.231",
   );
   incompleteCookie = serializeSessionCookie(incomplete).split(";", 1)[0];
+  otherUserId = incomplete.user.id;
 });
 
 afterAll(async () => {
@@ -254,12 +257,11 @@ test("home publishes metadata and enforces account/setup/date boundaries", async
 
 test("home loader maps every catalog search and detail state", async () => {
   const empty = await load("/?food=search");
-  expect(empty.data.catalog).toEqual({ groups: [], mode: "search", query: "", results: [] });
+  expect(empty.data.catalog).toEqual({ mode: "search", query: "", results: [] });
 
   const invalid = await load("/?food=search&query=a");
   expect(invalid.init?.status).toBe(400);
   expect(invalid.data.catalog).toEqual({
-    groups: [],
     message: "Enter a food search from 2 to 100 characters.",
     mode: "search",
     query: "a",
@@ -287,31 +289,24 @@ test("home loader maps every catalog search and detail state", async () => {
   }
 
   for (const [query, status] of [
-    ["not-installed", "not-installed"],
-    ["malformed", "unavailable"],
-    ["unavailable", "unavailable"],
+    ["not-installed", 503],
+    ["malformed", 500],
+    ["unavailable", 503],
   ] as const) {
     const result = await load(`/?food=search&query=${query}`);
-    expect(result.init?.status).toBe(200);
+    expect(result.init?.status).toBe(status);
     expect(result.data.catalog).toMatchObject({
       mode: "search",
       query,
       results: [],
-      groups: [
-        { provider: "usda-fdc", status },
-        { provider: "open-food-facts", status: "available" },
-      ],
     });
   }
-
-  const packaged = await load("/?food=search&query=example%20foods&filter=packaged");
+  const packaged = await load("/?food=search&query=yogurt&filter=packaged");
   expect(packaged.data.catalog).toMatchObject({
-    filter: "packaged",
-    groups: [{ kind: "packaged", results: [{ provider: "open-food-facts", providerFoodId: "0034000470693" }] }],
+    results: [{ provider: "usda-fdc", providerFoodId: "1001" }],
   });
   const packagedDetail = await load("/?food=0034000470693&provider=open-food-facts&query=example%20foods&filter=packaged");
   expect(packagedDetail.data.catalog).toMatchObject({
-    filter: "packaged",
     food: { provider: "open-food-facts", providerFoodId: "0034000470693" },
     mode: "detail",
   });
@@ -341,16 +336,11 @@ test("home loader maps every catalog search and detail state", async () => {
   if (vanishedWithoutRefresh.data.catalog?.mode !== "search") {
     throw new Error("Expected search fallback");
   }
-  expect(vanishedWithoutRefresh.data.catalog.groups).toMatchObject([
-    { kind: "basic", provider: "usda-fdc", results: [], status: "unavailable" },
-    { kind: "packaged", provider: "open-food-facts", results: [], status: "available" },
-  ]);
   expect(vanishedWithoutRefresh.data.catalog.results).toEqual([]);
   const vanishedInvalidQuery = await load("/?food=4040&query=a");
   if (vanishedInvalidQuery.data.catalog?.mode !== "search") {
     throw new Error("Expected search fallback");
   }
-  expect(vanishedInvalidQuery.data.catalog.groups).toEqual([]);
   expect(vanishedInvalidQuery.data.catalog.results).toEqual([]);
 
   const unsafe = await load("/?food=9999&query=unsafe");
@@ -378,6 +368,38 @@ test("home loader maps every catalog search and detail state", async () => {
   }
   const futureStage = await load("/?date=2026-09-01&food=search&query=yogurt");
   expect(futureStage.data.catalog).toBeUndefined();
+});
+
+test("food search ignores unrelated and legacy URL parameters", async () => {
+  const result = await load(
+    `/?food=search&query=yogurt&provider=open-food-facts&filter=packaged&userId=${otherUserId}&barcode=0034000470693&unknown=ignored`,
+  );
+
+  expect(result.data.catalog).toMatchObject({
+    mode: "search",
+    query: "yogurt",
+    results: [{
+      name: "Plain nonfat Greek yogurt",
+      provider: "usda-fdc",
+      providerFoodId: "1001",
+    }],
+  });
+  expect(result.data.catalog).not.toHaveProperty("filter");
+  expect(result.data.catalog).not.toHaveProperty("provider");
+});
+
+test("missing USDA search returns a friendly user-safe response", async () => {
+  const result = await load("/?food=search&query=not-installed");
+
+  expect(result.init?.status).toBe(503);
+  expect(result.data.catalog).toMatchObject({
+    message:
+      "USDA Foundation is not installed. Ask your administrator to install it in Food Catalogs Settings. Your saved Food Entries remain available.",
+    mode: "search",
+    query: "not-installed",
+    results: [],
+    title: "USDA Foundation is not installed",
+  });
 });
 
 test("home loader exposes barcode lookup without creating a Food Entry", async () => {
@@ -1151,6 +1173,33 @@ test("home food actions log, edit, detect conflicts, delete, and map catalog fai
     ),
   );
   expectRedirect(deleted, "/?date=2026-08-31&notice=deleted");
+});
+
+test("log-food ignores a submitted userId and writes only to the authenticated user", async () => {
+  const idempotencyKey = "authenticated-owner-only";
+  const result = await homeAction(
+    routeArgs(
+      post({
+        date: "2026-08-27",
+        idempotencyKey,
+        intent: "log-food",
+        providerFoodId: "1001",
+        quantity: "1",
+        selectedMeasurementId: "base:g:100000000",
+        userId: String(otherUserId),
+      }),
+    ),
+  );
+  expectRedirect(result, "/?date=2026-08-27");
+
+  const saved = getApplicationDatabase()
+    .getClient()
+    .select({ userId: foodEntries.userId })
+    .from(foodEntries)
+    .where(eq(foodEntries.idempotencyKey, idempotencyKey))
+    .get();
+  expect(saved).toEqual({ userId });
+  expect(saved?.userId).not.toBe(otherUserId);
 });
 
 test("home copies a historical Food Entry to today and returns to the source log with a notice", async () => {

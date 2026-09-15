@@ -15,8 +15,8 @@ A persistent installation contains three independent SQLite databases:
    persisted catalog outcomes.
 2. The active USDA generation stores imported Foundation foods and its search
    index.
-3. The active Open Food Facts generation stores imported products and its
-   barcode/name indexes.
+3. The active Open Food Facts generation stores imported products keyed by
+   barcode. It has no text-search index.
 
 The catalog generation files and temporary import files live in
 `CATALOG_DIRECTORY`, which defaults to `catalogs/` beside the application
@@ -34,7 +34,8 @@ application, and install them from server/container-visible regular files.
 USDA accepts the official Foundation **CSV ZIP**; Open Food Facts accepts the
 official product **JSONL GZIP** (recommended for serving nutrition) or supported **tab-separated CSV GZIP**. Browser archive requests are rejected.
 Either source can be installed first, and the same command deliberately replaces
-or reimports a source independently. A missing source is identified in search.
+or reimports a source independently. Missing USDA is identified in food search;
+missing OFF is identified during barcode lookup.
 
 Application upgrades run database migrations before readiness. Existing USDA and
 OFF Food Entry snapshots remain viewable, editable with their saved measurements,
@@ -44,7 +45,7 @@ absent. Use the same terminal commands after upgrading.
 Progress, lifecycle phases, counters and detailed errors stay in the terminal.
 Food Catalogs shows installed information and metadata-only update checks, with
 no upload controls, progress or import reports. Activation occurs only after the
-new database and indexes validate; readers keep using the prior complete
+new database and its provider-specific schema validate; readers keep using the prior complete
 generation until the handoff. The command waits for the backend's persisted
 terminal outcome; zero means successful activation, while failure/interruption
 and command/connection errors return nonzero. Backend work does not depend on the
@@ -53,12 +54,16 @@ terminal remaining connected after acceptance.
 All connected signed-in administrators and members receive source-specific
 installed/updated toasts on any page. Failures and interruptions are visible only
 to administrators. Toasts disappear after six seconds, pause while hovered or
-focused, and can be dismissed manually. Each browser tab remembers displayed
-outcomes across navigation and reload. Another client's dismissal or shared
-acknowledgement cannot suppress success delivery. Polling retries quietly after
-connection failures and checks on focus/reconnection. Anonymous clients receive
-no notifications; members cannot read private operator diagnostics or use
-management/acknowledgement mutations. Food Catalogs remains administrator-only.
+focused, and can be dismissed manually. Each browser profile remembers delivered
+outcomes for the signed-in account across navigation, reload, and browser restart.
+All outcomes accepted in one poll are recorded together, so refreshing cannot
+advance through an old queue. Only the newest successful outcome for each catalog
+is queued; a later install or replacement has a distinct identity and can notify
+again. Another account or client retains independent delivery. Polling retries
+quietly after connection failures and checks on focus/reconnection. Anonymous
+clients receive no notifications; members cannot read private operator diagnostics
+or use management/acknowledgement mutations. Food Catalogs remains
+administrator-only.
 
 ## Capacity and archive limits
 
@@ -87,7 +92,7 @@ the [USDA guide](local-usda-catalog.md#operations-and-verification) and
 On restart, an unfinished pre-activation job becomes **interrupted**, partial
 artifacts are removed, and the previous active generation stays available. If
 publication had started, recovery validates the candidate's recorded size,
-provider schema, indexes, and SQLite integrity before completing the handoff;
+provider schema and SQLite integrity before completing the handoff;
 otherwise it restores the prior complete generation. Rerun the source-specific terminal command with the complete archive. Partial
 imports are not resumable. Do not rename or delete UUID-named catalog files by
 hand.
@@ -110,7 +115,7 @@ distinctions as separate source records.
 The standard OFF daily dump identifies products but does not establish whether
 its `_100g` nutrition describes mass or volume, and the validated September
 2026 archive lacks authoritative serving fields. Those products remain useful
-for search, barcode review, and source identification but are deliberately
+for barcode review and source identification but are deliberately
 unavailable for calculated logging. The application does not guess density,
 convert package size into a serving, or retrieve missing facts from an API.
 
@@ -122,8 +127,8 @@ source dates remain visible in saved history after replacement.
 ## Reproducible performance verification
 
 The development-machine budget is p95 below **100 ms** for representative local
-ingredient searches/details, exact product searches, product-prefix searches,
-and barcode lookups, including reads while OFF is being replaced. Peak process
+USDA ingredient searches/details and OFF barcode lookups, including reads while
+OFF is being replaced. Peak process
 RSS during either full import must remain below **1 GiB**. These wall-clock
 budgets run only in opt-in scale tests, never in the ordinary deterministic
 suite:

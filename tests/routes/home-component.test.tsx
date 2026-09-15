@@ -1396,27 +1396,12 @@ test("home catalog renders initial, empty, failure, and selectable result states
       providerFoodId: "9999",
       providerPublishedDate: null,
     },
-    {
-      barcode: "0012345678902",
-      brand: "Exact Brand",
-      dataType: "Open Food Facts",
-      isSelectable: true,
-      measurementSummary: "100 g",
-      name: "Crunch cereal",
-      provider: "open-food-facts",
-      providerFoodId: "0012345678902",
-      providerPublishedDate: null,
-    },
   ];
   const catalogPreviousFocus = new TestElement();
   (globalThis.document as unknown as { activeElement: TestElement }).activeElement =
     catalogPreviousFocus;
   const renderer = await renderHome({
     catalog: {
-      groups: [
-        { kind: "basic", provider: "usda-fdc", results: results.slice(0, 2), status: "available" },
-        { kind: "packaged", provider: "open-food-facts", results: results.slice(2), status: "available" },
-      ],
       mode: "search",
       query: "yogurt",
       results,
@@ -1425,12 +1410,11 @@ test("home catalog renders initial, empty, failure, and selectable result states
   expect(semanticDom(renderer)).toMatchSnapshot();
   expect(renderer.root.findByProps({ "aria-label": "Food search results" }))
     .toBeDefined();
-  expect(allText(renderer)).toContain("Basic foods");
-  expect(allText(renderer)).toContain("Packaged products");
-  expect(renderer.root.findByProps({ href: "/?date=2026-08-31&food=0012345678902&query=yogurt&provider=open-food-facts" }))
-    .toBeDefined();
-  expect(renderer.root.findByProps({ href: "/?date=2026-08-31&food=search&query=yogurt&filter=packaged" }))
-    .toBeDefined();
+  expect(allText(renderer)).not.toContain("Basic foods");
+  expect(allText(renderer)).not.toContain("Packaged products");
+  expect(allText(renderer)).not.toContain("Open Food Facts");
+  expect(renderer.root.findAllByProps({ "aria-label": "Food type filter" }))
+    .toHaveLength(0);
   expect(queriedSelectors).toContain(
     'input:not([type="hidden"]):not([disabled]), button:not([disabled]), select:not([disabled]), a[href]',
   );
@@ -1479,7 +1463,6 @@ test("home catalog renders initial, empty, failure, and selectable result states
 
   const queryless = await renderHome({
     catalog: {
-      groups: [{ kind: "basic", provider: "usda-fdc", results: [results[0]], status: "available" }],
       mode: "search",
       query: "",
       results: [results[0]],
@@ -1505,128 +1488,53 @@ test("home catalog renders initial, empty, failure, and selectable result states
   await act(async () => idleFallback.unmount());
 });
 
-test("home catalog search renders explicit source state, provenance, and active filters", async () => {
-  const packagedResult = {
-    barcode: "0012345678902",
-    brand: "Exact Brand",
-    catalogGeneration: "off-generation",
-    dataType: "Open Food Facts",
+test("home catalog search renders a flat USDA result list with one attribution", async () => {
+  const usdaResult = {
+    barcode: null,
+    brand: "Example Farm",
+    catalogGeneration: "usda-generation",
+    dataType: "Foundation",
     isSelectable: true,
     measurementSummary: "100 g",
-    name: "Crunch cereal",
-    provider: "open-food-facts",
-    providerFoodId: "0012345678902",
+    name: "Egg, whole, raw",
+    provider: "usda-fdc",
+    providerFoodId: "1234",
     providerPublishedDate: "2026-08-01",
-  };
+  } as const;
   const renderer = await renderHome({
     catalog: {
-      filter: "packaged",
-      groups: [
-        {
-          kind: "packaged",
-          provider: "open-food-facts",
-          results: [packagedResult],
-          status: "available",
-        },
-        {
-          kind: "basic",
-          provider: "usda-fdc",
-          results: [],
-          status: "unavailable",
-        },
-      ],
       mode: "search",
-      query: "crunch",
-      results: [packagedResult],
+      query: "egg",
+      results: [usdaResult],
     },
   });
 
-  expect(input(renderer, "filter").props.value).toBe("packaged");
+  expect(renderer.root.findAllByProps({ name: "filter" })).toHaveLength(0);
   expect(renderer.root.findByProps({
-    href: "/?date=2026-08-31&food=search&query=crunch&filter=packaged",
-  }).props["aria-current"]).toBe("page");
-  expect(renderer.root.findByProps({
-    href: "/?date=2026-08-31&food=0012345678902&query=crunch&provider=open-food-facts&filter=packaged",
+    href: "/?date=2026-08-31&food=1234&query=egg&provider=usda-fdc",
   })).toBeDefined();
-  expect(allText(renderer)).toContain("Packaged product · Open Food Facts");
-  expect(allText(renderer)).toContain("Exact Brand · 100 g · 2026-08-01");
-  expect(allText(renderer)).toContain("Basic foodscatalog is temporarily unavailable");
-  expect(allText(renderer)).toContain("USDA FoodData Central and Open Food Facts");
+  expect(allText(renderer)).toContain("Example Farm · 100 g · 2026-08-01");
+  expect(allText(renderer)).toContain("USDA FoodData Central");
+  expect(allText(renderer)).not.toContain("Open Food Facts");
+  expect(renderer.root.findAllByProps({ className: styles.catalogType }))
+    .toHaveLength(0);
   await act(async () => renderer.unmount());
 
   const empty = await renderHome({
     catalog: {
-      groups: [
-        {
-          kind: "basic",
-          provider: "usda-fdc",
-          results: [],
-          status: "available",
-        },
-        {
-          kind: "packaged",
-          provider: "open-food-facts",
-          results: [],
-          status: "not-installed",
-        },
-      ],
       mode: "search",
       query: "missing food",
       results: [],
     },
   });
   expect(allText(empty)).toContain("No foods found");
-  expect(allText(empty)).toContain("Packaged productscatalog is not installed");
-  expect(allText(empty)).not.toContain("Basic foodscatalog is not installed");
+  expect(allText(empty)).toContain("USDA FoodData Central");
   await act(async () => empty.unmount());
-
-  const incompleteResult = {
-    ...packagedResult,
-    calculationUnavailableReason: "ambiguous_nutrition_basis",
-    isSelectable: false,
-  };
-  const incomplete = await renderHome({
-    catalog: {
-      groups: [{
-        kind: "packaged",
-        provider: "open-food-facts",
-        results: [incompleteResult],
-        status: "available",
-      }],
-      mode: "search",
-      query: "crunch",
-      results: [incompleteResult],
-    },
-  });
-  expect(allText(incomplete)).toContain(
-    "Calculation unavailable: this export does not establish whether nutrition is per 100 g or 100 ml.",
-  );
-  await act(async () => incomplete.unmount());
-
-  const oneProviderFallback = await renderHome({
-    catalog: {
-      groups: [{
-        kind: "packaged",
-        provider: "open-food-facts",
-        results: [packagedResult],
-        status: "available",
-      }],
-      mode: "search",
-      query: "crunch",
-      results: [packagedResult],
-    },
-  });
-  expect(oneProviderFallback.root.findAllByType("section").filter(section =>
-    section.props.className === styles.catalogResultGroup,
-  )).toHaveLength(1);
-  expect(allText(oneProviderFallback)).not.toContain("Basic foodscatalog");
-  await act(async () => oneProviderFallback.unmount());
 });
 
-test("OFF search detail uses the complete barcode-backed review behavior", async () => {
+test("legacy OFF detail links use the complete barcode-backed review behavior", async () => {
   const renderer = await renderHome({
     catalog: {
-      filter: "packaged",
       food: barcodeFood,
       idempotencyKey: "off-search-detail",
       mode: "detail",
@@ -1643,7 +1551,7 @@ test("OFF search detail uses the complete barcode-backed review behavior", async
     step: "0.000001",
   });
   expect(renderer.root.findByProps({
-    href: "/?date=2026-08-31&food=search&query=example+cereal&filter=packaged",
+    href: "/?date=2026-08-31&food=search&query=example+cereal",
   })).toBeDefined();
   expect(input(renderer, "provider").props.value).toBe("open-food-facts");
   expect(input(renderer, "providerFoodId").props.value).toBe(
@@ -2151,7 +2059,7 @@ test("home renders submission and navigation pending states", async () => {
     { to: "/?food=search&query=yogurt" },
   );
   expect(semanticDom(search)).toMatchSnapshot();
-  expect(allText(search)).toContain("Searching local food catalogs");
+  expect(allText(search)).toContain("Searching USDA foods");
   await act(async () => search.unmount());
 
   const detail = await renderPendingHome(
@@ -2167,7 +2075,7 @@ test("home renders submission and navigation pending states", async () => {
     { catalog: { mode: "search", query: "", results: [] } },
     { to: "/?other=1" },
   );
-  expect(allText(unrelated)).toContain("Searching local food catalogs");
+  expect(allText(unrelated)).toContain("Searching USDA foods");
   expect(unrelated.root.findAllByProps({ "aria-label": "Loading food details" }))
     .toHaveLength(0);
   await act(async () => unrelated.unmount());

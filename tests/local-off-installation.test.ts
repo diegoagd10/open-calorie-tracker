@@ -119,47 +119,6 @@ test("OFF installation retains ambiguous products for diagnostics but hides them
   expect(network).not.toHaveBeenCalled();
 });
 
-test("OFF search uses installed names, aliases, brands, accents, and prefixes", async () => {
-  const { management, directory } = await setup();
-  await install(management, offArchive([
-    { ...offWithBasis("100g", "0012345678901"), product_name: "Crème brûlée", generic_name: "Dessert custard", brands: "Maison Test" },
-    { ...offWithBasis("100g", "0012345678902"), product_name: "Crunch cereal", generic_name: "Breakfast flakes", brands: "Exact Brand" },
-    { ...offWithBasis("100g", "0012345678903"), product_name: "Egg noodles", generic_name: "Pasta", brands: "Distractor Foods" },
-  ]));
-  const packaged = new LocalOpenFoodFactsAdapter(management, directory);
-
-  await expect(packaged.search("  CREME  ")).resolves.toMatchObject([
-    { name: "Crème brûlée", provider: "open-food-facts", providerFoodId: "0012345678901" },
-  ]);
-  await expect(packaged.search("cust")).resolves.toMatchObject([
-    { name: "Crème brûlée" },
-  ]);
-  await expect(packaged.search("exact brand")).resolves.toMatchObject([
-    { brand: "Exact Brand", name: "Crunch cereal" },
-  ]);
-  await expect(packaged.search("eggs")).resolves.toMatchObject([
-    { name: "Egg noodles" },
-  ]);
-  await expect(packaged.search("a")).resolves.toEqual([]);
-});
-
-test("OFF search is bounded and treats query operators as ordinary words", async () => {
-  const { management, directory } = await setup();
-  const products = Array.from({ length: 30 }, (_, index) => ({
-    ...offWithBasis("100g", String(1_000_000 + index)),
-    product_name: `Egg snack ${index}`,
-  }));
-  products.push({ ...offWithBasis("100g", "0012345678901"), product_name: "NOT operator cereal" });
-  await install(management, offArchive(products));
-  const packaged = new LocalOpenFoodFactsAdapter(management, directory);
-
-  await expect(packaged.search("egg")).resolves.toHaveLength(25);
-  await expect(packaged.search("NOT operator")).resolves.toMatchObject([
-    { name: "NOT operator cereal" },
-  ]);
-  await expect(packaged.search('" OR *')).resolves.toEqual([]);
-});
-
 test("source-backed mass nutrition scales to a logged and editable snapshot", async () => {
   const { management, catalog, entries, userId } = await setup();
   await install(management, offArchive([offWithBasis("100g")]));
@@ -213,8 +172,8 @@ test("only an in-tree conflict remains publicly readable among unavailable produ
   await expect(catalog.lookupBarcode("open-food-facts", "9999999999999")).rejects.toThrow("no longer available");
 });
 
-test("OFF public reads hide products outside the nutrition priority tree but retain an in-tree conflict", async () => {
-  const { management, catalog, directory } = await setup();
+test("OFF barcode and detail reads hide products outside the nutrition priority tree but retain an in-tree conflict", async () => {
+  const { management, catalog } = await setup();
   const prefix = "nutrition.input_sets.packaging.as_sold.100g.nutrients.";
   const outside = [
     { ...offProduct, code: "0012345678901", product_name: "Priority probe ambiguous" },
@@ -240,14 +199,10 @@ test("OFF public reads hide products outside the nutrition priority tree but ret
     isSelectable: false,
   });
 
-  const packaged = new LocalOpenFoodFactsAdapter(management, directory);
-  await expect(packaged.search("priority probe")).resolves.toMatchObject([
-    { providerFoodId: conflict.code, calculationUnavailableReason: "conflicting_nutrition_bases" },
-  ]);
 });
 
 test("OFF public reads hide every native input-set failure outside the priority tree", async () => {
-  const { management, catalog, directory } = await setup();
+  const { management, catalog } = await setup();
   const validSet = {
     source: "packaging",
     preparation: "as_sold",
@@ -269,7 +224,6 @@ test("OFF public reads hide every native input-set failure outside the priority 
     await expect(catalog.lookupBarcode("open-food-facts", product.code))
       .rejects.toBeInstanceOf(CatalogFoodNotFoundError);
   }
-  await expect(new LocalOpenFoodFactsAdapter(management, directory).search("native outside")).resolves.toEqual([]);
 });
 
 test("OFF supports only an explicitly normalized serving in its authoritative dimension and rejects stale review", async () => {
@@ -354,7 +308,7 @@ test("a public OFF read holds its generation until replacement handoff completes
   await expect(stat(path.join(directory, `${oldGeneration}.sqlite`))).rejects.toMatchObject({ code: "ENOENT" });
 });
 
-test("OFF validation, import and indexing leave old product reads and USDA search available", async () => {
+test("OFF validation and import leave old product reads and USDA search available", async () => {
   const { management, database, directory } = await setup();
   const originalArchive = offArchive([{ ...offWithBasis("100g"), product_name: "Original oats" }]);
   await install(management, originalArchive);
@@ -374,7 +328,7 @@ import path from "node:path";
 import { setTimeout as wait } from "node:timers/promises";
 import { parentPort, workerData } from "node:worker_threads";
 const publish = message => parentPort.postMessage(message);
-for (const phase of ["validating", "importing", "indexing"]) {
+for (const phase of ["validating", "importing"]) {
   publish({ progress: { phase } });
   while (!existsSync(path.join(workerData.directory, "off-" + phase + ".release"))) await wait(5);
 }
@@ -394,10 +348,9 @@ await importOff(workerData, publish);
     stream: Readable.from(offArchive([{ ...offWithBasis("100g"), product_name: "Replacement oats" }])),
   });
 
-  for (const phase of ["validating", "importing", "indexing"] as const) {
+  for (const phase of ["validating", "importing"] as const) {
     await vi.waitFor(() => expect(replacement.read().job?.phase).toBe(phase));
     await expect(packaged.lookupBarcode(offProduct.code)).resolves.toMatchObject({ name: "Original oats", catalogGeneration: originalGeneration });
-    await expect(packaged.search("original oats")).resolves.toMatchObject([{ name: "Original oats", catalogGeneration: originalGeneration }]);
     await expect(basic.search("egg")).resolves.toEqual(expect.arrayContaining([expect.objectContaining({ provider: "usda-fdc" })]));
     await writeFile(path.join(directory, `off-${phase}.release`), "continue");
   }
@@ -523,14 +476,13 @@ test("the official daily export treats unescaped quotes as literal text, without
 
 
 test("native JSONL serving saves declared totals and survives failed and successful generation replacement", async () => {
-  const { management, catalog, entries, userId, directory } = await setup();
+  const { management, catalog, entries, userId } = await setup();
   const target = JSON.parse(await readFile("tests/fixtures/off-native-serving.json", "utf8")) as unknown;
   await install(management, offJsonlArchive([target]));
   const food = await catalog.lookupBarcode("open-food-facts", "643843715887");
   const input = { provider: food.provider, providerFoodId: food.providerFoodId, catalogGeneration: food.catalogGeneration, foodLogDate: "2026-09-06", idempotencyKey: "native-serving-save", selectedMeasurementId: "serving", quantity: "2" };
   const saved = await entries.log(userId, input);
   expect(saved).toMatchObject({ energyMilliKcal: 300_000, proteinMilligrams: 60_000, carbohydrateMilligrams: 8_000, fatMilligrams: 4_000, fiberMilligrams: 2_000, sugarMilligrams: 2_000, sodiumMilligrams: 340 });
-  await expect(new LocalOpenFoodFactsAdapter(management, directory).search("premier protein")).resolves.toMatchObject([{ providerFoodId: food.providerFoodId }]);
   const installed = management.read().installed;
   expect(installed).toMatchObject({ archiveFormat: "jsonl" });
   await install(management, offJsonlArchive([target]).subarray(0, -8));

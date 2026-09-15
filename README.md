@@ -25,6 +25,10 @@ For production configuration, deployment, updates, and backups, follow the
 Catalog installation is command-only. Food Catalogs in Settings shows installed
 sources, official downloads and metadata-only update checks.
 
+USDA Foundation powers **Search food**. Open Food Facts is installed only for
+camera scans and manually entered barcode lookup; it is not included in text
+search results.
+
 1. Use Node 24 and the pinned pnpm. Run `pnpm install --frozen-lockfile` and
    `pnpm build` to build the server, import worker and command artifacts.
 2. Start the application with `pnpm start` and your deployment configuration.
@@ -74,9 +78,13 @@ A published handoff is validated and recovered using the existing lifecycle.
 
 All connected signed-in clients receive source-specific installed/updated
 toasts on any application page. Failure/interruption toasts are administrator-only
-and direct the operator back to the terminal. Each browser tab deduplicates its
-own displayed outcomes across navigation/refresh; one client's dismissal or
-shared acknowledgement of success does not hide success from another client.
+and direct the operator back to the terminal. Each browser profile remembers
+delivered outcomes for the signed-in account across navigation, refresh, and
+browser restarts. A fetched batch is recorded together so refresh cannot walk
+through an old outcome backlog, while another account or client still receives
+its own notification. Only the newest successful outcome for each catalog is
+queued; a later installation or replacement has a new outcome identity and can
+notify again.
 Prior valid catalogs remain available during replacement and after a failed
 replacement; saved Food Entries retain their original nutrition and measurements.
 

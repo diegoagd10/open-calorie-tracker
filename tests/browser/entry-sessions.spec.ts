@@ -1,8 +1,9 @@
 import { expect, test } from "./reset-database";
+import { playwrightBrowserPorts } from "../../scripts/catalog-browser-runtime";
 
 const password = "correct horse 🔐 battery";
-const publicOrigin = "https://localhost:4173";
-const lanOrigin = "http://127.0.0.1:4174";
+const publicOrigin = `https://localhost:${playwrightBrowserPorts.public}`;
+const lanOrigin = `http://127.0.0.1:${playwrightBrowserPorts.lan}`;
 
 test("desktop and phone sessions share data across entries and logout stays local", async ({ page, context, browser, baseURL }) => {
   await page.goto("/register");
