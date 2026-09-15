@@ -15,16 +15,18 @@ function outcome(patch: Partial<CatalogOutcome> = {}): CatalogOutcome {
   return { provider: "usda-fdc", jobId: "job", filename: "foundation.zip", phase: "succeeded", completedAt: "2026-09-09T12:00:00Z", error: null, acknowledgedAt: null,
     installed: { generation: "job", filename: "foundation.zip", sha256: "snapshot-fingerprint", installedAt: "2026-09-09T12:00:00Z", foodCount: 469, publicationDateRange: { earliest: "2020-01-01", latest: "2026-04-30" } }, ...patch };
 }
-async function mount() {
+async function mount(viewerId = 7) {
   let renderer!: ReactTestRenderer;
-  await act(async () => { renderer = create(createElement(CatalogNotifications)); });
+  await act(async () => { renderer = create(createElement(CatalogNotifications, { viewerId })); });
   renderers.push(renderer);
   return renderer;
 }
 async function render(outcomes: CatalogOutcome[]) {
   vi.useFakeTimers();
   const storage = new Map<string, string>();
+  const durableStorage = new Map<string, string>();
   const browser = Object.assign(new EventTarget(), {
+    localStorage: { getItem: (key: string) => durableStorage.get(key) ?? null, setItem: (key: string, value: string) => { durableStorage.set(key, value); } },
     sessionStorage: { getItem: (key: string) => storage.get(key) ?? null, setItem: (key: string, value: string) => { storage.set(key, value); } },
   });
   vi.stubGlobal("window", browser);
@@ -43,6 +45,26 @@ test("nothing is visible without an event or for acknowledged operator outcomes"
   fetch.mockResolvedValueOnce(Response.json({ outcomes: [outcome({ phase: "failed", acknowledgedAt: "2026-09-09T13:00:00Z" })] }));
   await act(async () => { browser.dispatchEvent(new Event("focus")); });
   expect(text(renderer.root)).toBe("");
+});
+
+test("no catalog change stays quiet through polling, focus and refresh", async () => {
+  const { renderer, browser } = await render([]);
+  await advance(9000);
+  await act(async () => { browser.dispatchEvent(new Event("focus")); });
+  expect(text(renderer.root)).toBe("");
+  await act(() => renderer.unmount());
+  const refreshed = await mount();
+  expect(text(refreshed.root)).toBe("");
+});
+
+test.each([
+  ["usda-fdc", "USDA Foundation"],
+  ["open-food-facts", "Open Food Facts"],
+] as const)("a new %s catalog activation notifies a connected user", async (provider, name) => {
+  const { renderer, fetch, browser } = await render([]);
+  fetch.mockResolvedValueOnce(Response.json({ outcomes: [outcome({ provider, jobId: `${provider}-new`, operation: "update" })] }));
+  await act(async () => { browser.dispatchEvent(new Event("focus")); });
+  expect(text(renderer.root)).toBe(`${name} catalog updated.`);
 });
 
 test("a new event produces a brief accessible toast, expires and stays dismissed after polls and reload", async () => {
@@ -125,6 +147,7 @@ test("failed polling is quiet, reconnects and does not repeat an expired event",
 
 test("unavailable storage does not break expiry or in-memory deduplication", async () => {
   const { renderer, browser } = await render([]);
+  Object.defineProperty(browser, "localStorage", { get: () => { throw new Error("storage disabled"); } });
   Object.defineProperty(browser, "sessionStorage", { get: () => { throw new Error("storage disabled"); } });
   const fetch = vi.mocked(globalThis.fetch);
   fetch.mockImplementation(async () => Response.json({ outcomes: [outcome()] }));
@@ -159,4 +182,55 @@ test("shared acknowledgement cannot suppress success and displaying deduplicates
   await act(() => renderer.unmount());
   const refreshed = await mount();
   expect(text(refreshed.root)).toBe("");
+});
+
+test("a catalog update delivered ten days ago stays quiet through repeated refreshes", async () => {
+  vi.setSystemTime(new Date("2026-09-05T12:00:00Z"));
+  const { renderer, browser } = await render([outcome({ completedAt: "2026-09-05T12:00:00Z", operation: "update" })]);
+  expect(text(renderer.root)).toBe("USDA Foundation catalog updated.");
+  await act(() => renderer.unmount());
+  vi.setSystemTime(new Date("2026-09-15T12:00:00Z"));
+  let refreshedSession = new Map<string, string>();
+  Object.defineProperty(browser, "sessionStorage", {
+    configurable: true,
+    value: {
+      getItem: (key: string) => refreshedSession.get(key) ?? null,
+      setItem: (key: string, value: string) => { refreshedSession.set(key, value); },
+    },
+  });
+  const firstRefresh = await mount();
+  expect(text(firstRefresh.root)).toBe("");
+  await act(() => firstRefresh.unmount());
+  refreshedSession = new Map<string, string>();
+  const secondRefresh = await mount();
+  expect(text(secondRefresh.root)).toBe("");
+});
+
+test("refresh does not advance through a backlog of catalog success outcomes", async () => {
+  const { renderer } = await render([
+    outcome({ jobId: "usda-update", operation: "update" }),
+    outcome({ provider: "open-food-facts", jobId: "off-update", operation: "update" }),
+  ]);
+  expect(text(renderer.root)).toBe("Open Food Facts catalog updated.");
+  await act(() => renderer.unmount());
+  const refreshed = await mount();
+  expect(text(refreshed.root)).toBe("");
+});
+
+test("only the newest successful version of each catalog is queued", async () => {
+  const { renderer } = await render([
+    outcome({ jobId: "new-version", completedAt: "2026-09-09T14:00:00Z", operation: "update" }),
+    outcome({ jobId: "old-version", completedAt: "2026-09-09T12:00:00Z", operation: "install" }),
+  ]);
+  expect(text(renderer.root)).toBe("USDA Foundation catalog updated.");
+  await act(() => { (renderer.root.findByType("button").props as { onClick: () => void }).onClick(); });
+  expect(text(renderer.root)).toBe("");
+});
+
+test("delivery receipts are isolated between signed-in users in the same browser", async () => {
+  const { renderer } = await render([outcome({ operation: "update" })]);
+  expect(text(renderer.root)).toBe("USDA Foundation catalog updated.");
+  await act(() => renderer.unmount());
+  const otherUser = await mount(8);
+  expect(text(otherUser.root)).toBe("USDA Foundation catalog updated.");
 });

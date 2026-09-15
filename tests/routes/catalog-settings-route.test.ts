@@ -100,9 +100,11 @@ async function importArchive(provider: "usda-fdc" | "open-food-facts", filename:
 
 test("signed-in clients read successes independently while operator outcomes and acknowledgement stay administrator-only", async () => {
   await expect(notificationLoader(get(""))).rejects.toMatchObject({ status: 302 });
-  expect(await rootLoader(get(memberCookie))).toEqual({ catalogNotifications: true });
-  expect(await rootLoader(get())).toEqual({ catalogNotifications: true });
-  expect(await rootLoader(get(""))).toEqual({ catalogNotifications: false });
+  const memberNavigation = await rootLoader(get(memberCookie));
+  const adminNavigation = await rootLoader(get());
+  expect(memberNavigation.catalogNotifications?.viewerId).toBeTypeOf("number");
+  expect(adminNavigation.catalogNotifications?.viewerId).toBeTypeOf("number");
+  expect(await rootLoader(get(""))).toEqual({ catalogNotifications: null });
   await importArchive("usda-fdc", "foundation.zip", await foundationArchive());
   await importArchive("open-food-facts", "replacement.csv.gz", offArchive([offWithBasis("100g")]));
   const before = await (await notificationLoader(get())).json() as { outcomes: CatalogOutcome[] };

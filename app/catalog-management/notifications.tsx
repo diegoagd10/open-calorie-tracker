@@ -7,16 +7,39 @@ type NotificationData = { outcomes: CatalogNotification[] };
 const endpoint = "/catalog-notifications";
 const duration = 6000;
 
-function outcomeKey(outcome: CatalogNotification) {
+function outcomeKey(outcome: CatalogNotification, viewerId: number) {
+  return `catalog-toast:${viewerId}:${JSON.stringify([outcome.provider, outcome.jobId, outcome.completedAt, outcome.phase])}`;
+}
+
+function legacyOutcomeKey(outcome: CatalogNotification) {
   return `catalog-toast:${JSON.stringify([outcome.provider, outcome.jobId, outcome.completedAt, outcome.phase])}`;
 }
 
-function wasDisplayed(key: string) {
-  try { return window.sessionStorage.getItem(key) !== null; }
-  catch { return false; }
+function browserStorages() {
+  const storages: Storage[] = [];
+  try { storages.push(window.localStorage); }
+  catch { /* Local storage can be disabled by browser privacy settings. */ }
+  try { storages.push(window.sessionStorage); }
+  catch { /* Session storage can be disabled independently. */ }
+  return storages;
 }
 
-export function CatalogNotifications() {
+function storageHas(key: string) {
+  for (const storage of browserStorages()) {
+    try { if (storage.getItem(key) !== null) return true; }
+    catch { /* Try the other browser storage before falling back to memory. */ }
+  }
+  return false;
+}
+
+function storeDisplayed(key: string) {
+  for (const storage of browserStorages()) {
+    try { storage.setItem(key, "displayed"); }
+    catch { /* The other browser storage or in-memory set still deduplicates. */ }
+  }
+}
+
+export function CatalogNotifications({ viewerId }: { viewerId: number }) {
   const [queue, setQueue] = useState<CatalogNotification[]>([]);
   const [hovered, setHovered] = useState(false);
   const [focused, setFocused] = useState(false);
@@ -35,10 +58,18 @@ export function CatalogNotifications() {
         if (!response.ok) return;
         const data = await response.json() as NotificationData;
         if (controller.signal.aborted) return;
-        const fresh = [...data.outcomes].reverse().filter(outcome => {
-          const key = outcomeKey(outcome);
-          if ((outcome.phase !== "succeeded" && outcome.acknowledgedAt) || seen.current.has(key) || wasDisplayed(key)) return false;
+        const latestSuccessProviders = new Set<CatalogNotification["provider"]>();
+        const candidates = data.outcomes.filter(outcome => {
+          if (outcome.phase !== "succeeded") return true;
+          if (latestSuccessProviders.has(outcome.provider)) return false;
+          latestSuccessProviders.add(outcome.provider);
+          return true;
+        });
+        const fresh = candidates.reverse().filter(outcome => {
+          const key = outcomeKey(outcome, viewerId);
+          if ((outcome.phase !== "succeeded" && outcome.acknowledgedAt) || seen.current.has(key) || storageHas(key) || storageHas(legacyOutcomeKey(outcome))) return false;
           seen.current.add(key);
+          storeDisplayed(key);
           return true;
         });
         if (fresh.length) setQueue(previous => [...previous, ...fresh]);
@@ -57,23 +88,16 @@ export function CatalogNotifications() {
       window.removeEventListener("online", pollNow);
       window.removeEventListener("focus", pollNow);
     };
-  }, []);
-
-  useEffect(() => {
-    if (!current) return;
-    try { window.sessionStorage.setItem(outcomeKey(current), "displayed"); }
-    catch { /* The in-memory set still deduplicates when storage is unavailable. */ }
-  }, [current]);
+  }, [viewerId]);
 
   const dismiss = useCallback(() => {
     if (!current) return;
-    try { window.sessionStorage.setItem(outcomeKey(current), "dismissed"); }
-    catch { /* The in-memory set still prevents repeats when storage is unavailable. */ }
+    storeDisplayed(outcomeKey(current, viewerId));
     setQueue(previous => previous.slice(1));
     setHovered(false);
     setFocused(false);
     setLeaving(false);
-  }, [current]);
+  }, [current, viewerId]);
 
   useEffect(() => {
     setLeaving(false);
@@ -90,7 +114,7 @@ export function CatalogNotifications() {
 
   return <div className={styles.region} role={current ? "status" : undefined} aria-live="polite" aria-atomic="true">
     {current ? <div
-      key={outcomeKey(current)}
+      key={outcomeKey(current, viewerId)}
       className={styles.toast}
       data-phase={current.phase}
       data-leaving={leaving}
