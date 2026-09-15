@@ -73,6 +73,40 @@ test("native explicit mass and volume references provide matching source serving
   expect(imported.read("1234568")).toMatchObject({ authoritativeBaseUnit: "ml", measurements: [{ id: "ml" }, { id: "100ml" }, { id: "serving", baseQuantityMicrounits: 50_000_000 }] });
 });
 
+test("native serving authority outranks contradictory per-100 alternatives", async () => {
+  const nutrients = {
+    "energy-kcal": { value: 160, unit: "kcal" }, proteins: { value: 30, unit: "g" },
+    carbohydrates: { value: 4, unit: "g" }, fat: { value: 3, unit: "g" },
+  };
+  const imported = await install([nativeProduct([
+    { ...nativeSet, per: "100g", per_quantity: 100, nutrients: { "energy-kcal": { value: 49.184, unit: "kcal" }, proteins: { value: 9.222, unit: "g" } } },
+    { ...nativeSet, per: "100ml", per_quantity: 100, per_unit: "ml", nutrients },
+    { ...nativeSet, per_quantity: 325, per_unit: "ml", nutrients },
+  ], { code: "0643843716686", product_name: "Café Latte Protein Shake" })]);
+
+  expect(imported.read("0643843716686")).toMatchObject({
+    isSelectable: true, authoritativeBaseUnit: "ml", authoritativeBaseQuantityMicrounits: 325_000_000,
+    measurements: [{ id: "serving", unit: "ml", baseQuantityMicrounits: 325_000_000 }, { id: "ml" }, { id: "100ml" }],
+    nutritionPerAuthoritativeBase: {
+      energyMilliKcal: { amount: 160 }, proteinMilligrams: { amount: 30 },
+      carbohydrateMilligrams: { amount: 4 }, fatMilligrams: { amount: 3 },
+    },
+  });
+});
+
+test("declared serving dimension selects the matching per-100 authority", async () => {
+  const imported = await install([nativeProduct([
+    { ...nativeSet, per: "100g", per_quantity: 100, nutrients: { "energy-kcal": { value: 400, unit: "kcal" } } },
+    { ...nativeSet, per: "100ml", per_quantity: 100, per_unit: "ml", nutrients: { "energy-kcal": { value: 80, unit: "kcal" }, proteins: { value: 2, unit: "g" } } },
+  ], { serving_quantity: 250, serving_quantity_unit: "ml" })]);
+
+  expect(imported.read("1234567")).toMatchObject({
+    isSelectable: true, authoritativeBaseUnit: "ml", authoritativeBaseQuantityMicrounits: 100_000_000,
+    nutritionPerAuthoritativeBase: { energyMilliKcal: { amount: 80 }, proteinMilligrams: { amount: 2 } },
+    measurements: [{ id: "ml" }, { id: "100ml" }, { id: "serving", baseQuantityMicrounits: 250_000_000 }],
+  });
+});
+
 test("JSONL rejects countable malformed records and identities, but retains valid products and counters", async () => {
   const { gzipSync } = await import("node:zlib");
   const lines = [JSON.stringify(target), "{broken}", JSON.stringify({ product_name: "No identity" }), JSON.stringify({ code: { bad: true }, product_name: "Bad identity" }), JSON.stringify(target)];
