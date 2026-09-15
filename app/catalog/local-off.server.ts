@@ -5,6 +5,10 @@ import { CatalogNotInstalledError, CatalogFoodNotFoundError, CatalogStaleReviewE
 import { offSearchRelevance } from "./off-search.server";
 import { boundedSearchTokens, prefixSearchExpression } from "./search-normalization";
 
+function isPublishedOffFood(food: { calculationUnavailableReason?: string; isSelectable: boolean }) {
+  return food.isSelectable || food.calculationUnavailableReason === "conflicting_nutrition_bases";
+}
+
 export class LocalOpenFoodFactsAdapter implements BarcodeFoodCatalogProvider, SearchFoodCatalogProvider {
   constructor(private readonly management: CatalogManagement, private readonly directory: string) {}
   async search(query: string) {
@@ -12,7 +16,12 @@ export class LocalOpenFoodFactsAdapter implements BarcodeFoodCatalogProvider, Se
     if (!tokens) return [];
     let results;
     try {
-      results = await this.management.withActiveGeneration(generation => searchOffGeneration(this.directory, generation, prefixSearchExpression(tokens), food => offSearchRelevance(food, tokens)));
+      results = await this.management.withActiveGeneration(generation => searchOffGeneration(
+        this.directory,
+        generation,
+        prefixSearchExpression(tokens),
+        food => isPublishedOffFood(food) ? offSearchRelevance(food, tokens) : null,
+      ));
     } catch {
       throw new CatalogUnavailableError();
     }
@@ -32,7 +41,7 @@ export class LocalOpenFoodFactsAdapter implements BarcodeFoodCatalogProvider, Se
       if (context?.reviewedCatalogGeneration !== undefined && context.reviewedCatalogGeneration !== generation) throw new CatalogStaleReviewError();
       for (const id of ids) {
         const candidate = readOffGenerationFood(this.directory, generation, id);
-        if (candidate) return candidate;
+        if (candidate && isPublishedOffFood(candidate)) return candidate;
       }
       return undefined;
     });

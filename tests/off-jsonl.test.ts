@@ -46,6 +46,9 @@ function nativeProduct(sets: unknown, extra = {}) {
   return { code: "1234567", product_name: "Native food", nutriments: { "energy-kcal_serving": 999 }, nutrition: { input_sets: sets }, ...extra };
 }
 const nativeSet = { source: "packaging", preparation: "as_sold", per: "serving", per_quantity: 41, per_unit: "g", nutrients: { "energy-kcal": { value: 150, unit: "kcal" }, proteins: { value: 30, unit: "g" } } };
+function packagingSet(per: "100g" | "100ml" | "serving", perQuantity: number, perUnit: "g" | "ml", nutrients: Record<string, unknown>) {
+  return { source: "packaging", preparation: "as_sold", per, per_quantity: perQuantity, per_unit: perUnit, nutrients };
+}
 
 test.each([
   [null, "invalid_nutrition_input_sets"],
@@ -94,17 +97,93 @@ test("native serving authority outranks contradictory per-100 alternatives", asy
   });
 });
 
-test("declared serving dimension selects the matching per-100 authority", async () => {
+test("database sanity: Tabasco Habanero serving metadata selects the matching per-100 authority", async () => {
   const imported = await install([nativeProduct([
-    { ...nativeSet, per: "100g", per_quantity: 100, nutrients: { "energy-kcal": { value: 400, unit: "kcal" } } },
-    { ...nativeSet, per: "100ml", per_quantity: 100, per_unit: "ml", nutrients: { "energy-kcal": { value: 80, unit: "kcal" }, proteins: { value: 2, unit: "g" } } },
-  ], { serving_quantity: 250, serving_quantity_unit: "ml" })]);
+    packagingSet("100g", 100, "g", { "energy-kcal": { value: 88, unit: "kcal" }, proteins: { value: 1.3, unit: "g" } }),
+    packagingSet("100ml", 100, "ml", { "energy-kcal": { value: 121, unit: "kcal" }, proteins: { value: 1.5, unit: "g" } }),
+  ], { code: "0011210006508", product_name: "Tabasco Habanero Sauce", serving_quantity: 5, serving_quantity_unit: "ml" })]);
 
-  expect(imported.read("1234567")).toMatchObject({
+  expect(imported.read("0011210006508")).toMatchObject({
     isSelectable: true, authoritativeBaseUnit: "ml", authoritativeBaseQuantityMicrounits: 100_000_000,
-    nutritionPerAuthoritativeBase: { energyMilliKcal: { amount: 80 }, proteinMilligrams: { amount: 2 } },
-    measurements: [{ id: "ml" }, { id: "100ml" }, { id: "serving", baseQuantityMicrounits: 250_000_000 }],
+    nutritionPerAuthoritativeBase: { energyMilliKcal: { amount: 121 }, proteinMilligrams: { amount: 1.5 } },
+    measurements: [{ id: "ml" }, { id: "100ml" }, { id: "serving", baseQuantityMicrounits: 5_000_000 }],
   });
+});
+
+test("database sanity: sole-dimension and compatible-serving rules preserve real OFF measurements", async () => {
+  const imported = await install([
+    nativeProduct([
+      packagingSet("100g", 100, "g", { "energy-kcal": { value: 539, unit: "kcal" }, proteins: { value: 6.3, unit: "g" } }),
+    ], { code: "3017620422003", product_name: "Nutella", serving_quantity_unit: "g" }),
+    nativeProduct([
+      packagingSet("100g", 100, "g", { "energy-kcal": { value: 235, unit: "kcal" }, proteins: { value: 8.82, unit: "g" } }),
+    ], { code: "0000236555909", product_name: "Bakers Best, White Bread", serving_quantity: 34, serving_quantity_unit: "g" }),
+    nativeProduct([
+      packagingSet("100g", 100, "g", { "energy-kcal": { value: 0, unit: "kcal" }, proteins: { value: 0, unit: "g" } }),
+    ], { code: "0012000041709", product_name: "Green Tea Zero Sugar", serving_quantity: 500, serving_quantity_unit: "ml" }),
+  ]);
+
+  expect(imported.read("3017620422003")).toMatchObject({
+    authoritativeBaseUnit: "g",
+    isSelectable: true,
+    measurements: [{ id: "g" }, { id: "100g" }],
+    nutritionPerAuthoritativeBase: { energyMilliKcal: { amount: 539 } },
+  });
+  expect(imported.read("0000236555909")?.measurements).toContainEqual(expect.objectContaining({ id: "serving", unit: "g", baseQuantityMicrounits: 34_000_000 }));
+  expect(imported.read("0012000041709")).toMatchObject({
+    authoritativeBaseUnit: "g",
+    isSelectable: true,
+    measurements: [{ id: "g" }, { id: "100g" }],
+  });
+});
+
+test("database sanity: Tabasco Pepper remains an unresolved mass-volume conflict", async () => {
+  const nutrients = {
+    "energy-kcal": { value: 16, unit: "kcal" },
+    proteins: { value: 1, unit: "g" },
+    carbohydrates: { value: 1.6, unit: "g" },
+    fat: { value: 0.7, unit: "g" },
+  };
+  const imported = await install([nativeProduct([
+    packagingSet("100g", 100, "g", nutrients),
+    packagingSet("100ml", 100, "ml", nutrients),
+  ], { code: "0011210000018", product_name: "16000085 Tabasco Pepper Sauce" })]);
+
+  expect(imported.read("0011210000018")).toMatchObject({
+    calculationUnavailableReason: "conflicting_nutrition_bases",
+    isSelectable: false,
+    measurements: [],
+  });
+});
+
+test("database sanity: an unusable serving falls back, while a usable serving still wins despite implausible values", async () => {
+  const imported = await install([
+    nativeProduct([
+      packagingSet("100g", 100, "g", { "energy-kj": { value: 2480, unit: "kJ" }, proteins: { value: 10, unit: "g" } }),
+      packagingSet("serving", 20, "g", {}),
+    ], { code: "0009542009984", product_name: "SUPREME DARK 90% COCOA", serving_quantity: 20, serving_quantity_unit: "g" }),
+    nativeProduct([
+      packagingSet("100g", 100, "g", { "energy-kcal": { value: 500, unit: "kcal" } }),
+      packagingSet("serving", 52, "g", { "energy-kcal": { value: 500, unit: "kcal" }, proteins: { value: 7.69231, unit: "g" } }),
+    ], { code: "0009800800056", product_name: "nutella & GO! with Breadsticks", serving_quantity: 52, serving_quantity_unit: "g" }),
+  ]);
+
+  const fallback = imported.read("0009542009984")!;
+  expect(fallback).toMatchObject({
+    authoritativeBaseUnit: "g",
+    authoritativeBaseQuantityMicrounits: 100_000_000,
+    isSelectable: true,
+  });
+  expect(fallback.nutritionPerAuthoritativeBase.energyMilliKcal?.amount).toBeCloseTo(592.734, 3);
+  expect(fallback.measurements).toContainEqual(expect.objectContaining({ id: "serving", baseQuantityMicrounits: 20_000_000 }));
+  const implausible = imported.read("0009800800056")!;
+  expect(implausible).toMatchObject({
+    authoritativeBaseUnit: "g",
+    authoritativeBaseQuantityMicrounits: 52_000_000,
+    isSelectable: true,
+    nutritionPerAuthoritativeBase: { energyMilliKcal: { amount: 500 } },
+  });
+  expect(implausible.measurements[0]).toMatchObject({ id: "serving", baseQuantityMicrounits: 52_000_000 });
 });
 
 test("JSONL rejects countable malformed records and identities, but retains valid products and counters", async () => {
