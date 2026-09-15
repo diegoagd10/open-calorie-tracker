@@ -567,6 +567,13 @@ test("basic-food names, aliases and prefixes rank useful foods above noisy parti
   const eggs = await catalog.search("huevos");
   expect(eggs.map(food => food.name)).not.toContain("Eggplant, raw");
   expect(eggs.map(food => food.name)).not.toContain("Egg substitute, liquid");
+  for (const query of ["egg", "huevo"]) {
+    const names = (await catalog.search(query)).map(food => food.name);
+    expect(names[0], query).toMatch(/^Eggs,/);
+    expect(names, query).not.toEqual(
+      expect.arrayContaining([expect.stringMatching(/^Fish,/i)]),
+    );
+  }
   expect(eggs.filter(food => food.name === "Eggs, whole, raw")[0].providerFoodId).toBe("998");
   expect(await catalog.search("huevos")).toEqual(eggs);
 });

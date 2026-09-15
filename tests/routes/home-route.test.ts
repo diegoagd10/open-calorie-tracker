@@ -2,7 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import { sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { RouterContextProvider } from "react-router";
 import { afterAll, beforeAll, expect, test } from "vitest";
 
@@ -23,6 +23,7 @@ import {
   initializeApplicationDatabase,
   shutdownApplicationDatabase,
 } from "../../app/database/runtime.server";
+import { foodEntries } from "../../app/database/schema.server";
 import {
   action as homeAction,
   headers,
@@ -44,6 +45,7 @@ let temporaryDirectory: string;
 let cookie: string;
 let csrfToken: string;
 let incompleteCookie: string;
+let otherUserId: number;
 let userId: number;
 
 function routeArgs(request: Request) {
@@ -149,6 +151,7 @@ beforeAll(async () => {
     "203.0.113.231",
   );
   incompleteCookie = serializeSessionCookie(incomplete).split(";", 1)[0];
+  otherUserId = incomplete.user.id;
 });
 
 afterAll(async () => {
@@ -275,7 +278,7 @@ test("home loader maps every catalog search and detail state", async () => {
   });
 
   const legacyFilter = await load(
-    "/?food=search&query=yogurt&filter=packaged&unknown=ignored",
+    `/?food=search&query=yogurt&provider=open-food-facts&filter=packaged&userId=${otherUserId}&barcode=0034000470693&unknown=ignored`,
   );
   expect(legacyFilter.data.catalog).toMatchObject({
     mode: "search",
@@ -283,6 +286,7 @@ test("home loader maps every catalog search and detail state", async () => {
     results: [{ name: "Plain nonfat Greek yogurt", providerFoodId: "1001" }],
   });
   expect(legacyFilter.data.catalog).not.toHaveProperty("filter");
+  expect(legacyFilter.data.catalog).not.toHaveProperty("provider");
 
   for (const [query, expectedQuery, expectedStatus] of [
     ["ok", "ok", 200],
@@ -308,6 +312,12 @@ test("home loader maps every catalog search and detail state", async () => {
       results: [],
     });
   }
+  const notInstalled = await load("/?food=search&query=not-installed");
+  expect(notInstalled.data.catalog).toMatchObject({
+    message:
+      "USDA Foundation is not installed. Ask your administrator to install it in Food Catalogs Settings. Your saved Food Entries remain available.",
+    title: "USDA Foundation is not installed",
+  });
 
   const packaged = await load("/?food=search&query=yogurt&filter=packaged");
   expect(packaged.data.catalog).toMatchObject({
@@ -1149,6 +1159,33 @@ test("home food actions log, edit, detect conflicts, delete, and map catalog fai
     ),
   );
   expectRedirect(deleted, "/?date=2026-08-31&notice=deleted");
+});
+
+test("log-food ignores a submitted userId and writes only to the authenticated user", async () => {
+  const idempotencyKey = "authenticated-owner-only";
+  const result = await homeAction(
+    routeArgs(
+      post({
+        date: "2026-08-27",
+        idempotencyKey,
+        intent: "log-food",
+        providerFoodId: "1001",
+        quantity: "1",
+        selectedMeasurementId: "base:g:100000000",
+        userId: String(otherUserId),
+      }),
+    ),
+  );
+  expectRedirect(result, "/?date=2026-08-27");
+
+  const saved = getApplicationDatabase()
+    .getClient()
+    .select({ userId: foodEntries.userId })
+    .from(foodEntries)
+    .where(eq(foodEntries.idempotencyKey, idempotencyKey))
+    .get();
+  expect(saved).toEqual({ userId });
+  expect(saved?.userId).not.toBe(otherUserId);
 });
 
 test("home copies a historical Food Entry to today and returns to the source log with a notice", async () => {

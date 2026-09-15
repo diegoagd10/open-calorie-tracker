@@ -126,6 +126,34 @@ test("catalog dispatches by registered provider and capability", async () => {
     .toBeInstanceOf(CatalogUnknownProviderError);
 });
 
+test("manual search calls only USDA and never the Open Food Facts barcode provider", async () => {
+  const usda = new TestFoodCatalogProvider();
+  const usdaSearch = vi.spyOn(usda, "search");
+  const barcodeFood = await usda.getFood("1001");
+  const openFoodFactsSearch = vi.fn();
+  const openFoodFacts = {
+    async getFood() {
+      return { ...barcodeFood, provider: "open-food-facts" as const };
+    },
+    async lookupBarcode() {
+      return { ...barcodeFood, provider: "open-food-facts" as const };
+    },
+    search: openFoodFactsSearch,
+  };
+  const catalog = new FoodCatalog([
+    { capability: "search", provider: "usda-fdc", service: usda },
+    {
+      capability: "barcode",
+      provider: "open-food-facts",
+      service: openFoodFacts,
+    },
+  ]);
+
+  await expect(catalog.search("egg")).resolves.toHaveLength(1);
+  expect(usdaSearch).toHaveBeenCalledExactlyOnceWith("egg", undefined);
+  expect(openFoodFactsSearch).not.toHaveBeenCalled();
+});
+
 test("catalog rejects conflicting registrations and provider identity mismatches", async () => {
   const usda = new TestFoodCatalogProvider();
   const other: BarcodeFoodCatalogProvider = {
