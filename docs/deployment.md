@@ -144,12 +144,55 @@ standard error. If there is no administrator or the database does not contain
 exactly one administrator, the command exits unsuccessfully, prints no
 password, and changes nothing.
 
+Password recovery preserves key login and every saved key, and invalidates
+pending proofs. If key login is enabled, the temporary password cannot sign in
+until key login is deliberately disabled using the separate command below.
+
 After a successful recovery, sign in with the displayed temporary password.
 Only password replacement and logout are available until a new private password
 is saved; that replacement rotates the session and restores normal
 administrator access. If the current private password is still known, use the
 authenticated password-change page in Settings instead of this recovery
 command.
+
+## Recover lost administrator keys
+
+If all keys belonging to the sole administrator are unavailable, a local
+operator can restore password sign-in without providing a key proof. Run this
+separate command inside the running production container:
+
+```sh
+docker compose exec -T application node build/recovery/recover-administrator-keys.js
+```
+
+For Portainer, use the actual container name:
+
+```sh
+docker exec -i <application-container> node build/recovery/recover-administrator-keys.js
+```
+
+For a local production build, `pnpm admin:recover:keys` runs the same command.
+Use the application's configured `DATABASE_PATH` and `MIGRATIONS_PATH` (default
+`drizzle` directory). Local operator/container access is required; there is no
+HTTP recovery endpoint. The web service may remain running.
+
+In one transaction, the command finds the sole administrator by role, disables
+key login, advances authentication policy state, and revokes all administrator
+sessions and pending proofs across public and LAN entries. It preserves the
+password, every registered key, account identity, role, restrictions, and
+nutrition data. Running it again safely revokes any remaining password sessions
+and pending proofs while keeping password mode. Success exits with status 0
+and a confirmation; failures exit nonzero with a redacted outcome. No password
+or credential material is printed. Missing/multiple administrators or a missing
+password credential prevent recovery; storage/revocation failures roll back
+the entire operation.
+
+Sign in with the unchanged password, then inspect the retained keys in Security
+and delete lost keys before re-enabling key login. If the password is also lost,
+run the separate password-recovery command above. That operation issues a
+temporary password and still requires replacement at the next sign-in; key
+recovery does not clear that restriction. Password recovery alone never
+disables key login.
 
 ## Import food catalogs from the container
 

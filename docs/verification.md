@@ -175,6 +175,21 @@ pnpm exec vitest run tests/local-off-scale.test.ts
 
 Ordinary deterministic/browser tests use compact JSONL GZIP fixtures, including the native multiple-input-set serving record. The full benchmark writes `reports/off-jsonl-scale.json`, measures process RSS including the native worker, before/during/after replacement lookups and actual activation counters, and verifies saving the supplied snapshot's serving authority. It never writes to the development installation. Timing/RSS assertions belong only to this opt-in test.
 
+## Administrator recovery container check
+
+After changing recovery commands or their build entries, verify the production
+artifact against an isolated temporary application database:
+
+```sh
+docker build -t open-calory-tracker:recovery-check .
+RECOVERY_CONTAINER_IMAGE=open-calory-tracker:recovery-check \
+pnpm exec vitest run tests/administrator-key-recovery.test.ts
+```
+
+The opt-in command test runs both recovery entries in the built container,
+then checks password sign-in, retained keys, session revocation, and forced
+password replacement. It never uses the deployment's persistent database.
+
 ## Credentialed external suite
 
 The credentialed AI photo pilot remains separate:

@@ -3,9 +3,11 @@ import { randomBytes } from "node:crypto";
 import type { ApplicationDatabaseClient } from "../database/database.server";
 import {
   replaceSoleAdministratorCredential,
+  disableSoleAdministratorKeyLogin,
+  type AdministratorRecoveryPersistenceResult,
   type AdministratorRecoveryError,
 } from "../database/administrator-recovery.server";
-import { logAdministratorRecovery } from "./administrator-recovery-events.server";
+import { logAdministratorRecovery, logAdministratorKeyRecovery } from "./administrator-recovery-events.server";
 import { hashPassword } from "./password.server";
 
 export type AdministratorRecoveryResult =
@@ -48,6 +50,17 @@ export class AdministratorRecoveryService {
       return { ok: true, temporaryPassword };
     } catch (error) {
       logAdministratorRecovery("failed");
+      throw error;
+    }
+  }
+
+  disableKeyLogin(): AdministratorRecoveryPersistenceResult {
+    try {
+      const result = disableSoleAdministratorKeyLogin(this.#database);
+      logAdministratorKeyRecovery(result.ok ? "succeeded" : result.error);
+      return result;
+    } catch (error) {
+      logAdministratorKeyRecovery("failed");
       throw error;
     }
   }
