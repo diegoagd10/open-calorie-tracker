@@ -82,6 +82,13 @@ export class WebAuthnStorage {
       .get()!;
     return user;
   }
+  passwordChangeAccount(sessionHash: string) {
+    const session = this.session(sessionHash);
+    const user = this.database.select().from(users).where(eq(users.id, session.userId)).get()!;
+    if (!user.keyLoginEnabled || !this.credentials(user.id).length)
+      throw new KeyAuthenticationError("Use your current password in password mode.");
+    return user;
+  }
   allocateHandle(userId: number, version: number) {
     return this.database.transaction(
       (tx) => {
@@ -122,6 +129,7 @@ export class WebAuthnStorage {
         "add",
         "disable",
         "remove-key",
+        "password-change",
       ].includes(pending.purpose)
         ? !user.keyLoginEnabled
         : user.keyLoginEnabled)
@@ -138,8 +146,9 @@ export class WebAuthnStorage {
       const session = this.session(pending.sessionHash);
       if (
         session.userId !== userId ||
-        session.passwordChangeRequired ||
-        !isAccountSetupComplete(this.database, userId)
+        (pending.purpose !== "password-change" &&
+          (session.passwordChangeRequired ||
+            !isAccountSetupComplete(this.database, userId)))
       )
         throw new KeyAuthenticationError(
           "Complete account setup before enrolling a key.",
@@ -283,6 +292,29 @@ export class WebAuthnStorage {
       .get();
     if (!updated)
       throw new KeyAuthenticationError("Key changed during sign-in. Retry.");
+  }
+  replaceFallbackPassword<T>(
+    pending: PendingKeyCeremony,
+    verified: VerifiedKeyAssertion,
+    nextPasswordHash: string,
+    boundary: WebAuthnBoundary,
+    issue: (user: typeof users.$inferSelect, absolute: Date) => { persisted: typeof sessions.$inferInsert; session: T },
+  ): T {
+    return this.database.transaction((tx) => {
+      this.#requireProcessing(pending);
+      const current = this.accountForPending(pending, boundary);
+      if (pending.purpose !== "password-change" || !pending.sessionHash || verified.credential.userId !== current.id)
+        throw new KeyAuthenticationError("Wrong key owner or action.");
+      const absolute = new Date(this.session(pending.sessionHash).absoluteExpiresAt);
+      this.#updateCredential(verified);
+      const replaced = tx.update(passwordCredentials).set({ passwordHash: nextPasswordHash, updatedAt: this.now().toISOString() }).where(eq(passwordCredentials.userId, current.id)).returning({ userId: passwordCredentials.userId }).get();
+      if (!replaced) throw new KeyAuthenticationError("Password credential unavailable. Retry.");
+      tx.update(users).set({ passwordChangeRequired: false }).where(eq(users.id, current.id)).run();
+      revokeAccountAuthentication(tx, current.id);
+      const issued = issue({ ...current, passwordChangeRequired: false }, absolute);
+      tx.insert(sessions).values(issued.persisted).run();
+      return issued.session;
+    }, { behavior: "immediate" });
   }
   authorizeAddition(
     pending: PendingKeyCeremony,

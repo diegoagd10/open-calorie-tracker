@@ -1,6 +1,6 @@
 import type { AuthenticationResponseJSON } from "@simplewebauthn/server";
 import { randomBytes } from "node:crypto";
-import { verifyPassword } from "./password.server";
+import { hashPassword, verifyPassword } from "./password.server";
 import type { ApplicationDatabaseClient } from "../database/database.server";
 import {
   WebAuthnStorage,
@@ -21,6 +21,7 @@ import { operationalLog } from "../../server/operational-logging.js";
 import {
   keyAssertionResponseSchema,
   keyRegistrationResponseSchema,
+  fallbackPasswordChangeSchema,
 } from "./validation";
 import { PersistentRateLimiter } from "./rate-limiter.server";
 
@@ -32,6 +33,7 @@ function keyEvent(
       ? "key_removal"
       : "key_registration";
   if (purpose === "login") return "key_login";
+  if (purpose === "password-change") return "fallback_password_change";
   if (purpose === "remove-key" || purpose === "remove-password")
     return "key_removal";
   return ["enable", "disable", "re-enable"].includes(purpose)
@@ -311,6 +313,52 @@ export class KeyAuthenticationService {
       keyOrigin(),
     );
     return options;
+  }
+  async beginPasswordChange(token: string, browser: string) {
+    const user = this.#storage.passwordChangeAccount(hashOpaqueToken(token));
+    if (!this.#limits.consume("key-password-change", String(user.id), 5, 15 * 60_000))
+      throw new KeyAuthenticationError("Too many password attempts. Try again later.");
+    const boundary = keyOrigin();
+    const { generateAuthenticationOptions } = await import("@simplewebauthn/server");
+    const options = await generateAuthenticationOptions({
+      rpID: boundary.rpId,
+      userVerification: "required",
+      allowCredentials: this.#storage.credentials(user.id).map(({ id, transports }) => ({ id, transports })),
+    });
+    this.#storage.save({
+      browserHash: hashOpaqueToken(browser), userId: user.id, purpose: "password-change",
+      challenge: options.challenge, ...boundary, authenticationVersion: user.authenticationVersion,
+      sessionHash: hashOpaqueToken(token), name: "",
+      expiresAt: new Date(this.#now().getTime() + 5 * 60_000).toISOString(),
+    }, keyOrigin());
+    return options;
+  }
+  async finishPasswordChange(token: string, browser: string, input: unknown, nextPassword: string) {
+    const pending = this.#take(hashOpaqueToken(browser), "password-change", keyOrigin(), hashOpaqueToken(token));
+    try {
+      fallbackPasswordChangeSchema.parse({ newPassword: nextPassword, confirmNewPassword: nextPassword });
+      const verified = await this.#verifyAssertion(pending, input);
+      const current = this.#storage.accountForPending(pending, keyOrigin());
+      if (current.passwordChangeRequired) {
+        const passwordHash = this.#storage.passwordHash(current.id);
+        if (!passwordHash || (await verifyPassword(nextPassword, passwordHash)).matches)
+          throw new KeyAuthenticationError("Choose a password different from the temporary password.");
+      }
+      const nextPasswordHash = await hashPassword(nextPassword);
+      const session = this.#storage.replaceFallbackPassword(pending, verified, nextPasswordHash, keyOrigin(),
+        (user, absolute) => {
+          this.#limits.clear("key-password-change", String(pending.userId));
+          return prepareIssuedSession(this.#now(), {
+            id: user.id, username: user.usernameNormalized, role: user.role, passwordChangeRequired: false,
+          }, absolute);
+        });
+      operationalLog("info", "fallback_password_change", { outcome: "succeeded", userId: pending.userId });
+      return session;
+    } catch (error) {
+      operationalLog("info", "fallback_password_change", { outcome: "rejected", userId: pending.userId });
+      throw new KeyAuthenticationError(error instanceof KeyAuthenticationError && error.message.startsWith("Choose a password")
+        ? error.message : "Password replacement failed. Verify a registered key and retry; your password is unchanged.");
+    }
   }
   async beginRemoval(token: string, browser: string, target: string) {
     const user = this.#storage.enrollmentAccount(hashOpaqueToken(token));

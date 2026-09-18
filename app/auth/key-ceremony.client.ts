@@ -108,6 +108,20 @@ export function cancelKeyPrompt(): void {
   WebAuthnAbortService.cancelCeremony();
 }
 
+export async function replaceFallbackPassword(csrf: string, newPassword: string, confirmNewPassword: string) {
+  activePrompt = new AbortController();
+  const prompt = activePrompt;
+  try {
+    const verification = await post<{ options: PublicKeyCredentialRequestOptionsJSON }>(csrf, "password-start");
+    prompt.signal.throwIfAborted();
+    const response = await startAuthentication({ optionsJSON: verification.options });
+    return await post<{ nextPath: string }>(csrf, "password-finish", { response, newPassword, confirmNewPassword });
+  } catch (error) {
+    await post(csrf, "cancel").catch(() => {});
+    throw error;
+  }
+}
+
 export async function removeKey(
   csrf: string,
   credentialId: string,

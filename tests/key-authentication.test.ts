@@ -13,6 +13,178 @@ import { seedAuthenticatedAccount } from "./support/authentication";
 
 const cleanup: (() => Promise<void>)[] = [];
 const password = "correct horse battery staple";
+test("an active session and the account password cannot replace a fallback password in key mode", async () => {
+  const f = await fixture();
+  const { session } = await enroll(f.service, f.session.token);
+  expect(await f.service.changePassword(session, password, "replacement fallback password")).toEqual({ ok: false, error: "key-proof-required" });
+  expect((await f.service.verifyCredentials("owner", password)).matches).toBe(true);
+});
+test("fresh key proof replaces a forgotten fallback password, preserves keys, and rotates sessions without extending expiry", async () => {
+  const f = await fixture();
+  const { key, session } = await enroll(f.service, f.session.token);
+  const pending = await f.service.keys.beginLogin("owner", "pending-password", "192.0.2.8");
+  const proof = await f.service.keys.beginPasswordChange(session.token, "password-browser");
+  const changed = await f.service.keys.finishPasswordChange(
+    session.token, "password-browser", key.assertion(proof, 2), "replacement fallback password",
+  );
+  expect(changed.absoluteExpiresAt).toEqual(session.absoluteExpiresAt);
+  expect(await f.service.authenticate(session.token)).toBeUndefined();
+  expect(f.service.keys.status(changed.token)).toMatchObject({ enabled: true, credentials: [{ id: key.id }] });
+  await expect(f.service.keys.finishLogin("pending-password", key.assertion(pending, 3))).rejects.toThrow();
+  expect((await f.service.login("owner", "replacement fallback password", "192.0.2.8")).ok).toBe(false);
+  const disable = await f.service.keys.beginModeChange(changed.token, "disable-password", false);
+  await f.service.keys.finishModeChange(changed.token, "disable-password", false, key.assertion(disable, 3));
+  expect((await f.service.login("owner", password, "192.0.2.8")).ok).toBe(false);
+  expect((await f.service.login("owner", "replacement fallback password", "192.0.2.8")).ok).toBe(true);
+});
+test("key-authenticated reset users can replace, but cannot reuse, their temporary password without entering it", async () => {
+  const f = await fixture();
+  const { key, session } = await enroll(f.service, f.session.token);
+  const pending = await f.service.keys.beginPasswordChange(session.token, "before-reset");
+  const recovery = new AdministratorRecoveryService(f.database.getClient(), undefined, () => "new temporary password");
+  expect((await recovery.recover()).ok).toBe(true);
+  await expect(f.service.keys.finishPasswordChange(session.token, "before-reset", key.assertion(pending, 2), "replacement fallback password")).rejects.toThrow();
+  const login = await f.service.keys.beginLogin("owner", "after-reset", "192.0.2.8");
+  const restricted = await f.service.keys.finishLogin("after-reset", key.assertion(login, 2));
+  expect(restricted.user.passwordChangeRequired).toBe(true);
+  await expect(f.service.keys.beginModeChange(restricted.token, "disable", false)).rejects.toThrow("Complete account setup");
+  const reuse = await f.service.keys.beginPasswordChange(restricted.token, "reuse");
+  await expect(f.service.keys.finishPasswordChange(restricted.token, "reuse", key.assertion(reuse, 3), "new temporary password")).rejects.toThrow("different from the temporary password");
+  const proof = await f.service.keys.beginPasswordChange(restricted.token, "replace");
+  const changed = await f.service.keys.finishPasswordChange(restricted.token, "replace", key.assertion(proof, 3), "replacement fallback password");
+  expect(changed.user.passwordChangeRequired).toBe(false);
+  expect(f.service.keys.status(changed.token)).toMatchObject({ enabled: true, credentials: [{ id: key.id }] });
+});
+
+test.each(["password", "login-purpose", "disable-purpose", "cross-account", "wrong-session", "expire", "cancel", "signature", "verification", "presence", "short-password"])("fallback replacement denies %s and consumes the submitted challenge", async (failure) => {
+  const f = await fixture();
+  const { key, session } = await enroll(f.service, f.session.token);
+  let options = await f.service.keys.beginPasswordChange(session.token, "replace");
+  if (failure === "login-purpose") options = await f.service.keys.beginLogin("owner", "replace", "192.0.2.8");
+  if (failure === "disable-purpose") options = await f.service.keys.beginModeChange(session.token, "replace", false);
+  if (failure === "expire") f.advance(300_001);
+  if (failure === "cancel") f.service.keys.cancel("replace");
+  const assertion = failure === "cross-account" ? authenticator().assertion(options, 2) : key.assertion(options, 2,
+    failure === "signature" ? { badSignature: true } : failure === "verification" ? { flags: 1 } : failure === "presence" ? { flags: 4 } : {});
+  await expect(f.service.keys.finishPasswordChange(failure === "wrong-session" ? f.session.token : session.token,
+    "replace", failure === "password" ? password : assertion,
+    failure === "short-password" ? "short" : "replacement fallback password")).rejects.toThrow();
+  await expect(f.service.keys.finishPasswordChange(session.token, "replace", key.assertion(options, 2), "replacement fallback password")).rejects.toThrow();
+  expect((await f.service.verifyCredentials("owner", password)).matches).toBe(true);
+  expect(f.service.keys.status(session.token).enabled).toBe(true);
+});
+
+test("another browser cannot use or consume the owner's fallback-password proof", async () => {
+  const f = await fixture();
+  const { key, session } = await enroll(f.service, f.session.token);
+  const proof = await f.service.keys.beginPasswordChange(session.token, "owner-browser");
+  await expect(f.service.keys.finishPasswordChange(session.token, "other-browser", key.assertion(proof, 2), "replacement fallback password")).rejects.toThrow();
+  const changed = await f.service.keys.finishPasswordChange(session.token, "owner-browser", key.assertion(proof, 2), "replacement fallback password");
+  expect(await f.service.authenticate(changed.token)).toBeDefined();
+});
+
+test.each(["UPDATE ON password_credentials", "UPDATE OF password_change_required ON users", "DELETE ON sessions", "DELETE ON webauthn_ceremonies", "INSERT ON sessions", "DELETE ON rate_limit_counters"])("fallback replacement rolls back on persistence failure: %s", async (operation) => {
+  const f = await fixture();
+  const { key, session } = await enroll(f.service, f.session.token);
+  const proof = await f.service.keys.beginPasswordChange(session.token, "replace");
+  f.database.getClient().$client.exec(`CREATE TRIGGER refuse_password BEFORE ${operation} BEGIN SELECT RAISE(ABORT, 'storage failure'); END`);
+  await expect(f.service.keys.finishPasswordChange(session.token, "replace", key.assertion(proof, 2), "replacement fallback password")).rejects.toThrow();
+  f.database.getClient().$client.exec("DROP TRIGGER refuse_password");
+  expect((await f.service.verifyCredentials("owner", password)).matches).toBe(true);
+  expect(await f.service.authenticate(session.token)).toBeDefined();
+  expect(f.service.keys.status(session.token)).toMatchObject({ enabled: true, credentials: [{ id: key.id }] });
+  await expect(f.service.keys.finishPasswordChange(session.token, "replace", key.assertion(proof, 2), "replacement fallback password")).rejects.toThrow();
+});
+
+test("cancellation during fallback cryptography cannot update the password or issue a session", async () => {
+  const f = await fixture();
+  const { key, session } = await enroll(f.service, f.session.token);
+  const proof = await f.service.keys.beginPasswordChange(session.token, "replace");
+  const replacing = f.service.keys.finishPasswordChange(session.token, "replace", key.assertion(proof, 2), "replacement fallback password");
+  f.service.keys.cancel("replace");
+  await expect(replacing).rejects.toThrow();
+  expect((await f.service.verifyCredentials("owner", password)).matches).toBe(true);
+  expect(await f.service.authenticate(session.token)).toBeDefined();
+});
+
+test("any of five keys can replace the fallback without deleting keys or retaining older sessions", async () => {
+  const f = await fiveKeys();
+  const otherProof = await f.service.keys.beginLogin("owner", "older-login", "192.0.2.8");
+  const older = await f.service.keys.finishLogin("older-login", f.keys[0].assertion(otherProof, 3));
+  const proof = await f.service.keys.beginPasswordChange(f.current.token, "replace");
+  expect(proof.allowCredentials?.map((key) => key.id).sort()).toEqual(f.keys.map((key) => key.id).sort());
+  const changed = await f.service.keys.finishPasswordChange(f.current.token, "replace", f.keys[4].assertion(proof, 2), "replacement fallback password");
+  expect(f.service.keys.status(changed.token).credentials.map((key) => key.id).sort()).toEqual(f.keys.map((key) => key.id).sort());
+  expect(await f.service.authenticate(older.token)).toBeUndefined();
+  expect(await f.service.authenticate(f.current.token)).toBeUndefined();
+});
+
+test("fallback proof requires key mode and retains durable five-attempt limits until success or expiry", async () => {
+  const f = await fixture();
+  await expect(f.service.keys.beginPasswordChange(f.session.token, "replace")).rejects.toThrow("current password");
+  const { key, session } = await enroll(f.service, f.session.token);
+  for (let n = 0; n < 5; n++) await f.service.keys.beginPasswordChange(session.token, "replace");
+  const restarted = new AuthenticationService(f.database.getClient(), () => new Date("2026-09-13T19:00:00.000Z"));
+  await expect(restarted.keys.beginPasswordChange(session.token, "replace")).rejects.toThrow("Too many password attempts");
+  f.advance(15 * 60_000);
+  const proof = await f.service.keys.beginPasswordChange(session.token, "replace");
+  const changed = await f.service.keys.finishPasswordChange(session.token, "replace", key.assertion(proof, 2), "replacement fallback password");
+  for (let n = 0; n < 5; n++) await f.service.keys.beginPasswordChange(changed.token, "replace");
+  await expect(f.service.keys.beginPasswordChange(changed.token, "replace")).rejects.toThrow("Too many password attempts");
+});
+
+test("late fallback replacement cannot extend the original absolute session deadline", async () => {
+  const f = await fixture();
+  const { key, session } = await enroll(f.service, f.session.token);
+  for (let n = 0; n < 22; n++) {
+    f.advance(4 * 24 * 60 * 60_000);
+    expect(await f.service.authenticate(session.token)).toBeDefined();
+  }
+  f.advance(2 * 24 * 60 * 60_000 - 60_000);
+  const proof = await f.service.keys.beginPasswordChange(session.token, "replace");
+  const changed = await f.service.keys.finishPasswordChange(session.token, "replace", key.assertion(proof, 2), "replacement fallback password");
+  expect(changed.absoluteExpiresAt).toEqual(session.absoluteExpiresAt);
+  f.advance(60_000);
+  expect(await f.service.authenticate(changed.token)).toBeUndefined();
+});
+
+test("deliberate disable invalidates an outstanding fallback proof rather than restoring a stale key session", async () => {
+  const f = await fixture();
+  const { key, session } = await enroll(f.service, f.session.token);
+  const proof = await f.service.keys.beginPasswordChange(session.token, "replace");
+  const disable = await f.service.keys.beginModeChange(session.token, "disable", false);
+  await f.service.keys.finishModeChange(session.token, "disable", false, key.assertion(disable, 2));
+  await expect(f.service.keys.finishPasswordChange(session.token, "replace", key.assertion(proof, 3), "replacement fallback password")).rejects.toThrow();
+  expect((await f.service.login("owner", password, "192.0.2.9")).ok).toBe(true);
+  expect((await f.service.verifyCredentials("owner", "replacement fallback password")).matches).toBe(false);
+});
+
+test("fallback maintenance remains available without enrollment preview, hashes with the reviewed policy, and logs redacted outcomes", async () => {
+  const f = await fixture();
+  const { key, session } = await enroll(f.service, f.session.token);
+  vi.stubEnv("WEBAUTHN_ENROLLMENT_PREVIEW", "0");
+  vi.stubEnv("NODE_ENV", "production");
+  const output = vi.spyOn(console, "log").mockImplementation(() => {});
+  try {
+    const failedProof = await f.service.keys.beginPasswordChange(session.token, "replace");
+    await expect(f.service.keys.finishPasswordChange(session.token, "replace", key.assertion(failedProof, 2, { badSignature: true }), "replacement fallback password")).rejects.toThrow();
+    const proof = await f.service.keys.beginPasswordChange(session.token, "replace");
+    const assertion = key.assertion(proof, 2);
+    const changed = await f.service.keys.finishPasswordChange(session.token, "replace", assertion, "replacement fallback password");
+    const stored = await f.service.verifyCredentials("owner", "replacement fallback password");
+    expect(stored).toMatchObject({ matches: true, needsRehash: false });
+    expect(stored.user?.passwordHash).toMatch(/^argon2id\$v=1\$m=19456,t=2,p=1,l=32\$/);
+    expect(output.mock.calls.map(([line]) => JSON.parse(String(line)) as object)).toEqual([
+      expect.objectContaining({ event: "fallback_password_change", outcome: "rejected", userId: session.user.id }),
+      expect.objectContaining({ event: "fallback_password_change", outcome: "succeeded", userId: session.user.id }),
+    ]);
+    const serialized = JSON.stringify(output.mock.calls);
+    for (const secret of [password, "replacement fallback password", session.token, changed.token, proof.challenge, assertion.response.signature, key.id])
+      expect(serialized).not.toContain(secret);
+  } finally {
+    output.mockRestore();
+  }
+});
 afterEach(async () => {
   vi.unstubAllEnvs();
   for (const close of cleanup.splice(0)) await close();

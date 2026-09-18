@@ -267,6 +267,17 @@ and rotates the current session with its original absolute expiry. Failed,
 canceled, expired, replayed, or superseded attempts leave the mode unchanged.
 Accounts with no keys must enroll their first key instead.
 
+The account-password form uses fresh registered-key verification while key login
+is enabled. No old account password is needed, and the change preserves key mode
+and every saved key. The new fallback password becomes usable for sign-in only
+after deliberate disable/recovery. In password mode, the form still requires the
+current password. Password resets preserve keys/mode and mandatory replacement:
+a restricted key-authenticated user can replace the temporary password with a
+key, but cannot use application settings beforehand or reuse that temporary
+password. Replacement revokes older sessions and pending proofs and rotates the
+current session without extending its absolute deadline. This maintenance flow
+remains available to enrolled preview users when enrollment preview is turned off.
+
 Automated verification uses real signed ES256 protocol fixtures, Chromium virtual
 authenticators, and a non-loopback HTTP listener. Actual YubiKey USB/NFC and
 Proton Pass extension/mobile enrollment and sign-in remain required before a
