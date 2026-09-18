@@ -3,9 +3,7 @@
   min-height: 100vh;
   place-items: center;
   padding: 1rem;
-  background:
-    linear-gradient(rgb(16 42 67 / 58%), rgb(16 42 67 / 58%)),
-    var(--color-background);
+  background: var(--color-background);
 }
 
 .panel {
@@ -72,8 +70,8 @@
   margin: 0;
   padding: 0.75rem;
   border-radius: 0.6rem;
-  color: #8a1c14;
-  background: #fff1f0;
+  color: var(--danger);
+  background: var(--danger-soft);
   font-size: 0.8rem;
 }
 
@@ -82,7 +80,7 @@
   border: 0;
   border-radius: 0.65rem;
   color: white;
-  background: #126c24;
+  background: var(--green-dark);
   font: inherit;
   font-size: 0.8rem;
   font-weight: 750;
@@ -90,7 +88,7 @@
 }
 
 .submit:hover {
-  background: #105f1e;
+  background: var(--green-hover);
 }
 
 @media (max-width: 420px) {

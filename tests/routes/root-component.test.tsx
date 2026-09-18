@@ -1,5 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-member-access -- react-test-renderer host props are untyped */
-/* eslint-disable @typescript-eslint/no-unsafe-argument -- React element props are untyped at this boundary */
 import {
   Children,
   createElement,
@@ -44,8 +42,14 @@ test("root publishes the complete installable-app link contract", () => {
   ]);
 });
 
-test("root layout exposes the document and mobile metadata", () => {
-  const layout = Layout({ children: createElement("p", null, "Route body") });
+test("root layout exposes the document and mobile metadata", async () => {
+  let documentLayout: ReturnType<typeof Layout> | undefined;
+  const Probe = () => {
+    documentLayout = Layout({ children: createElement("p", null, "Route body") });
+    return null;
+  };
+  const renderer = await renderInRoute(createElement(Probe));
+  const layout = documentLayout! as ReactElement<{ lang: string; children: ReactNode }>;
   expect(layout.type).toBe("html");
   expect(layout.props.lang).toBe("en");
   const [head, body] = Children.toArray(layout.props.children) as ReactElement<{
@@ -61,7 +65,7 @@ test("root layout exposes the document and mobile metadata", () => {
   expect(metas).toEqual(expect.arrayContaining([
     { charSet: "utf-8" },
     { content: "width=device-width, initial-scale=1", name: "viewport" },
-    { content: "#102a43", name: "theme-color" },
+    { content: "#111820", name: "theme-color" },
     { content: "yes", name: "apple-mobile-web-app-capable" },
     { content: "yes", name: "mobile-web-app-capable" },
     { content: "Open Calorie Tracker", name: "apple-mobile-web-app-title" },
@@ -75,6 +79,7 @@ test("root layout exposes the document and mobile metadata", () => {
     props: { children: "Route body" },
     type: "p",
   });
+  renderer.unmount();
 });
 
 test("root app renders its nested route outlet", async () => {

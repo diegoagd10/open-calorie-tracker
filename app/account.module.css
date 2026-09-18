@@ -85,13 +85,13 @@
 }
 
 .error {
-  color: #8a1c14;
-  background: #fff1f0;
+  color: var(--danger);
+  background: var(--danger-soft);
 }
 
 .success {
   color: var(--color-ready);
-  background: #ecfdf3;
+  background: var(--green-soft);
 }
 
 .submit {
@@ -100,7 +100,7 @@
   border: 0;
   border-radius: 0.65rem;
   color: white;
-  background: #126c24;
+  background: var(--green-dark);
   font: inherit;
   font-size: 0.8rem;
   font-weight: 750;
@@ -108,7 +108,7 @@
 }
 
 .submit:hover {
-  background: #105f1e;
+  background: var(--green-hover);
 }
 
 .signOutForm {

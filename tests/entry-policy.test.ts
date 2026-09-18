@@ -120,3 +120,12 @@ test("the adapter sends no-content responses without manufacturing a body or coo
   expect(response.headers.getSetCookie()).toEqual([]);
   expect(await response.text()).toBe("");
 });
+
+test.each(["light", "dark"] as const)("connection verification errors follow the saved %s preference", async theme => {
+  const url = await listener("tunnel");
+  const response = await requestHttp(`${url}/`, { headers: { Host: "calories.example.test", Cookie: `appearance=${theme}` } });
+  expect(response.status).toBe(503);
+  const html = await response.text();
+  expect(html).toContain(`color-scheme:${theme}`);
+  expect(html).toContain(theme === "light" ? "background:#eef2f4;color:#17212b" : "background:#0a0f14;color:#edf2f7");
+});

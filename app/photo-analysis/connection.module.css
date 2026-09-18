@@ -11,13 +11,13 @@
 .heading h2 { margin: 0; font-size: 1.2rem; }
 .heading p { margin: 0.25rem 0 0; color: var(--muted); font-size: 0.8rem; }
 .connected, .disconnected { border-radius: 2rem; padding: 0.35rem 0.75rem; font-weight: 700; font-size: 0.8rem; }
-.connected { background: #edf7ee; color: var(--green-dark); }
-.disconnected { background: #f0f2f4; color: var(--ink-2); }
-.instructions { padding: 1rem; margin: 1rem 0; border-radius: 0.8rem; background: #f0f6f2; }
+.connected { background: var(--green-soft); color: var(--green-strong); }
+.disconnected { background: var(--surface-soft); color: var(--ink-2); }
+.instructions { padding: 1rem; margin: 1rem 0; border-radius: 0.8rem; background: var(--surface-soft); }
 .actions { display: flex; flex-wrap: wrap; gap: 0.75rem; }
 .actions button, .primary { display: inline-block; min-height: 2.75rem; padding: 0.65rem 1rem; border: 1px solid var(--rule-strong); border-radius: 0.65rem; color: var(--ink); background: var(--surface); font: inherit; font-weight: 700; text-decoration: none; cursor: pointer; }
-.actions .primary, .primary { color: white; background: var(--green); border-color: var(--green); }
+.actions .primary, .primary { color: white; background: var(--green-dark); border-color: var(--green); }
 .actions button:disabled { opacity: 0.6; cursor: wait; }
 .actions button:focus-visible, .primary:focus-visible { outline: 3px solid var(--green); outline-offset: 3px; }
-.error { background: #fff1f0; color: #8a1c14; padding: 0.75rem; border-radius: 0.65rem; }
+.error { background: var(--danger-soft); color: var(--danger); padding: 0.75rem; border-radius: 0.65rem; }
 .note { margin-bottom: 0; color: var(--muted); font-size: 0.8rem; }
