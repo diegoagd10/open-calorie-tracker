@@ -95,7 +95,9 @@ export async function changeKeyLoginMode(csrf: string, enabled: boolean) {
     const response = await startAuthentication({
       optionsJSON: verification.options,
     });
-    return await post<{ nextPath: string }>(csrf, `${action}-finish`, { response });
+    return await post<{ nextPath: string }>(csrf, `${action}-finish`, {
+      response,
+    });
   } catch (error) {
     await post(csrf, "cancel").catch(() => {});
     throw error;
@@ -104,6 +106,37 @@ export async function changeKeyLoginMode(csrf: string, enabled: boolean) {
 export function cancelKeyPrompt(): void {
   activePrompt?.abort();
   WebAuthnAbortService.cancelCeremony();
+}
+
+export async function removeKey(
+  csrf: string,
+  credentialId: string,
+  password?: string,
+) {
+  activePrompt = new AbortController();
+  const prompt = activePrompt;
+  try {
+    const verification = await post<{
+      options?: PublicKeyCredentialRequestOptionsJSON;
+    }>(csrf, "remove-start", { credentialId });
+    prompt.signal.throwIfAborted();
+    if (verification.options) {
+      const response = await startAuthentication({
+        optionsJSON: verification.options,
+      });
+      return await post<{ nextPath: string }>(csrf, "remove-finish", {
+        credentialId,
+        response,
+      });
+    }
+    return await post<{ nextPath: string }>(csrf, "remove-finish", {
+      credentialId,
+      password,
+    });
+  } catch (error) {
+    await post(csrf, "cancel").catch(() => {});
+    throw error;
+  }
 }
 
 export function keyProviderError(error: unknown): string {

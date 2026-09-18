@@ -38,6 +38,20 @@ import type {
 
 const origin = "https://tracker.example";
 const password = "correct horse battery staple";
+
+test("removal route binds the target, clears revoked cookies, and restores final-key password login", async () => {
+  const owner = await enabledAccount("remove.route");
+  const token = parseCookies(owner.enabledCookie).get("__Host-calorie_session")!;
+  const session = (await getAuthenticationService().authenticate(token))!;
+  const start = await action(args(post({ action: "remove-start", csrfToken: session.csrfToken, credentialId: owner.key.id }, owner.enabledCookie)));
+  expect(start.status).toBe(200);
+  const { options } = await start.json() as { options: PublicKeyCredentialRequestOptionsJSON };
+  const finish = await action(args(post({ action: "remove-finish", csrfToken: session.csrfToken, credentialId: owner.key.id, response: owner.key.assertion(options, 2) }, `${owner.enabledCookie}; ${cookies(start)}`)));
+  expect(await finish.json()).toEqual({ nextPath: "/login" });
+  expect(finish.headers.getSetCookie().some((cookie) => cookie.startsWith("__Host-calorie_session=;") && cookie.includes("Max-Age=0"))).toBe(true);
+  expect(await getAuthenticationService().authenticate(token)).toBeUndefined();
+  expect((await getAuthenticationService().login("remove.route", password, "remove.route")).ok).toBe(true);
+});
 let directory: string;
 function args(request: Request, pattern = "/key-ceremony") {
   return {
@@ -1264,7 +1278,7 @@ test.each([false, true])("mode toggle UI to enabled=%s handles cancellation and 
   await act(async () => renderer.unmount());
 });
 
-test.each(["disable-start", "re-enable-start"])("%s preserves authenticated CSRF, origin and anonymous guards", async (modeAction) => {
+test.each(["disable-start", "re-enable-start", "remove-start", "remove-finish"])("%s preserves authenticated CSRF, origin and anonymous guards", async (modeAction) => {
   await expect(action(args(post({ action: modeAction, csrfToken: "bad" })))).rejects.toMatchObject({ status: 401 });
   const session = await account(`protected.${modeAction}`);
   const cookie = serializeSessionCookie(session).split(";", 1)[0];
@@ -1272,4 +1286,65 @@ test.each(["disable-start", "re-enable-start"])("%s preserves authenticated CSRF
   const wrongOrigin = post({ action: modeAction, csrfToken: session.csrfToken }, cookie);
   wrongOrigin.headers.set("Origin", "https://attacker.example");
   await expect(action(args(wrongOrigin))).rejects.toMatchObject({ status: 403 });
+});
+
+test.each([true, false])("removal UI in key mode=%s explains final-key passwords, permits cancel, and retries fresh verification", async (enabled) => {
+  const username = `remove.ui.${enabled}`;
+  const owner = await enabledAccount(username);
+  let cookie = owner.enabledCookie;
+  if (!enabled) {
+    const current = (await getAuthenticationService().authenticate(parseCookies(cookie).get("__Host-calorie_session")))!;
+    const proof = await getAuthenticationService().keys.beginModeChange(current.token, "disable-removal-ui", false);
+    await getAuthenticationService().keys.finishModeChange(current.token, "disable-removal-ui", false, owner.key.assertion(proof, 2));
+    const login = await getAuthenticationService().login(username, password, username);
+    if (!login.ok) throw new Error("password login failed");
+    cookie = serializeSessionCookie(login.session).split(";", 1)[0];
+  }
+  const loaded = await securityLoader(args(new Request(`${origin}/settings/security`, { headers: { Cookie: cookie } }), "/settings/security"));
+  if (loaded instanceof Response) throw new Error("settings redirected");
+  const renderer = await renderPage(SecuritySettings, "/settings/security", loaded);
+  const transport = browserTransport(cookie);
+  transport.installNavigation();
+  const button = (name: string) => renderer.root.findAllByType("button").find((node) => node.children.includes(name))!;
+  await act(async () => { (button("Delete My key").props as { onClick(): void }).onClick(); });
+  expect(allText(renderer)).toContain("Deleting your final key restores password sign-in");
+  await act(async () => { (button("Cancel deletion").props as { onClick(): void }).onClick(); });
+  expect(allText(renderer)).not.toContain("Confirm deletion");
+  vi.mocked(browserProvider.startAuthentication).mockRejectedValueOnce(new DOMException("cancelled", "NotAllowedError"));
+  await act(async () => { (button("Delete My key").props as { onClick(): void }).onClick(); });
+  const submit = async (password: string) => {
+    const form = renderer.root.findAllByType("form").find((node) => node.props["aria-labelledby"] === "remove-key-title")!;
+    await act(async () => { (form.props as { onSubmit(event: { preventDefault(): void; currentTarget: object }): void }).onSubmit({ preventDefault() {}, currentTarget: { password } }); });
+  };
+  await submit("incorrect password");
+  await vi.waitFor(async () => { await act(async () => {}); expect(renderer.root.findAll((node) => node.props.role === "alert")).toHaveLength(1); });
+  expect(transport.assign).not.toHaveBeenCalled();
+  expect(getAuthenticationService().keys.status(parseCookies(transport.cookie()).get("__Host-calorie_session")!).credentials).toHaveLength(1);
+  vi.mocked(browserProvider.startAuthentication).mockImplementation(async ({ optionsJSON }) => owner.key.assertion(optionsJSON, 3));
+  await submit(password);
+  await vi.waitFor(() => expect(transport.assign).toHaveBeenCalledWith("/login"));
+  expect((await getAuthenticationService().login(username, password, username)).ok).toBe(true);
+  await act(async () => renderer.unmount());
+});
+
+test("personal removal rejects another owner's target and another session's proof, and logs no credential material", async () => {
+  const owner = await enabledAccount("remove.owner");
+  const foreign = await enabledAccount("remove.foreign");
+  async function sessionFor(cookie: string) {
+    return (await getAuthenticationService().authenticate(parseCookies(cookie).get("__Host-calorie_session")))!;
+  }
+  const current = await sessionFor(owner.enabledCookie);
+  const other = await sessionFor(foreign.enabledCookie);
+  const deniedTarget = await action(args(post({ action: "remove-start", csrfToken: other.csrfToken, credentialId: owner.key.id }, foreign.enabledCookie)));
+  expect(deniedTarget.status).toBe(400);
+  const start = await action(args(post({ action: "remove-start", csrfToken: current.csrfToken, credentialId: owner.key.id }, owner.enabledCookie)));
+  const { options } = await start.json() as { options: PublicKeyCredentialRequestOptionsJSON };
+  const response = owner.key.assertion(options, 2);
+  const log = vi.spyOn(console, "log").mockImplementation(() => {});
+  const rejected = await action(args(post({ action: "remove-finish", csrfToken: other.csrfToken, credentialId: owner.key.id, response }, `${foreign.enabledCookie}; ${cookies(start)}`)));
+  expect(rejected.status).toBe(400);
+  expect(getAuthenticationService().keys.status(current.token).credentials).toHaveLength(1);
+  const audit = log.mock.calls.map((call) => String(call[0])).join("\n");
+  expect(audit).toContain("key_removal");
+  for (const secret of [owner.key.id, options.challenge, response.response.signature, current.token, password]) expect(audit).not.toContain(secret);
 });

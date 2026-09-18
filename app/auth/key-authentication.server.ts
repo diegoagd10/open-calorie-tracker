@@ -1,4 +1,6 @@
 import type { AuthenticationResponseJSON } from "@simplewebauthn/server";
+import { randomBytes } from "node:crypto";
+import { verifyPassword } from "./password.server";
 import type { ApplicationDatabaseClient } from "../database/database.server";
 import {
   WebAuthnStorage,
@@ -25,8 +27,13 @@ import { PersistentRateLimiter } from "./rate-limiter.server";
 function keyEvent(
   purpose: PendingKeyCeremony["purpose"] | PendingKeyCeremony["purpose"][],
 ) {
-  if (Array.isArray(purpose)) return "key_registration";
+  if (Array.isArray(purpose))
+    return purpose.every((action) => action.startsWith("remove-"))
+      ? "key_removal"
+      : "key_registration";
   if (purpose === "login") return "key_login";
+  if (purpose === "remove-key" || purpose === "remove-password")
+    return "key_removal";
   return ["enable", "disable", "re-enable"].includes(purpose)
     ? "key_login_policy"
     : "key_registration";
@@ -265,9 +272,13 @@ export class KeyAuthenticationService {
   async beginModeChange(token: string, browser: string, enabled: boolean) {
     const user = this.#storage.enrollmentAccount(hashOpaqueToken(token));
     if (!enrollmentPreviewEnabled())
-      throw new KeyAuthenticationError("Key enrollment preview is unavailable.");
+      throw new KeyAuthenticationError(
+        "Key enrollment preview is unavailable.",
+      );
     if (!this.#limits.consume("key-mode", String(user.id), 10, 15 * 60_000))
-      throw new KeyAuthenticationError("Too many key attempts. Try again later.");
+      throw new KeyAuthenticationError(
+        "Too many key attempts. Try again later.",
+      );
     const credentials = this.#storage.credentials(user.id);
     if (user.keyLoginEnabled === enabled || !credentials.length)
       throw new KeyAuthenticationError(
@@ -300,6 +311,97 @@ export class KeyAuthenticationService {
       keyOrigin(),
     );
     return options;
+  }
+  async beginRemoval(token: string, browser: string, target: string) {
+    const user = this.#storage.enrollmentAccount(hashOpaqueToken(token));
+    if (!enrollmentPreviewEnabled())
+      throw new KeyAuthenticationError(
+        "Key enrollment preview is unavailable.",
+      );
+    if (!this.#limits.consume("key-removal", String(user.id), 10, 15 * 60_000))
+      throw new KeyAuthenticationError(
+        "Too many key attempts. Try again later.",
+      );
+    const credentials = this.#storage.credentials(user.id);
+    if (!credentials.some((key) => key.id === target))
+      throw new KeyAuthenticationError(
+        "Key unavailable. Retry from security settings.",
+      );
+    const boundary = keyOrigin();
+    const { generateAuthenticationOptions } = await import(
+      "@simplewebauthn/server"
+    );
+    const options = user.keyLoginEnabled
+      ? await generateAuthenticationOptions({
+          rpID: boundary.rpId,
+          userVerification: "required",
+          allowCredentials: credentials.map(({ id, transports }) => ({
+            id,
+            transports,
+          })),
+        })
+      : undefined;
+    this.#storage.save(
+      {
+        browserHash: hashOpaqueToken(browser),
+        userId: user.id,
+        purpose: user.keyLoginEnabled ? "remove-key" : "remove-password",
+        challenge: options?.challenge ?? randomBytes(32).toString("base64url"),
+        ...boundary,
+        authenticationVersion: user.authenticationVersion,
+        sessionHash: hashOpaqueToken(token),
+        targetCredentialId: target,
+        name: "",
+        expiresAt: new Date(this.#now().getTime() + 5 * 60_000).toISOString(),
+      },
+      keyOrigin(),
+    );
+    return { options };
+  }
+  async finishRemoval(
+    token: string,
+    browser: string,
+    target: string,
+    input: unknown,
+  ) {
+    const pending = this.#take(
+      hashOpaqueToken(browser),
+      ["remove-key", "remove-password"],
+      keyOrigin(),
+      hashOpaqueToken(token),
+    );
+    try {
+      if (pending.targetCredentialId !== target)
+        throw new KeyAuthenticationError("Wrong removal target.");
+      let verified: VerifiedKeyAssertion | { passwordHash: string };
+      if (pending.purpose === "remove-key") {
+        verified = await this.#verifyAssertion(pending, input);
+      } else {
+        const passwordHash = this.#storage.passwordHash(pending.userId);
+        if (
+          !passwordHash ||
+          typeof input !== "string" ||
+          !input.length ||
+          input.length > 1024 ||
+          !(await verifyPassword(input, passwordHash)).matches
+        )
+          throw new KeyAuthenticationError("Current password rejected.");
+        verified = { passwordHash };
+      }
+      this.#storage.removeCredential(pending, target, verified, keyOrigin());
+      operationalLog("info", "key_removal", {
+        outcome: "succeeded",
+        userId: pending.userId,
+      });
+    } catch {
+      operationalLog("info", "key_removal", {
+        outcome: "rejected",
+        userId: pending.userId,
+      });
+      throw new KeyAuthenticationError(
+        "Key removal failed. Your saved keys are unchanged. Retry.",
+      );
+    }
   }
   async finishModeChange(
     token: string,

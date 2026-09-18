@@ -50,6 +50,16 @@
   display: grid;
 }
 
+.keyRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-block: 0.75rem;
+  overflow-wrap: anywhere;
+}
+
 .form {
   gap: 0.9rem;
   padding-top: 1rem;

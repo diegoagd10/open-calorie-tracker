@@ -18,6 +18,8 @@ import { usernameSchema } from "../auth/validation";
 const bodySchema = z
   .object({
     action: z.enum([
+      "remove-start",
+      "remove-finish",
       "disable-start",
       "disable-finish",
       "re-enable-start",
@@ -33,6 +35,8 @@ const bodySchema = z
     ]),
     csrfToken: z.string().max(128),
     name: z.string().max(80).optional(),
+    credentialId: z.string().min(1).max(2048).optional(),
+    password: z.string().min(1).max(1024).optional(),
     username: usernameSchema.optional(),
     response: z.unknown().optional(),
   })
@@ -78,6 +82,7 @@ export async function action({ request }: Route.ActionArgs) {
   }
   const service = getAuthenticationService();
   const authenticatedAction =
+    input.action.startsWith("remove") ||
     input.action.startsWith("disable") ||
     input.action.startsWith("re-enable") ||
     input.action.startsWith("register") ||
@@ -122,6 +127,24 @@ export async function action({ request }: Route.ActionArgs) {
   );
   try {
     switch (input.action) {
+      case "remove-start":
+        return Response.json(
+          await service.keys.beginRemoval(
+            session!.token,
+            browser,
+            input.credentialId ?? "",
+          ),
+          { headers },
+        );
+      case "remove-finish":
+        await service.keys.finishRemoval(
+          session!.token,
+          browser,
+          input.credentialId ?? "",
+          input.password ?? input.response,
+        );
+        headers.append("Set-Cookie", serializeClearedSessionCookie());
+        return Response.json({ nextPath: "/login" }, { headers });
       case "disable-start":
       case "re-enable-start":
         return Response.json(

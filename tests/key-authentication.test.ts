@@ -17,6 +17,21 @@ afterEach(async () => {
   vi.unstubAllEnvs();
   for (const close of cleanup.splice(0)) await close();
 });
+
+test("a key can authorize its own final deletion, revoke pending login, and restore passwords", async () => {
+  const f = await fixture();
+  const { key, session } = await enroll(f.service, f.session.token);
+  const login = await f.service.keys.beginLogin("owner", "pending", "192.0.2.3");
+  const proof = await f.service.keys.beginRemoval(session.token, "remove", key.id);
+  expect(proof.options?.allowCredentials?.map((key) => key.id)).toEqual([key.id]);
+  await f.service.keys.finishRemoval(session.token, "remove", key.id, key.assertion(proof.options!, 2));
+  expect(await f.service.authenticate(session.token)).toBeUndefined();
+  await expect(f.service.keys.finishLogin("pending", key.assertion(login, 3))).rejects.toThrow();
+  const signedIn = await f.service.login("owner", password, "192.0.2.4");
+  if (!signedIn.ok) throw new Error("password login failed");
+  expect(f.service.keys.status(signedIn.session.token)).toEqual({ enabled: false, credentials: [] });
+  await expect(f.service.keys.beginModeChange(signedIn.session.token, "enable", true)).rejects.toThrow("first key");
+});
 async function fixture() {
   vi.stubEnv("APPLICATION_URL", "https://tracker.example");
   vi.stubEnv("WEBAUTHN_ENROLLMENT_PREVIEW", "1");
@@ -1037,6 +1052,182 @@ async function passwordMode() {
   if (!login.ok) throw new Error("password login failed");
   return { ...f, key, current: login.session };
 }
+
+test("removing a retained key needs fresh current password and burns incorrect attempts", async () => {
+  const f = await passwordMode();
+  const proof = await f.service.keys.beginRemoval(f.current.token, "remove", f.key.id);
+  expect(proof.options).toBeUndefined();
+  await expect(f.service.keys.finishRemoval(f.current.token, "remove", f.key.id, "incorrect password")).rejects.toThrow();
+  expect(f.service.keys.status(f.current.token).credentials).toHaveLength(1);
+  await expect(f.service.keys.finishRemoval(f.current.token, "remove", f.key.id, password)).rejects.toThrow();
+  await f.service.keys.beginRemoval(f.current.token, "fresh", f.key.id);
+  await f.service.keys.finishRemoval(f.current.token, "fresh", f.key.id, password);
+  expect(await f.service.authenticate(f.current.token)).toBeUndefined();
+  const login = await f.service.login("owner", password, "192.0.2.4");
+  if (!login.ok) throw new Error("password login failed");
+  expect(f.service.keys.status(login.session.token)).toEqual({ enabled: false, credentials: [] });
+});
+
+async function fiveKeys() {
+  const f = await fixture();
+  const first = await enroll(f.service, f.session.token);
+  let current = first.session;
+  const keys = [first.key];
+  for (let n = 1; n < 5; n++) {
+    const authorization = await f.service.keys.beginAddition(current.token, "addition", `Key ${n + 1}`);
+    const options = await f.service.keys.finishAdditionProof(current.token, "addition", keys[n - 1].assertion(authorization, 2));
+    const key = authenticator();
+    const proof = await f.service.keys.finishRegistration(current.token, "addition", key.registration(options));
+    current = await f.service.keys.finishEnrollment(current.token, "addition", key.assertion(proof));
+    keys.push(key);
+  }
+  return { ...f, keys, current };
+}
+
+test.each([true, false])("five-key deletion lifecycle preserves enabled=%s until the last key and cannot resurrect keys", async (enabled) => {
+  const f = await fiveKeys();
+  let current = f.current;
+  let counter = 10;
+  async function keyLogin(key: ReturnType<typeof authenticator>) {
+    const options = await f.service.keys.beginLogin("owner", "login", "192.0.2.7");
+    return f.service.keys.finishLogin("login", key.assertion(options, ++counter));
+  }
+  for (const key of f.keys) expect((await keyLogin(key)).user.id).toBe(current.user.id);
+  if (!enabled) {
+    const proof = await f.service.keys.beginModeChange(current.token, "disable", false);
+    await f.service.keys.finishModeChange(current.token, "disable", false, f.keys[4].assertion(proof, ++counter));
+    const login = await f.service.login("owner", password, "192.0.2.8");
+    if (!login.ok) throw new Error("password login failed");
+    current = login.session;
+  }
+  for (let n = 0; n < 5; n++) {
+    const proof = await f.service.keys.beginRemoval(current.token, "remove", f.keys[n].id);
+    await f.service.keys.finishRemoval(current.token, "remove", f.keys[n].id, enabled ? f.keys[n].assertion(proof.options!, ++counter) : password);
+    expect(await f.service.authenticate(current.token)).toBeUndefined();
+    if (enabled && n < 4) {
+      for (const key of f.keys.slice(n + 1)) current = await keyLogin(key);
+    } else {
+      const login = await f.service.login("owner", password, "192.0.2.8");
+      if (!login.ok) throw new Error("password login failed");
+      current = login.session;
+    }
+    expect(f.service.keys.status(current.token)).toMatchObject({ enabled: enabled && n < 4, credentials: f.keys.slice(n + 1).map((key) => ({ id: key.id })) });
+    await expect(keyLogin(f.keys[n])).rejects.toThrow();
+  }
+  await expect(f.service.keys.beginModeChange(current.token, "resurrect", true)).rejects.toThrow("first key");
+});
+
+test.each(["target", "session", "owner", "purpose", "expire", "cancel", "signature", "origin", "verification", "account", "credential"])("removal rejects %s changes and burns the submitted proof", async (failure) => {
+  const f = await fixture();
+  const { key, session } = await enroll(f.service, f.session.token);
+  const proof = await f.service.keys.beginRemoval(session.token, "remove", key.id);
+  const response = (failure === "owner" ? authenticator() : key).assertion(proof.options!, 2, {
+    badSignature: failure === "signature",
+    origin: failure === "origin" ? "https://foreign.example" : undefined,
+    flags: failure === "verification" ? 1 : undefined,
+  });
+  if (failure === "expire") f.advance(300_001);
+  if (failure === "cancel") f.service.keys.cancel("remove");
+  const finishing = failure === "purpose"
+    ? f.service.keys.finishModeChange(session.token, "remove", false, response)
+    : f.service.keys.finishRemoval(failure === "session" ? "foreign" : session.token, "remove", failure === "target" ? "other-target" : key.id, response);
+  if (failure === "account") f.database.getClient().update(users).set({ authenticationVersion: 99 }).where(eq(users.id, session.user.id)).run();
+  if (failure === "credential") f.database.getClient().$client.prepare("UPDATE webauthn_credentials SET revision = revision + 1 WHERE id = ?").run(key.id);
+  await expect(finishing).rejects.toThrow();
+  expect(f.service.keys.status(session.token)).toMatchObject({ enabled: true, credentials: [{ id: key.id }] });
+  await expect(f.service.keys.finishRemoval(session.token, "remove", key.id, response)).rejects.toThrow();
+});
+
+test.each(["credential", "mode", "sessions", "proofs"])("failed %s storage during final deletion rolls back every mutation and burns proof", async (failure) => {
+  const f = await fixture();
+  const { key, session } = await enroll(f.service, f.session.token);
+  const proof = await f.service.keys.beginRemoval(session.token, "remove", key.id);
+  const operation = { credential: "DELETE ON webauthn_credentials", mode: "UPDATE OF key_login_enabled ON users", sessions: "DELETE ON sessions", proofs: "DELETE ON webauthn_ceremonies" }[failure]!;
+  f.database.getClient().$client.exec(`CREATE TRIGGER refuse_removal BEFORE ${operation} BEGIN SELECT RAISE(ABORT, 'storage failure'); END`);
+  await expect(f.service.keys.finishRemoval(session.token, "remove", key.id, key.assertion(proof.options!, 2))).rejects.toThrow();
+  f.database.getClient().$client.exec("DROP TRIGGER refuse_removal");
+  expect((await f.service.authenticate(session.token))?.user.id).toBe(session.user.id);
+  expect(f.service.keys.status(session.token)).toMatchObject({ enabled: true, credentials: [{ id: key.id }] });
+  await expect(f.service.keys.finishRemoval(session.token, "remove", key.id, key.assertion(proof.options!, 2))).rejects.toThrow();
+  const retry = await f.service.keys.beginRemoval(session.token, "retry", key.id);
+  await f.service.keys.finishRemoval(session.token, "retry", key.id, key.assertion(retry.options!, 2));
+  expect((await f.service.login("owner", password, "192.0.2.8")).ok).toBe(true);
+});
+
+test("concurrent removals commit once, invalidate in-flight login, and preserve one usable remaining key", async () => {
+  const f = await fiveKeys();
+  const a = await f.service.keys.beginRemoval(f.current.token, "a", f.keys[0].id);
+  const b = await f.service.keys.beginRemoval(f.current.token, "b", f.keys[1].id);
+  const login = await f.service.keys.beginLogin("owner", "login", "192.0.2.8");
+  const results = await Promise.allSettled([
+    f.service.keys.finishRemoval(f.current.token, "a", f.keys[0].id, f.keys[0].assertion(a.options!, 10)),
+    f.service.keys.finishRemoval(f.current.token, "b", f.keys[1].id, f.keys[1].assertion(b.options!, 10)),
+    f.service.keys.finishLogin("login", f.keys[0].assertion(login, 11)),
+  ]);
+  expect(results.slice(0, 2).filter((result) => result.status === "fulfilled")).toHaveLength(1);
+  const issued = results[2].status === "fulfilled" ? results[2].value : undefined;
+  expect(issued ? await f.service.authenticate(issued.token) : undefined).toBeUndefined();
+  const fresh = await f.service.keys.beginLogin("owner", "fresh", "192.0.2.8");
+  const session = await f.service.keys.finishLogin("fresh", f.keys[4].assertion(fresh, 11));
+  expect(f.service.keys.status(session.token).credentials).toHaveLength(4);
+});
+
+test.each(["expire", "cancel", "session", "target", "key-proof", "password-change"])("password-mode removal rejects %s and keeps the retained key", async (failure) => {
+  const f = await passwordMode();
+  await f.service.keys.beginRemoval(f.current.token, "remove", f.key.id);
+  if (failure === "expire") f.advance(300_001);
+  if (failure === "cancel") f.service.keys.cancel("remove");
+  const removal = f.service.keys.finishRemoval(failure === "session" ? "foreign" : f.current.token, "remove", failure === "target" ? "foreign-target" : f.key.id, failure === "key-proof" ? {} : password);
+  if (failure === "password-change") {
+    f.database.getClient().$client.prepare("UPDATE password_credentials SET password_hash = 'changed' WHERE user_id = ?").run(f.current.user.id);
+  }
+  await expect(removal).rejects.toThrow();
+  expect(f.service.keys.status(f.current.token)).toMatchObject({ enabled: false, credentials: [{ id: f.key.id }] });
+  await expect(f.service.keys.finishRemoval(f.current.token, "remove", f.key.id, password)).rejects.toThrow();
+});
+
+test("deletion cannot target another account's key and removal limits persist across service instances", async () => {
+  const f = await passwordMode();
+  const foreign = await seedAuthenticatedAccount(f.service, f.database.getClient(), "foreign", password, "192.0.2.5");
+  await expect(f.service.keys.beginRemoval(foreign.token, "foreign", f.key.id)).rejects.toThrow();
+  for (let n = 0; n < 10; n++) await f.service.keys.beginRemoval(f.current.token, "remove", f.key.id);
+  await expect(new AuthenticationService(f.database.getClient(), () => new Date("2026-09-13T19:00:00.000Z")).keys.beginRemoval(f.current.token, "remove", f.key.id)).rejects.toThrow("Too many");
+});
+
+test("concurrent final-key removals restore password mode once and revoke pending login", async () => {
+  const f = await fixture();
+  const { key, session } = await enroll(f.service, f.session.token);
+  const a = await f.service.keys.beginRemoval(session.token, "a", key.id);
+  const b = await f.service.keys.beginRemoval(session.token, "b", key.id);
+  const login = await f.service.keys.beginLogin("owner", "login", "192.0.2.8");
+  const results = await Promise.allSettled([
+    f.service.keys.finishRemoval(session.token, "a", key.id, key.assertion(a.options!, 2)),
+    f.service.keys.finishRemoval(session.token, "b", key.id, key.assertion(b.options!, 3)),
+  ]);
+  expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+  await expect(f.service.keys.finishLogin("login", key.assertion(login, 4))).rejects.toThrow();
+  const passwordLogin = await f.service.login("owner", password, "192.0.2.8");
+  if (!passwordLogin.ok) throw new Error("password login failed");
+  expect(f.service.keys.status(passwordLogin.session.token)).toEqual({ enabled: false, credentials: [] });
+});
+
+test("disabling and re-enabling after deletion cannot restore a removed credential", async () => {
+  const f = await fiveKeys();
+  const proof = await f.service.keys.beginRemoval(f.current.token, "remove", f.keys[0].id);
+  await f.service.keys.finishRemoval(f.current.token, "remove", f.keys[0].id, f.keys[4].assertion(proof.options!, 10));
+  const login = await f.service.keys.beginLogin("owner", "login", "192.0.2.8");
+  const current = await f.service.keys.finishLogin("login", f.keys[4].assertion(login, 11));
+  const disable = await f.service.keys.beginModeChange(current.token, "disable", false);
+  await f.service.keys.finishModeChange(current.token, "disable", false, f.keys[4].assertion(disable, 12));
+  const passwordLogin = await f.service.login("owner", password, "192.0.2.8");
+  if (!passwordLogin.ok) throw new Error("password login failed");
+  const enable = await f.service.keys.beginModeChange(passwordLogin.session.token, "enable", true);
+  const restored = (await f.service.keys.finishModeChange(passwordLogin.session.token, "enable", true, f.keys[4].assertion(enable, 13)))!;
+  expect(f.service.keys.status(restored.token).credentials).toHaveLength(4);
+  const staleKey = await f.service.keys.beginLogin("owner", "removed", "192.0.2.8");
+  expect(staleKey.allowCredentials?.map((key) => key.id)).not.toContain(f.keys[0].id);
+  await expect(f.service.keys.finishLogin("removed", f.keys[0].assertion(staleKey, 14))).rejects.toThrow();
+});
 
 test.each(["cancel", "expire", "bad-signature", "wrong-purpose", "enrollment-purpose", "wrong-session", "credential-change", "account-change"])(
   "failed re-enable (%s) preserves password mode and consumes the attempt", async (failure) => {
