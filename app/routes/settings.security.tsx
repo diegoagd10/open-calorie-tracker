@@ -88,21 +88,22 @@ export default function SecuritySettings({ loaderData }: Route.ComponentProps) {
           </button>
         ) : null}
         {loaderData.credentials.length ? (
-          <ul>
+          <ul className={styles.keyList}>
             {loaderData.credentials.map((key) => (
               <li key={key.id} className={styles.keyRow}>
-                <span>{key.name}</span>
+                <span className={styles.keyName}>{key.name}</span>
                 {loaderData.preview ? (
                   <button
-                    className={styles.submit}
+                    className={styles.removeButton}
                     type="button"
+                    aria-label={`Delete ${key.name}`}
                     disabled={busy}
                     onClick={() => {
                       setRemoving(key);
                       setError("");
                     }}
                   >
-                    {`Delete ${key.name}`}
+                    Delete
                   </button>
                 ) : null}
               </li>
@@ -131,7 +132,9 @@ export default function SecuritySettings({ loaderData }: Route.ComponentProps) {
                 });
             }}
           >
-            <h3 id="remove-key-title">Delete {removing.name}?</h3>
+            <h3 id="remove-key-title" className={styles.removalTitle}>
+              Delete {removing.name}?
+            </h3>
             <p>
               {loaderData.credentials.length === 1
                 ? "Deleting your final key restores password sign-in. You must register a new key before enabling key login again."
@@ -159,25 +162,27 @@ export default function SecuritySettings({ loaderData }: Route.ComponentProps) {
                 />
               </div>
             )}
-            <button
-              className={styles.submit}
-              type="submit"
-              disabled={busy}
-              autoFocus={loaderData.enabled}
-            >
-              Confirm deletion
-            </button>
-            <button
-              className={styles.submit}
-              type="button"
-              disabled={busy}
-              onClick={() => {
-                setRemoving(undefined);
-                setError("");
-              }}
-            >
-              Cancel deletion
-            </button>
+            <div className={styles.removalActions}>
+              <button
+                className={styles.confirmRemovalButton}
+                type="submit"
+                disabled={busy}
+                autoFocus={loaderData.enabled}
+              >
+                Confirm deletion
+              </button>
+              <button
+                className={styles.cancelRemovalButton}
+                type="button"
+                disabled={busy}
+                onClick={() => {
+                  setRemoving(undefined);
+                  setError("");
+                }}
+              >
+                Cancel deletion
+              </button>
+            </div>
           </form>
         ) : null}
         {loaderData.preview ? (
