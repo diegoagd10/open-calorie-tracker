@@ -3,12 +3,13 @@ import { and, eq, lte } from "drizzle-orm";
 import type { ApplicationDatabaseClient } from "./database.server";
 import {
   sessions,
+  passwordCredentials,
   users,
   webauthnCeremonies,
   webauthnCredentials,
 } from "./schema.server";
 import { findActiveSessionByTokenHash } from "./credential-sessions.server";
-import { invalidateAccountProofs } from "./authentication-policy.server";
+import { revokeAccountAuthentication } from "./authentication-policy.server";
 import { isAccountSetupComplete } from "./account-setup.server";
 
 export class KeyAuthenticationError extends Error {}
@@ -47,6 +48,13 @@ export class WebAuthnStorage {
       .from(webauthnCredentials)
       .where(eq(webauthnCredentials.id, id))
       .get();
+  }
+  passwordHash(userId: number) {
+    return this.database
+      .select()
+      .from(passwordCredentials)
+      .where(eq(passwordCredentials.userId, userId))
+      .get()?.passwordHash;
   }
   session(hash: string) {
     const session = findActiveSessionByTokenHash(this.database, hash);
@@ -107,9 +115,14 @@ export class WebAuthnStorage {
       !user ||
       user.accessState !== "active" ||
       user.authenticationVersion !== pending.authenticationVersion ||
-      (["login", "add-proof", "register-add", "add", "disable"].includes(
-        pending.purpose,
-      )
+      ([
+        "login",
+        "add-proof",
+        "register-add",
+        "add",
+        "disable",
+        "remove-key",
+      ].includes(pending.purpose)
         ? !user.keyLoginEnabled
         : user.keyLoginEnabled)
     )
@@ -156,6 +169,7 @@ export class WebAuthnStorage {
             ...pending,
             sessionHash: pending.sessionHash ?? null,
             stagedCredential: pending.stagedCredential ?? null,
+            targetCredentialId: pending.targetCredentialId ?? null,
           },
           boundary,
         );
@@ -323,8 +337,7 @@ export class WebAuthnStorage {
           .set({ keyLoginEnabled: enabled })
           .where(eq(users.id, current.id))
           .run();
-        tx.delete(sessions).where(eq(sessions.userId, current.id)).run();
-        invalidateAccountProofs(tx, current.id);
+        revokeAccountAuthentication(tx, current.id);
         if (!enabled) return undefined;
         const issued = issue(current, absolute);
         tx.insert(sessions).values(issued.persisted).run();
@@ -332,6 +345,53 @@ export class WebAuthnStorage {
       },
       { behavior: "immediate" },
     );
+  }
+  removeCredential(
+    pending: PendingKeyCeremony,
+    target: string,
+    verified: VerifiedKeyAssertion | { passwordHash: string },
+    boundary: WebAuthnBoundary,
+  ): void {
+    this.database.transaction(
+      (tx) => {
+        this.#requireProcessing(pending);
+        const current = this.accountForPending(pending, boundary);
+        if (!pending.sessionHash || pending.targetCredentialId !== target)
+          throw new KeyAuthenticationError("Wrong key owner or action.");
+        this.#applyRemovalProof(pending, verified, current.id);
+        const removed = tx
+          .delete(webauthnCredentials)
+          .where(
+            and(
+              eq(webauthnCredentials.id, target),
+              eq(webauthnCredentials.userId, current.id),
+            ),
+          )
+          .returning({ id: webauthnCredentials.id })
+          .get();
+        if (!removed) throw new KeyAuthenticationError("Key changed. Retry.");
+        if (!this.credentials(current.id).length)
+          tx.update(users)
+            .set({ keyLoginEnabled: false })
+            .where(eq(users.id, current.id))
+            .run();
+        revokeAccountAuthentication(tx, current.id);
+      },
+      { behavior: "immediate" },
+    );
+  }
+  #applyRemovalProof(
+    pending: PendingKeyCeremony,
+    verified: VerifiedKeyAssertion | { passwordHash: string },
+    userId: number,
+  ): void {
+    if ("credential" in verified) {
+      if (pending.purpose !== "remove-key" || verified.credential.userId !== userId)
+        throw new KeyAuthenticationError("Wrong key owner or action.");
+      this.#updateCredential(verified);
+    } else if (pending.purpose !== "remove-password" || this.passwordHash(userId) !== verified.passwordHash) {
+      throw new KeyAuthenticationError("Password changed. Retry.");
+    }
   }
   complete<T>(
     pending: PendingKeyCeremony,
