@@ -8,3 +8,9 @@ export function logAdministratorRecovery(
     outcome,
   });
 }
+
+export function logAdministratorKeyRecovery(
+  outcome: AdministratorRecoveryError | "failed" | "succeeded",
+): void {
+  operationalLog(outcome === "succeeded" ? "warn" : "error", "administrator_key_recovery", { outcome });
+}

@@ -5,11 +5,15 @@ export default defineConfig({
     emptyOutDir: false,
     outDir: "build/recovery",
     rollupOptions: {
+      input: {
+        "recover-administrator": "server/recover-administrator.ts",
+        "recover-administrator-keys": "server/recover-administrator-keys.ts",
+      },
       output: {
-        entryFileNames: "recover-administrator.js",
+        entryFileNames: "[name].js",
       },
     },
-    ssr: "server/recover-administrator.ts",
+    ssr: true,
   },
   publicDir: false,
   resolve: {
