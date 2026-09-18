@@ -35,6 +35,9 @@ export class WebAuthnStorage {
       .where(eq(users.usernameNormalized, username))
       .get();
   }
+  #account(id: number) {
+    return this.database.select().from(users).where(eq(users.id, id)).get();
+  }
   credentials(userId: number) {
     return this.database
       .select()
@@ -75,16 +78,51 @@ export class WebAuthnStorage {
       throw new KeyAuthenticationError(
         "Complete account setup before enrolling a key.",
       );
-    const user = this.database
-      .select()
-      .from(users)
-      .where(eq(users.id, session.userId))
-      .get()!;
+    const user = this.#account(session.userId)!;
     return user;
+  }
+  recoveryAdministrator(sessionHash: string) {
+    const user = this.enrollmentAccount(sessionHash);
+    if (user.role !== "admin")
+      throw new KeyAuthenticationError("Administrator sign-in required.");
+    return user;
+  }
+  recoveryTarget(id: number, username: string) {
+    const user = this.#account(id);
+    if (!user || user.role !== "member" || user.usernameNormalized !== username)
+      throw new KeyAuthenticationError("Member is no longer available. Refresh and retry.");
+    return { id: user.id, username, authenticationVersion: user.authenticationVersion };
+  }
+  #acceptRecoveryProof(administratorId: number, pending: PendingKeyCeremony, verified: VerifiedKeyAssertion | { passwordHash: string }) {
+      if (pending.purpose === "recover-member-key" && "credential" in verified && verified.credential.userId === administratorId)
+        this.#updateCredential(verified);
+      else if (pending.purpose !== "recover-member-password" || !("passwordHash" in verified) || this.passwordHash(administratorId) !== verified.passwordHash)
+        throw new KeyAuthenticationError("Wrong recovery proof.");
+  }
+  recoverMember(
+    pending: PendingKeyCeremony,
+    verified: VerifiedKeyAssertion | { passwordHash: string },
+    boundary: WebAuthnBoundary,
+  ): "disabled" | "already-disabled" {
+    return this.database.transaction((tx) => {
+      this.#requireProcessing(pending);
+      const administrator = this.accountForPending(pending, boundary);
+      if (!pending.sessionHash || this.recoveryAdministrator(pending.sessionHash).id !== administrator.id || !pending.targetMember)
+        throw new KeyAuthenticationError("Administrator recovery proof required.");
+      this.#acceptRecoveryProof(administrator.id, pending, verified);
+      const target = this.recoveryTarget(pending.targetMember.id, pending.targetMember.username);
+      if (target.authenticationVersion !== pending.targetMember.authenticationVersion)
+        throw new KeyAuthenticationError("Member changed. Refresh and retry.");
+      const member = tx.select().from(users).where(eq(users.id, target.id)).get()!;
+      tx.update(users).set({ keyLoginEnabled: false }).where(eq(users.id, target.id)).run();
+      revokeAccountAuthentication(tx, target.id);
+      tx.delete(webauthnCeremonies).where(eq(webauthnCeremonies.browserHash, pending.browserHash)).run();
+      return member.keyLoginEnabled ? "disabled" : "already-disabled";
+    }, { behavior: "immediate" });
   }
   passwordChangeAccount(sessionHash: string) {
     const session = this.session(sessionHash);
-    const user = this.database.select().from(users).where(eq(users.id, session.userId)).get()!;
+    const user = this.#account(session.userId)!;
     if (!user.keyLoginEnabled || !this.credentials(user.id).length)
       throw new KeyAuthenticationError("Use your current password in password mode.");
     return user;
@@ -113,16 +151,12 @@ export class WebAuthnStorage {
     );
   }
   accountForPending(pending: PendingKeyCeremony, boundary: WebAuthnBoundary) {
-    const user = this.database
-      .select()
-      .from(users)
-      .where(eq(users.id, pending.userId))
-      .get();
+    const user = this.#account(pending.userId);
     if (
       !user ||
       user.accessState !== "active" ||
       user.authenticationVersion !== pending.authenticationVersion ||
-      ([
+      (!pending.purpose.startsWith("recover-member-") && ([
         "login",
         "add-proof",
         "register-add",
@@ -132,7 +166,7 @@ export class WebAuthnStorage {
         "password-change",
       ].includes(pending.purpose)
         ? !user.keyLoginEnabled
-        : user.keyLoginEnabled)
+        : user.keyLoginEnabled))
     )
       throw new KeyAuthenticationError(
         "Account or sign-in policy changed. Retry.",
@@ -179,6 +213,7 @@ export class WebAuthnStorage {
             sessionHash: pending.sessionHash ?? null,
             stagedCredential: pending.stagedCredential ?? null,
             targetCredentialId: pending.targetCredentialId ?? null,
+            targetMember: pending.targetMember ?? null,
           },
           boundary,
         );
@@ -247,11 +282,7 @@ export class WebAuthnStorage {
   }
   status(sessionHash: string) {
     const session = this.session(sessionHash);
-    const user = this.database
-      .select()
-      .from(users)
-      .where(eq(users.id, session.userId))
-      .get()!;
+    const user = this.#account(session.userId)!;
     return {
       enabled: user.keyLoginEnabled,
       credentials: this.credentials(user.id).map(({ id, name, createdAt }) => ({

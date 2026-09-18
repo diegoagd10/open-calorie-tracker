@@ -28,17 +28,19 @@ import { PersistentRateLimiter } from "./rate-limiter.server";
 function keyEvent(
   purpose: PendingKeyCeremony["purpose"] | PendingKeyCeremony["purpose"][],
 ) {
-  if (Array.isArray(purpose))
-    return purpose.every((action) => action.startsWith("remove-"))
-      ? "key_removal"
-      : "key_registration";
-  if (purpose === "login") return "key_login";
-  if (purpose === "password-change") return "fallback_password_change";
-  if (purpose === "remove-key" || purpose === "remove-password")
-    return "key_removal";
-  return ["enable", "disable", "re-enable"].includes(purpose)
-    ? "key_login_policy"
-    : "key_registration";
+  if (Array.isArray(purpose)) return keyEvent(purpose[0]);
+  const events: Record<string, string> = {
+    login: "key_login",
+    "password-change": "fallback_password_change",
+    "remove-key": "key_removal",
+    "remove-password": "key_removal",
+    "recover-member-key": "member_key_recovery",
+    "recover-member-password": "member_key_recovery",
+    enable: "key_login_policy",
+    disable: "key_login_policy",
+    "re-enable": "key_login_policy",
+  };
+  return events[purpose] ?? "key_registration";
 }
 function keyOrigin(): WebAuthnBoundary {
   const url = new URL(applicationOrigin());
@@ -314,6 +316,45 @@ export class KeyAuthenticationService {
     );
     return options;
   }
+  async beginMemberRecovery(token: string, browser: string, id: number, username: string, method: "password" | "key") {
+    const administrator = this.#storage.recoveryAdministrator(hashOpaqueToken(token));
+    if (!this.#limits.consume("member-key-recovery", String(administrator.id), 5, 15 * 60_000))
+      throw new KeyAuthenticationError("Too many recovery attempts. Try again later.");
+    const targetMember = this.#storage.recoveryTarget(id, username);
+    const boundary = keyOrigin();
+    const credentials = this.#storage.credentials(administrator.id);
+    if (method === "key" && !credentials.length)
+      throw new KeyAuthenticationError("Verify your administrator password; no administrator keys are saved.");
+    const { generateAuthenticationOptions } = await import("@simplewebauthn/server");
+    const options = method === "key" ? await generateAuthenticationOptions({
+      rpID: boundary.rpId, userVerification: "required",
+      allowCredentials: credentials.map(({ id, transports }) => ({ id, transports })),
+    }) : undefined;
+    this.#storage.save({
+      browserHash: hashOpaqueToken(browser), userId: administrator.id,
+      purpose: method === "key" ? "recover-member-key" : "recover-member-password",
+      challenge: options?.challenge ?? randomBytes(32).toString("base64url"), ...boundary,
+      authenticationVersion: administrator.authenticationVersion, sessionHash: hashOpaqueToken(token),
+      targetMember, name: "", expiresAt: new Date(this.#now().getTime() + 5 * 60_000).toISOString(),
+    }, boundary);
+    return { options };
+  }
+  async finishMemberRecovery(token: string, browser: string, id: number, username: string, input: unknown) {
+    const pending = this.#take(hashOpaqueToken(browser), ["recover-member-key", "recover-member-password"], keyOrigin(), hashOpaqueToken(token));
+    try {
+      if (pending.targetMember?.id !== id || pending.targetMember.username !== username)
+        throw new KeyAuthenticationError("Wrong recovery target.");
+      let verified: VerifiedKeyAssertion | { passwordHash: string };
+      if (pending.purpose === "recover-member-key") verified = await this.#verifyAssertion(pending, input);
+      else verified = await this.#verifyPasswordProof(pending.userId, input);
+      const outcome = this.#storage.recoverMember(pending, verified, keyOrigin());
+      operationalLog("info", "member_key_recovery", { outcome, userId: pending.userId, targetUserId: id });
+      return outcome;
+    } catch {
+      operationalLog("info", "member_key_recovery", { outcome: "rejected", userId: pending.userId });
+      throw new KeyAuthenticationError("Member key recovery failed. No recovery was applied. Refresh and retry.");
+    }
+  }
   async beginPasswordChange(token: string, browser: string) {
     const user = this.#storage.passwordChangeAccount(hashOpaqueToken(token));
     if (!this.#limits.consume("key-password-change", String(user.id), 5, 15 * 60_000))
@@ -406,6 +447,14 @@ export class KeyAuthenticationService {
     );
     return { options };
   }
+  async #verifyPasswordProof(userId: number, input: unknown) {
+    const passwordHash = this.#storage.passwordHash(userId);
+    if (
+      !passwordHash || typeof input !== "string" || !input.length || input.length > 1024 ||
+      !(await verifyPassword(input, passwordHash)).matches
+    ) throw new KeyAuthenticationError("Current password rejected.");
+    return { passwordHash };
+  }
   async finishRemoval(
     token: string,
     browser: string,
@@ -424,18 +473,7 @@ export class KeyAuthenticationService {
       let verified: VerifiedKeyAssertion | { passwordHash: string };
       if (pending.purpose === "remove-key") {
         verified = await this.#verifyAssertion(pending, input);
-      } else {
-        const passwordHash = this.#storage.passwordHash(pending.userId);
-        if (
-          !passwordHash ||
-          typeof input !== "string" ||
-          !input.length ||
-          input.length > 1024 ||
-          !(await verifyPassword(input, passwordHash)).matches
-        )
-          throw new KeyAuthenticationError("Current password rejected.");
-        verified = { passwordHash };
-      }
+      } else verified = await this.#verifyPasswordProof(pending.userId, input);
       this.#storage.removeCredential(pending, target, verified, keyOrigin());
       operationalLog("info", "key_removal", {
         outcome: "succeeded",

@@ -165,3 +165,20 @@ export function keyProviderError(error: unknown): string {
     ? error.message
     : "Your key provider is unavailable. Retry.";
 }
+
+export async function recoverMemberKeyLogin(csrf: string, targetUserId: number, username: string, confirmationUsername: string, method: "password" | "key", password: string) {
+  activePrompt = new AbortController();
+  const prompt = activePrompt;
+  const target = { targetUserId, username, confirmationUsername };
+  try {
+    const verification = await post<{ options?: PublicKeyCredentialRequestOptionsJSON }>(csrf, "recovery-start", { ...target, proofMethod: method });
+    prompt.signal.throwIfAborted();
+    const proof = verification.options
+      ? { response: await startAuthentication({ optionsJSON: verification.options }) }
+      : { password };
+    return await post<{ outcome: "disabled" | "already-disabled"; nextPath: string }>(csrf, "recovery-finish", { ...target, ...proof });
+  } catch (error) {
+    await post(csrf, "cancel").catch(() => {});
+    throw error;
+  }
+}
