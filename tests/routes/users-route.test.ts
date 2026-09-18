@@ -129,6 +129,7 @@ test("member directory authorizes anonymous, member, and administrator requests"
   expect(Object.keys(administrator).sort()).toEqual([
     "csrfToken",
     "members",
+    "recoveryPublicUrl",
     "today",
   ]);
   expect(administrator.csrfToken).not.toBe("");

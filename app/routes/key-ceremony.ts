@@ -11,6 +11,7 @@ import {
   serializeSessionCookie,
   requirePreAuthenticationCsrf,
   requireValidOrigin,
+  requireAdministratorSession,
 } from "../auth/http.server";
 import { KeyAuthenticationError } from "../database/webauthn.server";
 import { getAuthenticationService } from "../auth/runtime.server";
@@ -20,6 +21,8 @@ import { fallbackPasswordChangeSchema, usernameSchema } from "../auth/validation
 const bodySchema = z
   .object({
     action: z.enum([
+      "recovery-start",
+      "recovery-finish",
       "password-start",
       "password-finish",
       "remove-start",
@@ -38,6 +41,9 @@ const bodySchema = z
       "cancel",
     ]),
     csrfToken: z.string().max(128),
+    targetUserId: z.number().int().positive().safe().optional(),
+    confirmationUsername: z.string().max(30).optional(),
+    proofMethod: z.enum(["password", "key"]).optional(),
     name: z.string().max(80).optional(),
     credentialId: z.string().min(1).max(2048).optional(),
     password: z.string().min(1).max(1024).optional(),
@@ -88,6 +94,7 @@ export async function action({ request }: Route.ActionArgs) {
   }
   const service = getAuthenticationService();
   const authenticatedAction =
+    input.action.startsWith("recovery") ||
     input.action.startsWith("password") ||
     input.action.startsWith("remove") ||
     input.action.startsWith("disable") ||
@@ -96,7 +103,9 @@ export async function action({ request }: Route.ActionArgs) {
     input.action.startsWith("addition") ||
     input.action === "enable-finish";
   const session = authenticatedAction
-    ? await (input.action.startsWith("password")
+    ? await (input.action.startsWith("recovery")
+        ? requireAdministratorSession(request)
+        : input.action.startsWith("password")
         ? getSessionForAccountAccess(request)
         : getSessionForApplicationAccess(request))
     : undefined;
@@ -136,6 +145,15 @@ export async function action({ request }: Route.ActionArgs) {
   );
   try {
     switch (input.action) {
+      case "recovery-start":
+      case "recovery-finish": {
+        if (!input.targetUserId || !input.username || input.confirmationUsername !== input.username)
+          throw new KeyAuthenticationError("Enter the member username exactly to confirm recovery.");
+        if (input.action === "recovery-start")
+          return Response.json(await service.keys.beginMemberRecovery(session!.token, browser, input.targetUserId, input.username, input.proofMethod ?? "password"), { headers });
+        const outcome = await service.keys.finishMemberRecovery(session!.token, browser, input.targetUserId, input.username, input.password ?? input.response);
+        return Response.json({ outcome, nextPath: "/settings/users" }, { headers });
+      }
       case "password-start":
         return Response.json({ options: await service.keys.beginPasswordChange(session!.token, browser) }, { headers });
       case "password-finish": {

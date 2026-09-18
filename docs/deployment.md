@@ -278,6 +278,22 @@ password. Replacement revokes older sessions and pending proofs and rotates the
 current session without extending its absolute deadline. This maintenance flow
 remains available to enrolled preview users when enrollment preview is turned off.
 
+Member recovery is available in Users on public HTTPS. An already signed-in
+administrator confirms the target username and freshly verifies their own password
+or a saved administrator key. The administrator password is accepted for this
+recovery action even in key mode; it never enables ordinary password sign-in or
+personal key/password changes. Recovery disables the member's key login, preserves
+their password and all saved keys, and atomically revokes their sessions and pending
+proofs across public/LAN entries. Disabled members remain disabled and mandatory
+password replacement remains required. Already-disabled recovery reports that
+state and still revokes remaining authentication. Invalid or stale targets must be
+refreshed and confirmed again. The five-attempt limit per administrator lasts
+15 minutes and persists across restarts. Recovery remains available if enrollment
+preview is turned off. After password sign-in, members can inspect retained keys,
+delete lost keys with fresh password proof, and re-enable using a retained working
+key. If the password is also lost, use the separate password-reset operation.
+Administrators cannot enroll or delete member keys through recovery.
+
 Automated verification uses real signed ES256 protocol fixtures, Chromium virtual
 authenticators, and a non-loopback HTTP listener. Actual YubiKey USB/NFC and
 Proton Pass extension/mobile enrollment and sign-in remain required before a

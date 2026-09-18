@@ -1476,3 +1476,129 @@ test("mode changes require saved credentials, matching current mode, preview and
   for (let n = 0; n < 8; n++) await f.service.keys.beginModeChange(current.token, "mode", false);
   await expect(new AuthenticationService(f.database.getClient(), () => new Date("2026-09-13T19:00:00.000Z")).keys.beginModeChange(current.token, "mode", false)).rejects.toThrow("Too many");
 });
+
+test("administrator password proof recovers a member without losing keys or allowing administrator password login", async () => {
+  const f = await fixture();
+  const member = await recoveryMember(f);
+  const administrator = await enroll(f.service, f.session.token);
+  const pending = await f.service.keys.beginLogin("recovery.member", "pending-member", "192.0.2.10");
+  await f.service.keys.beginMemberRecovery(administrator.session.token, "recovery-proof", member.session.user.id, "recovery.member", "password");
+  expect(await f.service.keys.finishMemberRecovery(administrator.session.token, "recovery-proof", member.session.user.id, "recovery.member", password)).toBe("disabled");
+  expect(await f.service.authenticate(member.session.token)).toBeUndefined();
+  await expect(f.service.keys.finishLogin("pending-member", member.key.assertion(pending, 2))).rejects.toThrow();
+  expect((await f.service.login("owner", password, "192.0.2.11")).ok).toBe(false);
+  const login = await f.service.login("recovery.member", password, "192.0.2.12");
+  if (!login.ok) throw new Error("recovered password login failed");
+  expect(f.service.keys.status(login.session.token)).toMatchObject({ enabled: false, credentials: [{ id: member.key.id }] });
+});
+
+async function recoveryMember(f: Awaited<ReturnType<typeof fixture>>, username = "recovery.member") {
+  const session = await seedAuthenticatedAccount(f.service, f.database.getClient(), username, password, "192.0.2.10");
+  const setup = new GoalSetupService(f.database.getClient());
+  setup.completeInitial(session.user.id, {
+    displayUnits: "us", timeZone: "UTC", calorieTargetMilliKcal: 2_000_000,
+    carbohydrateTargetMilligrams: 200_000, fatTargetMilligrams: 60_000, fiberTargetMilligrams: 30_000,
+    proteinTargetMilligrams: 100_000, sodiumMaximumMilligrams: 2_000, sugarMaximumMilligrams: 40_000, waterTargetMicroliters: 2_000_000,
+  });
+  return enroll(f.service, session.token);
+}
+
+test.each(["key", "password"] as const)("fresh administrator %s proof preserves disabled state and mandatory password replacement", async (method) => {
+  const f = await fixture();
+  const member = await recoveryMember(f);
+  const admin = await enroll(f.service, f.session.token);
+  expect((await f.service.resetMemberPassword(admin.session.user, "recovery.member", "temporary reset password")).ok).toBe(true);
+  expect((await f.service.disableMemberAccess(admin.session.user, "recovery.member", "recovery.member")).ok).toBe(true);
+  const proof = await f.service.keys.beginMemberRecovery(admin.session.token, "recovery", member.session.user.id, "recovery.member", method);
+  await f.service.keys.finishMemberRecovery(admin.session.token, "recovery", member.session.user.id, "recovery.member", method === "key" ? admin.key.assertion(proof.options!, 2) : password);
+  expect((await f.service.login("recovery.member", "temporary reset password", "192.0.2.15")).ok).toBe(false);
+  expect(f.service.listManageableMembers()).toEqual([expect.objectContaining({ username: "recovery.member", accessState: "disabled", passwordChangeRequired: true })]);
+  expect((await f.service.reactivateMemberAccess(admin.session.user, "recovery.member")).ok).toBe(true);
+  const login = await f.service.login("recovery.member", "temporary reset password", "192.0.2.16");
+  if (!login.ok) throw new Error("password login failed");
+  expect(login.session.user.passwordChangeRequired).toBe(true);
+  expect(f.service.keys.status(login.session.token)).toMatchObject({ enabled: false, credentials: [{ id: member.key.id }] });
+});
+
+test.each(["member", "anonymous", "old-session", "other-target", "other-purpose", "expired", "wrong-password", "stale-member", "stale-admin", "cancel", "bad-signature", "missing-verification", "disabled-admin", "wrong-session"])("member recovery rejects %s without changing credentials", async (failure) => {
+  const f = await fixture();
+  const member = await recoveryMember(f);
+  const admin = await enroll(f.service, f.session.token);
+  let denied: Promise<unknown>;
+  if (["member", "anonymous", "old-session"].includes(failure)) {
+    denied = f.service.keys.beginMemberRecovery(failure === "member" ? member.session.token : failure === "anonymous" ? "missing" : f.session.token, "recovery", member.session.user.id, "recovery.member", "password");
+  } else {
+    const useKey = ["other-purpose", "bad-signature", "missing-verification"].includes(failure);
+    let proof = await f.service.keys.beginMemberRecovery(admin.session.token, "recovery", member.session.user.id, "recovery.member", useKey ? "key" : "password");
+    if (failure === "other-purpose") proof = { options: await f.service.keys.beginModeChange(admin.session.token, "recovery", false) };
+    if (failure === "expired") f.advance(300_001);
+    if (failure === "cancel") f.service.keys.cancel("recovery");
+    if (failure === "stale-member") await f.service.resetMemberPassword(admin.session.user, "recovery.member", "temporary reset password");
+    if (failure === "stale-admin") f.service.revokeSession(admin.session.token);
+    if (failure === "disabled-admin") f.database.getClient().update(users).set({ accessState: "disabled" }).where(eq(users.id, admin.session.user.id)).run();
+    const input = useKey ? admin.key.assertion(proof.options!, 2, failure === "bad-signature" ? { badSignature: true } : failure === "missing-verification" ? { flags: 1 } : {}) : failure === "wrong-password" ? "wrong password" : password;
+    denied = f.service.keys.finishMemberRecovery(failure === "wrong-session" ? f.session.token : admin.session.token, "recovery", failure === "other-target" ? f.session.user.id : member.session.user.id, "recovery.member", input);
+  }
+  await expect(denied).rejects.toThrow();
+  await expect(f.service.keys.finishMemberRecovery(admin.session.token, "recovery", member.session.user.id, "recovery.member", password)).rejects.toThrow();
+  expect((await f.service.login("recovery.member", password, "192.0.2.18")).ok).toBe(false);
+  const keyLogin = await f.service.keys.beginLogin("recovery.member", "after-denial", "192.0.2.18");
+  const session = await f.service.keys.finishLogin("after-denial", member.key.assertion(keyLogin, 2));
+  expect(f.service.keys.status(session.token)).toMatchObject({ enabled: true, credentials: [{ id: member.key.id }] });
+});
+
+test.each(["UPDATE OF key_login_enabled ON users", "DELETE ON sessions", "DELETE ON webauthn_ceremonies"])("member recovery rolls back persistence and revocation failure: %s", async (operation) => {
+  const f = await fixture();
+  const member = await recoveryMember(f);
+  await f.service.keys.beginMemberRecovery(f.session.token, "recovery", member.session.user.id, "recovery.member", "password");
+  f.database.getClient().$client.exec(`CREATE TRIGGER refuse_recovery BEFORE ${operation} BEGIN SELECT RAISE(ABORT, 'storage failure'); END`);
+  await expect(f.service.keys.finishMemberRecovery(f.session.token, "recovery", member.session.user.id, "recovery.member", password)).rejects.toThrow();
+  f.database.getClient().$client.exec("DROP TRIGGER refuse_recovery");
+  expect(await f.service.authenticate(member.session.token)).toBeDefined();
+  expect(f.service.keys.status(member.session.token)).toMatchObject({ enabled: true, credentials: [{ id: member.key.id }] });
+  expect((await f.service.verifyCredentials("recovery.member", password)).matches).toBe(true);
+});
+
+test("recovery consumes only its scoped proof, reports already-disabled honestly and never authorizes personal mutations", async () => {
+  const f = await fixture();
+  const member = await recoveryMember(f);
+  const admin = await enroll(f.service, f.session.token);
+  await f.service.keys.beginMemberRecovery(admin.session.token, "recover", member.session.user.id, "recovery.member", "password");
+  await expect(f.service.keys.finishRemoval(admin.session.token, "recover", admin.key.id, password)).rejects.toThrow();
+  expect(f.service.keys.status(admin.session.token)).toMatchObject({ enabled: true, credentials: [{ id: admin.key.id }] });
+  await f.service.keys.beginMemberRecovery(admin.session.token, "recover-password", member.session.user.id, "recovery.member", "password");
+  await expect(f.service.keys.finishPasswordChange(admin.session.token, "recover-password", password, "replacement fallback password")).rejects.toThrow();
+  const proof = await f.service.keys.beginMemberRecovery(admin.session.token, "recover", member.session.user.id, "recovery.member", "key");
+  const inFlightLogin = await f.service.keys.beginLogin("recovery.member", "in-flight", "192.0.2.19");
+  const authenticating = f.service.keys.finishLogin("in-flight", member.key.assertion(inFlightLogin, 2)).catch(() => undefined);
+  // Whichever assertion commits first, recovery must leave no usable stale session.
+  await f.service.keys.finishMemberRecovery(admin.session.token, "recover", member.session.user.id, "recovery.member", admin.key.assertion(proof.options!, 2));
+  const staleResult = await authenticating.catch(() => undefined);
+  expect(staleResult ? await f.service.authenticate(staleResult.token) : undefined).toBeUndefined();
+  await f.service.keys.beginMemberRecovery(admin.session.token, "again", member.session.user.id, "recovery.member", "password");
+  expect(await f.service.keys.finishMemberRecovery(admin.session.token, "again", member.session.user.id, "recovery.member", password)).toBe("already-disabled");
+  const login = await f.service.login("recovery.member", password, "192.0.2.20");
+  if (!login.ok) throw new Error("password login failed");
+  const enable = await f.service.keys.beginModeChange(login.session.token, "reuse", true);
+  const reused = await f.service.keys.finishModeChange(login.session.token, "reuse", true, member.key.assertion(enable, 3));
+  expect(f.service.keys.status(reused!.token)).toMatchObject({ enabled: true, credentials: [{ id: member.key.id }] });
+});
+
+test("recovery limits are durable and security outcomes omit proof material", async () => {
+  const f = await fixture();
+  const member = await recoveryMember(f);
+  vi.stubEnv("NODE_ENV", "production");
+  const log = vi.spyOn(console, "log").mockImplementation(() => {});
+  for (let n = 0; n < 5; n++) {
+    await f.service.keys.beginMemberRecovery(f.session.token, "recover", member.session.user.id, "recovery.member", "password");
+    await expect(f.service.keys.finishMemberRecovery(f.session.token, "recover", member.session.user.id, "recovery.member", "incorrect password")).rejects.toThrow();
+  }
+  await expect(new AuthenticationService(f.database.getClient(), () => new Date("2026-09-13T19:00:00.000Z")).keys.beginMemberRecovery(f.session.token, "recover", member.session.user.id, "recovery.member", "password")).rejects.toThrow("Too many");
+  f.advance(15 * 60_000);
+  await f.service.keys.beginMemberRecovery(f.session.token, "recover", member.session.user.id, "recovery.member", "password");
+  await f.service.keys.finishMemberRecovery(f.session.token, "recover", member.session.user.id, "recovery.member", password);
+  const output = JSON.stringify(log.mock.calls);
+  expect(output).toContain("member_key_recovery");
+  for (const secret of [password, "incorrect password", f.session.token, member.session.token, member.key.id]) expect(output).not.toContain(secret);
+  log.mockRestore();
+});

@@ -22,6 +22,7 @@ import SecuritySettings, {
   meta as securityMeta,
 } from "../../app/routes/settings.security";
 import Login from "../../app/routes/login";
+import Users, { loader as usersLoader } from "../../app/routes/settings.users";
 import * as browserProvider from "@simplewebauthn/browser";
 import { action } from "../../app/routes/key-ceremony";
 import { loader as securityLoader } from "../../app/routes/settings.security";
@@ -1469,4 +1470,106 @@ test("personal removal rejects another owner's target and another session's proo
   const audit = log.mock.calls.map((call) => String(call[0])).join("\n");
   expect(audit).toContain("key_removal");
   for (const secret of [owner.key.id, options.challenge, response.response.signature, current.token, password]) expect(audit).not.toContain(secret);
+});
+
+test("member recovery routes require administrator authority, target confirmation, CSRF and fresh password proof", async () => {
+  const service = getAuthenticationService();
+  getApplicationDatabase().getClient().$client.exec("DELETE FROM users WHERE role = 'admin'");
+  const administrator = await account("recovery.route.admin", "admin");
+  const member = await enabledAccount("recovery.route.member");
+  const memberSession = (await service.authenticate(parseCookies(member.enabledCookie).get("__Host-calorie_session")))!;
+  const adminCookie = serializeSessionCookie(administrator).split(";", 1)[0];
+  const fields = { csrfToken: administrator.csrfToken, targetUserId: memberSession.user.id, username: "recovery.route.member", confirmationUsername: "recovery.route.member", proofMethod: "password" };
+  await expect(action(args(post({ ...fields, action: "recovery-start" })))).rejects.toMatchObject({ status: 302 });
+  await expect(action(args(post({ ...fields, action: "recovery-start", csrfToken: memberSession.csrfToken }, member.enabledCookie)))).rejects.toMatchObject({ status: 404 });
+  await expect(action(args(post({ ...fields, action: "recovery-start", csrfToken: "bad" }, adminCookie)))).rejects.toMatchObject({ status: 403 });
+  const unconfirmed = await action(args(post({ ...fields, action: "recovery-start", confirmationUsername: "wrong" }, adminCookie)));
+  expect(unconfirmed.status).toBe(400);
+  const start = await action(args(post({ ...fields, action: "recovery-start" }, adminCookie)));
+  expect(start.status).toBe(200);
+  expect(await start.json()).toEqual({});
+  const finish = await action(args(post({ ...fields, action: "recovery-finish", password }, `${adminCookie}; ${cookies(start)}`)));
+  expect(finish.status).toBe(200);
+  expect(await finish.json()).toEqual({ outcome: "disabled", nextPath: "/settings/users" });
+  expect(finish.headers.get("Set-Cookie")).not.toContain("__Host-calorie_session=");
+  expect(await service.authenticate(memberSession.token)).toBeUndefined();
+  const login = await service.login("recovery.route.member", password, "192.0.2.95");
+  if (!login.ok) throw new Error("password recovery failed");
+  expect(service.keys.status(login.session.token)).toMatchObject({ enabled: false, credentials: [{ id: member.key.id }] });
+});
+
+test.each(["password", "key"] as const)("member recovery UI retries fresh %s proof, prevents duplicate submission and reports already-disabled mode", async (method) => {
+  vi.mocked(browserProvider.startAuthentication).mockReset();
+  getApplicationDatabase().getClient().$client.exec("DELETE FROM users WHERE role = 'admin'");
+  const admin = await enabledAccount(`recovery.ui.admin.${method}`, "admin");
+  const member = await enabledAccount(`recovery.ui.member.${method}`);
+  const service = getAuthenticationService();
+  const loaded = await usersLoader(args(new Request(`${origin}/settings/users`, { headers: { Cookie: admin.enabledCookie } }), "/settings/users"));
+  const renderer = await renderPage(Users, "/settings/users", loaded);
+  const transport = browserTransport(admin.enabledCookie);
+  const trigger = { focus: vi.fn() };
+  const open = async () => { await act(async () => {
+    (renderer.root.findByProps({ "aria-label": `Disable key login for recovery.ui.member.${method}` }).props as { onClick(event: object): void }).onClick({ currentTarget: trigger });
+  }); };
+  const cancel = () => renderer.root.findAllByType("button").find((node) => node.children.includes("Cancel recovery"))!;
+  await open();
+  await act(async () => { (cancel().props as { onClick(): void }).onClick(); });
+  expect(renderer.root.findAllByType("dialog")).toHaveLength(0);
+  expect(trigger.focus).toHaveBeenCalledOnce();
+  await open();
+  await act(async () => { (renderer.root.findByType("dialog").props as { onCancel(): void }).onCancel(); });
+  expect(renderer.root.findAllByType("dialog")).toHaveLength(0);
+  await open();
+  const submit = async (fields: object, proofMethod: string | null = method) => {
+    await act(async () => {
+      (renderer.root.findByType("dialog").findByType("form").props as {
+        onSubmit(event: object): void;
+      }).onSubmit({ preventDefault() {}, currentTarget: fields, nativeEvent: { submitter: proofMethod ? { getAttribute: () => proofMethod } : null } });
+    });
+  };
+  const fields = { confirmationUsername: `recovery.ui.member.${method}`, administratorPassword: password };
+  await submit({}, null);
+  await vi.waitFor(async () => { await act(async () => {}); expect(allText(renderer)).toContain("exactly to confirm"); });
+  if (method === "key") vi.mocked(browserProvider.startAuthentication).mockRejectedValueOnce(new DOMException("cancelled", "NotAllowedError"));
+  await submit({ ...fields, administratorPassword: "incorrect password" });
+  await vi.waitFor(async () => { await act(async () => {}); expect(renderer.root.findAllByProps({ role: "alert" })).toHaveLength(1); });
+  expect(service.keys.status(parseCookies(member.enabledCookie).get("__Host-calorie_session")!).enabled).toBe(true);
+  let continueProof!: () => void;
+  const proceed = new Promise<void>((resolve) => { continueProof = resolve; });
+  const originalFetch = globalThis.fetch;
+  vi.stubGlobal("fetch", async (url: string, init: RequestInit) => {
+    if ((JSON.parse(String(init.body)) as { action: string }).action === "recovery-finish") await proceed;
+    return originalFetch(url, init);
+  });
+  vi.mocked(browserProvider.startAuthentication).mockImplementation(async ({ optionsJSON }) => admin.key.assertion(optionsJSON, 2));
+  const attemptsBefore = transport.outcomes.filter((outcome) => outcome.action === "recovery-start").length;
+  await submit(fields);
+  await submit(fields); // A second click while proof is pending must have no effect.
+  expect(allText(renderer)).toContain("Verifying administrator proof");
+  expect(transport.outcomes.filter((outcome) => outcome.action === "recovery-start")).toHaveLength(attemptsBefore + 1);
+  continueProof();
+  await vi.waitFor(async () => { await act(async () => {}); expect(allText(renderer)).toContain("key login disabled. Password and saved keys are preserved"); });
+  expect(renderer.root.findAllByType("dialog")).toHaveLength(0);
+  expect(await service.authenticate(parseCookies(member.enabledCookie).get("__Host-calorie_session"))).toBeUndefined();
+  vi.mocked(browserProvider.startAuthentication).mockImplementation(async ({ optionsJSON }) => admin.key.assertion(optionsJSON, 3));
+  await open();
+  await submit(fields);
+  await vi.waitFor(async () => { await act(async () => {}); expect(allText(renderer)).toContain("key login was already disabled"); });
+  await open();
+  await act(async () => { (renderer.root.findByType("dialog").props as { onClose(): void }).onClose(); });
+  expect(renderer.root.findAllByType("dialog")).toHaveLength(0);
+  await act(async () => renderer.unmount());
+});
+
+test("LAN member management guides administrator recovery to public HTTPS without proof tokens", async () => {
+  getApplicationDatabase().getClient().$client.exec("DELETE FROM users WHERE role = 'admin'");
+  const admin = await account("recovery.lan.admin", "admin");
+  await account("recovery.lan.member");
+  const lanOrigin = "http://192.168.50.12:3000";
+  const loaded = await requestPolicyContext.run({ entry: "lan", origin: lanOrigin }, () => usersLoader(args(new Request(`${lanOrigin}/settings/users`, { headers: { Cookie: `calorie_lan_session=${admin.token}` } }), "/settings/users")));
+  expect(loaded.recoveryPublicUrl).toBe(`${origin}/settings/users`);
+  const renderer = await renderPage(Users, "/settings/users", loaded);
+  expect(renderer.root.findAllByType("a").some((node) => node.props.href === `${origin}/settings/users`)).toBe(true);
+  expect(renderer.root.findAllByType("button").some((node) => String(node.props["aria-label"]).startsWith("Disable key login"))).toBe(false);
+  await act(async () => renderer.unmount());
 });
