@@ -1191,6 +1191,27 @@ test("password-change failures are persisted and limited to five per 15 minutes"
   fixture.applicationDatabase.close();
 });
 
+test("password-mode replacement rolls back when failure-counter cleanup cannot persist", async () => {
+  const f = await createFixture();
+  const session = await seedAuthenticatedAccount(f.service, f.database, "cleanup.password", password, "203.0.113.153");
+  f.database.$client.exec("CREATE TRIGGER refuse_cleanup BEFORE DELETE ON rate_limit_counters BEGIN SELECT RAISE(ABORT, 'storage failure'); END");
+  await expect(f.service.changePassword(session, password, "replacement fallback password")).rejects.toThrow();
+  f.database.$client.exec("DROP TRIGGER refuse_cleanup");
+  expect((await f.service.verifyCredentials("cleanup.password", password)).matches).toBe(true);
+  expect(await f.service.authenticate(session.token)).toBeDefined();
+  f.applicationDatabase.close();
+});
+
+test("password replacement rejects an expired session and cannot substitute a later absolute deadline", async () => {
+  const f = await createFixture();
+  const session = await seedAuthenticatedAccount(f.service, f.database, "deadline.password", password, "203.0.113.153");
+  expect(await f.service.changePassword({ ...session, absoluteExpiresAt: new Date("2027-08-29T12:00:00.000Z") }, password, "replacement fallback password")).toEqual({ ok: false, error: "invalid-session" });
+  f.setNow("2026-09-04T12:00:00.000Z");
+  expect(await f.service.changePassword(session, password, "replacement fallback password")).toEqual({ ok: false, error: "invalid-session" });
+  expect((await f.service.verifyCredentials("deadline.password", password)).matches).toBe(true);
+  f.applicationDatabase.close();
+});
+
 test("password rotation preserves the original absolute session expiry", async () => {
   const fixture = await createFixture();
   const registration = await fixture.service.register(

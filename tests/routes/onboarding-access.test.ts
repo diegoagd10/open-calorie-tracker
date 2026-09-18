@@ -125,6 +125,7 @@ test("restricted sessions can open only password change and are denied every ord
     routeArgs(request("/account/password"), "/account/password"),
   );
   expect(password).toEqual({
+    keyLoginEnabled: false,
     csrfToken: restrictedCsrf,
     passwordChangeRequired: true,
     username: "restricted.member",

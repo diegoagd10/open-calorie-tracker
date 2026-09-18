@@ -1,11 +1,13 @@
 import { invalidateAccountProofs } from "./authentication-policy.server";
-import { and, eq } from "drizzle-orm";
+import { and, eq, gt } from "drizzle-orm";
 
 import type { ApplicationDatabaseClient } from "./database.server";
 import { passwordCredentials, sessions, users } from "./schema.server";
 
 export type PasswordAndSessionReplacement = {
   currentTokenHash: string;
+  expectedPasswordHash: string;
+  expectedAuthenticationVersion: number;
   nextPasswordHash: string;
   nextSession: typeof sessions.$inferInsert;
   updatedAt: string;
@@ -138,15 +140,25 @@ export function findCredentialByUsername(
 export function replacePasswordAndSessions(
   database: ApplicationDatabaseClient,
   replacement: PasswordAndSessionReplacement,
+  clearFailureAttempts: () => void,
 ): boolean {
   return database.transaction((transaction) => {
     const currentSession = transaction
       .select({ tokenHash: sessions.tokenHash })
       .from(sessions)
+      .innerJoin(users, eq(users.id, sessions.userId))
+      .innerJoin(passwordCredentials, eq(passwordCredentials.userId, users.id))
       .where(
         and(
           eq(sessions.tokenHash, replacement.currentTokenHash),
           eq(sessions.userId, replacement.userId),
+          eq(users.accessState, "active"),
+          eq(users.keyLoginEnabled, false),
+          eq(users.authenticationVersion, replacement.expectedAuthenticationVersion),
+          eq(passwordCredentials.passwordHash, replacement.expectedPasswordHash),
+          gt(sessions.idleExpiresAt, replacement.updatedAt),
+          gt(sessions.absoluteExpiresAt, replacement.updatedAt),
+          eq(sessions.absoluteExpiresAt, replacement.nextSession.absoluteExpiresAt),
         ),
       )
       .get();
@@ -171,6 +183,7 @@ export function replacePasswordAndSessions(
       .run();
     transaction.insert(sessions).values(replacement.nextSession).run();
     invalidateAccountProofs(transaction, replacement.userId);
+    clearFailureAttempts();
     return true;
   });
 }
