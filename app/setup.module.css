@@ -3,9 +3,7 @@
   min-height: 100vh;
   place-items: center;
   padding: 1rem;
-  background:
-    linear-gradient(rgb(16 42 67 / 48%), rgb(16 42 67 / 48%)),
-    var(--color-background);
+  background: var(--color-background);
 }
 
 .panel {
@@ -31,7 +29,7 @@
 }
 
 .progress span:first-child {
-  background: #16803a;
+  background: var(--green-dark);
 }
 
 .header {
@@ -106,13 +104,13 @@
 }
 
 .segmented input:checked + span {
-  border-color: #16803a;
-  color: #126c24;
-  background: #e8f5e9;
+  border-color: var(--green);
+  color: var(--green-strong);
+  background: var(--green-soft);
 }
 
 .segmented input:focus-visible + span {
-  outline: 3px solid #8ec5ff;
+  outline: 3px solid var(--focus);
   outline-offset: 2px;
 }
 
@@ -132,7 +130,7 @@
   border: 1px solid var(--color-border);
   border-radius: 0.65rem;
   color: var(--color-text);
-  background: var(--color-surface);
+  background: var(--ground);
   font: inherit;
   font-size: 1rem;
   font-weight: 400;
@@ -172,7 +170,7 @@
   border: 0;
   border-radius: 0.65rem;
   color: white;
-  background: #126c24;
+  background: var(--green-dark);
   font: inherit;
   font-size: 0.8rem;
   font-weight: 750;
@@ -180,15 +178,15 @@
 }
 
 .submit:hover {
-  background: #105f1e;
+  background: var(--green-hover);
 }
 
 .error {
   margin: 0;
   padding: 0.75rem;
   border-radius: 0.65rem;
-  color: #8a1c14;
-  background: #fff1f0;
+  color: var(--danger);
+  background: var(--danger-soft);
   font-size: 0.8rem;
 }
 

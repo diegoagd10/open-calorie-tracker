@@ -26,7 +26,7 @@
 
 .method:hover {
   border-color: var(--green);
-  background: #f4f9f4;
+  background: var(--surface-soft);
 }
 
 .method:focus-visible,
@@ -55,8 +55,8 @@
   height: 3.25rem;
   place-items: center;
   border-radius: 1rem;
-  color: var(--green-dark);
-  background: #edf6ed;
+  color: var(--green-strong);
+  background: var(--green-soft);
 }
 
 .icon svg {

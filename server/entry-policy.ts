@@ -1,3 +1,4 @@
+import { readTheme, themeColors } from "../app/appearance/theme";
 import { isIP } from "node:net";
 import type { Request, Response, RequestHandler } from "express";
 
@@ -49,7 +50,9 @@ function rejectPublicConnection(request: Request, response: Response): void {
     reason: request.get("cf-connecting-ip") === undefined ? "missing-visitor-ip" : "invalid-visitor-ip",
     requestId: response.locals.requestId,
   });
+  const theme = readTheme(request.get("cookie"));
+  const colors = themeColors[theme];
   response.status(503).set("Cache-Control", "no-store").type("html").send(
-    `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Connection verification failed</title><style>body{margin:0;background:#f8f7f3;color:#242722;font:1rem system-ui,sans-serif}main{max-width:36rem;margin:12vh auto;padding:2rem}h1{font-size:1.6rem}p{line-height:1.6}a{color:inherit}</style></head><body><main><h1>Connection verification failed</h1><p>${verificationMessage}</p><a href="/">Try again</a></main></body></html>`,
+    `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="${colors.surface}"><title>Connection verification failed</title><style>:root{color-scheme:${theme}}body{margin:0;background:${colors.background};color:${colors.text};font:1rem system-ui,sans-serif}main{max-width:36rem;margin:12vh auto;padding:2rem}h1{font-size:1.6rem}p{line-height:1.6}a{color:${colors.link}}a:focus-visible{outline:2px solid ${colors.focus};outline-offset:3px}</style></head><body><main><h1>Connection verification failed</h1><p>${verificationMessage}</p><a href="/">Try again</a></main></body></html>`,
   );
 }

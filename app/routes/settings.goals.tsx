@@ -2,6 +2,7 @@ import { useState } from "react";
 import { data, Form, redirect } from "react-router";
 
 import type { Route } from "./+types/settings.goals";
+import { AppearanceSelector } from "../appearance/selector";
 import { AppNavigation } from "../app-navigation";
 import { SettingsDestinations } from "../settings-destinations";
 import {
@@ -234,6 +235,8 @@ export default function Goals({ actionData, loaderData }: Route.ComponentProps) 
           csrfToken={loaderData.csrfToken}
           isAdministrator={loaderData.isAdministrator}
         />
+
+        <AppearanceSelector />
 
         <Form className={styles.settingsGroup} method="post" noValidate>
           <input

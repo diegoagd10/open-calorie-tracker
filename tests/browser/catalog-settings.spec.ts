@@ -124,7 +124,7 @@ test("terminal imports notify connected clients while a member searches and logs
   for (const client of clients) await expect(toast(client)).toHaveText("Open Food Facts catalog updated.");
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
   const visibleToast = notifications.locator('[data-phase="succeeded"]');
-  await expect(visibleToast).toHaveCSS("background-color", "rgb(237, 249, 240)");
+  await expect(visibleToast).toHaveCSS("background-color", "rgb(29, 57, 37)");
   expect((await visibleToast.boundingBox())!.y).toBeLessThan(30);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.screenshot({ path: testInfo.outputPath("catalog-notifications-mobile.png") });
@@ -150,7 +150,7 @@ test("terminal imports notify connected clients while a member searches and logs
   await commandImport("open-food-facts", "corrupt.csv.gz", failingReplacement, false);
   await page.goto("/settings/goals");
   await expect(notifications).toHaveText("Open Food Facts import failed. Inspect the terminal and retry the command.");
-  await expect(notifications.locator('[data-phase="failed"]')).toHaveCSS("background-color", "rgb(255, 241, 238)");
+  await expect(notifications.locator('[data-phase="failed"]')).toHaveCSS("background-color", "rgb(61, 32, 34)");
   await notifications.getByRole("button", { name: "Dismiss notification" }).click();
   for (const member of members) {
     await expect(toast(member)).toHaveCount(0);

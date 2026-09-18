@@ -53,6 +53,7 @@
           "app/users.module.css"
         ]
       },
+      { "name": "appearance", "patterns": ["app/appearance/**"] },
       { "name": "browser-auth", "patterns": ["app/auth/**/*.client.ts"] },
       {
         "name": "auth",
@@ -138,10 +139,12 @@
           "goals",
           "server",
           "setup",
-          "water-event"
+          "water-event",
+          "appearance"
         ]
       },
       { "from": "auth", "allow": ["database", "server"] },
+      { "from": "appearance", "allow": [], "allowTypeOnly": ["web"] },
       { "from": "browser-auth", "allow": [] },
       { "from": "catalog", "allow": ["server", "database", "catalog-management"] },
       { "from": "database", "allow": [], "allowTypeOnly": ["catalog", "catalog-management"] },
@@ -161,7 +164,7 @@
         "from": "water-event",
         "allow": ["database", "food-log", "setup"]
       },
-      { "from": "server", "allow": ["auth", "database", "photo-analysis", "catalog-management"] },
+      { "from": "server", "allow": ["auth", "database", "photo-analysis", "catalog-management", "appearance"] },
       { "from": "photo-analysis", "allow": ["catalog", "database", "food-entry", "food-log"] },
       {
         "from": "tests",
@@ -178,7 +181,8 @@
           "setup",
           "tooling",
           "water-event",
-          "web"
+          "web",
+          "appearance"
         ]
       },
       { "from": "tooling", "allow": ["auth"] }

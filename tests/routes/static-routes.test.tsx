@@ -34,6 +34,7 @@ describe("static route contracts", () => {
   test("the complete public route table maps URLs to their modules", () => {
     expect(routeConfig).toEqual([
       { file: "./routes/home.tsx", index: true },
+      { children: undefined, file: "./routes/appearance.ts", path: "appearance" },
       { children: undefined, file: "./routes/catalog-notifications.ts", path: "catalog-notifications" },
       { children: undefined, file: "./routes/photo-analysis.ts", path: "photo-analysis" },
       { children: undefined, file: "./routes/key-ceremony.ts", path: "key-ceremony" },
@@ -73,6 +74,7 @@ describe("static route contracts", () => {
         file: "./routes/health.ready.ts",
         path: "health/ready",
       },
+      { children: undefined, file: "./routes/not-found.tsx", path: "*" },
     ]);
   });
 });
