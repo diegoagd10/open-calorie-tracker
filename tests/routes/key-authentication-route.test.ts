@@ -1428,7 +1428,7 @@ test.each([true, false])("removal UI in key mode=%s explains final-key passwords
   const renderer = await renderPage(SecuritySettings, "/settings/security", loaded);
   const transport = browserTransport(cookie);
   transport.installNavigation();
-  const button = (name: string) => renderer.root.findAllByType("button").find((node) => node.children.includes(name))!;
+  const button = (name: string) => renderer.root.findAllByType("button").find((node) => (node.props["aria-label"] ?? node.children.join("")) === name)!;
   await act(async () => { (button("Delete My key").props as { onClick(): void }).onClick(); });
   expect(allText(renderer)).toContain("Deleting your final key restores password sign-in");
   await act(async () => { (button("Cancel deletion").props as { onClick(): void }).onClick(); });
