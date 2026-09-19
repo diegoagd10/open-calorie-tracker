@@ -8,6 +8,7 @@ import {
   getClientIp,
   getSessionForApplicationAccess,
   loadPreAuthenticationCsrf,
+  renewPreAuthenticationCsrf,
   requirePreAuthenticationCsrf,
   requireValidOrigin,
 } from "../auth/http.server";
@@ -16,6 +17,7 @@ import { registrationSchema } from "../auth/validation";
 import { logBootstrapRejected } from "../auth/bootstrap-events.server";
 
 type RegistrationActionData = {
+  csrfToken?: string;
   error?: string;
   username?: string;
 };
@@ -78,9 +80,17 @@ export async function action({ request }: Route.ActionArgs) {
       request,
       String(formData.get("csrfToken") ?? ""),
     );
-  } catch (error) {
+  } catch {
     logBootstrapRejected("invalid-csrf");
-    throw error;
+    const csrf = renewPreAuthenticationCsrf(request);
+    return data<RegistrationActionData>(
+      {
+        csrfToken: csrf.csrfToken,
+        error: "This form expired. Enter your password again and try creating the account.",
+        username: fields.username,
+      },
+      { headers: csrf.headers, status: 403 },
+    );
   }
   const parsed = registrationSchema.safeParse(fields);
 
@@ -135,7 +145,7 @@ export default function Register({
         <input
           name="csrfToken"
           type="hidden"
-          value={loaderData.csrfToken}
+          value={actionData?.csrfToken ?? loaderData.csrfToken}
         />
         <div className={styles.field}>
           <label htmlFor="register-username">Username</label>

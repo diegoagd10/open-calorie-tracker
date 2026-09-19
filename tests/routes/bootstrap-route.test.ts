@@ -120,6 +120,38 @@ describe("administrator bootstrap route", () => {
     expect((rejectedOrigin as Response).status).toBe(403);
     expect(console.log).toHaveBeenCalledWith(expect.stringContaining('"reason":"invalid-origin"'));
 
+    const expiredCsrfForm = await loadForm();
+    getApplicationDatabase().getClient().$client
+      .prepare("UPDATE pre_authentication_csrf_sessions SET expires_at = ?")
+      .run(new Date(0).toISOString());
+    const expiredCsrf = await registerAction(
+      routeArgs(
+        new Request(`${origin}/register`, {
+          body: new URLSearchParams({
+            confirmPassword: password,
+            csrfToken: expiredCsrfForm.csrfToken,
+            password,
+            username: "prospective.owner",
+          }),
+          headers: { Cookie: expiredCsrfForm.cookie, Origin: origin },
+          method: "POST",
+        }),
+      ),
+    );
+    expect(expiredCsrf).not.toBeInstanceOf(Response);
+    if (expiredCsrf instanceof Response) throw new Error("expired CSRF escaped the form");
+    expect(expiredCsrf).toMatchObject({
+      data: {
+        csrfToken: expect.any(String) as unknown,
+        error: "This form expired. Enter your password again and try creating the account.",
+        username: "prospective.owner",
+      },
+      init: { status: 403 },
+    });
+    expect(expiredCsrf.data.csrfToken).not.toBe(expiredCsrfForm.csrfToken);
+    expect(new Headers(expiredCsrf.init?.headers).get("Set-Cookie"))
+      .toContain("calorie_auth_csrf=");
+
     const invalidCsrfForm = await loadForm();
     const rejectedCsrf = await registerAction(
       routeArgs(
@@ -129,9 +161,14 @@ describe("administrator bootstrap route", () => {
           method: "POST",
         }),
       ),
-    ).catch((error: unknown) => error);
-    expect(rejectedCsrf).toBeInstanceOf(Response);
-    expect((rejectedCsrf as Response).status).toBe(403);
+    );
+    expect(rejectedCsrf).toMatchObject({
+      data: {
+        csrfToken: expect.any(String) as unknown,
+        error: "This form expired. Enter your password again and try creating the account.",
+      },
+      init: { status: 403 },
+    });
     expect(console.log).toHaveBeenCalledWith(expect.stringContaining('"reason":"invalid-csrf"'));
 
     const limitedIp = "203.0.113.83";

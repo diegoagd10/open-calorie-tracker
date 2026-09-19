@@ -155,6 +155,16 @@ export function loadPreAuthenticationCsrf(request: Request): {
   const current = service.resolve(getPreAuthenticationCsrfToken(request));
   if (current) return { csrfToken: current.csrfToken };
 
+  return renewPreAuthenticationCsrf(request);
+}
+
+export function renewPreAuthenticationCsrf(request: Request): {
+  csrfToken: string;
+  headers: Headers;
+} {
+  const service = getPreAuthenticationCsrfService();
+  service.revoke(getPreAuthenticationCsrfToken(request));
+
   const issued = service.issue();
   const headers = new Headers();
   headers.append("Set-Cookie", serializePreAuthenticationCsrfCookie(issued));

@@ -161,7 +161,12 @@ test("the Tunnel listener resolves HTTPS mutations without trusting forwarded pr
   });
 
   expect(response.status).toBe(403);
-  expect(await response.text()).toContain("CSRF token rejected.");
+  expect(await response.text()).toContain(
+    "This form expired. Enter your password again and try creating the account.",
+  );
+  expect(response.headers.get("Set-Cookie")).toContain(
+    "__Host-calorie_auth_csrf=",
+  );
 });
 
 test.each(["csv", "jsonl"])("the compiled OFF command imports %s through the running application", async format => {
