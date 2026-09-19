@@ -6,6 +6,7 @@ import { getUsdaAnalysisReader } from "../catalog/runtime.server";
 import { PhotoAnalysisService } from "./photo-analysis.server";
 import { PiPhotoAnalyzer, piCompletion } from "./pi.server";
 import { PiConnectionService } from "./pi-connection.server";
+import { ProviderPipelineDemo } from "./provider-pipeline-demo.server";
 import { TestPhotoAnalyzer } from "./test-fixture.server";
 
 const environmentSchema = z.object({
@@ -20,6 +21,10 @@ const environmentSchema = z.object({
     .default(path.resolve("data/pi/auth.json")),
   PHOTO_AI_USDA_ROUNDS: z.coerce.number().int().min(1).max(5).default(3),
   PHOTO_ANALYSIS_TEST_FIXTURE: z.enum(["0", "1"]).optional(),
+  PHOTO_PROVIDER_KEYS_PATH: z
+    .string()
+    .min(1)
+    .default(path.resolve("data/photo-provider-keys.json")),
   FOOD_LOG_TEST_NOW: z.string().optional(),
 });
 let current:
@@ -57,6 +62,7 @@ export function getPhotoAnalysisService() {
 }
 
 let connection: { key: string; service: PiConnectionService } | undefined;
+let providerDemo: { db: ApplicationDatabaseClient; path: string; service: ProviderPipelineDemo } | undefined;
 
 export function getPiConnectionService() {
   const config = environmentSchema.parse(process.env);
@@ -68,9 +74,35 @@ export function getPiConnectionService() {
   return connection.service;
 }
 
+export function getProviderPipelineDemo() {
+  const config = environmentSchema.parse(process.env);
+  const database = getApplicationDatabase().getClient();
+  if (providerDemo?.db !== database || providerDemo.path !== config.PHOTO_PROVIDER_KEYS_PATH) {
+    providerDemo = {
+      db: database,
+      path: config.PHOTO_PROVIDER_KEYS_PATH,
+      service: new ProviderPipelineDemo(
+        config.PHOTO_PROVIDER_KEYS_PATH,
+        getUsdaAnalysisReader(),
+        fetch,
+        new PiPhotoAnalyzer(
+          piCompletion({
+            authPath: config.PHOTO_AI_AUTH_PATH,
+            provider: config.PHOTO_AI_PROVIDER,
+            model: config.PHOTO_AI_MODEL,
+            reasoning: config.PHOTO_AI_REASONING,
+          }),
+        ),
+      ),
+    };
+  }
+  return providerDemo.service;
+}
+
 export function shutdownPhotoAnalysis() {
   connection?.service.shutdown();
   connection = undefined;
+  providerDemo = undefined;
   current?.service.shutdown();
   current = undefined;
 }

@@ -12,7 +12,7 @@
     "app/catalog-management/import-worker.ts",
     "tests/support/restored-usda-worker.mjs"
   ],
-  "ignorePatterns": ["docs/mocks/**"],
+  "ignorePatterns": ["docs/mocks/**", "app/**/*.module.css"],
   "ignoreDependencies": ["@react-router/dev", "isbot", "react-dom"],
   "typeAware": {
     "enabled": true,
@@ -304,6 +304,7 @@
       "scripts/**",
       "app/catalog/test-fixture.server.ts",
       "app/photo-analysis/test-fixture.server.ts",
+      "app/photo-analysis/provider-pipeline-demo.server.ts",
       "app/routes/**",
       "app/**/*.tsx",
       "drizzle.config.ts",

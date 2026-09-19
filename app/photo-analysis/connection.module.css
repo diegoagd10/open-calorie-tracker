@@ -21,3 +21,9 @@
 .actions button:focus-visible, .primary:focus-visible { outline: 3px solid var(--green); outline-offset: 3px; }
 .error { background: var(--danger-soft); color: var(--danger); padding: 0.75rem; border-radius: 0.65rem; }
 .note { margin-bottom: 0; color: var(--muted); font-size: 0.8rem; }
+@media (min-width: 1120px) {
+  .prototypeShell {
+    grid-template-columns: 15.5rem minmax(0, 1fr);
+    width: min(96rem, 100%);
+  }
+}

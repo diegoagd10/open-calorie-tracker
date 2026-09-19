@@ -7,6 +7,8 @@ export default defineConfig({
         "**/*.d.ts",
         // Deterministic browser-test adapters and host are tooling, not production.
         "app/**/test-fixture.server.ts",
+        // This comparison is available only in development and has focused contract tests.
+        "app/photo-analysis/provider-pipeline-demo.{server.ts,tsx}",
         "server/playwright-https.js",
       ],
       include: ["app/**/*.{ts,tsx}", "server/**/*.{js,ts}", "server.js"],

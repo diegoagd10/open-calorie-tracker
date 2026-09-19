@@ -5,6 +5,7 @@ import { expect, test, vi } from "vitest";
 import { SettingsDestinations } from "../../app/settings-destinations";
 import AiSettings from "../../app/routes/settings.ai";
 import type { PiConnectionService } from "../../app/photo-analysis/pi-connection.server";
+import { ProviderPipelineDemoView } from "../../app/photo-analysis/provider-pipeline-demo";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 type Connection = Awaited<ReturnType<PiConnectionService["read"]>>;
@@ -99,6 +100,65 @@ test.each([
 test("action conflicts are visible", async () => {
   const { renderer } = await render(disconnected, "Already in progress.");
   expect(text(renderer.root.findByProps({ role: "alert" }))).toBe("Already in progress.");
+  await act(() => renderer.unmount());
+});
+
+test("provider experiment compares one photo across three product previews", async () => {
+  const product = {
+    name: "Egg plate", assumptions: ["Portion estimated visually"],
+    totals: { energyKcal: 210, proteinGrams: 14, carbohydrateGrams: 2, fatGrams: 15, fiberGrams: 0, sugarGrams: 0, sodiumMilligrams: 220 },
+    components: [{ name: "fried eggs", quantity: 100, unit: "g" as const, source: "USDA 171288", energyKcal: 210, proteinGrams: 14, carbohydrateGrams: 2, fatGrams: 15 }],
+  };
+  const demo = {
+    totalElapsedMs: 2_300,
+    pipelines: [
+      { id: "pi" as const, label: "Current Pi", model: "Configured Pi photo model", elapsedMs: 2_300, status: "succeeded" as const, product },
+      { id: "gemini" as const, label: "Gemini", model: "gemini-3.1-flash-lite", elapsedMs: 800, status: "succeeded" as const, product },
+      { id: "gemini-jev" as const, label: "Gemini + Jev", model: "gemini-3.1-flash-lite + jev-1.13.0", elapsedMs: 1_000, status: "succeeded" as const, product, matches: [{ observed: "fried eggs", selected: "Egg, whole, cooked, fried", confidence: .91, source: "usda" as const }] },
+    ],
+  };
+  const Routes = createRoutesStub([{ path: "/", Component: () => <ProviderPipelineDemoView actionData={{ demo }} csrfToken="test-csrf" piConnected status={{ geminiConfigured: true, jevConfigured: true, ready: true }} /> }]);
+  let renderer!: ReactTestRenderer;
+  await act(() => { renderer = create(createElement(Routes)); });
+  const rendered = text(renderer.root);
+  expect(rendered).toContain("One photo, three pipelines");
+  expect(rendered).toContain("Current Pi");
+  expect(rendered).toContain("Gemini + Jev");
+  expect(rendered).toContain("What each pipeline would create");
+  expect(rendered.match(/210/g)).toHaveLength(6);
+  expect(buttons(renderer)).toContain("Compare all three");
+  expect(renderer.root.findAllByType("input").find(input => input.props.name === "photo")?.props.accept).toContain("image/jpeg");
+  await act(() => renderer.unmount());
+});
+
+test("development settings route opens the functional provider experiment", async () => {
+  const loaderData = {
+    csrfToken: "test-csrf",
+    username: "admin",
+    today: "2026-09-06",
+    connection: disconnected,
+    providerPrototypeEnabled: true,
+    providerDemo: {
+      geminiConfigured: true,
+      jevConfigured: true,
+      ready: true,
+    },
+  };
+  const Routes = createRoutesStub([{
+    path: "/settings/ai",
+    id: "ai",
+    Component: AiSettings,
+    loader: () => loaderData,
+  }]);
+  let renderer!: ReactTestRenderer;
+  await act(() => {
+    renderer = create(createElement(Routes, {
+      initialEntries: ["/settings/ai?prototype=providers"],
+      hydrationData: { loaderData: { ai: loaderData } },
+    }));
+  });
+  expect(text(renderer.root)).toContain("One photo, three pipelines");
+  expect(text(renderer.root)).not.toContain("Connect OpenAI");
   await act(() => renderer.unmount());
 });
 

@@ -1,14 +1,21 @@
 import { useEffect } from "react";
-import { data, Form, useNavigation, useRevalidator } from "react-router";
+import { data, Form, useNavigation, useRevalidator, useSearchParams } from "react-router";
 import type { Route } from "./+types/settings.ai";
 import { AppNavigation } from "../app-navigation";
-import { requireAdministratorSession, requireValidOrigin } from "../auth/http.server";
-import { getAuthenticationService } from "../auth/runtime.server";
-import { getPiConnectionService } from "../photo-analysis/runtime.server";
+import { readApplicationMutationForm, requireAdministratorSession, requireValidOrigin } from "../auth/http.server";
+import { getPiConnectionService, getProviderPipelineDemo } from "../photo-analysis/runtime.server";
 import { PiConnectionConflict } from "../photo-analysis/pi-connection.server";
+import { ProviderPipelineDemoView } from "../photo-analysis/provider-pipeline-demo";
+import { isProductionEnvironment } from "../runtime.server";
 import { SettingsDestinations } from "../settings-destinations";
 import shellStyles from "../food-log.module.css";
 import styles from "../photo-analysis/connection.module.css";
+
+type AiSettingsActionData = {
+  demo?: import("../photo-analysis/provider-pipeline-demo.server").ProviderComparisonResult;
+  error?: string;
+  message?: string;
+};
 
 export function meta() {
   return [{ title: "AI photo estimates · Open Calorie Tracker" }];
@@ -22,27 +29,53 @@ export async function loader({ request }: Route.LoaderArgs) {
     csrfToken: session.csrfToken,
     username: session.user.username,
     today: new Date().toISOString().slice(0, 10),
+    providerPrototypeEnabled: !isProductionEnvironment(),
+    providerDemo: await getProviderPipelineDemo().status(),
     connection: await getPiConnectionService().read(session.token),
   };
 }
 export async function action({ request }: Route.ActionArgs) {
   requireValidOrigin(request);
   const session = await requireAdministratorSession(request);
-  const form = await request.formData();
-  if (!getAuthenticationService().verifyCsrfToken(session.token, String(form.get("csrfToken") ?? ""))) {
-    throw new Response("CSRF token rejected.", { status: 403 });
-  }
+  const form = await readApplicationMutationForm(request, session);
+  const intent = String(form.get("intent") ?? "");
   const service = getPiConnectionService();
   try {
-    switch (form.get("intent")) {
+    switch (intent) {
+      case "save-provider-keys": {
+        if (isProductionEnvironment()) return data<AiSettingsActionData>({ error: "Provider demo is unavailable." }, { status: 404 });
+        await getProviderPipelineDemo().save({
+          geminiApiKey: String(form.get("geminiApiKey") ?? ""),
+          jevApiKey: String(form.get("jevApiKey") ?? ""),
+        });
+        return data<AiSettingsActionData>({ message: "Provider keys saved. You can now test a meal photo." });
+      }
+      case "remove-provider-keys": {
+        if (isProductionEnvironment()) return data<AiSettingsActionData>({ error: "Provider demo is unavailable." }, { status: 404 });
+        await getProviderPipelineDemo().remove();
+        return data<AiSettingsActionData>({ message: "Provider keys removed from this server." });
+      }
+      case "run-provider-demo": {
+        if (isProductionEnvironment()) return data<AiSettingsActionData>({ error: "Provider demo is unavailable." }, { status: 404 });
+        const photo = form.get("photo");
+        if (!(photo instanceof File)) throw new Error("Choose a meal photo.");
+        const demo = await getProviderPipelineDemo().compare({
+          bytes: Buffer.from(await photo.arrayBuffer()),
+          mimeType: photo.type,
+        });
+        return data<AiSettingsActionData>({ demo });
+      }
       case "connect": service.start(session.token); break;
       case "cancel": await service.cancel(session.token, String(form.get("attemptId") ?? "")); break;
       case "disconnect": await service.disconnect(session.token); break;
-      default: return data({ error: "Unsupported action." }, { status: 400 });
+      default: return data<AiSettingsActionData>({ error: "Unsupported action." }, { status: 400 });
     }
-    return data<{ error?: string }>({});
+    return data<AiSettingsActionData>({});
   } catch (error) {
-    if (error instanceof PiConnectionConflict) return data({ error: error.message }, { status: 409 });
+    if (error instanceof PiConnectionConflict) return data<AiSettingsActionData>({ error: error.message }, { status: 409 });
+    if (["save-provider-keys", "remove-provider-keys", "run-provider-demo"].includes(intent)) {
+      return data<AiSettingsActionData>({ error: error instanceof Error ? error.message : "Provider demo failed." }, { status: 400 });
+    }
     throw error;
   }
 }
@@ -52,6 +85,7 @@ export default function AiSettings({ loaderData, actionData }: Route.ComponentPr
   const { attempt } = connection;
   const navigation = useNavigation();
   const revalidator = useRevalidator();
+  const [searchParams] = useSearchParams();
   const pending = navigation.state !== "idle";
   useEffect(() => {
     if (!connection.busy) return;
@@ -61,6 +95,17 @@ export default function AiSettings({ loaderData, actionData }: Route.ComponentPr
     return () => clearInterval(timer);
   }, [connection.busy, revalidator]);
   const error = actionData?.error ?? attempt?.error ?? connection.error;
+  const prototype = searchParams.get("prototype");
+  if (loaderData.providerPrototypeEnabled && prototype === "providers") {
+    return (
+      <div className={`${shellStyles.shell} ${styles.prototypeShell}`}>
+        <AppNavigation active="settings" csrfToken={loaderData.csrfToken} selectedDate={loaderData.today} today={loaderData.today} />
+        <main className={shellStyles.appSurface}>
+          <ProviderPipelineDemoView actionData={actionData} csrfToken={loaderData.csrfToken} piConnected={connection.connected} status={loaderData.providerDemo} />
+        </main>
+      </div>
+    );
+  }
   return (
     <div className={shellStyles.shell}>
       <a className={shellStyles.skipLink} href="#ai-settings">Skip to AI settings</a>

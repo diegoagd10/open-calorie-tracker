@@ -18,6 +18,9 @@ const coveragePath = path.join(
 const coverageExclusions = new Set([
   "app/catalog/test-fixture.server.ts",
   "app/photo-analysis/test-fixture.server.ts",
+  // The provider comparison is a development-only experiment with focused tests.
+  "app/photo-analysis/provider-pipeline-demo.server.ts",
+  "app/photo-analysis/provider-pipeline-demo.tsx",
   "server/playwright-https.js",
 ]);
 

@@ -33,6 +33,7 @@ beforeAll(async () => {
   vi.stubEnv("APPLICATION_URL", origin);
   vi.stubEnv("DATABASE_PATH", path.join(directory, "application.sqlite"));
   vi.stubEnv("PHOTO_AI_AUTH_PATH", path.join(directory, "pi/auth.json"));
+  vi.stubEnv("PHOTO_PROVIDER_KEYS_PATH", path.join(directory, "providers/keys.json"));
   vi.stubGlobal("fetch", network);
   initializeApplicationDatabase();
   const auth = getAuthenticationService();
@@ -54,7 +55,7 @@ afterAll(async () => {
 test("only administrators can read or mutate the instance connection", async () => {
   await expect(loader(args(request("")))).rejects.toMatchObject({ status: 302 });
   await expect(loader(args(request(memberCookie)))).rejects.toMatchObject({ status: 404 });
-  for (const intent of ["connect", "disconnect", "cancel"]) {
+  for (const intent of ["connect", "disconnect", "cancel", "save-provider-keys", "remove-provider-keys", "run-provider-demo"]) {
     await expect(action(post({ intent }, ""))).rejects.toMatchObject({ status: 302 });
     await expect(action(post({ intent }, memberCookie))).rejects.toMatchObject({ status: 404 });
     await expect(action(post({ intent, csrfToken: "invalid" }))).rejects.toMatchObject({ status: 403 });
@@ -65,6 +66,44 @@ test("only administrators can read or mutate the instance connection", async () 
   expect(headers()).toEqual({ "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" });
   expect((await loader(args(request()))).today).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   expect(meta()).toEqual([{ title: "AI photo estimates · Open Calorie Tracker" }]);
+});
+
+test("administrator can save and remove demo provider keys without exposing their values", async () => {
+  const saved = await action(post({
+    intent: "save-provider-keys",
+    geminiApiKey: "gemini-private-key",
+    jevApiKey: "jev-private-key",
+  }));
+  expect(saved.data).toEqual({ message: "Provider keys saved. You can now test a meal photo." });
+  const state = await loader(args(request()));
+  expect(state.providerDemo).toEqual({ geminiConfigured: true, jevConfigured: true, ready: true });
+  expect(JSON.stringify(state)).not.toContain("private-key");
+  const removed = await action(post({ intent: "remove-provider-keys" }));
+  expect(removed.data).toEqual({ message: "Provider keys removed from this server." });
+  expect((await loader(args(request()))).providerDemo.ready).toBe(false);
+});
+
+test.each(["save-provider-keys", "remove-provider-keys", "run-provider-demo"])(
+  "production hides the provider experiment action %s",
+  async (intent) => {
+    const environment = process.env.NODE_ENV;
+    process.env.NODE_ENV = "production";
+    try {
+      expect(await action(post({ intent }))).toMatchObject({
+        data: { error: "Provider demo is unavailable." },
+        init: { status: 404 },
+      });
+    } finally {
+      process.env.NODE_ENV = environment;
+    }
+  },
+);
+
+test("provider comparison reports a missing photo inside the experiment", async () => {
+  expect(await action(post({ intent: "run-provider-demo" }))).toMatchObject({
+    data: { error: "Choose a meal photo." },
+    init: { status: 400 },
+  });
 });
 
 test("valid actions start, poll and cancel a browser flow without exposing credentials", async () => {
