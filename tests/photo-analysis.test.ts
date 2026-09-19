@@ -177,7 +177,7 @@ test("photo analysis saves captured local Foundation evidence when USDA is repla
   await management.submitArchive({
     filename: "replacement.zip",
     stream: Readable.from(await foundationArchive({
-      "food.csv": "fdc_id,data_type,description,publication_date\n747447,foundation_food,Broccoli revised after review,2026-08-01\n",
+      "food.csv": "fdc_id,data_type,description,food_category_id,publication_date\n747447,foundation_food,Broccoli revised after review,11,2026-08-01\n",
       "food_nutrient.csv": "id,fdc_id,nutrient_id,amount\n1,747447,2048,999\n2,747447,1003,99\n3,747447,1004,88\n4,747447,1005,77\n",
     })),
   });
@@ -242,7 +242,7 @@ test("a missing local preparation remains an explicit estimate without a fabrica
         await management.submitArchive({
           filename: "raw-tilapia.zip",
           stream: Readable.from(await foundationArchive({
-            "food.csv": "fdc_id,data_type,description,publication_date\n700,foundation_food,Fish tilapia raw,2026-01-01\n",
+            "food.csv": "fdc_id,data_type,description,food_category_id,publication_date\n700,foundation_food,Fish tilapia raw,11,2026-01-01\n",
             "food_nutrient.csv": "id,fdc_id,nutrient_id,amount\n1,700,2048,96\n2,700,1003,20\n3,700,1004,2\n4,700,1005,0\n",
             "food_portion.csv": "id,fdc_id,amount,measure_unit_id,gram_weight,modifier,portion_description\n",
           })),

@@ -9,7 +9,8 @@ import { openPromise, type Entry, type ZipFile } from "yauzl";
 
 export class ArchiveError extends Error {}
 const tables: Record<string, string[]> = {
-  "food.csv": ["fdc_id", "data_type", "description", "publication_date"],
+  "food.csv": ["fdc_id", "data_type", "description", "food_category_id", "publication_date"],
+  "food_category.csv": ["id", "description"],
   "foundation_food.csv": ["fdc_id", "NDB_number"],
   "food_nutrient.csv": ["id", "fdc_id", "nutrient_id", "amount"],
   "nutrient.csv": ["id", "name", "unit_name"],

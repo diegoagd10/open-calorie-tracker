@@ -9,6 +9,7 @@ import {
   TestOpenFoodFactsProvider,
 } from "./test-fixture.server";
 import { LocalUsdaAdapter } from "./local-usda.server";
+import type { UsdaPhotoAnalysisCatalog } from "./usda-evidence";
 import { catalogDirectory, getCatalogManagement } from "../catalog-management/runtime.server";
 import { LocalOpenFoodFactsAdapter } from "./local-off.server";
 
@@ -23,6 +24,10 @@ let foodCatalog: FoodCatalog | undefined;
 
 export function getUsdaAnalysisReader(): LocalUsdaAdapter {
   return new LocalUsdaAdapter(getCatalogManagement(), catalogDirectory());
+}
+
+export function getUsdaPhotoAnalysisCatalog(): UsdaPhotoAnalysisCatalog {
+  return getUsdaAnalysisReader();
 }
 
 export function getFoodCatalogProvider(): SearchFoodCatalogProvider {

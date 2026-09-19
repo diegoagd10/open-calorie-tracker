@@ -14,6 +14,15 @@ Inspected the official April 30, 2026 CSV ZIP directly on September 7, 2026. The
 
 Select main-table `foundation_food` records with valid FDC ID, name, and publication date. Require the subtype table's schema but do not use it as an inclusion whitelist. Explicitly exclude agricultural acquisitions, market acquisitions, samples, and subsamples. Reject archives containing other main-table food types rather than silently treating a full or Branded archive as Foundation.
 
+The same import requires `food_category.csv`, validates each category identity and
+name, and joins every retained Foundation record through `food_category_id`.
+Missing, duplicate, invalid, or unmatched category data fails the staged import;
+categories are never reconstructed from descriptions. New generation databases
+store the categories and food associations and advertise a versioned
+`photo-analysis` capability in their own schema. Older generation files remain
+valid for manual search, but Food Catalogs reports **Reimport required** until a
+normal staged Foundation reimport replaces them.
+
 Preserve every distinct FDC ID and its publication date. Identical descriptions are not proof of identical nutrient records or a reliable replacement relationship. For example, broccoli 321900 and 747447 have different dates and nutrient fields. The archive's main table omits the documented `food_key` lineage field, and the subtype table's NDB numbers do not cover all main records. Do not merge by name, invent lineage, or discard unmatched records. Sort otherwise-equivalent search results by descending publication date, then FDC ID; retain preparation in the original description. Duplicate instances of the same FDC ID make an archive invalid. Neither 395 nor 469 is a completeness gate.
 
 ## Release checks
@@ -29,6 +38,14 @@ The official source evidence, observed page contract, known limitations, and ful
 [USDA field descriptions](https://fdc.nal.usda.gov/docs/Download_Field_Descriptions_Oct2020.pdf) define food nutrient amounts per 100 g, nutrient units in `nutrient.csv`, and portion gram weight as the weight of the entire stated measure. Join on source IDs, not CSV row order or nutrient display names.
 
 Foundation energy precedence remains **2048 → 2047 → 1008** (specific Atwater, general Atwater, legacy energy); each accepted energy value must independently declare KCAL. Protein 1003, fat 1004, carbohydrate 1005, fiber 1079, and sugar 2000 require G; sodium 1093 accepts MG or G with explicit conversion. No energy is synthesized from macros or an unrecognized unit. Invalid, negative, non-finite, duplicate, or out-of-range tracked nutrient values are excluded and counted. Missing values remain null; zero stays zero. A valid lower-precedence calorie value can be used when a higher-precedence field is unavailable. Records without usable calories remain visible but cannot be logged.
+
+Photo Analysis acquires one generation lease for its complete category and food
+selection snapshot. It exposes source categories and, within each category, only
+foods with calories, protein, carbohydrate, and fat. Missing optional nutrients
+remain null and explicit source zeroes remain zero in captured evidence. Manual
+Food Catalog search continues to include records that do not meet this stricter
+Photo Analysis eligibility rule. An unreadable generation reports the existing
+unavailable state; an absent generation reports not installed.
 
 All usable foods support grams and 100 g. A portion requires a positive source amount, positive gram weight, a joined named measure, and a valid source portion ID. Its label includes amount, unit, qualifiers, and gram weight. Logging one portion uses the gram weight of that entire measure; it does not divide by the measure amount or infer density. Unsupported portions are excluded without disabling a valid 100 g basis.
 
