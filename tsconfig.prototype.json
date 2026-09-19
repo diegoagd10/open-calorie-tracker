@@ -1,0 +1,4 @@
+{
+  "extends": "./tsconfig.json",
+  "include": ["scripts/gemini-jev-usda-prototype.ts"]
+}

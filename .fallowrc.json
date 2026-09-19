@@ -120,7 +120,8 @@
           "scripts/check-codeql-results.mjs",
           "scripts/pr.mjs",
           "scripts/install-git-hooks.mjs",
-          "scripts/catalog-browser-runtime.ts"
+          "scripts/catalog-browser-runtime.ts",
+          "scripts/gemini-jev-usda-prototype.ts"
         ]
       }
     ],

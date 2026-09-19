@@ -45,7 +45,9 @@ export default tseslint.config(
     files: typescriptFiles,
     languageOptions: {
       parserOptions: {
-        projectService: true,
+        projectService: {
+          allowDefaultProject: ["scripts/gemini-jev-usda-prototype.ts"],
+        },
         tsconfigRootDir: import.meta.dirname,
       },
     },
