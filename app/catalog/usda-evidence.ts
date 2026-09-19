@@ -10,9 +10,9 @@ export type UsdaPhotoAnalysisCandidate = { fdcId: string; description: string };
 
 export type UsdaPhotoAnalysisSnapshot = {
   readonly generation: string;
-  categories(): UsdaPhotoAnalysisCategory[];
-  candidates(categoryId: string): UsdaPhotoAnalysisCandidate[];
-  evidence(fdcId: string): UsdaEvidence;
+  categories: () => UsdaPhotoAnalysisCategory[];
+  candidates: (categoryId: string) => UsdaPhotoAnalysisCandidate[];
+  evidence: (fdcId: string) => UsdaEvidence;
 };
 
 export type UsdaPhotoAnalysisReadiness =
@@ -22,11 +22,11 @@ export type UsdaPhotoAnalysisReadiness =
   | { state: "ready"; generation: string };
 
 export type UsdaPhotoAnalysisCatalog = {
-  photoAnalysisReadiness(): Promise<UsdaPhotoAnalysisReadiness>;
-  withPhotoAnalysisSnapshot<T>(
+  photoAnalysisReadiness: () => Promise<UsdaPhotoAnalysisReadiness>;
+  withPhotoAnalysisSnapshot: <T>(
     signal: AbortSignal,
     read: (snapshot: UsdaPhotoAnalysisSnapshot) => Promise<T> | T,
-  ): Promise<T>;
+  ) => Promise<T>;
 };
 
 export type UsdaAnalysisReader = {

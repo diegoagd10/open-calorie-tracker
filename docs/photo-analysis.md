@@ -111,6 +111,28 @@ The deterministic suites use temporary migrated SQLite and simulated Pi/USDA
 boundaries. The browser fixture is available only with `NODE_ENV=test` and
 `PHOTO_ANALYSIS_TEST_FIXTURE=1`; it does not measure model accuracy.
 
+The staged Gemini→Jev→USDA analyzer has its own opt-in live integration seam.
+It installs a supplied Foundation archive in a temporary catalog, sends one food
+image to Gemini, sends only Gemini's structured observations and installed-catalog
+choices to TypeSafe, and validates the selected evidence locally under the
+five-second analyzer deadline. It is not part of ordinary verification and does
+not change the active Pi runtime during this expand step. Run it explicitly with
+private inputs; it consumes both provider accounts:
+
+```sh
+GEMINI_API_KEY=... \
+TYPESAFE_API_KEY=... \
+PHOTO_GEMINI_JEV_USDA_ARCHIVE=/private/usda/FoodData_Central_foundation_food_csv.zip \
+PHOTO_GEMINI_JEV_FOOD_IMAGE=/private/meals/food.jpg \
+PHOTO_GEMINI_JEV_FOOD_MIME_TYPE=image/jpeg \
+pnpm test:gemini-jev-live
+```
+
+The live seam does not write credentials, provider payloads, images, or results to
+the repository. Deterministic tests cover no-food, mixed USDA/Gemini provenance,
+strict provider schemas, malformed choices, catalog readiness, and deadline
+cancellation without external network access.
+
 The installed Pi 0.85.1 registry includes `gpt-5.6-luna` with image support.
 Account access was verified with operator-provided Pi OAuth credentials. A
 historical smoke test on September 5, 2026, before local Foundation evidence was
