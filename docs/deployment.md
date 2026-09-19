@@ -23,6 +23,7 @@ entire directory for existing installations.
 | --- | --- |
 | `APPLICATION_URL` | Exact public HTTPS origin, initially `https://calorie.dagdappshub.com`. No credentials, path, query or fragment. |
 | `DATA_PATH` | Persistent host directory, for example `/srv/open-calory-tracker/data`. |
+| `WEBAUTHN_ENROLLMENT_PREVIEW` | Optional WebAuthn enrollment preview. Defaults to `0`; set to `1` only for an isolated preview installation after reviewing [Key enrollment preview](#key-enrollment-preview). |
 | `LAN_URL` | Optional exact HTTP server IP and port, initially `http://192.168.4.21:3002`. Any client with connectivity may use it. Omit it to disable LAN. |
 | `LAN_BIND_IP` | Host IP for the LAN mapping, initially `192.168.4.21`. Keep it consistent with `LAN_URL`. |
 | `LAN_HOST_PORT` | LAN host port, default `3002`. Keep it consistent with `LAN_URL`. |
@@ -279,8 +280,8 @@ named keys, username/key sign-in, and an account-level key-login toggle.
 Enrollment is off by default: `WEBAUTHN_ENROLLMENT_PREVIEW=1` enables it only for
 an isolated preview installation. Do not enable it on the production stack until
 the parent spec's key management and recovery tickets are complete. The standard
-Compose stack deliberately does not forward this flag. Already enrolled preview
-accounts continue to require their key if the enrollment flag is removed.
+Compose stack forwards this opt-in flag and defaults it to `0`. Already enrolled
+preview accounts continue to require their key if the flag is reset or removed.
 
 Credentials use the exact HTTPS `APPLICATION_URL` origin and its hostname as the
 RP ID. Development at HTTP localhost uses separate credentials; an HTTP LAN IP
