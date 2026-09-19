@@ -6,7 +6,7 @@ import { entryPolicy } from "./entry-policy";
 import type { RequestEntry } from "../app/runtime.server";
 
 import { shutdownApplicationDatabase } from "../app/database/runtime.server";
-import { getPhotoAnalysisService, shutdownPhotoAnalysis } from "../app/photo-analysis/runtime.server";
+import { getPhotoAnalysisCredentials, getPhotoAnalysisService, shutdownPhotoAnalysis } from "../app/photo-analysis/runtime.server";
 import { getCatalogManagement, shutdownCatalogManagement } from "../app/catalog-management/runtime.server";
 import { ensureLocalCatalogImportToken } from "../app/catalog-management/local-import-control.server";
 import { mountLocalCatalogImport } from "./local-catalog-import";
@@ -15,6 +15,7 @@ export async function shutdown() { shutdownPhotoAnalysis(); await shutdownCatalo
 initializeApplicationDatabase();
 getCatalogManagement();
 getPhotoAnalysisService();
+await getPhotoAnalysisCredentials();
 
 export function createApplication(entry: RequestEntry, controlToken: string) {
   const app = express();

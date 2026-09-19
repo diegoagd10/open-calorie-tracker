@@ -1,4 +1,5 @@
 import type { PhotoAnalyzer } from "./photo-analysis.server";
+import { ProviderCredentialRejectedError, type PhotoAnalysisCredentialValidator } from "./credentials.server";
 
 export class TestPhotoAnalyzer implements PhotoAnalyzer {
   async analyze(input: Parameters<PhotoAnalyzer["analyze"]>[0]) {
@@ -84,5 +85,15 @@ export class TestPhotoAnalyzer implements PhotoAnalyzer {
         },
       ],
     };
+  }
+}
+
+export class TestPhotoAnalysisCredentialValidator implements PhotoAnalysisCredentialValidator {
+  async validateGemini(key: string): Promise<void> {
+    if (key.includes("invalid")) throw new ProviderCredentialRejectedError();
+  }
+
+  async validateTypeSafe(key: string): Promise<void> {
+    if (key.includes("invalid")) throw new ProviderCredentialRejectedError();
   }
 }

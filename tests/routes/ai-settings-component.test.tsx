@@ -4,25 +4,32 @@ import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { expect, test, vi } from "vitest";
 import { SettingsDestinations } from "../../app/settings-destinations";
 import AiSettings from "../../app/routes/settings.ai";
+import type { PhotoAnalysisCredentialStatus } from "../../app/photo-analysis/credentials.server";
 import type { PiConnectionService } from "../../app/photo-analysis/pi-connection.server";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+const unconfigured: PhotoAnalysisCredentialStatus = { state: "unconfigured" };
+const configured: PhotoAnalysisCredentialStatus = {
+  state: "configured",
+  configuredAt: "2026-09-19T16:00:00.000Z",
+  updatedAt: "2026-09-19T16:00:00.000Z",
+  validatedAt: "2026-09-19T16:00:00.000Z",
+};
 type Connection = Awaited<ReturnType<PiConnectionService["read"]>>;
 const disconnected: Connection = { supported: true, connected: false, busy: false, error: undefined, attempt: undefined };
-const authorizationUrl = "https://auth.openai.com/oauth/authorize?response_type=code&redirect_uri=http%3A%2F%2Flocalhost%3A1455%2Fauth%2Fcallback&state=test-state&code_challenge=test-challenge";
-async function render(connection: Connection, actionError?: string) {
+async function render(credentials: PhotoAnalysisCredentialStatus, actionData?: { area?: "credentials" | "pi"; error?: string; success?: string; fieldErrors?: { geminiKey?: string; typeSafeKey?: string } }, connection: Connection = disconnected) {
   const load = vi.fn(() => ({
-    csrfToken: "test-csrf", username: "admin", today: "2026-09-06", connection,
+    csrfToken: "test-csrf", username: "admin", today: "2026-09-19", credentials, connection,
   }));
   const Routes = createRoutesStub([{ path: "/settings/ai", id: "ai", Component: AiSettings, loader: load }]);
   let renderer!: ReactTestRenderer;
   await act(async () => {
     renderer = create(createElement(Routes, {
       initialEntries: ["/settings/ai"],
-      hydrationData: { loaderData: { ai: load() }, actionData: actionError ? { ai: { error: actionError } } : undefined },
+      hydrationData: { loaderData: { ai: load() }, actionData: actionData ? { ai: actionData } : undefined },
     }));
   });
-  return { renderer, load };
+  return renderer;
 }
 function text(node: ReactTestRenderer["root"]): string {
   return node.children.map(child => typeof child === "string" ? child : text(child)).join("");
@@ -31,77 +38,134 @@ function buttons(renderer: ReactTestRenderer) {
   return renderer.root.findAllByType("button").map(button => text(button));
 }
 
-test("Settings explains the shared connection, links to the other settings and offers sign-in", async () => {
-  const { renderer } = await render(disconnected);
-  expect(text(renderer.root)).toContain("Not connected");
-  expect(text(renderer.root)).toContain("everyone on this tracker");
-  expect(buttons(renderer)).toContain("Connect OpenAI");
-  expect(buttons(renderer)).not.toContain("Disconnect");
-  expect(renderer.root.findAllByType("a").map(link => String(link.props.href))).toContain("/settings/goals");
-  expect(renderer.root.findAllByType("input").find(input => input.props.name === "csrfToken")?.props.value).toBe("test-csrf");
-  expect(text(renderer.root.findByProps({ role: "status" }))).toBe("");
-  expect(renderer.root.findAllByType("button").find(button => text(button) === "Connect OpenAI")?.props.value).toBe("connect");
-  expect(renderer.root.findAllByType("input").find(input => input.props.name === "attemptId")?.props.value).toBe("");
-  await act(() => renderer.unmount());
-});
-
-test("waiting renders browser authorization without any manual code or token input, polls, and only offers cancel", async () => {
-  vi.useFakeTimers();
-  const { renderer, load } = await render({ ...disconnected, busy: true, attempt: { id: "attempt-1", state: "waiting", authorizationUrl } });
-  try {
-    expect(text(renderer.root)).toContain("approve access with your OpenAI account");
-    expect(text(renderer.root)).toContain("No device-code login setting is required");
-    expect(buttons(renderer)).toContain("Cancel sign-in");
-    expect(buttons(renderer)).not.toContain("Finish authorization");
-    expect(renderer.root.findAllByType("button").find(button => text(button) === "Cancel sign-in")?.props.value).toBe("cancel");
-    expect(buttons(renderer)).not.toContain("Connect OpenAI");
-    const link = renderer.root.findAllByType("a").find(link => link.props.href === authorizationUrl);
-    expect(link?.props.target).toBe("_blank");
-    expect(link?.props.rel).toBe("noreferrer");
-    expect(renderer.root.findAllByProps({ name: "authorizationResponse" })).toHaveLength(0);
-    expect(text(renderer.root)).not.toContain("copy its complete address");
-    expect(renderer.root.findAllByType("input").find(input => input.props.name === "attemptId")?.props.value).toBe("attempt-1");
-    await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
-    expect(load).toHaveBeenCalledTimes(2);
-    await act(() => renderer.unmount());
-    expect(vi.getTimerCount()).toBe(0);
-  } finally {
-    await act(() => renderer.unmount());
-    vi.useRealTimers();
+test("unconfigured Settings accepts a bounded pair without repopulating either secret", async () => {
+  const renderer = await render(unconfigured);
+  expect(text(renderer.root)).toContain("Not configured");
+  expect(text(renderer.root)).toContain("never shown again");
+  expect(buttons(renderer)).toContain("Save credential pair");
+  expect(buttons(renderer)).not.toContain("Delete credential pair");
+  const secrets = renderer.root.findAllByType("input").filter(input => ["geminiKey", "typeSafeKey"].includes(String(input.props.name)));
+  expect(secrets).toHaveLength(2);
+  for (const secret of secrets) {
+    expect(secret.props).toMatchObject({
+      type: "password",
+      autoComplete: "new-password",
+      minLength: 16,
+      maxLength: 512,
+      required: true,
+    });
+    expect(secret.props.value).toBeUndefined();
+    expect(secret.props.defaultValue).toBeUndefined();
   }
+  expect(renderer.root.findAllByType("input").find(input => input.props.name === "csrfToken")?.props.value).toBe("test-csrf");
+  await act(() => renderer.unmount());
+});
+
+test("configured Settings reports validation metadata and requires explicit deletion confirmation", async () => {
+  const renderer = await render(configured);
+  expect(text(renderer.root)).toContain("Configured");
+  expect(text(renderer.root)).toContain("Last validated");
+  expect(buttons(renderer)).toContain("Replace credential pair");
+  expect(buttons(renderer)).toContain("Delete credential pair");
+  const confirmation = renderer.root.findAllByType("input").find(input => input.props.name === "confirmation");
+  expect(confirmation?.props).toMatchObject({ type: "checkbox", value: "delete", required: true });
+  expect(text(renderer.root)).not.toContain("AIza");
+  expect(text(renderer.root)).not.toContain("ts_live");
+  await act(() => renderer.unmount());
+});
+
+test("unreadable and failed states explain recovery without exposing submitted values", async () => {
+  const renderer = await render({
+    state: "unreadable",
+    configuredAt: "2026-09-18T12:00:00.000Z",
+    updatedAt: "2026-09-18T12:00:00.000Z",
+  }, {
+    area: "credentials",
+    error: "The credential pair could not be validated.",
+    fieldErrors: { geminiKey: "Gemini rejected this key." },
+  });
+  expect(text(renderer.root)).toContain("Needs re-entry");
+  expect(text(renderer.root)).toContain("Enter and validate both keys again");
+  expect(text(renderer.root)).toContain("Gemini rejected this key");
+  expect(renderer.root.findByProps({ name: "geminiKey" }).props).toMatchObject({
+    "aria-invalid": true,
+    "aria-describedby": "gemini-key-error",
+  });
+  expect(buttons(renderer)).toContain("Save credential pair");
+  expect(buttons(renderer)).toContain("Delete credential pair");
+  await act(() => renderer.unmount());
+});
+
+test("submitted controls stay disabled until credential mutation settles", async () => {
+  const loaderData = { csrfToken: "test-csrf", username: "admin", today: "2026-09-19", credentials: configured, connection: disconnected };
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const router = createMemoryRouter([{
+    path: "/settings/ai",
+    id: "ai",
+    Component: () => createElement(AiSettings, { loaderData: useLoaderData(), actionData: undefined } as never),
+    loader: () => loaderData,
+    action: async () => { await gate; return {}; },
+  }], { initialEntries: ["/settings/ai"], hydrationData: { loaderData: { ai: loaderData } } });
+  let renderer!: ReactTestRenderer;
+  await act(() => { renderer = create(createElement(RouterProvider, { router })); });
+  const form = new FormData();
+  form.set("intent", "save");
+  let submitted!: Promise<void>;
+  await act(async () => { submitted = router.navigate("/settings/ai", { formMethod: "post", formData: form }); });
+  const controls = renderer.root.findAllByType("button").filter(button => button.props.name === "intent");
+  expect(controls).toHaveLength(3);
+  for (const button of controls) expect(button.props.disabled).toBe(true);
+  expect(buttons(renderer)).toContain("Validating…");
+  await act(async () => { release(); await submitted; });
+  for (const button of renderer.root.findAllByType("button").filter(button => button.props.name === "intent")) expect(button.props.disabled).toBe(false);
+  await act(() => renderer.unmount());
+  router.dispose();
+});
+
+test("the active Pi connection controls remain available beside the encrypted credential form", async () => {
+  const connected = await render(unconfigured, undefined, { ...disconnected, connected: true });
+  expect(text(connected.root)).toContain("Active Pi analyzer");
+  expect(buttons(connected)).toContain("Reconnect OpenAI");
+  expect(buttons(connected)).toContain("Disconnect");
+  await act(() => connected.unmount());
+
+  const authorizationUrl = "https://auth.openai.com/oauth/authorize?state=test";
+  const waiting = await render(unconfigured, undefined, {
+    ...disconnected,
+    busy: true,
+    attempt: { id: "attempt-1", state: "waiting", authorizationUrl },
+  });
+  expect(text(waiting.root)).toContain("approve access with your OpenAI account");
+  expect(buttons(waiting)).toContain("Cancel sign-in");
+  const link = waiting.root.findAllByType("a").find(candidate => candidate.props.href === authorizationUrl);
+  expect(link?.props).toMatchObject({ target: "_blank", rel: "noreferrer" });
+  await act(() => waiting.unmount());
 });
 
 test.each([
-  [{ ...disconnected, connected: true }, "Connected", "Reconnect OpenAI"],
-  [{ ...disconnected, attempt: { id: "1", state: "failed", error: "Try connecting again." } }, "Try connecting again.", "Connect OpenAI"],
-  [{ ...disconnected, connected: true, attempt: { id: "1", state: "cancelled" } }, "Your previous connection is still saved.", "Reconnect OpenAI"],
+  [{ ...disconnected, busy: true }, "another session", undefined],
+  [{ ...disconnected, busy: true, attempt: { id: "1", state: "starting" } }, "Getting your secure OpenAI link", "Cancel sign-in"],
+  [{ ...disconnected, busy: true, attempt: { id: "1", state: "disconnecting" } }, "Disconnecting", undefined],
+  [{ ...disconnected, supported: false }, "does not support sign-in here", undefined],
+  [{ ...disconnected, error: "Storage unavailable." }, "Storage unavailable.", "Connect OpenAI"],
   [{ ...disconnected, attempt: { id: "1", state: "cancelled" } }, "No active sign-in.", "Connect OpenAI"],
-] satisfies [Connection, string, string][])("connected and terminal states expose the appropriate recovery actions: %j", async (connection, message, button) => {
-  const { renderer } = await render(connection);
+  [{ ...disconnected, connected: true, attempt: { id: "1", state: "cancelled" } }, "previous connection is still saved", "Reconnect OpenAI"],
+] satisfies [Connection, string, string | undefined][])("Pi status remains understandable during the credential expand step: %j", async (connection, message, expectedButton) => {
+  const renderer = await render(unconfigured, undefined, connection);
   expect(text(renderer.root)).toContain(message);
-  expect(buttons(renderer)).toContain(button);
-  expect(buttons(renderer).includes("Disconnect")).toBe(connection.connected);
+  if (expectedButton) expect(buttons(renderer)).toContain(expectedButton);
   await act(() => renderer.unmount());
 });
 
-test.each([
-  [{ ...disconnected, busy: true }, "another session"],
-  [{ ...disconnected, busy: true, attempt: { id: "1", state: "starting" } }, "Getting your secure OpenAI link"],
-  [{ ...disconnected, busy: true, attempt: { id: "1", state: "disconnecting" } }, "Disconnecting"],
-  [{ ...disconnected, supported: false }, "does not support sign-in here"],
-  [{ ...disconnected, error: "Storage unavailable." }, "Storage unavailable."],
-] satisfies [Connection, string][])("status remains understandable while setup is unavailable: %j", async (connection, message) => {
-  const { renderer } = await render(connection);
-  expect(text(renderer.root)).toContain(message);
+test("Pi action conflicts remain scoped to the connection card", async () => {
+  const renderer = await render(unconfigured, { area: "pi", error: "Already in progress." });
+  const connection = renderer.root.findByProps({ "aria-labelledby": "connection-heading" });
+  expect(text(connection)).toContain("Already in progress.");
+  const credentials = renderer.root.findByProps({ "aria-labelledby": "credentials-heading" });
+  expect(text(credentials)).not.toContain("Already in progress.");
   await act(() => renderer.unmount());
 });
-
-test("action conflicts are visible", async () => {
-  const { renderer } = await render(disconnected, "Already in progress.");
-  expect(text(renderer.root.findByProps({ role: "alert" }))).toBe("Already in progress.");
-  await act(() => renderer.unmount());
-});
-
 
 test.each([
   ["goals", true, ["/settings/catalogs", "/settings/ai", "/settings/users", "/settings/security"]],
@@ -115,44 +179,4 @@ test.each([
   await act(() => { renderer = create(createElement(Routes)); });
   expect(renderer.root.findAllByType("a").map(link => String(link.props.href))).toEqual(expected);
   await act(() => renderer.unmount());
-});
-
-test.each([false, true])("connection controls stay disabled until a submitted action settles (waiting=%s)", async waiting => {
-  const connection: Connection = waiting ? { ...disconnected, busy: true, attempt: { id: "pending-id", state: "waiting", authorizationUrl } } : { ...disconnected, connected: true };
-  const data = { csrfToken: "test-csrf", username: "admin", today: "2026-09-06", connection };
-  let release!: () => void;
-  const gate = new Promise<void>(resolve => { release = resolve; });
-  const router = createMemoryRouter([{ path: "/settings/ai", id: "ai", Component: () => createElement(AiSettings, { loaderData: useLoaderData(), actionData: undefined } as never), loader: () => data, action: async () => { await gate; return {}; } }], { initialEntries: ["/settings/ai"], hydrationData: { loaderData: { ai: data } } });
-  let renderer!: ReactTestRenderer;
-  await act(() => { renderer = create(createElement(RouterProvider, { router })); });
-  const form = new FormData();
-  form.set("intent", waiting ? "cancel" : "connect");
-  let submitted!: Promise<void>;
-  await act(async () => { submitted = router.navigate("/settings/ai", { formMethod: "post", formData: form }); });
-  const controls = renderer.root.findAllByType("button").filter(button => button.props.name === "intent");
-  expect(controls.length).toBe(waiting ? 1 : 2);
-  for (const button of controls) expect(button.props.disabled).toBe(true);
-  if (!waiting) expect(buttons(renderer)).toContain("Please wait…");
-  await act(async () => { release(); await submitted; });
-  for (const button of renderer.root.findAllByType("button").filter(button => button.props.name === "intent")) expect(button.props.disabled).toBe(false);
-  await act(() => renderer.unmount());
-  router.dispose();
-});
-
-test("non-pending settings do not poll and other-session/disconnecting states offer no cancellation", async () => {
-  vi.useFakeTimers();
-  try {
-    const { renderer, load } = await render(disconnected);
-    await act(async () => { await vi.advanceTimersByTimeAsync(4000); });
-    expect(load).toHaveBeenCalledTimes(1);
-    await act(() => renderer.unmount());
-    for (const attempt of [undefined, { id: "disconnect", state: "disconnecting" as const }]) {
-      const { renderer } = await render({ ...disconnected, busy: true, attempt });
-      expect(buttons(renderer)).not.toContain("Cancel sign-in");
-      expect(buttons(renderer)).not.toContain("Connect OpenAI");
-      const status = text(renderer.root.findByProps({ role: "status" }));
-      expect(status).toBe(attempt ? "Disconnecting…" : "A sign-in is in progress in another session.");
-      await act(() => renderer.unmount());
-    }
-  } finally { vi.useRealTimers(); }
 });

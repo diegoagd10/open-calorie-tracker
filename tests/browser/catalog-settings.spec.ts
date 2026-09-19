@@ -328,7 +328,7 @@ test("a real backend restart delivers independent interruption toasts only to ad
   const environment = {
     ...process.env, NODE_ENV: "test", CATALOG_BUILT_WORKER: "1", FOOD_CATALOG_TEST_FIXTURE: "0",
     PHOTO_ANALYSIS_TEST_FIXTURE: "1", SETUP_TEST_NOW: "2026-01-01T09:30:00.000Z", FOOD_LOG_TEST_NOW: "2026-08-29T18:00:00.000Z",
-    DATABASE_PATH: path.join(directory, "application.sqlite"), CATALOG_DIRECTORY: path.join(directory, "catalogs"),
+    DATABASE_PATH: path.join(directory, "application.sqlite"), CATALOG_DIRECTORY: path.join(directory, "catalogs"), APPLICATION_SECRETS_PATH: path.join(directory, "secrets"),
     PHOTO_AI_AUTH_PATH: path.join(directory, "pi/auth.json"), APPLICATION_URL: `https://localhost:${publicPort}`, LAN_URL: origin, LAN_PORT: lanPort,
   };
   const start = () => spawn(process.execPath, ["--import", "./tests/browser/pi-oauth-fixture.mjs", "--import", "./tests/browser/off-metadata-fixture.mjs", "server/playwright-https.js", key, cert, publicPort, lanPort], { env: environment, stdio: "ignore" });

@@ -16,6 +16,13 @@ export const applicationMetadata = sqliteTable("application_metadata", {
   updatedAt: text("updated_at").notNull(),
 });
 
+export const encryptedCredentialBundles = sqliteTable("encrypted_credential_bundles", {
+  name: text().primaryKey(),
+  envelope: text().notNull(),
+  configuredAt: text("configured_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});
+
 export const users = sqliteTable(
   "users",
   {

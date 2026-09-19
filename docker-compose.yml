@@ -7,6 +7,8 @@ services:
     restart: unless-stopped
     environment:
       APPLICATION_URL: "${APPLICATION_URL:?Set the canonical HTTPS application origin}"
+      APPLICATION_SECRETS_PATH: "${APPLICATION_SECRETS_PATH:-/app/secrets}"
+      APPLICATION_MASTER_KEY_PATH:
       PHOTO_AI_PROVIDER: "${PHOTO_AI_PROVIDER:-openai-codex}"
       PHOTO_AI_MODEL: "${PHOTO_AI_MODEL:-gpt-5.6-luna}"
       PHOTO_AI_REASONING: "${PHOTO_AI_REASONING:-low}"
@@ -22,3 +24,6 @@ services:
       - type: bind
         source: "${DATA_PATH:?Set DATA_PATH to the host data directory}"
         target: /app/data
+      - type: bind
+        source: "${APPLICATION_SECRETS_MOUNT_PATH:?Set APPLICATION_SECRETS_MOUNT_PATH to the separate host secrets directory}"
+        target: "${APPLICATION_SECRETS_PATH:-/app/secrets}"

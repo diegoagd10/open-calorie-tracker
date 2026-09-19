@@ -2,11 +2,14 @@ import path from "node:path";
 import { z } from "zod";
 import { getApplicationDatabase } from "../database/runtime.server";
 import type { ApplicationDatabaseClient } from "../database/database.server";
+import { initializeCredentialStorage, shutdownCredentialStorage } from "../credentials/runtime.server";
 import { getUsdaAnalysisReader } from "../catalog/runtime.server";
 import { PhotoAnalysisService } from "./photo-analysis.server";
 import { PiPhotoAnalyzer, piCompletion } from "./pi.server";
 import { PiConnectionService } from "./pi-connection.server";
-import { TestPhotoAnalyzer } from "./test-fixture.server";
+import { PhotoAnalysisCredentials } from "./credentials.server";
+import { RemotePhotoAnalysisCredentialValidator } from "./provider-credential-validation.server";
+import { TestPhotoAnalysisCredentialValidator, TestPhotoAnalyzer } from "./test-fixture.server";
 
 const environmentSchema = z.object({
   PHOTO_AI_PROVIDER: z.string().min(1).default("openai-codex"),
@@ -20,6 +23,7 @@ const environmentSchema = z.object({
     .default(path.resolve("data/pi/auth.json")),
   PHOTO_AI_USDA_ROUNDS: z.coerce.number().int().min(1).max(5).default(3),
   PHOTO_ANALYSIS_TEST_FIXTURE: z.enum(["0", "1"]).optional(),
+  PHOTO_CREDENTIAL_VALIDATION_TEST_FIXTURE: z.enum(["0", "1"]).optional(),
   FOOD_LOG_TEST_NOW: z.string().optional(),
 });
 let current:
@@ -68,9 +72,24 @@ export function getPiConnectionService() {
   return connection.service;
 }
 
+let credentials: Promise<PhotoAnalysisCredentials> | undefined;
+
+export function getPhotoAnalysisCredentials(): Promise<PhotoAnalysisCredentials> {
+  credentials ??= initializeCredentialStorage().then(bundles => {
+    const config = environmentSchema.parse(process.env);
+    const validator = process.env.NODE_ENV === "test" && config.PHOTO_CREDENTIAL_VALIDATION_TEST_FIXTURE === "1"
+      ? new TestPhotoAnalysisCredentialValidator()
+      : new RemotePhotoAnalysisCredentialValidator();
+    return new PhotoAnalysisCredentials(bundles, validator);
+  });
+  return credentials;
+}
+
 export function shutdownPhotoAnalysis() {
   connection?.service.shutdown();
   connection = undefined;
   current?.service.shutdown();
   current = undefined;
+  credentials = undefined;
+  shutdownCredentialStorage();
 }

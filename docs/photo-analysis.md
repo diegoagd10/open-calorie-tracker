@@ -28,7 +28,12 @@ The default subscription path is Pi's `openai-codex` provider, model
 credential and does not authenticate a Codex subscription.
 
 On a local installation, sign in as the application administrator and open
-**Settings → AI photo estimates → Connect OpenAI**. The application displays Pi's
+**Settings → AI photo estimates**. Enter the Gemini and TypeSafe API keys as one
+pair. Both are validated before the application atomically replaces the encrypted
+shared bundle; saved keys are never displayed again. The pair is staged for the
+later provider cutover and does not change the active analyzer in this expand step.
+
+The same page retains **OpenAI connection** for Pi. The application displays Pi's
 short-lived **Authorize with OpenAI** browser link. Open it, sign in, and approve.
 When Pi receives its callback on `localhost:1455`, Settings updates automatically.
 There is no code, token, or callback address to copy into the application and no
@@ -76,6 +81,8 @@ resumable execution system.
 | `PHOTO_AI_REASONING` | `low` (`minimal`, `medium`, `high` also supported) |
 | `PHOTO_AI_AUTH_PATH` | `data/pi/auth.json` under the working directory |
 | `PHOTO_AI_USDA_ROUNDS` | `3` (range 1–5) |
+| `APPLICATION_SECRETS_PATH` | `secrets` under the working directory (separate from `data`) |
+| `APPLICATION_MASTER_KEY_PATH` | `application-master.key` inside `APPLICATION_SECRETS_PATH` |
 
 The Pi SDK adapter creates no coding-agent session, shell, file tools, extension
 loader, project-context discovery, or automatic compaction. Only local USDA

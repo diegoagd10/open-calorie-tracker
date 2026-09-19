@@ -72,6 +72,7 @@
         "name": "database",
         "patterns": ["app/database/**"]
       },
+      { "name": "credentials", "patterns": ["app/credentials/**"] },
       { "name": "photo-analysis", "patterns": ["app/photo-analysis/**"] },
       {
         "name": "food-entry",
@@ -144,7 +145,8 @@
       { "from": "auth", "allow": ["database", "server"] },
       { "from": "browser-auth", "allow": [] },
       { "from": "catalog", "allow": ["server", "database", "catalog-management"] },
-      { "from": "database", "allow": [], "allowTypeOnly": ["catalog", "catalog-management"] },
+      { "from": "database", "allow": [], "allowTypeOnly": ["catalog", "catalog-management", "credentials"] },
+      { "from": "credentials", "allow": ["database"] },
       { "from": "catalog-management", "allow": ["database", "catalog"] },
       {
         "from": "food-entry",
@@ -162,13 +164,14 @@
         "allow": ["database", "food-log", "setup"]
       },
       { "from": "server", "allow": ["auth", "database", "photo-analysis", "catalog-management"] },
-      { "from": "photo-analysis", "allow": ["catalog", "database", "food-entry", "food-log"] },
+      { "from": "photo-analysis", "allow": ["catalog", "credentials", "database", "food-entry", "food-log"] },
       {
         "from": "tests",
         "allow": [
           "auth",
           "catalog",
           "catalog-management",
+          "credentials",
           "database",
           "photo-analysis",
           "food-entry",

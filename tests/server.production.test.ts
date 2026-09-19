@@ -5,7 +5,7 @@ import { seedAuthenticatedAccount } from "./support/authentication";
 import { authenticator } from "./support/webauthn";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { execFile } from "node:child_process";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import net from "node:net";
 import { networkInterfaces, tmpdir } from "node:os";
 import path from "node:path";
@@ -57,9 +57,11 @@ async function availablePort(): Promise<number> {
 }
 
 function startProductionProcess(environment: NodeJS.ProcessEnv): RunningProcess {
+  const applicationSecretsPath = environment.APPLICATION_SECRETS_PATH
+    ?? (environment.DATABASE_PATH ? path.join(path.dirname(environment.DATABASE_PATH), "secrets") : undefined);
   const child = spawn(process.execPath, ["server.js"], {
     cwd: process.cwd(),
-    env: { ...process.env, NODE_ENV: "production", ...environment },
+    env: { ...process.env, NODE_ENV: "production", ...environment, APPLICATION_SECRETS_PATH: applicationSecretsPath },
     stdio: "pipe",
   });
   processes.push(child);
@@ -129,6 +131,9 @@ test.each([undefined, "0.0.0.0/0", "invalid"])("production starts with obsolete 
   const port = await availablePort();
   const running = startProductionProcess({ APPLICATION_URL: "https://calories.example.test", DATABASE_PATH: path.join(directory, "application.sqlite"), PORT: String(port), TRUST_PROXY });
   expect((await waitForHttpResponse(`http://127.0.0.1:${port}/health/live`)).status).toBe(200);
+  const masterKeyPath = path.join(directory, "secrets", "application-master.key");
+  expect(await readFile(masterKeyPath)).toHaveLength(32);
+  expect((await stat(masterKeyPath)).mode & 0o777).toBe(0o600);
   running.child.kill("SIGTERM");
   await waitForExit(running.child);
   expect(parseJsonLines(running.stderr()).filter(line => line.event === "configuration_deprecated")).toHaveLength(TRUST_PROXY === undefined ? 0 : 1);

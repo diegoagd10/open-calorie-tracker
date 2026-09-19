@@ -20,4 +20,13 @@
 .actions button:disabled { opacity: 0.6; cursor: wait; }
 .actions button:focus-visible, .primary:focus-visible { outline: 3px solid var(--green); outline-offset: 3px; }
 .error { background: #fff1f0; color: #8a1c14; padding: 0.75rem; border-radius: 0.65rem; }
+.success { background: #edf7ee; color: var(--green-dark); padding: 0.75rem; border-radius: 0.65rem; }
+.credentialForm { display: grid; gap: 0.5rem; margin-top: 1rem; }
+.credentialForm input { width: 100%; min-height: 2.75rem; box-sizing: border-box; padding: 0.65rem 0.75rem; border: 1px solid var(--rule-strong); border-radius: 0.65rem; color: var(--ink); background: var(--surface); font: inherit; }
+.credentialForm input:focus-visible, .confirmation input:focus-visible { outline: 3px solid var(--green); outline-offset: 2px; }
+.credentialForm button { justify-self: start; margin-top: 0.5rem; }
+.fieldError { color: #8a1c14; }
+.deleteForm { display: grid; gap: 0.75rem; padding-top: 1rem; margin-top: 1rem; border-top: 1px solid var(--rule); }
+.confirmation { display: flex; align-items: flex-start; gap: 0.6rem; }
+.confirmation input { width: 1.1rem; height: 1.1rem; margin-top: 0.2rem; flex: 0 0 auto; }
 .note { margin-bottom: 0; color: var(--muted); font-size: 0.8rem; }
