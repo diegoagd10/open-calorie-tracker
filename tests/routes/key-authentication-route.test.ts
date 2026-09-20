@@ -22,9 +22,11 @@ import SecuritySettings, {
   meta as securityMeta,
 } from "../../app/routes/settings.security";
 import Login from "../../app/routes/login";
+import Users, { loader as usersLoader } from "../../app/routes/settings.users";
 import * as browserProvider from "@simplewebauthn/browser";
 import { action } from "../../app/routes/key-ceremony";
 import { loader as securityLoader } from "../../app/routes/settings.security";
+import ChangePassword, { loader as passwordLoader, action as changePassword } from "../../app/routes/account.password";
 import {
   action as passwordLogin,
   loader as loginLoader,
@@ -38,6 +40,65 @@ import type {
 
 const origin = "https://tracker.example";
 const password = "correct horse battery staple";
+
+test("account-password routes replace a forgotten fallback using action-scoped key proof, not a password", async () => {
+  const owner = await enabledAccount("fallback.route");
+  const token = parseCookies(owner.enabledCookie).get("__Host-calorie_session")!;
+  const session = (await getAuthenticationService().authenticate(token))!;
+  expect(await passwordLoader(args(new Request(`${origin}/account/password`, { headers: { Cookie: owner.enabledCookie } }), "/account/password"))).toMatchObject({ keyLoginEnabled: true });
+  const passwordAttempt = await changePassword(args(new Request(`${origin}/account/password`, {
+    method: "POST", headers: { Origin: origin, Cookie: owner.enabledCookie },
+    body: new URLSearchParams({ csrfToken: session.csrfToken, currentPassword: password, newPassword: "replacement fallback password", confirmNewPassword: "replacement fallback password" }),
+  }), "/account/password"));
+  expect(passwordAttempt).toMatchObject({ init: { status: 400 }, data: { error: "Verify a registered key to replace your fallback password." } });
+  const start = await action(args(post({ action: "password-start", csrfToken: session.csrfToken }, owner.enabledCookie)));
+  expect(start.status).toBe(200);
+  const { options } = await start.json() as { options: PublicKeyCredentialRequestOptionsJSON };
+  const finish = await action(args(post({ action: "password-finish", csrfToken: session.csrfToken,
+    newPassword: "replacement fallback password", confirmNewPassword: "replacement fallback password", response: owner.key.assertion(options, 2),
+  }, `${owner.enabledCookie}; ${cookies(start)}`)));
+  expect(finish.status).toBe(200);
+  expect(await finish.json()).toEqual({ nextPath: "/account/password" });
+  expect(await getAuthenticationService().authenticate(token)).toBeUndefined();
+  const rotated = parseCookies(cookies(finish)).get("__Host-calorie_session")!;
+  expect(getAuthenticationService().keys.status(rotated)).toMatchObject({ enabled: true, credentials: [{ id: owner.key.id }] });
+});
+
+test("fallback replacement follows authenticated password-cookie rotation without post-commit pre-authentication writes", async () => {
+  const owner = await enabledAccount("fallback.csrf");
+  const service = getAuthenticationService();
+  const token = parseCookies(owner.enabledCookie).get("__Host-calorie_session")!;
+  const session = (await service.authenticate(token))!;
+  const preAuth = await loginLoader(args(new Request(`${origin}/login`), "/login"));
+  if (preAuth instanceof Response) throw new Error("login redirected");
+  const preAuthCookie = new Headers(preAuth.init?.headers).get("Set-Cookie")!.split(";", 1)[0];
+  const start = await action(args(post({ action: "password-start", csrfToken: session.csrfToken }, owner.enabledCookie)));
+  const { options } = await start.json() as { options: PublicKeyCredentialRequestOptionsJSON };
+  const database = getApplicationDatabase().getClient();
+  database.$client.exec("CREATE TRIGGER refuse_pre_auth_cleanup BEFORE DELETE ON pre_authentication_csrf_sessions BEGIN SELECT RAISE(ABORT, 'storage failure'); END");
+  try {
+    const finish = await action(args(post({ action: "password-finish", csrfToken: session.csrfToken, response: owner.key.assertion(options, 2), newPassword: "replacement fallback password", confirmNewPassword: "replacement fallback password" }, `${owner.enabledCookie}; ${cookies(start)}; ${preAuthCookie}`)));
+    expect(finish.status).toBe(200);
+    const rotated = parseCookies(cookies(finish)).get("__Host-calorie_session")!;
+    expect(await service.authenticate(rotated)).toMatchObject({ user: { passwordChangeRequired: false } });
+  } finally {
+    database.$client.exec("DROP TRIGGER refuse_pre_auth_cleanup");
+  }
+});
+
+test("removal route binds the target, clears revoked cookies, and restores final-key password login", async () => {
+  const owner = await enabledAccount("remove.route");
+  const token = parseCookies(owner.enabledCookie).get("__Host-calorie_session")!;
+  const session = (await getAuthenticationService().authenticate(token))!;
+  const start = await action(args(post({ action: "remove-start", csrfToken: session.csrfToken, credentialId: owner.key.id }, owner.enabledCookie)));
+  expect(start.status).toBe(200);
+  const { options } = await start.json() as { options: PublicKeyCredentialRequestOptionsJSON };
+  const finish = await action(args(post({ action: "remove-finish", csrfToken: session.csrfToken, credentialId: owner.key.id, response: owner.key.assertion(options, 2) }, `${owner.enabledCookie}; ${cookies(start)}`)));
+  expect(await finish.json()).toEqual({ nextPath: "/login" });
+  expect(finish.headers.getSetCookie().some((cookie) => cookie.startsWith("__Host-calorie_session=;") && cookie.includes("Max-Age=0"))).toBe(true);
+  expect(await getAuthenticationService().authenticate(token)).toBeUndefined();
+  expect((await getAuthenticationService().login("remove.route", password, "remove.route")).ok).toBe(true);
+});
 let directory: string;
 function args(request: Request, pattern = "/key-ceremony") {
   return {
@@ -401,9 +462,10 @@ async function renderPage(
   Component: (props: never) => React.JSX.Element,
   pathname: string,
   loaderData: object,
+  loader?: () => unknown,
 ) {
   const Routes = createRoutesStub([
-    { Component: Component as never, id: "subject", path: pathname },
+    { Component: Component as never, id: "subject", path: pathname, loader },
   ]);
   let renderer: ReactTestRenderer | undefined;
   await act(async () => {
@@ -418,10 +480,11 @@ async function renderPage(
 }
 function formSubmit(renderer: ReactTestRenderer) {
   return (
-    renderer.root.findByType("form").props as {
+    renderer.root.findAllByType("form")[0].props as {
       onSubmit: (event: {
         preventDefault(): void;
         currentTarget: object;
+        defaultPrevented?: boolean;
       }) => void;
     }
   ).onSubmit;
@@ -435,6 +498,7 @@ function allText(renderer: ReactTestRenderer) {
 }
 function browserTransport(initialCookie: string) {
   const jar = new Map<string, string>();
+  const outcomes: { action: string; status: number }[] = [];
   for (const [name, value] of parseCookies(initialCookie)) jar.set(name, value);
   const cookie = () =>
     [...jar].map(([name, value]) => `${name}=${value}`).join("; ");
@@ -453,6 +517,7 @@ function browserTransport(initialCookie: string) {
         else jar.delete(name);
       }
     }
+    outcomes.push({ action: (JSON.parse(String(init.body)) as { action: string }).action, status: response.status });
     return response;
   });
   const NativeFormData = FormData;
@@ -469,8 +534,45 @@ function browserTransport(initialCookie: string) {
   const assign = vi.fn();
   const installNavigation = () =>
     vi.stubGlobal("window", { location: { assign } });
-  return { cookie, assign, installNavigation };
+  return { cookie, assign, installNavigation, outcomes };
 }
+
+test.each([false, true])("fallback-password UI verifies a fresh key and completes replacement with restriction=%s", async (restricted) => {
+  const owner = await enabledAccount(`password.ui.${restricted}`);
+  const service = getAuthenticationService();
+  let cookie = owner.enabledCookie;
+  let counter = 2;
+  if (restricted) {
+    await service.resetMemberPassword(owner.session.user, owner.session.user.username, "temporary replacement password");
+    const proof = await service.keys.beginLogin(owner.session.user.username, "ui-reset-login", "192.0.2.5");
+    cookie = serializeSessionCookie(await service.keys.finishLogin("ui-reset-login", owner.key.assertion(proof, counter++))).split(";", 1)[0];
+  }
+  const transport = browserTransport(cookie);
+  const load = () => passwordLoader(args(new Request(`${origin}/account/password`, { headers: { Cookie: transport.cookie() } }), "/account/password"));
+  const pageData = await load();
+  if (pageData instanceof Response) throw new Error("password settings redirected");
+  const renderer = await renderPage(ChangePassword, "/account/password", pageData, load);
+  transport.installNavigation();
+  expect(renderer.root.findAllByProps({ name: "currentPassword" })).toHaveLength(0);
+  expect(allText(renderer)).toContain("You do not need the old password");
+  vi.mocked(browserProvider.startAuthentication).mockRejectedValueOnce(new DOMException("cancelled", "NotAllowedError"));
+  const fields = { newPassword: "replacement fallback password", confirmNewPassword: "replacement fallback password", reset: vi.fn() };
+  await act(async () => {
+    formSubmit(renderer)({ defaultPrevented: false, preventDefault() { this.defaultPrevented = true; }, currentTarget: fields });
+    await vi.waitFor(() => expect(transport.outcomes).toContainEqual({ action: "cancel", status: 200 }));
+  });
+  expect(renderer.root.findByProps({ role: "alert" }).children.join("")).toContain("cancelled");
+  vi.mocked(browserProvider.startAuthentication).mockImplementation(async ({ optionsJSON }) => owner.key.assertion(optionsJSON, counter));
+  await act(async () => {
+    formSubmit(renderer)({ defaultPrevented: false, preventDefault() { this.defaultPrevented = true; }, currentTarget: fields });
+    await vi.waitFor(() => expect((service.keys.status(parseCookies(transport.cookie()).get("__Host-calorie_session")!)).enabled).toBe(true));
+    await vi.waitFor(() => expect((service.verifyCredentials(owner.session.user.username, "replacement fallback password"))).resolves.toMatchObject({ matches: true }));
+  });
+  expect(await load()).toMatchObject({ keyLoginEnabled: true, passwordChangeRequired: false });
+  expect(allText(renderer)).toContain(restricted ? "Set your private password" : "Password changed.");
+  expect(transport.assign.mock.calls).toEqual(restricted ? [["/setup"]] : []);
+  await act(async () => renderer.unmount());
+});
 
 test("security UI and login UI complete real route ceremonies without an account password", async () => {
   const owner = await account("ui.owner");
@@ -854,6 +956,41 @@ test("a key assertion after password reset keeps mandatory password replacement 
       ),
     ),
   ).rejects.toMatchObject({ status: 302 });
+  const restrictedCookie = cookies(completed);
+  const token = parseCookies(restrictedCookie).get("__Host-calorie_session")!;
+  const restricted = (await service.authenticate(token))!;
+  const start = await action(args(post({ action: "password-start", csrfToken: restricted.csrfToken }, restrictedCookie)));
+  const { options } = await start.json() as { options: PublicKeyCredentialRequestOptionsJSON };
+  expect((await action(args(post({ action: "cancel", csrfToken: restricted.csrfToken }, `${restrictedCookie}; ${cookies(start)}`)))).status).toBe(200);
+  const retry = await action(args(post({ action: "password-start", csrfToken: restricted.csrfToken }, restrictedCookie)));
+  const retriedOptions = (await retry.json() as { options: PublicKeyCredentialRequestOptionsJSON }).options;
+  const replaced = await action(args(post({ action: "password-finish", csrfToken: restricted.csrfToken, response: key.assertion(retriedOptions, 3), newPassword: "replacement fallback password", confirmNewPassword: "replacement fallback password" }, `${restrictedCookie}; ${cookies(retry)}`)));
+  expect(await replaced.json()).toEqual({ nextPath: "/setup" });
+  const newToken = parseCookies(cookies(replaced)).get("__Host-calorie_session")!;
+  expect(await service.authenticate(newToken)).toMatchObject({ user: { passwordChangeRequired: false } });
+  await expect(service.keys.finishPasswordChange(token, "missing", key.assertion(options, 3), "another replacement password")).rejects.toThrow();
+});
+
+test.each(["short", "confirmation", "wrong-purpose", "other-key", "other-session"])("password-replacement routes reject %s without changing password, mode, or saved keys", async (failure) => {
+  const owner = await enabledAccount(`fallback.${failure}`);
+  const token = parseCookies(owner.enabledCookie).get("__Host-calorie_session")!;
+  const session = (await getAuthenticationService().authenticate(token))!;
+  const other = await enabledAccount(`other.${failure}`);
+  const otherToken = parseCookies(other.enabledCookie).get("__Host-calorie_session")!;
+  const otherSession = (await getAuthenticationService().authenticate(otherToken))!;
+  const start = await action(args(post({ action: failure === "wrong-purpose" ? "disable-start" : "password-start", csrfToken: session.csrfToken }, owner.enabledCookie)));
+  const { options } = await start.json() as { options: PublicKeyCredentialRequestOptionsJSON };
+  const assertion = (failure === "other-key" ? other.key : owner.key).assertion(options, 2);
+  const body = { action: "password-finish", csrfToken: failure === "other-session" ? otherSession.csrfToken : session.csrfToken,
+    newPassword: failure === "short" ? "short" : "replacement fallback password", confirmNewPassword: failure === "confirmation" ? "mismatched fallback password" : "replacement fallback password", response: assertion };
+  const cookie = `${failure === "other-session" ? other.enabledCookie : owner.enabledCookie}; ${cookies(start)}`;
+  const finish = await action(args(post(body, cookie)));
+  expect(finish.status).toBe(400);
+  expect(finish.headers.getSetCookie().some((value) => value.startsWith("__Host-calorie_session="))).toBe(false);
+  const replay = await action(args(post({ ...body, newPassword: "replacement fallback password", confirmNewPassword: "replacement fallback password" }, cookie)));
+  expect(replay.status).toBe(400);
+  expect((await getAuthenticationService().verifyCredentials(session.user.username, password)).matches).toBe(true);
+  expect(getAuthenticationService().keys.status(session.token)).toMatchObject({ enabled: true, credentials: [{ id: owner.key.id }] });
 });
 
 test("adding a key through the route requires a scoped fresh assertion", async () => {
@@ -1264,7 +1401,7 @@ test.each([false, true])("mode toggle UI to enabled=%s handles cancellation and 
   await act(async () => renderer.unmount());
 });
 
-test.each(["disable-start", "re-enable-start"])("%s preserves authenticated CSRF, origin and anonymous guards", async (modeAction) => {
+test.each(["disable-start", "re-enable-start", "remove-start", "remove-finish"])("%s preserves authenticated CSRF, origin and anonymous guards", async (modeAction) => {
   await expect(action(args(post({ action: modeAction, csrfToken: "bad" })))).rejects.toMatchObject({ status: 401 });
   const session = await account(`protected.${modeAction}`);
   const cookie = serializeSessionCookie(session).split(";", 1)[0];
@@ -1272,4 +1409,167 @@ test.each(["disable-start", "re-enable-start"])("%s preserves authenticated CSRF
   const wrongOrigin = post({ action: modeAction, csrfToken: session.csrfToken }, cookie);
   wrongOrigin.headers.set("Origin", "https://attacker.example");
   await expect(action(args(wrongOrigin))).rejects.toMatchObject({ status: 403 });
+});
+
+test.each([true, false])("removal UI in key mode=%s explains final-key passwords, permits cancel, and retries fresh verification", async (enabled) => {
+  const username = `remove.ui.${enabled}`;
+  const owner = await enabledAccount(username);
+  let cookie = owner.enabledCookie;
+  if (!enabled) {
+    const current = (await getAuthenticationService().authenticate(parseCookies(cookie).get("__Host-calorie_session")))!;
+    const proof = await getAuthenticationService().keys.beginModeChange(current.token, "disable-removal-ui", false);
+    await getAuthenticationService().keys.finishModeChange(current.token, "disable-removal-ui", false, owner.key.assertion(proof, 2));
+    const login = await getAuthenticationService().login(username, password, username);
+    if (!login.ok) throw new Error("password login failed");
+    cookie = serializeSessionCookie(login.session).split(";", 1)[0];
+  }
+  const loaded = await securityLoader(args(new Request(`${origin}/settings/security`, { headers: { Cookie: cookie } }), "/settings/security"));
+  if (loaded instanceof Response) throw new Error("settings redirected");
+  const renderer = await renderPage(SecuritySettings, "/settings/security", loaded);
+  const transport = browserTransport(cookie);
+  transport.installNavigation();
+  const button = (name: string) => renderer.root.findAllByType("button").find((node) => (node.props["aria-label"] ?? node.children.join("")) === name)!;
+  await act(async () => { (button("Delete My key").props as { onClick(): void }).onClick(); });
+  expect(allText(renderer)).toContain("Deleting your final key restores password sign-in");
+  await act(async () => { (button("Cancel deletion").props as { onClick(): void }).onClick(); });
+  expect(allText(renderer)).not.toContain("Confirm deletion");
+  vi.mocked(browserProvider.startAuthentication).mockRejectedValueOnce(new DOMException("cancelled", "NotAllowedError"));
+  await act(async () => { (button("Delete My key").props as { onClick(): void }).onClick(); });
+  const submit = async (password: string) => {
+    const form = renderer.root.findAllByType("form").find((node) => node.props["aria-labelledby"] === "remove-key-title")!;
+    await act(async () => { (form.props as { onSubmit(event: { preventDefault(): void; currentTarget: object }): void }).onSubmit({ preventDefault() {}, currentTarget: { password } }); });
+  };
+  await submit("incorrect password");
+  await vi.waitFor(async () => { await act(async () => {}); expect(renderer.root.findAll((node) => node.props.role === "alert")).toHaveLength(1); });
+  expect(transport.assign).not.toHaveBeenCalled();
+  expect(getAuthenticationService().keys.status(parseCookies(transport.cookie()).get("__Host-calorie_session")!).credentials).toHaveLength(1);
+  vi.mocked(browserProvider.startAuthentication).mockImplementation(async ({ optionsJSON }) => owner.key.assertion(optionsJSON, 3));
+  await submit(password);
+  await vi.waitFor(() => expect(transport.assign).toHaveBeenCalledWith("/login"));
+  expect((await getAuthenticationService().login(username, password, username)).ok).toBe(true);
+  await act(async () => renderer.unmount());
+});
+
+test("personal removal rejects another owner's target and another session's proof, and logs no credential material", async () => {
+  const owner = await enabledAccount("remove.owner");
+  const foreign = await enabledAccount("remove.foreign");
+  async function sessionFor(cookie: string) {
+    return (await getAuthenticationService().authenticate(parseCookies(cookie).get("__Host-calorie_session")))!;
+  }
+  const current = await sessionFor(owner.enabledCookie);
+  const other = await sessionFor(foreign.enabledCookie);
+  const deniedTarget = await action(args(post({ action: "remove-start", csrfToken: other.csrfToken, credentialId: owner.key.id }, foreign.enabledCookie)));
+  expect(deniedTarget.status).toBe(400);
+  const start = await action(args(post({ action: "remove-start", csrfToken: current.csrfToken, credentialId: owner.key.id }, owner.enabledCookie)));
+  const { options } = await start.json() as { options: PublicKeyCredentialRequestOptionsJSON };
+  const response = owner.key.assertion(options, 2);
+  const log = vi.spyOn(console, "log").mockImplementation(() => {});
+  const rejected = await action(args(post({ action: "remove-finish", csrfToken: other.csrfToken, credentialId: owner.key.id, response }, `${foreign.enabledCookie}; ${cookies(start)}`)));
+  expect(rejected.status).toBe(400);
+  expect(getAuthenticationService().keys.status(current.token).credentials).toHaveLength(1);
+  const audit = log.mock.calls.map((call) => String(call[0])).join("\n");
+  expect(audit).toContain("key_removal");
+  for (const secret of [owner.key.id, options.challenge, response.response.signature, current.token, password]) expect(audit).not.toContain(secret);
+});
+
+test("member recovery routes require administrator authority, target confirmation, CSRF and fresh password proof", async () => {
+  const service = getAuthenticationService();
+  getApplicationDatabase().getClient().$client.exec("DELETE FROM users WHERE role = 'admin'");
+  const administrator = await account("recovery.route.admin", "admin");
+  const member = await enabledAccount("recovery.route.member");
+  const memberSession = (await service.authenticate(parseCookies(member.enabledCookie).get("__Host-calorie_session")))!;
+  const adminCookie = serializeSessionCookie(administrator).split(";", 1)[0];
+  const fields = { csrfToken: administrator.csrfToken, targetUserId: memberSession.user.id, username: "recovery.route.member", confirmationUsername: "recovery.route.member", proofMethod: "password" };
+  await expect(action(args(post({ ...fields, action: "recovery-start" })))).rejects.toMatchObject({ status: 302 });
+  await expect(action(args(post({ ...fields, action: "recovery-start", csrfToken: memberSession.csrfToken }, member.enabledCookie)))).rejects.toMatchObject({ status: 404 });
+  await expect(action(args(post({ ...fields, action: "recovery-start", csrfToken: "bad" }, adminCookie)))).rejects.toMatchObject({ status: 403 });
+  const unconfirmed = await action(args(post({ ...fields, action: "recovery-start", confirmationUsername: "wrong" }, adminCookie)));
+  expect(unconfirmed.status).toBe(400);
+  const start = await action(args(post({ ...fields, action: "recovery-start" }, adminCookie)));
+  expect(start.status).toBe(200);
+  expect(await start.json()).toEqual({});
+  const finish = await action(args(post({ ...fields, action: "recovery-finish", password }, `${adminCookie}; ${cookies(start)}`)));
+  expect(finish.status).toBe(200);
+  expect(await finish.json()).toEqual({ outcome: "disabled", nextPath: "/settings/users" });
+  expect(finish.headers.get("Set-Cookie")).not.toContain("__Host-calorie_session=");
+  expect(await service.authenticate(memberSession.token)).toBeUndefined();
+  const login = await service.login("recovery.route.member", password, "192.0.2.95");
+  if (!login.ok) throw new Error("password recovery failed");
+  expect(service.keys.status(login.session.token)).toMatchObject({ enabled: false, credentials: [{ id: member.key.id }] });
+});
+
+test.each(["password", "key"] as const)("member recovery UI retries fresh %s proof, prevents duplicate submission and reports already-disabled mode", async (method) => {
+  vi.mocked(browserProvider.startAuthentication).mockReset();
+  getApplicationDatabase().getClient().$client.exec("DELETE FROM users WHERE role = 'admin'");
+  const admin = await enabledAccount(`recovery.ui.admin.${method}`, "admin");
+  const member = await enabledAccount(`recovery.ui.member.${method}`);
+  const service = getAuthenticationService();
+  const loaded = await usersLoader(args(new Request(`${origin}/settings/users`, { headers: { Cookie: admin.enabledCookie } }), "/settings/users"));
+  const renderer = await renderPage(Users, "/settings/users", loaded);
+  const transport = browserTransport(admin.enabledCookie);
+  const trigger = { focus: vi.fn() };
+  const open = async () => { await act(async () => {
+    (renderer.root.findByProps({ "aria-label": `Disable key login for recovery.ui.member.${method}` }).props as { onClick(event: object): void }).onClick({ currentTarget: trigger });
+  }); };
+  const cancel = () => renderer.root.findAllByType("button").find((node) => node.children.includes("Cancel recovery"))!;
+  await open();
+  await act(async () => { (cancel().props as { onClick(): void }).onClick(); });
+  expect(renderer.root.findAllByType("dialog")).toHaveLength(0);
+  expect(trigger.focus).toHaveBeenCalledOnce();
+  await open();
+  await act(async () => { (renderer.root.findByType("dialog").props as { onCancel(): void }).onCancel(); });
+  expect(renderer.root.findAllByType("dialog")).toHaveLength(0);
+  await open();
+  const submit = async (fields: object, proofMethod: string | null = method) => {
+    await act(async () => {
+      (renderer.root.findByType("dialog").findByType("form").props as {
+        onSubmit(event: object): void;
+      }).onSubmit({ preventDefault() {}, currentTarget: fields, nativeEvent: { submitter: proofMethod ? { getAttribute: () => proofMethod } : null } });
+    });
+  };
+  const fields = { confirmationUsername: `recovery.ui.member.${method}`, administratorPassword: password };
+  await submit({}, null);
+  await vi.waitFor(async () => { await act(async () => {}); expect(allText(renderer)).toContain("exactly to confirm"); });
+  if (method === "key") vi.mocked(browserProvider.startAuthentication).mockRejectedValueOnce(new DOMException("cancelled", "NotAllowedError"));
+  await submit({ ...fields, administratorPassword: "incorrect password" });
+  await vi.waitFor(async () => { await act(async () => {}); expect(renderer.root.findAllByProps({ role: "alert" })).toHaveLength(1); });
+  expect(service.keys.status(parseCookies(member.enabledCookie).get("__Host-calorie_session")!).enabled).toBe(true);
+  let continueProof!: () => void;
+  const proceed = new Promise<void>((resolve) => { continueProof = resolve; });
+  const originalFetch = globalThis.fetch;
+  vi.stubGlobal("fetch", async (url: string, init: RequestInit) => {
+    if ((JSON.parse(String(init.body)) as { action: string }).action === "recovery-finish") await proceed;
+    return originalFetch(url, init);
+  });
+  vi.mocked(browserProvider.startAuthentication).mockImplementation(async ({ optionsJSON }) => admin.key.assertion(optionsJSON, 2));
+  const attemptsBefore = transport.outcomes.filter((outcome) => outcome.action === "recovery-start").length;
+  await submit(fields);
+  await submit(fields); // A second click while proof is pending must have no effect.
+  expect(allText(renderer)).toContain("Verifying administrator proof");
+  expect(transport.outcomes.filter((outcome) => outcome.action === "recovery-start")).toHaveLength(attemptsBefore + 1);
+  continueProof();
+  await vi.waitFor(async () => { await act(async () => {}); expect(allText(renderer)).toContain("key login disabled. Password and saved keys are preserved"); });
+  expect(renderer.root.findAllByType("dialog")).toHaveLength(0);
+  expect(await service.authenticate(parseCookies(member.enabledCookie).get("__Host-calorie_session"))).toBeUndefined();
+  vi.mocked(browserProvider.startAuthentication).mockImplementation(async ({ optionsJSON }) => admin.key.assertion(optionsJSON, 3));
+  await open();
+  await submit(fields);
+  await vi.waitFor(async () => { await act(async () => {}); expect(allText(renderer)).toContain("key login was already disabled"); });
+  await open();
+  await act(async () => { (renderer.root.findByType("dialog").props as { onClose(): void }).onClose(); });
+  expect(renderer.root.findAllByType("dialog")).toHaveLength(0);
+  await act(async () => renderer.unmount());
+});
+
+test("LAN member management guides administrator recovery to public HTTPS without proof tokens", async () => {
+  getApplicationDatabase().getClient().$client.exec("DELETE FROM users WHERE role = 'admin'");
+  const admin = await account("recovery.lan.admin", "admin");
+  await account("recovery.lan.member");
+  const lanOrigin = "http://192.168.50.12:3000";
+  const loaded = await requestPolicyContext.run({ entry: "lan", origin: lanOrigin }, () => usersLoader(args(new Request(`${lanOrigin}/settings/users`, { headers: { Cookie: `calorie_lan_session=${admin.token}` } }), "/settings/users")));
+  expect(loaded.recoveryPublicUrl).toBe(`${origin}/settings/users`);
+  const renderer = await renderPage(Users, "/settings/users", loaded);
+  expect(renderer.root.findAllByType("a").some((node) => node.props.href === `${origin}/settings/users`)).toBe(true);
+  expect(renderer.root.findAllByType("button").some((node) => String(node.props["aria-label"]).startsWith("Disable key login"))).toBe(false);
+  await act(async () => renderer.unmount());
 });

@@ -132,6 +132,7 @@ export type LoginResult =
   | { ok: true; session: IssuedSession };
 
 export type PasswordChangeResult =
+  | { error: "key-proof-required"; ok: false }
   | { error: "invalid-current-password"; ok: false }
   | { error: "invalid-session"; ok: false }
   | { error: "password-reuse"; ok: false }
@@ -314,6 +315,9 @@ export class AuthenticationService {
     currentPassword: string,
     nextPassword: string,
   ): Promise<PasswordChangeResult> {
+    const account = findCredentialByUsername(this.#database, currentSession.user.username);
+    if (account?.keyLoginEnabled)
+      return { error: "key-proof-required", ok: false };
     const rateLimitSubject = String(currentSession.user.id);
     if (
       !this.#rateLimiter.consume(
@@ -337,14 +341,14 @@ export class AuthenticationService {
       return { error: "invalid-current-password", ok: false };
     }
     if (
-      currentSession.user.passwordChangeRequired &&
+      verification.user!.passwordChangeRequired &&
       currentPassword === nextPassword
     ) {
       return { error: "password-reuse", ok: false };
     }
 
-    const now = this.#now();
     const nextPasswordHash = await hashPassword(nextPassword);
+    const now = this.#now();
     const nextSession = prepareIssuedSession(
       now,
       { ...currentSession.user, passwordChangeRequired: false },
@@ -354,17 +358,18 @@ export class AuthenticationService {
 
     const rotated = replacePasswordAndSessions(this.#database, {
       currentTokenHash,
+      expectedPasswordHash: verification.user!.passwordHash,
+      expectedAuthenticationVersion: verification.user!.authenticationVersion,
       nextPasswordHash,
       nextSession: nextSession.persisted,
       updatedAt: now.toISOString(),
       userId: currentSession.user.id,
-    });
+    }, () => this.#rateLimiter.clear("password-change-failure", rateLimitSubject));
 
     if (!rotated) {
       return { error: "invalid-session", ok: false };
     }
 
-    this.#rateLimiter.clear("password-change-failure", rateLimitSubject);
     return { ok: true, session: nextSession.session };
   }
 

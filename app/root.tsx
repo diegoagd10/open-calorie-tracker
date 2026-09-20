@@ -12,13 +12,15 @@ import type { Route } from "./+types/root";
 import { getSessionForAccountAccess } from "./auth/http.server";
 import { CatalogNotifications } from "./catalog-management/notifications";
 
+import { readTheme, themeColors } from "./appearance/theme";
+
 import stylesheet from "./styles.css?url";
 import readinessStyles from "./readiness.module.css";
 
 export async function loader({ request }: Route.LoaderArgs) {
   const session = await getSessionForAccountAccess(request);
   const navigation = { catalogNotifications: session && !session.user.passwordChangeRequired ? { viewerId: session.user.id } : null };
-  return navigation;
+  return { ...navigation, theme: readTheme(request.headers.get("Cookie")) };
 }
 export function headers() { return { "Cache-Control": "no-store" }; }
 
@@ -34,12 +36,14 @@ export const links = () => [
 ];
 
 export function Layout({ children }: { children: React.ReactNode }) {
+  const root = useRouteLoaderData<typeof loader>("root");
+  const theme = root?.theme ?? "dark";
   return (
-    <html lang="en">
+    <html lang="en" data-theme={theme}>
       <head>
         <meta charSet="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <meta name="theme-color" content="#102a43" />
+        <meta name="theme-color" content={themeColors[theme].surface} />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="mobile-web-app-capable" content="yes" />
         <meta

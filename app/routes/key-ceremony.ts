@@ -4,20 +4,29 @@ import type { Route } from "./+types/key-ceremony";
 import {
   authenticatedSessionHeaders,
   getClientIp,
+  getSessionForAccountAccess,
   getSessionForApplicationAccess,
   parseCookies,
   serializeClearedSessionCookie,
+  serializeSessionCookie,
   requirePreAuthenticationCsrf,
   requireValidOrigin,
+  requireAdministratorSession,
 } from "../auth/http.server";
 import { KeyAuthenticationError } from "../database/webauthn.server";
 import { getAuthenticationService } from "../auth/runtime.server";
 import { applicationOrigin, effectiveRequestPolicy } from "../runtime.server";
-import { usernameSchema } from "../auth/validation";
+import { fallbackPasswordChangeSchema, usernameSchema } from "../auth/validation";
 
 const bodySchema = z
   .object({
     action: z.enum([
+      "recovery-start",
+      "recovery-finish",
+      "password-start",
+      "password-finish",
+      "remove-start",
+      "remove-finish",
       "disable-start",
       "disable-finish",
       "re-enable-start",
@@ -32,7 +41,14 @@ const bodySchema = z
       "cancel",
     ]),
     csrfToken: z.string().max(128),
+    targetUserId: z.number().int().positive().safe().optional(),
+    confirmationUsername: z.string().max(30).optional(),
+    proofMethod: z.enum(["password", "key"]).optional(),
     name: z.string().max(80).optional(),
+    credentialId: z.string().min(1).max(2048).optional(),
+    password: z.string().min(1).max(1024).optional(),
+    newPassword: z.string().max(1024).optional(),
+    confirmNewPassword: z.string().max(1024).optional(),
     username: usernameSchema.optional(),
     response: z.unknown().optional(),
   })
@@ -78,13 +94,20 @@ export async function action({ request }: Route.ActionArgs) {
   }
   const service = getAuthenticationService();
   const authenticatedAction =
+    input.action.startsWith("recovery") ||
+    input.action.startsWith("password") ||
+    input.action.startsWith("remove") ||
     input.action.startsWith("disable") ||
     input.action.startsWith("re-enable") ||
     input.action.startsWith("register") ||
     input.action.startsWith("addition") ||
     input.action === "enable-finish";
   const session = authenticatedAction
-    ? await getSessionForApplicationAccess(request)
+    ? await (input.action.startsWith("recovery")
+        ? requireAdministratorSession(request)
+        : input.action.startsWith("password")
+        ? getSessionForAccountAccess(request)
+        : getSessionForApplicationAccess(request))
     : undefined;
   if (authenticatedAction) {
     if (!session)
@@ -94,7 +117,7 @@ export async function action({ request }: Route.ActionArgs) {
   } else if (input.action !== "cancel") {
     requirePreAuthenticationCsrf(request, input.csrfToken);
   } else {
-    const signedIn = await getSessionForApplicationAccess(request);
+    const signedIn = await getSessionForAccountAccess(request);
     if (signedIn) {
       if (!service.verifyCsrfToken(signedIn.token, input.csrfToken))
         throw new Response("CSRF token rejected.", { status: 403 });
@@ -122,6 +145,44 @@ export async function action({ request }: Route.ActionArgs) {
   );
   try {
     switch (input.action) {
+      case "recovery-start":
+      case "recovery-finish": {
+        if (!input.targetUserId || !input.username || input.confirmationUsername !== input.username)
+          throw new KeyAuthenticationError("Enter the member username exactly to confirm recovery.");
+        if (input.action === "recovery-start")
+          return Response.json(await service.keys.beginMemberRecovery(session!.token, browser, input.targetUserId, input.username, input.proofMethod ?? "password"), { headers });
+        const outcome = await service.keys.finishMemberRecovery(session!.token, browser, input.targetUserId, input.username, input.password ?? input.response);
+        return Response.json({ outcome, nextPath: "/settings/users" }, { headers });
+      }
+      case "password-start":
+        return Response.json({ options: await service.keys.beginPasswordChange(session!.token, browser) }, { headers });
+      case "password-finish": {
+        const parsed = fallbackPasswordChangeSchema.safeParse(input);
+        if (!parsed.success)
+          throw new KeyAuthenticationError(parsed.error.issues[0].path[0] === "newPassword"
+            ? "New password must contain 12–128 characters." : "New passwords do not match.");
+        const issued = await service.keys.finishPasswordChange(session!.token, browser, input.response, parsed.data.newPassword);
+        headers.append("Set-Cookie", serializeSessionCookie(issued));
+        return Response.json({ nextPath: session!.user.passwordChangeRequired ? "/setup" : "/account/password" }, { headers });
+      }
+      case "remove-start":
+        return Response.json(
+          await service.keys.beginRemoval(
+            session!.token,
+            browser,
+            input.credentialId ?? "",
+          ),
+          { headers },
+        );
+      case "remove-finish":
+        await service.keys.finishRemoval(
+          session!.token,
+          browser,
+          input.credentialId ?? "",
+          input.password ?? input.response,
+        );
+        headers.append("Set-Cookie", serializeClearedSessionCookie());
+        return Response.json({ nextPath: "/login" }, { headers });
       case "disable-start":
       case "re-enable-start":
         return Response.json(

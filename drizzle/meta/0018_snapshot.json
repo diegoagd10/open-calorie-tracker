@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "2ab8a0a0-f735-43fb-8ec8-ecc7ae972592",
+  "id": "27270fa6-646c-4be0-882e-036f73ff65af",
   "prevId": "d95c28f8-c864-418d-8db7-afc8ba1b8c05",
   "tables": {
     "application_metadata": {
@@ -16,44 +16,6 @@
         },
         "value": {
           "name": "value",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {}
-    },
-    "encrypted_credential_bundles": {
-      "name": "encrypted_credential_bundles",
-      "columns": {
-        "name": {
-          "name": "name",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "envelope": {
-          "name": "envelope",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "configured_at": {
-          "name": "configured_at",
           "type": "text",
           "primaryKey": false,
           "notNull": true,
@@ -1281,6 +1243,13 @@
         },
         "session_hash": {
           "name": "session_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "target_credential_id": {
+          "name": "target_credential_id",
           "type": "text",
           "primaryKey": false,
           "notNull": false,

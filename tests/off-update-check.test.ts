@@ -127,7 +127,7 @@ test.each(["", "invalid", "Wed, 31 Feb 2026 12:03:41 GMT"])("an invalid date %s 
   expect(management.read().updateCheck?.status).toBe("indeterminate");
 });
 
-test("a metadata outage is cached, cannot prevent manual import or lookup, and retry can establish the installed snapshot", async () => {
+test("a metadata outage is cached, cannot prevent manual import, and retry can establish the installed snapshot", async () => {
   let failed = true;
   const fetcher = vi.fn(async () => { if (failed) throw new Error("network failure"); return new Response(null, { headers: matchedHeaders }); });
   const { management, options } = await setup(fetcher);
@@ -136,13 +136,13 @@ test("a metadata outage is cached, cannot prevent manual import or lookup, and r
   await install(management);
   expect(management.read().installed?.sourceSnapshot).toBeUndefined();
   const catalog = new LocalOpenFoodFactsAdapter(management, options.directory);
-  const food = await catalog.lookupBarcode("0012345678905");
+  await expect(catalog.lookupBarcode("0012345678905")).rejects.toThrow("no longer available");
   await management.checkForUpdate();
   expect(fetcher).toHaveBeenCalledTimes(1);
   failed = false;
   await management.checkForUpdate({ force: true });
   expect(management.read().updateCheck?.status).toBe("unchanged");
-  expect(await catalog.lookupBarcode("0012345678905")).toEqual(food);
+  await expect(catalog.lookupBarcode("0012345678905")).rejects.toThrow("no longer available");
 });
 
 test.each([301, 302, 307, 308])("OFF follows only the official storage redirect (%s), always with HEAD", async status => {

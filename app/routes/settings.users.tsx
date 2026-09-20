@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { data, Form } from "react-router";
 
+import { cancelKeyPrompt, keyProviderError, recoverMemberKeyLogin } from "../auth/key-ceremony.client";
+import { applicationOrigin, effectiveRequestPolicy } from "../runtime.server";
 import { AppNavigation } from "../app-navigation";
 import type { Route } from "./+types/settings.users";
 import {
@@ -95,6 +97,7 @@ export function headers() {
 export async function loader({ request }: Route.LoaderArgs) {
   const session = await requireAdministratorSession(request);
   return {
+    recoveryPublicUrl: effectiveRequestPolicy().entry === "lan" ? `${applicationOrigin()}/settings/users` : undefined,
     csrfToken: session.csrfToken,
     members: getAuthenticationService().listManageableMembers(),
     today: new Date().toISOString().slice(0, 10),
@@ -307,6 +310,31 @@ export async function action({ request }: Route.ActionArgs) {
 }
 
 export default function Users({ actionData, loaderData }: Route.ComponentProps) {
+  const recoveryDialog = useMemberDialog();
+  const [recoveryError, setRecoveryError] = useState<string>();
+  const [recoveryOutcome, setRecoveryOutcome] = useState<string>();
+  const [recovering, setRecovering] = useState(false);
+  const recoveryInFlight = useRef(false);
+  async function recover(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!recoveryDialog.target || recoveryInFlight.current) return;
+    const fields = new FormData(event.currentTarget);
+    const method = (event.nativeEvent as SubmitEvent).submitter?.getAttribute("value") === "key" ? "key" : "password";
+    recoveryInFlight.current = true;
+    setRecovering(true);
+    setRecoveryError(undefined);
+    try {
+      const result = await recoverMemberKeyLogin(loaderData.csrfToken, recoveryDialog.target.id, recoveryDialog.target.username,
+        String(fields.get("confirmationUsername") ?? ""), method, String(fields.get("administratorPassword") ?? ""));
+      setRecoveryOutcome(`${recoveryDialog.target.username}: ${result.outcome === "disabled" ? "key login disabled" : "key login was already disabled"}. Password and saved keys are preserved; sessions were revoked.`);
+      recoveryDialog.dismiss();
+    } catch (error) {
+      setRecoveryError(keyProviderError(error));
+    } finally {
+      recoveryInFlight.current = false;
+      setRecovering(false);
+    }
+  }
   const disableDialog = useMemberDialog();
   const deletionDialog = useMemberDialog();
   const passwordResetDialog = useMemberDialog();
@@ -440,6 +468,7 @@ export default function Users({ actionData, loaderData }: Route.ComponentProps) 
             </div>
             <strong>{loaderData.members.length}</strong>
           </div>
+          {recoveryOutcome ? <p className={styles.directoryMessageSuccess} role="status">{recoveryOutcome}</p> : null}
           {actionData?.accessError ? (
             <p className={styles.directoryMessageError} role="alert">
               {actionData.accessError}
@@ -501,6 +530,12 @@ export default function Users({ actionData, loaderData }: Route.ComponentProps) 
                       </span>
                     </span>
                     <span className={styles.memberControls}>
+                      {loaderData.recoveryPublicUrl ? <a href={loaderData.recoveryPublicUrl}>Recover key login on public HTTPS</a> : (
+                        <button type="button" aria-label={`Disable key login for ${member.username}`} className={styles.resetButton} disabled={recovering} onClick={(event) => {
+                          setRecoveryError(undefined);
+                          recoveryDialog.open(member, event.currentTarget);
+                        }}>Disable key login</button>
+                      )}
                       <button
                         aria-label={`Reset password for ${member.username}`}
                         className={styles.resetButton}
@@ -574,8 +609,24 @@ export default function Users({ actionData, loaderData }: Route.ComponentProps) 
             </ul>
           )}
         </section>
-        {disableDialog.target ? (
-          <dialog
+        {recoveryDialog.target ? (
+        <dialog className={styles.confirmationDialog} ref={recoveryDialog.dialog} aria-labelledby="recover-key-heading" onCancel={() => { cancelKeyPrompt(); recoveryDialog.cancel(); }} onClose={recoveryDialog.dismiss}>
+          <form onSubmit={(event) => { void recover(event); }} aria-labelledby="recover-key-heading" key={recoveryDialog.target.id} className={styles.provisioningForm}>
+            <h2 id="recover-key-heading">Disable key login for {recoveryDialog.target.username}</h2>
+            <p>Restore password sign-in and revoke all member sessions. Their password and every saved key remain unchanged. Disabled accounts stay disabled. If their password is also lost, reset it separately.</p>
+            <label>Confirm member username<input name="confirmationUsername" autoComplete="off" maxLength={30} required /></label>
+            <label>Your administrator password<input name="administratorPassword" autoComplete="current-password" type="password" maxLength={1024} /></label>
+            <p>Verify your own password or a registered administrator key to confirm.</p>
+            {recoveryError ? <p role="alert">{recoveryError}</p> : null}
+            {recovering ? <p role="status">Verifying administrator proof…</p> : null}
+            <button type="submit" value="password" disabled={recovering}>Confirm with administrator password</button>
+            <button type="submit" value="key" disabled={recovering}>Confirm with administrator key</button>
+            <button type="button" onClick={() => { cancelKeyPrompt(); recoveryDialog.cancel(); }}>Cancel recovery</button>
+          </form>
+      </dialog>
+        ) : null}
+      {disableDialog.target ? (
+      <dialog
             aria-labelledby="disable-member-heading"
             aria-modal="true"
             className={styles.confirmationDialog}

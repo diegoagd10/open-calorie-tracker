@@ -1,0 +1,1 @@
+ALTER TABLE `webauthn_ceremonies` ADD `target_member` text;

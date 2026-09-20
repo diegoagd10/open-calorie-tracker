@@ -1,4 +1,5 @@
-import { data, Form, Link, redirect } from "react-router";
+import { useState } from "react";
+import { data, Form, Link, redirect, useRevalidator } from "react-router";
 
 import type { Route } from "./+types/account.password";
 import styles from "../account.module.css";
@@ -10,6 +11,8 @@ import {
 } from "../auth/http.server";
 import { getAuthenticationService } from "../auth/runtime.server";
 import { passwordChangeSchema } from "../auth/validation";
+import { replaceFallbackPassword, cancelKeyPrompt, keyProviderError } from "../auth/key-ceremony.client";
+import { applicationOrigin, effectiveRequestPolicy } from "../runtime.server";
 
 type PasswordChangeActionData = {
   changed?: true;
@@ -30,11 +33,15 @@ export function headers() {
 export async function loader({ request }: Route.LoaderArgs) {
   const session = await getSessionForAccountAccess(request);
   if (!session) return redirect("/login");
+  const keyLoginEnabled = getAuthenticationService().keys.status(session.token).enabled;
+  if (keyLoginEnabled && effectiveRequestPolicy().entry === "lan")
+    return redirect(`${applicationOrigin()}/account/password`);
 
   return {
     csrfToken: session.csrfToken,
     passwordChangeRequired: session.user.passwordChangeRequired,
     username: session.user.username,
+    keyLoginEnabled,
   };
 }
 
@@ -52,6 +59,10 @@ export async function action({ request }: Route.ActionArgs) {
   if (!getAuthenticationService().verifyCsrfToken(session.token, csrfToken)) {
     throw new Response("CSRF token rejected.", { status: 403 });
   }
+  if (!await getAuthenticationService().authenticate(session.token))
+    return redirect("/login", { headers: { "Set-Cookie": serializeClearedSessionCookie() } });
+  if (getAuthenticationService().keys.status(session.token).enabled)
+    return data<PasswordChangeActionData>({ error: "Verify a registered key to replace your fallback password." }, { status: 400 });
 
   const parsed = passwordChangeSchema.safeParse({
     confirmNewPassword: String(formData.get("confirmNewPassword") ?? ""),
@@ -92,6 +103,8 @@ export async function action({ request }: Route.ActionArgs) {
         { status: 400 },
       );
     }
+    if (result.error === "key-proof-required")
+      return data<PasswordChangeActionData>({ error: "Verify a registered key to replace your fallback password." }, { status: 400 });
     return data<PasswordChangeActionData>(
       { error: "The current password is incorrect." },
       { status: 400 },
@@ -114,7 +127,11 @@ export default function ChangePassword({
   actionData,
   loaderData,
 }: Route.ComponentProps) {
-  const formStateKey = actionData?.changed ? "changed" : "ready";
+  const [busy, setBusy] = useState(false);
+  const [keyError, setKeyError] = useState("");
+  const [changed, setChanged] = useState(false);
+  const revalidator = useRevalidator();
+  const formStateKey = actionData?.changed || changed ? "changed" : "ready";
   return (
     <main className={styles.shell}>
       <section className={styles.panel} aria-labelledby="password-heading">
@@ -134,6 +151,11 @@ export default function ChangePassword({
               ? "Replace the temporary password before continuing."
               : "Changing the password revokes other sessions and rotates this one."}
           </p>
+          <p>
+            {loaderData.keyLoginEnabled
+              ? "Verify a registered key to replace your fallback password. You do not need the old password. Key login and all saved keys stay enabled; this password is used only after key login is deliberately disabled or recovered."
+              : "Enter your current password to authorize this change."}
+          </p>
         </header>
 
         <Form
@@ -141,6 +163,29 @@ export default function ChangePassword({
           key={formStateKey}
           method="post"
           noValidate
+          onSubmit={loaderData.keyLoginEnabled ? (event) => {
+            event.preventDefault();
+            const form = event.currentTarget;
+            const fields = new FormData(form);
+            setBusy(true);
+            setChanged(false);
+            setKeyError("");
+            void replaceFallbackPassword(loaderData.csrfToken, String(fields.get("newPassword") ?? ""), String(fields.get("confirmNewPassword") ?? ""))
+              .then(async (result) => {
+                if (result.nextPath === "/setup") {
+                  window.location.assign(result.nextPath);
+                  return;
+                }
+                form.reset();
+                await revalidator.revalidate();
+                setChanged(true);
+                setBusy(false);
+              })
+              .catch((failure: unknown) => {
+                setKeyError(keyProviderError(failure));
+                setBusy(false);
+              });
+          } : undefined}
         >
           <input name="csrfToken" type="hidden" value={loaderData.csrfToken} />
           <input
@@ -149,7 +194,7 @@ export default function ChangePassword({
             type="hidden"
             value={loaderData.username}
           />
-          <div className={styles.field}>
+          {!loaderData.keyLoginEnabled ? <div className={styles.field}>
             <label htmlFor="current-password">Current password</label>
             <input
               autoComplete="current-password"
@@ -159,7 +204,7 @@ export default function ChangePassword({
               required
               type="password"
             />
-          </div>
+          </div> : null}
           <div className={styles.field}>
             <label htmlFor="new-password">New password</label>
             <input
@@ -169,6 +214,8 @@ export default function ChangePassword({
               name="newPassword"
               required
               type="password"
+              disabled={busy}
+              autoFocus={loaderData.keyLoginEnabled && loaderData.passwordChangeRequired}
             />
             <small id="new-password-help">
               12–128 characters; spaces and Unicode are welcome.
@@ -182,24 +229,29 @@ export default function ChangePassword({
               name="confirmNewPassword"
               required
               type="password"
+              disabled={busy}
             />
           </div>
-          {actionData?.error ? (
+          {keyError || actionData?.error ? (
             <p className={styles.error} role="alert">
-              {actionData.error}
+              {keyError || actionData?.error}
             </p>
           ) : null}
-          {actionData?.changed ? (
+          {actionData?.changed || changed ? (
             <p className={styles.success} role="status">
               <strong>Password changed.</strong> Other sessions were revoked.
             </p>
           ) : null}
 
-          <button className={styles.submit} type="submit">
+          <button className={styles.submit} type="submit" disabled={busy}>
             {loaderData.passwordChangeRequired
               ? "Set password and continue"
               : "Change password"}
           </button>
+          {busy ? <>
+            <p role="status">Verify a registered key with its PIN or biometrics to replace your fallback password.</p>
+            <button className={styles.submit} type="button" onClick={cancelKeyPrompt}>Cancel key prompt</button>
+          </> : null}
         </Form>
         {loaderData.passwordChangeRequired ? (
           <Form action="/logout" className={styles.signOutForm} method="post">

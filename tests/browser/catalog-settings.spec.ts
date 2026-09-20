@@ -125,7 +125,7 @@ test("terminal imports notify connected clients while a member searches and logs
   for (const client of clients) await expect(toast(client)).toHaveText("Open Food Facts catalog updated.");
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
   const visibleToast = notifications.locator('[data-phase="succeeded"]');
-  await expect(visibleToast).toHaveCSS("background-color", "rgb(237, 249, 240)");
+  await expect(visibleToast).toHaveCSS("background-color", "rgb(29, 57, 37)");
   expect((await visibleToast.boundingBox())!.y).toBeLessThan(30);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.screenshot({ path: testInfo.outputPath("catalog-notifications-mobile.png") });
@@ -151,7 +151,7 @@ test("terminal imports notify connected clients while a member searches and logs
   await commandImport("open-food-facts", "corrupt.csv.gz", failingReplacement, false);
   await page.goto("/settings/goals");
   await expect(notifications).toHaveText("Open Food Facts import failed. Inspect the terminal and retry the command.");
-  await expect(notifications.locator('[data-phase="failed"]')).toHaveCSS("background-color", "rgb(255, 241, 238)");
+  await expect(notifications.locator('[data-phase="failed"]')).toHaveCSS("background-color", "rgb(61, 32, 34)");
   await notifications.getByRole("button", { name: "Dismiss notification" }).click();
   for (const member of members) {
     await expect(toast(member)).toHaveCount(0);
@@ -218,8 +218,8 @@ test("terminal imports notify connected clients while a member searches and logs
     await member.reload();
     await expect(dailyLog.getByText("Local oat drink", { exact: true })).toBeVisible();
     await member.goto("/?food=barcode&barcode=0012345678906");
-    await expect(member.getByRole("alert")).toContainText("does not establish whether nutrition is per 100 g or 100 ml");
-    await expect(member.getByRole("button", { name: "Add to Food Log", exact: true })).toBeDisabled();
+    await expect(member.getByRole("alert")).toContainText("Product not found");
+    await expect(member.getByRole("button", { name: "Add to Food Log", exact: true })).toHaveCount(0);
     await member.goto("/?food=barcode&barcode=9999999999999");
     await expect(member.getByText("Product not found", { exact: true })).toBeVisible();
     const deniedOff = await context.request.post("/settings/catalogs", { headers: { Origin: new URL(page.url()).origin, "Content-Type": "application/gzip", "X-Catalog-Provider": "open-food-facts", "X-Archive-Name": "denied.gz" }, data: products });
@@ -434,6 +434,6 @@ test("JSONL import makes native serving nutrition scannable and saves source-bac
   await log.getByText("100% Whey Protein Powder", { exact: true }).click();
   await expect(page.getByLabel("Protein (g)")).toHaveValue("60");
   await page.goto("/?food=barcode&barcode=0012345678906");
-  await expect(page.getByRole("alert")).toContainText("does not establish whether nutrition is per 100 g or 100 ml");
-  await expect(page.getByRole("button", { name: "Add to Food Log", exact: true })).toBeDisabled();
+  await expect(page.getByRole("alert")).toContainText("Product not found");
+  await expect(page.getByRole("button", { name: "Add to Food Log", exact: true })).toHaveCount(0);
 });

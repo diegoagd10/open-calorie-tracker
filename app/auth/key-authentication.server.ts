@@ -1,4 +1,6 @@
 import type { AuthenticationResponseJSON } from "@simplewebauthn/server";
+import { randomBytes } from "node:crypto";
+import { hashPassword, verifyPassword } from "./password.server";
 import type { ApplicationDatabaseClient } from "../database/database.server";
 import {
   WebAuthnStorage,
@@ -19,17 +21,26 @@ import { operationalLog } from "../../server/operational-logging.js";
 import {
   keyAssertionResponseSchema,
   keyRegistrationResponseSchema,
+  fallbackPasswordChangeSchema,
 } from "./validation";
 import { PersistentRateLimiter } from "./rate-limiter.server";
 
 function keyEvent(
   purpose: PendingKeyCeremony["purpose"] | PendingKeyCeremony["purpose"][],
 ) {
-  if (Array.isArray(purpose)) return "key_registration";
-  if (purpose === "login") return "key_login";
-  return ["enable", "disable", "re-enable"].includes(purpose)
-    ? "key_login_policy"
-    : "key_registration";
+  if (Array.isArray(purpose)) return keyEvent(purpose[0]);
+  const events: Record<string, string> = {
+    login: "key_login",
+    "password-change": "fallback_password_change",
+    "remove-key": "key_removal",
+    "remove-password": "key_removal",
+    "recover-member-key": "member_key_recovery",
+    "recover-member-password": "member_key_recovery",
+    enable: "key_login_policy",
+    disable: "key_login_policy",
+    "re-enable": "key_login_policy",
+  };
+  return events[purpose] ?? "key_registration";
 }
 function keyOrigin(): WebAuthnBoundary {
   const url = new URL(applicationOrigin());
@@ -265,9 +276,13 @@ export class KeyAuthenticationService {
   async beginModeChange(token: string, browser: string, enabled: boolean) {
     const user = this.#storage.enrollmentAccount(hashOpaqueToken(token));
     if (!enrollmentPreviewEnabled())
-      throw new KeyAuthenticationError("Key enrollment preview is unavailable.");
+      throw new KeyAuthenticationError(
+        "Key enrollment preview is unavailable.",
+      );
     if (!this.#limits.consume("key-mode", String(user.id), 10, 15 * 60_000))
-      throw new KeyAuthenticationError("Too many key attempts. Try again later.");
+      throw new KeyAuthenticationError(
+        "Too many key attempts. Try again later.",
+      );
     const credentials = this.#storage.credentials(user.id);
     if (user.keyLoginEnabled === enabled || !credentials.length)
       throw new KeyAuthenticationError(
@@ -300,6 +315,179 @@ export class KeyAuthenticationService {
       keyOrigin(),
     );
     return options;
+  }
+  async beginMemberRecovery(token: string, browser: string, id: number, username: string, method: "password" | "key") {
+    const administrator = this.#storage.recoveryAdministrator(hashOpaqueToken(token));
+    if (!this.#limits.consume("member-key-recovery", String(administrator.id), 5, 15 * 60_000))
+      throw new KeyAuthenticationError("Too many recovery attempts. Try again later.");
+    const targetMember = this.#storage.recoveryTarget(id, username);
+    const boundary = keyOrigin();
+    const credentials = this.#storage.credentials(administrator.id);
+    if (method === "key" && !credentials.length)
+      throw new KeyAuthenticationError("Verify your administrator password; no administrator keys are saved.");
+    const { generateAuthenticationOptions } = await import("@simplewebauthn/server");
+    const options = method === "key" ? await generateAuthenticationOptions({
+      rpID: boundary.rpId, userVerification: "required",
+      allowCredentials: credentials.map(({ id, transports }) => ({ id, transports })),
+    }) : undefined;
+    this.#storage.save({
+      browserHash: hashOpaqueToken(browser), userId: administrator.id,
+      purpose: method === "key" ? "recover-member-key" : "recover-member-password",
+      challenge: options?.challenge ?? randomBytes(32).toString("base64url"), ...boundary,
+      authenticationVersion: administrator.authenticationVersion, sessionHash: hashOpaqueToken(token),
+      targetMember, name: "", expiresAt: new Date(this.#now().getTime() + 5 * 60_000).toISOString(),
+    }, boundary);
+    return { options };
+  }
+  async finishMemberRecovery(token: string, browser: string, id: number, username: string, input: unknown) {
+    const pending = this.#take(hashOpaqueToken(browser), ["recover-member-key", "recover-member-password"], keyOrigin(), hashOpaqueToken(token));
+    try {
+      if (pending.targetMember?.id !== id || pending.targetMember.username !== username)
+        throw new KeyAuthenticationError("Wrong recovery target.");
+      let verified: VerifiedKeyAssertion | { passwordHash: string };
+      if (pending.purpose === "recover-member-key") verified = await this.#verifyAssertion(pending, input);
+      else verified = await this.#verifyPasswordProof(pending.userId, input);
+      const outcome = this.#storage.recoverMember(pending, verified, keyOrigin());
+      operationalLog("info", "member_key_recovery", { outcome, userId: pending.userId, targetUserId: id });
+      return outcome;
+    } catch {
+      operationalLog("info", "member_key_recovery", { outcome: "rejected", userId: pending.userId });
+      throw new KeyAuthenticationError("Member key recovery failed. No recovery was applied. Refresh and retry.");
+    }
+  }
+  async beginPasswordChange(token: string, browser: string) {
+    const user = this.#storage.passwordChangeAccount(hashOpaqueToken(token));
+    if (!this.#limits.consume("key-password-change", String(user.id), 5, 15 * 60_000))
+      throw new KeyAuthenticationError("Too many password attempts. Try again later.");
+    const boundary = keyOrigin();
+    const { generateAuthenticationOptions } = await import("@simplewebauthn/server");
+    const options = await generateAuthenticationOptions({
+      rpID: boundary.rpId,
+      userVerification: "required",
+      allowCredentials: this.#storage.credentials(user.id).map(({ id, transports }) => ({ id, transports })),
+    });
+    this.#storage.save({
+      browserHash: hashOpaqueToken(browser), userId: user.id, purpose: "password-change",
+      challenge: options.challenge, ...boundary, authenticationVersion: user.authenticationVersion,
+      sessionHash: hashOpaqueToken(token), name: "",
+      expiresAt: new Date(this.#now().getTime() + 5 * 60_000).toISOString(),
+    }, keyOrigin());
+    return options;
+  }
+  async finishPasswordChange(token: string, browser: string, input: unknown, nextPassword: string) {
+    const pending = this.#take(hashOpaqueToken(browser), "password-change", keyOrigin(), hashOpaqueToken(token));
+    try {
+      fallbackPasswordChangeSchema.parse({ newPassword: nextPassword, confirmNewPassword: nextPassword });
+      const verified = await this.#verifyAssertion(pending, input);
+      const current = this.#storage.accountForPending(pending, keyOrigin());
+      if (current.passwordChangeRequired) {
+        const passwordHash = this.#storage.passwordHash(current.id);
+        if (!passwordHash || (await verifyPassword(nextPassword, passwordHash)).matches)
+          throw new KeyAuthenticationError("Choose a password different from the temporary password.");
+      }
+      const nextPasswordHash = await hashPassword(nextPassword);
+      const session = this.#storage.replaceFallbackPassword(pending, verified, nextPasswordHash, keyOrigin(),
+        (user, absolute) => {
+          this.#limits.clear("key-password-change", String(pending.userId));
+          return prepareIssuedSession(this.#now(), {
+            id: user.id, username: user.usernameNormalized, role: user.role, passwordChangeRequired: false,
+          }, absolute);
+        });
+      operationalLog("info", "fallback_password_change", { outcome: "succeeded", userId: pending.userId });
+      return session;
+    } catch (error) {
+      operationalLog("info", "fallback_password_change", { outcome: "rejected", userId: pending.userId });
+      throw new KeyAuthenticationError(error instanceof KeyAuthenticationError && error.message.startsWith("Choose a password")
+        ? error.message : "Password replacement failed. Verify a registered key and retry; your password is unchanged.");
+    }
+  }
+  async beginRemoval(token: string, browser: string, target: string) {
+    const user = this.#storage.enrollmentAccount(hashOpaqueToken(token));
+    if (!enrollmentPreviewEnabled())
+      throw new KeyAuthenticationError(
+        "Key enrollment preview is unavailable.",
+      );
+    if (!this.#limits.consume("key-removal", String(user.id), 10, 15 * 60_000))
+      throw new KeyAuthenticationError(
+        "Too many key attempts. Try again later.",
+      );
+    const credentials = this.#storage.credentials(user.id);
+    if (!credentials.some((key) => key.id === target))
+      throw new KeyAuthenticationError(
+        "Key unavailable. Retry from security settings.",
+      );
+    const boundary = keyOrigin();
+    const { generateAuthenticationOptions } = await import(
+      "@simplewebauthn/server"
+    );
+    const options = user.keyLoginEnabled
+      ? await generateAuthenticationOptions({
+          rpID: boundary.rpId,
+          userVerification: "required",
+          allowCredentials: credentials.map(({ id, transports }) => ({
+            id,
+            transports,
+          })),
+        })
+      : undefined;
+    this.#storage.save(
+      {
+        browserHash: hashOpaqueToken(browser),
+        userId: user.id,
+        purpose: user.keyLoginEnabled ? "remove-key" : "remove-password",
+        challenge: options?.challenge ?? randomBytes(32).toString("base64url"),
+        ...boundary,
+        authenticationVersion: user.authenticationVersion,
+        sessionHash: hashOpaqueToken(token),
+        targetCredentialId: target,
+        name: "",
+        expiresAt: new Date(this.#now().getTime() + 5 * 60_000).toISOString(),
+      },
+      keyOrigin(),
+    );
+    return { options };
+  }
+  async #verifyPasswordProof(userId: number, input: unknown) {
+    const passwordHash = this.#storage.passwordHash(userId);
+    if (
+      !passwordHash || typeof input !== "string" || !input.length || input.length > 1024 ||
+      !(await verifyPassword(input, passwordHash)).matches
+    ) throw new KeyAuthenticationError("Current password rejected.");
+    return { passwordHash };
+  }
+  async finishRemoval(
+    token: string,
+    browser: string,
+    target: string,
+    input: unknown,
+  ) {
+    const pending = this.#take(
+      hashOpaqueToken(browser),
+      ["remove-key", "remove-password"],
+      keyOrigin(),
+      hashOpaqueToken(token),
+    );
+    try {
+      if (pending.targetCredentialId !== target)
+        throw new KeyAuthenticationError("Wrong removal target.");
+      let verified: VerifiedKeyAssertion | { passwordHash: string };
+      if (pending.purpose === "remove-key") {
+        verified = await this.#verifyAssertion(pending, input);
+      } else verified = await this.#verifyPasswordProof(pending.userId, input);
+      this.#storage.removeCredential(pending, target, verified, keyOrigin());
+      operationalLog("info", "key_removal", {
+        outcome: "succeeded",
+        userId: pending.userId,
+      });
+    } catch {
+      operationalLog("info", "key_removal", {
+        outcome: "rejected",
+        userId: pending.userId,
+      });
+      throw new KeyAuthenticationError(
+        "Key removal failed. Your saved keys are unchanged. Retry.",
+      );
+    }
   }
   async finishModeChange(
     token: string,

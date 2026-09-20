@@ -339,6 +339,7 @@ describe("password route", () => {
       ),
     );
     expect(loaded).toEqual({
+      keyLoginEnabled: false,
       csrfToken: session.csrfToken,
       passwordChangeRequired: false,
       username: "password.owner",

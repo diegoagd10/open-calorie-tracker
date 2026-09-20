@@ -6,6 +6,7 @@ import { getAuthenticationService } from "../auth/runtime.server";
 import { enrollmentPreviewEnabled } from "../runtime.server";
 import {
   enrollKey,
+  removeKey,
   changeKeyLoginMode,
   keyProviderError,
   cancelKeyPrompt,
@@ -37,6 +38,9 @@ export default function SecuritySettings({ loaderData }: Route.ComponentProps) {
   const [busy, setBusy] = useState(false);
   const [modeChange, setModeChange] = useState(false);
   const [error, setError] = useState("");
+  const [removing, setRemoving] = useState<
+    (typeof loaderData.credentials)[number] | undefined
+  >();
   return (
     <main className={styles.shell}>
       <section className={styles.panel} aria-labelledby="security-title">
@@ -70,6 +74,7 @@ export default function SecuritySettings({ loaderData }: Route.ComponentProps) {
             onClick={() => {
               setBusy(true);
               setModeChange(true);
+              setRemoving(undefined);
               setError("");
               void changeKeyLoginMode(loaderData.csrfToken, !loaderData.enabled)
                 .then((result) => window.location.assign(result.nextPath))
@@ -83,11 +88,102 @@ export default function SecuritySettings({ loaderData }: Route.ComponentProps) {
           </button>
         ) : null}
         {loaderData.credentials.length ? (
-          <ul>
+          <ul className={styles.keyList}>
             {loaderData.credentials.map((key) => (
-              <li key={key.id}>{key.name}</li>
+              <li key={key.id} className={styles.keyRow}>
+                <span className={styles.keyName}>{key.name}</span>
+                {loaderData.preview ? (
+                  <button
+                    className={styles.removeButton}
+                    type="button"
+                    aria-label={`Delete ${key.name}`}
+                    disabled={busy}
+                    onClick={() => {
+                      setRemoving(key);
+                      setError("");
+                    }}
+                  >
+                    Delete
+                  </button>
+                ) : null}
+              </li>
             ))}
           </ul>
+        ) : null}
+        {removing ? (
+          <form
+            className={styles.form}
+            aria-labelledby="remove-key-title"
+            onSubmit={(event) => {
+              event.preventDefault();
+              const password = loaderData.enabled
+                ? undefined
+                : String(
+                    new FormData(event.currentTarget).get("password") ?? "",
+                  );
+              setBusy(true);
+              setModeChange(false);
+              setError("");
+              void removeKey(loaderData.csrfToken, removing.id, password)
+                .then((result) => window.location.assign(result.nextPath))
+                .catch((failure: unknown) => {
+                  setError(keyProviderError(failure));
+                  setBusy(false);
+                });
+            }}
+          >
+            <h3 id="remove-key-title" className={styles.removalTitle}>
+              Delete {removing.name}?
+            </h3>
+            <p>
+              {loaderData.credentials.length === 1
+                ? "Deleting your final key restores password sign-in. You must register a new key before enabling key login again."
+                : "Only this key will be deleted. Your other keys and sign-in mode are preserved."}{" "}
+              Deletion signs out all sessions. Deleted keys cannot be restored.
+            </p>
+            {loaderData.enabled ? (
+              <p>
+                Verify any saved key, including this key, to confirm deletion.
+              </p>
+            ) : (
+              <div className={styles.field}>
+                <label htmlFor="removal-password">
+                  Current account password
+                </label>
+                <input
+                  id="removal-password"
+                  name="password"
+                  type="password"
+                  autoComplete="current-password"
+                  required
+                  maxLength={1024}
+                  autoFocus
+                  disabled={busy}
+                />
+              </div>
+            )}
+            <div className={styles.removalActions}>
+              <button
+                className={styles.confirmRemovalButton}
+                type="submit"
+                disabled={busy}
+                autoFocus={loaderData.enabled}
+              >
+                Confirm deletion
+              </button>
+              <button
+                className={styles.cancelRemovalButton}
+                type="button"
+                disabled={busy}
+                onClick={() => {
+                  setRemoving(undefined);
+                  setError("");
+                }}
+              >
+                Cancel deletion
+              </button>
+            </div>
+          </form>
         ) : null}
         {loaderData.preview ? (
           <form
@@ -99,6 +195,7 @@ export default function SecuritySettings({ loaderData }: Route.ComponentProps) {
               );
               setBusy(true);
               setModeChange(false);
+              setRemoving(undefined);
               setError("");
               void (async () => {
                 try {
@@ -157,11 +254,15 @@ export default function SecuritySettings({ loaderData }: Route.ComponentProps) {
         ) : null}
         <p role="status">
           {busy
-            ? modeChange
-              ? "Verify any saved key to change sign-in mode. This signs out older sessions."
-              : loaderData.enabled
-              ? "Verify an existing key, then register and verify the new key."
-              : "Complete registration, then verify the new key."
+            ? removing
+              ? loaderData.enabled
+                ? "Verify any saved key to delete the selected key."
+                : "Verifying your current password."
+              : modeChange
+                ? "Verify any saved key to change sign-in mode. This signs out older sessions."
+                : loaderData.enabled
+                  ? "Verify an existing key, then register and verify the new key."
+                  : "Complete registration, then verify the new key."
             : ""}
         </p>
         <Link to="/account/password">Change account password</Link>

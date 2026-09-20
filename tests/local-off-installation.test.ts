@@ -7,7 +7,7 @@ import { pathToFileURL } from "node:url";
 import { afterEach, expect, test, vi } from "vitest";
 import { CatalogManagement } from "../app/catalog-management/catalog-management.server";
 import { LocalOpenFoodFactsAdapter } from "../app/catalog/local-off.server";
-import { FoodCatalog } from "../app/catalog/food-catalog.server";
+import { CatalogFoodNotFoundError, FoodCatalog } from "../app/catalog/food-catalog.server";
 import { openApplicationDatabase } from "../app/database/database.server";
 import { users, userPreferences } from "../app/database/schema.server";
 import { FoodEntryService } from "../app/food-entry/food-entry.server";
@@ -37,8 +37,7 @@ async function install(management: CatalogManagement, archive = offArchive()) {
 test("OFF barcode lookup finds Premier Protein's zero-prefixed EAN using its printed UPC", async () => {
   const { management, catalog } = await setup();
   await install(management, offArchive([{
-    ...offProduct,
-    code: "0643843715887",
+    ...offWithBasis("100g", "0643843715887"),
     product_name: "Chocolate Milkshake",
     brands: "premier protein",
   }]));
@@ -54,7 +53,7 @@ test.each(["643843715887", "0643843715887", "00643843715887"])(
   "OFF barcode lookup recognizes equivalent representations when %s is stored",
   async code => {
     const { management, catalog } = await setup();
-    await install(management, offArchive([{ ...offProduct, code }]));
+    await install(management, offArchive([offWithBasis("100g", code)]));
     for (const barcode of ["643843715887", "0643843715887", "00643843715887"]) {
       await expect(catalog.lookupBarcode("open-food-facts", barcode))
         .resolves.toMatchObject({ providerFoodId: code, barcode: code });
@@ -65,11 +64,11 @@ test.each(["643843715887", "0643843715887", "00643843715887"])(
 test("OFF barcode equivalence preserves exact matches, significant digits, and legacy manual identifiers", async () => {
   const { management, catalog } = await setup();
   await install(management, offArchive([
-    { ...offProduct, code: "643843715887", product_name: "Exact UPC" },
-    { ...offProduct, code: "0643843715887", product_name: "Exact EAN" },
-    { ...offProduct, code: "10643843715884", product_name: "Different packaging" },
-    { ...offProduct, code: "034000470694", product_name: "Legacy invalid check digit" },
-    { ...offProduct, code: "1234567", product_name: "Legacy short code" },
+    { ...offWithBasis("100g", "643843715887"), product_name: "Exact UPC" },
+    { ...offWithBasis("100g", "0643843715887"), product_name: "Exact EAN" },
+    { ...offWithBasis("100g", "10643843715884"), product_name: "Different packaging" },
+    { ...offWithBasis("100g", "034000470694"), product_name: "Legacy invalid check digit" },
+    { ...offWithBasis("100g", "1234567"), product_name: "Legacy short code" },
   ]));
   await expect(catalog.lookupBarcode("open-food-facts", "643843715887"))
     .resolves.toMatchObject({ name: "Exact UPC" });
@@ -111,14 +110,12 @@ test("an equivalent UPC review retains source identity for saving and rejects a 
   })).rejects.toThrow("catalog changed");
 });
 
-test("OFF installation preserves quoted names and leading zeros, retaining ambiguous products with a calculation reason", async () => {
-  const { management, catalog, entries, userId } = await setup();
+test("OFF installation retains ambiguous products for diagnostics but hides them from public reads", async () => {
+  const { management, catalog } = await setup();
   const network = vi.fn(() => { throw new Error("Food API forbidden"); }); vi.stubGlobal("fetch", network);
   await install(management, offArchive([offProduct], ["bad\trow"]));
   expect(management.read()).toMatchObject({ installed: { foodCount: 1 }, job: { phase: "succeeded", importedRecords: 1, rejectedRecords: 1, exclusions: { row_width_mismatch: 1, ambiguous_nutrition_basis: 1 } } });
-  const food = await catalog.lookupBarcode("open-food-facts", offProduct.code);
-  expect(food).toMatchObject({ barcode: "0012345678905", name: 'Oats\twith "bran"', isSelectable: false, calculationUnavailableReason: "ambiguous_nutrition_basis", measurements: [], providerModifiedDate: "2025-01-01T00:00:00.000Z" });
-  await expect(entries.log(userId, { provider: food.provider, providerFoodId: food.providerFoodId, catalogGeneration: food.catalogGeneration, foodLogDate: "2026-09-06", idempotencyKey: "ambiguous-product", selectedMeasurementId: "g", quantity: "30" })).rejects.toThrow();
+  await expect(catalog.lookupBarcode("open-food-facts", offProduct.code)).rejects.toBeInstanceOf(CatalogFoodNotFoundError);
   expect(network).not.toHaveBeenCalled();
 });
 
@@ -154,7 +151,7 @@ test("legacy explicit serving nutrition and supported kilojoules preserve zero a
   expect(saved).toMatchObject({ energyMilliKcal: 200_000, proteinMilligrams: 0, fatMilligrams: null, sodiumMilligrams: 200 });
 });
 
-test("missing calories, unknown units, conflicting bases, and no-nutrition records cannot be logged", async () => {
+test("only an in-tree conflict remains publicly readable among unavailable products", async () => {
   const { management, catalog } = await setup();
   const prefix = "nutrition.input_sets.packaging.as_sold.100g.nutrients.";
   const products: Record<string, string>[] = [
@@ -164,10 +161,69 @@ test("missing calories, unknown units, conflicting bases, and no-nutrition recor
     { ...offWithBasis("100g", "0012345678904"), no_nutrition_data: "on" },
   ];
   await install(management, offArchive(products));
-  const foods = await Promise.all(products.map(product => catalog.lookupBarcode("open-food-facts", product.code)));
-  expect(foods.map(food => [food.isSelectable, food.calculationUnavailableReason])).toEqual([[false, "calories_unavailable"], [false, "calories_unavailable"], [false, "conflicting_nutrition_bases"], [false, "nutrition_not_provided"]]);
+  for (const product of [products[0], products[1], products[3]]) {
+    await expect(catalog.lookupBarcode("open-food-facts", product.code)).rejects.toBeInstanceOf(CatalogFoodNotFoundError);
+  }
+  await expect(catalog.lookupBarcode("open-food-facts", products[2].code)).resolves.toMatchObject({
+    isSelectable: false,
+    calculationUnavailableReason: "conflicting_nutrition_bases",
+  });
   await expect(catalog.lookupBarcode("open-food-facts", "https://example.com")).rejects.toThrow("no longer available");
   await expect(catalog.lookupBarcode("open-food-facts", "9999999999999")).rejects.toThrow("no longer available");
+});
+
+test("OFF barcode and detail reads hide products outside the nutrition priority tree but retain an in-tree conflict", async () => {
+  const { management, catalog } = await setup();
+  const prefix = "nutrition.input_sets.packaging.as_sold.100g.nutrients.";
+  const outside = [
+    { ...offProduct, code: "0012345678901", product_name: "Priority probe ambiguous" },
+    { ...offWithBasis("100g", "0012345678902"), code: "0012345678902", product_name: "Priority probe calories", [`${prefix}energy-kcal.value`]: "" },
+    { ...offWithBasis("100g", "0012345678904"), code: "0012345678904", product_name: "Priority probe absent", no_nutrition_data: "on" },
+  ];
+  const conflict = {
+    ...offWithBasis("100g", "0012345678903"),
+    ...offWithBasis("100ml", "0012345678903"),
+    code: "0012345678903",
+    product_name: "Priority probe conflict",
+  };
+  await install(management, offArchive([...outside, conflict]));
+
+  for (const product of outside) {
+    await expect(catalog.lookupBarcode("open-food-facts", product.code))
+      .rejects.toBeInstanceOf(CatalogFoodNotFoundError);
+    await expect(catalog.getFood("open-food-facts", product.code))
+      .rejects.toBeInstanceOf(CatalogFoodNotFoundError);
+  }
+  await expect(catalog.lookupBarcode("open-food-facts", conflict.code)).resolves.toMatchObject({
+    calculationUnavailableReason: "conflicting_nutrition_bases",
+    isSelectable: false,
+  });
+
+});
+
+test("OFF public reads hide every native input-set failure outside the priority tree", async () => {
+  const { management, catalog } = await setup();
+  const validSet = {
+    source: "packaging",
+    preparation: "as_sold",
+    per: "100g",
+    per_quantity: 100,
+    per_unit: "g",
+    nutrients: { "energy-kcal": { value: 100, unit: "kcal" } },
+  };
+  const products = [
+    { code: "0012345678911", product_name: "Native outside invalid sets", nutrition: { input_sets: null } },
+    { code: "0012345678912", product_name: "Native outside unsupported authority", nutrition: { input_sets: [{ ...validSet, source: "estimate" }] } },
+    { code: "0012345678913", product_name: "Native outside invalid reference", nutrition: { input_sets: [{ ...validSet, per_quantity: 0 }] } },
+    { code: "0012345678914", product_name: "Native outside calories", nutrition: { input_sets: [{ ...validSet, nutrients: {} }] } },
+  ];
+  await install(management, offJsonlArchive(products));
+
+  expect(management.read().installed?.foodCount).toBe(products.length);
+  for (const product of products) {
+    await expect(catalog.lookupBarcode("open-food-facts", product.code))
+      .rejects.toBeInstanceOf(CatalogFoodNotFoundError);
+  }
 });
 
 test("OFF supports only an explicitly normalized serving in its authoritative dimension and rejects stale review", async () => {
@@ -409,7 +465,7 @@ test("storage preflight, conflicts and shutdown preserve independent OFF job sta
 test("the official daily export treats unescaped quotes as literal text, without consuming subsequent rows", async () => {
   const { management, catalog } = await setup();
   const source: Record<string, string> = { code: offProduct.code, url: "", creator: "", created_t: "", created_datetime: "", last_modified_t: "", last_modified_datetime: "", last_modified_by: "", last_updated_t: "", last_updated_datetime: "" };
-  Object.assign(source, offProduct, { product_name: '"Oats with bran' });
+  Object.assign(source, offWithBasis("100g"), { product_name: '"Oats with bran' });
   const header = Object.keys(source);
   const line = (row: typeof source) => header.map(key => row[key]).join("\t");
   await install(management, gzipSync([header.join("\t"), line(source), line({ ...source, code: "0012345678906", product_name: 'Cereal "quoted"' })].join("\n") + "\n"));

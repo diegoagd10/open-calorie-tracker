@@ -104,7 +104,7 @@ test("signed-in clients read successes independently while operator outcomes and
   const adminNavigation = await rootLoader(get());
   expect(memberNavigation.catalogNotifications?.viewerId).toBeTypeOf("number");
   expect(adminNavigation.catalogNotifications?.viewerId).toBeTypeOf("number");
-  expect(await rootLoader(get(""))).toEqual({ catalogNotifications: null });
+  expect(await rootLoader(get(""))).toEqual({ catalogNotifications: null, theme: "dark" });
   await importArchive("usda-fdc", "foundation.zip", await foundationArchive());
   expect((await loader(get())).catalog.photoAnalysisReadiness).toEqual({
     state: "ready",

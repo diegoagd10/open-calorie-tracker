@@ -985,7 +985,7 @@ test("upgrading a legacy photo revision keeps it readable with honest provenance
   const databasePath = path.join(directory, "application.sqlite");
   const previousMigrations = await createMigrationFolder(
     path.join(directory, "previous-migrations"),
-    { throughTag: "0018_sloppy_bromley" },
+    { throughTag: "0019_free_hellfire_club" },
   );
   const previous = openApplicationDatabase({
     databasePath,

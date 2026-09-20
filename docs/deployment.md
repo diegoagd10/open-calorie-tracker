@@ -30,6 +30,7 @@ and its master key.
 | `APPLICATION_SECRETS_MOUNT_PATH` | Separate persistent host secrets directory, for example `/srv/open-calory-tracker/secrets`. It must have mode `0700`; do not place it under `DATA_PATH`. |
 | `APPLICATION_SECRETS_PATH` | Generic in-container secrets directory and secrets-mount target, default `/app/secrets`; normally leave unchanged. |
 | `APPLICATION_MASTER_KEY_PATH` | Optional generic 32-byte application-master-key file override. When omitted, it defaults to `application-master.key` inside `APPLICATION_SECRETS_PATH`. |
+| `WEBAUTHN_ENROLLMENT_PREVIEW` | Optional WebAuthn enrollment preview. Defaults to `0`; set to `1` only for an isolated preview installation after reviewing [Key enrollment preview](#key-enrollment-preview). |
 | `LAN_URL` | Optional exact HTTP server IP and port, initially `http://192.168.4.21:3002`. Any client with connectivity may use it. Omit it to disable LAN. |
 | `LAN_BIND_IP` | Host IP for the LAN mapping, initially `192.168.4.21`. Keep it consistent with `LAN_URL`. |
 | `LAN_HOST_PORT` | LAN host port, default `3002`. Keep it consistent with `LAN_URL`. |
@@ -157,12 +158,55 @@ standard error. If there is no administrator or the database does not contain
 exactly one administrator, the command exits unsuccessfully, prints no
 password, and changes nothing.
 
+Password recovery preserves key login and every saved key, and invalidates
+pending proofs. If key login is enabled, the temporary password cannot sign in
+until key login is deliberately disabled using the separate command below.
+
 After a successful recovery, sign in with the displayed temporary password.
 Only password replacement and logout are available until a new private password
 is saved; that replacement rotates the session and restores normal
 administrator access. If the current private password is still known, use the
 authenticated password-change page in Settings instead of this recovery
 command.
+
+## Recover lost administrator keys
+
+If all keys belonging to the sole administrator are unavailable, a local
+operator can restore password sign-in without providing a key proof. Run this
+separate command inside the running production container:
+
+```sh
+docker compose exec -T application node build/recovery/recover-administrator-keys.js
+```
+
+For Portainer, use the actual container name:
+
+```sh
+docker exec -i <application-container> node build/recovery/recover-administrator-keys.js
+```
+
+For a local production build, `pnpm admin:recover:keys` runs the same command.
+Use the application's configured `DATABASE_PATH` and `MIGRATIONS_PATH` (default
+`drizzle` directory). Local operator/container access is required; there is no
+HTTP recovery endpoint. The web service may remain running.
+
+In one transaction, the command finds the sole administrator by role, disables
+key login, advances authentication policy state, and revokes all administrator
+sessions and pending proofs across public and LAN entries. It preserves the
+password, every registered key, account identity, role, restrictions, and
+nutrition data. Running it again safely revokes any remaining password sessions
+and pending proofs while keeping password mode. Success exits with status 0
+and a confirmation; failures exit nonzero with a redacted outcome. No password
+or credential material is printed. Missing/multiple administrators or a missing
+password credential prevent recovery; storage/revocation failures roll back
+the entire operation.
+
+Sign in with the unchanged password, then inspect the retained keys in Security
+and delete lost keys before re-enabling key login. If the password is also lost,
+run the separate password-recovery command above. That operation issues a
+temporary password and still requires replacement at the next sign-in; key
+recovery does not clear that restriction. Password recovery alone never
+disables key login.
 
 ## Import food catalogs from the container
 
@@ -294,8 +338,8 @@ named keys, username/key sign-in, and an account-level key-login toggle.
 Enrollment is off by default: `WEBAUTHN_ENROLLMENT_PREVIEW=1` enables it only for
 an isolated preview installation. Do not enable it on the production stack until
 the parent spec's key management and recovery tickets are complete. The standard
-Compose stack deliberately does not forward this flag. Already enrolled preview
-accounts continue to require their key if the enrollment flag is removed.
+Compose stack forwards this opt-in flag and defaults it to `0`. Already enrolled
+preview accounts continue to require their key if the flag is reset or removed.
 
 Credentials use the exact HTTPS `APPLICATION_URL` origin and its hostname as the
 RP ID. Development at HTTP localhost uses separate credentials; an HTTP LAN IP
@@ -324,6 +368,33 @@ Successful re-enabling invalidates older public/LAN sessions and pending attempt
 and rotates the current session with its original absolute expiry. Failed,
 canceled, expired, replayed, or superseded attempts leave the mode unchanged.
 Accounts with no keys must enroll their first key instead.
+
+The account-password form uses fresh registered-key verification while key login
+is enabled. No old account password is needed, and the change preserves key mode
+and every saved key. The new fallback password becomes usable for sign-in only
+after deliberate disable/recovery. In password mode, the form still requires the
+current password. Password resets preserve keys/mode and mandatory replacement:
+a restricted key-authenticated user can replace the temporary password with a
+key, but cannot use application settings beforehand or reuse that temporary
+password. Replacement revokes older sessions and pending proofs and rotates the
+current session without extending its absolute deadline. This maintenance flow
+remains available to enrolled preview users when enrollment preview is turned off.
+
+Member recovery is available in Users on public HTTPS. An already signed-in
+administrator confirms the target username and freshly verifies their own password
+or a saved administrator key. The administrator password is accepted for this
+recovery action even in key mode; it never enables ordinary password sign-in or
+personal key/password changes. Recovery disables the member's key login, preserves
+their password and all saved keys, and atomically revokes their sessions and pending
+proofs across public/LAN entries. Disabled members remain disabled and mandatory
+password replacement remains required. Already-disabled recovery reports that
+state and still revokes remaining authentication. Invalid or stale targets must be
+refreshed and confirmed again. The five-attempt limit per administrator lasts
+15 minutes and persists across restarts. Recovery remains available if enrollment
+preview is turned off. After password sign-in, members can inspect retained keys,
+delete lost keys with fresh password proof, and re-enable using a retained working
+key. If the password is also lost, use the separate password-reset operation.
+Administrators cannot enroll or delete member keys through recovery.
 
 Automated verification uses real signed ES256 protocol fixtures, Chromium virtual
 authenticators, and a non-loopback HTTP listener. Actual YubiKey USB/NFC and

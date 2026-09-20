@@ -95,7 +95,9 @@ export async function changeKeyLoginMode(csrf: string, enabled: boolean) {
     const response = await startAuthentication({
       optionsJSON: verification.options,
     });
-    return await post<{ nextPath: string }>(csrf, `${action}-finish`, { response });
+    return await post<{ nextPath: string }>(csrf, `${action}-finish`, {
+      response,
+    });
   } catch (error) {
     await post(csrf, "cancel").catch(() => {});
     throw error;
@@ -104,6 +106,51 @@ export async function changeKeyLoginMode(csrf: string, enabled: boolean) {
 export function cancelKeyPrompt(): void {
   activePrompt?.abort();
   WebAuthnAbortService.cancelCeremony();
+}
+
+export async function replaceFallbackPassword(csrf: string, newPassword: string, confirmNewPassword: string) {
+  activePrompt = new AbortController();
+  const prompt = activePrompt;
+  try {
+    const verification = await post<{ options: PublicKeyCredentialRequestOptionsJSON }>(csrf, "password-start");
+    prompt.signal.throwIfAborted();
+    const response = await startAuthentication({ optionsJSON: verification.options });
+    return await post<{ nextPath: string }>(csrf, "password-finish", { response, newPassword, confirmNewPassword });
+  } catch (error) {
+    await post(csrf, "cancel").catch(() => {});
+    throw error;
+  }
+}
+
+export async function removeKey(
+  csrf: string,
+  credentialId: string,
+  password?: string,
+) {
+  activePrompt = new AbortController();
+  const prompt = activePrompt;
+  try {
+    const verification = await post<{
+      options?: PublicKeyCredentialRequestOptionsJSON;
+    }>(csrf, "remove-start", { credentialId });
+    prompt.signal.throwIfAborted();
+    if (verification.options) {
+      const response = await startAuthentication({
+        optionsJSON: verification.options,
+      });
+      return await post<{ nextPath: string }>(csrf, "remove-finish", {
+        credentialId,
+        response,
+      });
+    }
+    return await post<{ nextPath: string }>(csrf, "remove-finish", {
+      credentialId,
+      password,
+    });
+  } catch (error) {
+    await post(csrf, "cancel").catch(() => {});
+    throw error;
+  }
 }
 
 export function keyProviderError(error: unknown): string {
@@ -117,4 +164,21 @@ export function keyProviderError(error: unknown): string {
   return error instanceof Error
     ? error.message
     : "Your key provider is unavailable. Retry.";
+}
+
+export async function recoverMemberKeyLogin(csrf: string, targetUserId: number, username: string, confirmationUsername: string, method: "password" | "key", password: string) {
+  activePrompt = new AbortController();
+  const prompt = activePrompt;
+  const target = { targetUserId, username, confirmationUsername };
+  try {
+    const verification = await post<{ options?: PublicKeyCredentialRequestOptionsJSON }>(csrf, "recovery-start", { ...target, proofMethod: method });
+    prompt.signal.throwIfAborted();
+    const proof = verification.options
+      ? { response: await startAuthentication({ optionsJSON: verification.options }) }
+      : { password };
+    return await post<{ outcome: "disabled" | "already-disabled"; nextPath: string }>(csrf, "recovery-finish", { ...target, ...proof });
+  } catch (error) {
+    await post(csrf, "cancel").catch(() => {});
+    throw error;
+  }
 }

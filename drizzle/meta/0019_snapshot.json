@@ -1,8 +1,8 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "a1fbd776-4fbb-4a5d-b430-7882be4dc7dd",
-  "prevId": "2ab8a0a0-f735-43fb-8ec8-ecc7ae972592",
+  "id": "ec99984b-d9ab-484c-ad99-6ec74012c3fc",
+  "prevId": "27270fa6-646c-4be0-882e-036f73ff65af",
   "tables": {
     "application_metadata": {
       "name": "application_metadata",
@@ -16,44 +16,6 @@
         },
         "value": {
           "name": "value",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {}
-    },
-    "encrypted_credential_bundles": {
-      "name": "encrypted_credential_bundles",
-      "columns": {
-        "name": {
-          "name": "name",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "envelope": {
-          "name": "envelope",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "configured_at": {
-          "name": "configured_at",
           "type": "text",
           "primaryKey": false,
           "notNull": true,
@@ -608,13 +570,6 @@
         },
         "result": {
           "name": "result",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "diagnostics": {
-          "name": "diagnostics",
           "type": "text",
           "primaryKey": false,
           "notNull": false,
@@ -1288,6 +1243,20 @@
         },
         "session_hash": {
           "name": "session_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "target_credential_id": {
+          "name": "target_credential_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "target_member": {
+          "name": "target_member",
           "type": "text",
           "primaryKey": false,
           "notNull": false,

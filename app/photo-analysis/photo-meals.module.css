@@ -3,9 +3,9 @@
   gap: 1rem;
   padding: 1rem;
   margin-block: 0.75rem;
-  border: 1px solid #d9e1da;
+  border: 1px solid var(--rule);
   border-radius: 1rem;
-  background: #fff;
+  background: var(--surface);
 }
 .card > img {
   width: 88px;
@@ -31,7 +31,7 @@
   display: block;
   width: 100%;
   max-width: 240px;
-  accent-color: #27644b;
+  accent-color: var(--green);
 }
 .actions {
   display: flex;
@@ -44,9 +44,9 @@
 .status button,
 .card button,
 .correction button {
-  background: #edf3ee;
-  color: #244b39;
-  border: 1px solid #bdd0c2;
+  background: var(--green-soft);
+  color: var(--green-strong);
+  border: 1px solid var(--green-border);
   padding: 0.55rem 0.75rem;
   border-radius: 0.5rem;
   cursor: pointer;
@@ -66,7 +66,7 @@
   width: 100%;
   min-height: 90px;
   padding: 0.75rem;
-  border: 1px solid #a9bcb0;
+  border: 1px solid var(--rule-strong);
   border-radius: 0.5rem;
   box-sizing: border-box;
   font: inherit;

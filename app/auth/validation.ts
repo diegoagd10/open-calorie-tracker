@@ -33,6 +33,14 @@ export const passwordChangeSchema = z
     }
   });
 
+export const fallbackPasswordChangeSchema = z.object({
+  confirmNewPassword: z.string(),
+  newPassword: passwordSchema,
+}).superRefine((change, context) => {
+  if (change.newPassword !== change.confirmNewPassword)
+    context.addIssue({ code: "custom", message: "passwords do not match", path: ["confirmNewPassword"] });
+});
+
 export const memberPasswordResetSchema = z
   .object({
     confirmPassword: z.string(),

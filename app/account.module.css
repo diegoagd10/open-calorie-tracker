@@ -50,6 +50,80 @@
   display: grid;
 }
 
+.keyList {
+  margin: 1rem 0;
+  padding: 0;
+  list-style: none;
+}
+
+.keyRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.75rem;
+  margin-block: 0.75rem;
+}
+
+.keyName,
+.removalTitle {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.removalTitle {
+  margin: 0;
+}
+
+.removalActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.removeButton,
+.confirmRemovalButton,
+.cancelRemovalButton {
+  min-height: 2.75rem;
+  padding: 0.65rem 1rem;
+  border: 1px solid var(--color-border);
+  border-radius: 0.65rem;
+  color: var(--color-text);
+  background: var(--color-surface);
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.removeButton {
+  border-color: var(--danger-border);
+  color: var(--danger);
+}
+
+.removeButton:hover {
+  background: var(--danger-soft);
+}
+
+.confirmRemovalButton {
+  border-color: var(--danger-action);
+  color: white;
+  background: var(--danger-action);
+}
+
+.confirmRemovalButton:hover {
+  filter: brightness(0.9);
+}
+
+.cancelRemovalButton:hover {
+  background: var(--ground);
+}
+
+.removalActions button:disabled,
+.keyRow button:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}
+
 .form {
   gap: 0.9rem;
   padding-top: 1rem;
@@ -85,13 +159,13 @@
 }
 
 .error {
-  color: #8a1c14;
-  background: #fff1f0;
+  color: var(--danger);
+  background: var(--danger-soft);
 }
 
 .success {
   color: var(--color-ready);
-  background: #ecfdf3;
+  background: var(--green-soft);
 }
 
 .submit {
@@ -100,7 +174,7 @@
   border: 0;
   border-radius: 0.65rem;
   color: white;
-  background: #126c24;
+  background: var(--green-dark);
   font: inherit;
   font-size: 0.8rem;
   font-weight: 750;
@@ -108,7 +182,7 @@
 }
 
 .submit:hover {
-  background: #105f1e;
+  background: var(--green-hover);
 }
 
 .signOutForm {

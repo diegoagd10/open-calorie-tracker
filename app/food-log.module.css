@@ -1,18 +1,6 @@
 .shell {
   --page-width: 100%;
   --surface-gutter: 1rem;
-  --blue: #1f65bd;
-  --blue-soft: #eaf3ff;
-  --ground: #fafbfd;
-  --green: #287c30;
-  --green-dark: #206628;
-  --ink: #17212b;
-  --ink-2: #394652;
-  --muted: #5f6b77;
-  --rule: #e2e6ea;
-  --rule-strong: #cfd5db;
-  --surface: #ffffff;
-  --surface-soft: #f3f5f7;
   min-height: 100dvh;
   color: var(--ink);
   background: var(--ground);
@@ -25,8 +13,8 @@
   left: 0.75rem;
   padding: 0.7rem 1rem;
   border-radius: 0.7rem;
-  color: white;
-  background: var(--ink);
+  color: var(--outer);
+  background: var(--green-strong);
   transform: translateY(-180%);
 }
 
@@ -86,7 +74,7 @@
   border-radius: 0.7rem;
   font: inherit;
   cursor: pointer;
-  box-shadow: 0 5px 16px rgb(15 29 45 / 14%);
+  box-shadow: 0 5px 16px rgb(0 0 0 / 14%);
 }
 
 .quickLogButton svg {
@@ -95,18 +83,18 @@
 }
 
 .quickLogFood {
-  color: var(--green-dark);
-  background: #edf8ee;
+  color: var(--green-strong);
+  background: var(--green-soft);
 }
 
 .quickLogWater {
-  color: var(--blue);
-  background: #eaf3ff;
+  color: var(--blue-strong);
+  background: var(--blue-soft);
 }
 
 .quickLogButton:hover,
 .quickLogButton:focus-visible {
-  box-shadow: 0 7px 20px rgb(15 29 45 / 20%);
+  box-shadow: 0 7px 20px rgb(0 0 0 / 20%);
   filter: brightness(0.98);
 }
 
@@ -232,16 +220,16 @@
 
 .selectedDate {
   color: white;
-  background: var(--green);
-  box-shadow: 0 7px 16px rgb(49 152 58 / 20%);
+  background: var(--green-dark);
+  box-shadow: 0 7px 16px rgb(0 0 0 / 20%);
 }
 
 .selectedDate:hover {
-  background: var(--green-dark);
+  background: var(--green-hover);
 }
 
 .futureDate {
-  color: #a1a7b0;
+  color: var(--muted-disabled);
   cursor: not-allowed;
 }
 
@@ -251,7 +239,7 @@
   border: 1px solid var(--rule);
   border-radius: 1rem;
   background: var(--surface);
-  box-shadow: 0 8px 24px rgb(15 29 45 / 5%);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 14%);
 }
 
 .calorieRow {
@@ -288,7 +276,7 @@
   height: 0.44rem;
   margin: 0.7rem 0 0.4rem;
   border-radius: 999px;
-  background: #e9edf1;
+  background: var(--surface-muted);
 }
 
 .linearProgress span,
@@ -371,7 +359,7 @@
   height: 0.25rem;
   margin-top: 0.55rem;
   border-radius: 999px;
-  background: #e8edf2;
+  background: var(--surface-muted);
 }
 
 .nutrientProgress span {
@@ -385,7 +373,7 @@
 .nutrientCell > em,
 .incompleteLabel {
   margin-top: 0.35rem;
-  color: #9a6114;
+  color: var(--warning);
   font-size: 0.62rem;
   font-style: normal;
   font-weight: 750;
@@ -419,7 +407,7 @@
   width: 0.5rem;
   height: 0.5rem;
   border-radius: 50%;
-  background: #cbd1d9;
+  background: var(--rule);
   content: "";
 }
 
@@ -438,7 +426,7 @@
   border: 1px solid var(--rule);
   border-radius: 1rem;
   background: var(--surface);
-  box-shadow: 0 8px 24px rgb(15 29 45 / 5%);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 14%);
 }
 
 .waterOverviewRow {
@@ -509,7 +497,7 @@
   padding: 2.5rem 1rem;
   border: 1px dashed var(--rule-strong);
   border-radius: 1rem;
-  background: var(--surface);
+  background: transparent;
   text-align: center;
 }
 
@@ -557,12 +545,24 @@
 
 .primaryButton {
   color: white;
-  background: var(--green);
+  background: var(--green-dark);
+}
+
+.primaryButton:hover,
+.cameraButton:hover {
+  background: var(--green-hover);
 }
 
 .secondaryButton {
-  color: var(--green-dark);
-  background: white;
+  border-color: var(--rule);
+  color: var(--ink);
+  background: var(--surface);
+}
+
+.secondaryButton:hover,
+.dialogClose:hover,
+.railNav a:hover:not([aria-current="page"]) {
+  background: var(--surface-soft);
 }
 
 .actionMessage {
@@ -624,7 +624,7 @@
 }
 
 .foodEntryCard:focus-visible {
-  outline: 3px solid #9bc1ed;
+  outline: 3px solid var(--focus);
   outline-offset: 2px;
 }
 
@@ -646,10 +646,10 @@
   width: 2.6rem;
   height: 2.6rem;
   place-items: center;
-  border: 1px solid #79c982;
+  border: 1px solid var(--green-border);
   border-radius: 50%;
-  color: var(--green-dark);
-  background: #edf8ee;
+  color: var(--green-strong);
+  background: var(--green-soft);
 }
 
 .waterEntryMarker {
@@ -659,10 +659,10 @@
   width: 2.6rem;
   height: 2.6rem;
   place-items: center;
-  border: 1px solid #78aee5;
+  border: 1px solid var(--blue-border);
   border-radius: 50%;
   color: var(--blue);
-  background: #eaf3ff;
+  background: var(--blue-soft);
 }
 
 .foodEntryContent,
@@ -726,12 +726,12 @@
 .foodEntryCard:hover,
 .foodEntryCard:focus-visible {
   border-color: var(--rule-strong);
-  background: #fbfcfd;
+  background: var(--surface-soft);
 }
 
 .waterEventCard:hover,
 .waterEventCard:focus-visible {
-  border-color: #78aee5;
+  border-color: var(--blue-border);
 }
 
 .foodEntryCardWithMenu {
@@ -784,7 +784,7 @@
   border: 1px solid var(--rule-strong);
   border-radius: 0.65rem;
   background: var(--surface);
-  box-shadow: 0 -0.75rem 2rem rgb(31 42 55 / 16%);
+  box-shadow: 0 -0.75rem 2rem rgb(0 0 0 / 16%);
 }
 
 .foodEntryMenuPopover button,
@@ -794,7 +794,7 @@
   padding: 0.65rem 0.75rem;
   border: 0;
   border-radius: 0.45rem;
-  color: var(--green-dark);
+  color: var(--green-strong);
   background: transparent;
   font: inherit;
   font-size: 0.78rem;
@@ -883,9 +883,9 @@
 .skeletonActions > span {
   background: linear-gradient(
     100deg,
-    #e1e5e9 20%,
-    #f4f6f7 38%,
-    #e1e5e9 56%
+    var(--surface-muted) 20%,
+    var(--rule) 38%,
+    var(--surface-muted) 56%
   );
   background-size: 300% 100%;
   animation: skeleton-shimmer 1.35s ease-in-out infinite;
@@ -955,24 +955,13 @@
 }
 
 .dialogBackdrop {
-  --blue: #1f65bd;
-  --blue-soft: #eaf3ff;
-  --green: #287c30;
-  --green-dark: #206628;
-  --ink: #17212b;
-  --ink-2: #394652;
-  --muted: #5f6b77;
-  --rule: #e2e6ea;
-  --rule-strong: #cfd5db;
-  --surface: #ffffff;
-  --surface-soft: #f3f5f7;
   position: fixed;
   z-index: 80;
   inset: 0;
   display: grid;
   align-items: end;
   padding-top: 2rem;
-  background: rgb(14 24 35 / 48%);
+  background: var(--backdrop);
 }
 
 .foodDialog {
@@ -983,7 +972,7 @@
   overflow-y: auto;
   border-radius: 1.4rem 1.4rem 0 0;
   background: var(--surface);
-  box-shadow: 0 -1rem 3rem rgb(15 29 45 / 18%);
+  box-shadow: 0 -1rem 3rem rgb(0 0 0 / 18%);
 }
 
 .dialogHead {
@@ -1015,7 +1004,7 @@
   margin-left: 0.45rem;
   padding: 0.2rem 0.45rem;
   border-radius: 999px;
-  color: #205a94;
+  color: var(--blue-strong);
   background: var(--blue-soft);
   font-size: 0.6rem;
   font-weight: 750;
@@ -1063,7 +1052,7 @@
   border: 1px solid var(--rule-strong);
   border-radius: 0.7rem;
   color: var(--ink);
-  background: white;
+  background: var(--ground);
   font: inherit;
 }
 
@@ -1164,7 +1153,12 @@
   margin-top: 0.65rem;
 }
 
-.barcodeScannerCameraControls .secondaryButton {
+.barcodeScannerCameraControls .primaryButton:hover,
+.cameraButton:hover {
+  background: var(--green-hover);
+}
+
+.secondaryButton {
   min-height: 2.5rem;
 }
 
@@ -1328,7 +1322,7 @@
 
 .providerAttribution a,
 .backToResults {
-  color: var(--green-dark);
+  color: var(--green-strong);
   font-weight: 700;
 }
 
@@ -1362,8 +1356,8 @@
   gap: 0.7rem;
   padding: 0.75rem;
   border-radius: 0.75rem;
-  color: var(--green-dark);
-  background: #f1f8f2;
+  color: var(--green-strong);
+  background: var(--green-soft);
 }
 
 .snapshotNote p,
@@ -1481,10 +1475,10 @@
 .dangerSubmitButton {
   min-height: 2.75rem;
   padding: 0.7rem 1rem;
-  border: 1px solid #c63d34;
+  border: 1px solid var(--danger-border);
   border-radius: 0.7rem;
-  color: #a92f28;
-  background: white;
+  color: var(--danger);
+  background: var(--ground);
   font: inherit;
   font-size: 0.78rem;
   font-weight: 750;
@@ -1493,7 +1487,7 @@
 
 .dangerSubmitButton {
   color: white;
-  background: #b9342c;
+  background: var(--danger-action);
 }
 
 .deleteConfirm {
@@ -1502,9 +1496,9 @@
   align-items: center;
   gap: 0.6rem;
   padding: 0.8rem;
-  border: 1px solid #efd1d1;
+  border: 1px solid var(--danger-border);
   border-radius: 0.75rem;
-  background: #fff0ef;
+  background: var(--danger-soft);
 }
 
 .deleteConfirm strong,
@@ -1515,7 +1509,7 @@
 
 .deleteConfirm p {
   margin-top: 0.15rem;
-  color: #955b5b;
+  color: var(--danger-muted);
   font-size: 0.66rem;
 }
 
@@ -1557,14 +1551,14 @@
   border: 1px solid var(--rule-strong);
   border-radius: 0.75rem;
   color: var(--ink-2);
-  background: white;
+  background: var(--surface);
   font: inherit;
   cursor: pointer;
 }
 
 .waterPresetButton[aria-pressed="true"] {
   border: 2px solid var(--blue);
-  color: #164f91;
+  color: var(--blue-strong);
   background: var(--blue-soft);
 }
 
@@ -1602,7 +1596,7 @@
   padding: 0.65rem 0.75rem;
   border: 1px solid var(--rule-strong);
   border-radius: 0.7rem;
-  background: white;
+  background: var(--ground);
   font: inherit;
 }
 
@@ -1630,7 +1624,7 @@
   border: 1px solid var(--blue);
   border-radius: 0.7rem;
   color: white;
-  background: var(--blue);
+  background: var(--blue-action);
   font: inherit;
   font-size: 0.78rem;
   font-weight: 750;
@@ -1657,8 +1651,8 @@
   margin: 0.8rem 0 0;
   padding: 0.7rem;
   border-radius: 0.7rem;
-  color: #8c2b24;
-  background: #fff0ef;
+  color: var(--danger);
+  background: var(--danger-soft);
   font-size: 0.75rem;
 }
 
@@ -1683,7 +1677,7 @@
 }
 
 .backLink {
-  color: var(--green-dark);
+  color: var(--green-strong);
   font-size: 0.75rem;
   font-weight: 750;
   white-space: nowrap;
@@ -1718,7 +1712,7 @@
 }
 
 .calendarNavDisabled {
-  color: #b4b9c1;
+  color: var(--muted-disabled);
 }
 
 .calendarGrid {
@@ -1754,7 +1748,7 @@
 
 .calendarToday {
   color: white;
-  background: var(--green);
+  background: var(--green-dark);
 }
 
 .calendarSelected {
@@ -1762,7 +1756,7 @@
 }
 
 .calendarFuture {
-  color: #b4b9c1;
+  color: var(--muted-disabled);
   cursor: not-allowed;
 }
 
@@ -1776,8 +1770,8 @@
   grid-template-columns: repeat(3, 1fr);
   min-height: 4.25rem;
   border-top: 1px solid var(--rule);
-  background: rgb(255 255 255 / 96%);
-  box-shadow: 0 -8px 28px rgb(15 29 45 / 6%);
+  background: var(--rail-overlay);
+  box-shadow: 0 -8px 28px rgb(0 0 0 / 14%);
 }
 
 .mobileNav a {
@@ -1793,7 +1787,7 @@
 }
 
 .mobileNav a[aria-current="page"] {
-  color: var(--green-dark);
+  color: var(--green-strong);
 }
 
 .mobileNav svg {
@@ -1815,7 +1809,7 @@
   padding: 0.45rem;
   border-radius: 0.65rem;
   color: white;
-  background: var(--green);
+  background: var(--green-dark);
 }
 
 .brandMark > span {
@@ -1868,8 +1862,8 @@
 }
 
 .railNav a[aria-current="page"] {
-  color: var(--green-dark);
-  background: #edf7ee;
+  color: var(--green-strong);
+  background: var(--green-soft);
 }
 
 .railNav svg {
@@ -1891,13 +1885,13 @@
   padding: 0.8rem;
   border-radius: 0.7rem;
   color: var(--ink-2);
-  background: #edf1f3;
+  background: var(--surface-soft);
 }
 
 .railPrivacy > svg {
   width: 1rem;
   height: 1rem;
-  color: var(--green-dark);
+  color: var(--green-strong);
 }
 
 .railPrivacy strong {
@@ -2101,7 +2095,7 @@
     margin-inline: auto;
     padding: 0;
     background: var(--rule);
-    box-shadow: 0 0 70px rgb(15 29 45 / 10%);
+    box-shadow: 0 0 70px rgb(0 0 0 / 14%);
   }
 
   .foodLogShell {
@@ -2116,7 +2110,7 @@
     display: flex;
     height: 100dvh;
     padding: 1.35rem 1.1rem;
-    background: #f7f9fa;
+    background: var(--rail);
   }
 
   .desktopRail {

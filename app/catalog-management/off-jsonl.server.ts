@@ -102,10 +102,20 @@ function readSet(value: unknown, row: Record<string, string>, exclude: Exclude):
   return { candidate: { ...ref, authority }, retained: { source: "packaging", preparation: "as_sold", per: ref.per, per_quantity: ref.quantity, per_unit: ref.unit, nutrients: retained } };
 }
 function preferredCandidate(candidates: Candidate[]): Candidate {
+  const completeness = (candidate: Candidate) => Object.values(candidate.authority.nutritionPerAuthoritativeBase).filter(value => value !== null).length;
+  return candidates.sort((a, b) => a.per.localeCompare(b.per) || completeness(b) - completeness(a) || JSON.stringify(a.authority.nutritionPerAuthoritativeBase).localeCompare(JSON.stringify(b.authority.nutritionPerAuthoritativeBase)))[0];
+}
+function authoritativeCandidates(row: Record<string, string>, candidates: Candidate[]) {
   const usable = candidates.filter(candidate => candidate.authority.isSelectable);
   const serving = usable.filter(candidate => candidate.per === "serving");
-  const completeness = (candidate: Candidate) => Object.values(candidate.authority.nutritionPerAuthoritativeBase).filter(value => value !== null).length;
-  return (serving.length ? serving : usable).sort((a, b) => a.per.localeCompare(b.per) || completeness(b) - completeness(a) || JSON.stringify(a.authority.nutritionPerAuthoritativeBase).localeCompare(JSON.stringify(b.authority.nutritionPerAuthoritativeBase)))[0];
+  if (serving.length) return serving;
+  const quantity = amount(row.serving_quantity);
+  const unit = row.serving_quantity_unit;
+  if (validReferenceQuantity(quantity) && (unit === "g" || unit === "ml")) {
+    const matching = usable.filter(candidate => candidate.unit === unit);
+    if (matching.length) return matching;
+  }
+  return usable;
 }
 function incompatibleReferences(chosen: Candidate, other: Candidate) {
   if (other.unit !== chosen.unit) return true;
@@ -146,8 +156,9 @@ export function offNativeNutrition(row: Record<string, string>, input: unknown, 
   const candidates = sets.flatMap(set => set.candidate ? [set.candidate] : []);
   if (!candidates.length) return unavailable("unsupported_nutrition_authority");
   if (!candidates.some(candidate => candidate.authority.isSelectable)) return unavailable("calories_unavailable");
-  const chosen = preferredCandidate(candidates);
-  if (candidates.some(other => conflicting(chosen, other))) return unavailable("conflicting_nutrition_bases");
+  const authoritative = authoritativeCandidates(row, candidates);
+  const chosen = preferredCandidate(authoritative);
+  if (authoritative.some(other => conflicting(chosen, other))) return unavailable("conflicting_nutrition_bases");
   return servingAuthority(chosen);
 }
 
