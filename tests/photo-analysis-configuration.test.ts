@@ -7,6 +7,7 @@ import { openApplicationDatabase, type ApplicationDatabase } from "../app/databa
 import { createDatabaseApplicationMetadata } from "../app/database/application-metadata.server";
 import {
   ModelDiscoveryError,
+  PhotoAnalysisAttemptConfigurationUnavailableError,
   PhotoAnalysisConfigurationInputError,
   PhotoAnalysisConfigurationService,
   type PhotoAnalysisModelDiscovery,
@@ -287,5 +288,211 @@ test("reports permanent and transient discovery failures while preserving the pr
   failure = "unknown";
   expect(await service.readSettings()).toMatchObject({
     gemini: { state: "transient-error", models: [] }, ready: false,
+  });
+});
+
+test("captures an attempt configuration without retaining mutable credential or profile state", async () => {
+  let currentCredentials = credentials;
+  const service = new PhotoAnalysisConfigurationService(
+    createDatabaseApplicationMetadata(database.getClient()),
+    { read: async () => currentCredentials },
+    {
+      discoverGemini: async () => [
+        { id: "gemini-3.1-flash-lite", displayName: "Gemini", methods: ["generateContent"] },
+      ],
+      discoverJev: async () => [
+        { id: "jev-1.13.0", effectiveId: "jev-1.13.0" },
+      ],
+    },
+  );
+  await service.save({
+    geminiModel: "gemini-3.1-flash-lite",
+    jevModel: "jev-1.13.0",
+    categoryConfidenceThreshold: 0.25,
+    productConfidenceThreshold: 0.6,
+  });
+
+  const captured = await service.captureAttemptConfiguration();
+  currentCredentials = {
+    geminiKey: "replacement-gemini-key",
+    typeSafeKey: "replacement-typesafe-key",
+  };
+  await service.save({
+    geminiModel: "gemini-3.1-flash-lite",
+    jevModel: "jev-1.13.0",
+    categoryConfidenceThreshold: 0.8,
+    productConfidenceThreshold: 0.9,
+  });
+
+  expect(captured).toEqual({
+    geminiKey: "gemini-private-key",
+    typeSafeKey: "typesafe-private-key",
+    geminiModel: "gemini-3.1-flash-lite",
+    jevModel: "jev-1.13.0",
+    categoryConfidenceThreshold: 0.25,
+    productConfidenceThreshold: 0.6,
+  });
+  expect(await service.captureAttemptConfiguration()).toMatchObject({
+    geminiKey: "replacement-gemini-key",
+    categoryConfidenceThreshold: 0.8,
+    productConfidenceThreshold: 0.9,
+  });
+});
+
+test("rechecks model availability and retries capture when configuration changes concurrently", async () => {
+  let currentCredentials = credentials;
+  let blockNextDiscovery = false;
+  let enteredDiscovery!: () => void;
+  let continueDiscovery!: () => void;
+  const discoveryEntered = new Promise<void>((resolve) => {
+    enteredDiscovery = resolve;
+  });
+  const discoveryContinues = new Promise<void>((resolve) => {
+    continueDiscovery = resolve;
+  });
+  const discovery: PhotoAnalysisModelDiscovery = {
+    discoverGemini: vi.fn(async () => {
+      if (blockNextDiscovery) {
+        blockNextDiscovery = false;
+        enteredDiscovery();
+        await discoveryContinues;
+      }
+      return [
+        { id: "gemini-3.1-flash-lite", displayName: "Gemini", methods: ["generateContent"] },
+      ];
+    }),
+    discoverJev: vi.fn(async () => [
+      { id: "jev-1.13.0", effectiveId: "jev-1.13.0" },
+    ]),
+  };
+  const service = new PhotoAnalysisConfigurationService(
+    createDatabaseApplicationMetadata(database.getClient()),
+    { read: async () => currentCredentials },
+    discovery,
+  );
+  await service.save({
+    geminiModel: "gemini-3.1-flash-lite",
+    jevModel: "jev-1.13.0",
+    categoryConfidenceThreshold: 0.25,
+    productConfidenceThreshold: 0.6,
+  });
+
+  blockNextDiscovery = true;
+  const captured = service.captureAttemptConfiguration();
+  await discoveryEntered;
+  currentCredentials = {
+    geminiKey: "replacement-gemini-key",
+    typeSafeKey: "replacement-typesafe-key",
+  };
+  await service.save({
+    geminiModel: "gemini-3.1-flash-lite",
+    jevModel: "jev-1.13.0",
+    categoryConfidenceThreshold: 0.8,
+    productConfidenceThreshold: 0.9,
+  });
+  continueDiscovery();
+
+  await expect(captured).resolves.toMatchObject({
+    geminiKey: "replacement-gemini-key",
+    typeSafeKey: "replacement-typesafe-key",
+    categoryConfidenceThreshold: 0.8,
+    productConfidenceThreshold: 0.9,
+  });
+  expect(discovery.discoverGemini).toHaveBeenCalledWith(
+    credentials.geminiKey,
+    expect.any(AbortSignal),
+  );
+  expect(discovery.discoverGemini).toHaveBeenCalledWith(
+    currentCredentials.geminiKey,
+    expect.any(AbortSignal),
+  );
+  expect(discovery.discoverJev).toHaveBeenCalledWith(
+    currentCredentials.typeSafeKey,
+    expect.any(AbortSignal),
+  );
+
+  const unavailable = new PhotoAnalysisConfigurationService(
+    createDatabaseApplicationMetadata(database.getClient()),
+    { read: async () => currentCredentials },
+    {
+      discoverGemini: async () => [],
+      discoverJev: async () => [],
+    },
+  );
+  await expect(unavailable.captureAttemptConfiguration()).rejects.toBeInstanceOf(
+    PhotoAnalysisAttemptConfigurationUnavailableError,
+  );
+
+  const unavailableJev = new PhotoAnalysisConfigurationService(
+    createDatabaseApplicationMetadata(database.getClient()),
+    { read: async () => currentCredentials },
+    {
+      discoverGemini: async () => [
+        { id: "gemini-3.1-flash-lite", displayName: "Gemini", methods: ["generateContent"] },
+      ],
+      discoverJev: async () => [],
+    },
+  );
+  await expect(unavailableJev.captureAttemptConfiguration()).rejects.toBeInstanceOf(
+    PhotoAnalysisAttemptConfigurationUnavailableError,
+  );
+  await expect(unavailableJev.save({
+    geminiModel: "gemini-3.1-flash-lite",
+    jevModel: "jev-1.13.0",
+    categoryConfidenceThreshold: 0.8,
+    productConfidenceThreshold: 0.9,
+  })).rejects.toMatchObject({
+    fieldErrors: {
+      jevModel: "Choose an available supported Jev model.",
+    },
+  });
+
+  const rejectedJev = new PhotoAnalysisConfigurationService(
+    createDatabaseApplicationMetadata(database.getClient()),
+    { read: async () => currentCredentials },
+    {
+      discoverGemini: async () => [
+        { id: "gemini-3.1-flash-lite", displayName: "Gemini", methods: ["generateContent"] },
+      ],
+      discoverJev: async () => { throw new Error("Jev discovery failed"); },
+    },
+  );
+  await expect(rejectedJev.save({
+    geminiModel: "gemini-3.1-flash-lite",
+    jevModel: "jev-1.13.0",
+    categoryConfidenceThreshold: 0.8,
+    productConfidenceThreshold: 0.9,
+  })).rejects.toThrow("Jev discovery failed");
+});
+
+test("cannot capture an attempt configuration without a usable credential pair", async () => {
+  const service = new PhotoAnalysisConfigurationService(
+    createDatabaseApplicationMetadata(database.getClient()),
+    { read: async () => undefined },
+    {
+      discoverGemini: async () => [],
+      discoverJev: async () => [],
+    },
+  );
+
+  await expect(service.captureAttemptConfiguration()).rejects.toBeInstanceOf(
+    PhotoAnalysisAttemptConfigurationUnavailableError,
+  );
+
+  const defaults = new PhotoAnalysisConfigurationService(
+    createDatabaseApplicationMetadata(database.getClient()),
+    { read: async () => credentials },
+    {
+      discoverGemini: async () => [
+        { id: "gemini-3.1-flash-lite", displayName: "Gemini", methods: ["generateContent"] },
+      ],
+      discoverJev: async () => [
+        { id: "jev-1.13.0", effectiveId: "jev-1.13.0" },
+      ],
+    },
+  );
+  await expect(defaults.captureAttemptConfiguration()).resolves.toMatchObject({
+    categoryConfidenceThreshold: 0,
+    productConfidenceThreshold: 0,
   });
 });

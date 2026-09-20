@@ -7,10 +7,19 @@ saves one aggregate Food Entry. Open it to inspect component references and
 assumptions or choose **Correct with AI**. Corrections replace that entry while
 retaining its previous totals until success. Other food-entry methods stay usable.
 
-Each attempt has a 20-second deadline after upload. Cancel stops an attempt and
+Each attempt has a five-second deadline after upload. Cancel stops an attempt and
 ignores late results. Failed, canceled, timed-out, or interrupted work requires an
 explicit Retry; a server restart never reruns lost work. New unsuccessful meals
 contribute no nutrition. There is no lifetime correction quota.
+
+Before an attempt is exposed as active, it captures copies of the usable provider
+credentials, selected Gemini and effective Jev models, model-specific thresholds,
+and one leased Photo Analysis-capable USDA generation. Credential replacement or
+deletion, configuration changes, and catalog activation affect only later
+attempts. Credentials remain in memory for the active attempt and are never added
+to attempt diagnostics. The catalog lease stays held through both Jev stages and
+evidence validation. Every correction and explicit retry captures a fresh lease;
+it never resumes interrupted work or silently reuses a previous match.
 
 Photos, application-relevant USDA evidence, correction text, and result revisions
 are private SQLite records. Deleting a Food Entry (or an unsuccessful photo card)

@@ -25,6 +25,7 @@ import {
   PhotoAnalysisService,
   type PhotoAnalyzer,
 } from "../app/photo-analysis/photo-analysis.server";
+import type { PhotoAnalysisAttemptSource } from "../app/photo-analysis/attempts.server";
 import {
   photoAnalysisDiagnosticsSchema,
   type PhotoAnalysisDiagnostics,
@@ -78,7 +79,7 @@ function estimate(energy = 250) {
   };
 }
 async function setup(
-  analyzer: PhotoAnalyzer,
+  analyzer: PhotoAnalyzer | PhotoAnalysisAttemptSource,
   options: {
     usda?: UsdaAnalysisReader;
     createUsda?: (context: {
@@ -174,7 +175,7 @@ test("photo analysis saves captured local Foundation evidence when USDA is repla
       },
     },
   );
-  const meal = service.start(userId, {
+  const meal = await service.start(userId, {
     photo,
     foodLogDate: "2026-09-04",
     idempotencyKey: "captured-local-foundation",
@@ -258,7 +259,7 @@ test("a missing local preparation remains an explicit estimate without a fabrica
       },
     },
   );
-  const meal = service.start(userId, {
+  const meal = await service.start(userId, {
     photo,
     foodLogDate: "2026-09-04",
     idempotencyKey: "missing-local-preparation",
@@ -281,7 +282,7 @@ test("a photo returns promptly, excludes pending nutrition, and auto-saves one e
         finish = resolve;
       }),
   });
-  const started = service.start(userId, {
+  const started = await service.start(userId, {
     photo,
     foodLogDate: "2026-09-04",
     idempotencyKey: "initial-photo-1",
@@ -314,7 +315,7 @@ test("successive AI corrections retain old totals while active and atomically re
       return new Promise((resolve) => completions.push(resolve));
     },
   });
-  const meal = service.start(userId, {
+  const meal = await service.start(userId, {
     photo,
     foodLogDate: "2026-09-03",
     idempotencyKey: "plate-correction",
@@ -328,19 +329,19 @@ test("successive AI corrections retain old totals while active and atomically re
     "It has butter",
     "Only half the rice",
   ].entries()) {
-    service.correct(userId, entryId, {
+    await service.correct(userId, entryId, {
       correction,
       idempotencyKey: `correction-${index}`,
     });
     expect(log.read(userId, "2026-09-03")?.entries).toMatchObject([
       { id: entryId, energyMilliKcal: index === 0 ? 250000 : 350000 },
     ]);
-    expect(() =>
+    await expect(
       service.correct(userId, entryId, {
         correction: "Another change",
         idempotencyKey: "conflicting-request",
       }),
-    ).toThrow();
+    ).rejects.toThrow();
     completions.shift()!(estimate(index === 0 ? 350 : 200));
     await expect
       .poll(() => service.status(userId, meal.id).status)
@@ -367,26 +368,27 @@ test("cancel and retry ignore late results, deduplicate requests, and preserve c
     foodLogDate: "2026-09-04",
     idempotencyKey: "cancel-initial",
   };
-  const meal = service.start(userId, input);
-  expect(service.start(userId, input).id).toBe(meal.id);
+  const meal = await service.start(userId, input);
+  expect((await service.start(userId, input)).id).toBe(meal.id);
   service.cancel(userId, meal.id, meal.attemptId);
-  const retried = service.retry(userId, meal.id, {
-    idempotencyKey: "explicit-retry",
-    attemptId: meal.attemptId,
-  });
-  expect(
+  const [retried, repeatedRetry] = await Promise.all([
     service.retry(userId, meal.id, {
       idempotencyKey: "explicit-retry",
       attemptId: meal.attemptId,
-    }).attemptId,
-  ).toBe(retried.attemptId);
+    }),
+    service.retry(userId, meal.id, {
+      idempotencyKey: "explicit-retry",
+      attemptId: meal.attemptId,
+    }),
+  ]);
+  expect(repeatedRetry.attemptId).toBe(retried.attemptId);
   completions[0](estimate(999));
   completions[1](estimate(200));
   await expect
     .poll(() => service.status(userId, meal.id).status)
     .toBe("succeeded");
   const entryId = service.status(userId, meal.id).entryId!;
-  const correction = service.correct(userId, entryId, {
+  const correction = await service.correct(userId, entryId, {
     correction: "Add butter",
     idempotencyKey: "cancel-correction",
   });
@@ -410,14 +412,14 @@ test("a bounded attempt times out and a new server marks lost work interrupted w
   const analyzer: PhotoAnalyzer = { analyze: () => new Promise(() => {}) };
   const timed = new PhotoAnalysisService(client, analyzer, { deadlineMs: 20 });
   services.push(timed);
-  const first = timed.start(userId, {
+  const first = await timed.start(userId, {
     photo,
     foodLogDate: "2026-09-03",
     idempotencyKey: "deadline-photo",
   });
   await expect.poll(() => timed.status(userId, first.id).status).toBe("failed");
   expect(timed.status(userId, first.id).error).toContain("timed out");
-  const running = timed.start(userId, {
+  const running = await timed.start(userId, {
     photo,
     foodLogDate: "2026-09-03",
     idempotencyKey: "interrupted-photo",
@@ -426,6 +428,45 @@ test("a bounded attempt times out and a new server marks lost work interrupted w
   const restarted = new PhotoAnalysisService(client, analyzer);
   expect(restarted.status(userId, running.id).status).toBe("interrupted");
   expect(restarted.photo(userId, running.id).bytes).toEqual(photo.bytes);
+});
+
+test("deadline and shutdown stop attempt capture without persisting half-captured work", async () => {
+  let finishCapture!: (lease: Awaited<ReturnType<PhotoAnalysisAttemptSource["capture"]>>) => void;
+  let releases = 0;
+  const source: PhotoAnalysisAttemptSource = {
+    capture: async () => await new Promise((resolve) => {
+      finishCapture = resolve;
+    }),
+  };
+  const { service, userId } = await setup(source, { deadlineMs: 20 });
+
+  await expect(service.start(userId, {
+    photo,
+    foodLogDate: "2026-09-04",
+    idempotencyKey: "capture-timeout",
+  })).rejects.toThrow("Analysis timed out");
+  expect(service.list(userId, "2026-09-04")).toEqual([]);
+  finishCapture({
+    analyzer: { analyze: async () => estimate() },
+    configuration: null,
+    release: () => { releases++; },
+  });
+  await expect.poll(() => releases).toBe(1);
+
+  const shutdownCapture = service.start(userId, {
+    photo,
+    foodLogDate: "2026-09-04",
+    idempotencyKey: "capture-shutdown",
+  });
+  service.shutdown();
+  await expect(shutdownCapture).rejects.toThrow("Analysis stopped");
+  finishCapture({
+    analyzer: { analyze: async () => estimate() },
+    configuration: null,
+    release: () => { releases++; },
+  });
+  await expect.poll(() => releases).toBe(2);
+  expect(service.list(userId, "2026-09-04")).toEqual([]);
 });
 
 function usdaFixture(): UsdaAnalysisReader {
@@ -602,7 +643,7 @@ test("a mixed result retains bounded matching provenance with its captured USDA 
     }),
   });
 
-  const meal = service.start(userId, {
+  const meal = await service.start(userId, {
     photo,
     foodLogDate: "2026-09-04",
     idempotencyKey: "mixed-provenance",
@@ -657,7 +698,7 @@ test("a failed attempt retains its captured model and threshold configuration", 
     },
   });
 
-  const meal = service.start(userId, {
+  const meal = await service.start(userId, {
     photo,
     foodLogDate: "2026-09-04",
     idempotencyKey: "failed-provenance",
@@ -672,6 +713,143 @@ test("a failed attempt retains its captured model and threshold configuration", 
     categoryConfidenceThreshold: 0.35,
     productConfidenceThreshold: 0.7,
     components: [],
+  });
+});
+
+test("active attempts keep their captured configuration while later corrections recheck it", async () => {
+  type Snapshot = {
+    catalogGeneration: string;
+    geminiModel: string;
+    jevModel: string;
+    categoryConfidenceThreshold: number;
+    productConfidenceThreshold: number;
+  };
+  let available: Snapshot | undefined = {
+    catalogGeneration: "generation-a",
+    geminiModel: "gemini-a",
+    jevModel: "jev-a",
+    categoryConfidenceThreshold: 0.2,
+    productConfidenceThreshold: 0.4,
+  };
+  const completions: ((value: unknown) => void)[] = [];
+  const released: string[] = [];
+  const attempts: PhotoAnalysisAttemptSource = {
+    capture: async () => {
+      if (!available) throw new Error("Photo Analysis is not configured");
+      const captured = { ...available };
+      return {
+        configuration: captured,
+        analyzer: {
+          analyze: async () => await new Promise((resolve) => {
+            completions.push(resolve);
+          }),
+        },
+        release: () => released.push(captured.catalogGeneration),
+      };
+    },
+  };
+  const { service, userId } = await setup(attempts);
+
+  const meal = await service.start(userId, {
+    photo,
+    foodLogDate: "2026-09-04",
+    idempotencyKey: "captured-initial-attempt",
+  });
+  available = {
+    catalogGeneration: "generation-b",
+    geminiModel: "gemini-b",
+    jevModel: "jev-b",
+    categoryConfidenceThreshold: 0.7,
+    productConfidenceThreshold: 0.8,
+  };
+  expect(JSON.parse(service.history(userId, meal.id)[0].diagnostics!)).toMatchObject({
+    catalogGeneration: "generation-a",
+    geminiModel: "gemini-a",
+    jevModel: "jev-a",
+    categoryConfidenceThreshold: 0.2,
+    productConfidenceThreshold: 0.4,
+  });
+  completions.shift()!(estimate(250));
+  await expect.poll(() => service.status(userId, meal.id).status).toBe("succeeded");
+
+  const correction = await service.correct(
+    userId,
+    service.status(userId, meal.id).entryId!,
+    {
+      correction: "Use the corrected portion",
+      idempotencyKey: "captured-correction-attempt",
+    },
+  );
+  available = undefined;
+  expect(JSON.parse(service.history(userId, meal.id).at(-1)!.diagnostics!)).toMatchObject({
+    catalogGeneration: "generation-b",
+    geminiModel: "gemini-b",
+    jevModel: "jev-b",
+    categoryConfidenceThreshold: 0.7,
+    productConfidenceThreshold: 0.8,
+  });
+  completions.shift()!(estimate(300));
+  await expect.poll(() => service.status(userId, meal.id).status).toBe("succeeded");
+  expect(released).toEqual(["generation-a", "generation-b"]);
+
+  available = {
+    catalogGeneration: "generation-c",
+    geminiModel: "gemini-c",
+    jevModel: "jev-c",
+    categoryConfidenceThreshold: 0.3,
+    productConfidenceThreshold: 0.5,
+  };
+  const canceled = await service.correct(
+    userId,
+    correction.entryId!,
+    {
+      correction: "Retry this complete correction",
+      idempotencyKey: "captured-canceled-correction",
+    },
+  );
+  service.cancel(userId, meal.id, canceled.attemptId);
+  available = {
+    catalogGeneration: "generation-d",
+    geminiModel: "gemini-d",
+    jevModel: "jev-d",
+    categoryConfidenceThreshold: 0.1,
+    productConfidenceThreshold: 0.9,
+  };
+  const retried = await service.retry(userId, meal.id, {
+    attemptId: canceled.attemptId,
+    idempotencyKey: "captured-retry-attempt",
+  });
+  expect(JSON.parse(service.history(userId, meal.id).at(-1)!.diagnostics!)).toMatchObject({
+    catalogGeneration: "generation-d",
+    geminiModel: "gemini-d",
+    jevModel: "jev-d",
+    categoryConfidenceThreshold: 0.1,
+    productConfidenceThreshold: 0.9,
+  });
+  completions.shift()!(estimate(999));
+  completions.shift()!(estimate(350));
+  await expect.poll(() => service.status(userId, meal.id).status).toBe("succeeded");
+  await expect.poll(() => released).toEqual([
+    "generation-a",
+    "generation-b",
+    "generation-c",
+    "generation-d",
+  ]);
+  expect(retried.correction).toBe("Retry this complete correction");
+
+  available = undefined;
+  await expect(service.correct(
+    userId,
+    correction.entryId!,
+    {
+      correction: "Try after deletion",
+      idempotencyKey: "unconfigured-correction-attempt",
+    },
+  )).rejects.toThrow("Photo Analysis is not configured");
+  expect(service.history(userId, meal.id)).toHaveLength(4);
+  expect(service.view(userId, meal.id)).toMatchObject({
+    status: "succeeded",
+    energyMilliKcal: 350000,
   });
 });
 
@@ -712,7 +890,7 @@ test("a later provider failure retains matching decisions already completed by t
     },
   });
 
-  const meal = service.start(userId, {
+  const meal = await service.start(userId, {
     photo,
     foodLogDate: "2026-09-04",
     idempotencyKey: "partial-matching-provenance",
@@ -740,13 +918,13 @@ test("corrections retain matching diagnostics beside every successful revision",
   const { service, userId } = await setup({
     analyze: async () => categoryFallbackOutcome(++call === 1 ? 0.8 : 0.65),
   });
-  const meal = service.start(userId, {
+  const meal = await service.start(userId, {
     photo,
     foodLogDate: "2026-09-04",
     idempotencyKey: "provenance-revision-one",
   });
   await expect.poll(() => service.status(userId, meal.id).status).toBe("succeeded");
-  service.correct(userId, service.status(userId, meal.id).entryId!, {
+  await service.correct(userId, service.status(userId, meal.id).entryId!, {
     correction: "The rice portion is smaller",
     idempotencyKey: "provenance-revision-two",
   });
@@ -772,7 +950,7 @@ test("unbounded or sensitive diagnostic fields fail closed without being persist
   };
   outcome.diagnostics.authorizationHeader = "Bearer secret-provider-token";
   const { service, userId } = await setup({ analyze: async () => outcome });
-  const meal = service.start(userId, {
+  const meal = await service.start(userId, {
     photo,
     foodLogDate: "2026-09-04",
     idempotencyKey: "sensitive-provenance",
@@ -794,7 +972,7 @@ test("matching provenance rejects more than five retained candidates", async () 
     })),
   );
   const { service, userId } = await setup({ analyze: async () => outcome });
-  const meal = service.start(userId, {
+  const meal = await service.start(userId, {
     photo,
     foodLogDate: "2026-09-04",
     idempotencyKey: "unbounded-candidate-provenance",
@@ -823,11 +1001,53 @@ test("upgrading a legacy photo revision keeps it readable with honest provenance
     RETURNING id
   `).id;
   client.run(sql`
+    INSERT INTO user_preferences (
+      user_id, display_units, time_zone, created_at, updated_at
+    ) VALUES (
+      ${userId}, 'metric', 'America/New_York',
+      '2026-09-01T12:00:00.000Z', '2026-09-01T12:00:00.000Z'
+    )
+  `);
+  const entryId = client.get<{ id: number }>(sql`
+    INSERT INTO food_entries (
+      user_id, food_log_date, local_event_time, provider, provider_food_id,
+      source_data_type, original_name, authoritative_base_unit,
+      authoritative_base_quantity_microunits, authoritative_nutrition,
+      selected_measurement_id, selected_measurement_label,
+      selected_measurement_unit, selected_measurement_base_quantity_microunits,
+      supported_measurements, quantity_microunits,
+      authoritative_energy_milli_kcal, authoritative_protein_milligrams,
+      authoritative_carbohydrate_milligrams, authoritative_fat_milligrams,
+      idempotency_key, created_at, updated_at
+    ) VALUES (
+      ${userId}, '2026-09-01', '12:00:00', 'ai-photo',
+      'legacy-photo-meal', 'AI analysis', 'Rice plate', 'serving', 1000000,
+      ${JSON.stringify({
+        carbohydrateMilligrams: { amount: 50_000, fixedPointMultiplier: 1 },
+        energyMilliKcal: { amount: 250_000, fixedPointMultiplier: 1 },
+        fatMilligrams: { amount: 2_000, fixedPointMultiplier: 1 },
+        fiberMilligrams: null,
+        proteinMilligrams: { amount: 5_000, fixedPointMultiplier: 1 },
+        sodiumMilligrams: null,
+        sugarMilligrams: null,
+      })},
+      'plate', '1 analyzed plate', 'serving', 1000000,
+      ${JSON.stringify([{
+        baseQuantityMicrounits: 1_000_000,
+        id: "plate",
+        label: "1 analyzed plate",
+        unit: "serving",
+      }])},
+      1000000, 250000, 5000, 50000, 2000, 'photo:legacy-photo-meal',
+      '2026-09-01T12:00:00.000Z', '2026-09-01T12:00:01.000Z'
+    ) RETURNING id
+  `).id;
+  client.run(sql`
     INSERT INTO photo_meals (
       id, user_id, entry_id, food_log_date, local_event_time,
       photo, mime_type, created_at
     ) VALUES (
-      'legacy-photo-meal', ${userId}, NULL, '2026-09-01', '12:00:00',
+      'legacy-photo-meal', ${userId}, ${entryId}, '2026-09-01', '12:00:00',
       ${photo.bytes}, 'image/png', '2026-09-01T12:00:00.000Z'
     )
   `);
@@ -849,15 +1069,49 @@ test("upgrading a legacy photo revision keeps it readable with honest provenance
   });
   databases.push(upgraded);
   const service = new PhotoAnalysisService(upgraded.getClient(), {
-    analyze: async () => estimate(),
+    analyze: async () => estimate(300),
   });
   services.push(service);
+  const entries = new FoodEntryService(
+    upgraded.getClient(),
+    { getFood: async () => { throw new Error("Legacy snapshot should be self-contained"); } },
+    () => new Date("2026-09-05T12:00:00.000Z"),
+  );
 
   expect(service.view(userId, "legacy-photo-meal")).toMatchObject({
     provenanceState: "legacy",
     result: { name: "Rice plate" },
+    energyMilliKcal: 250000,
   });
   expect(service.history(userId, "legacy-photo-meal")[0].diagnostics).toBeNull();
+  await service.correct(userId, entryId, {
+    correction: "Use the corrected legacy portion",
+    idempotencyKey: "legacy-photo-correction",
+  });
+  await expect.poll(
+    () => service.status(userId, "legacy-photo-meal").status,
+  ).toBe("succeeded");
+  expect(service.status(userId, "legacy-photo-meal").entryId).toBe(entryId);
+  expect(entries.read(userId, entryId).energyMilliKcal).toBe(300000);
+
+  const corrected = entries.read(userId, entryId);
+  const edited = entries.update(userId, entryId, {
+    foodLogDate: corrected.foodLogDate,
+    expectedUpdatedAt: corrected.updatedAt,
+    quantity: "1",
+    selectedMeasurementId: "plate",
+    name: "Edited legacy plate",
+  });
+  expect(edited.name).toBe("Edited legacy plate");
+  expect(entries.copyToToday(userId, entryId, {
+    foodLogDate: edited.foodLogDate,
+    idempotencyKey: `copy:${entryId}:legacy-photo`,
+  })).toMatchObject({ name: "Edited legacy plate", energyMilliKcal: 300000 });
+
+  service.delete(userId, "legacy-photo-meal");
+  expect(() => service.view(userId, "legacy-photo-meal")).toThrow(
+    "Photo meal unavailable",
+  );
 });
 
 test("AI can revise USDA searches while authoritative records determine nutrition and the consumed fraction applies once", async () => {
@@ -881,7 +1135,7 @@ test("AI can revise USDA searches while authoritative records determine nutritio
     },
     { usda: usdaFixture() },
   );
-  const meal = service.start(userId, {
+  const meal = await service.start(userId, {
     photo,
     foodLogDate: "2026-09-04",
     idempotencyKey: "usda-backed-plate",
@@ -952,7 +1206,7 @@ test.each([
     const { service, log, userId } = await setup({
       analyze: async () => invalid(),
     });
-    const meal = service.start(userId, {
+    const meal = await service.start(userId, {
       photo,
       foodLogDate: "2026-09-04",
       idempotencyKey: "invalid-result",
@@ -966,7 +1220,7 @@ test.each([
 
 test("invalid image data is rejected before accepting an analysis", async () => {
   const { service, userId } = await setup({ analyze: async () => estimate() });
-  expect(() =>
+  await expect(
     service.start(userId, {
       photo: {
         mimeType: "image/png",
@@ -975,7 +1229,7 @@ test("invalid image data is rejected before accepting an analysis", async () => 
       foodLogDate: "2026-09-04",
       idempotencyKey: "invalid-image",
     }),
-  ).toThrow();
+  ).rejects.toThrow();
 });
 
 function piMessage(content: PiMessage["content"]): PiMessage {
@@ -1018,7 +1272,7 @@ test("Pi can use an explicit estimate when the local USDA catalog is missing and
     ]);
   });
   const { service, log, userId } = await setup(analyzer);
-  const meal = service.start(userId, {
+  const meal = await service.start(userId, {
     photo,
     foodLogDate: "2026-09-04",
     idempotencyKey: "pi-outage-result",
@@ -1057,7 +1311,7 @@ test("processing blocks entry reads, edits, copies and deletion while other meal
     foodLogDate: "2026-09-03",
     idempotencyKey: "other-meal",
   });
-  const meal = service.start(userId, {
+  const meal = await service.start(userId, {
     photo,
     foodLogDate: "2026-09-03",
     idempotencyKey: "entry-lock-photo",
@@ -1068,7 +1322,7 @@ test("processing blocks entry reads, edits, copies and deletion while other meal
     .toBe("succeeded");
   const entryId = service.status(userId, meal.id).entryId!;
   const before = entries.read(userId, entryId);
-  service.correct(userId, entryId, {
+  await service.correct(userId, entryId, {
     correction: "Butter",
     idempotencyKey: "lock-correction",
   });
@@ -1116,7 +1370,7 @@ test("USDA components can omit model arithmetic while the saved result still con
     },
     { usda: usdaFixture() },
   );
-  const meal = service.start(userId, {
+  const meal = await service.start(userId, {
     photo,
     foodLogDate: "2026-09-04",
     idempotencyKey: "derived-nutrition",
@@ -1151,7 +1405,7 @@ test("failed corrections never erase successful USDA context or become applied c
     },
     { usda: usdaFixture() },
   );
-  const meal = service.start(userId, {
+  const meal = await service.start(userId, {
     photo,
     foodLogDate: "2026-09-04",
     idempotencyKey: "retained-reference",
@@ -1161,7 +1415,7 @@ test("failed corrections never erase successful USDA context or become applied c
     .toBe("succeeded");
   const entryId = service.status(userId, meal.id).entryId!;
   for (let i = 0; i < 4; i++) {
-    service.correct(userId, entryId, {
+    await service.correct(userId, entryId, {
       correction: "abandoned",
       idempotencyKey: `failed-context-${i}`,
     });
@@ -1173,7 +1427,7 @@ test("failed corrections never erase successful USDA context or become applied c
       energyMilliKcal: 260000,
     });
   }
-  service.correct(userId, entryId, {
+  await service.correct(userId, entryId, {
     correction: "Use the same weighed amount",
     idempotencyKey: "retained-reference-correction",
   });
@@ -1194,7 +1448,7 @@ test("photo views use the current Food Entry name after a manual edit", async ()
   const { service, client, userId } = await setup({
     analyze: async () => estimate(),
   });
-  const meal = service.start(userId, {
+  const meal = await service.start(userId, {
     photo,
     foodLogDate: "2026-09-04",
     idempotencyKey: "renamed-photo-meal",
@@ -1230,28 +1484,28 @@ test("invalid dates, keys, ownership, and stale attempt actions cannot mutate me
   const { service, userId } = await setup({
     analyze: () => new Promise(() => {}),
   });
-  const start = (key: string, date = "2026-09-04") =>
-    service.start(userId, { photo, foodLogDate: date, idempotencyKey: key });
+  const start = async (key: string, date = "2026-09-04") =>
+    await service.start(userId, { photo, foodLogDate: date, idempotencyKey: key });
   for (const key of [
     "short",
     "a".repeat(129),
     "bad space key",
     "x;bad-request",
   ])
-    expect(() => start(key)).toThrow();
+    await expect(start(key)).rejects.toThrow();
   for (const date of ["invalid", "2026-02-30", "2026-09-05"])
-    expect(() => start("invalid-date-request", date)).toThrow(
+    await expect(start("invalid-date-request", date)).rejects.toThrow(
       "Invalid Food Log date",
     );
   expect(() => service.list(userId, "wrong")).toThrow("Invalid Food Log date");
-  expect(() =>
+  await expect(
     service.start(userId + 1, {
       photo,
       foodLogDate: "2026-09-04",
       idempotencyKey: "no-time-zone",
     }),
-  ).toThrow("Invalid Food Log date");
-  const meal = start("guarded-photo");
+  ).rejects.toThrow("Invalid Food Log date");
+  const meal = await start("guarded-photo");
   expect(service.view(userId, meal.id)).toMatchObject({
     status: "active",
     stage: "Analyzing photo",
@@ -1270,35 +1524,35 @@ test("invalid dates, keys, ownership, and stale attempt actions cannot mutate me
   expect(() => service.delete(userId, meal.id)).toThrow(
     "Cancel the active analysis before deleting it",
   );
-  expect(() =>
+  await expect(
     service.retry(userId, meal.id, {
       attemptId: meal.attemptId,
       idempotencyKey: "active-retry",
     }),
-  ).toThrow("This attempt cannot be retried");
+  ).rejects.toThrow("This attempt cannot be retried");
   service.cancel(userId, meal.id, meal.attemptId);
   expect(service.status(userId, meal.id).error).toBe(
     "Analysis canceled. Retry when ready.",
   );
-  expect(() =>
+  await expect(
     service.retry(userId, meal.id, {
       attemptId: "stale",
       idempotencyKey: "stale-retry",
     }),
-  ).toThrow("This attempt cannot be retried");
-  expect(() =>
+  ).rejects.toThrow("This attempt cannot be retried");
+  await expect(
     service.retry(userId, meal.id, {
       attemptId: meal.attemptId,
       idempotencyKey: "bad key",
     }),
-  ).toThrow();
-  const other = start("other-owned-photo");
-  expect(() =>
+  ).rejects.toThrow();
+  const other = await start("other-owned-photo");
+  await expect(
     service.retry(userId, meal.id, {
       attemptId: meal.attemptId,
       idempotencyKey: "other-owned-photo",
     }),
-  ).toThrow("Request key belongs to another meal");
+  ).rejects.toThrow("Request key belongs to another meal");
   service.cancel(userId, other.id, other.attemptId);
   service.cancel(userId, other.id, other.attemptId);
   service.delete(userId, other.id);
@@ -1315,48 +1569,51 @@ test("completed corrections deduplicate per meal, validate text and keys, and pr
   const { service, userId, client } = await setup({
     analyze: async (input) => {
       contexts.push(input);
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
       return estimate(0);
     },
   });
-  const meals = ["dedup-photo-one", "dedup-photo-two"].map((idempotencyKey) =>
-    service.start(userId, { photo, foodLogDate: "2026-09-04", idempotencyKey }),
+  const meals = await Promise.all(
+    ["dedup-photo-one", "dedup-photo-two"].map(async (idempotencyKey) =>
+      await service.start(userId, { photo, foodLogDate: "2026-09-04", idempotencyKey }),
+    ),
   );
   await expect
     .poll(() => service.status(userId, meals[1].id).status)
     .toBe("succeeded");
   const entryId = service.status(userId, meals[0].id).entryId!;
   expect(service.view(userId, meals[0].id).energyMilliKcal).toBe(0);
-  expect(() =>
+  await expect(
     service.retry(userId, meals[0].id, {
       attemptId: meals[0].attemptId,
       idempotencyKey: "completed-retry",
     }),
-  ).toThrow("This attempt cannot be retried");
+  ).rejects.toThrow("This attempt cannot be retried");
   for (const correction of [" ", "x".repeat(2001)])
-    expect(() =>
+    await expect(
       service.correct(userId, entryId, {
         correction,
         idempotencyKey: "invalid-correction",
       }),
-    ).toThrow();
-  expect(() =>
+    ).rejects.toThrow();
+  await expect(
     service.correct(userId, entryId, {
       correction: "valid",
       idempotencyKey: "bad key",
     }),
-  ).toThrow();
-  expect(() =>
+  ).rejects.toThrow();
+  await expect(
     service.correct(userId + 1, entryId, {
       correction: "valid",
       idempotencyKey: "foreign-correction",
     }),
-  ).toThrow("Photo meal unavailable");
-  expect(() =>
+  ).rejects.toThrow("Photo meal unavailable");
+  await expect(
     service.correct(userId, entryId, {
       correction: "valid",
       idempotencyKey: "dedup-photo-two",
     }),
-  ).toThrow("Request key belongs to another meal");
+  ).rejects.toThrow("Request key belongs to another meal");
   const entries = new FoodEntryService(
     client,
     {
@@ -1374,23 +1631,23 @@ test("completed corrections deduplicate per meal, validate text and keys, and pr
     selectedMeasurementId: "plate",
     name: "Edited rice",
   });
-  const correction = service.correct(userId, entryId, {
+  const correction = await service.correct(userId, entryId, {
     correction: "  Add butter  ",
     idempotencyKey: "trimmed-correction",
   });
   expect(correction.stage).toBe("Analyzing photo");
   expect(
-    service.correct(userId, entryId, {
+    (await service.correct(userId, entryId, {
       correction: "Add butter",
       idempotencyKey: "trimmed-correction",
-    }).attemptId,
+    })).attemptId,
   ).toBe(correction.attemptId);
-  expect(() =>
+  await expect(
     service.correct(userId, entryId, {
       correction: "extra",
       idempotencyKey: "competing-correction",
     }),
-  ).toThrow("Analysis is already processing");
+  ).rejects.toThrow("Analysis is already processing");
   await expect
     .poll(() => service.status(userId, meals[0].id).status)
     .toBe("succeeded");
@@ -1400,10 +1657,10 @@ test("completed corrections deduplicate per meal, validate text and keys, and pr
   });
   expect(entries.read(userId, entryId).updatedAt > edited.updatedAt).toBe(true);
   expect(
-    service.correct(userId, entryId, {
+    (await service.correct(userId, entryId, {
       correction: "Add butter",
       idempotencyKey: "trimmed-correction",
-    }).attemptId,
+    })).attemptId,
   ).toBe(correction.attemptId);
 });
 
@@ -1423,7 +1680,7 @@ test("supported photo signatures and size limits are enforced before acceptance"
     { mimeType: "image/webp", bytes: webp },
     { ...photo, bytes: maximum },
   ].entries()) {
-    const meal = service.start(userId, {
+    const meal = await service.start(userId, {
       photo: image,
       foodLogDate: "2026-09-04",
       idempotencyKey: `supported-image-${index}`,
@@ -1447,13 +1704,13 @@ test("supported photo signatures and size limits are enforced before acceptance"
     { mimeType: "image/webp", bytes: Buffer.from("xxxx1234WEBP") },
   ];
   for (const [index, image] of invalid.entries())
-    expect(() =>
+    await expect(
       service.start(userId, {
         photo: image,
         foodLogDate: "2026-09-04",
         idempotencyKey: `unsupported-image-${index}`,
       }),
-    ).toThrow(
+    ).rejects.toThrow(
       index < 2
         ? "Choose a photo up to 8 MB"
         : "Choose a JPEG, PNG, or WebP photo",
@@ -1479,7 +1736,7 @@ test("USDA budgets permit the configured final round and forbid additional searc
     },
     { usda: usdaFixture() },
   );
-  const meal = service.start(userId, {
+  const meal = await service.start(userId, {
     photo,
     foodLogDate: "2026-09-04",
     idempotencyKey: "bounded-usda-tools",
@@ -1507,7 +1764,7 @@ test("USDA budgets permit the configured final round and forbid additional searc
     { usda: usdaFixture(), rounds: 1 },
   );
   services.push(configured);
-  const limited = configured.start(userId, {
+  const limited = await configured.start(userId, {
     photo,
     foodLogDate: "2026-09-04",
     idempotencyKey: "custom-tool-budget",
@@ -1542,7 +1799,7 @@ test("cancellation aborts pending USDA work and rejects late evidence without re
       },
     },
   );
-  const meal = service.start(userId, {
+  const meal = await service.start(userId, {
     photo,
     foodLogDate: "2026-09-04",
     idempotencyKey: "cancel-usda-work",
@@ -1562,7 +1819,7 @@ test("startup interrupts persisted active work, and late CPU-bound results canno
   const { service, userId, client } = await setup({
     analyze: () => new Promise(() => {}),
   });
-  const meal = service.start(userId, {
+  const meal = await service.start(userId, {
     photo,
     foodLogDate: "2026-09-04",
     idempotencyKey: "lost-on-restart",
@@ -1586,7 +1843,7 @@ test("startup interrupts persisted active work, and late CPU-bound results canno
     { deadlineMs: 20000 },
   );
   services.push(slow);
-  const late = slow.start(userId, {
+  const late = await slow.start(userId, {
     photo,
     foodLogDate: "2026-09-04",
     idempotencyKey: "cpu-bound-timeout",
@@ -1645,7 +1902,7 @@ test("Pi forwards the photo, successful context, complete USDA evidence and assi
     ]);
   });
   const { service, userId } = await setup(analyzer, { usda: usdaFixture() });
-  const meal = service.start(userId, {
+  const meal = await service.start(userId, {
     photo,
     foodLogDate: "2026-09-04",
     idempotencyKey: "pi-complete-context",
@@ -1724,7 +1981,7 @@ test.each([
         },
       },
     });
-    const meal = service.start(userId, {
+    const meal = await service.start(userId, {
       photo,
       foodLogDate: "2026-09-04",
       idempotencyKey: "invalid-pi-tool",
@@ -1745,7 +2002,7 @@ test.each(["error", "aborted"] as const)(
         stopReason,
       })),
     );
-    const meal = service.start(userId, {
+    const meal = await service.start(userId, {
       photo,
       foodLogDate: "2026-09-04",
       idempotencyKey: "bad-pi-stop-reason",
@@ -1761,7 +2018,7 @@ test("a non-food photo remains visible as failed without creating a food entry",
   const { service, userId } = await setup(new PiPhotoAnalyzer(async () =>
     piMessage([{ type: "text", text: '{"status":"no_food"}' }]),
   ));
-  const meal = service.start(userId, {
+  const meal = await service.start(userId, {
     photo, foodLogDate: "2026-09-04", idempotencyKey: "non-food-photo-test",
   });
   await expect.poll(() => service.status(userId, meal.id).status).toBe("failed");
@@ -1795,7 +2052,7 @@ test("Pi bounds model turns, tools per turn, final output and accumulated eviden
       ]),
   ].entries()) {
     const { service, userId } = await setup(new PiPhotoAnalyzer(complete));
-    const meal = service.start(userId, {
+    const meal = await service.start(userId, {
       photo,
       foodLogDate: "2026-09-04",
       idempotencyKey: `pi-budget-${index}`,
@@ -1824,7 +2081,7 @@ test("Pi bounds model turns, tools per turn, final output and accumulated eviden
       },
     },
   );
-  const meal = service.start(userId, {
+  const meal = await service.start(userId, {
     photo,
     foodLogDate: "2026-09-04",
     idempotencyKey: "pi-context-budget",
@@ -1854,7 +2111,7 @@ test("the maximum Pi tool batch and final output size still allow a usable resul
     }),
     { usda: usdaFixture() },
   );
-  const meal = service.start(userId, {
+  const meal = await service.start(userId, {
     photo,
     foodLogDate: "2026-09-04",
     idempotencyKey: "pi-budget-boundary",
@@ -1916,7 +2173,7 @@ test("missing USDA nutrients require explicit supplements and cannot be overridd
         },
         { usda: reader },
       );
-      const meal = service.start(userId, {
+      const meal = await service.start(userId, {
         photo,
         foodLogDate: "2026-09-04",
         idempotencyKey: `nutrient-supplement-${index}-${supplement}`,
@@ -1949,7 +2206,7 @@ test("missing USDA nutrients require explicit supplements and cannot be overridd
     },
     { usda: usdaFixture() },
   );
-  const meal = service.start(userId, {
+  const meal = await service.start(userId, {
     photo,
     foodLogDate: "2026-09-04",
     idempotencyKey: "forbidden-usda-override",
@@ -2028,7 +2285,7 @@ test("mixed component totals retain unknown nutrients and reject duplicate names
       },
       { usda: usdaFixture() },
     );
-    const meal = service.start(userId, {
+    const meal = await service.start(userId, {
       photo,
       foodLogDate: "2026-09-04",
       idempotencyKey: `mixed-validation-${index}`,
@@ -2081,7 +2338,7 @@ test("USDA context overflow retains only the previously accepted evidence for an
       },
     },
   );
-  const meal = service.start(userId, {
+  const meal = await service.start(userId, {
     photo,
     foodLogDate: "2026-09-04",
     idempotencyKey: "evidence-overflow",
@@ -2119,7 +2376,7 @@ test("explicit retry can reuse complete evidence retrieved before an initial fai
     },
     { usda: usdaFixture() },
   );
-  const meal = service.start(userId, {
+  const meal = await service.start(userId, {
     photo,
     foodLogDate: "2026-09-04",
     idempotencyKey: "retry-retained-evidence",
@@ -2127,7 +2384,7 @@ test("explicit retry can reuse complete evidence retrieved before an initial fai
   await expect
     .poll(() => service.status(userId, meal.id).status)
     .toBe("failed");
-  service.retry(userId, meal.id, {
+  await service.retry(userId, meal.id, {
     attemptId: meal.attemptId,
     idempotencyKey: "retry-without-new-lookup",
   });

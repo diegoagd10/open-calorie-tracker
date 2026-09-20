@@ -109,7 +109,7 @@ test.skipIf(process.env.PHOTO_ANALYSIS_LIVE !== "1")(
     try {
       for (const [index, meal] of meals.entries()) {
         const start = Date.now();
-        const initial = service.start(userId, {
+        const initial = await service.start(userId, {
           photo: {
             bytes: await readFile(
               path.resolve(path.dirname(datasetPath), meal.photoPath),
@@ -132,7 +132,7 @@ test.skipIf(process.env.PHOTO_ANALYSIS_LIVE !== "1")(
           correction,
         ] of meal.corrections.entries()) {
           if (first.entryId === null) break;
-          service.correct(userId, first.entryId, {
+          await service.correct(userId, first.entryId, {
             correction,
             idempotencyKey: `pilot-${index}-correction-${correctionIndex}`,
           });

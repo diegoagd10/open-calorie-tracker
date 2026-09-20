@@ -6,6 +6,11 @@ import {
   PhotoAnalysisStore,
   type PhotoMealRow,
 } from "../database/photo-analysis.server";
+import {
+  fixedPhotoAnalysisAttemptSource,
+  type PhotoAnalysisAttemptLease,
+  type PhotoAnalysisAttemptSource,
+} from "./attempts.server";
 import { localDateAt, parseIsoLocalDate } from "../food-log/date";
 import {
   localEventTimeForNewFoodLogEvent,
@@ -40,6 +45,10 @@ export type PhotoAnalyzer = {
   }): Promise<unknown>;
 };
 
+type PhotoAnalysisAttemptActivation =
+  | { kind: "initial" }
+  | { kind: "subsequent"; correction: string | null; retryAttemptId?: string };
+
 const keySchema = z
   .string()
   .min(8)
@@ -49,13 +58,14 @@ const keySchema = z
 export class PhotoAnalysisService {
   private readonly store: PhotoAnalysisStore;
   private readonly controllers = new Map<string, AbortController>();
+  private readonly attempts: PhotoAnalysisAttemptSource;
   private readonly usda?: UsdaAnalysisReader;
   private readonly rounds: number;
   private readonly deadlineMs: number;
   private readonly now: () => Date;
   constructor(
     private readonly database: ApplicationDatabaseClient,
-    private readonly analyzer: PhotoAnalyzer,
+    analyzer: PhotoAnalyzer | PhotoAnalysisAttemptSource,
     options: {
       now?: () => Date;
       deadlineMs?: number;
@@ -67,11 +77,14 @@ export class PhotoAnalysisService {
     this.now = options.now ?? (() => new Date());
     this.usda = options.usda;
     this.rounds = options.rounds ?? 3;
-    this.deadlineMs = options.deadlineMs ?? 20000;
+    this.deadlineMs = options.deadlineMs ?? 5000;
+    this.attempts = "capture" in analyzer
+      ? analyzer
+      : fixedPhotoAnalysisAttemptSource(analyzer);
     this.store.interrupt(this.now().toISOString());
   }
 
-  start(
+  async start(
     userId: number,
     input: { photo: PlatePhoto; foodLogDate: string; idempotencyKey: string },
   ) {
@@ -104,19 +117,9 @@ export class PhotoAnalysisService {
       ),
       createdAt: instant.toISOString(),
     };
-    const attemptId = randomUUID();
-    this.store.start(meal, {
-      id: attemptId,
-      mealId: meal.id,
-      userId,
-      idempotencyKey: input.idempotencyKey,
-      status: "active",
-      stage: "Analyzing photo",
-      diagnostics: this.initialDiagnostics(),
-      startedAt: meal.createdAt,
+    return await this.activateAttempt(meal, input.idempotencyKey, {
+      kind: "initial",
     });
-    void this.run(meal, attemptId);
-    return this.status(userId, meal.id);
   }
 
   status(userId: number, id: string) {
@@ -183,7 +186,7 @@ export class PhotoAnalysisService {
     return this.store.history(id);
   }
 
-  correct(
+  async correct(
     userId: number,
     entryId: number,
     input: { correction: string; idempotencyKey: string },
@@ -209,28 +212,72 @@ export class PhotoAnalysisService {
     const current = this.status(userId, meal.id);
     if (current.status === "active")
       throw new Error("Analysis is already processing");
-    return this.startAttempt(meal, input.idempotencyKey, correction);
+    return await this.activateAttempt(meal, input.idempotencyKey, {
+      kind: "subsequent",
+      correction,
+    });
   }
 
-  private startAttempt(
+  private async activateAttempt(
     meal: PhotoMealRow,
     idempotencyKey: string,
-    correction: string | null,
+    activation: PhotoAnalysisAttemptActivation,
   ) {
-    const current = this.status(meal.userId, meal.id);
     const attemptId = randomUUID();
-    this.store.attempt({
-      id: attemptId,
-      mealId: meal.id,
-      userId: meal.userId,
-      idempotencyKey,
-      status: "active",
-      stage: "Analyzing photo",
-      correction,
-      diagnostics: this.initialDiagnostics(),
-      startedAt: nextUpdatedAt(this.now(), current.startedAt),
-    });
-    void this.run(meal, attemptId);
+    const execution = await this.captureAttempt(attemptId);
+    const capturedRepeated = this.store.repeated(meal.userId, idempotencyKey);
+    if (capturedRepeated) {
+      this.discardAttempt(attemptId, execution);
+      if (
+        activation.kind === "subsequent" &&
+        capturedRepeated.mealId !== meal.id
+      )
+        throw new Error("Request key belongs to another meal");
+      return this.status(meal.userId, capturedRepeated.mealId);
+    }
+    try {
+      if (activation.kind === "initial") {
+        this.store.start(meal, {
+          id: attemptId,
+          mealId: meal.id,
+          userId: meal.userId,
+          idempotencyKey,
+          status: "active",
+          stage: "Analyzing photo",
+          diagnostics: this.initialDiagnostics(execution.lease),
+          startedAt: meal.createdAt,
+        });
+      } else {
+        const latest = this.status(meal.userId, meal.id);
+        if (
+          latest.status === "active" ||
+          (activation.retryAttemptId !== undefined &&
+            (latest.attemptId !== activation.retryAttemptId ||
+              latest.status === "succeeded"))
+        ) {
+          throw new Error(
+            activation.retryAttemptId === undefined
+              ? "Analysis is already processing"
+              : "This attempt cannot be retried",
+          );
+        }
+        this.store.attempt({
+          id: attemptId,
+          mealId: meal.id,
+          userId: meal.userId,
+          idempotencyKey,
+          status: "active",
+          stage: "Analyzing photo",
+          correction: activation.correction,
+          diagnostics: this.initialDiagnostics(execution.lease),
+          startedAt: nextUpdatedAt(this.now(), latest.startedAt),
+        });
+      }
+    } catch (error) {
+      this.discardAttempt(attemptId, execution);
+      throw error;
+    }
+    void this.run(meal, attemptId, execution);
     return this.status(meal.userId, meal.id);
   }
 
@@ -248,7 +295,7 @@ export class PhotoAnalysisService {
     return this.status(userId, id);
   }
 
-  retry(
+  async retry(
     userId: number,
     id: string,
     input: { idempotencyKey: string; attemptId: string },
@@ -267,10 +314,14 @@ export class PhotoAnalysisService {
       current.status === "succeeded"
     )
       throw new Error("This attempt cannot be retried");
-    return this.startAttempt(
+    return await this.activateAttempt(
       this.store.meal(userId, id)!,
       input.idempotencyKey,
-      current.correction,
+      {
+        kind: "subsequent",
+        correction: current.correction,
+        retryAttemptId: input.attemptId,
+      },
     );
   }
 
@@ -308,11 +359,63 @@ export class PhotoAnalysisService {
     return evidence;
   }
 
-  private initialDiagnostics() {
-    const configuration = this.analyzer.configurationSnapshot?.();
-    return configuration
-      ? serializePhotoAnalysisConfiguration(configuration)
+  private initialDiagnostics(lease: PhotoAnalysisAttemptLease) {
+    return lease.configuration
+      ? serializePhotoAnalysisConfiguration(lease.configuration)
       : null;
+  }
+
+  private async captureAttempt(attemptId: string) {
+    const controller = new AbortController();
+    const deadline = performance.now() + this.deadlineMs;
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      this.store.finish(
+        attemptId,
+        "failed",
+        "Analysis timed out. Retry when ready.",
+        this.now().toISOString(),
+      );
+      controller.abort();
+    }, this.deadlineMs);
+    timer.unref();
+    this.controllers.set(attemptId, controller);
+    let lease: PhotoAnalysisAttemptLease | undefined;
+    const pending = this.attempts.capture(controller.signal);
+    const aborted = abortFailure(controller.signal);
+    try {
+      lease = await Promise.race([pending, aborted.promise]);
+      controller.signal.throwIfAborted();
+      return { controller, deadline, lease, timer };
+    } catch (error) {
+      clearTimeout(timer);
+      lease?.release();
+      if (!lease) {
+        void pending.then(
+          (lateLease) => lateLease.release(),
+          () => undefined,
+        );
+      }
+      this.controllers.delete(attemptId);
+      if (timedOut)
+        throw new Error("Analysis timed out. Retry when ready.", {
+          cause: error,
+        });
+      throw error;
+    } finally {
+      aborted.dispose();
+    }
+  }
+
+  private discardAttempt(
+    attemptId: string,
+    execution: Awaited<ReturnType<PhotoAnalysisService["captureAttempt"]>>,
+  ) {
+    clearTimeout(execution.timer);
+    execution.controller.abort();
+    execution.lease.release();
+    this.controllers.delete(attemptId);
   }
 
   private usdaTools(
@@ -412,37 +515,23 @@ export class PhotoAnalysisService {
     return { input, current, currentEntry, evidence };
   }
 
-  private async run(meal: PhotoMealRow, attemptId: string) {
-    const controller = new AbortController();
-    this.controllers.set(attemptId, controller);
-    const deadline = performance.now() + this.deadlineMs;
-    const timer = setTimeout(() => {
-      this.store.finish(
-        attemptId,
-        "failed",
-        "Analysis timed out. Retry when ready.",
-        this.now().toISOString(),
-      );
-      controller.abort();
-    }, this.deadlineMs);
-    timer.unref();
-    const aborted = new Promise<never>((_resolve, reject) => {
-      controller.signal.addEventListener(
-        "abort",
-        () => {
-          clearTimeout(timer);
-          reject(new Error("Analysis stopped"));
-        },
-        { once: true },
-      );
-    });
+  private async run(
+    meal: PhotoMealRow,
+    attemptId: string,
+    execution: Awaited<ReturnType<PhotoAnalysisService["captureAttempt"]>>,
+  ) {
+    const { controller, deadline, lease, timer } = execution;
+    const aborted = abortFailure(controller.signal, () => clearTimeout(timer));
     try {
       const { input, current, currentEntry, evidence } = this.analysisInput(
         meal,
         attemptId,
         controller.signal,
       );
-      const value = await Promise.race([aborted, this.analyzer.analyze(input)]);
+      const value = await Promise.race([
+        aborted.promise,
+        lease.analyzer.analyze(input),
+      ]);
       controller.signal.throwIfAborted();
       const outcome = parsePhotoAnalysisOutcome(value);
       const analyzedValue = outcome?.result ?? value;
@@ -501,10 +590,28 @@ export class PhotoAnalysisService {
         this.now().toISOString(),
       );
     } finally {
+      aborted.dispose();
       clearTimeout(timer);
+      lease.release();
       this.controllers.delete(attemptId);
     }
   }
+}
+
+function abortFailure(signal: AbortSignal, onAbort: () => void = () => undefined) {
+  let stop!: () => void;
+  const promise = new Promise<never>((_resolve, reject) => {
+    stop = () => {
+      onAbort();
+      reject(new Error("Analysis stopped"));
+    };
+    if (signal.aborted) stop();
+    else signal.addEventListener("abort", stop, { once: true });
+  });
+  return {
+    promise,
+    dispose: () => signal.removeEventListener("abort", stop),
+  };
 }
 
 function photoHasSignature(bytes: Buffer, mimeType: string) {

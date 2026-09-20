@@ -89,22 +89,22 @@ export async function action({ request }: Route.ActionArgs) {
     if (intent === "start") {
       const photo = form.get("photo");
       if (!(photo instanceof File)) throw new Error("Choose a plate photo");
-      mealId = service.start(userId, {
+      mealId = (await service.start(userId, {
         foodLogDate: String(form.get("date") ?? ""),
         idempotencyKey,
         photo: {
           bytes: Buffer.from(await photo.arrayBuffer()),
           mimeType: photo.type,
         },
-      }).id;
+      })).id;
     } else if (intent === "correct") {
-      mealId = service.correct(
+      mealId = (await service.correct(
         userId,
         z.coerce.number().int().positive().parse(form.get("entryId")),
         { idempotencyKey, correction: String(form.get("correction") ?? "") },
-      ).id;
+      )).id;
     } else if (intent === "retry") {
-      service.retry(userId, id, {
+      await service.retry(userId, id, {
         idempotencyKey,
         attemptId: String(form.get("attemptId") ?? ""),
       });

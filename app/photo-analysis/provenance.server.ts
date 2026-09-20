@@ -126,10 +126,11 @@ export type PhotoAnalysisConfigurationSnapshot = Pick<
   | "jevModel"
   | "categoryConfidenceThreshold"
   | "productConfidenceThreshold"
->;
+> & { catalogGeneration?: string | null };
 
 const configurationSnapshotSchema = z
   .object({
+    catalogGeneration: identifier.nullable().optional(),
     geminiModel: identifier,
     jevModel: identifier,
     categoryConfidenceThreshold: probability,
@@ -274,7 +275,7 @@ export function serializePhotoAnalysisConfiguration(
   const parsed = configurationSnapshotSchema.parse(configuration);
   return JSON.stringify({
     ...parsed,
-    catalogGeneration: null,
+    catalogGeneration: parsed.catalogGeneration ?? null,
     components: [],
   });
 }

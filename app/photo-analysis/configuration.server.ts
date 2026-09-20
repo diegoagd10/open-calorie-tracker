@@ -92,6 +92,16 @@ export type PhotoAnalysisConfigurationInput = {
 };
 export type PhotoAnalysisConfigurationFieldErrors = Partial<Record<keyof PhotoAnalysisConfigurationInput, string>>;
 
+export type PhotoAnalysisAttemptConfiguration = PhotoAnalysisConfigurationInput &
+  PhotoAnalysisCredentialPair;
+
+export class PhotoAnalysisAttemptConfigurationUnavailableError extends Error {
+  constructor() {
+    super("Photo Analysis configuration is unavailable.");
+    this.name = "PhotoAnalysisAttemptConfigurationUnavailableError";
+  }
+}
+
 export class PhotoAnalysisConfigurationInputError extends Error {
   constructor(readonly fieldErrors: PhotoAnalysisConfigurationFieldErrors) {
     super("Choose available models and enter valid confidence thresholds.");
@@ -128,20 +138,15 @@ export class PhotoAnalysisConfigurationService {
     }
 
     const signal = AbortSignal.timeout(5_000);
-    const [geminiResult, jevResult] = await Promise.allSettled([
-      this.discovery.discoverGemini(pair.geminiKey, signal),
-      this.discovery.discoverJev(pair.typeSafeKey, signal),
-    ]);
-    const geminiModels = geminiResult.status === "fulfilled" ? compatibleGeminiModels(geminiResult.value) : [];
-    const jevModels = jevResult.status === "fulfilled" ? compatibleJevModels(jevResult.value) : [];
-    const gemini = geminiResult.status === "fulfilled"
-      ? { state: "available" as const, models: geminiModels }
-      : discoveryFailureState(geminiResult.reason);
-    const jev = jevResult.status === "fulfilled"
-      ? { state: "available" as const, models: jevModels }
-      : discoveryFailureState(jevResult.reason);
-    const selectedGeminiAvailable = geminiModels.some(model => model.id === stored.geminiModel);
-    const selectedJevAvailable = jevModels.some(model => model.id === stored.jevModel);
+    const discovered = await this.discover(pair, signal);
+    const gemini = discovered.gemini.status === "fulfilled"
+      ? { state: "available" as const, models: discovered.geminiModels }
+      : discoveryFailureState(discovered.gemini.reason);
+    const jev = discovered.jev.status === "fulfilled"
+      ? { state: "available" as const, models: discovered.jevModels }
+      : discoveryFailureState(discovered.jev.reason);
+    const selectedGeminiAvailable = discovered.geminiModels.some(model => model.id === stored.geminiModel);
+    const selectedJevAvailable = discovered.jevModels.some(model => model.id === stored.jevModel);
     const ready = gemini.state === "available" && jev.state === "available"
       && selectedGeminiAvailable && selectedJevAvailable;
     return {
@@ -163,13 +168,14 @@ export class PhotoAnalysisConfigurationService {
       });
     }
     const signal = AbortSignal.timeout(5_000);
-    const [geminiDiscovered, jevDiscovered] = await Promise.all([
-      this.discovery.discoverGemini(pair.geminiKey, signal),
-      this.discovery.discoverJev(pair.typeSafeKey, signal),
-    ]);
-    const geminiModels = compatibleGeminiModels(geminiDiscovered);
-    const jevModels = compatibleJevModels(jevDiscovered);
-    const fieldErrors = validateConfigurationInput(input, geminiModels, jevModels);
+    const discovered = await this.discover(pair, signal);
+    if (discovered.gemini.status === "rejected") throw discovered.gemini.reason;
+    if (discovered.jev.status === "rejected") throw discovered.jev.reason;
+    const fieldErrors = validateConfigurationInput(
+      input,
+      discovered.geminiModels,
+      discovered.jevModels,
+    );
     if (Object.keys(fieldErrors).length) throw new PhotoAnalysisConfigurationInputError(fieldErrors);
 
     const previous = this.readStored();
@@ -190,6 +196,68 @@ export class PhotoAnalysisConfigurationService {
     return await this.readSettings();
   }
 
+  async captureAttemptConfiguration(
+    signal: AbortSignal = new AbortController().signal,
+  ): Promise<PhotoAnalysisAttemptConfiguration> {
+    for (let capturePass = 0; capturePass < 3; capturePass++) {
+      signal.throwIfAborted();
+      const credentials = await this.credentials.read();
+      if (!credentials) {
+        throw new PhotoAnalysisAttemptConfigurationUnavailableError();
+      }
+      const stored = this.readStored();
+      const discovered = await this.discover(credentials, signal);
+      signal.throwIfAborted();
+      const currentCredentials = await this.credentials.read();
+      const currentStored = this.readStored();
+      if (
+        !sameCredentialPair(credentials, currentCredentials) ||
+        JSON.stringify(stored) !== JSON.stringify(currentStored)
+      ) {
+        continue;
+      }
+      if (
+        discovered.gemini.status === "rejected" ||
+        discovered.jev.status === "rejected" ||
+        !discovered.geminiModels.some(
+          (model) => model.id === stored.geminiModel,
+        ) ||
+        !discovered.jevModels.some(
+          (model) => model.id === stored.jevModel,
+        )
+      ) {
+        throw new PhotoAnalysisAttemptConfigurationUnavailableError();
+      }
+      const profile = stored.profiles[stored.jevModel] ?? uncalibratedProfile();
+      return {
+        ...credentials,
+        geminiModel: stored.geminiModel,
+        jevModel: stored.jevModel,
+        categoryConfidenceThreshold: profile.categoryConfidenceThreshold,
+        productConfidenceThreshold: profile.productConfidenceThreshold,
+      };
+    }
+    throw new PhotoAnalysisAttemptConfigurationUnavailableError();
+  }
+
+  private async discover(
+    credentials: PhotoAnalysisCredentialPair,
+    signal: AbortSignal,
+  ) {
+    const [gemini, jev] = await Promise.allSettled([
+      this.discovery.discoverGemini(credentials.geminiKey, signal),
+      this.discovery.discoverJev(credentials.typeSafeKey, signal),
+    ]);
+    return {
+      gemini,
+      geminiModels:
+        gemini.status === "fulfilled" ? compatibleGeminiModels(gemini.value) : [],
+      jev,
+      jevModels:
+        jev.status === "fulfilled" ? compatibleJevModels(jev.value) : [],
+    };
+  }
+
   private readStored(): z.infer<typeof storedConfigurationSchema> {
     const value = this.persistence.read(CONFIGURATION_KEY);
     if (!value) {
@@ -202,6 +270,17 @@ export class PhotoAnalysisConfigurationService {
     }
     return storedConfigurationSchema.parse(JSON.parse(value) as unknown);
   }
+}
+
+function sameCredentialPair(
+  left: PhotoAnalysisCredentialPair,
+  right: PhotoAnalysisCredentialPair | undefined,
+) {
+  return (
+    right !== undefined &&
+    left.geminiKey === right.geminiKey &&
+    left.typeSafeKey === right.typeSafeKey
+  );
 }
 
 function uncalibratedProfile(): JevThresholdProfile {
