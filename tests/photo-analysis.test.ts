@@ -2,6 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { Readable } from "node:stream";
+import { sql } from "drizzle-orm";
 import { afterEach, expect, test, vi } from "vitest";
 import { CatalogManagement } from "../app/catalog-management/catalog-management.server";
 import { LocalUsdaAdapter } from "../app/catalog/local-usda.server";
@@ -24,7 +25,12 @@ import {
   PhotoAnalysisService,
   type PhotoAnalyzer,
 } from "../app/photo-analysis/photo-analysis.server";
+import {
+  photoAnalysisDiagnosticsSchema,
+  type PhotoAnalysisDiagnostics,
+} from "../app/photo-analysis/provenance.server";
 import { foundationArchive } from "./support/foundation-archive";
+import { createMigrationFolder } from "./support/migrations";
 
 const services: PhotoAnalysisService[] = [];
 const catalogManagers: CatalogManagement[] = [];
@@ -448,7 +454,8 @@ function usdaFixture(): UsdaAnalysisReader {
       provider: "usda-fdc",
       providerFoodId: "700",
       providerModifiedDate: null,
-      providerPublishedDate: null,
+      providerPublishedDate: "2026-01-01",
+      catalogGeneration: "foundation-generation-7",
     },
     record: { dataType: "Foundation", description: "Rice, cooked", fdcId: 700 },
   };
@@ -457,6 +464,401 @@ function usdaFixture(): UsdaAnalysisReader {
     async searchEvidence() { return [evidence]; },
   };
 }
+
+const categoryNoneReason = {
+  code: "category-none",
+  message: "No USDA category adequately matched the visible component.",
+} as const;
+
+function categoryFallbackOutcome(probability = 0.8) {
+  return {
+    kind: "photo-analysis-outcome" as const,
+    result: {
+      ...estimate(),
+      components: [{
+        ...estimate().components[0],
+        source: { kind: "ai", reason: categoryNoneReason.message },
+      }],
+    },
+    evidence: [],
+    diagnostics: {
+      catalogGeneration: "foundation-generation-7",
+      geminiModel: "gemini-3.1-flash-lite",
+      jevModel: "jev-1.13.0",
+      categoryConfidenceThreshold: 0.35,
+      productConfidenceThreshold: 0.7,
+      components: [{
+        componentId: "rice",
+        category: {
+          choice: {
+            key: "none",
+            label: "No listed category adequately represents this visible food.",
+          },
+          confidence: 0.9,
+          selectedProbability: probability,
+          topCandidates: [
+            {
+              key: "none",
+              label: "No listed category adequately represents this visible food.",
+              probability,
+            },
+            {
+              key: "category_20",
+              label: "Cereal Grains and Pasta",
+              probability: 1 - probability,
+            },
+          ],
+        },
+        product: null,
+        fallbackReason: categoryNoneReason,
+      }],
+    },
+  };
+}
+
+test("a mixed result retains bounded matching provenance with its captured USDA evidence", async () => {
+  const evidence = await usdaFixture().getEvidence("700", new AbortController().signal);
+  const { service, userId } = await setup({
+    analyze: async () => ({
+      kind: "photo-analysis-outcome",
+      result: {
+        ...estimate(),
+        name: "Rice and sauce",
+        components: [
+          {
+            ...estimate().components[0],
+            source: { kind: "usda", fdcId: "700" },
+          },
+          {
+            ...estimate(80).components[0],
+            id: "sauce",
+            name: "House sauce",
+            quantity: 1,
+            unit: "serving",
+            source: {
+              kind: "ai",
+              reason: "USDA record confidence was below the configured threshold.",
+            },
+          },
+        ],
+      },
+      evidence: [evidence],
+      diagnostics: {
+        catalogGeneration: "foundation-generation-7",
+        geminiModel: "gemini-3.1-flash-lite",
+        jevModel: "jev-1.13.0",
+        categoryConfidenceThreshold: 0.35,
+        productConfidenceThreshold: 0.7,
+        components: [
+          {
+            componentId: "rice",
+            category: {
+              choice: { key: "category_20", label: "Cereal Grains and Pasta" },
+              confidence: 0.91,
+              selectedProbability: 0.82,
+              topCandidates: [
+                { key: "category_20", label: "Cereal Grains and Pasta", probability: 0.82 },
+                { key: "none", label: "No listed category adequately represents this visible food.", probability: 0.18 },
+              ],
+            },
+            product: {
+              choice: { key: "food_700", label: "Rice, cooked" },
+              confidence: 0.94,
+              selectedProbability: 0.9,
+              topCandidates: [
+                { key: "food_700", label: "Rice, cooked", probability: 0.9 },
+                { key: "none", label: "No listed Foundation record adequately represents this visible food.", probability: 0.1 },
+              ],
+            },
+            fallbackReason: null,
+          },
+          {
+            componentId: "sauce",
+            category: {
+              choice: { key: "category_1", label: "Dairy and Egg Products" },
+              confidence: 0.8,
+              selectedProbability: 0.75,
+              topCandidates: [
+                { key: "category_1", label: "Dairy and Egg Products", probability: 0.75 },
+                { key: "none", label: "No listed category adequately represents this visible food.", probability: 0.25 },
+              ],
+            },
+            product: {
+              choice: { key: "food_701", label: "Sauce candidate" },
+              confidence: 0.6,
+              selectedProbability: 0.58,
+              topCandidates: [
+                { key: "food_701", label: "Sauce candidate", probability: 0.58 },
+                { key: "none", label: "No listed Foundation record adequately represents this visible food.", probability: 0.42 },
+              ],
+            },
+            fallbackReason: {
+              code: "product-low-confidence",
+              message: "USDA record confidence was below the configured threshold.",
+            },
+          },
+        ],
+      },
+    }),
+  });
+
+  const meal = service.start(userId, {
+    photo,
+    foodLogDate: "2026-09-04",
+    idempotencyKey: "mixed-provenance",
+  });
+  await expect.poll(() => service.status(userId, meal.id).status).toBe("succeeded");
+
+  const attempt = service.history(userId, meal.id)[0] as unknown as {
+    diagnostics: string;
+    evidence: string;
+  };
+  expect(JSON.parse(attempt.diagnostics)).toMatchObject({
+    catalogGeneration: "foundation-generation-7",
+    geminiModel: "gemini-3.1-flash-lite",
+    jevModel: "jev-1.13.0",
+    categoryConfidenceThreshold: 0.35,
+    productConfidenceThreshold: 0.7,
+    components: [
+      {
+        componentId: "rice",
+        category: { choice: { key: "category_20", label: "Cereal Grains and Pasta" } },
+        product: { choice: { key: "food_700", label: "Rice, cooked" } },
+        fallbackReason: null,
+      },
+      {
+        componentId: "sauce",
+        fallbackReason: { code: "product-low-confidence" },
+      },
+    ],
+  });
+  expect(JSON.parse(attempt.evidence)).toEqual([evidence]);
+  expect(service.view(userId, meal.id)).toMatchObject({
+    provenanceState: "recorded",
+    result: {
+      components: [
+        { source: { kind: "usda", dataType: "Foundation", fdcId: "700" } },
+        { source: { kind: "ai", reason: "USDA record confidence was below the configured threshold." } },
+      ],
+    },
+  });
+});
+
+test("a failed attempt retains its captured model and threshold configuration", async () => {
+  const { service, userId } = await setup({
+    configurationSnapshot: () => ({
+      geminiModel: "gemini-3.1-flash-lite",
+      jevModel: "jev-1.13.0",
+      categoryConfidenceThreshold: 0.35,
+      productConfidenceThreshold: 0.7,
+    }),
+    analyze: async () => {
+      throw new Error("provider unavailable");
+    },
+  });
+
+  const meal = service.start(userId, {
+    photo,
+    foodLogDate: "2026-09-04",
+    idempotencyKey: "failed-provenance",
+  });
+  await expect.poll(() => service.status(userId, meal.id).status).toBe("failed");
+
+  const attempt = service.history(userId, meal.id)[0];
+  expect(JSON.parse(attempt.diagnostics!)).toEqual({
+    catalogGeneration: null,
+    geminiModel: "gemini-3.1-flash-lite",
+    jevModel: "jev-1.13.0",
+    categoryConfidenceThreshold: 0.35,
+    productConfidenceThreshold: 0.7,
+    components: [],
+  });
+});
+
+test("a later provider failure retains matching decisions already completed by the attempt", async () => {
+  const partial: PhotoAnalysisDiagnostics = categoryFallbackOutcome().diagnostics;
+  partial.components[0] = {
+    ...partial.components[0],
+    category: {
+      choice: { key: "category_20", label: "Cereal Grains and Pasta" },
+      confidence: 0.88,
+      selectedProbability: 0.76,
+      topCandidates: [
+        {
+          key: "category_20",
+          label: "Cereal Grains and Pasta",
+          probability: 0.76,
+        },
+        {
+          key: "none",
+          label: "No listed category adequately represents this visible food.",
+          probability: 0.24,
+        },
+      ],
+    },
+    product: null,
+    fallbackReason: null,
+  };
+  const { service, userId } = await setup({
+    configurationSnapshot: () => ({
+      geminiModel: "gemini-3.1-flash-lite",
+      jevModel: "jev-1.13.0",
+      categoryConfidenceThreshold: 0.35,
+      productConfidenceThreshold: 0.7,
+    }),
+    analyze: async (input) => {
+      input.recordDiagnostics?.(partial);
+      throw new Error("product provider unavailable");
+    },
+  });
+
+  const meal = service.start(userId, {
+    photo,
+    foodLogDate: "2026-09-04",
+    idempotencyKey: "partial-matching-provenance",
+  });
+  await expect.poll(() => service.status(userId, meal.id).status).toBe("failed");
+
+  expect(
+    photoAnalysisDiagnosticsSchema.parse(
+      JSON.parse(service.history(userId, meal.id)[0].diagnostics!),
+    ).components[0],
+  ).toMatchObject({
+    componentId: "rice",
+    category: {
+      choice: { key: "category_20", label: "Cereal Grains and Pasta" },
+      confidence: 0.88,
+      selectedProbability: 0.76,
+    },
+    product: null,
+    fallbackReason: null,
+  });
+});
+
+test("corrections retain matching diagnostics beside every successful revision", async () => {
+  let call = 0;
+  const { service, userId } = await setup({
+    analyze: async () => categoryFallbackOutcome(++call === 1 ? 0.8 : 0.65),
+  });
+  const meal = service.start(userId, {
+    photo,
+    foodLogDate: "2026-09-04",
+    idempotencyKey: "provenance-revision-one",
+  });
+  await expect.poll(() => service.status(userId, meal.id).status).toBe("succeeded");
+  service.correct(userId, service.status(userId, meal.id).entryId!, {
+    correction: "The rice portion is smaller",
+    idempotencyKey: "provenance-revision-two",
+  });
+  await expect.poll(() => service.status(userId, meal.id).status).toBe("succeeded");
+
+  const history = service.history(userId, meal.id);
+  expect(history).toHaveLength(2);
+  expect(history.map((attempt) =>
+    photoAnalysisDiagnosticsSchema.parse(
+      JSON.parse(attempt.diagnostics!),
+    ).components[0].category.selectedProbability,
+  )).toEqual([0.8, 0.65]);
+  expect(() => service.history(userId + 1, meal.id)).toThrow(
+    "Photo meal unavailable",
+  );
+});
+
+test("unbounded or sensitive diagnostic fields fail closed without being persisted", async () => {
+  const outcome = categoryFallbackOutcome() as ReturnType<typeof categoryFallbackOutcome> & {
+    diagnostics: ReturnType<typeof categoryFallbackOutcome>["diagnostics"] & {
+      authorizationHeader?: string;
+    };
+  };
+  outcome.diagnostics.authorizationHeader = "Bearer secret-provider-token";
+  const { service, userId } = await setup({ analyze: async () => outcome });
+  const meal = service.start(userId, {
+    photo,
+    foodLogDate: "2026-09-04",
+    idempotencyKey: "sensitive-provenance",
+  });
+  await expect.poll(() => service.status(userId, meal.id).status).toBe("failed");
+
+  expect(JSON.stringify(service.history(userId, meal.id))).not.toContain(
+    "secret-provider-token",
+  );
+});
+
+test("matching provenance rejects more than five retained candidates", async () => {
+  const outcome = categoryFallbackOutcome();
+  outcome.diagnostics.components[0].category.topCandidates.push(
+    ...Array.from({ length: 4 }, (_, index) => ({
+      key: `category_${index + 30}`,
+      label: `Extra category ${index + 1}`,
+      probability: 0,
+    })),
+  );
+  const { service, userId } = await setup({ analyze: async () => outcome });
+  const meal = service.start(userId, {
+    photo,
+    foodLogDate: "2026-09-04",
+    idempotencyKey: "unbounded-candidate-provenance",
+  });
+  await expect.poll(() => service.status(userId, meal.id).status).toBe("failed");
+
+  expect(service.history(userId, meal.id)[0].diagnostics).toBeNull();
+});
+
+test("upgrading a legacy photo revision keeps it readable with honest provenance state", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "photo-provenance-migration-"));
+  directories.push(directory);
+  const databasePath = path.join(directory, "application.sqlite");
+  const previousMigrations = await createMigrationFolder(
+    path.join(directory, "previous-migrations"),
+    { throughTag: "0018_sloppy_bromley" },
+  );
+  const previous = openApplicationDatabase({
+    databasePath,
+    migrationsFolder: previousMigrations,
+  });
+  const client = previous.getClient();
+  const userId = client.get<{ id: number }>(sql`
+    INSERT INTO users (username_normalized, created_at)
+    VALUES ('legacy.photo', '2026-09-01T12:00:00.000Z')
+    RETURNING id
+  `).id;
+  client.run(sql`
+    INSERT INTO photo_meals (
+      id, user_id, entry_id, food_log_date, local_event_time,
+      photo, mime_type, created_at
+    ) VALUES (
+      'legacy-photo-meal', ${userId}, NULL, '2026-09-01', '12:00:00',
+      ${photo.bytes}, 'image/png', '2026-09-01T12:00:00.000Z'
+    )
+  `);
+  client.run(sql`
+    INSERT INTO photo_attempts (
+      id, meal_id, user_id, idempotency_key, status, stage, correction,
+      evidence, result, error, started_at, finished_at
+    ) VALUES (
+      'legacy-photo-attempt', 'legacy-photo-meal', ${userId}, 'legacy-photo-key',
+      'succeeded', 'Preparing result', NULL, '[]', ${JSON.stringify(estimate())},
+      NULL, '2026-09-01T12:00:00.000Z', '2026-09-01T12:00:01.000Z'
+    )
+  `);
+  previous.close();
+
+  const upgraded = openApplicationDatabase({
+    databasePath,
+    migrationsFolder: path.resolve("drizzle"),
+  });
+  databases.push(upgraded);
+  const service = new PhotoAnalysisService(upgraded.getClient(), {
+    analyze: async () => estimate(),
+  });
+  services.push(service);
+
+  expect(service.view(userId, "legacy-photo-meal")).toMatchObject({
+    provenanceState: "legacy",
+    result: { name: "Rice plate" },
+  });
+  expect(service.history(userId, "legacy-photo-meal")[0].diagnostics).toBeNull();
+});
 
 test("AI can revise USDA searches while authoritative records determine nutrition and the consumed fraction applies once", async () => {
   const { service, log, userId } = await setup(

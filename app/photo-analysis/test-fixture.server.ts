@@ -2,6 +2,109 @@ import type { PhotoAnalyzer } from "./photo-analysis.server";
 import { ProviderCredentialRejectedError, type PhotoAnalysisCredentialValidator } from "./credentials.server";
 import type { PhotoAnalysisModelDiscovery } from "./configuration.server";
 
+const categoryNone = {
+  code: "category-none" as const,
+  message: "No USDA category adequately matched the visible component.",
+};
+
+function fixtureDiagnostics(
+  componentId: string,
+  options: {
+    catalogGeneration?: string;
+    fdcId?: string;
+    foodLabel?: string;
+  } = {},
+) {
+  const category = {
+    choice: options.fdcId
+      ? { key: "category_11", label: "Vegetables and Vegetable Products" }
+      : {
+          key: "none",
+          label: "No listed category adequately represents this visible food.",
+        },
+    confidence: 0.9,
+    selectedProbability: 0.9,
+    topCandidates: options.fdcId
+      ? [
+          {
+            key: "category_11",
+            label: "Vegetables and Vegetable Products",
+            probability: 0.9,
+          },
+          {
+            key: "none",
+            label: "No listed category adequately represents this visible food.",
+            probability: 0.1,
+          },
+        ]
+      : [
+          {
+            key: "none",
+            label: "No listed category adequately represents this visible food.",
+            probability: 0.9,
+          },
+          {
+            key: "category_20",
+            label: "Cereal Grains and Pasta",
+            probability: 0.1,
+          },
+        ],
+  };
+  const product = options.fdcId
+    ? {
+        choice: {
+          key: `food_${options.fdcId}`,
+          label: options.foodLabel ?? "Foundation food",
+        },
+        confidence: 0.9,
+        selectedProbability: 0.9,
+        topCandidates: [
+          {
+            key: `food_${options.fdcId}`,
+            label: options.foodLabel ?? "Foundation food",
+            probability: 0.9,
+          },
+          {
+            key: "none",
+            label: "No listed Foundation record adequately represents this visible food.",
+            probability: 0.1,
+          },
+        ],
+      }
+    : null;
+  return {
+    catalogGeneration: options.catalogGeneration ?? "browser-foundation-fixture",
+    geminiModel: "gemini-3.1-flash-lite",
+    jevModel: "jev-1.13.0",
+    categoryConfidenceThreshold: 0,
+    productConfidenceThreshold: 0,
+    components: [{
+      componentId,
+      category,
+      product,
+      fallbackReason: options.fdcId ? null : categoryNone,
+    }],
+  };
+}
+
+function fixtureOutcome(
+  result: unknown,
+  componentId: string,
+  options: {
+    evidence?: Awaited<ReturnType<Parameters<PhotoAnalyzer["analyze"]>[0]["usda"]["detail"]>>[];
+    catalogGeneration?: string;
+    fdcId?: string;
+    foodLabel?: string;
+  } = {},
+) {
+  return {
+    kind: "photo-analysis-outcome" as const,
+    result,
+    evidence: options.evidence ?? [],
+    diagnostics: fixtureDiagnostics(componentId, options),
+  };
+}
+
 export class TestPhotoAnalyzer implements PhotoAnalyzer {
   async analyze(input: Parameters<PhotoAnalyzer["analyze"]>[0]) {
     await new Promise<void>((resolve, reject) => {
@@ -25,7 +128,7 @@ export class TestPhotoAnalyzer implements PhotoAnalyzer {
         const candidate = candidates[0];
         if (!candidate) throw new Error("No matching local evidence");
         const evidence = await input.usda.detail(candidate.food.providerFoodId);
-        return {
+        const result = {
           name: "Photo broccoli plate",
           consumedFraction: 1,
           assumptions: ["The photo contains 100 g of raw broccoli"],
@@ -43,8 +146,15 @@ export class TestPhotoAnalyzer implements PhotoAnalyzer {
             ],
           }],
         };
+        return fixtureOutcome(result, "broccoli", {
+          evidence: [evidence],
+          catalogGeneration:
+            evidence.food.catalogGeneration ?? "browser-foundation-fixture",
+          fdcId: evidence.food.providerFoodId,
+          foodLabel: evidence.food.name,
+        });
       } catch {
-        return {
+        const result = {
           name: "Estimated broccoli plate",
           consumedFraction: 1,
           assumptions: ["No suitable installed Foundation evidence was available"],
@@ -54,7 +164,7 @@ export class TestPhotoAnalyzer implements PhotoAnalyzer {
             quantity: 100,
             unit: "g",
             includes: [],
-            source: { kind: "ai", reason: "Installed Foundation evidence unavailable" },
+            source: { kind: "ai", reason: categoryNone.message },
             nutrition: {
               energyKcal: 32,
               proteinGrams: 2.5,
@@ -63,9 +173,10 @@ export class TestPhotoAnalyzer implements PhotoAnalyzer {
             },
           }],
         };
+        return fixtureOutcome(result, "broccoli");
       }
     }
-    return {
+    const result = {
       name: "Photo rice plate",
       consumedFraction: 1,
       assumptions: ["Rice portion estimated from the photo"],
@@ -76,7 +187,7 @@ export class TestPhotoAnalyzer implements PhotoAnalyzer {
           quantity: 200,
           unit: "g",
           includes: [],
-          source: { kind: "ai", reason: "Deterministic browser fixture" },
+          source: { kind: "ai", reason: categoryNone.message },
           nutrition: {
             energyKcal: input.correction ? 350 : 250,
             proteinGrams: 5,
@@ -86,6 +197,7 @@ export class TestPhotoAnalyzer implements PhotoAnalyzer {
         },
       ],
     };
+    return fixtureOutcome(result, "rice");
   }
 }
 

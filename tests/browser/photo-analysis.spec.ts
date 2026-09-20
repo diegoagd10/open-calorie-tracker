@@ -88,7 +88,13 @@ test("plate capture returns to Daily Log, survives reload, and supports correcti
   expect(photoBox!.height).toBe(manualBox!.height);
   await page.screenshot({ path: testInfo.outputPath("unified-timeline-mobile.png") });
   await meals.getByRole("link", { name: /Photo rice plate/ }).click();
-  await expect(page.getByRole("region", { name: "Photo analysis details" }).getByRole("img")).toBeVisible();
+  const analysisDetails = page.getByRole("region", { name: "Photo analysis details" });
+  await expect(analysisDetails.getByRole("img")).toBeVisible();
+  await analysisDetails.getByText("Components, sources and assumptions", { exact: true }).click();
+  await expect(analysisDetails).toContainText(
+    "Gemini estimate: No USDA category adequately matched the visible component.",
+  );
+  await expect(analysisDetails).not.toContainText("selectedProbability");
   await page.getByRole("button", { name: "Correct with AI" }).click();
   await page
     .getByRole("textbox", { name: "Correction", exact: true })

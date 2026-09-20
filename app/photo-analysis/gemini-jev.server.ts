@@ -10,6 +10,11 @@ import type {
   UsdaPhotoAnalysisSnapshot,
 } from "../catalog/usda-evidence.ts";
 import type { PhotoAnalyzer, PlatePhoto } from "./photo-analysis.server.ts";
+import {
+  PHOTO_ANALYSIS_FALLBACK_REASONS,
+  type PhotoAnalysisFallbackReason,
+  type PhotoAnalysisFallbackReasonCode,
+} from "./provenance.server.ts";
 import { validatePhotoResult, type PhotoResult } from "./result.server.ts";
 
 export type GeminiMealRequest = {
@@ -59,39 +64,10 @@ export type GeminiJevAnalysis = {
       componentId: string;
       category: GeminiJevChoiceDiagnostic;
       product: GeminiJevChoiceDiagnostic | null;
-      fallbackReason: GeminiJevFallbackReason | null;
+      fallbackReason: PhotoAnalysisFallbackReason | null;
     }[];
   };
 };
-
-const FALLBACK_REASONS = {
-  "category-none": {
-    code: "category-none",
-    message: "No USDA category adequately matched the visible component.",
-  },
-  "category-low-confidence": {
-    code: "category-low-confidence",
-    message: "USDA category confidence was below the configured threshold.",
-  },
-  "missing-grams": {
-    code: "missing-grams",
-    message: "Gemini could not provide a defensible gram estimate.",
-  },
-  "inadequate-candidates": {
-    code: "inadequate-candidates",
-    message: "No adequate USDA candidate was available in the selected category.",
-  },
-  "product-none": {
-    code: "product-none",
-    message: "No USDA record adequately matched the visible component.",
-  },
-  "product-low-confidence": {
-    code: "product-low-confidence",
-    message: "USDA record confidence was below the configured threshold.",
-  },
-} as const;
-export type GeminiJevFallbackReasonCode = keyof typeof FALLBACK_REASONS;
-export type GeminiJevFallbackReason = typeof FALLBACK_REASONS[GeminiJevFallbackReasonCode];
 
 const noFoodSchema = z.object({ status: z.literal("no_food") }).strict();
 const amount = z.number().finite().nonnegative().max(999_999.999);
@@ -248,8 +224,21 @@ export class GeminiJevPhotoAnalyzer implements PhotoAnalyzer {
     this.config = configSchema.parse(config);
   }
 
-  async analyze(input: Parameters<PhotoAnalyzer["analyze"]>[0]): Promise<PhotoResult> {
-    return (await this.analyzeWithDiagnostics(input)).result;
+  async analyze(input: Parameters<PhotoAnalyzer["analyze"]>[0]): Promise<unknown> {
+    const analysis = await this.analyzeWithDiagnostics(input);
+    return {
+      kind: "photo-analysis-outcome",
+      ...analysis,
+    };
+  }
+
+  configurationSnapshot() {
+    return {
+      geminiModel: this.config.geminiModel,
+      jevModel: this.config.jevModel,
+      categoryConfidenceThreshold: this.config.categoryConfidenceThreshold,
+      productConfidenceThreshold: this.config.productConfidenceThreshold,
+    };
   }
 
   async analyzeWithDiagnostics(input: Parameters<PhotoAnalyzer["analyze"]>[0]): Promise<GeminiJevAnalysis> {
@@ -302,10 +291,13 @@ export class GeminiJevPhotoAnalyzer implements PhotoAnalyzer {
       snapshot,
       this.config.categoryConfidenceThreshold,
     );
+    applyFallbackReasons(plan, decisions);
+    input.recordDiagnostics?.(this.diagnostics(snapshot, decisions));
     const productAnswers = Object.keys(plan.questions).length === 0
       ? {}
       : await this.choices({ model: this.config.jevModel, state, questions: plan.questions }, input.signal);
     applyProductDecisions(plan, productAnswers, decisions, this.config.productConfidenceThreshold);
+    input.recordDiagnostics?.(this.diagnostics(snapshot, decisions));
     const assembled = assembleComponents(meal, plan, productAnswers, decisions, snapshot);
     input.signal.throwIfAborted();
     const result = validatePhotoResult({
@@ -317,14 +309,21 @@ export class GeminiJevPhotoAnalyzer implements PhotoAnalyzer {
     return {
       result,
       evidence: assembled.evidence,
-      diagnostics: {
-        catalogGeneration: snapshot.generation,
-        geminiModel: this.config.geminiModel,
-        jevModel: this.config.jevModel,
-        categoryConfidenceThreshold: this.config.categoryConfidenceThreshold,
-        productConfidenceThreshold: this.config.productConfidenceThreshold,
-        components: decisions,
-      },
+      diagnostics: this.diagnostics(snapshot, decisions),
+    };
+  }
+
+  private diagnostics(
+    snapshot: UsdaPhotoAnalysisSnapshot,
+    components: GeminiJevAnalysis["diagnostics"]["components"],
+  ): GeminiJevAnalysis["diagnostics"] {
+    return {
+      catalogGeneration: snapshot.generation,
+      geminiModel: this.config.geminiModel,
+      jevModel: this.config.jevModel,
+      categoryConfidenceThreshold: this.config.categoryConfidenceThreshold,
+      productConfidenceThreshold: this.config.productConfidenceThreshold,
+      components,
     };
   }
 
@@ -344,7 +343,7 @@ export class GeminiJevPhotoAnalyzer implements PhotoAnalyzer {
 type ProductPlan = {
   questions: JevChoiceRequest["questions"];
   candidates: Map<number, ReturnType<UsdaPhotoAnalysisSnapshot["candidates"]>>;
-  fallbackReasons: Map<number, GeminiJevFallbackReason>;
+  fallbackReasons: Map<number, PhotoAnalysisFallbackReason>;
 };
 
 function buildCategoryRequest(
@@ -435,10 +434,23 @@ function applyProductDecisions(
     const answer = answers[questionKey(index)];
     decisions[index].product = choiceDiagnostic(answer, plan.questions[questionKey(index)]);
     if (answer.choice === "none") {
-      plan.fallbackReasons.set(index, fallbackReason("product-none"));
+      const reason = fallbackReason("product-none");
+      plan.fallbackReasons.set(index, reason);
+      decisions[index].fallbackReason = reason;
     } else if (answer.confidence < confidenceThreshold) {
-      plan.fallbackReasons.set(index, fallbackReason("product-low-confidence"));
+      const reason = fallbackReason("product-low-confidence");
+      plan.fallbackReasons.set(index, reason);
+      decisions[index].fallbackReason = reason;
     }
+  }
+}
+
+function applyFallbackReasons(
+  plan: ProductPlan,
+  decisions: GeminiJevAnalysis["diagnostics"]["components"],
+) {
+  for (const [index, reason] of plan.fallbackReasons) {
+    decisions[index].fallbackReason = reason;
   }
 }
 
@@ -471,8 +483,10 @@ function assembleComponents(
   return { components, evidence: [...evidence.values()] };
 }
 
-function fallbackReason(code: GeminiJevFallbackReasonCode): GeminiJevFallbackReason {
-  return FALLBACK_REASONS[code];
+function fallbackReason(
+  code: PhotoAnalysisFallbackReasonCode,
+): PhotoAnalysisFallbackReason {
+  return PHOTO_ANALYSIS_FALLBACK_REASONS[code];
 }
 
 function geminiContext(input: Parameters<PhotoAnalyzer["analyze"]>[0]): Record<string, unknown> {
@@ -568,10 +582,17 @@ function fallbackComponent(component: FoodObservation["components"][number], rea
 }
 
 function choiceDiagnostic(answer: ChoiceAnswer, question: JevChoiceQuestion): GeminiJevChoiceDiagnostic {
-  const topCandidates = Object.entries(answer.probabilities)
+  const candidates = Object.entries(answer.probabilities)
     .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
-    .slice(0, 5)
     .map(([key, probability]) => ({ key, label: question.criteria[key], probability }));
+  const selected = candidates.find(({ key }) => key === answer.choice)!;
+  const topCandidates = [
+    selected,
+    ...candidates.filter(({ key }) => key !== answer.choice).slice(0, 4),
+  ].sort(
+    (left, right) =>
+      right.probability - left.probability || left.key.localeCompare(right.key),
+  );
   return {
     choice: { key: answer.choice, label: question.criteria[answer.choice] },
     confidence: answer.confidence,

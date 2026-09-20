@@ -17,7 +17,17 @@ are private SQLite records. Deleting a Food Entry (or an unsuccessful photo card
 cascades to its photo and history. Account deletion does the same. Database
 backups remain subject to the operator's retention policy. Images are sent to the
 configured AI provider; deleting local data does not promise provider-side deletion.
-Hidden model reasoning is not persisted. Do not publish the database or auth file.
+For staged Gemini/Jev attempts, each revision retains the concrete models,
+thresholds, validated category and product choices, confidence, selected
+probability, at most five top candidates per choice, fallback reason, and the
+captured Foundation evidence used for validation. Failed attempts retain the
+model and threshold snapshot available before provider work. This diagnostic
+history follows the meal owner's access boundary and is not returned by the
+ordinary meal endpoint or administrator credential settings. Provider payloads,
+hidden reasoning, credentials, authorization headers, local secret paths, and
+image bytes are not part of matching diagnostics. Legacy revisions remain
+readable and are labeled when detailed provenance is unavailable. Do not publish
+the database or auth file.
 
 ## Operator setup
 
@@ -90,6 +100,12 @@ nutrient. Optional unknown nutrients stay unknown. The consumed fraction is
 applied once. Structured overlap checks reject duplicate component IDs/names and
 prepared-dish ingredient overlap; identifying semantic overlap still depends on
 the model and user corrections.
+
+The normal meal details deliberately summarize rather than dump diagnostics. A
+USDA-backed component shows `USDA Foundation` and its captured FDC identity. A
+Gemini-backed component shows the concise fallback explanation, including `none`,
+below-threshold category or product decisions, inadequate candidates, or missing
+defensible grams. Mixed meals show the source independently for every component.
 
 ## Verification and live pilot
 

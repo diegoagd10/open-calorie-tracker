@@ -249,6 +249,11 @@ export function PhotoCorrection({
       />
       <details>
         <summary>Components, sources and assumptions</summary>
+        {meal.provenanceState === "legacy" ? (
+          <p>
+            <small>Legacy analysis · detailed matching provenance unavailable</small>
+          </p>
+        ) : null}
         <p>Consumed fraction: {meal.result?.consumedFraction}</p>
         {meal.result?.components.map((component) => (
           <p key={component.id}>
@@ -257,11 +262,11 @@ export function PhotoCorrection({
             <br />
             {component.source.kind === "usda"
               ? `USDA${component.source.dataType ? ` ${component.source.dataType}` : ""} · FDC ${component.source.fdcId}`
-              : `AI estimate: ${component.source.reason}`}
+              : `${meal.provenanceState === "recorded" ? "Gemini" : "AI"} estimate: ${component.source.reason}`}
             {component.supplements.map((item) => (
               <span key={item.nutrient}>
                 <br />
-                AI estimate for {item.nutrient}: {item.amount} — {item.reason}
+                {`${meal.provenanceState === "recorded" ? "Gemini" : "AI"} estimate for ${item.nutrient}: ${item.amount} — ${item.reason}`}
               </span>
             ))}
           </p>

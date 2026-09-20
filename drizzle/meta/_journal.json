@@ -134,6 +134,13 @@
       "when": 1789849058327,
       "tag": "0018_sloppy_bromley",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "6",
+      "when": 1789913819642,
+      "tag": "0019_powerful_rawhide_kid",
+      "breakpoints": true
     }
   ]
 }

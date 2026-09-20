@@ -322,6 +322,7 @@ export const photoAttempts = sqliteTable("photo_attempts", {
   error: text(),
   startedAt: text("started_at").notNull(),
   finishedAt: text("finished_at"),
+  diagnostics: text(),
 }, (table) => [
   uniqueIndex("photo_attempts_idempotency").on(table.userId, table.idempotencyKey),
   uniqueIndex("photo_attempts_one_active").on(table.mealId).where(sql`${table.status} = 'active'`),

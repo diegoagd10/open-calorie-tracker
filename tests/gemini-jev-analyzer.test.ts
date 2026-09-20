@@ -12,6 +12,7 @@ import {
   type JevChoiceClient,
   type JevChoiceRequest,
 } from "../app/photo-analysis/gemini-jev.server";
+import { photoAnalysisDiagnosticsSchema } from "../app/photo-analysis/provenance.server";
 import { NoFoodDetectedError } from "../app/photo-analysis/result.server";
 
 afterEach(() => { vi.useRealTimers(); });
@@ -199,9 +200,11 @@ test("one leased generation supplies both Jev stages and authoritative USDA nutr
     productConfidenceThreshold: 0,
   });
 
-  const result = await analyzer.analyze(analyzerInput());
+  const outcome = await analyzer.analyze(analyzerInput()) as {
+    result: unknown;
+  };
 
-  expect(result).toMatchObject({
+  expect(outcome.result).toMatchObject({
     name: "Egg breakfast",
     consumedFraction: 0.5,
     assumptions: [
@@ -292,6 +295,47 @@ test("the analyzer exposes bounded validated matching decisions for later persis
   );
   expect(analysis.evidence).toHaveLength(1);
   expect(JSON.stringify(analysis.diagnostics)).not.toContain(analyzerInput().photo.bytes.toString("base64"));
+});
+
+test("bounded tied candidates always retain the selected choice", async () => {
+  const categories = Array.from({ length: 6 }, (_, index) => ({
+    id: String(index + 1),
+    name: `Category ${index + 1}`,
+  }));
+  const categoryKeys = [...categories.map(({ id }) => `category_${id}`), "none"];
+  const tiedProbability = 1 / categoryKeys.length;
+  let stage = 0;
+  const analyzer = new GeminiJevPhotoAnalyzer(
+    { analyzeMeal: geminiMock(async () => observedMeal()) },
+    {
+      choose: jevMock(async () => {
+        stage++;
+        return stage === 1
+          ? choiceResponse("category_6", categoryKeys, {
+              probabilities: Object.fromEntries(
+                categoryKeys.map((key) => [key, tiedProbability]),
+              ),
+            })
+          : choiceResponse("food_100", ["food_100", "none"]);
+      }),
+    },
+    readyCatalog({
+      categories: () => categories,
+      candidates: (categoryId) =>
+        categoryId === "6"
+          ? [{ fdcId: "100", description: "Eggs, whole, raw" }]
+          : [],
+    }),
+  );
+
+  const analysis = await analyzer.analyzeWithDiagnostics(analyzerInput());
+
+  expect(analysis.diagnostics.components[0].category.topCandidates).toHaveLength(5);
+  expect(analysis.diagnostics.components[0].category.topCandidates).toContainEqual({
+    key: "category_6",
+    label: "Category 6",
+    probability: tiedProbability,
+  });
 });
 
 test("none, low confidence, missing grams, and a valid match produce one complete mixed meal", async () => {
@@ -485,11 +529,11 @@ test("an oversized candidate category becomes an explicit Gemini estimate", asyn
     evidence,
   });
 
-  const result = await new GeminiJevPhotoAnalyzer(gemini, jev, catalog).analyze(analyzerInput()) as {
-    components: { source: unknown }[];
+  const outcome = await new GeminiJevPhotoAnalyzer(gemini, jev, catalog).analyze(analyzerInput()) as {
+    result: { components: { source: unknown }[] };
   };
 
-  expect(result.components[0].source).toEqual({
+  expect(outcome.result.components[0].source).toEqual({
     kind: "ai",
     reason: "No adequate USDA candidate was available in the selected category.",
   });
@@ -512,6 +556,44 @@ test.each(["gemini", "jev"] as const)("a %s provider failure fails the whole ana
   await expect(new GeminiJevPhotoAnalyzer(gemini, jev, readyCatalog()).analyze(analyzerInput())).rejects.toBe(providerError);
   expect(gemini.analyzeMeal).toHaveBeenCalledOnce();
   expect(jev.choose).toHaveBeenCalledTimes(provider === "jev" ? 1 : 0);
+});
+
+test("a product-stage failure reports the completed category decision", async () => {
+  const providerError = new Error("provider unavailable");
+  let stage = 0;
+  const jev: JevChoiceClient = {
+    choose: jevMock(async () => {
+      stage++;
+      if (stage === 1) {
+        return choiceResponse("category_1", ["category_1", "none"]);
+      }
+      throw providerError;
+    }),
+  };
+  const recordDiagnostics = vi.fn<(diagnostics: unknown) => void>();
+  const input = { ...analyzerInput(), recordDiagnostics };
+
+  await expect(new GeminiJevPhotoAnalyzer(
+    { analyzeMeal: geminiMock(async () => observedMeal()) },
+    jev,
+    readyCatalog(),
+  ).analyze(input)).rejects.toBe(providerError);
+
+  expect(recordDiagnostics.mock.calls).toHaveLength(1);
+  const recorded = photoAnalysisDiagnosticsSchema.parse(
+    recordDiagnostics.mock.calls[0][0],
+  );
+  expect(recorded.catalogGeneration).toBe("generation-one");
+  expect(recorded.components).toHaveLength(1);
+  expect(recorded.components[0]).toMatchObject({
+    componentId: "visible-eggs",
+    product: null,
+    fallbackReason: null,
+  });
+  expect(recorded.components[0].category.choice).toEqual({
+    key: "category_1",
+    label: "Dairy and Egg Products",
+  });
 });
 
 test("one five-second signal cancels ignored provider work without retrying", async () => {

@@ -165,6 +165,7 @@ test("status, correction, cancellation, retry and deletion preserve the authenti
   const value = (await saved.json()) as { entryId: number; result: unknown };
   expect(value).toMatchObject({
     energyMilliKcal: 250000,
+    provenanceState: "recorded",
     result: {
       name: "Photo rice plate",
       consumedFraction: 1,
@@ -176,7 +177,10 @@ test("status, correction, cancellation, retry and deletion preserve the authenti
           quantity: 200,
           unit: "g",
           includes: [],
-          source: { kind: "ai", reason: "Deterministic browser fixture" },
+          source: {
+            kind: "ai",
+            reason: "No USDA category adequately matched the visible component.",
+          },
           nutrition: {
             energyKcal: 250,
             proteinGrams: 5,
@@ -187,6 +191,7 @@ test("status, correction, cancellation, retry and deletion preserve the authenti
       ],
     },
   });
+  expect(value).not.toHaveProperty("diagnostics");
   const correction = await submit("correct", {
     entryId: String(value.entryId),
     correction: "Extra butter",

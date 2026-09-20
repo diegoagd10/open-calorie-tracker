@@ -12,9 +12,18 @@ import {
   nextUpdatedAt,
 } from "../food-log/event-time.server";
 import { NoFoodDetectedError, validatePhotoResult, type PhotoResult } from "./result.server";
+import {
+  hasRecordedPhotoAnalysisProvenance,
+  parsePhotoAnalysisOutcome,
+  serializePhotoAnalysisConfiguration,
+  serializePhotoAnalysisDiagnostics,
+  serializePhotoAnalysisProgress,
+  type PhotoAnalysisConfigurationSnapshot,
+} from "./provenance.server";
 
 export type PlatePhoto = { bytes: Buffer; mimeType: string };
 export type PhotoAnalyzer = {
+  configurationSnapshot?: () => PhotoAnalysisConfigurationSnapshot;
   analyze(input: {
     photo: PlatePhoto;
     signal: AbortSignal;
@@ -23,6 +32,7 @@ export type PhotoAnalyzer = {
     currentResult?: unknown;
     currentEntry?: unknown;
     evidence: UsdaEvidence[];
+    recordDiagnostics?: (diagnostics: unknown) => void;
     usda: {
       search(query: string, page: number): Promise<UsdaEvidence[]>;
       detail(id: string): Promise<UsdaEvidence>;
@@ -102,6 +112,7 @@ export class PhotoAnalysisService {
       idempotencyKey: input.idempotencyKey,
       status: "active",
       stage: "Analyzing photo",
+      diagnostics: this.initialDiagnostics(),
       startedAt: meal.createdAt,
     });
     void this.run(meal, attemptId);
@@ -113,11 +124,16 @@ export class PhotoAnalysisService {
     if (!meal) throw new Error("Photo meal unavailable");
     const attempt = this.store.recent(id)[0];
     return {
-      ...attempt,
       id,
       attemptId: attempt.id,
       entryId: meal.entryId,
       foodLogDate: meal.foodLogDate,
+      status: attempt.status,
+      stage: attempt.stage,
+      correction: attempt.correction,
+      startedAt: attempt.startedAt,
+      finishedAt: attempt.finishedAt,
+      error: attempt.error,
     };
   }
 
@@ -137,7 +153,8 @@ export class PhotoAnalysisService {
         energyMilliKcal = entry.energyMilliKcal;
       }
     }
-    const storedResult = this.store.recent(id, true)[0]?.result;
+    const successfulAttempt = this.store.recent(id, true)[0];
+    const storedResult = successfulAttempt?.result;
     let result: PhotoResult | null = null;
     if (storedResult) result = JSON.parse(storedResult) as PhotoResult;
     return {
@@ -153,6 +170,11 @@ export class PhotoAnalysisService {
       name,
       energyMilliKcal,
       result,
+      provenanceState: hasRecordedPhotoAnalysisProvenance(
+        successfulAttempt?.diagnostics ?? null,
+      )
+        ? ("recorded" as const)
+        : ("legacy" as const),
     };
   }
 
@@ -205,6 +227,7 @@ export class PhotoAnalysisService {
       status: "active",
       stage: "Analyzing photo",
       correction,
+      diagnostics: this.initialDiagnostics(),
       startedAt: nextUpdatedAt(this.now(), current.startedAt),
     });
     void this.run(meal, attemptId);
@@ -283,6 +306,13 @@ export class PhotoAnalysisService {
         evidence.set(item.food.providerFoodId, item);
     }
     return evidence;
+  }
+
+  private initialDiagnostics() {
+    const configuration = this.analyzer.configurationSnapshot?.();
+    return configuration
+      ? serializePhotoAnalysisConfiguration(configuration)
+      : null;
   }
 
   private usdaTools(
@@ -370,6 +400,13 @@ export class PhotoAnalysisService {
         ? (JSON.parse(previousResult) as unknown)
         : undefined,
       evidence: [...evidence.values()],
+      recordDiagnostics: (diagnostics: unknown) => {
+        signal.throwIfAborted();
+        this.store.recordDiagnostics(
+          attemptId,
+          serializePhotoAnalysisProgress(diagnostics),
+        );
+      },
       usda: this.usdaTools(attemptId, signal, evidence),
     };
     return { input, current, currentEntry, evidence };
@@ -407,14 +444,32 @@ export class PhotoAnalysisService {
       );
       const value = await Promise.race([aborted, this.analyzer.analyze(input)]);
       controller.signal.throwIfAborted();
+      const outcome = parsePhotoAnalysisOutcome(value);
+      const analyzedValue = outcome?.result ?? value;
+      if (outcome) {
+        for (const item of outcome.evidence) {
+          evidence.set(item.food.providerFoodId, item);
+        }
+      }
+      const encodedEvidence = JSON.stringify([...evidence.values()]);
+      if (Buffer.byteLength(encodedEvidence, "utf8") > 750000) {
+        throw new Error("USDA context limit reached");
+      }
+      const { result, snapshot } = validatePhotoResult(analyzedValue, meal.id, [
+        ...evidence.values(),
+      ]);
+      const diagnostics = outcome
+        ? serializePhotoAnalysisDiagnostics(
+            outcome.diagnostics,
+            result,
+            outcome.evidence,
+          )
+        : null;
       this.store.progress(
         attemptId,
         "Preparing result",
-        JSON.stringify([...evidence.values()]),
+        encodedEvidence,
       );
-      const { result, snapshot } = validatePhotoResult(value, meal.id, [
-        ...evidence.values(),
-      ]);
       if (performance.now() >= deadline) {
         this.store.finish(
           attemptId,
@@ -429,6 +484,7 @@ export class PhotoAnalysisService {
         attemptId,
         snapshot,
         JSON.stringify(result),
+        diagnostics,
         nextUpdatedAt(
           this.now(),
           [current.startedAt, currentEntry?.updatedAt ?? ""].sort().at(-1)!,

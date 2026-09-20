@@ -1,7 +1,7 @@
 import path from "node:path";
 import BetterSqlite3 from "better-sqlite3";
-import { z } from "zod";
 import type { CatalogFood } from "../catalog/food-catalog.server.ts";
+import { foundationCatalogFoodSchema } from "./usda-foundation-schema.server.ts";
 
 export type UsdaGenerationCategory = { id: string; name: string };
 export type UsdaGenerationFood = { categoryId: string; food: CatalogFood };
@@ -17,47 +17,8 @@ export type UsdaPhotoAnalysisGeneration = {
 
 export const USDA_PHOTO_ANALYSIS_CAPABILITY = { name: "photo-analysis", version: 1 } as const;
 
-const nutrientValueSchema = z.object({
-  amount: z.number().nonnegative(),
-  fixedPointMultiplier: z.number().int().positive(),
-});
-const nutritionSchema = z.object({
-  carbohydrateMilligrams: nutrientValueSchema.nullable(),
-  energyMilliKcal: nutrientValueSchema.nullable(),
-  fatMilligrams: nutrientValueSchema.nullable(),
-  fiberMilligrams: nutrientValueSchema.nullable(),
-  proteinMilligrams: nutrientValueSchema.nullable(),
-  sodiumMilligrams: nutrientValueSchema.nullable(),
-  sugarMilligrams: nutrientValueSchema.nullable(),
-});
-const foundationFoodSchema = z.object({
-  authoritativeBaseQuantityMicrounits: z.number().int().positive(),
-  authoritativeBaseUnit: z.literal("g"),
-  barcode: z.null(),
-  brand: z.null(),
-  calculationUnavailableReason: z.string().optional(),
-  catalogGeneration: z.string().min(1),
-  dataType: z.literal("Foundation"),
-  isSelectable: z.boolean(),
-  marketCountry: z.null(),
-  measurementSummary: z.string(),
-  measurements: z.array(z.object({
-    baseQuantityMicrounits: z.number().int().positive(),
-    id: z.string().min(1),
-    label: z.string().min(1),
-    unit: z.enum(["g", "ml", "serving"]),
-  })),
-  name: z.string().min(1),
-  nutritionPerAuthoritativeBase: nutritionSchema,
-  originalName: z.string().min(1),
-  provider: z.literal("usda-fdc"),
-  providerFoodId: z.string().regex(/^[1-9]\d*$/u),
-  providerModifiedDate: z.null(),
-  providerPublishedDate: z.iso.date(),
-});
-
 function parseGenerationFood(record: string, expectedId: string, expectedGeneration: string): CatalogFood {
-  const food = foundationFoodSchema.parse(JSON.parse(record));
+  const food = foundationCatalogFoodSchema.parse(JSON.parse(record));
   if (food.providerFoodId !== expectedId || food.catalogGeneration !== expectedGeneration) {
     throw new Error("USDA generation food identity is inconsistent.");
   }
