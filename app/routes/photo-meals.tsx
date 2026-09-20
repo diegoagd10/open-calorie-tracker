@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useFetcher, useNavigate, useRevalidator } from "react-router";
 import type { PhotoAnalysisService } from "../photo-analysis/photo-analysis.server";
+import type { PresentedPhotoAnalysisReadiness } from "../photo-analysis/readiness.server";
 import styles from "../photo-analysis/photo-meals.module.css";
 import methodStyles from "./add-food-method.module.css";
 import { UiIcon } from "../ui-icon";
@@ -12,7 +13,11 @@ function imageUrl(id: string) {
   return `/photo-analysis?id=${encodeURIComponent(id)}&image=1`;
 }
 
-export function usePhotoUpload(date: string, csrfToken: string) {
+export function usePhotoUpload(
+  date: string,
+  csrfToken: string,
+  readiness: PresentedPhotoAnalysisReadiness = { state: "ready" },
+) {
   const upload = useFetcher<PhotoAction>();
   const navigate = useNavigate();
   const [preview, setPreview] = useState<string>();
@@ -28,43 +33,58 @@ export function usePhotoUpload(date: string, csrfToken: string) {
   return {
     pending,
     capture: (
-      <label className={methodStyles.method}>
-        <span className={methodStyles.icon}>
-          <UiIcon name="camera" />
-        </span>
-        <span className={methodStyles.label}>AI photo</span>
-        <input
-          aria-label="Take photo · AI calories"
-          type="file"
-          accept="image/jpeg,image/png,image/webp"
-          capture="environment"
-          disabled={pending}
-          onChange={(event) => {
-            const file = event.target.files?.[0];
-            if (!file) return;
-            void navigate(`/?date=${date}`);
-            if (file.size > 8388608) {
-              setError("Choose a photo up to 8 MB.");
-              return;
+      <>
+        <label className={methodStyles.method}>
+          <span className={methodStyles.icon}>
+            <UiIcon name="camera" />
+          </span>
+          <span className={methodStyles.label}>AI photo</span>
+          <input
+            aria-describedby={
+              readiness.state === "unavailable"
+                ? "photo-analysis-readiness"
+                : undefined
             }
-            setError(undefined);
-            setPreview(URL.createObjectURL(file));
-            const form = new FormData();
-            form.set("intent", "start");
-            form.set("date", date);
-            form.set("csrfToken", csrfToken);
-            form.set("idempotencyKey", crypto.randomUUID());
-            form.set("photo", file);
-            pendingUpload.current = form;
-            void upload.submit(form, {
-              action: "/photo-analysis",
-              method: "post",
-              encType: "multipart/form-data",
-            });
-            event.target.value = "";
-          }}
-        />
-      </label>
+            aria-label="Take photo · AI calories"
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            capture="environment"
+            disabled={pending || readiness.state === "unavailable"}
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              if (!file) return;
+              void navigate(`/?date=${date}`);
+              if (file.size > 8388608) {
+                setError("Choose a photo up to 8 MB.");
+                return;
+              }
+              setError(undefined);
+              setPreview(URL.createObjectURL(file));
+              const form = new FormData();
+              form.set("intent", "start");
+              form.set("date", date);
+              form.set("csrfToken", csrfToken);
+              form.set("idempotencyKey", crypto.randomUUID());
+              form.set("photo", file);
+              pendingUpload.current = form;
+              void upload.submit(form, {
+                action: "/photo-analysis",
+                method: "post",
+                encType: "multipart/form-data",
+              });
+              event.target.value = "";
+            }}
+          />
+        </label>
+        {readiness.state === "unavailable" ? (
+          <p id="photo-analysis-readiness">
+            {readiness.reason}{" "}
+            {readiness.destination ? (
+              <Link to={readiness.destination}>Open settings</Link>
+            ) : null}
+          </p>
+        ) : null}
+      </>
     ),
     feedback: pending || error || upload.data?.error ? (
       <>

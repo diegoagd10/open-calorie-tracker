@@ -1,6 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { sql } from "drizzle-orm";
 import { RouterContextProvider } from "react-router";
 import { afterAll, beforeAll, expect, test } from "vitest";
 import { serializeSessionCookie } from "../../app/auth/http.server";
@@ -294,4 +295,76 @@ test("invalid uploads and operations return actionable private errors", async ()
   expect(await (await action(args(huge))).json()).toEqual({
     error: "Choose a photo up to 8 MB",
   });
+});
+
+test.each([
+  "missing-credentials",
+  "unreadable-credentials",
+  "unavailable-models",
+  "catalog-not-installed",
+  "catalog-reimport-required",
+  "catalog-unavailable",
+] as const)("stale clients cannot start when readiness is %s", async (code) => {
+  const db = getApplicationDatabase().getClient();
+  const before = db.get<{ count: number }>(sql`SELECT count(*) AS count FROM photo_attempts`).count;
+  db.run(sql`
+    INSERT INTO application_metadata (key, value, updated_at)
+    VALUES ('photo_analysis_test_readiness', ${code}, '2026-09-20T00:00:00.000Z')
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+  `);
+  try {
+    const body = form();
+    body.set("idempotencyKey", `blocked:${code}`);
+    const response = await action(post(body));
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({
+      error: "AI photo analysis is not available right now.",
+    });
+    expect(db.get<{ count: number }>(sql`SELECT count(*) AS count FROM photo_attempts`).count).toBe(before);
+  } finally {
+    db.run(sql`DELETE FROM application_metadata WHERE key = 'photo_analysis_test_readiness'`);
+  }
+});
+
+test("stale correction and retry requests are rejected before a new attempt is stored", async () => {
+  const started = form();
+  started.set("idempotencyKey", "readiness-stale-lifecycle");
+  const initial = (await (await action(post(started))).json()) as {
+    id: string;
+    attemptId: string;
+    entryId: number | null;
+  };
+  const read = async () =>
+    (await (await loader(args(new Request(`${origin}/photo-analysis?id=${initial.id}`, {
+      headers: { Cookie: cookie },
+    })))).json()) as { attemptId: string; entryId: number; status: string };
+  await expect.poll(async () => (await read()).status, { timeout: 4_000 }).toBe("succeeded");
+  const succeeded = await read();
+  const db = getApplicationDatabase().getClient();
+  db.run(sql`
+    INSERT INTO application_metadata (key, value, updated_at)
+    VALUES ('photo_analysis_test_readiness', 'unavailable-models', '2026-09-20T00:00:00.000Z')
+  `);
+  const before = db.get<{ count: number }>(sql`SELECT count(*) AS count FROM photo_attempts`).count;
+  try {
+    const correction = new FormData();
+    correction.set("csrfToken", csrf);
+    correction.set("intent", "correct");
+    correction.set("entryId", String(succeeded.entryId));
+    correction.set("correction", "Add butter");
+    correction.set("idempotencyKey", "blocked-correction");
+    expect((await action(post(correction))).status).toBe(503);
+
+    db.run(sql`UPDATE photo_attempts SET status = 'failed', finished_at = '2026-09-20T00:00:00.000Z' WHERE id = ${succeeded.attemptId}`);
+    const retry = new FormData();
+    retry.set("csrfToken", csrf);
+    retry.set("intent", "retry");
+    retry.set("id", initial.id);
+    retry.set("attemptId", succeeded.attemptId);
+    retry.set("idempotencyKey", "blocked-retry");
+    expect((await action(post(retry))).status).toBe(503);
+    expect(db.get<{ count: number }>(sql`SELECT count(*) AS count FROM photo_attempts`).count).toBe(before);
+  } finally {
+    db.run(sql`DELETE FROM application_metadata WHERE key = 'photo_analysis_test_readiness'`);
+  }
 });

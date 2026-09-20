@@ -7,6 +7,7 @@ import {
 } from "../auth/http.server";
 import { getAuthenticationService } from "../auth/runtime.server";
 import { getPhotoAnalysisService } from "../photo-analysis/runtime.server";
+import { PhotoAnalysisUnavailableError } from "../photo-analysis/readiness.server";
 
 const noStore = { "Cache-Control": "private, no-store" };
 
@@ -122,16 +123,20 @@ export async function action({ request }: Route.ActionArgs) {
       headers: noStore,
     });
   } catch (error) {
+    const unavailable =
+      error instanceof PhotoAnalysisUnavailableError
+        ? error.forRole(session.user.role)
+        : undefined;
     return Response.json(
       {
         error:
-          error instanceof z.ZodError
+          unavailable?.reason ?? (error instanceof z.ZodError
             ? "Check the photo request and try again"
             : error instanceof Error
               ? error.message
-              : "Photo analysis unavailable",
+              : "Photo analysis unavailable"),
       },
-      { status: 400, headers: noStore },
+      { status: unavailable ? 503 : 400, headers: noStore },
     );
   }
 }

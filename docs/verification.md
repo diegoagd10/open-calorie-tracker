@@ -177,14 +177,20 @@ Ordinary deterministic/browser tests use compact JSONL GZIP fixtures, including 
 
 ## Credentialed external suite
 
-The credentialed AI photo pilot remains separate:
+The credentialed Gemini/Jev photo integration remains separate:
 
 ```sh
-PHOTO_PILOT_DATASET=... PHOTO_AI_AUTH_PATH=... PHOTO_PILOT_USDA_ARCHIVE=... pnpm test:photo-live
+GEMINI_API_KEY=... \
+TYPESAFE_API_KEY=... \
+PHOTO_GEMINI_JEV_USDA_ARCHIVE=... \
+PHOTO_GEMINI_JEV_FOOD_IMAGE=... \
+PHOTO_GEMINI_JEV_FOOD_MIME_TYPE=image/jpeg \
+pnpm test:gemini-jev-live
 ```
 
-The photo pilot requires its AI-provider credentials, a local USDA Foundation
-archive, and outbound AI access. No GitHub workflow runs it automatically.
+The integration requires both provider credentials, a local USDA Foundation
+archive, one private image, and outbound AI access. No GitHub workflow runs it
+automatically.
 
 ## Fallow baselines
 

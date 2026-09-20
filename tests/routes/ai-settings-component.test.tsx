@@ -4,6 +4,7 @@ import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { expect, test } from "vitest";
 import type { PhotoAnalysisCredentialStatus } from "../../app/photo-analysis/credentials.server";
 import type { PhotoAnalysisSettingsSnapshot } from "../../app/photo-analysis/configuration.server";
+import type { PresentedPhotoAnalysisReadiness } from "../../app/photo-analysis/readiness.server";
 import AiSettings from "../../app/routes/settings.ai";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -31,8 +32,13 @@ const settings: PhotoAnalysisSettingsSnapshot = {
   ready: true,
 };
 type ActionData = { area?: "credentials" | "configuration"; error?: string; success?: string; fieldErrors?: Record<string, string> };
-async function render(credentials: PhotoAnalysisCredentialStatus, discovered?: PhotoAnalysisSettingsSnapshot, actionData?: ActionData) {
-  const loaderData = { csrfToken: "test-csrf", today: "2026-09-19", credentials, settings: discovered };
+async function render(
+  credentials: PhotoAnalysisCredentialStatus,
+  discovered?: PhotoAnalysisSettingsSnapshot,
+  actionData?: ActionData,
+  readiness: PresentedPhotoAnalysisReadiness = { state: "ready" },
+) {
+  const loaderData = { csrfToken: "test-csrf", today: "2026-09-19", credentials, settings: discovered, readiness };
   const Routes = createRoutesStub([{ path: "/settings/ai", id: "ai", Component: AiSettings, loader: () => loaderData }]);
   let renderer!: ReactTestRenderer;
   await act(async () => {
@@ -99,7 +105,31 @@ test("configured Settings shows supported defaults, calibration, and threshold s
   expect(input(renderer, "categoryConfidenceThreshold").props.value).toBe(0.25);
   expect(input(renderer, "productConfidenceThreshold").props.value).toBe(0.5);
   expect(text(renderer.root)).not.toContain("OpenAI connection");
+  expect(text(renderer.root)).toContain("New-attempt readiness");
+  expect(text(renderer.root)).toContain("New Photo Analysis attempts can start");
   await act(() => renderer.unmount());
+});
+
+test("Settings presents readiness recovery without linking back to the current page", async () => {
+  const catalog = await render(configured, settings, undefined, {
+    state: "unavailable",
+    reason: "Reimport USDA Foundation for Photo Analysis.",
+    destination: "/settings/catalogs",
+  });
+  expect(text(catalog.root)).toContain("New-attempt readiness");
+  expect(text(catalog.root)).toContain("Blocked");
+  expect(text(catalog.root)).toContain("Reimport USDA Foundation for Photo Analysis.");
+  expect(catalog.root.findAllByProps({ href: "/settings/catalogs" })).toHaveLength(2);
+  await act(() => catalog.unmount());
+
+  const credentials = await render(configured, settings, undefined, {
+    state: "unavailable",
+    reason: "Refresh the selected Gemini and Jev models.",
+    destination: "/settings/ai",
+  });
+  expect(text(credentials.root)).toContain("Refresh the selected Gemini and Jev models.");
+  expect(credentials.root.findAllByProps({ href: "/settings/ai" })).toHaveLength(0);
+  await act(() => credentials.unmount());
 });
 
 test("combobox typing filters options, keyboard selection rejects free-form state, and a new Jev model starts uncalibrated", async () => {

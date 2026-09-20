@@ -31,6 +31,7 @@ import {
   meta,
 } from "../../app/routes/home";
 import { PhotoAnalysisService } from "../../app/photo-analysis/photo-analysis.server";
+import { shutdownPhotoAnalysis } from "../../app/photo-analysis/runtime.server";
 import { getFoodEntryService } from "../../app/food-entry/runtime.server";
 import { getFoodLogService } from "../../app/food-log/runtime.server";
 import { getGoalSetupService } from "../../app/setup/runtime.server";
@@ -115,6 +116,7 @@ beforeAll(async () => {
   process.env.APPLICATION_URL = origin;
   process.env.DATABASE_PATH = path.join(temporaryDirectory, "application.sqlite");
   process.env.FOOD_CATALOG_TEST_FIXTURE = "1";
+  process.env.PHOTO_ANALYSIS_TEST_FIXTURE = "1";
   process.env.FOOD_LOG_TEST_NOW = instant;
   process.env.SETUP_TEST_NOW = instant;
   initializeApplicationDatabase();
@@ -155,6 +157,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  shutdownPhotoAnalysis();
   shutdownApplicationDatabase();
   await rm(temporaryDirectory, { force: true, recursive: true });
   for (const name of [
@@ -162,6 +165,7 @@ afterAll(async () => {
     "DATABASE_PATH",
     "FOOD_CATALOG_TEST_FIXTURE",
     "FOOD_LOG_TEST_NOW",
+    "PHOTO_ANALYSIS_TEST_FIXTURE",
     "SETUP_TEST_NOW",
   ]) delete process.env[name];
 });

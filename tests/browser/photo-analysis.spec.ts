@@ -2,6 +2,8 @@ import AxeBuilder from "@axe-core/playwright";
 import {
   bootstrapOrSignInBrowserTestUser,
   expect,
+  openBrowserTestDatabase,
+  signInProvisionedMember,
   test,
 } from "./reset-database";
 import { playwrightBrowserPorts } from "../../scripts/catalog-browser-runtime";
@@ -17,6 +19,60 @@ const photo = {
     "base64",
   ),
 };
+
+test("readiness blocks only photo capture with role-appropriate recovery", async ({ page, browser }) => {
+  const password = "correct horse 🔐 battery";
+  await bootstrapOrSignInBrowserTestUser(page, "photo.readiness.admin", password);
+  await page.getByRole("button", { name: "Finish setup" }).click();
+  await expect(page).toHaveURL("/");
+  const database = openBrowserTestDatabase();
+  database.prepare(`
+    INSERT INTO application_metadata (key, value, updated_at) VALUES (?, ?, ?)
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+  `).run(
+    "photo_analysis_test_readiness",
+    "missing-credentials",
+    "2026-09-20T00:00:00.000Z",
+  );
+  database.close();
+
+  await page.reload();
+  await page.getByRole("button", { name: "Add Food", exact: true }).click();
+  await expect(page.getByLabel("Take photo · AI calories")).toBeDisabled();
+  await expect(page.getByRole("dialog")).toContainText(
+    "Configure Gemini and TypeSafe credentials.",
+  );
+  await expect(page.getByRole("link", { name: "Open settings" })).toHaveAttribute(
+    "href",
+    "/settings/ai",
+  );
+  await expect(page.getByRole("link", { name: /Manual/ })).toBeEnabled();
+
+  const context = await browser.newContext({
+    baseURL: new URL(page.url()).origin,
+    ignoreHTTPSErrors: true,
+  });
+  try {
+    const member = await context.newPage();
+    await signInProvisionedMember(member, "photo.readiness.member", password);
+    await member.getByRole("button", { name: "Finish setup" }).click();
+    await expect(member).toHaveURL("/");
+    await member.getByRole("button", { name: "Add Food", exact: true }).click();
+    await expect(member.getByLabel("Take photo · AI calories")).toBeDisabled();
+    await expect(member.getByRole("dialog")).toContainText(
+      "AI photo analysis is not available right now.",
+    );
+    await expect(member.getByRole("link", { name: "Open settings" })).toHaveCount(0);
+    await expect(member.getByRole("link", { name: /Manual/ })).toBeEnabled();
+  } finally {
+    await context.close();
+    const cleanup = openBrowserTestDatabase();
+    cleanup.prepare(
+      "DELETE FROM application_metadata WHERE key = 'photo_analysis_test_readiness'",
+    ).run();
+    cleanup.close();
+  }
+});
 
 test("plate capture returns to Daily Log, survives reload, and supports correction and cancellation @camera-matrix", async ({
   page,

@@ -208,27 +208,18 @@ If that key file is missing, startup creates a new one, Settings reports that th
 old bundle needs re-entry, and saving a newly validated pair replaces the
 unreadable row.
 
-## Maintain the active Pi connection during the expand step
+## Verify Photo Analysis readiness
 
-For a local process, sign in as the administrator and open **Settings → AI photo
-estimates → OpenAI connection**. Follow the browser authorization link and approve.
-Pi receives the callback on `localhost:1455` and Settings detects completion
-automatically. This does not require entering a code or token or enabling
-device-code login.
+After saving the Gemini and TypeSafe credential pair, select available models and
+thresholds in **Settings → AI photo estimates**. Install or reimport USDA
+Foundation from the terminal workflow, then confirm **New-attempt readiness** is
+**Ready**. The readiness card links to Food Catalogs when catalog recovery is
+required. Do not expose provider keys as environment variables or copy them into
+the catalog directory.
 
-The browser and the Pi process must share the same localhost. A browser on a
-different machine, or on the host while Pi runs in the default isolated Compose
-network, cannot reach that callback directly. Do not expose the callback publicly;
-use a trusted loopback tunnel or provision Pi's auth file on the application host.
-
-Pi remains the active analyzer until the later provider-cutover change. The
-default Compose configuration persists the Pi connection at
-`DATA_PATH/pi/auth.json` on the host. Preserve the existing `DATA_PATH` when
-updating; it is not copied into the new encrypted bundle. No extra Pi variables
-are required for the default provider and model;
 Install USDA Foundation with the [terminal workflow](../README.md#install-food-catalogs-from-the-terminal) for local food search, photo evidence, and logging; Food Catalogs shows availability and update checks. No USDA API key is used at runtime.
-See [photo-analysis.md](photo-analysis.md#operator-setup) for reconnect,
-disconnect, and provider prerequisites.
+See [photo-analysis.md](photo-analysis.md#operator-setup) for provider and
+readiness details.
 
 ## Updates and backups
 

@@ -5,10 +5,19 @@ import type {
   UsdaPhotoAnalysisCatalog,
 } from "../app/catalog/usda-evidence";
 import {
+  CatalogNotInstalledError,
+  CatalogReimportRequiredError,
+  CatalogUnavailableError,
+} from "../app/catalog/food-catalog.server";
+import { CredentialBundleUnreadableError } from "../app/credentials/encrypted-credential-bundles.server";
+import {
   GeminiJevPhotoAnalysisAttemptSource,
   type PhotoAnalysisProviderClientFactory,
 } from "../app/photo-analysis/attempts.server";
-import type { PhotoAnalysisAttemptConfiguration } from "../app/photo-analysis/configuration.server";
+import {
+  PhotoAnalysisAttemptConfigurationUnavailableError,
+  type PhotoAnalysisAttemptConfiguration,
+} from "../app/photo-analysis/configuration.server";
 import type { PhotoAnalyzer } from "../app/photo-analysis/photo-analysis.server";
 
 function analyzerInput(): Parameters<PhotoAnalyzer["analyze"]>[0] {
@@ -178,9 +187,9 @@ test("an active attempt retains copied credentials, configuration, and one catal
     "typesafe-key-generation-a",
   ]);
   expect(completedLeases).toBe(0);
-  await expect(source.capture(new AbortController().signal)).rejects.toThrow(
-    "credentials deleted",
-  );
+  await expect(source.capture(new AbortController().signal)).rejects.toMatchObject({
+    code: "unreadable-credentials",
+  });
   first.release();
   first.release();
   await expect.poll(() => completedLeases).toBe(1);
@@ -221,9 +230,9 @@ test("an active attempt retains copied credentials, configuration, and one catal
   await expect.poll(() => completedLeases).toBe(2);
 
   configuration = undefined;
-  await expect(source.capture(new AbortController().signal)).rejects.toThrow(
-    "credentials deleted",
-  );
+  await expect(source.capture(new AbortController().signal)).rejects.toMatchObject({
+    code: "unreadable-credentials",
+  });
 });
 
 test("attempt capture propagates cancellation and catalog acquisition failures", async () => {
@@ -268,11 +277,109 @@ test("attempt capture propagates cancellation and catalog acquisition failures",
       reader,
       neverReady(new Error("catalog failed")),
     ).capture(new AbortController().signal),
-  ).rejects.toThrow("catalog failed");
+  ).rejects.toMatchObject({ code: "catalog-unavailable" });
   await expect(
     new GeminiJevPhotoAnalysisAttemptSource(
       reader,
       neverReady("catalog failed without an Error"),
     ).capture(new AbortController().signal),
-  ).rejects.toThrow("Catalog unavailable");
+  ).rejects.toMatchObject({ code: "catalog-unavailable" });
+});
+
+test.each([
+  [new PhotoAnalysisAttemptConfigurationUnavailableError("missing-credentials"), "missing-credentials"],
+  [new PhotoAnalysisAttemptConfigurationUnavailableError("unavailable-models"), "unavailable-models"],
+])("attempt capture translates stale configuration into readiness errors", async (failure, code) => {
+  const source = new GeminiJevPhotoAnalysisAttemptSource(
+    { captureAttemptConfiguration: async () => { throw failure; } },
+    {
+      photoAnalysisReadiness: async () => ({ state: "ready", generation: "unused" }),
+      withPhotoAnalysisSnapshot: async () => { throw new Error("unused"); },
+    },
+  );
+  await expect(source.capture(new AbortController().signal)).rejects.toMatchObject({
+    name: "PhotoAnalysisUnavailableError",
+    code,
+  });
+});
+
+test("attempt capture preserves cancellation and conceals unreadable credential storage", async () => {
+  const catalog: UsdaPhotoAnalysisCatalog = {
+    photoAnalysisReadiness: async () => ({ state: "not-installed" }),
+    withPhotoAnalysisSnapshot: async () => { throw new Error("unused"); },
+  };
+  const unreadable = new GeminiJevPhotoAnalysisAttemptSource(
+    {
+      captureAttemptConfiguration: async () => {
+        throw new CredentialBundleUnreadableError();
+      },
+    },
+    catalog,
+  );
+  await expect(unreadable.capture(new AbortController().signal)).rejects.toMatchObject({
+    code: "unreadable-credentials",
+  });
+
+  const controller = new AbortController();
+  const canceled = new GeminiJevPhotoAnalysisAttemptSource(
+    {
+      captureAttemptConfiguration: async (signal) => {
+        controller.abort();
+        signal.throwIfAborted();
+        throw new Error("unreachable");
+      },
+    },
+    catalog,
+  );
+  await expect(canceled.capture(controller.signal)).rejects.toMatchObject({
+    name: "AbortError",
+  });
+});
+
+test("catalog cancellation remains cancellation rather than a readiness failure", async () => {
+  const configuration: PhotoAnalysisAttemptConfiguration = {
+    geminiKey: "gemini-key-generation-a",
+    typeSafeKey: "typesafe-key-generation-a",
+    geminiModel: "gemini-3.1-flash-lite",
+    jevModel: "jev-1.13.0",
+    categoryConfidenceThreshold: 0.25,
+    productConfidenceThreshold: 0.6,
+  };
+  const source = new GeminiJevPhotoAnalysisAttemptSource(
+    { captureAttemptConfiguration: async () => configuration },
+    {
+      photoAnalysisReadiness: async () => ({ state: "not-installed" }),
+      withPhotoAnalysisSnapshot: async () => {
+        throw new DOMException("Canceled", "AbortError");
+      },
+    },
+  );
+  await expect(source.capture(new AbortController().signal)).rejects.toMatchObject({
+    name: "AbortError",
+  });
+});
+
+test.each([
+  [new CatalogNotInstalledError(), "catalog-not-installed"],
+  [new CatalogReimportRequiredError(), "catalog-reimport-required"],
+  [new CatalogUnavailableError(), "catalog-unavailable"],
+])("attempt capture translates stale catalog state into readiness errors", async (failure, code) => {
+  const configuration: PhotoAnalysisAttemptConfiguration = {
+    geminiKey: "gemini-key-generation-a",
+    typeSafeKey: "typesafe-key-generation-a",
+    geminiModel: "gemini-3.1-flash-lite",
+    jevModel: "jev-1.13.0",
+    categoryConfidenceThreshold: 0.25,
+    productConfidenceThreshold: 0.6,
+  };
+  const source = new GeminiJevPhotoAnalysisAttemptSource(
+    { captureAttemptConfiguration: async () => configuration },
+    {
+      photoAnalysisReadiness: async () => ({ state: "not-installed" }),
+      withPhotoAnalysisSnapshot: async () => { throw failure; },
+    },
+  );
+  await expect(source.capture(new AbortController().signal)).rejects.toEqual(
+    expect.objectContaining({ code }),
+  );
 });

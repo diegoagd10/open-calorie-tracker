@@ -2,7 +2,16 @@ import type {
   UsdaPhotoAnalysisCatalog,
   UsdaPhotoAnalysisSnapshot,
 } from "../catalog/usda-evidence";
-import type { PhotoAnalysisAttemptConfiguration } from "./configuration.server";
+import {
+  CatalogNotInstalledError,
+  CatalogReimportRequiredError,
+  CatalogUnavailableError,
+} from "../catalog/food-catalog.server";
+import { CredentialBundleUnreadableError } from "../credentials/encrypted-credential-bundles.server";
+import {
+  PhotoAnalysisAttemptConfigurationUnavailableError,
+  type PhotoAnalysisAttemptConfiguration,
+} from "./configuration.server";
 import {
   GeminiHttpMealClient,
   JevHttpChoiceClient,
@@ -14,6 +23,8 @@ import {
 } from "./gemini-jev.server";
 import type { PhotoAnalyzer } from "./photo-analysis.server";
 import type { PhotoAnalysisConfigurationSnapshot } from "./provenance.server";
+import { PhotoAnalysisUnavailableError } from "./readiness.server";
+import type { PhotoAnalysisReadiness } from "./readiness.server";
 
 export type PhotoAnalysisAttemptLease = {
   analyzer: PhotoAnalyzer;
@@ -51,8 +62,20 @@ implements PhotoAnalysisAttemptSource {
 
   async capture(signal: AbortSignal): Promise<PhotoAnalysisAttemptLease> {
     signal.throwIfAborted();
-    const configuration =
-      await this.configuration.captureAttemptConfiguration(signal);
+    let configuration: PhotoAnalysisAttemptConfiguration;
+    try {
+      configuration =
+        await this.configuration.captureAttemptConfiguration(signal);
+    } catch (error) {
+      if (error instanceof PhotoAnalysisAttemptConfigurationUnavailableError) {
+        throw new PhotoAnalysisUnavailableError(error.reason);
+      }
+      if (error instanceof CredentialBundleUnreadableError) {
+        throw new PhotoAnalysisUnavailableError("unreadable-credentials");
+      }
+      if (isAbortError(error)) throw error;
+      throw new PhotoAnalysisUnavailableError("unreadable-credentials");
+    }
     signal.throwIfAborted();
     return await this.captureCatalogLease(configuration, signal);
   }
@@ -91,7 +114,18 @@ implements PhotoAnalysisAttemptSource {
           await held;
         })
         .catch((error: unknown) => {
-          if (!captured) reject(error instanceof Error ? error : new Error("Catalog unavailable"));
+          if (captured) return;
+          if (error instanceof CatalogNotInstalledError) {
+            reject(new PhotoAnalysisUnavailableError("catalog-not-installed"));
+          } else if (error instanceof CatalogReimportRequiredError) {
+            reject(new PhotoAnalysisUnavailableError("catalog-reimport-required"));
+          } else if (error instanceof CatalogUnavailableError) {
+            reject(new PhotoAnalysisUnavailableError("catalog-unavailable"));
+          } else if (isAbortError(error)) {
+            reject(error);
+          } else {
+            reject(new PhotoAnalysisUnavailableError("catalog-unavailable"));
+          }
         });
     });
   }
@@ -113,6 +147,10 @@ implements PhotoAnalysisAttemptSource {
       },
     );
   }
+}
+
+function isAbortError(error: unknown): error is Error {
+  return error instanceof Error && error.name === "AbortError";
 }
 
 function capturedCatalog(
@@ -141,6 +179,23 @@ export function fixedPhotoAnalysisAttemptSource(
         configuration: analyzer.configurationSnapshot?.() ?? null,
         release: () => undefined,
       };
+    },
+  };
+}
+
+export function readinessGatedPhotoAnalysisAttemptSource(
+  source: PhotoAnalysisAttemptSource,
+  readiness: { read(): Promise<PhotoAnalysisReadiness> },
+): PhotoAnalysisAttemptSource {
+  return {
+    capture: async (signal) => {
+      signal.throwIfAborted();
+      const state = await readiness.read();
+      signal.throwIfAborted();
+      if (state.state === "unavailable") {
+        throw new PhotoAnalysisUnavailableError(state.code);
+      }
+      return await source.capture(signal);
     },
   };
 }

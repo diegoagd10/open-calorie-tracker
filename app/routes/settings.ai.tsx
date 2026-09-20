@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { data, Form, useNavigation } from "react-router";
+import { data, Form, Link, useNavigation } from "react-router";
 import { z } from "zod";
 import type { Route } from "./+types/settings.ai";
 import { AppNavigation } from "../app-navigation";
@@ -17,7 +17,7 @@ import {
   PhotoAnalysisCredentialValidationError,
   type PhotoAnalysisCredentialPair,
 } from "../photo-analysis/credentials.server";
-import { getPhotoAnalysisConfiguration, getPhotoAnalysisCredentials } from "../photo-analysis/runtime.server";
+import { getPhotoAnalysisConfiguration, getPhotoAnalysisCredentials, getPhotoAnalysisReadiness } from "../photo-analysis/runtime.server";
 import { SettingsDestinations } from "../settings-destinations";
 import shellStyles from "../food-log.module.css";
 import styles from "../photo-analysis/connection.module.css";
@@ -45,10 +45,12 @@ export async function loader({ request }: Route.LoaderArgs) {
   const session = await requireAdministratorSession(request);
   const credentialService = await getPhotoAnalysisCredentials();
   const credentials = await credentialService.status();
+  const readiness = await getPhotoAnalysisReadiness("admin");
   return {
     csrfToken: session.csrfToken,
     today: new Date().toISOString().slice(0, 10),
     credentials,
+    readiness,
     settings: credentials.state === "configured"
       ? await (await getPhotoAnalysisConfiguration()).readSettings()
       : undefined,
@@ -323,6 +325,28 @@ export default function AiSettings({ loaderData, actionData }: Route.ComponentPr
             </>
           )}
           <p className={styles.note}>Model and threshold changes apply only to future attempts and never recalculate saved meals.</p>
+        </section>
+        <section className={styles.card} aria-labelledby="readiness-heading">
+          <div className={styles.heading}>
+            <div>
+              <h2 id="readiness-heading">New-attempt readiness</h2>
+              <p>Credentials, selected models, and USDA Foundation</p>
+            </div>
+            <span className={loaderData.readiness.state === "ready" ? styles.connected : styles.disconnected}>
+              {loaderData.readiness.state === "ready" ? "Ready" : "Blocked"}
+            </span>
+          </div>
+          {loaderData.readiness.state === "ready" ? (
+            <p>New Photo Analysis attempts can start.</p>
+          ) : (
+            <p role="alert" className={styles.error}>
+              {loaderData.readiness.reason}{" "}
+              {loaderData.readiness.destination && loaderData.readiness.destination !== "/settings/ai" ? (
+                <Link to={loaderData.readiness.destination}>Open Food Catalogs settings</Link>
+              ) : null}
+            </p>
+          )}
+          <p className={styles.note}>Active attempts keep the configuration and catalog generation they started with.</p>
         </section>
         <SettingsDestinations active="ai" csrfToken={loaderData.csrfToken} isAdministrator />
       </main>

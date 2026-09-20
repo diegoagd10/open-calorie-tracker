@@ -96,7 +96,10 @@ export type PhotoAnalysisAttemptConfiguration = PhotoAnalysisConfigurationInput 
   PhotoAnalysisCredentialPair;
 
 export class PhotoAnalysisAttemptConfigurationUnavailableError extends Error {
-  constructor() {
+  constructor(
+    readonly reason: "missing-credentials" | "unavailable-models" =
+      "unavailable-models",
+  ) {
     super("Photo Analysis configuration is unavailable.");
     this.name = "PhotoAnalysisAttemptConfigurationUnavailableError";
   }
@@ -203,7 +206,9 @@ export class PhotoAnalysisConfigurationService {
       signal.throwIfAborted();
       const credentials = await this.credentials.read();
       if (!credentials) {
-        throw new PhotoAnalysisAttemptConfigurationUnavailableError();
+        throw new PhotoAnalysisAttemptConfigurationUnavailableError(
+          "missing-credentials",
+        );
       }
       const stored = this.readStored();
       const discovered = await this.discover(credentials, signal);
