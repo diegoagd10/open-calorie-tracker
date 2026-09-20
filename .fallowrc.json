@@ -6,7 +6,6 @@
   },
   "dynamicallyLoaded": [
     "server/playwright-https.js",
-    "tests/browser/pi-oauth-fixture.mjs",
     "tests/browser/off-metadata-fixture.mjs",
     "server/app.ts",
     "app/catalog-management/import-worker.ts",

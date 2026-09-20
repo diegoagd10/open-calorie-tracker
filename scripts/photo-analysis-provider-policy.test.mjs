@@ -30,6 +30,7 @@ test("the retired photo provider has no dependency, runtime, environment, or tes
   const files = [
     ...(await sourceFiles("app")),
     ...(await sourceFiles("tests")),
+    ".fallowrc.json",
     "playwright.config.ts",
     "playwright.catalog.config.ts",
     "docker-compose.yml",
