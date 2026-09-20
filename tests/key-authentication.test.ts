@@ -2,11 +2,17 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { eq } from "drizzle-orm";
-import { users, webauthnCeremonies } from "../app/database/schema.server";
+import {
+  passwordCredentials,
+  users,
+  webauthnCeremonies,
+  webauthnCredentials,
+} from "../app/database/schema.server";
 import { AdministratorRecoveryService } from "../app/auth/administrator-recovery.server";
 import { afterEach, expect, test, vi } from "vitest";
 import { AuthenticationService } from "../app/auth/authentication.server";
 import { openApplicationDatabase } from "../app/database/database.server";
+import { WebAuthnStorage } from "../app/database/webauthn.server";
 import { GoalSetupService } from "../app/setup/goal-setup.server";
 import { authenticator } from "./support/webauthn";
 import { seedAuthenticatedAccount } from "./support/authentication";
@@ -105,6 +111,33 @@ test("cancellation during fallback cryptography cannot update the password or is
   await expect(replacing).rejects.toThrow();
   expect((await f.service.verifyCredentials("owner", password)).matches).toBe(true);
   expect(await f.service.authenticate(session.token)).toBeDefined();
+});
+
+test("fallback replacement fails closed when its password credential disappears", async () => {
+  const f = await fixture();
+  const { key, session } = await enroll(f.service, f.session.token);
+  const proof = await f.service.keys.beginPasswordChange(
+    session.token,
+    "replace-missing-password",
+  );
+  f.database
+    .getClient()
+    .delete(passwordCredentials)
+    .where(eq(passwordCredentials.userId, session.user.id))
+    .run();
+
+  await expect(
+    f.service.keys.finishPasswordChange(
+      session.token,
+      "replace-missing-password",
+      key.assertion(proof, 2),
+      "replacement fallback password",
+    ),
+  ).rejects.toThrow();
+  expect(f.service.keys.status(session.token)).toMatchObject({
+    enabled: true,
+    credentials: [{ id: key.id }],
+  });
 });
 
 test("any of five keys can replace the fallback without deleting keys or retaining older sessions", async () => {
@@ -697,6 +730,32 @@ test("rate limits survive service recreation and enrollment preview is off by de
   ).rejects.toThrow("Too many");
 });
 
+test("stale account versions cannot allocate a WebAuthn handle", async () => {
+  const f = await fixture();
+  const storage = new WebAuthnStorage(
+    f.database.getClient(),
+    () => new Date("2026-09-13T19:00:00.000Z"),
+  );
+
+  expect(() =>
+    storage.allocateHandle(f.session.user.id, 999),
+  ).toThrow("Account changed");
+});
+
+test("key sign-in fails closed when enabled mode has no saved credentials", async () => {
+  const f = await fixture();
+  const { session } = await enroll(f.service, f.session.token);
+  f.database
+    .getClient()
+    .delete(webauthnCredentials)
+    .where(eq(webauthnCredentials.userId, session.user.id))
+    .run();
+
+  await expect(
+    f.service.keys.beginLogin("owner", "missing-key", "192.0.2.22"),
+  ).rejects.toThrow("unavailable");
+});
+
 test("zero-counter authenticators can sign in repeatedly with new single-use challenges", async () => {
   const { service, session } = await fixture();
   const key = authenticator();
@@ -1240,6 +1299,20 @@ test("removing a retained key needs fresh current password and burns incorrect a
   expect(f.service.keys.status(login.session.token)).toEqual({ enabled: false, credentials: [] });
 });
 
+test("key removal is unavailable when enrollment preview is disabled", async () => {
+  const f = await fixture();
+  const { key, session } = await enroll(f.service, f.session.token);
+  vi.stubEnv("WEBAUTHN_ENROLLMENT_PREVIEW", "");
+
+  await expect(
+    f.service.keys.beginRemoval(session.token, "remove", key.id),
+  ).rejects.toThrow("preview");
+  expect(f.service.keys.status(session.token)).toMatchObject({
+    enabled: true,
+    credentials: [{ id: key.id }],
+  });
+});
+
 async function fiveKeys() {
   const f = await fixture();
   const first = await enroll(f.service, f.session.token);
@@ -1490,6 +1563,35 @@ test("administrator password proof recovers a member without losing keys or allo
   const login = await f.service.login("recovery.member", password, "192.0.2.12");
   if (!login.ok) throw new Error("recovered password login failed");
   expect(f.service.keys.status(login.session.token)).toMatchObject({ enabled: false, credentials: [{ id: member.key.id }] });
+});
+
+test("member recovery rejects invalid targets before issuing a proof", async () => {
+  const f = await fixture();
+
+  await expect(
+    f.service.keys.beginMemberRecovery(
+      f.session.token,
+      "invalid-target",
+      f.session.user.id,
+      "owner",
+      "password",
+    ),
+  ).rejects.toThrow("no longer available");
+});
+
+test("member recovery falls back to administrator password when no administrator key is saved", async () => {
+  const f = await fixture();
+  const member = await recoveryMember(f);
+
+  await expect(
+    f.service.keys.beginMemberRecovery(
+      f.session.token,
+      "missing-admin-key",
+      member.session.user.id,
+      "recovery.member",
+      "key",
+    ),
+  ).rejects.toThrow("no administrator keys");
 });
 
 async function recoveryMember(f: Awaited<ReturnType<typeof fixture>>, username = "recovery.member") {

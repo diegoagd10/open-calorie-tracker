@@ -7,6 +7,8 @@ import {
 } from "../auth/http.server";
 import { getAuthenticationService } from "../auth/runtime.server";
 import { getPhotoAnalysisService } from "../photo-analysis/runtime.server";
+import { PhotoAnalysisUnavailableError } from "../photo-analysis/readiness.server";
+import { presentPhotoAnalysisReadiness } from "./photo-analysis-readiness";
 
 const noStore = { "Cache-Control": "private, no-store" };
 
@@ -89,22 +91,22 @@ export async function action({ request }: Route.ActionArgs) {
     if (intent === "start") {
       const photo = form.get("photo");
       if (!(photo instanceof File)) throw new Error("Choose a plate photo");
-      mealId = service.start(userId, {
+      mealId = (await service.start(userId, {
         foodLogDate: String(form.get("date") ?? ""),
         idempotencyKey,
         photo: {
           bytes: Buffer.from(await photo.arrayBuffer()),
           mimeType: photo.type,
         },
-      }).id;
+      })).id;
     } else if (intent === "correct") {
-      mealId = service.correct(
+      mealId = (await service.correct(
         userId,
         z.coerce.number().int().positive().parse(form.get("entryId")),
         { idempotencyKey, correction: String(form.get("correction") ?? "") },
-      ).id;
+      )).id;
     } else if (intent === "retry") {
-      service.retry(userId, id, {
+      await service.retry(userId, id, {
         idempotencyKey,
         attemptId: String(form.get("attemptId") ?? ""),
       });
@@ -122,16 +124,26 @@ export async function action({ request }: Route.ActionArgs) {
       headers: noStore,
     });
   } catch (error) {
+    const unavailable =
+      error instanceof PhotoAnalysisUnavailableError
+        ? presentPhotoAnalysisReadiness(
+            { state: "unavailable", code: error.code },
+            session.user.role,
+          )
+        : undefined;
     return Response.json(
       {
         error:
-          error instanceof z.ZodError
+          unavailable?.reason ?? (error instanceof z.ZodError
             ? "Check the photo request and try again"
             : error instanceof Error
               ? error.message
-              : "Photo analysis unavailable",
+              : "Photo analysis unavailable"),
+        ...(unavailable?.destination
+          ? { destination: unavailable.destination }
+          : {}),
       },
-      { status: 400, headers: noStore },
+      { status: unavailable ? 503 : 400, headers: noStore },
     );
   }
 }

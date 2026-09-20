@@ -1,22 +1,28 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useFetcher, useNavigate, useRevalidator } from "react-router";
 import type { PhotoAnalysisService } from "../photo-analysis/photo-analysis.server";
+import type { PresentedPhotoAnalysisReadiness } from "./photo-analysis-readiness";
 import styles from "../photo-analysis/photo-meals.module.css";
 import methodStyles from "./add-food-method.module.css";
 import { UiIcon } from "../ui-icon";
 
 type PhotoMeal = ReturnType<PhotoAnalysisService["view"]>;
-type PhotoAction = { error?: string; id?: string };
+type PhotoAction = { destination?: string; error?: string; id?: string };
 
 function imageUrl(id: string) {
   return `/photo-analysis?id=${encodeURIComponent(id)}&image=1`;
 }
 
-export function usePhotoUpload(date: string, csrfToken: string) {
+export function usePhotoUpload(
+  date: string,
+  csrfToken: string,
+  readiness: PresentedPhotoAnalysisReadiness = { state: "ready" },
+) {
   const upload = useFetcher<PhotoAction>();
   const navigate = useNavigate();
   const [preview, setPreview] = useState<string>();
   const [error, setError] = useState<string>();
+  const [availabilityOpen, setAvailabilityOpen] = useState(false);
   const pendingUpload = useRef<FormData | null>(null);
   useEffect(
     () => () => {
@@ -28,43 +34,78 @@ export function usePhotoUpload(date: string, csrfToken: string) {
   return {
     pending,
     capture: (
-      <label className={methodStyles.method}>
-        <span className={methodStyles.icon}>
-          <UiIcon name="camera" />
-        </span>
-        <span className={methodStyles.label}>AI photo</span>
-        <input
-          aria-label="Take photo · AI calories"
-          type="file"
-          accept="image/jpeg,image/png,image/webp"
-          capture="environment"
-          disabled={pending}
-          onChange={(event) => {
-            const file = event.target.files?.[0];
-            if (!file) return;
-            void navigate(`/?date=${date}`);
-            if (file.size > 8388608) {
-              setError("Choose a photo up to 8 MB.");
-              return;
+      <div className={methodStyles.captureMethod}>
+        <label className={methodStyles.method}>
+          <span className={methodStyles.icon}>
+            <UiIcon name="camera" />
+          </span>
+          <span className={methodStyles.label}>AI photo</span>
+          <input
+            aria-describedby={
+              readiness.state === "unavailable"
+                ? "photo-analysis-readiness"
+                : undefined
             }
-            setError(undefined);
-            setPreview(URL.createObjectURL(file));
-            const form = new FormData();
-            form.set("intent", "start");
-            form.set("date", date);
-            form.set("csrfToken", csrfToken);
-            form.set("idempotencyKey", crypto.randomUUID());
-            form.set("photo", file);
-            pendingUpload.current = form;
-            void upload.submit(form, {
-              action: "/photo-analysis",
-              method: "post",
-              encType: "multipart/form-data",
-            });
-            event.target.value = "";
-          }}
-        />
-      </label>
+            aria-label="Take photo · AI calories"
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            capture="environment"
+            disabled={pending || readiness.state === "unavailable"}
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              if (!file) return;
+              void navigate(`/?date=${date}`);
+              if (file.size > 8388608) {
+                setError("Choose a photo up to 8 MB.");
+                return;
+              }
+              setError(undefined);
+              setPreview(URL.createObjectURL(file));
+              const form = new FormData();
+              form.set("intent", "start");
+              form.set("date", date);
+              form.set("csrfToken", csrfToken);
+              form.set("idempotencyKey", crypto.randomUUID());
+              form.set("photo", file);
+              pendingUpload.current = form;
+              void upload.submit(form, {
+                action: "/photo-analysis",
+                method: "post",
+                encType: "multipart/form-data",
+              });
+              event.target.value = "";
+            }}
+          />
+        </label>
+        {readiness.state === "unavailable" ? (
+          <div
+            className={methodStyles.availability}
+            data-open={availabilityOpen || undefined}
+          >
+            <button
+              aria-controls="photo-analysis-readiness"
+              aria-expanded={availabilityOpen}
+              aria-label="Why AI photo is unavailable"
+              className={methodStyles.availabilityTrigger}
+              onClick={() => setAvailabilityOpen(open => !open)}
+              type="button"
+            >
+              <UiIcon name="help" />
+            </button>
+            <div
+              aria-label="AI photo unavailable"
+              className={methodStyles.availabilityPopover}
+              id="photo-analysis-readiness"
+              role="note"
+            >
+              <p>{readiness.reason}</p>
+              {readiness.destination ? (
+                <Link to={readiness.destination}>Open settings</Link>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
+      </div>
     ),
     feedback: pending || error || upload.data?.error ? (
       <>
@@ -85,6 +126,9 @@ export function usePhotoUpload(date: string, csrfToken: string) {
             <div>
               <strong>Photo upload failed</strong>
               <p>{error ?? upload.data?.error}</p>
+              {upload.data?.destination ? (
+                <Link to={upload.data.destination}>Open settings</Link>
+              ) : null}
               {pendingUpload.current ? (
                 <button type="button" onClick={() => {
                   void upload.submit(pendingUpload.current, {
@@ -218,7 +262,14 @@ export function PhotoMealStatus({ meal, csrfToken }: { meal: PhotoMeal; csrfToke
           </>
         ) : null}
       </action.Form>
-      {action.data?.error ? <p role="alert">{action.data.error}</p> : null}
+      {action.data?.error ? (
+        <p role="alert">
+          {action.data.error}
+          {action.data.destination ? (
+            <> <Link to={action.data.destination}>Open settings</Link></>
+          ) : null}
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -249,6 +300,11 @@ export function PhotoCorrection({
       />
       <details>
         <summary>Components, sources and assumptions</summary>
+        {meal.provenanceState === "legacy" ? (
+          <p>
+            <small>Legacy analysis · detailed matching provenance unavailable</small>
+          </p>
+        ) : null}
         <p>Consumed fraction: {meal.result?.consumedFraction}</p>
         {meal.result?.components.map((component) => (
           <p key={component.id}>
@@ -257,11 +313,11 @@ export function PhotoCorrection({
             <br />
             {component.source.kind === "usda"
               ? `USDA${component.source.dataType ? ` ${component.source.dataType}` : ""} · FDC ${component.source.fdcId}`
-              : `AI estimate: ${component.source.reason}`}
+              : `${meal.provenanceState === "recorded" ? "Gemini" : "AI"} estimate: ${component.source.reason}`}
             {component.supplements.map((item) => (
               <span key={item.nutrient}>
                 <br />
-                AI estimate for {item.nutrient}: {item.amount} — {item.reason}
+                {`${meal.provenanceState === "recorded" ? "Gemini" : "AI"} estimate for ${item.nutrient}: ${item.amount} — ${item.reason}`}
               </span>
             ))}
           </p>
@@ -294,7 +350,14 @@ export function PhotoCorrection({
               ? "Apply correction"
               : "Starting correction…"}
           </button>
-          {action.data?.error ? <p role="alert">{action.data.error}</p> : null}
+          {action.data?.error ? (
+            <p role="alert">
+              {action.data.error}
+              {action.data.destination ? (
+                <> <Link to={action.data.destination}>Open settings</Link></>
+              ) : null}
+            </p>
+          ) : null}
         </action.Form>
       ) : (
         <button type="button" onClick={() => setKey(crypto.randomUUID())}>

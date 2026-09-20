@@ -42,12 +42,13 @@ COPY --from=build --chown=node:node /app/scripts ./scripts
 COPY --from=build --chown=node:node /app/server/http-host.js /app/server/operational-logging.js /app/server/startup-configuration.js ./server/
 COPY --from=build --chown=node:node /app/server.js ./server.js
 
-RUN mkdir -p /app/data \
-  && chown node:node /app/data
+RUN mkdir -p /app/data /app/secrets \
+  && chown node:node /app/data /app/secrets \
+  && chmod 0700 /app/secrets
 
 USER node
 
-VOLUME ["/app/data"]
+VOLUME ["/app/data", "/app/secrets"]
 EXPOSE 3000 3002
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \

@@ -1,7 +1,8 @@
 # Production deployment
 
-Run one application container with persistent `/app/data`; both entries share
-SQLite, accounts, roles and nutrition data. The supported path on `svc-01` is:
+Run one application container with persistent `/app/data` and a separately
+persisted `/app/secrets`; both entries share SQLite, accounts, roles and
+nutrition data. The supported path on `svc-01` is:
 
 ```text
 public HTTPS -> Cloudflare -> cloudflared on svc-01 -> localhost:3001 -> application:3000
@@ -16,13 +17,19 @@ by other services is not part of this application's path.
 
 Create the Git stack from `https://github.com/diegoagd10/open-calory-tracker.git`
 with Compose path `docker-compose.yml` and the intended verified Git reference.
-Before deploying, create `DATA_PATH`, writable by UID/GID 1000, and back up the
-entire directory for existing installations.
+Before deploying, create `DATA_PATH` and `APPLICATION_SECRETS_MOUNT_PATH` as
+distinct host directories writable by UID/GID 1000, and set the secrets
+directory to mode `0700`. Back up the data and secrets with separate access
+controls; a routine data backup must not contain both the credential ciphertext
+and its master key.
 
 | Variable | Value |
 | --- | --- |
 | `APPLICATION_URL` | Exact public HTTPS origin, initially `https://calorie.dagdappshub.com`. No credentials, path, query or fragment. |
 | `DATA_PATH` | Persistent host directory, for example `/srv/open-calory-tracker/data`. |
+| `APPLICATION_SECRETS_MOUNT_PATH` | Separate persistent host secrets directory, for example `/srv/open-calory-tracker/secrets`. It must have mode `0700`; do not place it under `DATA_PATH`. |
+| `APPLICATION_SECRETS_PATH` | Generic in-container secrets directory and secrets-mount target, default `/app/secrets`; normally leave unchanged. |
+| `APPLICATION_MASTER_KEY_PATH` | Optional generic 32-byte application-master-key file override. When omitted, it defaults to `application-master.key` inside `APPLICATION_SECRETS_PATH`. |
 | `WEBAUTHN_ENROLLMENT_PREVIEW` | Optional WebAuthn enrollment preview. Defaults to `0`; set to `1` only for an isolated preview installation after reviewing [Key enrollment preview](#key-enrollment-preview). |
 | `LAN_URL` | Optional exact HTTP server IP and port, initially `http://192.168.4.21:3002`. Any client with connectivity may use it. Omit it to disable LAN. |
 | `LAN_BIND_IP` | Host IP for the LAN mapping, initially `192.168.4.21`. Keep it consistent with `LAN_URL`. |
@@ -38,7 +45,13 @@ If the server IP or external LAN port changes, update `LAN_URL` and its mapping
 together. A disabled LAN listener can retain an unused Docker mapping, but no
 application serves it.
 
-Photo provider/model/auth settings retain the Compose defaults. Optional catalog
+Provider credentials and model choices are configured only through administrator
+Settings; Compose has no provider selector, provider key, or provider auth-file
+option. The application, running as UID/GID 1000, creates the generic master key
+on first startup with mode `0600`. Losing only the secrets mount leaves accounts,
+meals, history and catalogs intact, but encrypted external credentials become
+unreadable and must be entered again in Settings.
+Optional catalog
 limits and storage configuration are described in [USDA operations](local-usda-catalog.md),
 [OFF operations](local-off-catalog.md) and the [catalog workflow](food-catalog-operations.md).
 No USDA/OFF lookup API credentials are needed. Barcode and food lookups use the
@@ -225,25 +238,68 @@ After success, verify the installed generation in **Settings → Food Catalogs**
 then remove the copied source archive if it is no longer needed. Do not remove
 UUID-named files from the catalog directory.
 
-## Connect AI from Settings
+## Configure Photo Analysis credentials
 
-For a local process, sign in as the administrator and open **Settings → AI photo
-estimates → Connect OpenAI**. Follow the browser authorization link and approve.
-Pi receives the callback on `localhost:1455` and Settings detects completion
-automatically. This does not require entering a code or token or enabling
-device-code login.
+Sign in as the administrator and open **Settings → AI photo estimates**. Enter
+the Gemini and TypeSafe API keys together. The application validates both before
+atomically replacing the encrypted shared bundle; it never returns saved values
+to the browser. Replacing the pair needs no additional password or key ceremony.
+Deletion requires checking the explicit confirmation and affects future bundle
+reads without deleting users, meals, Food Entries, history or catalogs.
 
-The browser and the Pi process must share the same localhost. A browser on a
-different machine, or on the host while Pi runs in the default isolated Compose
-network, cannot reach that callback directly. Do not expose the callback publicly;
-use a trusted loopback tunnel or provision Pi's auth file on the application host.
+Replacement validates both new keys before atomically replacing the working
+pair. A validation failure leaves the previous pair active. Deletion disables
+new starts, corrections, and retries; attempts that already captured a pair may
+finish. Keys belong in Settings, not Compose variables, shell profiles, catalog
+directories, or deployment logs.
 
-The default Compose configuration persists the connection at
-`DATA_PATH/pi/auth.json` on the host. Preserve the existing `DATA_PATH` when
-updating. No extra AI variables are required for the default provider and model;
+The encrypted bundle lives in the application database, while its AES-256-GCM
+master key lives only at `APPLICATION_MASTER_KEY_PATH`. Persist the secrets mount
+across container replacement and keep its containing directory at mode `0700`.
+If that key file is missing, startup creates a new one, Settings reports that the
+old bundle needs re-entry, and saving a newly validated pair replaces the
+unreadable row.
+
+Back up the master key with the secrets mount under access controls separate from
+the data backup. Restoring credentials requires the database ciphertext and the
+matching master key. If the key is lost, do not restore or copy arbitrary key
+bytes: allow the service user to create a replacement, sign in as administrator,
+and re-enter both provider keys. Key loss does not recalculate or remove existing
+Photo Analysis history.
+
+## Verify Photo Analysis readiness
+
+After saving the Gemini and TypeSafe credential pair, select available models and
+thresholds in **Settings → AI photo estimates**. Install or reimport USDA
+Foundation from the terminal workflow, then confirm **New-attempt readiness** is
+**Ready**. The readiness card links to Food Catalogs when catalog recovery is
+required. Do not expose provider keys as environment variables or copy them into
+the catalog directory.
+
+Gemini receives the validated image and bounded meal/correction context. TypeSafe
+receives Gemini's structured observations and bounded locally installed USDA
+category/candidate descriptions, not the image. The application validates the
+choices and performs authoritative USDA arithmetic locally. Every attempt has
+one five-second deadline; a provider, schema, catalog, or deadline failure leaves
+the attempt failed and requires an explicit retry.
+
 Install USDA Foundation with the [terminal workflow](../README.md#install-food-catalogs-from-the-terminal) for local food search, photo evidence, and logging; Food Catalogs shows availability and update checks. No USDA API key is used at runtime.
-See [photo-analysis.md](photo-analysis.md#operator-setup) for reconnect,
-disconnect, and provider prerequisites.
+See [photo-analysis.md](photo-analysis.md#operator-setup) for provider and
+readiness details.
+
+## Upgrade from the retired photo provider
+
+Redeploying this release does not recalculate existing photo history or Food
+Entries. Manual USDA search, barcode/OFF lookup, and other Food Entry methods are
+unchanged. An older USDA generation remains available to manual search but must
+be reimported normally before it can support new photos.
+
+The application no longer reads, writes, or deletes the legacy credential file
+at `data/pi/auth.json`; it has no retired-provider fallback or selection switch.
+Leave that operator-owned file untouched during this deployment. Only after the
+Gemini/Jev live smoke and deployed Photo Analysis are verified should the human
+operator follow `TKT-aab75c6c` to remove that exact file in a maintenance window.
+Application automation must not perform that cleanup.
 
 ## Updates and backups
 
@@ -261,7 +317,9 @@ Do not delete UUID-named catalog files by hand. Startup removes abandoned artifa
 Use a short maintenance window:
 
 1. Stop the application so SQLite has no writer.
-2. Back up the complete `DATA_PATH`, including the SQLite WAL-related files.
+2. Back up the complete `DATA_PATH`, including the SQLite WAL-related files. Back
+   up `APPLICATION_SECRETS_MOUNT_PATH` separately with tighter access controls;
+   do not merge it into the routine data backup.
 3. Pull and redeploy the Git stack.
 4. Wait for readiness, then verify login and a known historical entry.
 

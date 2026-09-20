@@ -26,7 +26,8 @@ import {
   getApplicationMutationSession,
   readApplicationMutationForm,
 } from "../auth/http.server";
-import { getPhotoAnalysisService } from "../photo-analysis/runtime.server";
+import { getPhotoAnalysisReadiness, getPhotoAnalysisService } from "../photo-analysis/runtime.server";
+import { presentPhotoAnalysisReadiness } from "./photo-analysis-readiness";
 import { PhotoMealCard, PhotoMealStatus, PhotoCorrection, usePhotoMealPolling, usePhotoUpload } from "./photo-meals";
 import { DateRail } from "../date-rail";
 import { AppNavigation } from "../app-navigation";
@@ -376,6 +377,10 @@ export async function loader({ request }: Route.LoaderArgs) {
   }
   if (!foodLog) return redirect("/setup");
   const photoMeals = getPhotoAnalysisService().list(session.user.id, foodLog.selectedDate);
+  const photoAnalysisReadiness = presentPhotoAnalysisReadiness(
+    await getPhotoAnalysisReadiness(),
+    session.user.role,
+  );
 
   const copyIdempotencyKeys =
     foodLog.selectedDate < foodLog.today
@@ -707,6 +712,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       csrfToken: session.csrfToken,
       foodEntryEditor,
       photoMeals,
+      photoAnalysisReadiness,
       foodLog,
       nearbyDates,
       notice: noticeMessage(noticeKind, copiedFood, foodLog.today),
@@ -3677,11 +3683,16 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
     foodEntryEditor,
     foodLog,
     photoMeals = [],
+    photoAnalysisReadiness = { state: "ready" as const },
     nearbyDates,
     notice,
     waterDialog,
   } = loaderData;
-  const photoUpload = usePhotoUpload(foodLog.selectedDate, csrfToken);
+  const photoUpload = usePhotoUpload(
+    foodLog.selectedDate,
+    csrfToken,
+    photoAnalysisReadiness,
+  );
   usePhotoMealPolling(photoMeals);
   const activeFoodEntryEditor =
     actionData?.foodEntryEditor ?? foodEntryEditor;

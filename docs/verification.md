@@ -190,16 +190,30 @@ The opt-in command test runs both recovery entries in the built container,
 then checks password sign-in, retained keys, session revocation, and forced
 password replacement. It never uses the deployment's persistent database.
 
-## Credentialed external suite
+## Credentialed Photo Analysis smoke
 
-The credentialed AI photo pilot remains separate:
+The opt-in smoke uses real Gemini and TypeSafe accounts, imports a supplied USDA
+Foundation archive into a temporary catalog, verifies selected model
+availability, analyzes one food image with source provenance, rejects one
+non-food image, and applies the production five-second deadline:
 
 ```sh
-PHOTO_PILOT_DATASET=... PHOTO_AI_AUTH_PATH=... PHOTO_PILOT_USDA_ARCHIVE=... pnpm test:photo-live
+GEMINI_API_KEY=... \
+TYPESAFE_API_KEY=... \
+PHOTO_ANALYSIS_USDA_ARCHIVE=... \
+PHOTO_ANALYSIS_FOOD_IMAGE=... \
+PHOTO_ANALYSIS_FOOD_MIME_TYPE=image/jpeg \
+PHOTO_ANALYSIS_NON_FOOD_IMAGE=... \
+PHOTO_ANALYSIS_NON_FOOD_MIME_TYPE=image/jpeg \
+PHOTO_ANALYSIS_GEMINI_MODEL=gemini-3.1-flash-lite \
+PHOTO_ANALYSIS_JEV_MODEL=jev-1.13.0 \
+pnpm test:photo-live
 ```
 
-The photo pilot requires its AI-provider credentials, a local USDA Foundation
-archive, and outbound AI access. No GitHub workflow runs it automatically.
+The smoke requires both provider credentials, a local USDA Foundation archive,
+two private images, and outbound AI access. It does not print or persist the
+keys, images, provider payloads, or results. It consumes provider usage, makes no
+accuracy claim, and no automated verification or publishing workflow runs it.
 
 ## Fallow baselines
 

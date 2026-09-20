@@ -1,25 +1,30 @@
-import path from "node:path";
 import { z } from "zod";
 import { getApplicationDatabase } from "../database/runtime.server";
+import { createDatabaseApplicationMetadata } from "../database/application-metadata.server";
 import type { ApplicationDatabaseClient } from "../database/database.server";
-import { getUsdaAnalysisReader } from "../catalog/runtime.server";
+import { initializeCredentialStorage, shutdownCredentialStorage } from "../credentials/runtime.server";
+import { getUsdaAnalysisReader, getUsdaPhotoAnalysisCatalog } from "../catalog/runtime.server";
 import { PhotoAnalysisService } from "./photo-analysis.server";
-import { PiPhotoAnalyzer, piCompletion } from "./pi.server";
-import { PiConnectionService } from "./pi-connection.server";
-import { TestPhotoAnalyzer } from "./test-fixture.server";
+import { PhotoAnalysisCredentials } from "./credentials.server";
+import { RemotePhotoAnalysisCredentialValidator } from "./provider-credential-validation.server";
+import { PhotoAnalysisConfigurationService } from "./configuration.server";
+import { RemotePhotoAnalysisModelDiscovery } from "./model-discovery.server";
+import { TestPhotoAnalysisCredentialValidator, TestPhotoAnalysisModelDiscovery, TestPhotoAnalysisReadiness, TestPhotoAnalyzer } from "./test-fixture.server";
+import {
+  fixedPhotoAnalysisAttemptSource,
+  GeminiJevPhotoAnalysisAttemptSource,
+  readinessGatedPhotoAnalysisAttemptSource,
+} from "./attempts.server";
+import {
+  PhotoAnalysisReadinessService,
+  type PhotoAnalysisReadiness,
+  type PhotoAnalysisReadinessInput,
+} from "./readiness.server";
 
 const environmentSchema = z.object({
-  PHOTO_AI_PROVIDER: z.string().min(1).default("openai-codex"),
-  PHOTO_AI_MODEL: z.string().min(1).default("gpt-5.6-luna"),
-  PHOTO_AI_REASONING: z
-    .enum(["minimal", "low", "medium", "high"])
-    .default("low"),
-  PHOTO_AI_AUTH_PATH: z
-    .string()
-    .min(1)
-    .default(path.resolve("data/pi/auth.json")),
-  PHOTO_AI_USDA_ROUNDS: z.coerce.number().int().min(1).max(5).default(3),
   PHOTO_ANALYSIS_TEST_FIXTURE: z.enum(["0", "1"]).optional(),
+  PHOTO_CREDENTIAL_VALIDATION_TEST_FIXTURE: z.enum(["0", "1"]).optional(),
+  PHOTO_MODEL_DISCOVERY_TEST_FIXTURE: z.enum(["0", "1"]).optional(),
   FOOD_LOG_TEST_NOW: z.string().optional(),
 });
 let current:
@@ -31,46 +36,117 @@ export function getPhotoAnalysisService() {
   if (current?.db === db) return current.service;
   const config = environmentSchema.parse(process.env);
   const test = process.env.NODE_ENV === "test";
+  const fixture = test && config.PHOTO_ANALYSIS_TEST_FIXTURE === "1";
+  const readiness = fixture
+    ? new TestPhotoAnalysisReadiness(createDatabaseApplicationMetadata(db))
+    : undefined;
+  const attempts = fixture
+    ? readinessGatedPhotoAnalysisAttemptSource(
+        fixedPhotoAnalysisAttemptSource(new TestPhotoAnalyzer()),
+        readiness!,
+      )
+    : new GeminiJevPhotoAnalysisAttemptSource(
+        {
+          captureAttemptConfiguration: async (signal) =>
+            await (
+              await getPhotoAnalysisConfiguration()
+            ).captureAttemptConfiguration(signal),
+        },
+        getUsdaPhotoAnalysisCatalog(),
+      );
   const service = new PhotoAnalysisService(
     db,
-    test && config.PHOTO_ANALYSIS_TEST_FIXTURE === "1"
-      ? new TestPhotoAnalyzer()
-      : new PiPhotoAnalyzer(
-          piCompletion({
-            authPath: config.PHOTO_AI_AUTH_PATH,
-            provider: config.PHOTO_AI_PROVIDER,
-            model: config.PHOTO_AI_MODEL,
-            reasoning: config.PHOTO_AI_REASONING,
-          }),
-        ),
+    attempts,
     {
       now:
         test && config.FOOD_LOG_TEST_NOW
           ? () => new Date(config.FOOD_LOG_TEST_NOW!)
           : undefined,
-      usda: getUsdaAnalysisReader(),
-      rounds: config.PHOTO_AI_USDA_ROUNDS,
+      ...(fixture ? { usda: getUsdaAnalysisReader() } : {}),
     },
   );
   current = { db, service };
   return service;
 }
 
-let connection: { key: string; service: PiConnectionService } | undefined;
-
-export function getPiConnectionService() {
+export async function getPhotoAnalysisReadiness(
+  input?: PhotoAnalysisReadinessInput,
+): Promise<PhotoAnalysisReadiness> {
+  const db = getApplicationDatabase().getClient();
   const config = environmentSchema.parse(process.env);
-  const key = JSON.stringify([config.PHOTO_AI_AUTH_PATH, config.PHOTO_AI_PROVIDER]);
-  if (connection?.key !== key) {
-    connection?.service.shutdown();
-    connection = { key, service: new PiConnectionService(config.PHOTO_AI_AUTH_PATH, config.PHOTO_AI_PROVIDER) };
+  if (
+    process.env.NODE_ENV === "test" &&
+    config.PHOTO_ANALYSIS_TEST_FIXTURE === "1"
+  ) {
+    return await new TestPhotoAnalysisReadiness(
+      createDatabaseApplicationMetadata(db),
+    ).read();
   }
-  return connection.service;
+  try {
+    const service = new PhotoAnalysisReadinessService(
+      await getPhotoAnalysisCredentials(),
+      await getPhotoAnalysisConfiguration(),
+      getUsdaPhotoAnalysisCatalog(),
+    );
+    return await service.read(input);
+  } catch {
+    return { state: "unavailable", code: "unreadable-credentials" };
+  }
+}
+
+let credentials: Promise<PhotoAnalysisCredentials> | undefined;
+
+export function getPhotoAnalysisCredentials(): Promise<PhotoAnalysisCredentials> {
+  credentials ??= initializeCredentialStorage()
+    .then(bundles => {
+      const config = environmentSchema.parse(process.env);
+      const validator = process.env.NODE_ENV === "test" && config.PHOTO_CREDENTIAL_VALIDATION_TEST_FIXTURE === "1"
+        ? new TestPhotoAnalysisCredentialValidator()
+        : new RemotePhotoAnalysisCredentialValidator();
+      return new PhotoAnalysisCredentials(bundles, validator);
+    })
+    .catch(error => {
+      credentials = undefined;
+      configuration = undefined;
+      throw error;
+    });
+  return credentials;
+}
+
+export async function getPhotoAnalysisCredentialStatus() {
+  try {
+    return await (await getPhotoAnalysisCredentials()).status();
+  } catch {
+    return { state: "storage-unavailable" as const };
+  }
+}
+
+let configuration: Promise<PhotoAnalysisConfigurationService> | undefined;
+
+export function getPhotoAnalysisConfiguration(): Promise<PhotoAnalysisConfigurationService> {
+  configuration ??= getPhotoAnalysisCredentials()
+    .then(credentialService => {
+      const config = environmentSchema.parse(process.env);
+      const discovery = process.env.NODE_ENV === "test" && config.PHOTO_MODEL_DISCOVERY_TEST_FIXTURE === "1"
+        ? new TestPhotoAnalysisModelDiscovery()
+        : new RemotePhotoAnalysisModelDiscovery();
+      return new PhotoAnalysisConfigurationService(
+        createDatabaseApplicationMetadata(getApplicationDatabase().getClient()),
+        credentialService,
+        discovery,
+      );
+    })
+    .catch(error => {
+      configuration = undefined;
+      throw error;
+    });
+  return configuration;
 }
 
 export function shutdownPhotoAnalysis() {
-  connection?.service.shutdown();
-  connection = undefined;
   current?.service.shutdown();
   current = undefined;
+  credentials = undefined;
+  configuration = undefined;
+  shutdownCredentialStorage();
 }

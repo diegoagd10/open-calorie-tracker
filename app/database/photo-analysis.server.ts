@@ -40,6 +40,19 @@ export class PhotoAnalysisStore {
       .run();
   }
 
+  recordDiagnostics(attemptId: string, diagnostics: string) {
+    this.db
+      .update(photoAttempts)
+      .set({ diagnostics })
+      .where(
+        and(
+          eq(photoAttempts.id, attemptId),
+          eq(photoAttempts.status, "active"),
+        ),
+      )
+      .run();
+  }
+
   interrupt(at: string) {
     this.db
       .update(photoAttempts)
@@ -163,12 +176,13 @@ export class PhotoAnalysisStore {
     attemptId: string,
     snapshot: PhotoSnapshot,
     result: string,
+    diagnostics: string | null,
     at: string,
   ) {
     this.db.transaction((tx) => {
       const active = tx
         .update(photoAttempts)
-        .set({ status: "succeeded", finishedAt: at, result })
+        .set({ status: "succeeded", finishedAt: at, result, diagnostics })
         .where(
           and(
             eq(photoAttempts.id, attemptId),

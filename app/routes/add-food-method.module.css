@@ -24,6 +24,86 @@
   transition: background 150ms ease, border-color 150ms ease;
 }
 
+.captureMethod {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.captureMethod .method {
+  flex: 1;
+}
+
+.availability {
+  position: absolute;
+  z-index: 2;
+  top: 0.65rem;
+  right: 0.65rem;
+}
+
+.availabilityTrigger {
+  display: grid;
+  width: 1.75rem;
+  height: 1.75rem;
+  padding: 0;
+  place-items: center;
+  border: 1px solid #9aac9d;
+  border-radius: 999px;
+  color: var(--green-dark);
+  background: var(--surface);
+  cursor: help;
+  list-style: none;
+}
+
+.availabilityTrigger:hover {
+  border-color: var(--green);
+  background: #edf6ed;
+}
+
+.availabilityTrigger:focus-visible {
+  outline: 3px solid var(--blue);
+  outline-offset: 2px;
+}
+
+.availabilityTrigger svg {
+  width: 1.1rem;
+  height: 1.1rem;
+}
+
+.availabilityPopover {
+  position: absolute;
+  top: calc(100% + 0.45rem);
+  left: 0;
+  display: none;
+  width: min(15rem, calc(100vw - 2.5rem));
+  padding: 0.75rem;
+  border: 1px solid var(--rule);
+  border-radius: 0.75rem;
+  color: var(--ink);
+  background: var(--surface);
+  box-shadow: 0 0.5rem 1.5rem rgb(22 39 29 / 14%);
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+
+.availability:hover .availabilityPopover,
+.availability:focus-within .availabilityPopover,
+.availability[data-open] .availabilityPopover {
+  display: block;
+}
+
+.availabilityPopover p {
+  margin: 0;
+}
+
+.availabilityPopover a {
+  display: inline-block;
+  margin-top: 0.45rem;
+  color: var(--green-dark);
+  font-weight: 700;
+}
+
 .method:hover {
   border-color: var(--green);
   background: var(--surface-soft);

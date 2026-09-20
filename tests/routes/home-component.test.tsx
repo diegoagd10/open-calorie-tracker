@@ -978,6 +978,38 @@ test("Add Food offers search, barcode, and manual paths before any provider runs
   await act(async () => renderer.unmount());
 });
 
+test("Add Food disables only AI photo capture and presents role-appropriate recovery", async () => {
+  const member = await renderHome({
+    catalog: { mode: "choose", query: "" },
+    photoAnalysisReadiness: {
+      state: "unavailable",
+      reason: "AI photo analysis is not available right now.",
+    },
+  });
+  expect(member.root.findByProps({ "aria-label": "Take photo · AI calories" }).props.disabled).toBe(true);
+  expect(member.root.findByProps({ "aria-label": "Add Food methods" }).children).toHaveLength(4);
+  expect(allText(member)).toContain("AI photo analysis is not available right now.");
+  expect(allText(member)).toContain("Search food");
+  expect(allText(member)).toContain("Manual");
+  expect(member.root.findAllByProps({ href: "/settings/ai" })).toHaveLength(0);
+  await act(async () => member.unmount());
+
+  const administrator = await renderHome({
+    catalog: { mode: "choose", query: "" },
+    photoAnalysisReadiness: {
+      state: "unavailable",
+      reason: "Configure Gemini and TypeSafe credentials.",
+      destination: "/settings/ai",
+    },
+  });
+  expect(administrator.root.findByProps({ "aria-label": "Take photo · AI calories" }).props.disabled).toBe(true);
+  expect(allText(administrator)).toContain("Configure Gemini and TypeSafe credentials.");
+  expect(administrator.root.findByProps({ "aria-label": "Why AI photo is unavailable" })).toBeDefined();
+  expect(administrator.root.findByProps({ "aria-label": "AI photo unavailable" }).props.role).toBe("note");
+  expect(administrator.root.findByProps({ href: "/settings/ai" })).toBeDefined();
+  await act(async () => administrator.unmount());
+});
+
 test("manual Food Entry form keeps entered totals when quantity changes and restores invalid drafts", async () => {
   const catalog = {
     idempotencyKey: "manual-form-key",

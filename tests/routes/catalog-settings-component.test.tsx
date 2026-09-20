@@ -4,14 +4,16 @@ import { act, create, type ReactTestInstance, type ReactTestRenderer } from "rea
 import { afterEach, expect, test, vi } from "vitest";
 import CatalogSettings, { meta } from "../../app/routes/settings.catalogs";
 import type { CatalogState, ImportPhase } from "../../app/catalog-management/catalog-management.server";
+import type { UsdaPhotoAnalysisReadiness } from "../../app/catalog/usda-evidence";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const renderers: ReactTestRenderer[] = [];
 afterEach(async () => { for (const renderer of renderers.splice(0)) await act(() => renderer.unmount()); vi.useRealTimers(); vi.unstubAllGlobals(); });
 const empty: CatalogState = { installed: null, job: null, busy: false };
+type CatalogFixture = CatalogState & { photoAnalysisReadiness?: UsdaPhotoAnalysisReadiness };
 function job(phase: ImportPhase): NonNullable<CatalogState["job"]> { return { id: "job", filename: "archive.gz", phase, receivedBytes: 1234, processedRecords: 5678, importedRecords: 4321, rejectedRecords: 123, exclusions: {}, error: null, startedAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z" }; }
 function text(node: ReactTestInstance): string { return node.children.map(child => typeof child === "string" ? child : text(child)).join(""); }
-async function render(catalog = empty, offCatalog = empty) {
+async function render(catalog: CatalogFixture = empty, offCatalog: CatalogFixture = empty) {
   const load = vi.fn(() => ({ catalog, offCatalog, today: "2026-09-08", csrfToken: "catalog-csrf" }));
   const Routes = createRoutesStub([{ path: "/settings/catalogs", id: "catalogs", Component: CatalogSettings, loader: load }]);
   let renderer!: ReactTestRenderer;
@@ -19,6 +21,17 @@ async function render(catalog = empty, offCatalog = empty) {
   renderers.push(renderer);
   return { renderer, load, card: (provider: string) => renderer.root.findByProps({ "aria-labelledby": `${provider}-heading` }) };
 }
+
+test("USDA reports concise Photo Analysis readiness without changing the OFF card", async () => {
+  const installed = { generation: "generation", filename: "foundation.zip", sha256: "abc", installedAt: "2026-01-02T03:04:05.000Z", foodCount: 4, publicationDateRange: { earliest: "2019-04-01", latest: "2026-04-30" } };
+  const legacy = await render({ ...empty, installed, photoAnalysisReadiness: { state: "reimport-required", generation: "generation" } });
+  expect(text(legacy.card("usda-fdc"))).toContain("Photo Analysis: Reimport required");
+  expect(text(legacy.card("open-food-facts"))).not.toContain("Photo Analysis");
+
+  const capable = await render({ ...empty, installed, photoAnalysisReadiness: { state: "ready", generation: "generation" } });
+  expect(text(capable.card("usda-fdc"))).toContain("Photo Analysis: Ready");
+  expect(text(capable.card("open-food-facts"))).not.toContain("Photo Analysis");
+});
 
 test("each catalog card shows availability, official downloads and metadata controls without installation controls", async () => {
   expect(meta()).toEqual([{ title: "Food Catalogs · Open Calorie Tracker" }]);

@@ -7,12 +7,9 @@ services:
     restart: unless-stopped
     environment:
       APPLICATION_URL: "${APPLICATION_URL:?Set the canonical HTTPS application origin}"
+      APPLICATION_SECRETS_PATH: "${APPLICATION_SECRETS_PATH:-/app/secrets}"
+      APPLICATION_MASTER_KEY_PATH:
       WEBAUTHN_ENROLLMENT_PREVIEW: "${WEBAUTHN_ENROLLMENT_PREVIEW:-0}"
-      PHOTO_AI_PROVIDER: "${PHOTO_AI_PROVIDER:-openai-codex}"
-      PHOTO_AI_MODEL: "${PHOTO_AI_MODEL:-gpt-5.6-luna}"
-      PHOTO_AI_REASONING: "${PHOTO_AI_REASONING:-low}"
-      PHOTO_AI_AUTH_PATH: "${PHOTO_AI_AUTH_PATH:-/app/data/pi/auth.json}"
-      PHOTO_AI_USDA_ROUNDS: "${PHOTO_AI_USDA_ROUNDS:-3}"
       PORT: "${PORT:-3000}"
       LAN_URL: "${LAN_URL:-}"
       LAN_PORT: "${LAN_PORT:-3002}"
@@ -23,3 +20,6 @@ services:
       - type: bind
         source: "${DATA_PATH:?Set DATA_PATH to the host data directory}"
         target: /app/data
+      - type: bind
+        source: "${APPLICATION_SECRETS_MOUNT_PATH:?Set APPLICATION_SECRETS_MOUNT_PATH to the separate host secrets directory}"
+        target: "${APPLICATION_SECRETS_PATH:-/app/secrets}"

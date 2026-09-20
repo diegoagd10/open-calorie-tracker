@@ -44,6 +44,7 @@ const meal: Meal = {
   finishedAt: "2026-09-05T03:59:10.000Z",
   error: null,
   energyMilliKcal: 250400,
+  provenanceState: "recorded",
   result: {
     name: "AI dinner",
     consumedFraction: 0.5,
@@ -385,10 +386,10 @@ test("correction details retain provenance and the repeatable form submits the o
     "Rice",
     "200",
     "USDA Foundation · FDC 700",
-    "AI estimate for ",
+    "Gemini estimate for ",
     "proteinGrams",
     "Missing from reference",
-    "AI estimate: No suitable match",
+    "Gemini estimate: No suitable match",
     "Estimated rice weight",
   ])
     expect(text()).toContain(value);
@@ -455,6 +456,21 @@ test("correction details retain provenance and the repeatable form submits the o
   state.navigate.mockClear();
   await act(() => { renderer = create(createElement(PhotoCorrection, { meal, csrfToken: "csrf-photo" })); });
   expect(state.navigate).not.toHaveBeenCalled();
+});
+
+test("legacy meals remain readable without claiming unavailable matching provenance", async () => {
+  await act(() => {
+    renderer = create(
+      createElement(PhotoCorrection, {
+        meal: { ...meal, provenanceState: "legacy" },
+        csrfToken: "csrf-photo",
+      }),
+    );
+  });
+
+  expect(text()).toContain("Legacy analysis · detailed matching provenance unavailable");
+  expect(text()).toContain("AI estimate: No suitable match");
+  expect(text()).not.toContain("Gemini estimate: No suitable match");
 });
 
 test("recovery controls stay usable when idle and lock while their request submits", async () => {

@@ -1,14 +1,15 @@
-import { mkdtemp, readFile, rm, readdir, stat, writeFile, mkdir } from "node:fs/promises";
+import { chmod, mkdtemp, readFile, rm, readdir, stat, writeFile, mkdir } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import BetterSqlite3 from "better-sqlite3";
 import { PassThrough, Readable } from "node:stream";
 import { pathToFileURL } from "node:url";
 import { afterEach, expect, test, vi } from "vitest";
 import { CatalogManagement, type CatalogImportJob, type CatalogManagementOptions } from "../app/catalog-management/catalog-management.server";
 import { LocalUsdaAdapter } from "../app/catalog/local-usda.server";
 import { TestFoodCatalogProvider, TestOpenFoodFactsProvider } from "../app/catalog/test-fixture.server";
-import { FoodCatalog } from "../app/catalog/food-catalog.server";
+import { CatalogReimportRequiredError, CatalogUnavailableError, FoodCatalog } from "../app/catalog/food-catalog.server";
 import { openApplicationDatabase } from "../app/database/database.server";
 import { saveCatalogState } from "../app/database/catalog-state.server";
 import { users, userPreferences } from "../app/database/schema.server";
@@ -63,6 +64,176 @@ test("an installed Foundation catalog supplies bounded photo evidence without in
   await expect(local.getEvidence("747447", new AbortController().signal)).resolves.toEqual(evidence[0]);
 });
 
+test("an installed Foundation generation exposes one category-scoped Photo Analysis snapshot", async () => {
+  const { management, local, catalog } = await setup();
+  await management.submitArchive({ filename: "foundation.zip", stream: Readable.from(await foundationArchive()) });
+  await vi.waitFor(() => expect(management.read().busy).toBe(false));
+
+  const result = await local.withPhotoAnalysisSnapshot(new AbortController().signal, async snapshot => ({
+    generation: snapshot.generation,
+    categories: snapshot.categories(),
+    vegetables: snapshot.candidates("11"),
+    grains: snapshot.candidates("20"),
+    evidence: snapshot.evidence("747447"),
+    eggEvidence: snapshot.evidence("748967"),
+    rejectsIncompleteEvidence: (() => {
+      try { snapshot.evidence("2758999"); return false; } catch { return true; }
+    })(),
+  }));
+
+  expect(result.generation).toBe(management.read().installed?.generation);
+  expect(result.categories).toEqual([
+    { id: "20", name: "Cereal Grains and Pasta" },
+    { id: "1", name: "Dairy and Egg Products" },
+    { id: "16", name: "Legumes and Legume Products" },
+    { id: "11", name: "Vegetables and Vegetable Products" },
+  ]);
+  expect(result.vegetables).toEqual([
+    { fdcId: "321900", description: "Broccoli, raw" },
+    { fdcId: "747447", description: "Broccoli, raw" },
+  ]);
+  expect(result.grains).toEqual([]);
+  expect(result.rejectsIncompleteEvidence).toBe(true);
+  expect(result.evidence.record).toMatchObject({
+    fdcId: 747447,
+    description: "Broccoli, raw",
+    nutrientsPer100g: {
+      energyKcal: 32,
+      proteinGrams: 2.57,
+      carbohydrateGrams: 6.27,
+      fatGrams: 0.34,
+      sugarGrams: null,
+    },
+  });
+  expect(result.eggEvidence.record).toMatchObject({ nutrientsPer100g: { fiberGrams: 0 } });
+  await expect(catalog.search("pasta")).resolves.toEqual([
+    expect.objectContaining({ providerFoodId: "2758999", isSelectable: false }),
+  ]);
+});
+
+test("Photo Analysis readiness distinguishes an absent catalog from an AI-capable generation", async () => {
+  const { management, local } = await setup();
+  await expect(local.photoAnalysisReadiness()).resolves.toEqual({ state: "not-installed" });
+
+  await management.submitArchive({ filename: "foundation.zip", stream: Readable.from(await foundationArchive()) });
+  await vi.waitFor(() => expect(management.read().busy).toBe(false));
+  expect(management.read()).toMatchObject({ installed: { foodCount: 4 }, job: { phase: "succeeded", error: null } });
+
+  await expect(local.photoAnalysisReadiness()).resolves.toEqual({
+    state: "ready",
+    generation: management.read().installed?.generation,
+  });
+});
+
+test("an unreadable installed generation keeps the existing unavailable state", async () => {
+  const { management, local, directory } = await setup();
+  await management.submitArchive({ filename: "foundation.zip", stream: Readable.from(await foundationArchive()) });
+  await vi.waitFor(() => expect(management.read().busy).toBe(false));
+  const generation = management.read().installed!.generation;
+  const filename = path.join(directory, `${generation}.sqlite`);
+  await chmod(filename, 0o600);
+  await writeFile(filename, "corrupt generation");
+
+  await expect(local.photoAnalysisReadiness()).resolves.toEqual({ state: "unavailable", generation });
+  await expect(local.withPhotoAnalysisSnapshot(new AbortController().signal, snapshot => snapshot.categories()))
+    .rejects.toBeInstanceOf(CatalogUnavailableError);
+});
+
+test.each([
+  ["malformed JSON", "UPDATE foods SET record = '{' WHERE id = '747447'"],
+  ["a mismatched source identity", "UPDATE foods SET record = json_set(record, '$.providerFoodId', '999999') WHERE id = '747447'"],
+  ["an invalid core nutrient", "UPDATE foods SET record = json_set(record, '$.nutritionPerAuthoritativeBase.energyMilliKcal.amount', 'invalid') WHERE id = '747447'"],
+])("a generation with %s is unavailable for Photo Analysis", async (_case, mutation) => {
+  const { management, local, directory } = await setup();
+  await management.submitArchive({ filename: "foundation.zip", stream: Readable.from(await foundationArchive()) });
+  await vi.waitFor(() => expect(management.read().busy).toBe(false));
+  const generation = management.read().installed!.generation;
+  const filename = path.join(directory, `${generation}.sqlite`);
+  await chmod(filename, 0o600);
+  const database = new BetterSqlite3(filename);
+  database.prepare(mutation).run();
+  database.close();
+
+  await expect(local.photoAnalysisReadiness()).resolves.toEqual({ state: "unavailable", generation });
+  await expect(local.withPhotoAnalysisSnapshot(new AbortController().signal, snapshot => snapshot.categories()))
+    .rejects.toBeInstanceOf(CatalogUnavailableError);
+});
+
+test("Photo Analysis verifies generation-owned capability metadata and category associations", async () => {
+  const { management, local, catalog, directory } = await setup();
+  await management.submitArchive({ filename: "foundation.zip", stream: Readable.from(await foundationArchive()) });
+  await vi.waitFor(() => expect(management.read().busy).toBe(false));
+  const generation = management.read().installed!.generation;
+  const filename = path.join(directory, `${generation}.sqlite`);
+  await chmod(filename, 0o600);
+  const database = new BetterSqlite3(filename);
+  database.prepare("UPDATE generation_capabilities SET version = 2 WHERE name = 'photo-analysis'").run();
+  database.close();
+
+  await expect(local.photoAnalysisReadiness()).resolves.toEqual({ state: "reimport-required", generation });
+  await expect(catalog.search("broccoli")).resolves.toHaveLength(2);
+
+  const inconsistent = new BetterSqlite3(filename);
+  inconsistent.pragma("foreign_keys = OFF");
+  inconsistent.prepare("UPDATE generation_capabilities SET version = 1 WHERE name = 'photo-analysis'").run();
+  inconsistent.prepare("DELETE FROM food_categories WHERE id = '11'").run();
+  inconsistent.close();
+  await expect(local.photoAnalysisReadiness()).resolves.toEqual({ state: "unavailable", generation });
+  await expect(catalog.search("broccoli")).resolves.toHaveLength(2);
+});
+
+test("one Photo Analysis snapshot retains its generation through a replacement handoff", async () => {
+  const { management, local, directory } = await setup();
+  await management.submitArchive({ filename: "foundation.zip", stream: Readable.from(await foundationArchive()) });
+  await vi.waitFor(() => expect(management.read().busy).toBe(false));
+  const oldGeneration = management.read().installed!.generation;
+  let release!: () => void;
+  let started!: () => void;
+  const held = new Promise<void>(resolve => { release = resolve; });
+  const snapshotStarted = new Promise<void>(resolve => { started = resolve; });
+
+  const oldSnapshot = local.withPhotoAnalysisSnapshot(new AbortController().signal, async snapshot => {
+    const categories = snapshot.categories();
+    const candidates = snapshot.candidates("11");
+    started();
+    await held;
+    return { generation: snapshot.generation, categories, candidates, evidence: snapshot.evidence("747447") };
+  });
+  await snapshotStarted;
+
+  await management.submitArchive({ filename: "replacement.zip", stream: Readable.from(await foundationArchive({
+    "food.csv": "fdc_id,data_type,description,food_category_id,publication_date\n747447,foundation_food,Broccoli replacement,11,2026-08-01\n",
+    "food_category.csv": "id,code,description\n11,1100,Replacement vegetables\n",
+    "foundation_food.csv": "fdc_id,NDB_number\n747447,11090\n",
+    "food_nutrient.csv": "id,fdc_id,nutrient_id,amount\n1,747447,2048,40\n2,747447,1003,3\n3,747447,1004,1\n4,747447,1005,8\n",
+    "food_portion.csv": "id,fdc_id,amount,measure_unit_id,gram_weight,modifier,portion_description\n",
+  })) });
+  await vi.waitFor(() => {
+    expect(management.read().job?.phase).toBe("activating");
+    expect(management.read().installed?.generation).not.toBe(oldGeneration);
+  });
+  const newGeneration = management.read().installed!.generation;
+  await expect(stat(path.join(directory, `${oldGeneration}.sqlite`))).resolves.toBeDefined();
+  await expect(local.withPhotoAnalysisSnapshot(new AbortController().signal, snapshot => ({
+    generation: snapshot.generation,
+    categories: snapshot.categories(),
+    candidates: snapshot.candidates("11"),
+  }))).resolves.toEqual({
+    generation: newGeneration,
+    categories: [{ id: "11", name: "Replacement vegetables" }],
+    candidates: [{ fdcId: "747447", description: "Broccoli replacement" }],
+  });
+
+  release();
+  const completedOldSnapshot = await oldSnapshot;
+  expect(completedOldSnapshot.generation).toBe(oldGeneration);
+  expect(completedOldSnapshot.categories).toEqual(expect.arrayContaining([{ id: "11", name: "Vegetables and Vegetable Products" }]));
+  expect(completedOldSnapshot.candidates).toEqual(expect.arrayContaining([{ fdcId: "747447", description: "Broccoli, raw" }]));
+  expect(completedOldSnapshot.evidence).toMatchObject({ record: { description: "Broccoli, raw" } });
+  await vi.waitFor(() => expect(management.read().busy).toBe(false));
+  await expect(stat(path.join(directory, `${oldGeneration}.sqlite`))).rejects.toMatchObject({ code: "ENOENT" });
+});
+
 test("an installed real Foundation archive supports local search, source portions and saved nutrition", async () => {
   const { management, catalog, entries, userId } = await setup();
   const network = vi.fn(() => { throw new Error("Food API access is forbidden"); });
@@ -89,7 +260,7 @@ test("a USDA replacement keeps the active generation usable until the complete r
   const original = await catalog.getFood("usda-fdc", "748967");
 
   const replacement = await foundationArchive({
-    "food.csv": "fdc_id,data_type,description,publication_date\n748967,foundation_food,Replacement egg,2026-08-01\n",
+    "food.csv": "fdc_id,data_type,description,food_category_id,publication_date\n748967,foundation_food,Replacement egg,1,2026-08-01\n",
     "foundation_food.csv": "fdc_id,NDB_number,footnote\n748967,01123,Replacement release\n",
     "food_nutrient.csv": "id,fdc_id,nutrient_id,amount\n1,748967,2048,200\n",
     "food_portion.csv": "id,fdc_id,amount,measure_unit_id,gram_weight,modifier,portion_description\n",
@@ -180,7 +351,8 @@ test("restart restores the prior USDA catalog and personal entries before a succ
     workerPath: path.resolve("app/catalog-management/import-worker.ts"),
   });
   cleanups.unshift(() => restarted.shutdown());
-  const restartedCatalog = new FoodCatalog([{ provider: "usda-fdc", capability: "search", service: new LocalUsdaAdapter(restarted, directory) }]);
+  const restartedLocal = new LocalUsdaAdapter(restarted, directory);
+  const restartedCatalog = new FoodCatalog([{ provider: "usda-fdc", capability: "search", service: restartedLocal }]);
   const restartedEntries = new FoodEntryService(database.getClient(), restartedCatalog, () => new Date("2026-09-07T12:00:00.000Z"));
 
   expect(restarted.read()).toMatchObject({
@@ -188,6 +360,7 @@ test("restart restores the prior USDA catalog and personal entries before a succ
     busy: false,
     job: { phase: "interrupted", error: "USDA replacement could not be confirmed after restart. The previous catalog remains active. Upload the archive again." },
   });
+  await expect(restartedLocal.photoAnalysisReadiness()).resolves.toEqual({ state: "ready", generation: previous.generation });
   await expect(restartedCatalog.search("egg")).resolves.toEqual(expect.arrayContaining([expect.objectContaining({ providerFoodId: food.providerFoodId })]));
   await expect(restartedCatalog.getFood("usda-fdc", food.providerFoodId)).resolves.toMatchObject({ name: food.name, catalogGeneration: previous.generation });
   expect(restartedEntries.read(userId, saved.id)).toEqual(saved);
@@ -290,17 +463,19 @@ test("a public catalog read holds its old generation until the replacement hando
 });
 
 test("a validation failure leaves the previous USDA catalog searchable and loggable", async () => {
-  const { management, catalog, entries, userId } = await setup();
+  const { management, local, catalog, entries, userId } = await setup();
   await management.submitArchive({ filename: "foundation.zip", stream: Readable.from(await foundationArchive()) });
   await vi.waitFor(() => expect(management.read().busy).toBe(false));
   const working = management.read().installed!;
   const food = await catalog.getFood("usda-fdc", "748967");
+  await expect(local.photoAnalysisReadiness()).resolves.toEqual({ state: "ready", generation: working.generation });
 
   await management.submitArchive({ filename: "invalid.zip", stream: Readable.from(await foundationArchive({
-    "food.csv": "fdc_id,data_type,description,publication_date\n1,branded_food,Wrong dataset,2026-01-01\n",
+    "food.csv": "fdc_id,data_type,description,food_category_id,publication_date\n1,branded_food,Wrong dataset,1,2026-01-01\n",
   })) });
   await vi.waitFor(() => expect(management.read().busy).toBe(false));
   expect(management.read()).toMatchObject({ installed: working, job: { phase: "failed", error: "Wrong USDA dataset. Only a Foundation CSV archive is supported." } });
+  await expect(local.photoAnalysisReadiness()).resolves.toEqual({ state: "ready", generation: working.generation });
   await expect(catalog.search("egg")).resolves.toEqual(expect.arrayContaining([expect.objectContaining({ catalogGeneration: working.generation })]));
   await expect(entries.log(userId, {
     provider: food.provider,
@@ -320,7 +495,7 @@ test("saving a review from a retired generation reports staleness even when the 
   const reviewed = await catalog.getFood("usda-fdc", "748967");
 
   await management.submitArchive({ filename: "replacement.zip", stream: Readable.from(await foundationArchive({
-    "food.csv": "fdc_id,data_type,description,publication_date\n747447,foundation_food,Broccoli replacement,2026-08-01\n",
+    "food.csv": "fdc_id,data_type,description,food_category_id,publication_date\n747447,foundation_food,Broccoli replacement,11,2026-08-01\n",
     "foundation_food.csv": "fdc_id,NDB_number,footnote\n747447,11090,Replacement release\n",
     "food_nutrient.csv": "id,fdc_id,nutrient_id,amount\n1,747447,2048,40\n",
     "food_portion.csv": "id,fdc_id,amount,measure_unit_id,gram_weight,modifier,portion_description\n",
@@ -369,9 +544,9 @@ test("worker startup failure remains a durable retryable installation error", as
 
 test.each([
   ["food.csv", "", "Missing CSV header in food.csv."],
-  ["food.csv", "fdc_id,data_type,description,publication_date,description\n", "Incompatible Foundation schema in food.csv."],
-  ["food.csv", "fdc_id,data_type,description,publication_date\n1,foundation_food,One,2026-01-01\n1,foundation_food,Two,2026-01-01\n", "Duplicate FDC ID in food.csv."],
-  ["food.csv", "fdc_id,data_type,description,publication_date\n1,survey_fndds_food,Wrong,2026-01-01\n", "Wrong USDA dataset. Only a Foundation CSV archive is supported."],
+  ["food.csv", "fdc_id,data_type,description,food_category_id,publication_date,description\n", "Incompatible Foundation schema in food.csv."],
+  ["food.csv", "fdc_id,data_type,description,food_category_id,publication_date\n1,foundation_food,One,1,2026-01-01\n1,foundation_food,Two,1,2026-01-01\n", "Duplicate FDC ID in food.csv."],
+  ["food.csv", "fdc_id,data_type,description,food_category_id,publication_date\n1,survey_fndds_food,Wrong,1,2026-01-01\n", "Wrong USDA dataset. Only a Foundation CSV archive is supported."],
   ["nutrient.csv", "id,name,unit_name\n2048,Energy,KCAL\n2048,Energy,KCAL\n", "Duplicate definition in nutrient.csv."],
   ["measure_unit.csv", "id,name\n1,cup\n1,glass\n", "Duplicate definition in measure_unit.csv."],
   ["foundation_food.csv", "fdc_id\n", "Incompatible Foundation schema in foundation_food.csv."],
@@ -591,7 +766,7 @@ test("egg and huevo searches never return fish results", async () => {
 test("exact names and aliases outrank repeated-keyword partial matches", async () => {
   const { management, catalog } = await setup();
   await management.submitArchive({ filename: "ranking.zip", stream: Readable.from(await foundationArchive({
-    "food.csv": 'fdc_id,data_type,description,publication_date\n1,foundation_food,Spinach,2019-01-01\n2,foundation_food,"Spinach, spinach, spinach, spinach, raw",2026-01-01\n3,foundation_food,Spinach spinach spinach spinach soup,2026-01-01\n4,foundation_food,Spinach rawhide spinach rawhide spinach rawhide,2026-01-01\n5,foundation_food,Spinach raw,2010-01-01\n',
+    "food.csv": 'fdc_id,data_type,description,food_category_id,publication_date\n1,foundation_food,Spinach,11,2019-01-01\n2,foundation_food,"Spinach, spinach, spinach, spinach, raw",11,2026-01-01\n3,foundation_food,Spinach spinach spinach spinach soup,11,2026-01-01\n4,foundation_food,Spinach rawhide spinach rawhide spinach rawhide,11,2026-01-01\n5,foundation_food,Spinach raw,11,2010-01-01\n',
     "food_nutrient.csv": "id,fdc_id,nutrient_id,amount\n1,1,2048,23\n2,2,2048,23\n3,3,2048,100\n4,4,2048,100\n5,5,2048,23\n",
   })) });
   await vi.waitFor(() => expect(management.read().busy).toBe(false));
@@ -612,11 +787,11 @@ test("exact names and aliases outrank repeated-keyword partial matches", async (
 test("new and restored name-only generations resolve the same basic-food aliases without rewriting source data", async () => {
   const names = ["Egg, raw", "Eggs, raw", "Fish, tilapia, raw", "Tilapia, raw", "Broccoli, raw", "Carrot, raw", "Carrots, raw", "Spinach, raw", "Tomato, raw", "Tomatoes, raw", "Lettuce, raw", "Zucchini, raw", "Squash, summer, zucchini, raw", "Squash, summer, green, zucchini, raw", "Squash, winter, zucchini", "Peas, summer, zucchini", "Eggplant, raw", "Eggs, Grade AAA, whole", "Eggs, Grade A, whole"];
   const archive = await foundationArchive({
-    "food.csv": "fdc_id,data_type,description,publication_date\n" + names.map((name, index) => `${index + 1},foundation_food,"${name}",2026-01-01`).join("\n") + "\n",
+    "food.csv": "fdc_id,data_type,description,food_category_id,publication_date\n" + names.map((name, index) => `${index + 1},foundation_food,"${name}",1,2026-01-01`).join("\n") + "\n",
     "food_nutrient.csv": "id,fdc_id,nutrient_id,amount\n" + names.map((_, index) => `${index + 1},${index + 1},2048,100`).join("\n") + "\n",
   });
   for (const workerPath of ["app/catalog-management/import-worker.ts", "tests/support/restored-usda-worker.mjs"]) {
-    const { management, catalog, directory } = await setup({ workerPath: path.resolve(workerPath) });
+    const { management, local, catalog, directory } = await setup({ workerPath: path.resolve(workerPath) });
     await management.submitArchive({ filename: "compatible.zip", stream: Readable.from(archive) });
     await vi.waitFor(() => expect(management.read().busy).toBe(false));
     const filename = path.join(directory, `${management.read().installed!.generation}.sqlite`);
@@ -641,6 +816,15 @@ test("new and restored name-only generations resolve the same basic-food aliases
     expect((await catalog.search("eggs grade A")).map(food => food.providerFoodId)).toEqual(["19"]);
     expect(await catalog.search("calabacín winter")).toEqual([]);
     expect(await catalog.search("huevos plant")).toEqual([]);
+    const expectedReadiness = workerPath.includes("restored-usda-worker") ? "reimport-required" : "ready";
+    expect(await local.photoAnalysisReadiness()).toEqual({ state: expectedReadiness, generation: management.read().installed?.generation });
+    const acquisition = await local.withPhotoAnalysisSnapshot(new AbortController().signal, snapshot => snapshot.categories())
+      .then(() => "ready" as const)
+      .catch((error: unknown) => {
+        if (error instanceof CatalogReimportRequiredError) return "reimport-required" as const;
+        throw error;
+      });
+    expect(acquisition).toBe(expectedReadiness);
     expect(await readFile(filename)).toEqual(before);
   }
 });
@@ -691,8 +875,8 @@ test("source portions preserve trimmed labels, reject undetermined units, and bo
 
 test("the Foundation record bound rejects an oversized dataset without installing a partial generation", async () => {
   const { management } = await setup();
-  const rows = Array.from({ length: 100001 }, (_, index) => `${index + 1},foundation_food,Food,2026-01-01`).join("\n");
-  await management.submitArchive({ filename: "too-many.zip", stream: Readable.from(await foundationArchive({ "food.csv": "fdc_id,data_type,description,publication_date\n" + rows + "\n" })) });
+  const rows = Array.from({ length: 100001 }, (_, index) => `${index + 1},foundation_food,Food,1,2026-01-01`).join("\n");
+  await management.submitArchive({ filename: "too-many.zip", stream: Readable.from(await foundationArchive({ "food.csv": "fdc_id,data_type,description,food_category_id,publication_date\n" + rows + "\n" })) });
   await vi.waitFor(() => expect(management.read().busy).toBe(false), { timeout: 10000 });
   expect(management.read()).toMatchObject({ installed: null, job: { phase: "failed", error: "Foundation record limit exceeded.", processedRecords: 100001 } });
 });
@@ -798,7 +982,7 @@ test("numeric source syntax is explicit and invalid identity rows never become s
 test("import normalizes source descriptions, orders release dates, and counts missing and unsafe nutrient values", async () => {
   const { management, catalog } = await setup();
   await management.submitArchive({ filename: "quality.zip", stream: Readable.from(await foundationArchive({
-    "food.csv": 'fdc_id,data_type,description,publication_date\n1,foundation_food,Too much energy,2026-01-01\n2,foundation_food,"  E\u0301pinard, raw  ",2019-01-01\n3,foundation_food,Food,2022-01-01\n',
+    "food.csv": 'fdc_id,data_type,description,food_category_id,publication_date\n1,foundation_food,Too much energy,11,2026-01-01\n2,foundation_food,"  E\u0301pinard, raw  ",11,2019-01-01\n3,foundation_food,Food,11,2022-01-01\n',
     "foundation_food.csv": "fdc_id,NDB_number\n1,123\n2,456\ninvalid,789\n",
     "food_nutrient.csv": "id,fdc_id,nutrient_id,amount\n1,1,2048,1e10\n2,2,2048,23\n3,3,2048,100\n4,2,1003,   \n5,2,1003,12\n6,2,1004,1\n",
     "nutrient.csv": "id,name,unit_name\n2048,Energy,KCAL\n1003,Protein,G\n",
@@ -844,7 +1028,7 @@ test.each([
   ["unsafe path", { "../escape.csv": "unsafe" }, null],
   ["missing table", { "nutrient.csv": null }, null],
   ["wrong schema", { "food.csv": "fdc_id,description\n1,Wrong\n" }, null],
-  ["wrong dataset", { "food.csv": "fdc_id,data_type,description,publication_date\n1,branded_food,Wrong,2026-01-01\n" }, null],
+  ["wrong dataset", { "food.csv": "fdc_id,data_type,description,food_category_id,publication_date\n1,branded_food,Wrong,1,2026-01-01\n" }, null],
   ["no usable foods", { "food_nutrient.csv": "id,fdc_id,nutrient_id,amount\n" }, null],
 ] as const)("%s leaves USDA uninstalled with a durable error and permits retry", async (_name, overrides, body) => {
   const { management, catalog } = await setup();

@@ -113,6 +113,13 @@ export class CatalogUnavailableError extends Error {
   }
 }
 
+export class CatalogReimportRequiredError extends Error {
+  constructor() {
+    super("The USDA catalog must be reimported for Photo Analysis");
+    this.name = "CatalogReimportRequiredError";
+  }
+}
+
 export class CatalogInvalidDataError extends Error {
   constructor() {
     super("The food catalog contains invalid data");

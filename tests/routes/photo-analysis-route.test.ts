@@ -1,6 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { sql } from "drizzle-orm";
 import { RouterContextProvider } from "react-router";
 import { afterAll, beforeAll, expect, test } from "vitest";
 import { serializeSessionCookie } from "../../app/auth/http.server";
@@ -11,12 +12,18 @@ import {
 } from "../../app/database/runtime.server";
 import { userPreferences } from "../../app/database/schema.server";
 import { shutdownPhotoAnalysis } from "../../app/photo-analysis/runtime.server";
+import {
+  PHOTO_ANALYSIS_TEST_READINESS_KEY,
+  photoAnalysisTestReadinessCodeSchema,
+} from "../../app/photo-analysis/test-fixture.server";
 import { action, loader } from "../../app/routes/photo-analysis";
 import { seedAuthenticatedAccount } from "../support/authentication";
 
 const origin = "http://localhost:3000";
 let directory: string;
 let cookie: string;
+let adminCookie: string;
+let adminCsrf: string;
 let otherCookie: string;
 let csrf: string;
 const bytes = Buffer.from(
@@ -69,12 +76,31 @@ beforeAll(async () => {
     "correct horse battery staple",
     "192.0.2.11",
   );
+  const admin = await seedAuthenticatedAccount(
+    getAuthenticationService(),
+    db,
+    "photo.admin",
+    "correct horse battery staple",
+    "192.0.2.12",
+    "admin",
+  );
   cookie = serializeSessionCookie(account).split(";")[0];
   otherCookie = serializeSessionCookie(other).split(";")[0];
   csrf = account.csrfToken;
+  adminCookie = serializeSessionCookie(admin).split(";")[0];
+  adminCsrf = admin.csrfToken;
   db.insert(userPreferences)
     .values({
       userId: account.user.id,
+      timeZone: "America/New_York",
+      displayUnits: "metric",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    })
+    .run();
+  db.insert(userPreferences)
+    .values({
+      userId: admin.user.id,
       timeZone: "America/New_York",
       displayUnits: "metric",
       createdAt: "2026-01-01T00:00:00.000Z",
@@ -165,6 +191,7 @@ test("status, correction, cancellation, retry and deletion preserve the authenti
   const value = (await saved.json()) as { entryId: number; result: unknown };
   expect(value).toMatchObject({
     energyMilliKcal: 250000,
+    provenanceState: "recorded",
     result: {
       name: "Photo rice plate",
       consumedFraction: 1,
@@ -176,7 +203,10 @@ test("status, correction, cancellation, retry and deletion preserve the authenti
           quantity: 200,
           unit: "g",
           includes: [],
-          source: { kind: "ai", reason: "Deterministic browser fixture" },
+          source: {
+            kind: "ai",
+            reason: "No USDA category adequately matched the visible component.",
+          },
           nutrition: {
             energyKcal: 250,
             proteinGrams: 5,
@@ -187,6 +217,7 @@ test("status, correction, cancellation, retry and deletion preserve the authenti
       ],
     },
   });
+  expect(value).not.toHaveProperty("diagnostics");
   const correction = await submit("correct", {
     entryId: String(value.entryId),
     correction: "Extra butter",
@@ -248,11 +279,17 @@ test("status, correction, cancellation, retry and deletion preserve the authenti
 test("invalid uploads and operations return actionable private errors", async () => {
   const noSession = await loader(args(new Request(`${origin}/photo-analysis`)));
   expect(noSession.headers.get("Location")).toBe("/login");
+  expect((await loader(args(new Request(`${origin}/photo-analysis`, {
+    headers: { Cookie: cookie },
+  })))).status).toBe(404);
   expect((await action(post(form(), ""))).headers.get("Location")).toBe(
     "/login",
   );
   const rejected = await action(post(form("bad")));
   expect(await rejected.json()).toEqual({ error: "CSRF token rejected" });
+  const missingCsrf = form();
+  missingCsrf.delete("csrfToken");
+  expect((await action(post(missingCsrf))).status).toBe(403);
   for (const [changes, expected] of [
     [{ intent: "nonsense" }, "Unknown photo action"],
     [{ photo: "not a file" }, "Choose a plate photo"],
@@ -267,6 +304,39 @@ test("invalid uploads and operations return actionable private errors", async ()
     expect(response.status).toBe(400);
     expect(response.headers.get("Cache-Control")).toBe("private, no-store");
     expect(await response.json()).toEqual({ error: expected });
+  }
+  for (const body of [
+    (() => {
+      const value = form();
+      value.delete("date");
+      value.set("idempotencyKey", "missing-date");
+      return value;
+    })(),
+    (() => {
+      const value = form();
+      value.set("intent", "correct");
+      value.set("entryId", "1");
+      value.delete("correction");
+      value.set("idempotencyKey", "missing-correction");
+      return value;
+    })(),
+    (() => {
+      const value = form();
+      value.set("intent", "retry");
+      value.set("id", "missing");
+      value.delete("attemptId");
+      value.set("idempotencyKey", "missing-retry-attempt");
+      return value;
+    })(),
+    (() => {
+      const value = form();
+      value.set("intent", "cancel");
+      value.set("id", "missing");
+      value.delete("attemptId");
+      return value;
+    })(),
+  ]) {
+    expect((await action(post(body))).status).toBe(400);
   }
   const empty = await action(
     args(
@@ -289,4 +359,89 @@ test("invalid uploads and operations return actionable private errors", async ()
   expect(await (await action(args(huge))).json()).toEqual({
     error: "Choose a photo up to 8 MB",
   });
+});
+
+test.each(photoAnalysisTestReadinessCodeSchema.options)("stale clients cannot start when readiness is %s", async (code) => {
+  const db = getApplicationDatabase().getClient();
+  const before = db.get<{ count: number }>(sql`SELECT count(*) AS count FROM photo_attempts`).count;
+  db.run(sql`
+    INSERT INTO application_metadata (key, value, updated_at)
+    VALUES (${PHOTO_ANALYSIS_TEST_READINESS_KEY}, ${code}, '2026-09-20T00:00:00.000Z')
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+  `);
+  try {
+    const body = form();
+    body.set("idempotencyKey", `blocked:${code}`);
+    const response = await action(post(body));
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({
+      error: "AI photo analysis is not available right now.",
+    });
+    expect(db.get<{ count: number }>(sql`SELECT count(*) AS count FROM photo_attempts`).count).toBe(before);
+  } finally {
+    db.run(sql`DELETE FROM application_metadata WHERE key = ${PHOTO_ANALYSIS_TEST_READINESS_KEY}`);
+  }
+});
+
+test("stale correction and retry requests are rejected before a new attempt is stored", async () => {
+  const started = form();
+  started.set("idempotencyKey", "readiness-stale-lifecycle");
+  const initial = (await (await action(post(started))).json()) as {
+    id: string;
+    attemptId: string;
+    entryId: number | null;
+  };
+  const read = async () =>
+    (await (await loader(args(new Request(`${origin}/photo-analysis?id=${initial.id}`, {
+      headers: { Cookie: cookie },
+    })))).json()) as { attemptId: string; entryId: number; status: string };
+  await expect.poll(async () => (await read()).status, { timeout: 4_000 }).toBe("succeeded");
+  const succeeded = await read();
+  const db = getApplicationDatabase().getClient();
+  db.run(sql`
+    INSERT INTO application_metadata (key, value, updated_at)
+    VALUES (${PHOTO_ANALYSIS_TEST_READINESS_KEY}, 'unavailable-models', '2026-09-20T00:00:00.000Z')
+  `);
+  const before = db.get<{ count: number }>(sql`SELECT count(*) AS count FROM photo_attempts`).count;
+  try {
+    const correction = new FormData();
+    correction.set("csrfToken", csrf);
+    correction.set("intent", "correct");
+    correction.set("entryId", String(succeeded.entryId));
+    correction.set("correction", "Add butter");
+    correction.set("idempotencyKey", "blocked-correction");
+    expect((await action(post(correction))).status).toBe(503);
+
+    db.run(sql`UPDATE photo_attempts SET status = 'failed', finished_at = '2026-09-20T00:00:00.000Z' WHERE id = ${succeeded.attemptId}`);
+    const retry = new FormData();
+    retry.set("csrfToken", csrf);
+    retry.set("intent", "retry");
+    retry.set("id", initial.id);
+    retry.set("attemptId", succeeded.attemptId);
+    retry.set("idempotencyKey", "blocked-retry");
+    expect((await action(post(retry))).status).toBe(503);
+    expect(db.get<{ count: number }>(sql`SELECT count(*) AS count FROM photo_attempts`).count).toBe(before);
+  } finally {
+    db.run(sql`DELETE FROM application_metadata WHERE key = ${PHOTO_ANALYSIS_TEST_READINESS_KEY}`);
+  }
+});
+
+test("blocked administrator requests include the relevant recovery destination", async () => {
+  const db = getApplicationDatabase().getClient();
+  db.run(sql`
+    INSERT INTO application_metadata (key, value, updated_at)
+    VALUES (${PHOTO_ANALYSIS_TEST_READINESS_KEY}, 'catalog-reimport-required', '2026-09-20T00:00:00.000Z')
+  `);
+  try {
+    const body = form(adminCsrf);
+    body.set("idempotencyKey", "blocked-admin-request");
+    const response = await action(post(body, adminCookie));
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({
+      error: "Reimport USDA Foundation for Photo Analysis.",
+      destination: "/settings/catalogs",
+    });
+  } finally {
+    db.run(sql`DELETE FROM application_metadata WHERE key = ${PHOTO_ANALYSIS_TEST_READINESS_KEY}`);
+  }
 });

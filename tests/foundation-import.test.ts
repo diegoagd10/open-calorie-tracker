@@ -5,7 +5,8 @@ import { foundationArchive } from "./support/foundation-archive";
 const cleanups: (() => Promise<void>)[] = [];
 afterEach(async () => { await Promise.all(cleanups.splice(0).map(cleanup => cleanup())); });
 const install = async (overrides: Record<string, string | null> = {}, maxExpandedBytes = 10 * 1024 * 1024) => runArchive("usda", await foundationArchive({
-  "food.csv": "fdc_id,data_type,description,publication_date\n1,foundation_food,Crème,2024-01-02\n",
+  "food.csv": "fdc_id,data_type,description,food_category_id,publication_date\n1,foundation_food,Crème,1,2024-01-02\n",
+  "food_category.csv": "id,code,description\n1,0100,Test category\n",
   "foundation_food.csv": "fdc_id,NDB_number\n99,1\n",
   "food_nutrient.csv": "id,fdc_id,nutrient_id,amount\n1,1,1008,100\n2,1,2047,110\n3,1,2048,120\n4,1,1003,1.2e1\n5,1,1004,0\n6,1,1005,30\n7,1,1079,4\n8,1,1093,0.05\n9,1,2000,5.5\n",
   "nutrient.csv": "id,name,unit_name\n1008,Energy,KCAL\n2047,General,KCAL\n2048,Specific,KCAL\n1003,Protein, g \n1004,Fat,G\n1005,Carbs,G\n1079,Fiber,G\n1093,Sodium,G\n2000,Sugar,G\n",
@@ -52,14 +53,14 @@ test.each([[" .25 ", 0.25], ["1.", 1], ["1e+02", 100], ["1e-02", 0.01]] as const
 });
 
 test("Foundation emits progress while skipping a large run of research records", async () => {
-  const research = Array.from({ length: 1999 }, (_, index) => `${index + 2},sample_food,Research,2024-01-01\n`).join("");
-  const imported = await install({ "food.csv": "fdc_id,data_type,description,publication_date\n1,foundation_food,Food,2024-01-01\n" + research });
+  const research = Array.from({ length: 1999 }, (_, index) => `${index + 2},sample_food,Research,1,2024-01-01\n`).join("");
+  const imported = await install({ "food.csv": "fdc_id,data_type,description,food_category_id,publication_date\n1,foundation_food,Food,1,2024-01-01\n" + research });
   expect(imported.messages.filter(message => message.progress?.phase === "importing").map(message => message.progress?.processedRecords)).toEqual([0, 2000]);
   expect(imported.messages.at(-2)?.progress).toEqual({ phase: "indexing", processedRecords: 2009, importedRecords: 1, rejectedRecords: 1999, exclusions: { research_record: 1999 } });
 });
 
 test.each(["bad1", "1bad", "01"])("Foundation rejects malformed source identifier %s", async id => {
-  const imported = await install({ "food.csv": `fdc_id,data_type,description,publication_date\n1,foundation_food,Food,2024-01-01\n${id},foundation_food,Invalid,2024-01-01\n` });
+  const imported = await install({ "food.csv": `fdc_id,data_type,description,food_category_id,publication_date\n1,foundation_food,Food,1,2024-01-01\n${id},foundation_food,Invalid,1,2024-01-01\n` });
   expect(imported.final.result?.foodCount).toBe(1);
   expect(imported.messages.at(-2)?.progress?.exclusions).toEqual({ invalid_food_record: 1 });
 });
@@ -75,7 +76,7 @@ test("invalid nutrient IDs, duplicates, missing definitions and unrelated foods 
 
 test("research records, invalid foods and invalid subtype IDs are counted, while calorie-free foods remain available", async () => {
   const imported = await install({
-    "food.csv": "fdc_id,data_type,description,publication_date\n1,foundation_food, valid ,2025-01-01\n2,foundation_food,No calories,2020-01-01\n3,agricultural_acquisition,Research,2020-01-01\n4,market_acquisition,Research,2020-01-01\n5,sample_food,Research,2020-01-01\n6,sub_sample_food,Research,2020-01-01\n0,foundation_food,Invalid ID,2020-01-01\n7,foundation_food, ,2020-01-01\n8,foundation_food,Invalid date,2020-02-30\n9007199254740992,foundation_food,Unsafe ID,2020-01-01\n",
+    "food.csv": "fdc_id,data_type,description,food_category_id,publication_date\n1,foundation_food, valid ,1,2025-01-01\n2,foundation_food,No calories,1,2020-01-01\n3,agricultural_acquisition,Research,1,2020-01-01\n4,market_acquisition,Research,1,2020-01-01\n5,sample_food,Research,1,2020-01-01\n6,sub_sample_food,Research,1,2020-01-01\n0,foundation_food,Invalid ID,1,2020-01-01\n7,foundation_food, ,1,2020-01-01\n8,foundation_food,Invalid date,1,2020-02-30\n9007199254740992,foundation_food,Unsafe ID,1,2020-01-01\n",
     "foundation_food.csv": "fdc_id,NDB_number\n0,1\n",
   });
   expect(imported.final.result).toEqual({ foodCount: 2, publicationDateRange: { earliest: "2020-01-01", latest: "2025-01-01" } });
@@ -99,21 +100,33 @@ test("Foundation rejects invalid, duplicate and excessive portions but retains s
 });
 
 test.each([
-  [{ "food.csv": "fdc_id,data_type,description,publication_date\n1,foundation_food,One,2024-01-01\n1,foundation_food,Duplicate,2024-01-01\n" }, "Duplicate FDC ID in food.csv."],
-  [{ "food.csv": "fdc_id,data_type,description,publication_date\n1,branded_food,Wrong,2024-01-01\n" }, "Wrong USDA dataset. Only a Foundation CSV archive is supported."],
+  [{ "food.csv": "fdc_id,data_type,description,food_category_id,publication_date\n1,foundation_food,One,1,2024-01-01\n1,foundation_food,Duplicate,1,2024-01-01\n" }, "Duplicate FDC ID in food.csv."],
+  [{ "food.csv": "fdc_id,data_type,description,food_category_id,publication_date\n1,branded_food,Wrong,1,2024-01-01\n" }, "Wrong USDA dataset. Only a Foundation CSV archive is supported."],
   [{ "nutrient.csv": "id,name,unit_name\n1008,Calories,KCAL\n1008,Again,KCAL\n" }, "Duplicate definition in nutrient.csv."],
   [{ "measure_unit.csv": "id,name\n1,cup\n1,again\n" }, "Duplicate definition in measure_unit.csv."],
   [{ "food_nutrient.csv": "id,fdc_id,nutrient_id,amount\n" }, "Foundation archive contains no foods with usable calories. Nothing was installed."],
   [{ "nutrient.csv": null }, "Missing Foundation table: nutrient.csv. Choose the Foundation CSV ZIP with supporting data."],
   [{ "food.csv": "" }, "Missing CSV header in food.csv."],
-  [{ "food.csv": "fdc_id,fdc_id,description,publication_date\n" }, "Incompatible Foundation schema in food.csv."],
-  [{ "food.csv": "fdc_id,description,publication_date\n" }, "Incompatible Foundation schema in food.csv."],
+  [{ "food.csv": "fdc_id,fdc_id,description,food_category_id,publication_date\n" }, "Incompatible Foundation schema in food.csv."],
+  [{ "food.csv": "fdc_id,description,food_category_id,publication_date\n" }, "Incompatible Foundation schema in food.csv."],
 ] as const)("Foundation rejects invalid source structure %#", async (overrides, error) => {
   const imported = await install(overrides);
   expect(imported.final.error).toBe(error);
   expect(typeof imported.final.progress?.processedRecords).toBe("number");
   expect(imported.final.progress?.exclusions).toBeDefined();
   expect(imported.messages.some(message => message.result)).toBe(false);
+});
+
+test.each([
+  [{ "food_category.csv": null }, "Missing Foundation table: food_category.csv. Choose the Foundation CSV ZIP with supporting data."],
+  [{ "food_category.csv": "id,code,description\n1,0100,One\n1,0200,Duplicate\n" }, "Duplicate category in food_category.csv."],
+  [{ "food_category.csv": "id,code,description\n0,0100,Invalid\n" }, "Invalid category in food_category.csv."],
+  [{ "food_category.csv": "id,code,description\n1,0100, \n" }, "Invalid category in food_category.csv."],
+  [{ "food.csv": "fdc_id,data_type,description,food_category_id,publication_date\n1,foundation_food,Food,2,2024-01-01\n" }, "Foundation food has an invalid or missing category."],
+] as const)("Foundation rejects missing, duplicate, invalid or unmatched category data %#", async (overrides, error) => {
+  const imported = await install(overrides);
+  expect(imported.final.error).toBe(error);
+  expect(imported.final.result).toBeUndefined();
 });
 
 test("Foundation archive bounds, ignored members and checksum failures are enforced", async () => {

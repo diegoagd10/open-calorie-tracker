@@ -31,6 +31,7 @@ import {
   meta,
 } from "../../app/routes/home";
 import { PhotoAnalysisService } from "../../app/photo-analysis/photo-analysis.server";
+import { shutdownPhotoAnalysis } from "../../app/photo-analysis/runtime.server";
 import { getFoodEntryService } from "../../app/food-entry/runtime.server";
 import { getFoodLogService } from "../../app/food-log/runtime.server";
 import { getGoalSetupService } from "../../app/setup/runtime.server";
@@ -115,6 +116,7 @@ beforeAll(async () => {
   process.env.APPLICATION_URL = origin;
   process.env.DATABASE_PATH = path.join(temporaryDirectory, "application.sqlite");
   process.env.FOOD_CATALOG_TEST_FIXTURE = "1";
+  process.env.PHOTO_ANALYSIS_TEST_FIXTURE = "1";
   process.env.FOOD_LOG_TEST_NOW = instant;
   process.env.SETUP_TEST_NOW = instant;
   initializeApplicationDatabase();
@@ -155,6 +157,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  shutdownPhotoAnalysis();
   shutdownApplicationDatabase();
   await rm(temporaryDirectory, { force: true, recursive: true });
   for (const name of [
@@ -162,6 +165,7 @@ afterAll(async () => {
     "DATABASE_PATH",
     "FOOD_CATALOG_TEST_FIXTURE",
     "FOOD_LOG_TEST_NOW",
+    "PHOTO_ANALYSIS_TEST_FIXTURE",
     "SETUP_TEST_NOW",
   ]) delete process.env[name];
 });
@@ -1483,13 +1487,13 @@ test("copy loader restricts source actions and validates every calendar selectio
 test("home lists accepted photo work and redirects attempts to open a processing entry", async () => {
   let finish!: (value: unknown) => void;
   const photoService = new PhotoAnalysisService(getApplicationDatabase().getClient(), { analyze: () => new Promise(resolve => { finish = resolve; }) }, { now: () => new Date(instant) });
-  const photo = photoService.start(userId, { photo: { mimeType: "image/png", bytes: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAAFElEQVR4nGP4TyJgGNUwqmH4agAAr639H708R/EAAAAASUVORK5CYII=", "base64") }, foodLogDate: today, idempotencyKey: "home-photo-lifecycle" });
+  const photo = await photoService.start(userId, { photo: { mimeType: "image/png", bytes: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAAFElEQVR4nGP4TyJgGNUwqmH4agAAr639H708R/EAAAAASUVORK5CYII=", "base64") }, foodLogDate: today, idempotencyKey: "home-photo-lifecycle" });
   expect((await load()).data.photoMeals).toMatchObject([{ id: photo.id, entryId: null, status: "active" }]);
   finish({ name: "Home rice", consumedFraction: 1, assumptions: [], components: [{ id: "rice", name: "Rice", quantity: 200, unit: "g", includes: [], source: { kind: "ai", reason: "No reference" }, nutrition: { energyKcal: 250, proteinGrams: 5, carbohydrateGrams: 50, fatGrams: 2 } }] });
   await expect.poll(() => photoService.status(userId, photo.id).status).toBe("succeeded");
   const entryId = photoService.status(userId, photo.id).entryId!;
   expect((await load(`/?date=${today}&entry=${entryId}`)).data.foodEntryEditor?.id).toBe(entryId);
-  photoService.correct(userId, entryId, { correction: "Butter", idempotencyKey: "home-photo-correction" });
+  await photoService.correct(userId, entryId, { correction: "Butter", idempotencyKey: "home-photo-correction" });
   expectRedirect(await homeLoader(routeArgs(get(`/?date=${today}&entry=${entryId}`))), `/?date=${today}`);
   photoService.shutdown();
 });

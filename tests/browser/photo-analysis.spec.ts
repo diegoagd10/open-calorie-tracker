@@ -1,10 +1,14 @@
 import AxeBuilder from "@axe-core/playwright";
+import type { Browser, Page } from "@playwright/test";
 import {
   bootstrapOrSignInBrowserTestUser,
   expect,
+  openBrowserTestDatabase,
+  signInProvisionedMember,
   test,
 } from "./reset-database";
 import { playwrightBrowserPorts } from "../../scripts/catalog-browser-runtime";
+import { PHOTO_ANALYSIS_TEST_READINESS_KEY } from "../../app/photo-analysis/test-fixture.server";
 
 const publicOrigin = `https://localhost:${playwrightBrowserPorts.public}`;
 const escapedPublicOrigin = publicOrigin.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -17,6 +21,108 @@ const photo = {
     "base64",
   ),
 };
+
+async function verifyReadinessRecovery(page: Page, browser: Browser) {
+  const password = "correct horse 🔐 battery";
+  await bootstrapOrSignInBrowserTestUser(page, "photo.readiness.admin", password);
+  await page.getByRole("button", { name: "Finish setup" }).click();
+  await expect(page).toHaveURL("/");
+  const homeOrigin = new URL(page.url()).origin;
+  const database = openBrowserTestDatabase();
+  database.prepare(`
+    INSERT INTO application_metadata (key, value, updated_at) VALUES (?, ?, ?)
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+  `).run(
+    PHOTO_ANALYSIS_TEST_READINESS_KEY,
+    "missing-credentials",
+    "2026-09-20T00:00:00.000Z",
+  );
+  database.close();
+
+  await page.reload();
+  await page.getByRole("button", { name: "Add Food", exact: true }).click();
+  await expect(page.getByLabel("Take photo · AI calories")).toBeDisabled();
+  const adminReason = page.getByText("Configure Gemini and TypeSafe credentials.", { exact: true });
+  const adminHelp = page.getByRole("button", { name: "Why AI photo is unavailable" });
+  await expect(adminReason).toBeHidden();
+  await adminHelp.hover();
+  await expect(adminReason).toBeVisible();
+  await page.getByRole("heading", { name: "Add Food" }).hover();
+  await expect(adminReason).toBeHidden();
+  await adminHelp.click();
+  await expect(adminReason).toBeVisible();
+  await expect(page.getByRole("link", { name: "Open settings" })).toHaveAttribute(
+    "href",
+    "/settings/ai",
+  );
+  await expect(page.getByRole("link", { name: /Manual/ })).toBeEnabled();
+
+  const context = await browser.newContext({
+    baseURL: new URL(page.url()).origin,
+    ignoreHTTPSErrors: true,
+  });
+  try {
+    const member = await context.newPage();
+    await signInProvisionedMember(member, "photo.readiness.member", password);
+    await member.getByRole("button", { name: "Finish setup" }).click();
+    await expect(member).toHaveURL("/");
+    await member.getByRole("button", { name: "Add Food", exact: true }).focus();
+    await member.keyboard.press("Enter");
+    await expect(member.getByLabel("Take photo · AI calories")).toBeDisabled();
+    await member.getByRole("button", { name: "Why AI photo is unavailable" }).click();
+    await expect(member.getByText("AI photo analysis is not available right now.", { exact: true })).toBeVisible();
+    await expect(member.getByRole("link", { name: "Open settings" })).toHaveCount(0);
+    await expect(member.getByRole("link", { name: /Manual/ })).toBeEnabled();
+    await member.goto("about:blank");
+    await context.close();
+
+    await page.goto("about:blank");
+    const transition = openBrowserTestDatabase();
+    transition.prepare(`
+      UPDATE application_metadata SET value = ?, updated_at = ? WHERE key = ?
+    `).run(
+      "catalog-reimport-required",
+      "2026-09-20T00:01:00.000Z",
+      PHOTO_ANALYSIS_TEST_READINESS_KEY,
+    );
+    transition.close();
+    await page.goto(homeOrigin);
+    await page.getByRole("button", { name: "Add Food", exact: true }).click();
+    await expect(page.getByLabel("Take photo · AI calories")).toBeDisabled();
+    await page.getByRole("button", { name: "Why AI photo is unavailable" }).click();
+    await expect(page.getByText("Reimport USDA Foundation for Photo Analysis.", { exact: true })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Open settings" })).toHaveAttribute(
+      "href",
+      "/settings/catalogs",
+    );
+
+    await page.goto("about:blank");
+    const ready = openBrowserTestDatabase();
+    ready.prepare(
+      "DELETE FROM application_metadata WHERE key = ?",
+    ).run(PHOTO_ANALYSIS_TEST_READINESS_KEY);
+    ready.close();
+    await page.goto(homeOrigin);
+    await page.getByRole("button", { name: "Add Food", exact: true }).click();
+    await expect(page.getByLabel("Take photo · AI calories")).toBeEnabled();
+    expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+  } finally {
+    await context.close();
+    const cleanup = openBrowserTestDatabase();
+    cleanup.prepare(
+      "DELETE FROM application_metadata WHERE key = ?",
+    ).run(PHOTO_ANALYSIS_TEST_READINESS_KEY);
+    cleanup.close();
+  }
+}
+
+test("readiness blocks only photo capture with role-appropriate recovery", async ({ page, browser }) => {
+  await verifyReadinessRecovery(page, browser);
+});
+
+test("readiness blocks only photo capture with role-appropriate recovery @camera-matrix", async ({ page, browser }) => {
+  await verifyReadinessRecovery(page, browser);
+});
 
 test("plate capture returns to Daily Log, survives reload, and supports correction and cancellation @camera-matrix", async ({
   page,
@@ -88,7 +194,13 @@ test("plate capture returns to Daily Log, survives reload, and supports correcti
   expect(photoBox!.height).toBe(manualBox!.height);
   await page.screenshot({ path: testInfo.outputPath("unified-timeline-mobile.png") });
   await meals.getByRole("link", { name: /Photo rice plate/ }).click();
-  await expect(page.getByRole("region", { name: "Photo analysis details" }).getByRole("img")).toBeVisible();
+  const analysisDetails = page.getByRole("region", { name: "Photo analysis details" });
+  await expect(analysisDetails.getByRole("img")).toBeVisible();
+  await analysisDetails.getByText("Components, sources and assumptions", { exact: true }).click();
+  await expect(analysisDetails).toContainText(
+    "Gemini estimate: No USDA category adequately matched the visible component.",
+  );
+  await expect(analysisDetails).not.toContainText("selectedProbability");
   await page.getByRole("button", { name: "Correct with AI" }).click();
   await page
     .getByRole("textbox", { name: "Correction", exact: true })
@@ -177,6 +289,8 @@ test("non-food photos show a persistent failure and rejected uploads explain the
   await page.reload();
   await expect(meals).toContainText("No food or drink detected");
   await expect(meals.getByRole("img", { name: "Your plate" })).toBeVisible();
+  await meals.getByRole("button", { name: "Delete photo meal" }).click();
+  await expect(meals).toHaveCount(0);
   await page.getByRole("button", { name: "Add Food", exact: true }).click();
   await page.getByLabel("Take photo · AI calories").setInputFiles({
     name: "invalid.png", mimeType: "image/png", buffer: Buffer.alloc(32),

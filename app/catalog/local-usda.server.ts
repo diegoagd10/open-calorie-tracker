@@ -1,8 +1,9 @@
-import { buildUsdaGeneration, readUsdaGenerationFood, searchUsdaGeneration } from "../database/usda-generation.server.ts";
+import { buildUsdaGeneration, readUsdaGenerationFood, searchUsdaGeneration, withUsdaPhotoAnalysisGeneration, type UsdaGenerationBuild } from "../database/usda-generation.server.ts";
+import { usdaPhotoAnalysisGenerationReadiness } from "../database/catalog-generation-validation.server.ts";
 import type { CatalogManagement } from "../catalog-management/catalog-management.server";
-import { CatalogNotInstalledError, CatalogFoodNotFoundError, CatalogStaleReviewError, CatalogUnavailableError, type CatalogFood, type CatalogNutrientValue, type CatalogOperationContext, type CatalogSearchResult, type SearchFoodCatalogProvider } from "./food-catalog.server.ts";
+import { CatalogNotInstalledError, CatalogFoodNotFoundError, CatalogReimportRequiredError, CatalogStaleReviewError, CatalogUnavailableError, type CatalogFood, type CatalogNutrientValue, type CatalogOperationContext, type CatalogSearchResult, type SearchFoodCatalogProvider } from "./food-catalog.server.ts";
 import { boundedSearchTokens, normalizedSearchWords } from "./search-normalization.ts";
-import type { UsdaAnalysisReader, UsdaEvidence } from "./usda-evidence";
+import type { UsdaAnalysisReader, UsdaEvidence, UsdaPhotoAnalysisCatalog, UsdaPhotoAnalysisReadiness, UsdaPhotoAnalysisSnapshot } from "./usda-evidence";
 
 const basicFoodAliases = [
   { headings: ["egg", "eggs"], aliases: ["egg", "eggs", "huevo", "huevos"] },
@@ -45,8 +46,8 @@ function relevance(name: string, tokens: string[]): number | null {
   return 3;
 }
 
-export function buildLocalUsdaGeneration(directory: string, generation: string, foods: Iterable<CatalogFood>, indexing: () => void) {
-  buildUsdaGeneration(directory, generation, foods, indexing, aliasesFor);
+export function buildLocalUsdaGeneration(directory: string, generation: string, source: UsdaGenerationBuild, indexing: () => void) {
+  buildUsdaGeneration(directory, generation, source, indexing, aliasesFor);
 }
 
 function evidenceAmount(value: CatalogNutrientValue | null, outputMultiplier: number): number | null {
@@ -80,7 +81,7 @@ function localEvidence(food: CatalogFood): UsdaEvidence {
   };
 }
 
-export class LocalUsdaAdapter implements SearchFoodCatalogProvider, UsdaAnalysisReader {
+export class LocalUsdaAdapter implements SearchFoodCatalogProvider, UsdaAnalysisReader, UsdaPhotoAnalysisCatalog {
   readonly #management: CatalogManagement;
   readonly #directory: string;
   constructor(management: CatalogManagement, directory: string) { this.#management = management; this.#directory = directory; }
@@ -121,5 +122,36 @@ export class LocalUsdaAdapter implements SearchFoodCatalogProvider, UsdaAnalysis
     const food = await this.getFood(id);
     signal.throwIfAborted();
     return localEvidence(food);
+  }
+  async photoAnalysisReadiness(): Promise<UsdaPhotoAnalysisReadiness> {
+    const result = await this.#management.withActiveGeneration(generation => ({
+      generation,
+      state: usdaPhotoAnalysisGenerationReadiness(this.#directory, generation),
+    }));
+    return result ?? { state: "not-installed" };
+  }
+  async withPhotoAnalysisSnapshot<T>(signal: AbortSignal, read: (snapshot: UsdaPhotoAnalysisSnapshot) => Promise<T> | T): Promise<T> {
+    signal.throwIfAborted();
+    const result = await this.#management.withActiveGeneration(async generation => {
+      const readiness = usdaPhotoAnalysisGenerationReadiness(this.#directory, generation);
+      if (readiness === "reimport-required") throw new CatalogReimportRequiredError();
+      if (readiness === "unavailable") throw new CatalogUnavailableError();
+      return { value: await withUsdaPhotoAnalysisGeneration(this.#directory, generation, async stored => await read({
+        generation,
+        categories: () => { signal.throwIfAborted(); return stored.categories(); },
+        candidates: categoryId => {
+          signal.throwIfAborted();
+          return stored.candidates(categoryId).map(food => ({ fdcId: food.providerFoodId, description: food.originalName }));
+        },
+        evidence: fdcId => {
+          signal.throwIfAborted();
+          const food = stored.food(fdcId);
+          if (!food) throw new CatalogFoodNotFoundError();
+          return localEvidence(food);
+        },
+      })) };
+    });
+    if (!result) throw new CatalogNotInstalledError();
+    return result.value;
   }
 }

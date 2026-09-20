@@ -49,7 +49,7 @@ test("catalog management requires administrator authentication and upload CSRF b
   await expect(action(post(zip, memberCookie))).rejects.toMatchObject({ status: 404 });
   await expect(action(post(zip, adminCookie, "invalid"))).rejects.toMatchObject({ status: 403 });
   await expect(action(post(zip, adminCookie, csrfToken, "https://attacker.example"))).rejects.toMatchObject({ status: 403 });
-  expect((await loader(get())).catalog).toMatchObject({ installed: null });
+  expect((await loader(get())).catalog).toMatchObject({ installed: null, photoAnalysisReadiness: { state: "not-installed" } });
   expect((await loader(get())).catalog).not.toHaveProperty("job");
   expect((await loader(get())).catalog).not.toHaveProperty("busy");
   expect((await loader(get())).catalog.updateCheck).toMatchObject({ status: "indeterminate", availableRelease: null, error: null });
@@ -106,6 +106,10 @@ test("signed-in clients read successes independently while operator outcomes and
   expect(adminNavigation.catalogNotifications?.viewerId).toBeTypeOf("number");
   expect(await rootLoader(get(""))).toEqual({ catalogNotifications: null, theme: "dark" });
   await importArchive("usda-fdc", "foundation.zip", await foundationArchive());
+  expect((await loader(get())).catalog.photoAnalysisReadiness).toEqual({
+    state: "ready",
+    generation: getCatalogManagement().read().installed?.generation,
+  });
   await importArchive("open-food-facts", "replacement.csv.gz", offArchive([offWithBasis("100g")]));
   const before = await (await notificationLoader(get())).json() as { outcomes: CatalogOutcome[] };
   await importArchive("open-food-facts", "failure.gz", new Uint8Array([1, 2]));
