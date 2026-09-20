@@ -104,9 +104,9 @@ const providerComponentSchema = {
   additionalProperties: false,
   properties: {
     id: { type: "string", description: "Short unique visible-component identifier." },
-    name: {
+    singleFoodIdentity: {
       type: "string",
-      description: "Exactly one independently matchable visible food identity. Never combine egg and diced potato in one component when both remain visibly distinguishable.",
+      description: "Exactly one independently matchable visible food identity. Use the most specific identity supported by visible evidence, but use a neutral generic identity instead of guessing when materially different foods look indistinguishable. A value containing the word 'with' or 'and' is invalid. Do not combine foods that remain visually distinguishable and can be quantified separately. If a visible constituent's amount can be described, it must be its own item.",
     },
     preparationEvidence: { type: "string" },
     quantityDescription: { type: "string" },
@@ -114,12 +114,9 @@ const providerComponentSchema = {
       anyOf: [{ type: "number", minimum: 0.000_001, maximum: 10_000 }, { type: "null" }],
       description: "Estimated grams for the full visible component before consumedFraction is applied, or null when indefensible.",
     },
-    uncertainty: { type: "string" },
-    assumptions: {
-      type: "array",
-      description: "Visible-evidence uncertainty only. Never mention invisible cooking fats, including assumed or minimal oil or butter.",
-      items: { type: "string" },
-      maxItems: 1,
+    uncertainty: {
+      type: "string",
+      description: "Visible-evidence uncertainty only. Never mention invisible cooking fats, including assumed or minimal oil or butter. Never state unseen ingredients or recipe facts.",
     },
     nutrition: {
       type: "string",
@@ -128,12 +125,11 @@ const providerComponentSchema = {
   },
   required: [
     "id",
-    "name",
+    "singleFoodIdentity",
     "preparationEvidence",
     "quantityDescription",
     "grams",
     "uncertainty",
-    "assumptions",
     "nutrition",
   ],
 } as const;
@@ -157,16 +153,15 @@ export const GEMINI_MEAL_RESPONSE_JSON_SCHEMA = {
           maximum: 1,
           description: "Fraction of the full visible meal that was consumed. Component quantities and nutrition remain pre-fraction totals.",
         },
-        assumptions: { type: "array", items: { type: "string" }, maxItems: 8 },
         components: {
           type: "array",
-          description: "Independently matchable visible foods. Egg and diced potato must be separate items when both are visible, even when mixed together; refried beans stay together because their recipe ingredients are not individually visible.",
+          description: "One item for each independently quantifiable visible food. Separate foods that remain visually distinguishable even when mixed or touching. Visually discrete pieces with a separately estimable quantity must be separate items.",
           items: providerComponentSchema,
           minItems: 1,
           maxItems: 8,
         },
       },
-      required: ["status", "name", "consumedFraction", "assumptions", "components"],
+      required: ["status", "name", "consumedFraction", "components"],
     },
   ],
 } as const;
@@ -203,7 +198,9 @@ const configSchema = z.object({
   deadlineMs: z.number().int().positive().max(5_000).default(5_000),
 }).strict();
 
-const instruction = `Describe only food or drink visibly present in the supplied image as independently matchable nutritional components. Separate visibly distinct foods even when they are mixed, such as egg and diced potato. If scrambled egg and diced potato are both visible, you must return one egg component and one potato component; never return a combined eggs-with-potatoes component. Mixed together is not inseparable when the individual foods remain visibly distinguishable. Keep a prepared food together when its recipe ingredients are not individually visible, such as refried beans. Do not infer hidden ingredients, fats, seasonings, fillings, brands, or recipe ingredients. Never assume that a cooking fat was used, even in a phrase such as "minimal oil". Omit invisible cooking fats completely from components, assumptions, and nutrition. Never choose or invent a USDA FDC identity. Return the required structured observation and complete fallback nutrition for every visible component. Encode each component's nutrition as a JSON object inside the required nutrition string. consumedFraction is the fraction of the full visible meal that was consumed. Every component's quantity, grams, and fallback nutrition must describe its full visible portion before consumedFraction is applied. Nutrition values are totals for that stated component quantity, never values per 100 grams; the application applies consumedFraction exactly once.`;
+const instruction = `Describe only food or drink visibly present in the supplied image as independently matchable nutritional components. Return one component for each independently quantifiable visible food. Each component name must represent one visible food identity. Separate foods that remain visually distinguishable even when they are mixed or touching. Mixed together is not inseparable when the individual foods remain visually distinguishable. Cooking foods together is never, by itself, a reason to merge them. Visually discrete pieces with a separately estimable quantity remain separate components even when cooked inside another food. If you can describe or estimate a visible constituent's amount, return it as its own component. Do not join multiple visible, separately quantifiable foods in one component name with words such as "with" or "and". Use the most specific identity supported by visible evidence. If the image cannot distinguish materially different food identities, use a generic visible identity and explain the ambiguity in uncertainty instead of guessing. Do not infer hidden ingredients, fats, seasonings, fillings, brands, or recipe ingredients. Never assume that a cooking fat was used, even in a phrase such as "minimal oil". Omit invisible cooking fats completely from components, assumptions, and nutrition. Never choose or invent a USDA FDC identity. Return the required structured observation and complete fallback nutrition for every visible component. Encode each component's nutrition as a JSON object inside the required nutrition string. consumedFraction is the fraction of the full visible meal that was consumed. Every component's quantity, grams, and fallback nutrition must describe its full visible portion before consumedFraction is applied. Nutrition values are totals for that stated component quantity, never values per 100 grams; the application applies consumedFraction exactly once. Before returning, audit every proposed singleFoodIdentity. Any identity containing the literal word "with" or "and" is invalid; replace it with separate component objects for the visible foods now, not after returning.`;
+const atomicityCorrection = `Correction required: the prior response joined multiple visible foods into a compound component identity. Re-inspect the same image and return one revised component per independently quantifiable visible food. A component identity must not join foods with "with" or "and"; move each visibly distinct, separately estimable food into its own component with its own quantity, grams, uncertainty, and nutrition.`;
+const compoundIdentityPattern = /\b(?:with|and)\b/iu;
 
 export class GeminiJevPhotoAnalyzer implements PhotoAnalyzer {
   private readonly config: z.infer<typeof configSchema>;
@@ -262,17 +259,25 @@ export class GeminiJevPhotoAnalyzer implements PhotoAnalyzer {
     snapshot: UsdaPhotoAnalysisSnapshot,
   ): Promise<GeminiJevAnalysis> {
     input.signal.throwIfAborted();
-    const observation = await this.gemini.analyzeMeal({
+    let meal = parseGeminiObservation(await this.gemini.analyzeMeal({
       model: this.config.geminiModel,
       photo: input.photo,
       instruction,
       context,
-    }, input.signal);
+    }, input.signal));
     input.signal.throwIfAborted();
-    if (noFoodSchema.safeParse(observation).success) {
-      validatePhotoResult(observation, "gemini-jev-analysis", []);
+    const rejectedCompoundComponentIdentities = meal.components
+      .map(component => component.name)
+      .filter(name => compoundIdentityPattern.test(name));
+    if (rejectedCompoundComponentIdentities.length > 0) {
+      meal = parseGeminiObservation(await this.gemini.analyzeMeal({
+        model: this.config.geminiModel,
+        photo: input.photo,
+        instruction: `${instruction}\n\n${atomicityCorrection}`,
+        context: { ...context, rejectedCompoundComponentIdentities },
+      }, input.signal));
+      input.signal.throwIfAborted();
     }
-    const meal = foodObservationSchema.parse(observation);
     const state = matchingState(meal);
     const categoryRequest = buildCategoryRequest(meal, state, snapshot, this.config.jevModel);
     const categoryAnswers = await this.choices(categoryRequest, input.signal);
@@ -502,6 +507,13 @@ function geminiContext(input: Parameters<PhotoAnalyzer["analyze"]>[0]): Record<s
   } catch {
     throw new Error("Gemini context is invalid or too large");
   }
+}
+
+function parseGeminiObservation(observation: unknown): FoodObservation {
+  if (noFoodSchema.safeParse(observation).success) {
+    validatePhotoResult(observation, "gemini-jev-analysis", []);
+  }
+  return foodObservationSchema.parse(observation);
 }
 
 function analysisDeadline(parent: AbortSignal, milliseconds: number) {

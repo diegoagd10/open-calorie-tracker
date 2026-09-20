@@ -48,9 +48,16 @@ test("a strict Gemini no-food observation performs no Jev work and uses the exis
       expect(request.photo).toEqual(analyzerInput().photo);
       expect(request.context).toEqual({ previousCorrections: [], evidence: [] });
       expect(request.instruction).toContain("Do not infer hidden ingredients");
-      expect(request.instruction).toContain("egg and diced potato");
-      expect(request.instruction).toContain("refried beans");
-      expect(request.instruction).toContain("Mixed together is not inseparable");
+      expect(request.instruction).toContain("one component for each independently quantifiable visible food");
+      expect(request.instruction).toContain("Mixed together is not inseparable when the individual foods remain visually distinguishable");
+      expect(request.instruction).toContain("Each component name must represent one visible food identity");
+      expect(request.instruction).toContain("Do not join multiple visible, separately quantifiable foods in one component name");
+      expect(request.instruction).toContain("Cooking foods together is never, by itself, a reason to merge them");
+      expect(request.instruction).toContain("If you can describe or estimate a visible constituent's amount, return it as its own component");
+      expect(request.instruction).toContain("use a generic visible identity and explain the ambiguity");
+      for (const hardcodedFood of ["egg", "potato", "refried beans"]) {
+        expect(request.instruction.toLocaleLowerCase()).not.toContain(hardcodedFood);
+      }
       expect(request.instruction).toContain("Never assume that a cooking fat was used");
       expect(request.instruction).toContain("full visible portion before consumedFraction is applied");
       expect(request.instruction).toContain("never values per 100 grams");
@@ -135,6 +142,42 @@ function observedMeal() {
     }],
   };
 }
+
+test("a compound visible-food identity gets one bounded Gemini correction before matching", async () => {
+  const compoundMeal = {
+    ...observedMeal(),
+    components: [{
+      ...observedMeal().components[0],
+      name: "visible base with visible pieces",
+      quantityDescription: "one portion of the base with a separately estimated portion of pieces",
+    }],
+  };
+  const gemini: GeminiMealClient = {
+    analyzeMeal: geminiMock()
+      .mockResolvedValueOnce(compoundMeal)
+      .mockResolvedValueOnce(observedMeal()),
+  };
+  let stage = 0;
+  const jev: JevChoiceClient = {
+    choose: jevMock(async () => {
+      stage++;
+      return stage === 1
+        ? choiceResponse("category_1", ["category_1", "none"])
+        : choiceResponse("food_100", ["food_100", "none"]);
+    }),
+  };
+
+  await expect(new GeminiJevPhotoAnalyzer(gemini, jev, readyCatalog()).analyze(analyzerInput()))
+    .resolves.toMatchObject({ result: { components: [{ name: "Scrambled eggs" }] } });
+
+  expect(gemini.analyzeMeal).toHaveBeenCalledTimes(2);
+  const correction = vi.mocked(gemini.analyzeMeal).mock.calls[1][0];
+  expect(correction.instruction).toContain("Correction required");
+  expect(correction.instruction).toContain("one revised component per independently quantifiable visible food");
+  expect(correction.context).toMatchObject({
+    rejectedCompoundComponentIdentities: ["visible base with visible pieces"],
+  });
+});
 
 function readyCatalog(overrides: Partial<{
   categories: () => { id: string; name: string }[];

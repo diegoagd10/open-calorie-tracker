@@ -28,6 +28,7 @@ const geminiEnvelopeSchema = z.object({
 const encodedNutritionObservationSchema = z.object({
   status: z.literal("food"),
   components: z.array(z.object({
+    singleFoodIdentity: z.string().trim().min(1).max(200),
     nutrition: z.string().min(2).max(4_000),
   }).passthrough()).min(1).max(8),
 }).passthrough();
@@ -143,12 +144,18 @@ function decodeGeminiNutrition(value: unknown): unknown {
   if (!food.success) return value;
   return {
     ...food.data,
-    components: food.data.components.map(component => ({
-      ...component,
-      // Gemini returns only independently matchable visible components, so
-      // overlap metadata is intentionally not part of the provider contract.
-      includes: [],
-      nutrition: JSON.parse(component.nutrition) as unknown,
-    })),
+    assumptions: [],
+    components: food.data.components.map(component => {
+      const { singleFoodIdentity, ...observation } = component;
+      return {
+        ...observation,
+        name: singleFoodIdentity,
+        assumptions: [],
+        // Gemini returns only independently matchable visible components, so
+        // overlap metadata is intentionally not part of the provider contract.
+        includes: [],
+        nutrition: JSON.parse(component.nutrition) as unknown,
+      };
+    }),
   };
 }
