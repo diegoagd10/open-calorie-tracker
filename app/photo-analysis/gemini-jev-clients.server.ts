@@ -25,6 +25,12 @@ const geminiEnvelopeSchema = z.object({
     }).passthrough(),
   }).passthrough()).length(1),
 }).passthrough();
+const encodedNutritionObservationSchema = z.object({
+  status: z.literal("food"),
+  components: z.array(z.object({
+    nutrition: z.string().min(2).max(4_000),
+  }).passthrough()).min(1).max(8),
+}).passthrough();
 
 export class GeminiHttpMealClient implements GeminiMealClient {
   private readonly key: string;
@@ -55,7 +61,7 @@ export class GeminiHttpMealClient implements GeminiMealClient {
     const text = envelope.candidates[0].content.parts.map(part => part.text).join("");
     if (text.length > 50_000) throw new PhotoAnalysisProviderError();
     try {
-      return JSON.parse(text) as unknown;
+      return decodeGeminiNutrition(JSON.parse(text) as unknown);
     } catch {
       throw new PhotoAnalysisProviderError();
     }
@@ -128,4 +134,16 @@ function providerSchema<T>(schema: z.ZodType<T>, value: unknown): T {
   const result = schema.safeParse(value);
   if (!result.success) throw new PhotoAnalysisProviderError();
   return result.data;
+}
+
+function decodeGeminiNutrition(value: unknown): unknown {
+  const food = encodedNutritionObservationSchema.safeParse(value);
+  if (!food.success) return value;
+  return {
+    ...food.data,
+    components: food.data.components.map(component => ({
+      ...component,
+      nutrition: JSON.parse(component.nutrition) as unknown,
+    })),
+  };
 }

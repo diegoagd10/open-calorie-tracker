@@ -97,31 +97,8 @@ const foodObservationSchema = z.object({
     nutrition: observedNutritionSchema,
   }).strict()).min(1).max(8),
 }).strict();
-const providerAmountSchema = { type: "number", minimum: 0, maximum: 999_999.999 } as const;
-const providerOptionalAmountSchema = { anyOf: [providerAmountSchema, { type: "null" }] } as const;
-const providerNutritionSchema = {
-  type: "object",
-  description: "Nutrition totals for the component's full stated quantity before consumedFraction is applied; never per 100 grams.",
-  additionalProperties: false,
-  properties: {
-    energyKcal: providerAmountSchema,
-    proteinGrams: providerAmountSchema,
-    carbohydrateGrams: providerAmountSchema,
-    fatGrams: providerAmountSchema,
-    fiberGrams: providerOptionalAmountSchema,
-    sugarGrams: providerOptionalAmountSchema,
-    sodiumMilligrams: providerOptionalAmountSchema,
-  },
-  required: [
-    "energyKcal",
-    "proteinGrams",
-    "carbohydrateGrams",
-    "fatGrams",
-    "fiberGrams",
-    "sugarGrams",
-    "sodiumMilligrams",
-  ],
-} as const;
+// Keep Gemini's provider schema shallow enough for low-latency models. The HTTP
+// adapter decodes this bounded JSON string before this module validates the full shape.
 const providerComponentSchema = {
   type: "object",
   additionalProperties: false,
@@ -137,7 +114,10 @@ const providerComponentSchema = {
     uncertainty: { type: "string" },
     assumptions: { type: "array", items: { type: "string" }, maxItems: 1 },
     includes: { type: "array", items: { type: "string" }, maxItems: 30 },
-    nutrition: providerNutritionSchema,
+    nutrition: {
+      type: "string",
+      description: "JSON object with energyKcal, proteinGrams, carbohydrateGrams, fatGrams, fiberGrams, sugarGrams, and sodiumMilligrams totals for the full stated quantity; the last three may be null.",
+    },
   },
   required: [
     "id",
@@ -211,7 +191,7 @@ const configSchema = z.object({
   deadlineMs: z.number().int().positive().max(5_000).default(5_000),
 }).strict();
 
-const instruction = `Describe only food or drink visibly present in the supplied image. Separate independently visible foods, but keep an inseparable prepared food together. Do not infer hidden ingredients, fats, seasonings, fillings, brands, or recipe ingredients. Never choose or invent a USDA FDC identity. Return the required structured observation and complete fallback nutrition for every visible component. consumedFraction is the fraction of the full visible meal that was consumed. Every component's quantity, grams, and fallback nutrition must describe its full visible portion before consumedFraction is applied. Nutrition values are totals for that stated component quantity, never values per 100 grams; the application applies consumedFraction exactly once.`;
+const instruction = `Describe only food or drink visibly present in the supplied image. Separate independently visible foods, but keep an inseparable prepared food together. Do not infer hidden ingredients, fats, seasonings, fillings, brands, or recipe ingredients. Never choose or invent a USDA FDC identity. Return the required structured observation and complete fallback nutrition for every visible component. Encode each component's nutrition as a JSON object inside the required nutrition string. consumedFraction is the fraction of the full visible meal that was consumed. Every component's quantity, grams, and fallback nutrition must describe its full visible portion before consumedFraction is applied. Nutrition values are totals for that stated component quantity, never values per 100 grams; the application applies consumedFraction exactly once.`;
 
 export class GeminiJevPhotoAnalyzer implements PhotoAnalyzer {
   private readonly config: z.infer<typeof configSchema>;

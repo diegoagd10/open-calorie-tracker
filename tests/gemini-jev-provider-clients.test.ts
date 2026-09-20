@@ -53,6 +53,77 @@ test("the Gemini adapter sends one authenticated structured multimodal request",
   expect(JSON.stringify(body)).not.toContain("gemini-private-key");
 });
 
+test("the Gemini adapter keeps the provider schema shallow and decodes bounded nutrition JSON", async () => {
+  const nutrition = {
+    energyKcal: 155,
+    proteinGrams: 13,
+    carbohydrateGrams: 1.1,
+    fatGrams: 11,
+    fiberGrams: 0,
+    sugarGrams: 1.1,
+    sodiumMilligrams: 124,
+  };
+  const providerObservation = {
+    status: "food",
+    name: "Two eggs",
+    consumedFraction: 1,
+    assumptions: [],
+    components: [{
+      id: "eggs",
+      name: "Eggs",
+      preparationEvidence: "Two cooked eggs are visible.",
+      quantityDescription: "2 large eggs",
+      grams: 100,
+      uncertainty: "Preparation fat is not visible.",
+      assumptions: [],
+      includes: [],
+      nutrition: JSON.stringify(nutrition),
+    }],
+  };
+  const network = vi.fn<typeof fetch>(async () => Response.json({
+    candidates: [{
+      finishReason: "STOP",
+      content: { parts: [{ text: JSON.stringify(providerObservation) }] },
+    }],
+  }));
+  const client = new GeminiHttpMealClient("gemini-private-key", network);
+
+  await expect(client.analyzeMeal(mealRequest, new AbortController().signal)).resolves.toEqual({
+    ...providerObservation,
+    components: [{ ...providerObservation.components[0], nutrition }],
+  });
+
+  const body = JSON.parse(String(network.mock.calls[0][1]?.body)) as {
+    generationConfig: { responseJsonSchema: { anyOf: { properties?: Record<string, unknown> }[] } };
+  };
+  const foodSchema = body.generationConfig.responseJsonSchema.anyOf.find(option => option.properties?.components);
+  const nutritionSchema = z.object({
+    properties: z.object({
+      components: z.object({
+        items: z.object({
+          properties: z.object({ nutrition: z.object({ type: z.literal("string") }) }).passthrough(),
+        }).passthrough(),
+      }).passthrough(),
+    }).passthrough(),
+  }).parse(foodSchema).properties.components.items.properties.nutrition;
+  expect(nutritionSchema).toEqual(expect.objectContaining({ type: "string" }));
+});
+
+test("malformed Gemini nutrition JSON fails at the provider boundary", async () => {
+  const network = vi.fn<typeof fetch>(async () => Response.json({
+    candidates: [{
+      finishReason: "STOP",
+      content: { parts: [{ text: JSON.stringify({
+        status: "food",
+        components: [{ nutrition: "not json" }],
+      }) }] },
+    }],
+  }));
+
+  await expect(new GeminiHttpMealClient("gemini-private-key", network)
+    .analyzeMeal(mealRequest, new AbortController().signal)).rejects.toBeInstanceOf(PhotoAnalysisProviderError);
+});
+
 test("the Jev adapter sends one Bearer-authenticated batched Choice request", async () => {
   const response = { model: "jev-1.13.0", answers: {}, usage: { input_tokens: 1, output_tokens: 1 } };
   const network = vi.fn<typeof fetch>(async () => Response.json(response));
