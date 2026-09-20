@@ -1,15 +1,17 @@
 import path from "node:path";
 import { z } from "zod";
 import { getApplicationDatabase } from "../database/runtime.server";
+import { createDatabaseApplicationMetadata } from "../database/application-metadata.server";
 import type { ApplicationDatabaseClient } from "../database/database.server";
 import { initializeCredentialStorage, shutdownCredentialStorage } from "../credentials/runtime.server";
 import { getUsdaAnalysisReader } from "../catalog/runtime.server";
 import { PhotoAnalysisService } from "./photo-analysis.server";
 import { PiPhotoAnalyzer, piCompletion } from "./pi.server";
-import { PiConnectionService } from "./pi-connection.server";
 import { PhotoAnalysisCredentials } from "./credentials.server";
 import { RemotePhotoAnalysisCredentialValidator } from "./provider-credential-validation.server";
-import { TestPhotoAnalysisCredentialValidator, TestPhotoAnalyzer } from "./test-fixture.server";
+import { PhotoAnalysisConfigurationService } from "./configuration.server";
+import { RemotePhotoAnalysisModelDiscovery } from "./model-discovery.server";
+import { TestPhotoAnalysisCredentialValidator, TestPhotoAnalysisModelDiscovery, TestPhotoAnalyzer } from "./test-fixture.server";
 
 const environmentSchema = z.object({
   PHOTO_AI_PROVIDER: z.string().min(1).default("openai-codex"),
@@ -24,6 +26,7 @@ const environmentSchema = z.object({
   PHOTO_AI_USDA_ROUNDS: z.coerce.number().int().min(1).max(5).default(3),
   PHOTO_ANALYSIS_TEST_FIXTURE: z.enum(["0", "1"]).optional(),
   PHOTO_CREDENTIAL_VALIDATION_TEST_FIXTURE: z.enum(["0", "1"]).optional(),
+  PHOTO_MODEL_DISCOVERY_TEST_FIXTURE: z.enum(["0", "1"]).optional(),
   FOOD_LOG_TEST_NOW: z.string().optional(),
 });
 let current:
@@ -60,18 +63,6 @@ export function getPhotoAnalysisService() {
   return service;
 }
 
-let connection: { key: string; service: PiConnectionService } | undefined;
-
-export function getPiConnectionService() {
-  const config = environmentSchema.parse(process.env);
-  const key = JSON.stringify([config.PHOTO_AI_AUTH_PATH, config.PHOTO_AI_PROVIDER]);
-  if (connection?.key !== key) {
-    connection?.service.shutdown();
-    connection = { key, service: new PiConnectionService(config.PHOTO_AI_AUTH_PATH, config.PHOTO_AI_PROVIDER) };
-  }
-  return connection.service;
-}
-
 let credentials: Promise<PhotoAnalysisCredentials> | undefined;
 
 export function getPhotoAnalysisCredentials(): Promise<PhotoAnalysisCredentials> {
@@ -85,11 +76,27 @@ export function getPhotoAnalysisCredentials(): Promise<PhotoAnalysisCredentials>
   return credentials;
 }
 
+let configuration: Promise<PhotoAnalysisConfigurationService> | undefined;
+
+export function getPhotoAnalysisConfiguration(): Promise<PhotoAnalysisConfigurationService> {
+  configuration ??= getPhotoAnalysisCredentials().then(credentialService => {
+    const config = environmentSchema.parse(process.env);
+    const discovery = process.env.NODE_ENV === "test" && config.PHOTO_MODEL_DISCOVERY_TEST_FIXTURE === "1"
+      ? new TestPhotoAnalysisModelDiscovery()
+      : new RemotePhotoAnalysisModelDiscovery();
+    return new PhotoAnalysisConfigurationService(
+      createDatabaseApplicationMetadata(getApplicationDatabase().getClient()),
+      credentialService,
+      discovery,
+    );
+  });
+  return configuration;
+}
+
 export function shutdownPhotoAnalysis() {
-  connection?.service.shutdown();
-  connection = undefined;
   current?.service.shutdown();
   current = undefined;
   credentials = undefined;
+  configuration = undefined;
   shutdownCredentialStorage();
 }

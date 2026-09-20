@@ -1,5 +1,6 @@
 import type { PhotoAnalyzer } from "./photo-analysis.server";
 import { ProviderCredentialRejectedError, type PhotoAnalysisCredentialValidator } from "./credentials.server";
+import type { PhotoAnalysisModelDiscovery } from "./configuration.server";
 
 export class TestPhotoAnalyzer implements PhotoAnalyzer {
   async analyze(input: Parameters<PhotoAnalyzer["analyze"]>[0]) {
@@ -95,5 +96,21 @@ export class TestPhotoAnalysisCredentialValidator implements PhotoAnalysisCreden
 
   async validateTypeSafe(key: string): Promise<void> {
     if (key.includes("invalid")) throw new ProviderCredentialRejectedError();
+  }
+}
+
+export class TestPhotoAnalysisModelDiscovery implements PhotoAnalysisModelDiscovery {
+  async discoverGemini() {
+    return [
+      { id: "gemini-3.1-flash-lite", displayName: "Gemini 3.1 Flash-Lite", methods: ["generateContent"] },
+      { id: "gemini-3.5-flash", displayName: "Gemini 3.5 Flash", methods: ["generateContent"] },
+    ];
+  }
+
+  async discoverJev() {
+    return [
+      { id: "jev", effectiveId: "jev-1.13.0" },
+      { id: "jev-1.14.0", effectiveId: "jev-1.14.0" },
+    ];
   }
 }

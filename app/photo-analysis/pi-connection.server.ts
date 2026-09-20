@@ -18,7 +18,7 @@ type PendingConnection = {
   done?: Promise<void>;
 };
 
-export class PiConnectionConflict extends Error {}
+class PiConnectionConflict extends Error {}
 
 const OPENAI_AUTHORIZATION_ORIGIN = "https://auth.openai.com";
 const OPENAI_AUTHORIZATION_PATH = "/oauth/authorize";

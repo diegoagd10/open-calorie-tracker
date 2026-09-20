@@ -1,4 +1,3 @@
-import { mkdir, rm, writeFile } from "node:fs/promises";
 import AxeBuilder from "@axe-core/playwright";
 import { bootstrapOrSignInBrowserTestUser, expect, openBrowserTestDatabase, signInProvisionedMember, test } from "./reset-database";
 
@@ -8,24 +7,14 @@ const validPair = {
   typeSafe: "ts_live_BrowserTypeSafeCredential_1234567890",
 };
 
-async function callbackAddress(page: import("@playwright/test").Page) {
-  const href = await page.getByRole("link", { name: "Authorize with OpenAI" }).getAttribute("href");
-  if (!href) throw new Error("Missing OpenAI authorization link");
-  const state = new URL(href).searchParams.get("state");
-  if (!state) throw new Error("Missing OAuth state");
-  return `http://localhost:1455/auth/callback?code=browser-approval&state=${state}`;
-}
-
 test.beforeEach(async () => {
   const database = openBrowserTestDatabase();
   database.prepare("DELETE FROM encrypted_credential_bundles").run();
+  database.prepare("DELETE FROM application_metadata WHERE key = 'photo_analysis_configuration'").run();
   database.close();
-  await mkdir("data/playwright-tests/pi", { recursive: true });
-  await rm("data/playwright-tests/pi/auth.json", { force: true });
-  await writeFile("data/playwright-tests/pi/decision", "pending");
 });
 
-test("administrator configures, replaces, and explicitly deletes credentials on mobile @camera-matrix", async ({ page }, testInfo) => {
+test("administrator configures credentials, searches models, and keeps per-model thresholds on mobile @camera-matrix", async ({ page }, testInfo) => {
   await bootstrapOrSignInBrowserTestUser(page, "ai.admin", password);
   await page.getByRole("button", { name: "Finish setup" }).click();
   await page.getByRole("link", { name: "Settings", exact: true }).click();
@@ -44,8 +33,69 @@ test("administrator configures, replaces, and explicitly deletes credentials on 
   await expect(page.locator("body")).not.toContainText(validPair.gemini);
   await expect(page.locator("body")).not.toContainText(validPair.typeSafe);
 
+  const models = page.getByRole("region", { name: "Models and confidence" });
+  await expect(models).toContainText("Ready");
+  await expect(page.getByRole("combobox", { name: "Gemini model" })).toHaveValue("gemini-3.1-flash-lite");
+  await expect(page.getByRole("combobox", { name: "Jev model" })).toHaveValue("jev-1.13.0");
+  await expect(models).toContainText("un calibrated".replace(" ", ""));
+  await expect(page.getByLabel("Category confidence threshold")).toHaveValue("0");
+  await expect(page.getByLabel("Product confidence threshold")).toHaveValue("0");
+
+  const geminiModel = page.getByRole("combobox", { name: "Gemini model" });
+  await geminiModel.fill("3.5");
+  await expect(page.getByRole("option", { name: /Gemini 3.5 Flash/ })).toBeVisible();
+  await geminiModel.press("Enter");
+  await expect(geminiModel).toHaveValue("gemini-3.5-flash");
+
+  const jevModel = page.getByRole("combobox", { name: "Jev model" });
+  await jevModel.fill("1.14");
+  await jevModel.press("Enter");
+  await expect(jevModel).toHaveValue("jev-1.14.0");
+  await expect(models).toContainText("jev-1.14.0 is uncalibrated");
+  await page.getByLabel("Category confidence threshold").fill("0.3");
+  await page.getByLabel("Product confidence threshold").fill("0.55");
+  await page.getByRole("button", { name: "Save model settings" }).click();
+  await expect(models.getByRole("status").filter({ hasText: "model settings saved" })).toBeVisible();
+
+  await jevModel.fill("1.13");
+  await jevModel.press("Enter");
+  await expect(page.getByLabel("Category confidence threshold")).toHaveValue("0");
+  await expect(page.getByLabel("Product confidence threshold")).toHaveValue("0");
+  await page.getByLabel("Category confidence threshold").fill("0.2");
+  await page.getByLabel("Product confidence threshold").fill("0.4");
+  await page.getByRole("button", { name: "Save model settings" }).click();
+  await expect(models).toContainText("Saved calibration for jev-1.13.0");
+
+  await jevModel.fill("1.14");
+  await jevModel.press("Enter");
+  await expect(page.getByLabel("Category confidence threshold")).toHaveValue("0.3");
+  await expect(page.getByLabel("Product confidence threshold")).toHaveValue("0.55");
+
+  await geminiModel.fill("arbitrary-free-text");
+  await expect(page.getByText("Choose a Gemini model from the available options.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Save model settings" })).toBeDisabled();
+
   await page.reload();
   await expect(credentials).toContainText("Configured");
+  const unavailableDatabase = openBrowserTestDatabase();
+  unavailableDatabase.prepare(`
+    INSERT INTO application_metadata (key, value, updated_at) VALUES (?, ?, ?)
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+  `).run("photo_analysis_configuration", JSON.stringify({
+    version: 1,
+    geminiModel: "gemini-3.5-flash",
+    jevModel: "jev-9.9.9",
+    profiles: {
+      "jev-9.9.9": { categoryConfidenceThreshold: 0.7, productConfidenceThreshold: 0.8, calibrated: true },
+    },
+  }), "2026-09-19T20:00:00.000Z");
+  unavailableDatabase.close();
+  await page.reload();
+  await expect(models).toContainText("Not ready");
+  await expect(models.getByRole("alert")).toContainText("selected Jev model is unavailable");
+  await expect(jevModel).toHaveValue("jev-9.9.9");
+  await expect(page.getByLabel("Category confidence threshold")).toHaveValue("0.7");
+  await expect(page.getByLabel("Product confidence threshold")).toHaveValue("0.8");
   await expect(page.getByLabel("Gemini API key")).toHaveValue("");
   await expect(page.getByLabel("TypeSafe API key")).toHaveValue("");
   await page.getByLabel("Gemini API key").fill("AIzaSyBrowserReplacement_1234567890");
@@ -59,17 +109,7 @@ test("administrator configures, replaces, and explicitly deletes credentials on 
   await page.getByRole("button", { name: "Delete credential pair" }).click();
   await expect(credentials).toContainText("Not configured");
   await expect(page.getByRole("button", { name: "Delete credential pair" })).toHaveCount(0);
-
-  const piConnection = page.getByRole("region", { name: "OpenAI connection" });
-  await expect(piConnection).toContainText("Not connected");
-  await page.getByRole("button", { name: "Connect OpenAI", exact: true }).click();
-  await expect(page.getByRole("link", { name: "Authorize with OpenAI" })).toBeVisible();
-  await writeFile("data/playwright-tests/pi/decision", "approve");
-  expect((await page.request.get(await callbackAddress(page))).ok()).toBe(true);
-  await expect(page.getByRole("button", { name: "Reconnect OpenAI" })).toBeVisible({ timeout: 10_000 });
-  await expect(piConnection).toContainText("Connected");
-  await page.getByRole("button", { name: "Disconnect", exact: true }).click();
-  await expect(piConnection).toContainText("Not connected");
+  await expect(models).toContainText("Save a valid credential pair");
 
   await page.screenshot({ path: testInfo.outputPath("photo-credentials.png"), fullPage: true });
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);

@@ -30,36 +30,22 @@ credential and does not authenticate a Codex subscription.
 On a local installation, sign in as the application administrator and open
 **Settings → AI photo estimates**. Enter the Gemini and TypeSafe API keys as one
 pair. Both are validated before the application atomically replaces the encrypted
-shared bundle; saved keys are never displayed again. The pair is staged for the
-later provider cutover and does not change the active analyzer in this expand step.
+shared bundle; saved keys are never displayed again. Settings then discovers the
+models available to those credentials without returning either key to the browser.
 
-The same page retains **OpenAI connection** for Pi. The application displays Pi's
-short-lived **Authorize with OpenAI** browser link. Open it, sign in, and approve.
-When Pi receives its callback on `localhost:1455`, Settings updates automatically.
-There is no code, token, or callback address to copy into the application and no
-device-code login setting is required. See the [official authentication
-guide](https://learn.chatgpt.com/docs/auth#sign-in-with-chatgpt).
+Choose a supported Gemini model and a concrete Jev version from the searchable
+selectors. Free-text model identifiers cannot be saved. Category and product
+confidence thresholds range from `0.0` through `1.0` and are stored separately for
+each Jev version. `0.0` accepts any non-`none` choice regardless of distribution
+ambiguity; higher values require a more concentrated probability distribution.
+If either Jev decision is below its threshold, that component uses its Gemini
+estimate. New Jev versions begin at `0.0` and are marked uncalibrated. A saved
+selection that later becomes unavailable remains selected and makes new Photo
+Analysis configuration unready instead of switching silently.
 
-This browser flow requires the browser and Pi process to share the same localhost.
-For a remote host or an isolated container, use a trusted loopback tunnel or
-provision Pi's auth file on the application host; never expose the callback port
-publicly.
-Settings supports the default `openai-codex` provider. Other providers retain
-the existing operator-managed Pi credential path.
-
-The connection serves this entire installation. Only the application administrator
-can read or change it; a pending authorization link is visible only in the session
-that started it. A single sign-in can run at a time. Cancel or expiration clears
-the pending link while retaining any previously saved connection. Restarting the
-application interrupts pending sign-ins; request a new link. Completed credentials
-persist.
-
-Use **Reconnect OpenAI** to replace the saved account and **Disconnect** to remove
-its local credentials. Disconnect does not delete meals, revoke provider-side
-access, or cancel an already dispatched photo request. Settings reports saved
-connection status; a revoked subscription or provider outage can still make an
-analysis fail. Provider errors and access/refresh tokens are never returned to
-the Settings page.
+These provider settings are staged for the later runtime cutover and do not change
+the active Pi analyzer in this expand step. The legacy Pi authorization UI is no
+longer shown on this page; the existing auth file remains untouched and active.
 
 Pi stores renewable credentials in `auth.json` and refreshes them during model
 requests. In Docker the default path is `/app/data/pi/auth.json`, inside the
