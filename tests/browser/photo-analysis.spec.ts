@@ -42,9 +42,15 @@ async function verifyReadinessRecovery(page: Page, browser: Browser) {
   await page.reload();
   await page.getByRole("button", { name: "Add Food", exact: true }).click();
   await expect(page.getByLabel("Take photo · AI calories")).toBeDisabled();
-  await expect(page.getByRole("dialog")).toContainText(
-    "Configure Gemini and TypeSafe credentials.",
-  );
+  const adminReason = page.getByText("Configure Gemini and TypeSafe credentials.", { exact: true });
+  const adminHelp = page.getByRole("button", { name: "Why AI photo is unavailable" });
+  await expect(adminReason).toBeHidden();
+  await adminHelp.hover();
+  await expect(adminReason).toBeVisible();
+  await page.getByRole("heading", { name: "Add Food" }).hover();
+  await expect(adminReason).toBeHidden();
+  await adminHelp.click();
+  await expect(adminReason).toBeVisible();
   await expect(page.getByRole("link", { name: "Open settings" })).toHaveAttribute(
     "href",
     "/settings/ai",
@@ -63,9 +69,8 @@ async function verifyReadinessRecovery(page: Page, browser: Browser) {
     await member.getByRole("button", { name: "Add Food", exact: true }).focus();
     await member.keyboard.press("Enter");
     await expect(member.getByLabel("Take photo · AI calories")).toBeDisabled();
-    await expect(member.getByRole("dialog")).toContainText(
-      "AI photo analysis is not available right now.",
-    );
+    await member.getByRole("button", { name: "Why AI photo is unavailable" }).click();
+    await expect(member.getByText("AI photo analysis is not available right now.", { exact: true })).toBeVisible();
     await expect(member.getByRole("link", { name: "Open settings" })).toHaveCount(0);
     await expect(member.getByRole("link", { name: /Manual/ })).toBeEnabled();
     await member.goto("about:blank");
@@ -84,9 +89,8 @@ async function verifyReadinessRecovery(page: Page, browser: Browser) {
     await page.goto(homeOrigin);
     await page.getByRole("button", { name: "Add Food", exact: true }).click();
     await expect(page.getByLabel("Take photo · AI calories")).toBeDisabled();
-    await expect(page.getByRole("dialog")).toContainText(
-      "Reimport USDA Foundation for Photo Analysis.",
-    );
+    await page.getByRole("button", { name: "Why AI photo is unavailable" }).click();
+    await expect(page.getByText("Reimport USDA Foundation for Photo Analysis.", { exact: true })).toBeVisible();
     await expect(page.getByRole("link", { name: "Open settings" })).toHaveAttribute(
       "href",
       "/settings/catalogs",

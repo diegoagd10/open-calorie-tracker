@@ -104,8 +104,8 @@ test("configured Settings shows supported defaults, calibration, and threshold s
   expect(input(renderer, "jevModel").props.value).toBe("jev-1.13.0");
   expect(input(renderer, "categoryConfidenceThreshold").props.value).toBe(0.25);
   expect(input(renderer, "productConfidenceThreshold").props.value).toBe(0.5);
-  expect(text(renderer.root)).toContain("New-attempt readiness");
-  expect(text(renderer.root)).toContain("New Photo Analysis attempts can start");
+  expect(text(renderer.root)).toContain("AI photo availability");
+  expect(text(renderer.root)).toContain("Members can start a photo estimate from Add Food");
   await act(() => renderer.unmount());
 });
 
@@ -115,8 +115,9 @@ test("Settings presents readiness recovery without linking back to the current p
     reason: "Reimport USDA Foundation for Photo Analysis.",
     destination: "/settings/catalogs",
   });
-  expect(text(catalog.root)).toContain("New-attempt readiness");
-  expect(text(catalog.root)).toContain("Blocked");
+  expect(text(catalog.root)).toContain("AI photo availability");
+  expect(text(catalog.root)).toContain("Unavailable");
+  expect(text(catalog.root)).toContain("AI photo is hidden from Add Food until this is fixed");
   expect(text(catalog.root)).toContain("Reimport USDA Foundation for Photo Analysis.");
   expect(catalog.root.findAllByProps({ href: "/settings/catalogs" })).toHaveLength(2);
   await act(() => catalog.unmount());

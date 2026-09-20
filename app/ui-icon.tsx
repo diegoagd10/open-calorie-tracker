@@ -3,6 +3,7 @@ export type UiIconName =
   | "calendar"
   | "camera"
   | "external"
+  | "help"
   | "info"
   | "lock"
   | "log"
@@ -67,6 +68,11 @@ export function UiIcon({ name }: { name: UiIconName }) {
         <path d="M12 5v14M5 12h14" />
       ) : name === "external" ? (
         <path d="M14 4h6v6M20 4l-9 9M18 13v6a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h6" />
+      ) : name === "help" ? (
+        <>
+          <circle cx="12" cy="12" r="9" />
+          <path d="M9.8 9a2.4 2.4 0 1 1 3.25 2.25c-.7.3-1.05.75-1.05 1.75M12 17h.01" />
+        </>
       ) : (
         <>
           <circle cx="12" cy="12" r="9" />

@@ -177,34 +177,38 @@ function ModelCombobox({ label, name, models, value, onChange, describedBy }: Mo
   const filtered = models.filter(model => `${model.label} ${model.id}`.toLocaleLowerCase().includes(query));
   const choose = (model: ModelOption) => { onChange(model.id); setOpen(false); setActive(0); };
   return (
-    <div className={styles.credentialForm}>
+    <div className={styles.modelField}>
       <label htmlFor={id}>{label}</label>
-      <input
-        id={id}
-        name={name}
-        type="search"
-        role="combobox"
-        autoComplete="off"
-        aria-autocomplete="list"
-        aria-controls={listId}
-        aria-expanded={open}
-        aria-activedescendant={open && filtered[active] ? `${id}-option-${active}` : undefined}
-        aria-describedby={describedBy}
-        value={value}
-        onFocus={() => setOpen(true)}
-        onBlur={() => setTimeout(() => setOpen(false), 0)}
-        onChange={event => { onChange(event.target.value); setOpen(true); setActive(0); }}
-        onKeyDown={event => {
-          if (event.key === "ArrowDown") {
-            event.preventDefault(); setOpen(true);
-            setActive(index => Math.min(index + 1, Math.max(0, filtered.length - 1)));
-          } else if (event.key === "ArrowUp") {
-            event.preventDefault(); setActive(index => Math.max(0, index - 1));
-          } else if (event.key === "Enter" && open && filtered[active]) {
-            event.preventDefault(); choose(filtered[active]);
-          } else if (event.key === "Escape") setOpen(false);
-        }}
-      />
+      <div className={styles.comboboxControl}>
+        <input
+          id={id}
+          name={name}
+          type="search"
+          role="combobox"
+          autoComplete="off"
+          aria-autocomplete="list"
+          aria-controls={listId}
+          aria-expanded={open}
+          aria-haspopup="listbox"
+          aria-activedescendant={open && filtered[active] ? `${id}-option-${active}` : undefined}
+          aria-describedby={describedBy}
+          value={value}
+          onFocus={() => setOpen(true)}
+          onBlur={() => setTimeout(() => setOpen(false), 0)}
+          onChange={event => { onChange(event.target.value); setOpen(true); setActive(0); }}
+          onKeyDown={event => {
+            if (event.key === "ArrowDown") {
+              event.preventDefault(); setOpen(true);
+              setActive(index => Math.min(index + 1, Math.max(0, filtered.length - 1)));
+            } else if (event.key === "ArrowUp") {
+              event.preventDefault(); setActive(index => Math.max(0, index - 1));
+            } else if (event.key === "Enter" && open && filtered[active]) {
+              event.preventDefault(); choose(filtered[active]);
+            } else if (event.key === "Escape") setOpen(false);
+          }}
+        />
+        <span aria-hidden="true" className={styles.comboboxChevron}>⌄</span>
+      </div>
       {open ? (
         <ul id={listId} role="listbox" aria-label={`${label} options`}>
           {filtered.length ? filtered.map((model, index) => (
@@ -324,7 +328,7 @@ export default function AiSettings({ loaderData, actionData }: Route.ComponentPr
             <Form method="post" className={styles.deleteForm}>
               <input type="hidden" name="csrfToken" value={loaderData.csrfToken} />
               <label className={styles.confirmation}><input type="checkbox" name="confirmation" value="delete" required />I understand this disables new Photo Analysis credential consumers.</label>
-              <button disabled={pending} name="intent" value="delete-credentials">Delete credential pair</button>
+              <button className={styles.destructive} disabled={pending} name="intent" value="delete-credentials">Delete credential pair</button>
             </Form>
           ) : null}
           <p className={styles.note}>Replacing or deleting this pair affects future attempts only. It never changes saved meals, Food Entries, or Photo Analysis history.</p>
@@ -344,24 +348,25 @@ export default function AiSettings({ loaderData, actionData }: Route.ComponentPr
         <section className={styles.card} aria-labelledby="readiness-heading">
           <div className={styles.heading}>
             <div>
-              <h2 id="readiness-heading">New-attempt readiness</h2>
-              <p>Credentials, selected models, and USDA Foundation</p>
+              <h2 id="readiness-heading">AI photo availability</h2>
+              <p>Can members use AI photo from Add Food?</p>
             </div>
             <span className={loaderData.readiness.state === "ready" ? styles.connected : styles.disconnected}>
-              {loaderData.readiness.state === "ready" ? "Ready" : "Blocked"}
+              {loaderData.readiness.state === "ready" ? "Available" : "Unavailable"}
             </span>
           </div>
           {loaderData.readiness.state === "ready" ? (
-            <p>New Photo Analysis attempts can start.</p>
+            <p>AI photo is available. Members can start a photo estimate from Add Food.</p>
           ) : (
             <p role="alert" className={styles.error}>
+              <strong>AI photo is hidden from Add Food until this is fixed.</strong>{" "}
               {loaderData.readiness.reason}{" "}
               {loaderData.readiness.destination && loaderData.readiness.destination !== "/settings/ai" ? (
                 <Link to={loaderData.readiness.destination}>Open Food Catalogs settings</Link>
               ) : null}
             </p>
           )}
-          <p className={styles.note}>Active attempts keep the configuration and catalog generation they started with.</p>
+          <p className={styles.note}>Changes affect new photos only. Meals already being analyzed continue with the settings they started with.</p>
         </section>
         <SettingsDestinations active="ai" csrfToken={loaderData.csrfToken} isAdministrator />
       </main>

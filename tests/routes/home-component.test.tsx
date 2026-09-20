@@ -1004,6 +1004,8 @@ test("Add Food disables only AI photo capture and presents role-appropriate reco
   });
   expect(administrator.root.findByProps({ "aria-label": "Take photo · AI calories" }).props.disabled).toBe(true);
   expect(allText(administrator)).toContain("Configure Gemini and TypeSafe credentials.");
+  expect(administrator.root.findByProps({ "aria-label": "Why AI photo is unavailable" })).toBeDefined();
+  expect(administrator.root.findByProps({ "aria-label": "AI photo unavailable" }).props.role).toBe("note");
   expect(administrator.root.findByProps({ href: "/settings/ai" })).toBeDefined();
   await act(async () => administrator.unmount());
 });

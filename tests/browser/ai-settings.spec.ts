@@ -102,6 +102,7 @@ test("administrator configures credentials, searches models, and keeps per-model
   await page.getByLabel("TypeSafe API key").fill("ts_live_BrowserReplacement_1234567890");
   await page.getByRole("button", { name: "Replace credential pair" }).click();
   await expect(credentials.getByRole("status")).toContainText("credentials saved");
+  await page.screenshot({ path: testInfo.outputPath("photo-settings-configured.png"), fullPage: true });
 
   await page.getByRole("button", { name: "Delete credential pair" }).click();
   await expect(credentials).toContainText("Configured");

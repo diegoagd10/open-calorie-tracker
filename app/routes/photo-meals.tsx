@@ -22,6 +22,7 @@ export function usePhotoUpload(
   const navigate = useNavigate();
   const [preview, setPreview] = useState<string>();
   const [error, setError] = useState<string>();
+  const [availabilityOpen, setAvailabilityOpen] = useState(false);
   const pendingUpload = useRef<FormData | null>(null);
   useEffect(
     () => () => {
@@ -77,12 +78,32 @@ export function usePhotoUpload(
           />
         </label>
         {readiness.state === "unavailable" ? (
-          <p className={methodStyles.availability} id="photo-analysis-readiness">
-            {readiness.reason}{" "}
-            {readiness.destination ? (
-              <Link to={readiness.destination}>Open settings</Link>
-            ) : null}
-          </p>
+          <div
+            className={methodStyles.availability}
+            data-open={availabilityOpen || undefined}
+          >
+            <button
+              aria-controls="photo-analysis-readiness"
+              aria-expanded={availabilityOpen}
+              aria-label="Why AI photo is unavailable"
+              className={methodStyles.availabilityTrigger}
+              onClick={() => setAvailabilityOpen(open => !open)}
+              type="button"
+            >
+              <UiIcon name="help" />
+            </button>
+            <div
+              aria-label="AI photo unavailable"
+              className={methodStyles.availabilityPopover}
+              id="photo-analysis-readiness"
+              role="note"
+            >
+              <p>{readiness.reason}</p>
+              {readiness.destination ? (
+                <Link to={readiness.destination}>Open settings</Link>
+              ) : null}
+            </div>
+          </div>
         ) : null}
       </div>
     ),
