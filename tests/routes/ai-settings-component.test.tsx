@@ -104,7 +104,6 @@ test("configured Settings shows supported defaults, calibration, and threshold s
   expect(input(renderer, "jevModel").props.value).toBe("jev-1.13.0");
   expect(input(renderer, "categoryConfidenceThreshold").props.value).toBe(0.25);
   expect(input(renderer, "productConfidenceThreshold").props.value).toBe(0.5);
-  expect(text(renderer.root)).not.toContain("OpenAI connection");
   expect(text(renderer.root)).toContain("New-attempt readiness");
   expect(text(renderer.root)).toContain("New Photo Analysis attempts can start");
   await act(() => renderer.unmount());

@@ -36,7 +36,7 @@ ordinary meal endpoint or administrator credential settings. Provider payloads,
 hidden reasoning, credentials, authorization headers, local secret paths, and
 image bytes are not part of matching diagnostics. Legacy revisions remain
 readable and are labeled when detailed provenance is unavailable. Do not publish
-the database or auth file.
+the database, secrets directory, master key, or live-smoke inputs.
 
 ## Operator setup
 
@@ -82,9 +82,8 @@ resumable execution system.
 | `APPLICATION_MASTER_KEY_PATH` | `application-master.key` inside `APPLICATION_SECRETS_PATH` |
 
 Provider configuration stays behind the backend runtime boundary. Gemini and Jev
-requests use the captured generic API credentials and concrete model identifiers;
-there is no coding-agent session, shell, file tool, extension loader, or project
-context. The whole attempt, including readiness capture, has a five-second
+requests use the captured generic API credentials and concrete model identifiers.
+The whole attempt, including readiness capture, has a five-second
 deadline. Unavailable models, credentials, or catalogs reject the request before
 an attempt card is stored and never save an unvalidated completion as nutrition.
 
@@ -108,38 +107,40 @@ Gemini-backed component shows the concise fallback explanation, including `none`
 below-threshold category or product decisions, inadequate candidates, or missing
 defensible grams. Mixed meals show the source independently for every component.
 
-## Verification and live pilot
+## Verification and live smoke
 
 The deterministic suites use temporary migrated SQLite and simulated Gemini,
 Jev, and USDA
 boundaries. The browser fixture is available only with `NODE_ENV=test` and
 `PHOTO_ANALYSIS_TEST_FIXTURE=1`; it does not measure model accuracy.
 
-The staged Gemini→Jev→USDA analyzer has its own opt-in live integration seam.
-It installs a supplied Foundation archive in a temporary catalog, sends one food
-image to Gemini, sends only Gemini's structured observations and installed-catalog
-choices to TypeSafe, and validates the selected evidence locally under the
-five-second analyzer deadline. It is not part of ordinary verification. Run it
-explicitly with private inputs; it consumes both provider accounts:
+The Gemini→Jev→USDA analyzer has an explicit opt-in live smoke seam. It verifies
+that the requested Gemini and effective Jev models are available, installs a
+supplied Foundation archive in a temporary AI-capable catalog, checks one food
+image with source provenance, and checks one non-food image. Both analyses use
+the production five-second deadline. The smoke is not an accuracy study and is
+not part of ordinary verification. Run it explicitly with private inputs; it
+consumes both provider accounts:
 
 ```sh
 GEMINI_API_KEY=... \
 TYPESAFE_API_KEY=... \
-PHOTO_GEMINI_JEV_USDA_ARCHIVE=/private/usda/FoodData_Central_foundation_food_csv.zip \
-PHOTO_GEMINI_JEV_FOOD_IMAGE=/private/meals/food.jpg \
-PHOTO_GEMINI_JEV_FOOD_MIME_TYPE=image/jpeg \
-pnpm test:gemini-jev-live
+PHOTO_ANALYSIS_USDA_ARCHIVE=/private/usda/FoodData_Central_foundation_food_csv.zip \
+PHOTO_ANALYSIS_FOOD_IMAGE=/private/meals/food.jpg \
+PHOTO_ANALYSIS_FOOD_MIME_TYPE=image/jpeg \
+PHOTO_ANALYSIS_NON_FOOD_IMAGE=/private/meals/non-food.jpg \
+PHOTO_ANALYSIS_NON_FOOD_MIME_TYPE=image/jpeg \
+PHOTO_ANALYSIS_GEMINI_MODEL=gemini-3.1-flash-lite \
+PHOTO_ANALYSIS_JEV_MODEL=jev-1.13.0 \
+pnpm test:photo-live
 ```
 
-The live seam does not write credentials, provider payloads, images, or results to
-the repository. Deterministic tests cover no-food, mixed USDA/Gemini provenance,
-strict provider schemas, malformed choices, catalog readiness, and deadline
-cancellation without external network access.
-
-A representative weighed-meal pilot is still required to evaluate nutrition
-accuracy and latency distributions. Keep any images, reference nutrition,
-credentials, and generated reports private. Neither deterministic fixtures nor
-an unrun pilot are evidence that an accuracy target was achieved.
+Keys are supplied only to the smoke process; the test does not print or persist
+credentials, provider payloads, images, or results. Deterministic tests cover
+no-food, mixed USDA/Gemini provenance, strict provider schemas, malformed
+choices, catalog readiness, and deadline cancellation without external network
+access. Use a separate, deliberately designed study for accuracy or latency
+distribution claims.
 
 ## Mobile feedback verification
 

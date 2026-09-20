@@ -134,6 +134,25 @@ test("deletion changes future reads without mutating a pair already captured by 
   expect(captured).toEqual(validPair);
 });
 
+test("status becomes unconfigured when credentials disappear during the status check", async () => {
+  const bundles = await openEncryptedCredentialBundles({
+    masterKeyPath: path.join(directory, "secrets", "application-master.key"),
+    persistence: new DatabaseCredentialBundlePersistence(database.getClient()),
+  });
+  vi.spyOn(bundles, "status").mockResolvedValue({
+    state: "configured",
+    configuredAt: "2026-09-20T12:00:00.000Z",
+    updatedAt: "2026-09-20T12:00:00.000Z",
+  });
+  vi.spyOn(bundles, "read").mockResolvedValue(undefined);
+  const credentials = new PhotoAnalysisCredentials(bundles, {
+    validateGemini: async () => undefined,
+    validateTypeSafe: async () => undefined,
+  });
+
+  expect(await credentials.status()).toEqual({ state: "unconfigured" });
+});
+
 test("lost master-key status remains non-secret and a validated pair can replace it", async () => {
   const validator = {
     validateGemini: async () => undefined,

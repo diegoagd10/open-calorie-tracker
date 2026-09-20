@@ -94,7 +94,7 @@ storage, capacity, recovery, update uncertainty and end-to-end verification.
 Camera barcode scanning requirements and privacy behavior are documented in
 [the camera scanning guide](docs/barcode-scanning.md).
 
-Plate photos: see [capture, corrections, operator OAuth provisioning, and live pilot](docs/photo-analysis.md).
+Plate photos: see [capture, corrections, encrypted provider setup, and live smoke verification](docs/photo-analysis.md).
 
 ## Contributing
 

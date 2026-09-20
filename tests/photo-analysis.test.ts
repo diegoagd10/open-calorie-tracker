@@ -11,10 +11,6 @@ import {
   type ApplicationDatabase,
 } from "../app/database/database.server";
 import { users, userPreferences } from "../app/database/schema.server";
-import {
-  PiPhotoAnalyzer,
-  type PiMessage,
-} from "../app/photo-analysis/pi.server";
 import { FoodEntryService } from "../app/food-entry/food-entry.server";
 import type {
   UsdaAnalysisReader,
@@ -30,6 +26,7 @@ import {
   photoAnalysisDiagnosticsSchema,
   type PhotoAnalysisDiagnostics,
 } from "../app/photo-analysis/provenance.server";
+import { NoFoodDetectedError } from "../app/photo-analysis/result.server";
 import { foundationArchive } from "./support/foundation-archive";
 import { createMigrationFolder } from "./support/migrations";
 
@@ -1232,61 +1229,6 @@ test("invalid image data is rejected before accepting an analysis", async () => 
   ).rejects.toThrow();
 });
 
-function piMessage(content: PiMessage["content"]): PiMessage {
-  return {
-    role: "assistant",
-    content,
-    api: "openai-responses",
-    provider: "openai-codex",
-    model: "gpt-5.6-luna",
-    stopReason: "stop",
-    timestamp: 1,
-    usage: {
-      input: 0,
-      output: 0,
-      cacheRead: 0,
-      cacheWrite: 0,
-      totalTokens: 0,
-      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-    },
-  };
-}
-
-test("Pi can use an explicit estimate when the local USDA catalog is missing and exposes only food evidence tools", async () => {
-  let deliveredError = false;
-  let toolNames: string[] = [];
-  const analyzer = new PiPhotoAnalyzer(async (context) => {
-    toolNames = context.tools?.map((tool) => tool.name) ?? [];
-    const previous = context.messages.at(-1)!;
-    if (previous.role === "toolResult") {
-      deliveredError = previous.isError;
-      return piMessage([{ type: "text", text: JSON.stringify(estimate()) }]);
-    }
-    return piMessage([
-      {
-        type: "toolCall",
-        id: "search-one",
-        name: "usda_search",
-        arguments: { query: "rice", page: 1 },
-      },
-    ]);
-  });
-  const { service, log, userId } = await setup(analyzer);
-  const meal = await service.start(userId, {
-    photo,
-    foodLogDate: "2026-09-04",
-    idempotencyKey: "pi-outage-result",
-  });
-  await expect
-    .poll(() => service.status(userId, meal.id).status)
-    .toBe("succeeded");
-  expect(toolNames).toEqual(["usda_search", "usda_detail"]);
-  expect(deliveredError).toBe(true);
-  expect(log.read(userId, "2026-09-04")?.entries).toMatchObject([
-    { energyMilliKcal: 250000 },
-  ]);
-});
-
 test("processing blocks entry reads, edits, copies and deletion while other meals stay available", async () => {
   let finish!: (value: unknown) => void;
   const { service, client, userId } = await setup({
@@ -1840,7 +1782,7 @@ test("startup interrupts persisted active work, and late CPU-bound results canno
         return estimate();
       },
     },
-    { deadlineMs: 20000 },
+    { deadlineMs: 5_000 },
   );
   services.push(slow);
   const late = await slow.start(userId, {
@@ -1856,168 +1798,12 @@ test("startup interrupts persisted active work, and late CPU-bound results canno
   vi.restoreAllMocks();
 });
 
-test("Pi forwards the photo, successful context, complete USDA evidence and assistant tool metadata", async () => {
-  let calls = 0;
-  const contexts: unknown[] = [];
-  const checkToolContext = (
-    context: import("../app/photo-analysis/pi.server").PiContext,
-  ) => {
-    const last = context.messages.at(-1)!;
-    expect(last).toMatchObject({
-      role: "toolResult",
-      toolCallId: "detail-one",
-      toolName: "usda_detail",
-      isError: false,
-    });
-    expect(JSON.stringify(last.content)).toContain("fdcId");
-    expect(context.messages.at(-2)).toMatchObject({
-      role: "assistant",
-      content: [
-        { type: "thinking", thinking: "provider metadata" },
-        { type: "toolCall", id: "detail-one" },
-      ],
-    });
-  };
-  const analyzer = new PiPhotoAnalyzer(async (context) => {
-    contexts.push(structuredClone(context.messages));
-    const last = context.messages.at(-1)!;
-    if (last.role === "toolResult") {
-      checkToolContext(context);
-      const json = JSON.stringify(estimate());
-      return piMessage([
-        { type: "thinking", thinking: "private reasoning" },
-        { type: "text", text: json.slice(0, 20) },
-        { type: "text", text: json.slice(20) },
-      ]);
-    }
-    calls++;
-    return piMessage([
-      { type: "thinking", thinking: "provider metadata" },
-      {
-        type: "toolCall",
-        id: "detail-one",
-        name: "usda_detail",
-        arguments: { id: "700" },
-      },
-    ]);
-  });
-  const { service, userId } = await setup(analyzer, { usda: usdaFixture() });
-  const meal = await service.start(userId, {
-    photo,
-    foodLogDate: "2026-09-04",
-    idempotencyKey: "pi-complete-context",
-  });
-  await expect
-    .poll(() => service.status(userId, meal.id).status)
-    .toBe("succeeded");
-  expect(calls).toBe(1);
-  expect(contexts[0]).toMatchObject([
-    {
-      role: "user",
-      content: [
-        {
-          type: "image",
-          data: photo.bytes.toString("base64"),
-          mimeType: "image/png",
-        },
-        {
-          type: "text",
-          text: JSON.stringify({ previousCorrections: [], evidence: [] }),
-        },
-      ],
-    },
-  ]);
-  expect(JSON.stringify(service.history(userId, meal.id))).not.toContain(
-    "private reasoning",
-  );
-});
-
-test.each([
-  ["unsupported tool", "exec", { command: "touch forbidden" }],
-  ["invalid search", "usda_search", { query: "x", page: 1 }],
-  ["oversized query", "usda_search", { query: "x".repeat(101), page: 1 }],
-  ["invalid page", "usda_search", { query: "rice", page: 0 }],
-  ["unbounded page", "usda_search", { query: "rice", page: 4 }],
-  ["invalid detail", "usda_detail", { id: "0" }],
-  ["prefixed detail", "usda_detail", { id: "x700" }],
-  ["suffixed detail", "usda_detail", { id: "700x" }],
-] as const)(
-  "Pi reports %s safely and allows an explicit estimate",
-  async (_label, name, args) => {
-    let consulted = false;
-    const checkError = (
-      last: import("../app/photo-analysis/pi.server").PiContext["messages"][number],
-    ) => {
-      expect(last).toHaveProperty("isError", true);
-      expect(last.content).toEqual([
-        {
-          type: "text",
-          text: JSON.stringify({
-            error:
-              "USDA tool unavailable, invalid arguments, or limit reached. Use explicit estimates with reasons if a usable result is possible.",
-          }),
-        },
-      ]);
-    };
-    const analyzer = new PiPhotoAnalyzer(async (context) => {
-      const last = context.messages.at(-1)!;
-      if (last.role === "toolResult") {
-        checkError(last);
-        return piMessage([{ type: "text", text: JSON.stringify(estimate()) }]);
-      }
-      return piMessage([
-        { type: "toolCall", id: "invalid-tool", name, arguments: args },
-      ]);
-    });
-    const { service, userId } = await setup(analyzer, {
-      usda: {
-        searchEvidence: async () => {
-          consulted = true;
-          return [];
-        },
-        getEvidence: async () => {
-          consulted = true;
-          throw new Error("Unexpected");
-        },
-      },
-    });
-    const meal = await service.start(userId, {
-      photo,
-      foodLogDate: "2026-09-04",
-      idempotencyKey: "invalid-pi-tool",
-    });
-    await expect
-      .poll(() => service.status(userId, meal.id).status)
-      .toBe("succeeded");
-    expect(consulted).toBe(false);
-  },
-);
-
-test.each(["error", "aborted"] as const)(
-  "Pi %s completion cannot save even when its text looks valid",
-  async (stopReason) => {
-    const { service, userId } = await setup(
-      new PiPhotoAnalyzer(async () => ({
-        ...piMessage([{ type: "text", text: JSON.stringify(estimate()) }]),
-        stopReason,
-      })),
-    );
-    const meal = await service.start(userId, {
-      photo,
-      foodLogDate: "2026-09-04",
-      idempotencyKey: "bad-pi-stop-reason",
-    });
-    await expect
-      .poll(() => service.status(userId, meal.id).status)
-      .toBe("failed");
-    expect(service.view(userId, meal.id).entryId).toBeNull();
-  },
-);
-
 test("a non-food photo remains visible as failed without creating a food entry", async () => {
-  const { service, userId } = await setup(new PiPhotoAnalyzer(async () =>
-    piMessage([{ type: "text", text: '{"status":"no_food"}' }]),
-  ));
+  const { service, userId } = await setup({
+    analyze: async () => {
+      throw new NoFoodDetectedError();
+    },
+  });
   const meal = await service.start(userId, {
     photo, foodLogDate: "2026-09-04", idempotencyKey: "non-food-photo-test",
   });
@@ -2027,99 +1813,6 @@ test("a non-food photo remains visible as failed without creating a food entry",
     error: "No food or drink detected. Try a clear photo of your meal.",
   });
   expect(service.photo(userId, meal.id).bytes).toEqual(photo.bytes);
-});
-
-test("Pi bounds model turns, tools per turn, final output and accumulated evidence", async () => {
-  let turns = 0;
-  const call = {
-    type: "toolCall" as const,
-    id: "search",
-    name: "usda_search",
-    arguments: { query: "rice", page: 1 },
-  };
-  for (const [index, complete] of [
-    async () => {
-      turns++;
-      return piMessage([call]);
-    },
-    async () => piMessage(Array.from({ length: 7 }, () => call)),
-    async () =>
-      piMessage([
-        {
-          type: "text" as const,
-          text: JSON.stringify(estimate()) + " ".repeat(50000),
-        },
-      ]),
-  ].entries()) {
-    const { service, userId } = await setup(new PiPhotoAnalyzer(complete));
-    const meal = await service.start(userId, {
-      photo,
-      foodLogDate: "2026-09-04",
-      idempotencyKey: `pi-budget-${index}`,
-    });
-    await expect
-      .poll(() => service.status(userId, meal.id).status)
-      .toBe("failed");
-  }
-  expect(turns).toBe(10);
-  const evidence = await usdaFixture().getEvidence(
-    "700",
-    new AbortController().signal,
-  );
-  let modelCalls = 0;
-  const { service, userId } = await setup(
-    new PiPhotoAnalyzer(async () => {
-      modelCalls++;
-      return piMessage([call]);
-    }),
-    {
-      usda: {
-        searchEvidence: async () => [
-          { ...evidence, record: { padding: "x".repeat(510000) } },
-        ],
-        getEvidence: async () => evidence,
-      },
-    },
-  );
-  const meal = await service.start(userId, {
-    photo,
-    foodLogDate: "2026-09-04",
-    idempotencyKey: "pi-context-budget",
-  });
-  await expect
-    .poll(() => service.status(userId, meal.id).status)
-    .toBe("failed");
-  expect(modelCalls).toBe(1);
-});
-
-test("the maximum Pi tool batch and final output size still allow a usable result", async () => {
-  let calls = 0;
-  const json = JSON.stringify(estimate());
-  const { service, userId } = await setup(
-    new PiPhotoAnalyzer(async (context) => {
-      calls++;
-      if (context.messages.at(-1)?.role === "toolResult")
-        return piMessage([{ type: "text", text: json.padEnd(50000) }]);
-      return piMessage(
-        Array.from({ length: 6 }, (_, index) => ({
-          type: "toolCall",
-          id: `detail-${index}`,
-          name: "usda_detail",
-          arguments: { id: "700" },
-        })),
-      );
-    }),
-    { usda: usdaFixture() },
-  );
-  const meal = await service.start(userId, {
-    photo,
-    foodLogDate: "2026-09-04",
-    idempotencyKey: "pi-budget-boundary",
-  });
-  await expect
-    .poll(() => service.status(userId, meal.id).status)
-    .toBe("succeeded");
-  expect(calls).toBe(2);
 });
 
 test("missing USDA nutrients require explicit supplements and cannot be overridden", async () => {

@@ -175,22 +175,30 @@ pnpm exec vitest run tests/local-off-scale.test.ts
 
 Ordinary deterministic/browser tests use compact JSONL GZIP fixtures, including the native multiple-input-set serving record. The full benchmark writes `reports/off-jsonl-scale.json`, measures process RSS including the native worker, before/during/after replacement lookups and actual activation counters, and verifies saving the supplied snapshot's serving authority. It never writes to the development installation. Timing/RSS assertions belong only to this opt-in test.
 
-## Credentialed external suite
+## Credentialed Photo Analysis smoke
 
-The credentialed Gemini/Jev photo integration remains separate:
+The opt-in smoke uses real Gemini and TypeSafe accounts, imports a supplied USDA
+Foundation archive into a temporary catalog, verifies selected model
+availability, analyzes one food image with source provenance, rejects one
+non-food image, and applies the production five-second deadline:
 
 ```sh
 GEMINI_API_KEY=... \
 TYPESAFE_API_KEY=... \
-PHOTO_GEMINI_JEV_USDA_ARCHIVE=... \
-PHOTO_GEMINI_JEV_FOOD_IMAGE=... \
-PHOTO_GEMINI_JEV_FOOD_MIME_TYPE=image/jpeg \
-pnpm test:gemini-jev-live
+PHOTO_ANALYSIS_USDA_ARCHIVE=... \
+PHOTO_ANALYSIS_FOOD_IMAGE=... \
+PHOTO_ANALYSIS_FOOD_MIME_TYPE=image/jpeg \
+PHOTO_ANALYSIS_NON_FOOD_IMAGE=... \
+PHOTO_ANALYSIS_NON_FOOD_MIME_TYPE=image/jpeg \
+PHOTO_ANALYSIS_GEMINI_MODEL=gemini-3.1-flash-lite \
+PHOTO_ANALYSIS_JEV_MODEL=jev-1.13.0 \
+pnpm test:photo-live
 ```
 
-The integration requires both provider credentials, a local USDA Foundation
-archive, one private image, and outbound AI access. No GitHub workflow runs it
-automatically.
+The smoke requires both provider credentials, a local USDA Foundation archive,
+two private images, and outbound AI access. It does not print or persist the
+keys, images, provider payloads, or results. It consumes provider usage, makes no
+accuracy claim, and no automated verification or publishing workflow runs it.
 
 ## Fallow baselines
 

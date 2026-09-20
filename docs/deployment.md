@@ -44,10 +44,12 @@ If the server IP or external LAN port changes, update `LAN_URL` and its mapping
 together. A disabled LAN listener can retain an unused Docker mapping, but no
 application serves it.
 
-Photo provider/model/auth settings retain the Compose defaults. The application
-creates the generic master key on first startup with mode `0600`. Losing only the
-secrets mount leaves accounts, meals, history and catalogs intact, but encrypted
-external credentials become unreadable and must be entered again in Settings.
+Provider credentials and model choices are configured only through administrator
+Settings; Compose has no provider selector, provider key, or provider auth-file
+option. The application, running as UID/GID 1000, creates the generic master key
+on first startup with mode `0600`. Losing only the secrets mount leaves accounts,
+meals, history and catalogs intact, but encrypted external credentials become
+unreadable and must be entered again in Settings.
 Optional catalog
 limits and storage configuration are described in [USDA operations](local-usda-catalog.md),
 [OFF operations](local-off-catalog.md) and the [catalog workflow](food-catalog-operations.md).
@@ -201,12 +203,25 @@ to the browser. Replacing the pair needs no additional password or key ceremony.
 Deletion requires checking the explicit confirmation and affects future bundle
 reads without deleting users, meals, Food Entries, history or catalogs.
 
+Replacement validates both new keys before atomically replacing the working
+pair. A validation failure leaves the previous pair active. Deletion disables
+new starts, corrections, and retries; attempts that already captured a pair may
+finish. Keys belong in Settings, not Compose variables, shell profiles, catalog
+directories, or deployment logs.
+
 The encrypted bundle lives in the application database, while its AES-256-GCM
 master key lives only at `APPLICATION_MASTER_KEY_PATH`. Persist the secrets mount
 across container replacement and keep its containing directory at mode `0700`.
 If that key file is missing, startup creates a new one, Settings reports that the
 old bundle needs re-entry, and saving a newly validated pair replaces the
 unreadable row.
+
+Back up the master key with the secrets mount under access controls separate from
+the data backup. Restoring credentials requires the database ciphertext and the
+matching master key. If the key is lost, do not restore or copy arbitrary key
+bytes: allow the service user to create a replacement, sign in as administrator,
+and re-enter both provider keys. Key loss does not recalculate or remove existing
+Photo Analysis history.
 
 ## Verify Photo Analysis readiness
 
@@ -217,9 +232,30 @@ Foundation from the terminal workflow, then confirm **New-attempt readiness** is
 required. Do not expose provider keys as environment variables or copy them into
 the catalog directory.
 
+Gemini receives the validated image and bounded meal/correction context. TypeSafe
+receives Gemini's structured observations and bounded locally installed USDA
+category/candidate descriptions, not the image. The application validates the
+choices and performs authoritative USDA arithmetic locally. Every attempt has
+one five-second deadline; a provider, schema, catalog, or deadline failure leaves
+the attempt failed and requires an explicit retry.
+
 Install USDA Foundation with the [terminal workflow](../README.md#install-food-catalogs-from-the-terminal) for local food search, photo evidence, and logging; Food Catalogs shows availability and update checks. No USDA API key is used at runtime.
 See [photo-analysis.md](photo-analysis.md#operator-setup) for provider and
 readiness details.
+
+## Upgrade from the retired photo provider
+
+Redeploying this release does not recalculate existing photo history or Food
+Entries. Manual USDA search, barcode/OFF lookup, and other Food Entry methods are
+unchanged. An older USDA generation remains available to manual search but must
+be reimported normally before it can support new photos.
+
+The application no longer reads, writes, or deletes the legacy credential file
+at `data/pi/auth.json`; it has no retired-provider fallback or selection switch.
+Leave that operator-owned file untouched during this deployment. Only after the
+Gemini/Jev live smoke and deployed Photo Analysis are verified should the human
+operator follow `TKT-aab75c6c` to remove that exact file in a maintenance window.
+Application automation must not perform that cleanup.
 
 ## Updates and backups
 
