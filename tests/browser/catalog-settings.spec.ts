@@ -304,14 +304,7 @@ test("administrator checks rolling OFF snapshots independently of terminal impor
     await page.reload();
     await expect(off.getByText("OFF snapshot metadata is temporarily unavailable.", { exact: true })).toBeVisible();
     expect((await readFile(requestsPath, "utf8")).trim().split("\n")).toEqual(beforeReload);
-    const requests = beforeReload.map(line => JSON.parse(line) as { method: string; url: string });
-    const officialMetadataUrls = new Set([
-      "https://static.openfoodfacts.org/data/openfoodfacts-products.jsonl.gz",
-      "https://static.openfoodfacts.org/data/en.openfoodfacts.org.products.csv.gz",
-    ]);
-    expect(requests.length).toBeGreaterThan(0);
-    expect(requests.every(request => request.method === "HEAD")).toBe(true);
-    expect(requests.every(request => officialMetadataUrls.has(request.url))).toBe(true);
+    expect(beforeReload.map(line => JSON.parse(line) as { method: string; url: string })).toEqual(beforeReload.map(() => ({ method: "HEAD", url: "https://static.openfoodfacts.org/data/en.openfoodfacts.org.products.csv.gz" })));
   } finally { await rm(fixturePath, { force: true }); }
 });
 
