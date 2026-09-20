@@ -21,7 +21,7 @@
 .actions button:disabled, .primary:disabled, .destructive:disabled { opacity: 0.6; cursor: wait; }
 .actions button:focus-visible, .primary:focus-visible, .destructive:focus-visible { outline: 3px solid var(--green); outline-offset: 3px; }
 .error { background: var(--danger-soft); color: var(--danger); padding: 0.75rem; border-radius: 0.65rem; }
-.success { background: var(--green-soft); color: var(--green-dark); padding: 0.75rem; border-radius: 0.65rem; }
+.success { background: var(--green-soft); color: var(--green-strong); padding: 0.75rem; border-radius: 0.65rem; }
 .credentialForm { display: grid; gap: 0.5rem; margin-top: 1rem; }
 .credentialForm input { width: 100%; min-height: 2.75rem; box-sizing: border-box; padding: 0.65rem 0.75rem; border: 1px solid var(--rule-strong); border-radius: 0.65rem; color: var(--ink); background: var(--surface); font: inherit; }
 .credentialForm input:focus-visible, .confirmation input:focus-visible { outline: 3px solid var(--green); outline-offset: 2px; }
