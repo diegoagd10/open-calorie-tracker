@@ -1,6 +1,34 @@
 import type { PhotoAnalyzer } from "./photo-analysis.server";
+import type { PhotoAnalysisReadiness } from "./readiness.server";
 import { ProviderCredentialRejectedError, type PhotoAnalysisCredentialValidator } from "./credentials.server";
 import type { PhotoAnalysisModelDiscovery } from "./configuration.server";
+import { z } from "zod";
+
+export const PHOTO_ANALYSIS_TEST_READINESS_KEY =
+  "photo_analysis_test_readiness";
+export const photoAnalysisTestReadinessCodeSchema = z.enum([
+  "missing-credentials",
+  "unreadable-credentials",
+  "unavailable-models",
+  "catalog-not-installed",
+  "catalog-reimport-required",
+  "catalog-unavailable",
+]);
+
+export class TestPhotoAnalysisReadiness {
+  constructor(
+    private readonly metadata: { read(key: string): string | undefined },
+  ) {}
+
+  async read(): Promise<PhotoAnalysisReadiness> {
+    const stored = this.metadata.read(PHOTO_ANALYSIS_TEST_READINESS_KEY);
+    if (!stored) return { state: "ready" };
+    return {
+      state: "unavailable",
+      code: photoAnalysisTestReadinessCodeSchema.parse(stored),
+    };
+  }
+}
 
 const categoryNone = {
   code: "category-none" as const,
@@ -10,6 +38,7 @@ const categoryNone = {
 function fixtureDiagnostics(
   componentId: string,
   options: {
+    additionalAiComponentIds?: string[];
     catalogGeneration?: string;
     fdcId?: string;
     foodLabel?: string;
@@ -78,12 +107,39 @@ function fixtureDiagnostics(
     jevModel: "jev-1.13.0",
     categoryConfidenceThreshold: 0,
     productConfidenceThreshold: 0,
-    components: [{
-      componentId,
-      category,
-      product,
-      fallbackReason: options.fdcId ? null : categoryNone,
-    }],
+    components: [
+      {
+        componentId,
+        category,
+        product,
+        fallbackReason: options.fdcId ? null : categoryNone,
+      },
+      ...(options.additionalAiComponentIds ?? []).map((additionalId) => ({
+        componentId: additionalId,
+        category: {
+          choice: {
+            key: "none",
+            label: "No listed category adequately represents this visible food.",
+          },
+          confidence: 0.9,
+          selectedProbability: 0.9,
+          topCandidates: [
+            {
+              key: "none",
+              label: "No listed category adequately represents this visible food.",
+              probability: 0.9,
+            },
+            {
+              key: "category_20",
+              label: "Cereal Grains and Pasta",
+              probability: 0.1,
+            },
+          ],
+        },
+        product: null,
+        fallbackReason: categoryNone,
+      })),
+    ],
   };
 }
 
@@ -91,6 +147,7 @@ function fixtureOutcome(
   result: unknown,
   componentId: string,
   options: {
+    additionalAiComponentIds?: string[];
     evidence?: Awaited<ReturnType<Parameters<PhotoAnalyzer["analyze"]>[0]["usda"]["detail"]>>[];
     catalogGeneration?: string;
     fdcId?: string;
@@ -144,6 +201,19 @@ export class TestPhotoAnalyzer implements PhotoAnalyzer {
               { nutrient: "carbohydrateGrams", amount: 6, reason: "Installed Foundation fixture omits carbohydrate" },
               { nutrient: "fatGrams", amount: 0.3, reason: "Installed Foundation fixture omits fat" },
             ],
+          }, {
+            id: "seasoning",
+            name: "Seasoning",
+            quantity: 1,
+            unit: "g",
+            includes: [],
+            source: { kind: "ai", reason: categoryNone.message },
+            nutrition: {
+              energyKcal: 0,
+              proteinGrams: 0,
+              carbohydrateGrams: 0,
+              fatGrams: 0,
+            },
           }],
         };
         return fixtureOutcome(result, "broccoli", {
@@ -152,6 +222,7 @@ export class TestPhotoAnalyzer implements PhotoAnalyzer {
             evidence.food.catalogGeneration ?? "browser-foundation-fixture",
           fdcId: evidence.food.providerFoodId,
           foodLabel: evidence.food.name,
+          additionalAiComponentIds: ["seasoning"],
         });
       } catch {
         const result = {

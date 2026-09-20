@@ -8,6 +8,7 @@ import {
 import { getAuthenticationService } from "../auth/runtime.server";
 import { getPhotoAnalysisService } from "../photo-analysis/runtime.server";
 import { PhotoAnalysisUnavailableError } from "../photo-analysis/readiness.server";
+import { presentPhotoAnalysisReadiness } from "./photo-analysis-readiness";
 
 const noStore = { "Cache-Control": "private, no-store" };
 
@@ -125,7 +126,10 @@ export async function action({ request }: Route.ActionArgs) {
   } catch (error) {
     const unavailable =
       error instanceof PhotoAnalysisUnavailableError
-        ? error.forRole(session.user.role)
+        ? presentPhotoAnalysisReadiness(
+            { state: "unavailable", code: error.code },
+            session.user.role,
+          )
         : undefined;
     return Response.json(
       {
@@ -135,6 +139,9 @@ export async function action({ request }: Route.ActionArgs) {
             : error instanceof Error
               ? error.message
               : "Photo analysis unavailable"),
+        ...(unavailable?.destination
+          ? { destination: unavailable.destination }
+          : {}),
       },
       { status: unavailable ? 503 : 400, headers: noStore },
     );

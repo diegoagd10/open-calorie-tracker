@@ -7,6 +7,7 @@ import {
   test,
 } from "./reset-database";
 import { playwrightBrowserPorts } from "../../scripts/catalog-browser-runtime";
+import { PHOTO_ANALYSIS_TEST_READINESS_KEY } from "../../app/photo-analysis/test-fixture.server";
 
 const publicOrigin = `https://localhost:${playwrightBrowserPorts.public}`;
 const escapedPublicOrigin = publicOrigin.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -30,7 +31,7 @@ test("readiness blocks only photo capture with role-appropriate recovery", async
     INSERT INTO application_metadata (key, value, updated_at) VALUES (?, ?, ?)
     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
   `).run(
-    "photo_analysis_test_readiness",
+    PHOTO_ANALYSIS_TEST_READINESS_KEY,
     "missing-credentials",
     "2026-09-20T00:00:00.000Z",
   );
@@ -57,19 +58,54 @@ test("readiness blocks only photo capture with role-appropriate recovery", async
     await signInProvisionedMember(member, "photo.readiness.member", password);
     await member.getByRole("button", { name: "Finish setup" }).click();
     await expect(member).toHaveURL("/");
-    await member.getByRole("button", { name: "Add Food", exact: true }).click();
+    await member.getByRole("button", { name: "Add Food", exact: true }).focus();
+    await member.keyboard.press("Enter");
     await expect(member.getByLabel("Take photo · AI calories")).toBeDisabled();
     await expect(member.getByRole("dialog")).toContainText(
       "AI photo analysis is not available right now.",
     );
     await expect(member.getByRole("link", { name: "Open settings" })).toHaveCount(0);
     await expect(member.getByRole("link", { name: /Manual/ })).toBeEnabled();
+    await member.goto("about:blank");
+    await context.close();
+
+    await page.goto("about:blank");
+    const transition = openBrowserTestDatabase();
+    transition.prepare(`
+      UPDATE application_metadata SET value = ?, updated_at = ? WHERE key = ?
+    `).run(
+      "catalog-reimport-required",
+      "2026-09-20T00:01:00.000Z",
+      PHOTO_ANALYSIS_TEST_READINESS_KEY,
+    );
+    transition.close();
+    await page.goto(publicOrigin);
+    await page.getByRole("button", { name: "Add Food", exact: true }).click();
+    await expect(page.getByLabel("Take photo · AI calories")).toBeDisabled();
+    await expect(page.getByRole("dialog")).toContainText(
+      "Reimport USDA Foundation for Photo Analysis.",
+    );
+    await expect(page.getByRole("link", { name: "Open settings" })).toHaveAttribute(
+      "href",
+      "/settings/catalogs",
+    );
+
+    await page.goto("about:blank");
+    const ready = openBrowserTestDatabase();
+    ready.prepare(
+      "DELETE FROM application_metadata WHERE key = ?",
+    ).run(PHOTO_ANALYSIS_TEST_READINESS_KEY);
+    ready.close();
+    await page.goto(publicOrigin);
+    await page.getByRole("button", { name: "Add Food", exact: true }).click();
+    await expect(page.getByLabel("Take photo · AI calories")).toBeEnabled();
+    expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
   } finally {
     await context.close();
     const cleanup = openBrowserTestDatabase();
     cleanup.prepare(
-      "DELETE FROM application_metadata WHERE key = 'photo_analysis_test_readiness'",
-    ).run();
+      "DELETE FROM application_metadata WHERE key = ?",
+    ).run(PHOTO_ANALYSIS_TEST_READINESS_KEY);
     cleanup.close();
   }
 });
@@ -239,6 +275,8 @@ test("non-food photos show a persistent failure and rejected uploads explain the
   await page.reload();
   await expect(meals).toContainText("No food or drink detected");
   await expect(meals.getByRole("img", { name: "Your plate" })).toBeVisible();
+  await meals.getByRole("button", { name: "Delete photo meal" }).click();
+  await expect(meals).toHaveCount(0);
   await page.getByRole("button", { name: "Add Food", exact: true }).click();
   await page.getByLabel("Take photo · AI calories").setInputFiles({
     name: "invalid.png", mimeType: "image/png", buffer: Buffer.alloc(32),

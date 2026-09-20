@@ -12,12 +12,18 @@ import {
 } from "../../app/database/runtime.server";
 import { userPreferences } from "../../app/database/schema.server";
 import { shutdownPhotoAnalysis } from "../../app/photo-analysis/runtime.server";
+import {
+  PHOTO_ANALYSIS_TEST_READINESS_KEY,
+  photoAnalysisTestReadinessCodeSchema,
+} from "../../app/photo-analysis/test-fixture.server";
 import { action, loader } from "../../app/routes/photo-analysis";
 import { seedAuthenticatedAccount } from "../support/authentication";
 
 const origin = "http://localhost:3000";
 let directory: string;
 let cookie: string;
+let adminCookie: string;
+let adminCsrf: string;
 let otherCookie: string;
 let csrf: string;
 const bytes = Buffer.from(
@@ -70,12 +76,31 @@ beforeAll(async () => {
     "correct horse battery staple",
     "192.0.2.11",
   );
+  const admin = await seedAuthenticatedAccount(
+    getAuthenticationService(),
+    db,
+    "photo.admin",
+    "correct horse battery staple",
+    "192.0.2.12",
+    "admin",
+  );
   cookie = serializeSessionCookie(account).split(";")[0];
   otherCookie = serializeSessionCookie(other).split(";")[0];
   csrf = account.csrfToken;
+  adminCookie = serializeSessionCookie(admin).split(";")[0];
+  adminCsrf = admin.csrfToken;
   db.insert(userPreferences)
     .values({
       userId: account.user.id,
+      timeZone: "America/New_York",
+      displayUnits: "metric",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    })
+    .run();
+  db.insert(userPreferences)
+    .values({
+      userId: admin.user.id,
       timeZone: "America/New_York",
       displayUnits: "metric",
       createdAt: "2026-01-01T00:00:00.000Z",
@@ -254,11 +279,17 @@ test("status, correction, cancellation, retry and deletion preserve the authenti
 test("invalid uploads and operations return actionable private errors", async () => {
   const noSession = await loader(args(new Request(`${origin}/photo-analysis`)));
   expect(noSession.headers.get("Location")).toBe("/login");
+  expect((await loader(args(new Request(`${origin}/photo-analysis`, {
+    headers: { Cookie: cookie },
+  })))).status).toBe(404);
   expect((await action(post(form(), ""))).headers.get("Location")).toBe(
     "/login",
   );
   const rejected = await action(post(form("bad")));
   expect(await rejected.json()).toEqual({ error: "CSRF token rejected" });
+  const missingCsrf = form();
+  missingCsrf.delete("csrfToken");
+  expect((await action(post(missingCsrf))).status).toBe(403);
   for (const [changes, expected] of [
     [{ intent: "nonsense" }, "Unknown photo action"],
     [{ photo: "not a file" }, "Choose a plate photo"],
@@ -273,6 +304,39 @@ test("invalid uploads and operations return actionable private errors", async ()
     expect(response.status).toBe(400);
     expect(response.headers.get("Cache-Control")).toBe("private, no-store");
     expect(await response.json()).toEqual({ error: expected });
+  }
+  for (const body of [
+    (() => {
+      const value = form();
+      value.delete("date");
+      value.set("idempotencyKey", "missing-date");
+      return value;
+    })(),
+    (() => {
+      const value = form();
+      value.set("intent", "correct");
+      value.set("entryId", "1");
+      value.delete("correction");
+      value.set("idempotencyKey", "missing-correction");
+      return value;
+    })(),
+    (() => {
+      const value = form();
+      value.set("intent", "retry");
+      value.set("id", "missing");
+      value.delete("attemptId");
+      value.set("idempotencyKey", "missing-retry-attempt");
+      return value;
+    })(),
+    (() => {
+      const value = form();
+      value.set("intent", "cancel");
+      value.set("id", "missing");
+      value.delete("attemptId");
+      return value;
+    })(),
+  ]) {
+    expect((await action(post(body))).status).toBe(400);
   }
   const empty = await action(
     args(
@@ -297,19 +361,12 @@ test("invalid uploads and operations return actionable private errors", async ()
   });
 });
 
-test.each([
-  "missing-credentials",
-  "unreadable-credentials",
-  "unavailable-models",
-  "catalog-not-installed",
-  "catalog-reimport-required",
-  "catalog-unavailable",
-] as const)("stale clients cannot start when readiness is %s", async (code) => {
+test.each(photoAnalysisTestReadinessCodeSchema.options)("stale clients cannot start when readiness is %s", async (code) => {
   const db = getApplicationDatabase().getClient();
   const before = db.get<{ count: number }>(sql`SELECT count(*) AS count FROM photo_attempts`).count;
   db.run(sql`
     INSERT INTO application_metadata (key, value, updated_at)
-    VALUES ('photo_analysis_test_readiness', ${code}, '2026-09-20T00:00:00.000Z')
+    VALUES (${PHOTO_ANALYSIS_TEST_READINESS_KEY}, ${code}, '2026-09-20T00:00:00.000Z')
     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
   `);
   try {
@@ -322,7 +379,7 @@ test.each([
     });
     expect(db.get<{ count: number }>(sql`SELECT count(*) AS count FROM photo_attempts`).count).toBe(before);
   } finally {
-    db.run(sql`DELETE FROM application_metadata WHERE key = 'photo_analysis_test_readiness'`);
+    db.run(sql`DELETE FROM application_metadata WHERE key = ${PHOTO_ANALYSIS_TEST_READINESS_KEY}`);
   }
 });
 
@@ -343,7 +400,7 @@ test("stale correction and retry requests are rejected before a new attempt is s
   const db = getApplicationDatabase().getClient();
   db.run(sql`
     INSERT INTO application_metadata (key, value, updated_at)
-    VALUES ('photo_analysis_test_readiness', 'unavailable-models', '2026-09-20T00:00:00.000Z')
+    VALUES (${PHOTO_ANALYSIS_TEST_READINESS_KEY}, 'unavailable-models', '2026-09-20T00:00:00.000Z')
   `);
   const before = db.get<{ count: number }>(sql`SELECT count(*) AS count FROM photo_attempts`).count;
   try {
@@ -365,6 +422,26 @@ test("stale correction and retry requests are rejected before a new attempt is s
     expect((await action(post(retry))).status).toBe(503);
     expect(db.get<{ count: number }>(sql`SELECT count(*) AS count FROM photo_attempts`).count).toBe(before);
   } finally {
-    db.run(sql`DELETE FROM application_metadata WHERE key = 'photo_analysis_test_readiness'`);
+    db.run(sql`DELETE FROM application_metadata WHERE key = ${PHOTO_ANALYSIS_TEST_READINESS_KEY}`);
+  }
+});
+
+test("blocked administrator requests include the relevant recovery destination", async () => {
+  const db = getApplicationDatabase().getClient();
+  db.run(sql`
+    INSERT INTO application_metadata (key, value, updated_at)
+    VALUES (${PHOTO_ANALYSIS_TEST_READINESS_KEY}, 'catalog-reimport-required', '2026-09-20T00:00:00.000Z')
+  `);
+  try {
+    const body = form(adminCsrf);
+    body.set("idempotencyKey", "blocked-admin-request");
+    const response = await action(post(body, adminCookie));
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({
+      error: "Reimport USDA Foundation for Photo Analysis.",
+      destination: "/settings/catalogs",
+    });
+  } finally {
+    db.run(sql`DELETE FROM application_metadata WHERE key = ${PHOTO_ANALYSIS_TEST_READINESS_KEY}`);
   }
 });

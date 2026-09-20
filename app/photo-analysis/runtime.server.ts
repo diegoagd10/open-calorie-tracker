@@ -9,7 +9,7 @@ import { PhotoAnalysisCredentials } from "./credentials.server";
 import { RemotePhotoAnalysisCredentialValidator } from "./provider-credential-validation.server";
 import { PhotoAnalysisConfigurationService } from "./configuration.server";
 import { RemotePhotoAnalysisModelDiscovery } from "./model-discovery.server";
-import { TestPhotoAnalysisCredentialValidator, TestPhotoAnalysisModelDiscovery, TestPhotoAnalyzer } from "./test-fixture.server";
+import { TestPhotoAnalysisCredentialValidator, TestPhotoAnalysisModelDiscovery, TestPhotoAnalysisReadiness, TestPhotoAnalyzer } from "./test-fixture.server";
 import {
   fixedPhotoAnalysisAttemptSource,
   GeminiJevPhotoAnalysisAttemptSource,
@@ -17,9 +17,8 @@ import {
 } from "./attempts.server";
 import {
   PhotoAnalysisReadinessService,
-  PhotoAnalysisUnavailableError,
-  presentPhotoAnalysisReadiness,
   type PhotoAnalysisReadiness,
+  type PhotoAnalysisReadinessInput,
 } from "./readiness.server";
 
 const environmentSchema = z.object({
@@ -38,7 +37,9 @@ export function getPhotoAnalysisService() {
   const config = environmentSchema.parse(process.env);
   const test = process.env.NODE_ENV === "test";
   const fixture = test && config.PHOTO_ANALYSIS_TEST_FIXTURE === "1";
-  const readiness = fixture ? fixtureReadiness(db) : undefined;
+  const readiness = fixture
+    ? new TestPhotoAnalysisReadiness(createDatabaseApplicationMetadata(db))
+    : undefined;
   const attempts = fixture
     ? readinessGatedPhotoAnalysisAttemptSource(
         fixedPhotoAnalysisAttemptSource(new TestPhotoAnalyzer()),
@@ -68,37 +69,18 @@ export function getPhotoAnalysisService() {
   return service;
 }
 
-const TEST_READINESS_KEY = "photo_analysis_test_readiness";
-
-function fixtureReadiness(db: ApplicationDatabaseClient) {
-  const metadata = createDatabaseApplicationMetadata(db);
-  return {
-    read: async (): Promise<PhotoAnalysisReadiness> => {
-      const stored = metadata.read(TEST_READINESS_KEY);
-      if (!stored) return { state: "ready" };
-      const code = z.enum([
-        "missing-credentials",
-        "unreadable-credentials",
-        "unavailable-models",
-        "catalog-not-installed",
-        "catalog-reimport-required",
-        "catalog-unavailable",
-      ]).parse(stored);
-      return { state: "unavailable", code };
-    },
-  };
-}
-
 export async function getPhotoAnalysisReadiness(
-  role: "admin" | "member",
-) {
+  input?: PhotoAnalysisReadinessInput,
+): Promise<PhotoAnalysisReadiness> {
   const db = getApplicationDatabase().getClient();
   const config = environmentSchema.parse(process.env);
   if (
     process.env.NODE_ENV === "test" &&
     config.PHOTO_ANALYSIS_TEST_FIXTURE === "1"
   ) {
-    return presentPhotoAnalysisReadiness(await fixtureReadiness(db).read(), role);
+    return await new TestPhotoAnalysisReadiness(
+      createDatabaseApplicationMetadata(db),
+    ).read();
   }
   try {
     const service = new PhotoAnalysisReadinessService(
@@ -106,11 +88,9 @@ export async function getPhotoAnalysisReadiness(
       await getPhotoAnalysisConfiguration(),
       getUsdaPhotoAnalysisCatalog(),
     );
-    return await service.forRole(role);
+    return await service.read(input);
   } catch {
-    return new PhotoAnalysisUnavailableError("unreadable-credentials").forRole(
-      role,
-    );
+    return { state: "unavailable", code: "unreadable-credentials" };
   }
 }
 
@@ -125,6 +105,14 @@ export function getPhotoAnalysisCredentials(): Promise<PhotoAnalysisCredentials>
     return new PhotoAnalysisCredentials(bundles, validator);
   });
   return credentials;
+}
+
+export async function getPhotoAnalysisCredentialStatus() {
+  try {
+    return await (await getPhotoAnalysisCredentials()).status();
+  } catch {
+    return { state: "storage-unavailable" as const };
+  }
 }
 
 let configuration: Promise<PhotoAnalysisConfigurationService> | undefined;

@@ -4,8 +4,8 @@ import type { UsdaPhotoAnalysisReadiness } from "../app/catalog/usda-evidence";
 import {
   PhotoAnalysisReadinessService,
   PhotoAnalysisUnavailableError,
-  presentPhotoAnalysisReadiness,
 } from "../app/photo-analysis/readiness.server";
+import { presentPhotoAnalysisReadiness } from "../app/routes/photo-analysis-readiness";
 
 function service(input: {
   credentials?: "configured" | "unconfigured" | "unreadable";
@@ -100,8 +100,14 @@ test.each([
 ) => {
   const readinessService = service(input);
   const readiness = await readinessService.read();
-  expect(readiness).toEqual({ state: "unavailable", code });
-  expect(await readinessService.forRole("admin")).toEqual({
+  expect(readiness).toEqual({
+    state: "unavailable",
+    code,
+    ...(code === "unavailable-models"
+      ? { detail: "The selected Gemini model is unavailable." }
+      : {}),
+  });
+  expect(presentPhotoAnalysisReadiness(readiness, "admin")).toEqual({
     state: "unavailable",
     reason: administratorReason,
     destination,
@@ -118,11 +124,17 @@ test("ready state is shared and failures become the route-safe unavailable error
   expect(presentPhotoAnalysisReadiness(readiness, "member")).toEqual({ state: "ready" });
 
   const failure = new PhotoAnalysisUnavailableError("catalog-not-installed");
-  expect(failure.forRole("admin")).toMatchObject({
+  expect(presentPhotoAnalysisReadiness(
+    { state: "unavailable", code: failure.code },
+    "admin",
+  )).toMatchObject({
     reason: "Install USDA Foundation for Photo Analysis.",
     destination: "/settings/catalogs",
   });
-  expect(failure.forRole("member")).toEqual({
+  expect(presentPhotoAnalysisReadiness(
+    { state: "unavailable", code: failure.code },
+    "member",
+  )).toEqual({
     state: "unavailable",
     reason: "AI photo analysis is not available right now.",
   });

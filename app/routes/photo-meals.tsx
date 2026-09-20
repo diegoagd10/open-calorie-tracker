@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useFetcher, useNavigate, useRevalidator } from "react-router";
 import type { PhotoAnalysisService } from "../photo-analysis/photo-analysis.server";
-import type { PresentedPhotoAnalysisReadiness } from "../photo-analysis/readiness.server";
+import type { PresentedPhotoAnalysisReadiness } from "./photo-analysis-readiness";
 import styles from "../photo-analysis/photo-meals.module.css";
 import methodStyles from "./add-food-method.module.css";
 import { UiIcon } from "../ui-icon";
 
 type PhotoMeal = ReturnType<PhotoAnalysisService["view"]>;
-type PhotoAction = { error?: string; id?: string };
+type PhotoAction = { destination?: string; error?: string; id?: string };
 
 function imageUrl(id: string) {
   return `/photo-analysis?id=${encodeURIComponent(id)}&image=1`;
@@ -105,6 +105,9 @@ export function usePhotoUpload(
             <div>
               <strong>Photo upload failed</strong>
               <p>{error ?? upload.data?.error}</p>
+              {upload.data?.destination ? (
+                <Link to={upload.data.destination}>Open settings</Link>
+              ) : null}
               {pendingUpload.current ? (
                 <button type="button" onClick={() => {
                   void upload.submit(pendingUpload.current, {
@@ -238,7 +241,14 @@ export function PhotoMealStatus({ meal, csrfToken }: { meal: PhotoMeal; csrfToke
           </>
         ) : null}
       </action.Form>
-      {action.data?.error ? <p role="alert">{action.data.error}</p> : null}
+      {action.data?.error ? (
+        <p role="alert">
+          {action.data.error}
+          {action.data.destination ? (
+            <> <Link to={action.data.destination}>Open settings</Link></>
+          ) : null}
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -319,7 +329,14 @@ export function PhotoCorrection({
               ? "Apply correction"
               : "Starting correction…"}
           </button>
-          {action.data?.error ? <p role="alert">{action.data.error}</p> : null}
+          {action.data?.error ? (
+            <p role="alert">
+              {action.data.error}
+              {action.data.destination ? (
+                <> <Link to={action.data.destination}>Open settings</Link></>
+              ) : null}
+            </p>
+          ) : null}
         </action.Form>
       ) : (
         <button type="button" onClick={() => setKey(crypto.randomUUID())}>

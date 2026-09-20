@@ -27,6 +27,7 @@ import {
   readApplicationMutationForm,
 } from "../auth/http.server";
 import { getPhotoAnalysisReadiness, getPhotoAnalysisService } from "../photo-analysis/runtime.server";
+import { presentPhotoAnalysisReadiness } from "./photo-analysis-readiness";
 import { PhotoMealCard, PhotoMealStatus, PhotoCorrection, usePhotoMealPolling, usePhotoUpload } from "./photo-meals";
 import { DateRail } from "../date-rail";
 import { AppNavigation } from "../app-navigation";
@@ -376,7 +377,8 @@ export async function loader({ request }: Route.LoaderArgs) {
   }
   if (!foodLog) return redirect("/setup");
   const photoMeals = getPhotoAnalysisService().list(session.user.id, foodLog.selectedDate);
-  const photoAnalysisReadiness = await getPhotoAnalysisReadiness(
+  const photoAnalysisReadiness = presentPhotoAnalysisReadiness(
+    await getPhotoAnalysisReadiness(),
     session.user.role,
   );
 

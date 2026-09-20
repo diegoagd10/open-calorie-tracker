@@ -10,6 +10,7 @@ import {
 } from "../app/database/runtime.server";
 import {
   getPhotoAnalysisConfiguration,
+  getPhotoAnalysisCredentialStatus,
   getPhotoAnalysisCredentials,
   getPhotoAnalysisReadiness,
   getPhotoAnalysisService,
@@ -48,9 +49,9 @@ test("production runtime constructs Gemini/Jev services and reports missing cred
   expect(getPhotoAnalysisService()).toBe(service);
   await expect(getPhotoAnalysisCredentials()).resolves.toBeDefined();
   await expect(getPhotoAnalysisConfiguration()).resolves.toBeDefined();
-  await expect(getPhotoAnalysisReadiness("member")).resolves.toEqual({
+  await expect(getPhotoAnalysisReadiness()).resolves.toEqual({
     state: "unavailable",
-    reason: "AI photo analysis is not available right now.",
+    code: "missing-credentials",
   });
 });
 
@@ -60,9 +61,11 @@ test("unusable master-key storage becomes a non-disclosing readiness failure", a
   const blockedPath = path.join(directory, "not-a-directory");
   await writeFile(blockedPath, "blocked");
   process.env.APPLICATION_SECRETS_PATH = blockedPath;
-  await expect(getPhotoAnalysisReadiness("admin")).resolves.toEqual({
+  await expect(getPhotoAnalysisCredentialStatus()).resolves.toEqual({
+    state: "storage-unavailable",
+  });
+  await expect(getPhotoAnalysisReadiness()).resolves.toEqual({
     state: "unavailable",
-    reason: "Repair the Photo Analysis credential encryption setup.",
-    destination: "/settings/ai",
+    code: "unreadable-credentials",
   });
 });

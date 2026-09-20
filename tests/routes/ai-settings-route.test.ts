@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { sql } from "drizzle-orm";
@@ -88,12 +88,45 @@ test("only administrators can read or mutate shared Photo Analysis configuration
   expect(meta()).toEqual([{ title: "AI photo estimates · Open Calorie Tracker" }]);
 });
 
+test("unusable master-key storage still renders actionable settings and rejects writes", async () => {
+  shutdownPhotoAnalysis();
+  const secretsPath = path.join(directory, "secrets");
+  await rm(secretsPath, { force: true, recursive: true });
+  await writeFile(secretsPath, "not a directory");
+  try {
+    await expect(loader(args(request()))).resolves.toMatchObject({
+      credentials: { state: "storage-unavailable" },
+      readiness: {
+        state: "unavailable",
+        reason: "Repair the Photo Analysis credential encryption setup.",
+        destination: "/settings/ai",
+      },
+      settings: undefined,
+    });
+    const response = await action(post({
+      intent: "save-credentials",
+      ...validPair,
+    }));
+    expect(response.init?.status).toBe(503);
+    expect(response.data).toMatchObject({
+      area: "credentials",
+      error: "Credential storage is unavailable. Repair the master-key path and try again.",
+    });
+  } finally {
+    shutdownPhotoAnalysis();
+    await rm(secretsPath, { force: true });
+    await mkdir(secretsPath, { mode: 0o700 });
+  }
+});
+
 test("saves a validated pair and discovers compatible models without returning secrets", async () => {
   const response = await action(post({ intent: "save-credentials", ...validPair }));
   expect(response.data).toEqual({ area: "credentials", success: "Photo Analysis credentials saved." });
   expect(network).toHaveBeenCalledTimes(2);
 
+  network.mockClear();
   const state = await loader(args(request()));
+  expect(network).toHaveBeenCalledTimes(2);
   expect(state.credentials).toMatchObject({ state: "configured", validatedAt: expect.any(String) as unknown });
   expect(state.settings).toMatchObject({
     ready: true,

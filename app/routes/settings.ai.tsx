@@ -17,7 +17,8 @@ import {
   PhotoAnalysisCredentialValidationError,
   type PhotoAnalysisCredentialPair,
 } from "../photo-analysis/credentials.server";
-import { getPhotoAnalysisConfiguration, getPhotoAnalysisCredentials, getPhotoAnalysisReadiness } from "../photo-analysis/runtime.server";
+import { getPhotoAnalysisConfiguration, getPhotoAnalysisCredentials, getPhotoAnalysisCredentialStatus, getPhotoAnalysisReadiness } from "../photo-analysis/runtime.server";
+import { presentPhotoAnalysisReadiness } from "./photo-analysis-readiness";
 import { SettingsDestinations } from "../settings-destinations";
 import shellStyles from "../food-log.module.css";
 import styles from "../photo-analysis/connection.module.css";
@@ -43,17 +44,20 @@ const configurationFormSchema = z.object({
 
 export async function loader({ request }: Route.LoaderArgs) {
   const session = await requireAdministratorSession(request);
-  const credentialService = await getPhotoAnalysisCredentials();
-  const credentials = await credentialService.status();
-  const readiness = await getPhotoAnalysisReadiness("admin");
+  const credentials = await getPhotoAnalysisCredentialStatus();
+  const settings = credentials.state === "configured"
+    ? await (await getPhotoAnalysisConfiguration()).readSettings()
+    : undefined;
+  const readiness = presentPhotoAnalysisReadiness(
+    await getPhotoAnalysisReadiness({ credentials, settings }),
+    "admin",
+  );
   return {
     csrfToken: session.csrfToken,
     today: new Date().toISOString().slice(0, 10),
     credentials,
     readiness,
-    settings: credentials.state === "configured"
-      ? await (await getPhotoAnalysisConfiguration()).readSettings()
-      : undefined,
+    settings,
   };
 }
 
@@ -64,8 +68,17 @@ export async function action({ request }: Route.ActionArgs) {
   if (!getAuthenticationService().verifyCsrfToken(session.token, String(form.get("csrfToken") ?? ""))) {
     throw new Response("CSRF token rejected.", { status: 403 });
   }
-  const credentials = await getPhotoAnalysisCredentials();
-  switch (form.get("intent")) {
+  const intent = form.get("intent");
+  let credentials;
+  try {
+    credentials = await getPhotoAnalysisCredentials();
+  } catch {
+    return data<AiSettingsActionData>({
+      area: intent === "save-configuration" ? "configuration" : "credentials",
+      error: "Credential storage is unavailable. Repair the master-key path and try again.",
+    }, { status: 503 });
+  }
+  switch (intent) {
     case "save-credentials":
       try {
         await credentials.replace({
@@ -139,9 +152,10 @@ function parseConfigurationForm(candidate: {
   });
 }
 
-function statusLabel(state: "configured" | "unconfigured" | "unreadable") {
+function statusLabel(state: "configured" | "unconfigured" | "unreadable" | "storage-unavailable") {
   if (state === "configured") return "Configured";
   if (state === "unreadable") return "Needs re-entry";
+  if (state === "storage-unavailable") return "Needs repair";
   return "Not configured";
 }
 
@@ -292,6 +306,7 @@ export default function AiSettings({ loaderData, actionData }: Route.ComponentPr
           <div className={styles.heading}><div><h2 id="credentials-heading">Photo Analysis credentials</h2><p>Gemini and TypeSafe</p></div><span className={configured ? styles.connected : styles.disconnected}>{statusLabel(loaderData.credentials.state)}</span></div>
           <p>Shared by everyone on this tracker. Saved keys are encrypted and are never shown again.</p>
           {loaderData.credentials.state === "unreadable" ? <p role="alert" className={styles.error}>The saved credential pair cannot be read. Enter and validate both keys again.</p> : null}
+          {loaderData.credentials.state === "storage-unavailable" ? <p role="alert" className={styles.error}>Credential storage cannot use the configured master-key path. Repair it, then reload this page.</p> : null}
           {credentialError ? <p role="alert" className={styles.error}>{credentialError}</p> : null}
           {credentialSuccess ? <p role="status" className={styles.success}>{credentialSuccess}</p> : null}
           {configuredStatus ? <p className={styles.note}>Last validated {new Date(configuredStatus.validatedAt).toLocaleString()}.</p> : null}

@@ -106,6 +106,7 @@ test("terminal imports notify connected clients while a member searches and logs
   await details.getByText("Components, sources and assumptions", { exact: true }).click();
   await expect(details).toContainText("USDA Foundation · FDC 107");
   await expect(details).toContainText("Installed Foundation fixture omits protein");
+  await expect(details).toContainText("Gemini estimate: No USDA category adequately matched the visible component.");
   await page.goto("/settings/catalogs");
 
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);

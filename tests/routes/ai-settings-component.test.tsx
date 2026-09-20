@@ -4,7 +4,7 @@ import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { expect, test } from "vitest";
 import type { PhotoAnalysisCredentialStatus } from "../../app/photo-analysis/credentials.server";
 import type { PhotoAnalysisSettingsSnapshot } from "../../app/photo-analysis/configuration.server";
-import type { PresentedPhotoAnalysisReadiness } from "../../app/photo-analysis/readiness.server";
+import type { PresentedPhotoAnalysisReadiness } from "../../app/routes/photo-analysis-readiness";
 import AiSettings from "../../app/routes/settings.ai";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;

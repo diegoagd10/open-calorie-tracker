@@ -65,6 +65,7 @@ export class PhotoAnalysisCredentialValidationError extends Error {
 
 export type PhotoAnalysisCredentialStatus =
   | { state: "unconfigured" }
+  | { state: "storage-unavailable" }
   | ({ state: "unreadable" } & CredentialBundleMetadata)
   | ({ state: "configured"; validatedAt: string } & CredentialBundleMetadata);
 
