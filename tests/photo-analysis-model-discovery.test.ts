@@ -83,6 +83,30 @@ test("accepts the alternate Jev models envelope and effectiveModel spelling", as
   ]);
 });
 
+test("accepts current TypeSafe model metadata and resolves documented aliases to a concrete version", async () => {
+  const discovery = new RemotePhotoAnalysisModelDiscovery(
+    vi.fn(async () => Response.json({
+      models: [
+        {
+          name: "jev-latest",
+          description: "The latest stable Jev release",
+          release_date: "2026-09-10T18:38:01.391457+00:00",
+        },
+        {
+          name: "jev-preview",
+          description: "The latest Jev release, including previews",
+          release_date: "2026-09-10T18:39:06.057655+00:00",
+        },
+      ],
+    })),
+  );
+
+  await expect(discovery.discoverJev("secret", new AbortController().signal)).resolves.toEqual([
+    { id: "jev-latest", effectiveId: "jev-1.13.0" },
+    { id: "jev-preview", effectiveId: "jev-1.13.0" },
+  ]);
+});
+
 test.each([
   ["missing body", () => new Response(null)],
   ["invalid content length", () => new Response("{}", { headers: { "content-length": "invalid" } })],

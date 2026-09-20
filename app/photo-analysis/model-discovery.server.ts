@@ -17,15 +17,28 @@ const geminiPageSchema = z.object({
   nextPageToken: z.string().min(1).max(500).optional(),
 }).passthrough();
 
-const jevModelSchema = z.object({
+const legacyJevModelSchema = z.object({
   id: z.string().min(1).max(100),
   effective_model: z.string().min(1).max(100).optional(),
   effectiveModel: z.string().min(1).max(100).optional(),
-}).passthrough();
+});
+const currentJevModelSchema = z.object({
+  name: z.string().min(1).max(100),
+  description: z.string().min(1).max(1_000),
+  release_date: z.string().min(1).max(100),
+});
+const jevModelSchema = z.union([legacyJevModelSchema, currentJevModelSchema]);
 const jevEnvelopeSchema = z.union([
   z.object({ data: z.array(jevModelSchema).max(1_000) }).passthrough(),
   z.object({ models: z.array(jevModelSchema).max(1_000) }).passthrough(),
 ]).transform(value => "data" in value ? value.data : value.models);
+
+// TypeSafe lists moving aliases, while thresholds and provenance require a concrete version.
+// Keep this mapping explicit so a provider alias change cannot silently reuse old calibration.
+const documentedJevAliasTargets: Readonly<Record<string, string>> = {
+  "jev-latest": "jev-1.13.0",
+  "jev-preview": "jev-1.13.0",
+};
 
 export class RemotePhotoAnalysisModelDiscovery implements PhotoAnalysisModelDiscovery {
   constructor(private readonly network: typeof fetch = fetch) {}
@@ -61,8 +74,14 @@ export class RemotePhotoAnalysisModelDiscovery implements PhotoAnalysisModelDisc
     );
     const models = parseProviderSchema(jevEnvelopeSchema, value) as z.output<typeof jevModelSchema>[];
     return models.map(model => {
-      const effectiveId = model.effective_model ?? model.effectiveModel ?? model.id;
-      return { id: model.id, effectiveId };
+      if ("id" in model) {
+        const effectiveId = model.effective_model ?? model.effectiveModel ?? model.id;
+        return { id: model.id, effectiveId };
+      }
+      return {
+        id: model.name,
+        effectiveId: documentedJevAliasTargets[model.name] ?? model.name,
+      };
     });
   }
 

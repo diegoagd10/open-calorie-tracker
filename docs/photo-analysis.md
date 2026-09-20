@@ -61,6 +61,11 @@ estimate. New Jev versions begin at `0.0` and are marked uncalibrated. A saved
 selection that later becomes unavailable remains selected and makes new Photo
 Analysis configuration unready instead of switching silently.
 
+TypeSafe's model-list response exposes moving aliases such as `jev-latest` rather
+than concrete version identifiers. The backend resolves documented aliases through
+an explicit compatibility mapping before presenting Jev versions, so a future alias
+move cannot silently reuse thresholds or provenance from an older version.
+
 **New-attempt readiness** on that page combines the encrypted credential pair,
 current model discovery and selections, and the active USDA Foundation
 generation. Missing or unreadable credentials, unavailable selected models, a
