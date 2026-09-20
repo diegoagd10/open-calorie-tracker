@@ -987,6 +987,7 @@ test("Add Food disables only AI photo capture and presents role-appropriate reco
     },
   });
   expect(member.root.findByProps({ "aria-label": "Take photo · AI calories" }).props.disabled).toBe(true);
+  expect(member.root.findByProps({ "aria-label": "Add Food methods" }).children).toHaveLength(4);
   expect(allText(member)).toContain("AI photo analysis is not available right now.");
   expect(allText(member)).toContain("Search food");
   expect(allText(member)).toContain("Manual");

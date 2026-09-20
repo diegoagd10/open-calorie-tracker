@@ -24,6 +24,23 @@
   transition: background 150ms ease, border-color 150ms ease;
 }
 
+.captureMethod {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.captureMethod .method {
+  flex: 1;
+}
+
+.availability {
+  margin: 0;
+  font-size: 0.8rem;
+  line-height: 1.35;
+}
+
 .method:hover {
   border-color: var(--green);
   background: #f4f9f4;

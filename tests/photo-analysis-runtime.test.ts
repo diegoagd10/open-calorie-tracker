@@ -68,4 +68,10 @@ test("unusable master-key storage becomes a non-disclosing readiness failure", a
     state: "unavailable",
     code: "unreadable-credentials",
   });
+
+  process.env.APPLICATION_SECRETS_PATH = path.join(directory, "repaired-secrets");
+  await expect(getPhotoAnalysisCredentialStatus()).resolves.toEqual({
+    state: "unconfigured",
+  });
+  await expect(getPhotoAnalysisConfiguration()).resolves.toBeDefined();
 });

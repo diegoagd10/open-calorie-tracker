@@ -1,4 +1,5 @@
 import AxeBuilder from "@axe-core/playwright";
+import type { Browser, Page } from "@playwright/test";
 import {
   bootstrapOrSignInBrowserTestUser,
   expect,
@@ -21,11 +22,12 @@ const photo = {
   ),
 };
 
-test("readiness blocks only photo capture with role-appropriate recovery", async ({ page, browser }) => {
+async function verifyReadinessRecovery(page: Page, browser: Browser) {
   const password = "correct horse 🔐 battery";
   await bootstrapOrSignInBrowserTestUser(page, "photo.readiness.admin", password);
   await page.getByRole("button", { name: "Finish setup" }).click();
   await expect(page).toHaveURL("/");
+  const homeOrigin = new URL(page.url()).origin;
   const database = openBrowserTestDatabase();
   database.prepare(`
     INSERT INTO application_metadata (key, value, updated_at) VALUES (?, ?, ?)
@@ -79,7 +81,7 @@ test("readiness blocks only photo capture with role-appropriate recovery", async
       PHOTO_ANALYSIS_TEST_READINESS_KEY,
     );
     transition.close();
-    await page.goto(publicOrigin);
+    await page.goto(homeOrigin);
     await page.getByRole("button", { name: "Add Food", exact: true }).click();
     await expect(page.getByLabel("Take photo · AI calories")).toBeDisabled();
     await expect(page.getByRole("dialog")).toContainText(
@@ -96,7 +98,7 @@ test("readiness blocks only photo capture with role-appropriate recovery", async
       "DELETE FROM application_metadata WHERE key = ?",
     ).run(PHOTO_ANALYSIS_TEST_READINESS_KEY);
     ready.close();
-    await page.goto(publicOrigin);
+    await page.goto(homeOrigin);
     await page.getByRole("button", { name: "Add Food", exact: true }).click();
     await expect(page.getByLabel("Take photo · AI calories")).toBeEnabled();
     expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
@@ -108,6 +110,14 @@ test("readiness blocks only photo capture with role-appropriate recovery", async
     ).run(PHOTO_ANALYSIS_TEST_READINESS_KEY);
     cleanup.close();
   }
+}
+
+test("readiness blocks only photo capture with role-appropriate recovery", async ({ page, browser }) => {
+  await verifyReadinessRecovery(page, browser);
+});
+
+test("readiness blocks only photo capture with role-appropriate recovery @camera-matrix", async ({ page, browser }) => {
+  await verifyReadinessRecovery(page, browser);
 });
 
 test("plate capture returns to Daily Log, survives reload, and supports correction and cancellation @camera-matrix", async ({

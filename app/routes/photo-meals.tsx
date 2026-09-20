@@ -33,7 +33,7 @@ export function usePhotoUpload(
   return {
     pending,
     capture: (
-      <>
+      <div className={methodStyles.captureMethod}>
         <label className={methodStyles.method}>
           <span className={methodStyles.icon}>
             <UiIcon name="camera" />
@@ -77,14 +77,14 @@ export function usePhotoUpload(
           />
         </label>
         {readiness.state === "unavailable" ? (
-          <p id="photo-analysis-readiness">
+          <p className={methodStyles.availability} id="photo-analysis-readiness">
             {readiness.reason}{" "}
             {readiness.destination ? (
               <Link to={readiness.destination}>Open settings</Link>
             ) : null}
           </p>
         ) : null}
-      </>
+      </div>
     ),
     feedback: pending || error || upload.data?.error ? (
       <>

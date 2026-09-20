@@ -97,13 +97,19 @@ export async function getPhotoAnalysisReadiness(
 let credentials: Promise<PhotoAnalysisCredentials> | undefined;
 
 export function getPhotoAnalysisCredentials(): Promise<PhotoAnalysisCredentials> {
-  credentials ??= initializeCredentialStorage().then(bundles => {
-    const config = environmentSchema.parse(process.env);
-    const validator = process.env.NODE_ENV === "test" && config.PHOTO_CREDENTIAL_VALIDATION_TEST_FIXTURE === "1"
-      ? new TestPhotoAnalysisCredentialValidator()
-      : new RemotePhotoAnalysisCredentialValidator();
-    return new PhotoAnalysisCredentials(bundles, validator);
-  });
+  credentials ??= initializeCredentialStorage()
+    .then(bundles => {
+      const config = environmentSchema.parse(process.env);
+      const validator = process.env.NODE_ENV === "test" && config.PHOTO_CREDENTIAL_VALIDATION_TEST_FIXTURE === "1"
+        ? new TestPhotoAnalysisCredentialValidator()
+        : new RemotePhotoAnalysisCredentialValidator();
+      return new PhotoAnalysisCredentials(bundles, validator);
+    })
+    .catch(error => {
+      credentials = undefined;
+      configuration = undefined;
+      throw error;
+    });
   return credentials;
 }
 
@@ -118,17 +124,22 @@ export async function getPhotoAnalysisCredentialStatus() {
 let configuration: Promise<PhotoAnalysisConfigurationService> | undefined;
 
 export function getPhotoAnalysisConfiguration(): Promise<PhotoAnalysisConfigurationService> {
-  configuration ??= getPhotoAnalysisCredentials().then(credentialService => {
-    const config = environmentSchema.parse(process.env);
-    const discovery = process.env.NODE_ENV === "test" && config.PHOTO_MODEL_DISCOVERY_TEST_FIXTURE === "1"
-      ? new TestPhotoAnalysisModelDiscovery()
-      : new RemotePhotoAnalysisModelDiscovery();
-    return new PhotoAnalysisConfigurationService(
-      createDatabaseApplicationMetadata(getApplicationDatabase().getClient()),
-      credentialService,
-      discovery,
-    );
-  });
+  configuration ??= getPhotoAnalysisCredentials()
+    .then(credentialService => {
+      const config = environmentSchema.parse(process.env);
+      const discovery = process.env.NODE_ENV === "test" && config.PHOTO_MODEL_DISCOVERY_TEST_FIXTURE === "1"
+        ? new TestPhotoAnalysisModelDiscovery()
+        : new RemotePhotoAnalysisModelDiscovery();
+      return new PhotoAnalysisConfigurationService(
+        createDatabaseApplicationMetadata(getApplicationDatabase().getClient()),
+        credentialService,
+        discovery,
+      );
+    })
+    .catch(error => {
+      configuration = undefined;
+      throw error;
+    });
   return configuration;
 }
 
