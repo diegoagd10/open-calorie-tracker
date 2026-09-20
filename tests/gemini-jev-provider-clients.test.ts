@@ -33,18 +33,28 @@ test("the Gemini adapter sends one authenticated structured multimodal request",
   expect(new Headers(init?.headers).get("x-goog-api-key")).toBe("gemini-private-key");
   const body = JSON.parse(String(init?.body)) as {
     contents: { parts: unknown[] }[];
-    generationConfig: { responseMimeType: string; responseJsonSchema: unknown };
+    generationConfig: {
+      responseMimeType: string;
+      responseJsonSchema: unknown;
+      temperature: number;
+      maxOutputTokens: number;
+    };
   };
   expect(body.contents[0].parts).toEqual([
     { text: `${mealRequest.instruction}\nApplication context:\n${JSON.stringify(mealRequest.context)}` },
     { inlineData: { mimeType: "image/jpeg", data: mealRequest.photo.bytes.toString("base64") } },
   ]);
   expect(body.generationConfig.responseMimeType).toBe("application/json");
+  expect(body.generationConfig.temperature).toBe(0.2);
+  expect(body.generationConfig.maxOutputTokens).toBe(8_192);
   expect(z.object({ anyOf: z.array(z.unknown()).min(1) }).parse(body.generationConfig.responseJsonSchema).anyOf)
     .not.toHaveLength(0);
   const schemaText = JSON.stringify(body.generationConfig.responseJsonSchema);
   expect(schemaText).toContain('"enum":["no_food"]');
   expect(schemaText).toContain('"enum":["food"]');
+  expect(schemaText).toContain("Egg and diced potato must be separate items");
+  expect(schemaText).toContain("Never combine egg and diced potato in one component");
+  expect(schemaText).toContain("Never mention invisible cooking fats");
   for (const unsupported of ["const", "minLength", "maxLength", "pattern", "exclusiveMinimum"]) {
     expect(schemaText).not.toContain(`"${unsupported}"`);
   }
@@ -76,7 +86,6 @@ test("the Gemini adapter keeps the provider schema shallow and decodes bounded n
       grams: 100,
       uncertainty: "Preparation fat is not visible.",
       assumptions: [],
-      includes: [],
       nutrition: JSON.stringify(nutrition),
     }],
   };
@@ -90,7 +99,7 @@ test("the Gemini adapter keeps the provider schema shallow and decodes bounded n
 
   await expect(client.analyzeMeal(mealRequest, new AbortController().signal)).resolves.toEqual({
     ...providerObservation,
-    components: [{ ...providerObservation.components[0], nutrition }],
+    components: [{ ...providerObservation.components[0], includes: [], nutrition }],
   });
 
   const body = JSON.parse(String(network.mock.calls[0][1]?.body)) as {
@@ -107,6 +116,7 @@ test("the Gemini adapter keeps the provider schema shallow and decodes bounded n
     }).passthrough(),
   }).parse(foodSchema).properties.components.items.properties.nutrition;
   expect(nutritionSchema).toEqual(expect.objectContaining({ type: "string" }));
+  expect(JSON.stringify(foodSchema)).not.toContain('"includes"');
 });
 
 test("malformed Gemini nutrition JSON fails at the provider boundary", async () => {

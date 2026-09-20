@@ -53,6 +53,8 @@ export class GeminiHttpMealClient implements GeminiMealClient {
         generationConfig: {
           responseMimeType: "application/json",
           responseJsonSchema: GEMINI_MEAL_RESPONSE_JSON_SCHEMA,
+          temperature: 0.2,
+          maxOutputTokens: 8_192,
         },
       }),
       signal,
@@ -143,6 +145,9 @@ function decodeGeminiNutrition(value: unknown): unknown {
     ...food.data,
     components: food.data.components.map(component => ({
       ...component,
+      // Gemini returns only independently matchable visible components, so
+      // overlap metadata is intentionally not part of the provider contract.
+      includes: [],
       nutrition: JSON.parse(component.nutrition) as unknown,
     })),
   };

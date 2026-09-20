@@ -104,7 +104,10 @@ const providerComponentSchema = {
   additionalProperties: false,
   properties: {
     id: { type: "string", description: "Short unique visible-component identifier." },
-    name: { type: "string" },
+    name: {
+      type: "string",
+      description: "Exactly one independently matchable visible food identity. Never combine egg and diced potato in one component when both remain visibly distinguishable.",
+    },
     preparationEvidence: { type: "string" },
     quantityDescription: { type: "string" },
     grams: {
@@ -112,8 +115,12 @@ const providerComponentSchema = {
       description: "Estimated grams for the full visible component before consumedFraction is applied, or null when indefensible.",
     },
     uncertainty: { type: "string" },
-    assumptions: { type: "array", items: { type: "string" }, maxItems: 1 },
-    includes: { type: "array", items: { type: "string" }, maxItems: 30 },
+    assumptions: {
+      type: "array",
+      description: "Visible-evidence uncertainty only. Never mention invisible cooking fats, including assumed or minimal oil or butter.",
+      items: { type: "string" },
+      maxItems: 1,
+    },
     nutrition: {
       type: "string",
       description: "JSON object with energyKcal, proteinGrams, carbohydrateGrams, fatGrams, fiberGrams, sugarGrams, and sodiumMilligrams totals for the full stated quantity; the last three may be null.",
@@ -127,7 +134,6 @@ const providerComponentSchema = {
     "grams",
     "uncertainty",
     "assumptions",
-    "includes",
     "nutrition",
   ],
 } as const;
@@ -152,7 +158,13 @@ export const GEMINI_MEAL_RESPONSE_JSON_SCHEMA = {
           description: "Fraction of the full visible meal that was consumed. Component quantities and nutrition remain pre-fraction totals.",
         },
         assumptions: { type: "array", items: { type: "string" }, maxItems: 8 },
-        components: { type: "array", items: providerComponentSchema, minItems: 1, maxItems: 8 },
+        components: {
+          type: "array",
+          description: "Independently matchable visible foods. Egg and diced potato must be separate items when both are visible, even when mixed together; refried beans stay together because their recipe ingredients are not individually visible.",
+          items: providerComponentSchema,
+          minItems: 1,
+          maxItems: 8,
+        },
       },
       required: ["status", "name", "consumedFraction", "assumptions", "components"],
     },
@@ -191,7 +203,7 @@ const configSchema = z.object({
   deadlineMs: z.number().int().positive().max(5_000).default(5_000),
 }).strict();
 
-const instruction = `Describe only food or drink visibly present in the supplied image. Separate independently visible foods, but keep an inseparable prepared food together. Do not infer hidden ingredients, fats, seasonings, fillings, brands, or recipe ingredients. Never choose or invent a USDA FDC identity. Return the required structured observation and complete fallback nutrition for every visible component. Encode each component's nutrition as a JSON object inside the required nutrition string. consumedFraction is the fraction of the full visible meal that was consumed. Every component's quantity, grams, and fallback nutrition must describe its full visible portion before consumedFraction is applied. Nutrition values are totals for that stated component quantity, never values per 100 grams; the application applies consumedFraction exactly once.`;
+const instruction = `Describe only food or drink visibly present in the supplied image as independently matchable nutritional components. Separate visibly distinct foods even when they are mixed, such as egg and diced potato. If scrambled egg and diced potato are both visible, you must return one egg component and one potato component; never return a combined eggs-with-potatoes component. Mixed together is not inseparable when the individual foods remain visibly distinguishable. Keep a prepared food together when its recipe ingredients are not individually visible, such as refried beans. Do not infer hidden ingredients, fats, seasonings, fillings, brands, or recipe ingredients. Never assume that a cooking fat was used, even in a phrase such as "minimal oil". Omit invisible cooking fats completely from components, assumptions, and nutrition. Never choose or invent a USDA FDC identity. Return the required structured observation and complete fallback nutrition for every visible component. Encode each component's nutrition as a JSON object inside the required nutrition string. consumedFraction is the fraction of the full visible meal that was consumed. Every component's quantity, grams, and fallback nutrition must describe its full visible portion before consumedFraction is applied. Nutrition values are totals for that stated component quantity, never values per 100 grams; the application applies consumedFraction exactly once.`;
 
 export class GeminiJevPhotoAnalyzer implements PhotoAnalyzer {
   private readonly config: z.infer<typeof configSchema>;
@@ -394,10 +406,10 @@ function planProductChoices(
     plan.candidates.set(index, options);
     plan.questions[questionKey(index)] = {
       type: "choice",
-      instructions: `Choose the closest defensible USDA Foundation record for ${component.name}, or none when no record is adequate.`,
+      instructions: `Choose the USDA Foundation record that best represents the food identity of ${component.name}. Prefer an exact prepared-food record when one exists. Otherwise choose the closest base food even when the record is raw and the observed food is cooked. Do not choose none merely because raw and cooked preparation differ; choose none only when the food identity differs. Do not infer hidden ingredients.`,
       criteria: {
         ...Object.fromEntries(options.map(candidate => [`food_${candidate.fdcId}`, candidate.description])),
-        none: "No listed Foundation record adequately represents this visible food.",
+        none: "No listed record has the same base food identity as this visible component.",
       },
     };
   }
@@ -589,7 +601,11 @@ function validateAnswer(answer: ChoiceAnswer, question: JevChoiceQuestion) {
   }
   const values = Object.values(answer.probabilities);
   const total = values.reduce((sum, probability) => sum + probability, 0);
-  if (Math.abs(total - 1) > 0.001 || answer.probabilities[answer.choice] !== Math.max(...values)) {
+  // Jev rounds individual probabilities in its wire response, so a complete
+  // distribution can legitimately total 0.99 or 1.01. Keep the tolerance
+  // narrow while still requiring every criterion and the selected maximum.
+  const roundingTolerance = 0.02 + Number.EPSILON * values.length;
+  if (Math.abs(total - 1) > roundingTolerance || answer.probabilities[answer.choice] !== Math.max(...values)) {
     throw new Error("Jev returned an invalid probability distribution");
   }
 }

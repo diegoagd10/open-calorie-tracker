@@ -48,6 +48,10 @@ test("a strict Gemini no-food observation performs no Jev work and uses the exis
       expect(request.photo).toEqual(analyzerInput().photo);
       expect(request.context).toEqual({ previousCorrections: [], evidence: [] });
       expect(request.instruction).toContain("Do not infer hidden ingredients");
+      expect(request.instruction).toContain("egg and diced potato");
+      expect(request.instruction).toContain("refried beans");
+      expect(request.instruction).toContain("Mixed together is not inseparable");
+      expect(request.instruction).toContain("Never assume that a cooking fat was used");
       expect(request.instruction).toContain("full visible portion before consumedFraction is applied");
       expect(request.instruction).toContain("never values per 100 grams");
       return { status: "no_food" };
@@ -239,11 +243,16 @@ test("one leased generation supplies both Jev stages and authoritative USDA nutr
     } } },
   });
   expect(calls[1]).toMatchObject({
-    questions: { component_0: { criteria: {
-      food_100: "Eggs, whole, raw",
-      none: "No listed Foundation record adequately represents this visible food.",
-    } } },
+    questions: { component_0: {
+      criteria: {
+        food_100: "Eggs, whole, raw",
+        none: "No listed record has the same base food identity as this visible component.",
+      },
+    } },
   });
+  expect(calls[1].questions.component_0.instructions).toContain(
+    "Do not choose none merely because raw and cooked preparation differ",
+  );
   expect(JSON.stringify(calls)).not.toContain(analyzerInput().photo.bytes.toString("base64"));
 });
 
@@ -335,6 +344,28 @@ test("bounded tied candidates always retain the selected choice", async () => {
     key: "category_6",
     label: "Category 6",
     probability: tiedProbability,
+  });
+});
+
+test("Jev probability rounding does not reject an otherwise valid choice", async () => {
+  let stage = 0;
+  const analyzer = new GeminiJevPhotoAnalyzer(
+    { analyzeMeal: geminiMock(async () => observedMeal()) },
+    {
+      choose: jevMock(async () => {
+        stage++;
+        return stage === 1
+          ? choiceResponse("category_1", ["category_1", "none"], {
+              probabilities: { category_1: 0.89, none: 0.1 },
+            })
+          : choiceResponse("food_100", ["food_100", "none"]);
+      }),
+    },
+    readyCatalog(),
+  );
+
+  await expect(analyzer.analyze(analyzerInput())).resolves.toMatchObject({
+    result: { components: [{ source: { kind: "usda", fdcId: "100" } }] },
   });
 });
 
@@ -484,6 +515,7 @@ test.each([
   }],
   ["cross-category choice", () => choiceResponse("category_2", ["category_1", "none"], { probabilities: { category_1: 0.1, category_2: 0.8, none: 0.1 } })],
   ["omitted probability", () => choiceResponse("category_1", ["category_1", "none"], { probabilities: { category_1: 1 } })],
+  ["materially incomplete probability distribution", () => choiceResponse("category_1", ["category_1", "none"], { probabilities: { category_1: 0.6, none: 0.1 } })],
   ["invalid probability winner", () => choiceResponse("category_1", ["category_1", "none"], { probabilities: { category_1: 0.4, none: 0.6 } })],
   ["oversized confidence", () => choiceResponse("category_1", ["category_1", "none"], { confidence: 2 })],
 ] as const)("Jev output with an %s cannot become USDA evidence", async (_case, response) => {
