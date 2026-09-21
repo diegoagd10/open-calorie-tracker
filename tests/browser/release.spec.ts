@@ -326,6 +326,10 @@ test("a second user cannot list, read, edit, or delete another user's records", 
   await page.getByRole("button", { name: "Add Water" }).click();
   await page
     .getByRole("dialog", { name: "Add Water" })
+    .getByRole("button", { name: /^Add one 8 fl oz Glass/ })
+    .click();
+  await page
+    .getByRole("dialog", { name: "Add Water" })
     .getByRole("button", { name: "Add 8 fl oz" })
     .click();
   await page

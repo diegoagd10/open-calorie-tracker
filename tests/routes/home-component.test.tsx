@@ -583,6 +583,9 @@ test("home renders food and water timeline entries with factual units", async ()
     id: 12,
     kind: "water" as const,
     localEventTime: "13:07:00",
+    preset8Count: 0,
+    preset16Count: 1,
+    preset24Count: 0,
   };
   const unknownEnergyEvent = {
     ...foodEvent,
@@ -1783,13 +1786,14 @@ test("home water dialogs cover create, presets, exact values, edit, and deletion
   expect(semanticDom(createDialog)).toMatchSnapshot();
   expect(allText(createDialog)).toContain("Add Water");
   expect(queriedSelectors).toContain("button:not([disabled])");
-  expect(input(createDialog, "waterSelection").props.value).toBe("8");
-  expect(allText(createDialog)).toContain("Add 8 fl oz");
+  expect(input(createDialog, "waterSelection").props.value).toBe("presets");
+  expect(allText(createDialog)).toContain("Select water amount");
   const large = createDialog.root.findAllByType("button").find(
     (button) => nodeText(button).includes("Large"),
   )!;
   await act(async () => large.props.onClick());
-  expect(input(createDialog, "waterSelection").props.value).toBe("24");
+  expect(input(createDialog, "waterSelection").props.value).toBe("presets");
+  expect(input(createDialog, "waterPreset24Count").props.value).toBe(1);
   expect(allText(createDialog)).toContain("Add 24 fl oz");
   const exact = createDialog.root.findAllByType("button").find(
     (button) => nodeText(button).includes("ExactamountCustom"),
@@ -1801,7 +1805,7 @@ test("home water dialogs cover create, presets, exact values, edit, and deletion
     max: "500",
     min: "0.001",
     step: "0.001",
-    value: "12",
+    value: "24",
   });
   await act(async () =>
     input(createDialog, "waterAmount").props.onChange({ target: { value: "13.5" } }),
@@ -1821,6 +1825,9 @@ test("home water dialogs cover create, presets, exact values, edit, and deletion
     foodLogDate: "2026-08-31",
     id: 51,
     localEventTime: "13:15:00",
+    preset8Count: 0,
+    preset16Count: 1,
+    preset24Count: 0,
     updatedAt: "2026-08-31T13:15:00.000Z",
   };
   const edit = await renderHome({
@@ -1862,6 +1869,7 @@ test("home water dialogs cover create, presets, exact values, edit, and deletion
     ...event,
     amountMicroliters: 400_010,
     id: 52,
+    preset16Count: 0,
     updatedAt: "2026-08-31T13:16:00.000Z",
   };
   const custom = await renderHome({
@@ -1896,7 +1904,7 @@ test("home water dialogs cover create, presets, exact values, edit, and deletion
     },
     waterDialog: { mode: "create" },
   });
-  expect(allText(metricCreate)).toContain("Add 237 ml");
+  expect(allText(metricCreate)).toContain("Select water amount");
   expect(allText(metricCreate)).toContain("473.176 ml");
   expect(metricCreate.root.findByProps({ "aria-label": "Water progress" }).props)
     .toMatchObject({ "aria-valuenow": 1000 });
@@ -1918,6 +1926,54 @@ test("home water dialogs cover create, presets, exact values, edit, and deletion
   expect(allText(actionEditor)).toContain("Reloaded conflicting Water Event");
   expect(input(actionEditor, "eventId").props.value).toBe(51);
   await act(async () => actionEditor.unmount());
+});
+
+test("water preset counts reset after Exact and grouped edits open with the total", async () => {
+  const createDialog = await renderHome({
+    foodLog: { ...baseFoodLog, displayUnits: "metric" },
+    waterDialog: { mode: "create" },
+  });
+  const bottle = createDialog.root.findAllByType("button").find(
+    (button) => nodeText(button).includes("Bottle"),
+  )!;
+  await act(async () => bottle.props.onClick());
+  await act(async () => bottle.props.onClick());
+  expect(input(createDialog, "waterPreset16Count").props.value).toBe(2);
+  expect(allText(createDialog)).toContain("2 servings");
+  expect(allText(createDialog)).toContain("Add 946 ml");
+  const exact = createDialog.root.findAllByType("button").find(
+    (button) => nodeText(button).includes("ExactamountCustom"),
+  )!;
+  await act(async () => exact.props.onClick());
+  expect(input(createDialog, "waterAmount").props.value).toBe("946.352");
+  await act(async () => bottle.props.onClick());
+  expect(input(createDialog, "waterPreset16Count").props.value).toBe(0);
+  expect(allText(createDialog)).toContain("Tap a size to add a serving.");
+  await act(async () => createDialog.unmount());
+
+  const editDialog = await renderHome({
+    waterDialog: {
+      mode: "edit",
+      event: {
+        amountMicroliters: 946_352,
+        foodLogDate: "2026-08-31",
+        id: 54,
+        localEventTime: "13:15:00",
+        preset8Count: 0,
+        preset16Count: 2,
+        preset24Count: 0,
+        updatedAt: "2026-08-31T13:15:00.000Z",
+      },
+    },
+  });
+  expect(input(editDialog, "waterSelection").props.value).toBe("exact");
+  expect(input(editDialog, "waterAmount").props.value).toBe("32");
+  const glass = editDialog.root.findAllByType("button").find(
+    (button) => nodeText(button).includes("Glass"),
+  )!;
+  await act(async () => glass.props.onClick());
+  expect(input(editDialog, "waterSelection").props.value).toBe("8");
+  await act(async () => editDialog.unmount());
 });
 
 test("home renders submission and navigation pending states", async () => {
@@ -2083,7 +2139,7 @@ test("home renders submission and navigation pending states", async () => {
     { formData: wrongWater, to: "/" },
   );
   expect(idleWater.root.findByType("fieldset").props.disabled).toBe(false);
-  expect(allText(idleWater)).toContain("Add 8 fl oz");
+  expect(allText(idleWater)).toContain("Select water amount");
   await act(async () => idleWater.unmount());
 
   const search = await renderPendingHome(

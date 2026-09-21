@@ -40,13 +40,13 @@ exports[`home renders calendar navigation, selected dates, and future days 1`] =
 
 exports[`home renders calendar navigation, selected dates, and future days 2`] = `"f4b3be22f28a9e816bbd3f69b5957117ef84d5d8e6e7ab08b68c4448d0520ff1"`;
 
-exports[`home renders food and water timeline entries with factual units 1`] = `"9ca58c7ca564f58cbc06545ecac75623c1428611ebf372141ab8c648c94b2171"`;
+exports[`home renders food and water timeline entries with factual units 1`] = `"7f37aa0fd40650e534936083bf30516f25b5093af42b5a3e087163aa26805efb"`;
 
 exports[`home renders submission and navigation pending states 1`] = `"7f815e255cd5a0a287c8c30f80292f1b3a2b54dbd57eeb43c4b676e1d5a8ff5e"`;
 
 exports[`home renders submission and navigation pending states 2`] = `"1041e8e14c3883697640163e317abeb6c5d712230f735700e3fc1eff01be8cee"`;
 
-exports[`home renders submission and navigation pending states 3`] = `"ae477d1e29e8470676507bca710f8e652f77303b89ef3ddbcb8e82229c9fee1c"`;
+exports[`home renders submission and navigation pending states 3`] = `"a596ae96d5bb9e796b508b55600aa6a928a5ccb38380e6b73e404568083eedf2"`;
 
 exports[`home renders submission and navigation pending states 4`] = `"b773f0be369a4bd3036f68a63fb6d25895f01089bea8882fba496269c73b2cd5"`;
 
@@ -56,12 +56,12 @@ exports[`home renders today's empty log and all goal progress contracts 1`] = `"
 
 exports[`home renders today's empty log and all goal progress contracts 2`] = `"a2f8dbc7ac5a8fa474893a9773a2bf15782ba5aae48f9e0b8175db237ec8daed"`;
 
-exports[`home water dialogs cover create, presets, exact values, edit, and deletion 1`] = `"c15cbf649cab928810db7556ddf29d4c0221324b71c8aa2288a79b7e36a276d6"`;
+exports[`home water dialogs cover create, presets, exact values, edit, and deletion 1`] = `"c1d06b75e65afd594cfad67daaabde12038a76b7f977cab075f80c9689775330"`;
 
-exports[`home water dialogs cover create, presets, exact values, edit, and deletion 2`] = `"efb8068fbe94d4a4da8ae2f239a7153f544d0f654317eac00e1abe1ea573c6bc"`;
+exports[`home water dialogs cover create, presets, exact values, edit, and deletion 2`] = `"4cef1ee5807b465588fd873dd97ddfa7a26f5e562b96ee767e9aacbc792fe9a8"`;
 
-exports[`home water dialogs cover create, presets, exact values, edit, and deletion 3`] = `"721a75994ccc758329f965b444b1bee113cad4ae07dd10d6cbb0414856e54ccd"`;
+exports[`home water dialogs cover create, presets, exact values, edit, and deletion 3`] = `"ae0ee73144a4366994c5cad4fd76e5a05b33191032b87504cefd0fc41c736347"`;
 
-exports[`home water dialogs cover create, presets, exact values, edit, and deletion 4`] = `"c8426c788c3581b6842e328277ef8a23b991daa51e64df51b60174fa686738a6"`;
+exports[`home water dialogs cover create, presets, exact values, edit, and deletion 4`] = `"2975ebe8f43059842db9e9fd1419cce7960ea28ec83cacf1898db9bd52187643"`;
 
-exports[`home water dialogs cover create, presets, exact values, edit, and deletion 5`] = `"4d558d293471d3073db8d87067b24b3223429903a5d021078ced10c27ea31f1e"`;
+exports[`home water dialogs cover create, presets, exact values, edit, and deletion 5`] = `"ab54207dfc8f41492ce266bb4491f230715da97887fffa14bc712721c498591e"`;
