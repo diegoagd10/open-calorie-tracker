@@ -176,6 +176,7 @@ export const foodEntries = sqliteTable(
     localEventTime: text("local_event_time").notNull(),
     provider: text().notNull(),
     providerFoodId: text("provider_food_id").notNull(),
+    sourceSavedFoodId: integer("source_saved_food_id"),
     providerPublishedDate: text("provider_published_date"),
     providerModifiedDate: text("provider_modified_date"),
     sourceDataType: text("source_data_type").notNull(),

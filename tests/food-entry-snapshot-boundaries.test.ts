@@ -38,6 +38,7 @@ function row(change: Partial<FoodEntryRow> = {}): FoodEntryRow {
     selectedMeasurementUnit: "g",
     sodiumMilligrams: null,
     sourceDataType: "Foundation",
+    sourceSavedFoodId: null,
     sugarMilligrams: null,
     supportedMeasurements: "[]",
     updatedAt: "2026-08-29T18:00:00.000Z",

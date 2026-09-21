@@ -38,7 +38,7 @@ export function readSavedFoodRow(
     .get();
 }
 
-export function readSavedFoodBySource(
+function readSavedFoodBySource(
   database: SavedFoodDatabase,
   userId: number,
   sourceEntryId: number,
@@ -53,6 +53,24 @@ export function readSavedFoodBySource(
       ),
     )
     .get();
+}
+
+export function readSavedFoodForEntry(
+  database: SavedFoodDatabase,
+  userId: number,
+  entryId: number,
+) {
+  const entry = database
+    .select({ provider: foodEntries.provider, sourceSavedFoodId: foodEntries.sourceSavedFoodId })
+    .from(foodEntries)
+    .where(and(eq(foodEntries.userId, userId), eq(foodEntries.id, entryId)))
+    .get();
+  if (!entry || entry.provider !== "manual") return undefined;
+  return (
+    entry.sourceSavedFoodId === null
+      ? undefined
+      : readSavedFoodRow(database, userId, entry.sourceSavedFoodId)
+  ) ?? readSavedFoodBySource(database, userId, entryId);
 }
 
 export function insertSavedFood(
@@ -94,6 +112,10 @@ export function saveManualEntryRow(
       )
       .get();
     if (!source || source.provider !== "manual") return undefined;
+    if (source.sourceSavedFoodId !== null) {
+      const linked = readSavedFoodRow(transaction, userId, source.sourceSavedFoodId);
+      if (linked) return linked;
+    }
     insertSavedFood(
       transaction,
       userId,

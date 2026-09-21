@@ -1505,6 +1505,64 @@ test("Add Food searches My foods and reuses a manual snapshot on the viewed day"
     }));
 });
 
+test("reusing My foods does not offer to save the same food again", async () => {
+  const service = getFoodEntryService(new Date(instant));
+  const original = service.logManual(userId, {
+    energyKcal: "115",
+    foodLogDate: "2026-08-26",
+    idempotencyKey: "route-linked-food-original",
+    name: "Linked tortilla QA",
+    quantity: "2",
+  });
+  const saved = service.listSavedFoods(userId, "Linked tortilla QA");
+  expect(saved).toHaveLength(1);
+
+  const reused = service.logSavedFood(
+    userId,
+    saved[0].id,
+    "2026-08-28",
+    "route-linked-food-reuse",
+  );
+  expect((await load(`/?date=2026-08-28&entry=${reused.id}`)).data.manualEntrySaved)
+    .toBe(true);
+  const copied = service.copyToDate(userId, reused.id, {
+    destinationFoodLogDate: "2026-08-29",
+    foodLogDate: reused.foodLogDate,
+    idempotencyKey: `copy:${reused.id}:linked-food`,
+  });
+  expect((await load(`/?date=2026-08-29&entry=${copied.id}`)).data.manualEntrySaved)
+    .toBe(true);
+
+  const repeatedSave = await homeAction(routeArgs(post({
+    date: "2026-08-28",
+    entryId: String(reused.id),
+    intent: "save-manual-food",
+  })));
+  expectRedirect(repeatedSave, `/?date=2026-08-28&entry=${reused.id}&notice=food-saved`);
+  expect(service.listSavedFoods(userId, "Linked tortilla QA")).toHaveLength(1);
+
+  const distinct = service.logManual(userId, {
+    energyKcal: "115",
+    foodLogDate: "2026-08-25",
+    idempotencyKey: "route-linked-food-distinct",
+    name: "Linked tortilla QA",
+    quantity: "2",
+  });
+  getApplicationDatabase().getClient()
+    .delete(savedFoods)
+    .where(eq(savedFoods.sourceEntryId, distinct.id))
+    .run();
+  expect((await load(`/?date=2026-08-25&entry=${distinct.id}`)).data.manualEntrySaved)
+    .toBe(false);
+  await homeAction(routeArgs(post({
+    date: "2026-08-25",
+    entryId: String(distinct.id),
+    intent: "save-manual-food",
+  })));
+  expect(service.listSavedFoods(userId, "Linked tortilla QA")).toHaveLength(2);
+  expect(original.id).not.toBe(distinct.id);
+});
+
 test("an older manual entry joins My foods only after the entry action", async () => {
   const source = getFoodEntryService(new Date(instant)).logManual(userId, {
     energyKcal: "90",

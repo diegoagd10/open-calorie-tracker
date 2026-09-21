@@ -17,7 +17,7 @@ import type { ApplicationDatabaseClient } from "../database/database.server";
 import {
   insertSavedFood,
   listSavedFoodRows,
-  readSavedFoodBySource,
+  readSavedFoodForEntry,
   readSavedFoodRow,
   saveManualEntryRow,
 } from "../database/saved-foods.server";
@@ -652,7 +652,7 @@ export class FoodEntryService {
       parsed.data.idempotencyKey,
       manualFoodEntrySource(parsed.data, quantity),
       this.#now(),
-      true,
+      { saveManual: true },
     );
   }
 
@@ -669,7 +669,7 @@ export class FoodEntryService {
   }
 
   isManualEntrySaved(userId: number, entryId: number) {
-    return readSavedFoodBySource(this.#database, userId, entryId) !== undefined;
+    return readSavedFoodForEntry(this.#database, userId, entryId) !== undefined;
   }
 
   saveManualEntry(userId: number, entryId: number) {
@@ -703,6 +703,7 @@ export class FoodEntryService {
       idempotencyKey,
       (({ id: _id, name: _name, sourceEntryId: _sourceEntryId, ...source }) => source)(saved),
       this.#now(),
+      { sourceSavedFoodId: saved.id },
     );
   }
 
@@ -810,6 +811,11 @@ export class FoodEntryService {
             instant,
             timeZone,
           ),
+          sourceSavedFoodId: readSavedFoodForEntry(
+            transaction,
+            userId,
+            eligible.source.id,
+          )?.id,
           updatedAt: createdAt,
           userId,
         })
@@ -998,7 +1004,7 @@ export class FoodEntryService {
     idempotencyKey: string,
     source: FoodEntryInsertSource,
     instant: Date,
-    saveManual = false,
+    options: { saveManual?: boolean; sourceSavedFoodId?: number } = {},
   ) {
     const createdAt = instant.toISOString();
     return this.#database.transaction((transaction) => {
@@ -1034,12 +1040,13 @@ export class FoodEntryService {
           foodLogDate,
           idempotencyKey,
           localEventTime,
+          sourceSavedFoodId: options.sourceSavedFoodId,
           updatedAt: createdAt,
           userId,
         })
         .returning()
         .get();
-      if (saveManual) {
+      if (options.saveManual) {
         insertManualFoodSnapshot(transaction, userId, row, createdAt);
       }
       return foodEntrySnapshot(row);
