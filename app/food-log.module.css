@@ -687,6 +687,10 @@
   white-space: nowrap;
 }
 
+.foodEntryContent .waterEntryBreakdown {
+  white-space: normal;
+}
+
 .foodEntryContent small {
   overflow: hidden;
   margin-top: 0.15rem;
@@ -1541,6 +1545,15 @@
   gap: 0.45rem;
 }
 
+.waterPresetOption {
+  position: relative;
+  min-width: 0;
+}
+
+.waterPresetOption > .waterPresetButton {
+  width: 100%;
+}
+
 .waterPresetButton {
   display: grid;
   min-height: 5.9rem;
@@ -1556,10 +1569,45 @@
   cursor: pointer;
 }
 
-.waterPresetButton[aria-pressed="true"] {
+.waterPresetButton[aria-pressed="true"],
+.waterPresetButton[data-counted="true"] {
   border: 2px solid var(--blue);
   color: var(--blue-strong);
   background: var(--blue-soft);
+}
+
+.waterPresetButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.waterPresetCount {
+  position: absolute;
+  top: 0.35rem;
+  right: 0.4rem;
+  font-size: 0.72rem;
+}
+
+.waterPresetRemove {
+  position: absolute;
+  right: 0.35rem;
+  bottom: 0.35rem;
+  display: grid;
+  width: 1.4rem;
+  height: 1.4rem;
+  place-items: center;
+  border: 1px solid var(--blue-border);
+  border-radius: 50%;
+  color: var(--blue-strong);
+  background: var(--surface);
+  font: inherit;
+  cursor: pointer;
+}
+
+.waterSelectionSummary {
+  margin: -0.35rem 0 0;
+  color: var(--muted);
+  font-size: 0.72rem;
 }
 
 .waterPresetButton strong {

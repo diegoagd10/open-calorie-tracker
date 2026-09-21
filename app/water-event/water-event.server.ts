@@ -12,7 +12,42 @@ import {
   FutureFoodLogDateError,
   InvalidFoodLogDateError,
 } from "../food-log/food-log.server";
-import { waterTargetMicrolitersFromDisplay } from "../setup/validation";
+import {
+  waterTargetMicrolitersFromDisplay,
+  waterTargetThousandthsFromMicroliters,
+} from "../setup/validation";
+import {
+  waterPresetTotalMicroliters,
+  waterPresetTotalOunces,
+  type WaterPresetCounts,
+} from "./presets";
+
+const presetCountsSchema = z.object({
+  "8": z.number().int().nonnegative(),
+  "16": z.number().int().nonnegative(),
+  "24": z.number().int().nonnegative(),
+}).refine((counts) => {
+  const ounces = waterPresetTotalOunces(counts);
+  return ounces > 0 && ounces <= 500;
+});
+
+function storedPresetCounts(counts: WaterPresetCounts) {
+  return {
+    preset8Count: counts["8"],
+    preset16Count: counts["16"],
+    preset24Count: counts["24"],
+  };
+}
+
+function singlePresetCounts(selection: "8" | "16" | "24") {
+  return storedPresetCounts({
+    "8": Number(selection === "8"),
+    "16": Number(selection === "16"),
+    "24": Number(selection === "24"),
+  });
+}
+
+const noPresetCounts = storedPresetCounts({ "8": 0, "16": 0, "24": 0 });
 
 function createWaterEventSchema() {
   return z.discriminatedUnion("selection", [
@@ -24,6 +59,11 @@ function createWaterEventSchema() {
     z.object({
       foodLogDate: z.string(),
       selection: z.enum(["8", "16", "24"]),
+    }),
+    z.object({
+      counts: presetCountsSchema,
+      foodLogDate: z.string(),
+      selection: z.literal("presets"),
     }),
   ]);
 }
@@ -84,6 +124,34 @@ function canonicalWaterAmount(
   return amountMicroliters;
 }
 
+function updatedWaterValues(
+  existing: typeof waterEvents.$inferSelect,
+  input: z.output<ReturnType<typeof updateWaterEventSchema>>,
+  displayUnits: "metric" | "us",
+) {
+  const submittedAmount = canonicalWaterAmount(input, displayUnits);
+  if (input.selection !== "exact") {
+    return {
+      amountMicroliters: submittedAmount,
+      ...singlePresetCounts(input.selection),
+    };
+  }
+
+  const amountUnchanged =
+    waterTargetThousandthsFromMicroliters(submittedAmount, displayUnits) ===
+    waterTargetThousandthsFromMicroliters(existing.amountMicroliters, displayUnits);
+  return {
+    amountMicroliters: amountUnchanged ? existing.amountMicroliters : submittedAmount,
+    ...(amountUnchanged
+      ? {
+          preset8Count: existing.preset8Count,
+          preset16Count: existing.preset16Count,
+          preset24Count: existing.preset24Count,
+        }
+      : noPresetCounts),
+  };
+}
+
 export class WaterEventService {
   readonly #database: ApplicationDatabaseClient;
   readonly #now: () => Date;
@@ -117,16 +185,24 @@ export class WaterEventService {
     const instant = this.#now();
     const today = localDateAt(instant, preference.timeZone);
     if (foodLogDate > today) throw new FutureFoodLogDateError();
-    const amountMicroliters = canonicalWaterAmount(
-      parsed.data,
-      preference.displayUnits as "metric" | "us",
-    );
+    const amountMicroliters = parsed.data.selection === "presets"
+      ? waterPresetTotalMicroliters(parsed.data.counts)
+      : canonicalWaterAmount(
+          parsed.data,
+          preference.displayUnits as "metric" | "us",
+        );
+    const presetCounts = parsed.data.selection === "presets"
+      ? storedPresetCounts(parsed.data.counts)
+      : parsed.data.selection === "exact"
+        ? noPresetCounts
+        : singlePresetCounts(parsed.data.selection);
 
     const createdAt = instant.toISOString();
     return this.#database
       .insert(waterEvents)
       .values({
         amountMicroliters,
+        ...presetCounts,
         createdAt,
         foodLogDate,
         localEventTime: localEventTimeForNewFoodLogEvent(
@@ -173,14 +249,15 @@ export class WaterEventService {
     if (!preference || !["metric", "us"].includes(preference.displayUnits)) {
       throw new WaterEventUnavailableError();
     }
-    const amountMicroliters = canonicalWaterAmount(
+    const values = updatedWaterValues(
+      existing,
       parsed.data,
       preference.displayUnits as "metric" | "us",
     );
     const updated = this.#database
       .update(waterEvents)
       .set({
-        amountMicroliters,
+        ...values,
         localEventTime: `${parsed.data.localEventTime}:00`,
         updatedAt: nextUpdatedAt(this.#now(), existing.updatedAt),
       })
