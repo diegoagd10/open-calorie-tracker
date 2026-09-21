@@ -268,6 +268,25 @@ export const foodEntries = sqliteTable(
   ],
 );
 
+export const savedFoods = sqliteTable(
+  "saved_foods",
+  {
+    id: integer().primaryKey({ autoIncrement: true }),
+    userId: requiredUserId(),
+    sourceEntryId: integer("source_entry_id").notNull(),
+    name: text().notNull(),
+    snapshot: text().notNull(),
+    createdAt: text("created_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("saved_foods_user_source_unique").on(
+      table.userId,
+      table.sourceEntryId,
+    ),
+    index("saved_foods_user_name_index").on(table.userId, table.name),
+  ],
+);
+
 export const waterEvents = sqliteTable(
   "water_events",
   {

@@ -71,6 +71,7 @@ import {
   createCopyFoodEntryIdempotencyKey,
   FoodEntryUnavailableError,
   InvalidFoodEntryInputError,
+  savedFoodIdempotencyKeySchema,
   StaleFoodEntryError,
 } from "../food-entry/food-entry.server";
 import { getFoodEntryService } from "../food-entry/runtime.server";
@@ -166,6 +167,17 @@ function foodLogIntentSchema() {
       sugarGrams: z.string(),
     }),
     z.object({
+      date: z.string().refine((value) => parseIsoLocalDate(value) !== undefined),
+      entryId: z.string().refine((value) => positiveIntegerId(value) !== undefined),
+      intent: z.literal("save-manual-food"),
+    }),
+    z.object({
+      date: z.string().refine((value) => parseIsoLocalDate(value) !== undefined),
+      idempotencyKey: savedFoodIdempotencyKeySchema,
+      intent: z.literal("log-saved-food"),
+      savedFoodId: z.string().refine((value) => positiveIntegerId(value) !== undefined),
+    }),
+    z.object({
       carbohydrateGrams: z.string(),
       date: z.string(),
       energyKcal: z.string(),
@@ -192,6 +204,9 @@ function foodLogIntentSchema() {
 
 type CurrentFoodEntry = ReturnType<
   ReturnType<typeof getFoodEntryService>["read"]
+>;
+type SavedFood = ReturnType<
+  ReturnType<typeof getFoodEntryService>["readSavedFood"]
 >;
 type ManualFoodDraft = Extract<
   z.output<ReturnType<typeof foodLogIntentSchema>>,
@@ -423,6 +438,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const requestedEntry = url.searchParams.get("entry");
   let foodEntryEditor;
+  let manualEntrySaved = false;
   if (requestedEntry !== null && !foodLog.isFuture) {
     const entryId = positiveIntegerId(requestedEntry);
     if (entryId === undefined) {
@@ -436,6 +452,10 @@ export async function loader({ request }: Route.LoaderArgs) {
       );
       if (foodEntryEditor.foodLogDate !== foodLog.selectedDate) {
         throw new FoodEntryUnavailableError();
+      }
+      if (foodEntryEditor.provider === "manual") {
+        manualEntrySaved = getFoodEntryService(testRequestInstant(request))
+          .isManualEntrySaved(session.user.id, entryId);
       }
     } catch (error) {
       if (error instanceof FoodEntryUnavailableError) {
@@ -571,9 +591,12 @@ export async function loader({ request }: Route.LoaderArgs) {
         mode: "search";
         query: string;
         results: CatalogSearchResult[];
+        savedResults: SavedFood[];
         message?: string;
         title?: string;
       }
+    | { mode: "my"; query: string; results: SavedFood[] }
+    | { mode: "saved"; query: string; food: SavedFood; idempotencyKey: string }
     | {
         mode: "detail";
         query: string;
@@ -586,6 +609,29 @@ export async function loader({ request }: Route.LoaderArgs) {
       catalog = { mode: "choose", query: "" };
     } else if (foodStage.mode === "manual") {
       catalog = { idempotencyKey: randomUUID(), mode: "manual", query: "" };
+    } else if (foodStage.mode === "my") {
+      const query = requestedQuery.trim();
+      catalog = {
+        mode: "my",
+        query,
+        results: getFoodEntryService(testRequestInstant(request))
+          .listSavedFoods(session.user.id, query),
+      };
+    } else if (foodStage.mode === "saved") {
+      try {
+        catalog = {
+          food: getFoodEntryService(testRequestInstant(request))
+            .readSavedFood(session.user.id, foodStage.savedFoodId),
+          idempotencyKey: randomUUID(),
+          mode: "saved",
+          query: requestedQuery,
+        };
+      } catch (error) {
+        if (error instanceof FoodEntryUnavailableError) {
+          throw new Response(error.message, { status: 404 });
+        }
+        throw error;
+      }
     } else if (foodStage.mode === "barcode") {
       const requestedBarcode = url.searchParams.get("barcode") ?? "";
       if (!requestedBarcode) {
@@ -631,7 +677,13 @@ export async function loader({ request }: Route.LoaderArgs) {
     } else if (foodStage.mode === "search") {
       const parsedQuery = catalogQuery(requestedQuery);
       if (!requestedQuery) {
-        catalog = { mode: "search", query: "", results: [] };
+        catalog = {
+          mode: "search",
+          query: "",
+          results: [],
+          savedResults: getFoodEntryService(testRequestInstant(request))
+            .listSavedFoods(session.user.id),
+        };
       } else if (parsedQuery === undefined) {
         responseStatus = 400;
         catalog = {
@@ -639,6 +691,7 @@ export async function loader({ request }: Route.LoaderArgs) {
           mode: "search",
           query: requestedQuery,
           results: [],
+          savedResults: [],
           title: "Search not sent",
         };
       } else {
@@ -647,6 +700,8 @@ export async function loader({ request }: Route.LoaderArgs) {
             mode: "search",
             query: parsedQuery,
             results: await getFoodCatalog().search(parsedQuery, catalogContext),
+            savedResults: getFoodEntryService(testRequestInstant(request))
+              .listSavedFoods(session.user.id, parsedQuery),
           };
         } catch (error) {
           const failure = catalogFailure(error);
@@ -657,6 +712,8 @@ export async function loader({ request }: Route.LoaderArgs) {
             mode: "search",
             query: parsedQuery,
             results: [],
+            savedResults: getFoodEntryService(testRequestInstant(request))
+              .listSavedFoods(session.user.id, parsedQuery),
             title: failure.title,
           };
         }
@@ -696,6 +753,8 @@ export async function loader({ request }: Route.LoaderArgs) {
           mode: "search",
           query: requestedQuery,
           results,
+          savedResults: getFoodEntryService(testRequestInstant(request))
+            .listSavedFoods(session.user.id, requestedQuery),
           title: failure.title,
         };
       }
@@ -711,6 +770,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       copyIdempotencyKeys,
       csrfToken: session.csrfToken,
       foodEntryEditor,
+      manualEntrySaved,
       photoMeals,
       photoAnalysisReadiness,
       foodLog,
@@ -739,6 +799,9 @@ function noticeMessage(
   if (value === "deleted") {
     return "Food Entry deleted. Daily totals updated.";
   }
+  if (value === "food-saved") {
+    return "Added to My foods.";
+  }
   if (value === "water-updated") {
     return "Water Event updated. Daily total refreshed.";
   }
@@ -753,6 +816,8 @@ type CatalogRouteState =
   | { mode: "choose" }
   | { mode: "detail"; provider: CatalogProviderId; providerFoodId: string }
   | { mode: "manual" }
+  | { mode: "my" }
+  | { mode: "saved"; savedFoodId: number }
   | { mode: "search" };
 
 function positiveIntegerId(value: string | null): number | undefined {
@@ -770,6 +835,11 @@ function catalogRouteState(
   if (value === "choose") return { mode: "choose" };
   if (value === "barcode") return { mode: "barcode" };
   if (value === "manual") return { mode: "manual" };
+  if (value === "my") return { mode: "my" };
+  if (value?.startsWith("saved:")) {
+    const savedFoodId = positiveIntegerId(value.slice(6));
+    if (savedFoodId !== undefined) return { mode: "saved", savedFoodId };
+  }
   const provider = requestedProvider === null || requestedProvider === "usda-fdc"
     ? "usda-fdc"
     : requestedProvider === "open-food-facts"
@@ -798,7 +868,7 @@ export async function action({ request }: Route.ActionArgs) {
   const formData = await readApplicationMutationForm(request, session);
 
   const formFields = Object.fromEntries([
-    "carbohydrateGrams", "date", "destinationDate", "energyKcal", "entryId", "eventId", "expectedUpdatedAt", "fatGrams", "fiberGrams", "idempotencyKey", "intent", "name", "proteinGrams", "providerFoodId", "provider", "quantity", "selectedMeasurementId", "sodiumMilligrams", "sugarGrams", "waterAmount", "waterEventTime", "waterSelection"
+    "carbohydrateGrams", "date", "destinationDate", "energyKcal", "entryId", "eventId", "expectedUpdatedAt", "fatGrams", "fiberGrams", "idempotencyKey", "intent", "name", "proteinGrams", "providerFoodId", "provider", "quantity", "savedFoodId", "selectedMeasurementId", "sodiumMilligrams", "sugarGrams", "waterAmount", "waterEventTime", "waterSelection"
   ].map(name => [name, formString(formData, name)]));
   const parsed = foodLogIntentSchema().safeParse({
     ...formFields,
@@ -882,6 +952,48 @@ export async function action({ request }: Route.ActionArgs) {
             tone: "error",
           },
           { status: 400 },
+        );
+      }
+      throw error;
+    }
+  }
+
+  if (parsed.data.intent === "save-manual-food") {
+    const entryId = Number(parsed.data.entryId);
+    try {
+      const service = getFoodEntryService(testRequestInstant(request));
+      const entry = service.read(session.user.id, entryId);
+      if (entry.foodLogDate !== parsed.data.date) {
+        throw new FoodEntryUnavailableError();
+      }
+      service.saveManualEntry(session.user.id, entryId);
+      return redirect(`${foodLogHref(parsed.data.date)}&entry=${entryId}&notice=food-saved`);
+    } catch (error) {
+      if (error instanceof FoodEntryUnavailableError) {
+        return data<HomeActionData>(
+          { message: error.message, tone: "error" },
+          { status: 404 },
+        );
+      }
+      throw error;
+    }
+  }
+
+  if (parsed.data.intent === "log-saved-food") {
+    const savedFoodId = Number(parsed.data.savedFoodId);
+    try {
+      getFoodEntryService(testRequestInstant(request)).logSavedFood(
+        session.user.id,
+        savedFoodId,
+        parsed.data.date,
+        parsed.data.idempotencyKey,
+      );
+      return redirect(foodLogHref(parsed.data.date));
+    } catch (error) {
+      if (error instanceof FoodEntryUnavailableError) {
+        return data<HomeActionData>(
+          { message: error.message, tone: "error" },
+          { status: 404 },
         );
       }
       throw error;
@@ -2185,10 +2297,12 @@ function FoodEntryEditorDialog({
   actionData,
   csrfToken,
   entry,
+  manualEntrySaved,
   photoMeal,
 }: {
   actionData: HomeActionData | undefined;
   csrfToken: string;
+  manualEntrySaved: boolean;
   photoMeal?: Route.ComponentProps["loaderData"]["photoMeals"][number];
   entry: EditableFoodEntry;
 }) {
@@ -2250,6 +2364,22 @@ function FoodEntryEditorDialog({
             ×
           </Link>
         </div>
+        {entry.provider === "manual" ? (
+          manualEntrySaved ? (
+            <p className={styles.authoritativeNote} role="status">
+              In My foods. Changes to this daily entry do not change the saved food.
+            </p>
+          ) : (
+            <Form method="post">
+              <input name="csrfToken" type="hidden" value={csrfToken} />
+              <input name="date" type="hidden" value={entry.foodLogDate} />
+              <input name="entryId" type="hidden" value={entry.id} />
+              <button className={styles.secondaryButton} name="intent" type="submit" value="save-manual-food">
+                Add to My foods
+              </button>
+            </Form>
+          )
+        ) : null}
         {photoMeal ? <PhotoCorrection meal={photoMeal} csrfToken={csrfToken} /> : null}
         <Form className={styles.editFoodForm} method="post" noValidate>
           <input name="csrfToken" type="hidden" value={csrfToken} />
@@ -2633,6 +2763,12 @@ function CatalogChoiceStage({ date, photoCapture }: { date: string; photoCapture
   return (
     <>
     <div className={methodStyles.methods} aria-label="Add Food methods">
+      <Link className={`${methodStyles.method} ${methodStyles.savedMethod}`} to={catalogHref(date, "my")}>
+        <span className={methodStyles.icon}>
+          <UiIcon name="utensils" />
+        </span>
+        <span className={methodStyles.label}>My foods</span>
+      </Link>
       {photoCapture}
       <Link aria-label="Search for food" className={methodStyles.method} to={catalogHref(date, "search")}>
         <span className={methodStyles.icon}>
@@ -2659,6 +2795,144 @@ function CatalogChoiceStage({ date, photoCapture }: { date: string; photoCapture
       <p>Deleting a photo meal removes its photo and history from this app. It does not delete data retained by your AI provider.</p>
     </details>
     </>
+  );
+}
+
+function SavedFoodResults({
+  date,
+  foods,
+  query,
+}: {
+  date: string;
+  foods: SavedFood[];
+  query: string;
+}) {
+  return (
+    <div className={styles.catalogResults} aria-label="My foods results">
+      {foods.map((food) => (
+        <Link key={food.id} to={catalogHref(date, `saved:${food.id}`, query)}>
+          <span>
+            <strong>{food.name}</strong>
+            <small>
+              {food.selectedMeasurementLabel} × {food.quantityMicrounits / 1_000_000}
+              {" · "}{formatEnergy(food.energyMilliKcal)} kcal
+            </small>
+          </span>
+          <small>Select ›</small>
+        </Link>
+      ))}
+    </div>
+  );
+}
+
+function MyFoodsStage({
+  catalog,
+  date,
+}: {
+  catalog: Extract<NonNullable<Route.ComponentProps["loaderData"]["catalog"]>, { mode: "my" }>;
+  date: string;
+}) {
+  return (
+    <section aria-labelledby="my-foods-title">
+      <Link className={styles.backToResults} to={catalogHref(date, "choose")}>
+        ‹ Back to methods
+      </Link>
+      <div className={styles.foodIdentity}>
+        <span className={styles.catalogType}>Manual foods</span>
+        <h3 id="my-foods-title">My foods</h3>
+        <p>Reuse a food you entered manually.</p>
+      </div>
+      <Form className={styles.searchForm} method="get">
+        <input name="date" type="hidden" value={date} />
+        <input name="food" type="hidden" value="my" />
+        <label htmlFor="my-food-query">Search My foods</label>
+        <div className={styles.searchControl}>
+          <input
+            autoComplete="off"
+            defaultValue={catalog.query}
+            id="my-food-query"
+            name="query"
+            placeholder="Try Mexican tortilla"
+            type="search"
+          />
+          <button className={styles.primaryButton} type="submit">Search</button>
+        </div>
+      </Form>
+      {catalog.results.length ? (
+        <SavedFoodResults date={date} foods={catalog.results} query={catalog.query} />
+      ) : (
+        <div className={styles.catalogState} role="status">
+          <h3>{catalog.query ? "No matching foods" : "No foods saved yet"}</h3>
+          <p>New manual foods are saved here automatically. Open an older manual entry to add it here.</p>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function SavedFoodStage({
+  actionData,
+  catalog,
+  csrfToken,
+  date,
+}: {
+  actionData: HomeActionData | undefined;
+  catalog: Extract<NonNullable<Route.ComponentProps["loaderData"]["catalog"]>, { mode: "saved" }>;
+  csrfToken: string;
+  date: string;
+}) {
+  const { food } = catalog;
+  const navigation = useNavigation();
+  const pending = navigation.formData?.get("intent") === "log-saved-food";
+  const nutrients = [
+    ["Calories (kcal)", storedNutrientInput(food.energyMilliKcal)],
+    ["Protein (g)", storedNutrientInput(food.proteinMilligrams)],
+    ["Carbohydrate (g)", storedNutrientInput(food.carbohydrateMilligrams)],
+    ["Fat (g)", storedNutrientInput(food.fatMilligrams)],
+    ["Fiber (g)", storedNutrientInput(food.fiberMilligrams)],
+    ["Sugar (g)", storedNutrientInput(food.sugarMilligrams)],
+    ["Sodium (mg)", storedNutrientInput(food.sodiumMilligrams, true)],
+  ];
+  return (
+    <section aria-labelledby="saved-food-title">
+      <Link className={styles.backToResults} to={catalogHref(date, "my", catalog.query)}>
+        ‹ Back to My foods
+      </Link>
+      <div className={styles.foodIdentity}>
+        <span className={styles.catalogType}>My foods</span>
+        <h3 id="saved-food-title">{food.name}</h3>
+        <p>Review the saved values before adding this food to {fullDate(date)}.</p>
+      </div>
+      <div className={styles.foodDetailGrid}>
+        <div className={styles.stackedField}>
+          <span>Measurement</span>
+          <strong>{food.selectedMeasurementLabel}</strong>
+        </div>
+        <div className={styles.stackedField}>
+          <span>Quantity</span>
+          <strong>{food.quantityMicrounits / 1_000_000}</strong>
+        </div>
+      </div>
+      <dl className={styles.nutritionPreview}>
+        {nutrients.map(([label, value]) => (
+          <div key={label}>
+            <dt>{label}</dt>
+            <dd>{value || "Unknown"}</dd>
+          </div>
+        ))}
+      </dl>
+      <Form method="post">
+        <input name="csrfToken" type="hidden" value={csrfToken} />
+        <input name="date" type="hidden" value={date} />
+        <input name="savedFoodId" type="hidden" value={food.id} />
+        <input name="idempotencyKey" type="hidden" value={catalog.idempotencyKey} />
+        <FoodLogFormActions date={date} message={actionData?.message}>
+          <button className={styles.primaryButton} disabled={pending} name="intent" type="submit" value="log-saved-food">
+            {pending ? "Adding…" : "Add to Food Log"}
+          </button>
+        </FoodLogFormActions>
+      </Form>
+    </section>
   );
 }
 
@@ -3062,7 +3336,7 @@ function CatalogDialog({
   );
   const detailPending =
     catalog.mode === "search" &&
-    pendingFoodStage?.mode === "detail";
+    (pendingFoodStage?.mode === "detail" || pendingFoodStage?.mode === "saved");
   const searchPending =
     navigation.state !== "idle" &&
     !detailPending;
@@ -3096,6 +3370,8 @@ function CatalogDialog({
                 <span className={styles.dialogChip}>
                   {catalog.mode === "search" || catalog.mode === "detail"
                     ? "USDA food catalog"
+                    : catalog.mode === "my" || catalog.mode === "saved"
+                      ? "My foods"
                     : catalog.mode === "barcode"
                       ? "Open Food Facts"
                       : "Manual"}
@@ -3133,6 +3409,15 @@ function CatalogDialog({
           />
         ) : catalog.mode === "choose" ? (
           <CatalogChoiceStage date={date} photoCapture={photoCapture} />
+        ) : catalog.mode === "my" ? (
+          <MyFoodsStage catalog={catalog} date={date} />
+        ) : catalog.mode === "saved" ? (
+          <SavedFoodStage
+            actionData={actionData}
+            catalog={catalog}
+            csrfToken={csrfToken}
+            date={date}
+          />
         ) : catalog.mode === "manual" ? (
           <ManualFoodStage
             actionData={actionData}
@@ -3210,6 +3495,16 @@ function CatalogDialog({
               </div>
             ) : (
               <>
+                {catalog.savedResults.length > 0 ? (
+                  <section aria-label="My foods">
+                    <h3>My foods</h3>
+                    <SavedFoodResults
+                      date={date}
+                      foods={catalog.savedResults}
+                      query={catalog.query}
+                    />
+                  </section>
+                ) : null}
                 {catalog.message ? (
                   <div className={styles.catalogState} role="alert">
                     <h3>{catalog.title ?? "Search unavailable"}</h3>
@@ -3255,7 +3550,7 @@ function CatalogDialog({
                       );
                     })}
                   </div>
-                ) : catalog.message ? null : catalog.query ? (
+                ) : catalog.message || catalog.savedResults.length ? null : catalog.query ? (
                   <div className={styles.catalogState} role="status">
                     <h3>No foods found</h3>
                     <p>
@@ -3681,6 +3976,7 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
     copyIdempotencyKeys,
     csrfToken,
     foodEntryEditor,
+    manualEntrySaved,
     foodLog,
     photoMeals = [],
     photoAnalysisReadiness = { state: "ready" as const },
@@ -3907,6 +4203,7 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
           actionData={actionData}
           csrfToken={csrfToken}
           entry={activeFoodEntryEditor}
+          manualEntrySaved={manualEntrySaved}
           photoMeal={photoMeals.find((meal) => meal.entryId === activeFoodEntryEditor.id)}
           key={activeFoodEntryEditor.updatedAt}
         />

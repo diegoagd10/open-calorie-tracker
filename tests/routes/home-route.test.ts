@@ -23,7 +23,7 @@ import {
   initializeApplicationDatabase,
   shutdownApplicationDatabase,
 } from "../../app/database/runtime.server";
-import { foodEntries } from "../../app/database/schema.server";
+import { foodEntries, savedFoods } from "../../app/database/schema.server";
 import {
   action as homeAction,
   headers,
@@ -261,7 +261,7 @@ test("home publishes metadata and enforces account/setup/date boundaries", async
 
 test("home loader maps every catalog search and detail state", async () => {
   const empty = await load("/?food=search");
-  expect(empty.data.catalog).toEqual({ mode: "search", query: "", results: [] });
+  expect(empty.data.catalog).toEqual({ mode: "search", query: "", results: [], savedResults: [] });
 
   const invalid = await load("/?food=search&query=a");
   expect(invalid.init?.status).toBe(400);
@@ -270,6 +270,7 @@ test("home loader maps every catalog search and detail state", async () => {
     mode: "search",
     query: "a",
     results: [],
+    savedResults: [],
     title: "Search not sent",
   });
 
@@ -1444,6 +1445,144 @@ test("home creates manual Food Entries on the selected date and preserves invali
     },
     init: { status: 422 },
   });
+});
+
+test("Add Food searches My foods and reuses a manual snapshot on the viewed day", async () => {
+  const created = await homeAction(routeArgs(post({
+    date: "2026-08-27",
+    energyKcal: "100",
+    idempotencyKey: "route-my-food-tortilla",
+    intent: "log-manual-food",
+    name: "Mexican tortilla",
+    quantity: "2",
+  })));
+  expectRedirect(created, "/?date=2026-08-27");
+
+  const myFoods = await load("/?date=2026-08-29&food=my");
+  expect(myFoods.data.catalog?.mode).toBe("my");
+  if (!myFoods.data.catalog || myFoods.data.catalog.mode !== "my") {
+    throw new Error("My foods did not open");
+  }
+  expect(myFoods.data.catalog.results).toEqual(expect.arrayContaining([
+    expect.objectContaining({
+      name: "Mexican tortilla",
+      energyMilliKcal: 100_000,
+      quantityMicrounits: 2_000_000,
+    }),
+  ]));
+  const searched = await load("/?date=2026-08-29&food=search&query=tortilla");
+  expect(searched.data.catalog?.mode).toBe("search");
+  if (!searched.data.catalog || searched.data.catalog.mode !== "search") {
+    throw new Error("Search did not open");
+  }
+  expect(searched.data.catalog.savedResults.some((food) => food.name === "Mexican tortilla"))
+    .toBe(true);
+  const saved = myFoods.data.catalog;
+  const savedFoodId = saved.results.find((food) => food.name === "Mexican tortilla")?.id;
+  if (savedFoodId === undefined) throw new Error("Saved food is missing");
+  const detail = await load(`/?date=2026-08-29&food=saved:${savedFoodId}`);
+  expect(detail.data.catalog?.mode).toBe("saved");
+  if (!detail.data.catalog || detail.data.catalog.mode !== "saved") {
+    throw new Error("Saved food did not open");
+  }
+  expect(detail.data.catalog.food).toMatchObject({
+    name: "Mexican tortilla",
+    energyMilliKcal: 100_000,
+  });
+
+  const reused = await homeAction(routeArgs(post({
+    date: "2026-08-29",
+    idempotencyKey: "route-my-food-reuse",
+    intent: "log-saved-food",
+    savedFoodId: String(savedFoodId),
+  })));
+  expectRedirect(reused, "/?date=2026-08-29");
+  expect((await load("/?date=2026-08-29")).data.foodLog.entries)
+    .toContainEqual(expect.objectContaining({
+      name: "Mexican tortilla",
+      energyMilliKcal: 100_000,
+      quantityMicrounits: 2_000_000,
+    }));
+});
+
+test("an older manual entry joins My foods only after the entry action", async () => {
+  const source = getFoodEntryService(new Date(instant)).logManual(userId, {
+    energyKcal: "90",
+    foodLogDate: "2026-08-24",
+    idempotencyKey: "route-historical-food",
+    name: "Old manual flatbread",
+    quantity: "1",
+  });
+  getApplicationDatabase().getClient()
+    .delete(savedFoods)
+    .where(eq(savedFoods.sourceEntryId, source.id))
+    .run();
+  const before = await load(`/?date=2026-08-24&entry=${source.id}`);
+  expect(before.data.manualEntrySaved).toBe(false);
+  const saved = await homeAction(routeArgs(post({
+    date: "2026-08-24",
+    entryId: String(source.id),
+    intent: "save-manual-food",
+  })));
+  expectRedirect(saved, `/?date=2026-08-24&entry=${source.id}&notice=food-saved`);
+  expect((await load(`/?date=2026-08-24&entry=${source.id}`)).data.manualEntrySaved)
+    .toBe(true);
+  expect((await load("/?date=2026-08-31&food=my&query=flatbread")).data.catalog)
+    .toMatchObject({
+      mode: "my",
+      results: [expect.objectContaining({ name: "Old manual flatbread" })],
+    });
+});
+
+test("My foods rejects missing products and cannot save an entry from another day", async () => {
+  const source = getFoodEntryService(new Date(instant)).logManual(userId, {
+    energyKcal: "80",
+    foodLogDate: "2026-08-25",
+    idempotencyKey: "saved-boundary-source",
+    name: "Saved boundary tortilla",
+    quantity: "1",
+  });
+  await expect(homeLoader(routeArgs(get("/?date=2026-08-25&food=saved:999999"))))
+    .rejects.toMatchObject({ status: 404 });
+  const wrongDay = await homeAction(routeArgs(post({
+    date: "2026-08-26",
+    entryId: String(source.id),
+    intent: "save-manual-food",
+  })));
+  expect(wrongDay).toMatchObject({ init: { status: 404 } });
+
+  const missingFood = await homeAction(routeArgs(post({
+    date: "2026-08-25",
+    idempotencyKey: "missing-saved-food",
+    intent: "log-saved-food",
+    savedFoodId: "999999",
+  })));
+  expect(missingFood).toMatchObject({ init: { status: 404 } });
+  const invalidId = await homeAction(routeArgs(post({
+    date: "2026-08-25",
+    idempotencyKey: "invalid-saved-id",
+    intent: "log-saved-food",
+    savedFoodId: "invalid",
+  })));
+  expect(invalidId).toMatchObject({ init: { status: 400 } });
+  const savedFoodId = getFoodEntryService(new Date(instant))
+    .listSavedFoods(userId, "Saved boundary tortilla")[0].id;
+  const reservedKey = await homeAction(routeArgs(post({
+    date: "2026-08-25",
+    idempotencyKey: `copy:${source.id}:reserved`,
+    intent: "log-saved-food",
+    savedFoodId: String(savedFoodId),
+  })));
+  expect(reservedKey).toMatchObject({ init: { status: 400 } });
+  const future = await homeAction(routeArgs(post({
+    date: "2026-09-01",
+    idempotencyKey: "future-saved-food",
+    intent: "log-saved-food",
+    savedFoodId: String(savedFoodId),
+  })));
+  expect(future).toMatchObject({ init: { status: 422 } });
+  const invalidUrl = await load("/?date=2026-08-25&food=saved:invalid");
+  expect(invalidUrl.data.catalog).toBeUndefined();
 });
 
 test("copy loader restricts source actions and validates every calendar selection", async () => {

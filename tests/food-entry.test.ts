@@ -25,6 +25,7 @@ import {
 } from "../app/database/database.server";
 import {
   foodEntries,
+  savedFoods,
   goalVersions,
   userPreferences,
   users,
@@ -669,6 +670,141 @@ test("a manual Food Entry stores entered totals and scales later edits from one 
     proteinMilligrams: 8_000,
     quantityMicrounits: 4_000_000,
   });
+  database.close();
+});
+
+test("a new manual food is searchable and can be reused after its daily entry is deleted", async () => {
+  const database = await setupDatabase();
+  const client = database.getClient();
+  const userId = insertConfiguredUser(client, "saved.manual");
+  const otherUserId = insertConfiguredUser(client, "saved.other");
+  const service = new FoodEntryService(
+    client,
+    new FakeCatalogProvider(),
+    () => new Date("2026-08-29T18:00:00.000Z"),
+  );
+  const original = service.logManual(userId, {
+    energyKcal: "100",
+    foodLogDate: "2026-08-27",
+    idempotencyKey: "saved-manual-tortilla",
+    name: "Mexican tortilla",
+    proteinGrams: "3",
+    quantity: "2",
+  });
+  const matches = service.listSavedFoods(userId, "TORTILLA");
+  expect(matches).toHaveLength(1);
+  expect(matches[0]).toMatchObject({
+    name: "Mexican tortilla",
+    energyMilliKcal: 100_000,
+    proteinMilligrams: 3_000,
+    quantityMicrounits: 2_000_000,
+    sourceEntryId: original.id,
+  });
+  expect(service.listSavedFoods(otherUserId, "tortilla")).toEqual([]);
+  expect(() => service.readSavedFood(otherUserId, matches[0].id))
+    .toThrow(FoodEntryUnavailableError);
+
+  service.delete(userId, original.id, {
+    expectedUpdatedAt: original.updatedAt,
+    foodLogDate: original.foodLogDate,
+  });
+  const reused = service.logSavedFood(
+    userId,
+    matches[0].id,
+    "2026-08-29",
+    "reuse-tortilla-on-29",
+  );
+  expect(reused).toMatchObject({
+    foodLogDate: "2026-08-29",
+    name: "Mexican tortilla",
+    energyMilliKcal: 100_000,
+    proteinMilligrams: 3_000,
+    quantityMicrounits: 2_000_000,
+  });
+  expect(service.logSavedFood(userId, matches[0].id, "2026-08-29", "reuse-tortilla-on-29").id)
+    .toBe(reused.id);
+  expect(() => service.logSavedFood(
+    userId,
+    matches[0].id,
+    "2026-08-29",
+    `copy:${original.id}:reserved-key`,
+  )).toThrow(InvalidFoodEntryInputError);
+  database.close();
+});
+
+test("an old manual entry is saved only by explicit action and remains independent", async () => {
+  const database = await setupDatabase();
+  const client = database.getClient();
+  const userId = insertConfiguredUser(client, "saved.historical");
+  const service = new FoodEntryService(
+    client,
+    new FakeCatalogProvider(),
+    () => new Date("2026-08-29T18:00:00.000Z"),
+  );
+  const historical = service.logManual(userId, {
+    energyKcal: "120",
+    foodLogDate: "2026-08-27",
+    idempotencyKey: "historical-tortilla",
+    name: "Old tortilla",
+    quantity: "2",
+  });
+  client.delete(savedFoods).where(eq(savedFoods.userId, userId)).run();
+  expect(service.listSavedFoods(userId)).toEqual([]);
+  expect(service.isManualEntrySaved(userId, historical.id)).toBe(false);
+
+  const saved = service.saveManualEntry(userId, historical.id);
+  expect(service.saveManualEntry(userId, historical.id).id).toBe(saved.id);
+  expect(service.isManualEntrySaved(userId, historical.id)).toBe(true);
+  service.update(userId, historical.id, {
+    energyKcal: "200",
+    expectedUpdatedAt: historical.updatedAt,
+    foodLogDate: historical.foodLogDate,
+    name: "Changed tortilla",
+    quantity: "2",
+    selectedMeasurementId: "serving",
+  });
+  expect(service.readSavedFood(userId, saved.id)).toMatchObject({
+    name: "Old tortilla",
+    energyMilliKcal: 120_000,
+  });
+  database.close();
+});
+
+test("My foods can save only the account's manual entries", async () => {
+  const database = await setupDatabase();
+  const client = database.getClient();
+  const userId = insertConfiguredUser(client, "saved.owner");
+  const otherUserId = insertConfiguredUser(client, "saved.not-owner");
+  const service = new FoodEntryService(
+    client,
+    new FakeCatalogProvider(),
+    () => new Date("2026-08-29T18:00:00.000Z"),
+  );
+  const manual = service.logManual(userId, {
+    energyKcal: "60",
+    foodLogDate: "2026-08-28",
+    idempotencyKey: "owner-manual-food",
+    name: "Owner tortilla",
+    quantity: "1",
+  });
+  const catalog = await service.log(userId, {
+    foodLogDate: "2026-08-28",
+    idempotencyKey: "owner-catalog-food",
+    provider: "usda-fdc",
+    providerFoodId: "200",
+    quantity: "1",
+    selectedMeasurementId: "portion:7",
+  });
+  expect(() => service.saveManualEntry(otherUserId, manual.id))
+    .toThrow(FoodEntryUnavailableError);
+  expect(() => service.saveManualEntry(userId, catalog.id))
+    .toThrow(FoodEntryUnavailableError);
+  expect(() => service.saveManualEntry(userId, 0))
+    .toThrow(FoodEntryUnavailableError);
+  expect(() => service.readSavedFood(userId, 0))
+    .toThrow(FoodEntryUnavailableError);
+  expect(() => service.logSavedFood(userId, 999_999, "2026-08-28", "missing-saved-entry"))
+    .toThrow(FoodEntryUnavailableError);
   database.close();
 });
 

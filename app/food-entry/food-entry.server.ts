@@ -14,6 +14,13 @@ import {
 } from "../catalog/food-catalog.server";
 import { isSupportedCommercialBarcode } from "../catalog/barcode";
 import type { ApplicationDatabaseClient } from "../database/database.server";
+import {
+  insertSavedFood,
+  listSavedFoodRows,
+  readSavedFoodBySource,
+  readSavedFoodRow,
+  saveManualEntryRow,
+} from "../database/saved-foods.server";
 import { readUserTimeZone } from "../database/user-preferences.server";
 import { isPhotoEntryProcessing } from "../database/photo-analysis.server";
 import { foodEntries, userPreferences } from "../database/schema.server";
@@ -42,6 +49,10 @@ const idempotencyKeySchema = z
   .min(8)
   .max(128)
   .refine((value) => /^[A-Za-z0-9._:-]+$/.test(value));
+
+export const savedFoodIdempotencyKeySchema = idempotencyKeySchema.refine(
+  (value) => !value.startsWith("copy:"),
+);
 
 export const copyFoodEntryIdempotencyKeySchema = idempotencyKeySchema.refine(
   (value) => value.startsWith("copy:"),
@@ -331,6 +342,32 @@ function savedNutritionSnapshotValues(source: FoodEntryRow) {
   };
 }
 
+type SavedFoodRow = NonNullable<ReturnType<typeof readSavedFoodRow>>;
+
+function savedFoodSnapshot(row: SavedFoodRow) {
+  return {
+    id: row.id,
+    name: row.name,
+    sourceEntryId: row.sourceEntryId,
+    ...JSON.parse(row.snapshot) as ReturnType<typeof savedNutritionSnapshotValues>,
+  };
+}
+
+function insertManualFoodSnapshot(
+  database: Pick<ApplicationDatabaseClient, "insert" | "select">,
+  userId: number,
+  source: FoodEntryRow,
+  createdAt: string,
+) {
+  insertSavedFood(
+    database,
+    userId,
+    source,
+    createdAt,
+    JSON.stringify(savedNutritionSnapshotValues(source)),
+  );
+}
+
 function eligibleCopyDestination(
   source: FoodEntryRow | undefined,
   sourceFoodLogDate: string,
@@ -614,6 +651,57 @@ export class FoodEntryService {
       parsed.data.foodLogDate,
       parsed.data.idempotencyKey,
       manualFoodEntrySource(parsed.data, quantity),
+      this.#now(),
+      true,
+    );
+  }
+
+  listSavedFoods(userId: number, query = "") {
+    return listSavedFoodRows(this.#database, userId, query).map(savedFoodSnapshot);
+  }
+
+  readSavedFood(userId: number, savedFoodId: number) {
+    const parsedId = z.number().int().positive().safeParse(savedFoodId);
+    if (!parsedId.success) throw new FoodEntryUnavailableError();
+    const row = readSavedFoodRow(this.#database, userId, parsedId.data);
+    if (!row) throw new FoodEntryUnavailableError();
+    return savedFoodSnapshot(row);
+  }
+
+  isManualEntrySaved(userId: number, entryId: number) {
+    return readSavedFoodBySource(this.#database, userId, entryId) !== undefined;
+  }
+
+  saveManualEntry(userId: number, entryId: number) {
+    const parsedId = z.number().int().positive().safeParse(entryId);
+    if (!parsedId.success) throw new FoodEntryUnavailableError();
+    const saved = saveManualEntryRow(
+      this.#database,
+      userId,
+      parsedId.data,
+      this.#now().toISOString(),
+      (source) => JSON.stringify(savedNutritionSnapshotValues(source)),
+    );
+    if (!saved) throw new FoodEntryUnavailableError();
+    return savedFoodSnapshot(saved);
+  }
+
+  logSavedFood(
+    userId: number,
+    savedFoodId: number,
+    foodLogDate: string,
+    idempotencyKey: string,
+  ) {
+    if (!savedFoodIdempotencyKeySchema.safeParse(idempotencyKey).success) {
+      throw new InvalidFoodEntryInputError();
+    }
+    const saved = this.readSavedFood(userId, savedFoodId);
+    this.#requireWritableDate(userId, foodLogDate);
+    return this.#insertSnapshot(
+      userId,
+      foodLogDate,
+      idempotencyKey,
+      (({ id: _id, name: _name, sourceEntryId: _sourceEntryId, ...source }) => source)(saved),
       this.#now(),
     );
   }
@@ -910,6 +998,7 @@ export class FoodEntryService {
     idempotencyKey: string,
     source: FoodEntryInsertSource,
     instant: Date,
+    saveManual = false,
   ) {
     const createdAt = instant.toISOString();
     return this.#database.transaction((transaction) => {
@@ -950,6 +1039,9 @@ export class FoodEntryService {
         })
         .returning()
         .get();
+      if (saveManual) {
+        insertManualFoodSnapshot(transaction, userId, row, createdAt);
+      }
       return foodEntrySnapshot(row);
     });
   }
