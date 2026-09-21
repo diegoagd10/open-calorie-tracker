@@ -3,6 +3,7 @@ import { Link, useFetcher, useNavigate, useRevalidator } from "react-router";
 import type { PhotoAnalysisService } from "../photo-analysis/photo-analysis.server";
 import type { PresentedPhotoAnalysisReadiness } from "./photo-analysis-readiness";
 import styles from "../photo-analysis/photo-meals.module.css";
+import foodStyles from "../food-log.module.css";
 import methodStyles from "./add-food-method.module.css";
 import { UiIcon } from "../ui-icon";
 
@@ -164,64 +165,81 @@ export function PhotoMealCard({
   csrfToken: string;
 }) {
   const active = meal.status === "active";
+  const unsuccessful = !active && meal.status !== "succeeded";
   const title = meal.name ?? meal.result?.name ?? "Plate photo";
-  return (
-    <article className={styles.card} aria-label={title}>
-      <img src={imageUrl(meal.id)} alt="Your plate" />
-      <div className={styles.content}>
-        {meal.entryId && !active ? (
-          <Link
-            data-entry-editor-trigger
-            to={`/?date=${meal.foodLogDate}&entry=${meal.entryId}`}
-          >
-            <strong>{title}</strong>
-          </Link>
+  const status = active
+    ? "Analyzing photo"
+    : meal.status === "canceled"
+      ? "Analysis canceled"
+      : meal.status === "interrupted"
+        ? "Analysis interrupted"
+        : meal.status === "failed"
+          ? "Analysis failed"
+          : "AI photo estimate";
+  const content = (
+    <>
+      <span
+        className={`${foodStyles.foodEntryMarker} ${unsuccessful ? styles.failedMarker : ""}`}
+        aria-hidden={active ? undefined : true}
+      >
+        {active ? (
+          <img className={styles.mealPhoto} src={imageUrl(meal.id)} alt="Your plate" />
         ) : (
-          <strong>{title}</strong>
+          <UiIcon name={unsuccessful ? "info" : "utensils"} />
         )}
-        <small>
-          AI photo estimate
-          {meal.energyMilliKcal === null
-            ? ""
-            : ` · ${Math.round(meal.energyMilliKcal / 1000)} kcal`}
+      </span>
+      <span className={styles.rowLabel}>AI photo estimate</span>
+      <span className={foodStyles.foodEntryContent}>
+        <strong>{title}</strong>
+        <small
+          className={unsuccessful ? styles.failedStatus : undefined}
+          role={meal.status === "succeeded" ? undefined : "status"}
+        >
+          {active ? <span className={foodStyles.photoActivityDot} aria-hidden="true" /> : null}
+          {status}
         </small>
-        <PhotoMealStatus meal={meal} csrfToken={csrfToken} />
-      </div>
+      </span>
+      {meal.energyMilliKcal !== null ? (
+        <span className={foodStyles.foodEntryEnergy}>
+          {Math.round(meal.energyMilliKcal / 1000)} <small>kcal</small>
+        </span>
+      ) : null}
+    </>
+  );
+  if (meal.entryId && meal.status === "succeeded") {
+    return (
+      <article aria-label={title}>
+        <Link
+          className={`${foodStyles.foodEntryCard} ${styles.rowSummary}`}
+          data-entry-editor-trigger
+          to={`/?date=${meal.foodLogDate}&entry=${meal.entryId}`}
+        >
+          {content}
+        </Link>
+      </article>
+    );
+  }
+  return (
+    <article className={styles.mealRow} aria-label={title} aria-busy={active || undefined}>
+      <details>
+        <summary className={`${foodStyles.foodEntryCard} ${styles.rowSummary}`}>
+          {content}
+        </summary>
+        <div className={styles.rowDetails}>
+          <PhotoMealStatus meal={meal} csrfToken={csrfToken} />
+        </div>
+      </details>
     </article>
   );
 }
 
 export function PhotoMealStatus({ meal, csrfToken }: { meal: PhotoMeal; csrfToken: string }) {
   const action = useFetcher<PhotoAction>();
-  const [elapsed, setElapsed] = useState(0);
   const active = meal.status === "active";
-  useEffect(() => {
-    if (!active) return;
-    const timer = setInterval(
-      () =>
-        setElapsed(
-          Math.max(
-            0,
-            Math.floor((Date.now() - Date.parse(meal.startedAt)) / 1000),
-          ),
-        ),
-      1000,
-    );
-    return () => clearInterval(timer);
-  }, [active, meal.startedAt]);
   return (
     <div className={styles.status}>
-      {active ? (
-        <>
-          <p role="status">{meal.stage}</p>
-          <progress aria-label={meal.stage} />
-          <small>
-            {elapsed} seconds elapsed
-            {meal.entryId ? " · Previous nutrition retained" : ""}
-          </small>
-        </>
-      ) : null}
-      {meal.error ? <p role="status">{meal.error}</p> : null}
+      {active && meal.entryId ? <small>Previous nutrition retained</small> : null}
+      {meal.error ? <p role="alert">{meal.error}</p> : null}
       <action.Form
         action="/photo-analysis"
         method="post"

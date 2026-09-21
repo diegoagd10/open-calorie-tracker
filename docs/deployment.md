@@ -280,7 +280,7 @@ Gemini receives the validated image and bounded meal/correction context. TypeSaf
 receives Gemini's structured observations and bounded locally installed USDA
 category/candidate descriptions, not the image. The application validates the
 choices and performs authoritative USDA arithmetic locally. Every attempt has
-one five-second deadline; a provider, schema, catalog, or deadline failure leaves
+one ten-second deadline; a provider, schema, catalog, or deadline failure leaves
 the attempt failed and requires an explicit retry.
 
 Install USDA Foundation with the [terminal workflow](../README.md#install-food-catalogs-from-the-terminal) for local food search, photo evidence, and logging; Food Catalogs shows availability and update checks. No USDA API key is used at runtime.

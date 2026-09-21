@@ -3301,8 +3301,9 @@ function FoodTimelineEntry({ entry, photoMeal, csrfToken, copyKey }: {
   });
   const startingCorrection = correction.state !== "idle";
   const active = startingCorrection || photoMeal?.status === "active";
-  const ContentElement = active ? "div" : "span";
-  const className = copyKey && !active
+  const unsuccessful = !active && photoMeal !== undefined && photoMeal.status !== "succeeded";
+  const expandable = active || unsuccessful;
+  const className = copyKey && !expandable
     ? `${styles.foodEntryCard} ${styles.foodEntryCardWithMenu}`
     : styles.foodEntryCard;
   const content = (
@@ -3318,7 +3319,7 @@ function FoodTimelineEntry({ entry, photoMeal, csrfToken, copyKey }: {
       >
         <UiIcon name="utensils" />
       </span>
-      <ContentElement className={styles.foodEntryContent}>
+      <span className={styles.foodEntryContent}>
         <strong>{entry.name}</strong>
         <small>
           {entry.provider === "open-food-facts"
@@ -3328,24 +3329,16 @@ function FoodTimelineEntry({ entry, photoMeal, csrfToken, copyKey }: {
             : entry.provider === "ai-photo" ? "AI photo estimate"
             : `USDA FoodData Central · ${entry.dataType}`}
         </small>
-        <small>
-          {entry.selectedMeasurementLabel} ×{" "}
-          {entry.quantityMicrounits / 1_000_000}
+        <small className={unsuccessful ? styles.photoFailedStatus : undefined} role={expandable ? "status" : undefined}>
+          {active ? (
+            <><span className={styles.photoActivityDot} aria-hidden="true" />{startingCorrection ? "Starting correction" : "Analyzing photo"}</>
+          ) : unsuccessful ? (
+            photoMeal.status === "failed" ? "Analysis failed" : photoMeal.status === "canceled" ? "Analysis canceled" : "Analysis interrupted"
+          ) : (
+            <>{entry.selectedMeasurementLabel} × {entry.quantityMicrounits / 1_000_000}</>
+          )}
         </small>
-        {active ? (
-          <div className={styles.photoCorrectionProgress}>
-            <p role="status">Updating this meal with AI…</p>
-            {photoMeal?.status === "active" ? (
-              <PhotoMealStatus meal={photoMeal} csrfToken={csrfToken} />
-            ) : (
-              <>
-                <progress aria-label="Starting correction" />
-                <p>Starting correction. Previous nutrition retained.</p>
-              </>
-            )}
-          </div>
-        ) : null}
-      </ContentElement>
+      </span>
       <span className={styles.foodEntryEnergy}>
         {formatEnergy(entry.energyMilliKcal)}{" "}
         <small>kcal</small>
@@ -3354,25 +3347,34 @@ function FoodTimelineEntry({ entry, photoMeal, csrfToken, copyKey }: {
   );
   return (
     <article aria-busy={active || undefined}>
-      {active ? (
-        <div className={className}>{content}</div>
+      {expandable ? (
+        <details className={styles.photoCorrectionDetails}>
+          <summary className={className}>{content}</summary>
+          <div className={styles.photoEntryStatus}>
+            {photoMeal && !startingCorrection ? (
+              <PhotoMealStatus meal={photoMeal} csrfToken={csrfToken} />
+            ) : (
+              <p>Starting correction. Previous nutrition retained.</p>
+            )}
+            {unsuccessful ? (
+              <Link data-entry-editor-trigger to={`${foodLogHref(entry.foodLogDate)}&entry=${entry.id}`}>
+                Open meal details
+              </Link>
+            ) : null}
+          </div>
+        </details>
       ) : (
         <Link className={className} data-entry-editor-trigger to={`${foodLogHref(entry.foodLogDate)}&entry=${entry.id}`}>
           {content}
         </Link>
       )}
-      {copyKey && !active ? (
+      {copyKey && !expandable ? (
         <FoodEntryCopyMenu csrfToken={csrfToken} entry={entry} idempotencyKey={copyKey} key={copyKey} />
       ) : null}
       {!active && correction.data?.error ? (
         <p className={styles.catalogError} role="alert">
           Correction could not start: {correction.data.error} Open this meal to try again.
         </p>
-      ) : null}
-      {!active && photoMeal && photoMeal.status !== "succeeded" ? (
-        <div className={styles.photoEntryStatus}>
-          <PhotoMealStatus meal={photoMeal} csrfToken={csrfToken} />
-        </div>
       ) : null}
     </article>
   );
@@ -3816,9 +3818,7 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
                       </PhotoTimelineEntry>
                     ) : null}
                     {photoMeals.filter((meal) => meal.entryId === null).map((meal) => (
-                      <PhotoTimelineEntry key={meal.id}>
-                        <PhotoMealCard meal={meal} csrfToken={csrfToken} />
-                      </PhotoTimelineEntry>
+                      <PhotoMealCard key={meal.id} meal={meal} csrfToken={csrfToken} />
                     ))}
                     {foodLog.events.map((entry) => {
                       return entry.kind === "food" ? (

@@ -2166,26 +2166,34 @@
   font-size: 0.8rem;
 }
 
-.photoCorrectionProgress {
-  margin-top: 0.5rem;
-  font-size: 0.75rem;
+.foodEntryContent .photoFailedStatus {
+  color: var(--danger-muted);
 }
 
-.photoCorrectionProgress p {
-  margin-block: 0.35rem;
+.photoCorrectionDetails > summary {
+  list-style: none;
+  cursor: pointer;
 }
 
-.photoCorrectionProgress small {
-  overflow: visible;
-  white-space: normal;
+.photoCorrectionDetails > summary::-webkit-details-marker {
+  display: none;
 }
 
-.photoCorrectionProgress progress {
-  display: block;
-  width: 100%;
-  accent-color: var(--green);
+.photoActivityDot {
+  display: inline-block;
+  width: 0.4rem;
+  height: 0.4rem;
+  margin-right: 0.4rem;
+  border-radius: 50%;
+  background: var(--green);
+  vertical-align: middle;
+  animation: photo-activity-pulse 1.4s ease-in-out infinite;
 }
 
-.entryList article[aria-busy="true"] .foodEntryCard::after {
-  content: "";
+@keyframes photo-activity-pulse {
+  50% { opacity: 0.35; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .photoActivityDot { animation: none; }
 }

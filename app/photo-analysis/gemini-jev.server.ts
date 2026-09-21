@@ -10,6 +10,7 @@ import type {
   UsdaPhotoAnalysisSnapshot,
 } from "../catalog/usda-evidence.ts";
 import type { PhotoAnalyzer, PlatePhoto } from "./photo-analysis.server.ts";
+import { PHOTO_ANALYSIS_DEADLINE_MS } from "./deadline.server";
 import {
   PHOTO_ANALYSIS_FALLBACK_REASONS,
   type PhotoAnalysisFallbackReason,
@@ -195,7 +196,7 @@ const configSchema = z.object({
   jevModel: z.string().min(1).max(100).regex(/^[A-Za-z0-9._-]+$/u).default("jev-1.13.0"),
   categoryConfidenceThreshold: z.number().min(0).max(1).default(0),
   productConfidenceThreshold: z.number().min(0).max(1).default(0),
-  deadlineMs: z.number().int().positive().max(5_000).default(5_000),
+  deadlineMs: z.number().int().positive().max(PHOTO_ANALYSIS_DEADLINE_MS).default(PHOTO_ANALYSIS_DEADLINE_MS),
 }).strict();
 
 const instruction = `Describe only food or drink visibly present in the supplied image as independently matchable nutritional components. Return one component for each independently quantifiable visible food. Each component name must represent one visible food identity. Separate foods that remain visually distinguishable even when they are mixed or touching. Mixed together is not inseparable when the individual foods remain visually distinguishable. Cooking foods together is never, by itself, a reason to merge them. Visually discrete pieces with a separately estimable quantity remain separate components even when cooked inside another food. If you can describe or estimate a visible constituent's amount, return it as its own component. Do not join multiple visible, separately quantifiable foods in one component name with words such as "with" or "and". Use the most specific identity supported by visible evidence. If the image cannot distinguish materially different food identities, use a generic visible identity and explain the ambiguity in uncertainty instead of guessing. Do not infer hidden ingredients, fats, seasonings, fillings, brands, or recipe ingredients. Never assume that a cooking fat was used, even in a phrase such as "minimal oil". Omit invisible cooking fats completely from components, assumptions, and nutrition. Never choose or invent a USDA FDC identity. Return the required structured observation and complete fallback nutrition for every visible component. Encode each component's nutrition as a JSON object inside the required nutrition string. consumedFraction is the fraction of the full visible meal that was consumed. Every component's quantity, grams, and fallback nutrition must describe its full visible portion before consumedFraction is applied. Nutrition values are totals for that stated component quantity, never values per 100 grams; the application applies consumedFraction exactly once. Before returning, audit every proposed singleFoodIdentity. Any identity containing the literal word "with" or "and" is invalid; replace it with separate component objects for the visible foods now, not after returning.`;

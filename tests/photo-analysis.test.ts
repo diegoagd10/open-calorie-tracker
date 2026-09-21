@@ -427,6 +427,27 @@ test("a bounded attempt times out and a new server marks lost work interrupted w
   expect(restarted.photo(userId, running.id).bytes).toEqual(photo.bytes);
 });
 
+test("an accepted photo has ten seconds to finish before timing out", async () => {
+  const { service, userId } = await setup({ analyze: () => new Promise(() => {}) });
+  vi.useFakeTimers();
+  try {
+    const meal = await service.start(userId, {
+      photo,
+      foodLogDate: "2026-09-04",
+      idempotencyKey: "default-ten-second-deadline",
+    });
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(service.status(userId, meal.id).status).toBe("active");
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(service.status(userId, meal.id)).toMatchObject({
+      status: "failed",
+      error: "Analysis timed out. Retry when ready.",
+    });
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
 test("deadline and shutdown stop attempt capture without persisting half-captured work", async () => {
   let finishCapture!: (lease: Awaited<ReturnType<PhotoAnalysisAttemptSource["capture"]>>) => void;
   let releases = 0;

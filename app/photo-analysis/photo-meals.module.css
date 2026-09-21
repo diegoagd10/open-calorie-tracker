@@ -7,6 +7,56 @@
   border-radius: 1rem;
   background: var(--surface);
 }
+.mealRow {
+  min-width: 0;
+}
+.rowSummary {
+  box-sizing: border-box;
+  width: 100%;
+  cursor: pointer;
+  list-style: none;
+}
+.rowSummary::-webkit-details-marker {
+  display: none;
+}
+.rowSummary:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+.rowLabel {
+  grid-column: 2;
+  grid-row: 1;
+  align-self: end;
+  margin-bottom: 0.1rem;
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 650;
+}
+.mealPhoto {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+}
+.mealRow .failedMarker {
+  color: var(--danger);
+  border-color: var(--danger-border);
+  background: var(--danger-soft);
+}
+.mealRow .failedStatus {
+  color: var(--danger-muted);
+}
+.rowDetails {
+  margin-top: 0.35rem;
+  padding: 0.75rem;
+  border: 1px solid var(--rule);
+  border-radius: 0.7rem;
+  background: var(--surface);
+  font-size: 0.78rem;
+}
+.rowDetails p:first-child {
+  margin-top: 0;
+}
 .card > img {
   width: 88px;
   height: 88px;
@@ -14,19 +64,6 @@
   object-fit: cover;
   flex-shrink: 0;
 }
-.content {
-  min-width: 0;
-  flex: 1;
-  overflow-wrap: anywhere;
-}
-.content > small {
-  display: block;
-  margin-block: 0.35rem;
-}
-.content p {
-  margin-block: 0.5rem;
-}
-.status progress,
 .card progress {
   display: block;
   width: 100%;
@@ -51,6 +88,17 @@
   border-radius: 0.5rem;
   cursor: pointer;
   min-height: 44px;
+}
+.actions button[value="delete"],
+.actions button[value="cancel"] {
+  color: var(--muted);
+  border-color: var(--rule-strong);
+  background: transparent;
+}
+.actions button[value="delete"]:hover {
+  color: var(--danger);
+  border-color: var(--danger-border);
+  background: var(--danger-soft);
 }
 .correction {
   display: grid;

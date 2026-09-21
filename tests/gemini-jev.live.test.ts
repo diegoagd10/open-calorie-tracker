@@ -85,7 +85,7 @@ test.skipIf(process.env.PHOTO_ANALYSIS_LIVE !== "1")(
         new GeminiHttpMealClient(geminiKey),
         new JevHttpChoiceClient(typeSafeKey),
         new LocalUsdaAdapter(management, catalogDirectory),
-        { geminiModel, jevModel, deadlineMs: 5_000 },
+        { geminiModel, jevModel, deadlineMs: 10_000 },
       );
 
       const foodStarted = performance.now();

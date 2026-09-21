@@ -7,7 +7,7 @@ saves one aggregate Food Entry. Open it to inspect component references and
 assumptions or choose **Correct with AI**. Corrections replace that entry while
 retaining its previous totals until success. Other food-entry methods stay usable.
 
-Each attempt has a five-second deadline after upload. Cancel stops an attempt and
+Each attempt has a ten-second deadline after upload. Cancel stops an attempt and
 ignores late results. Failed, canceled, timed-out, or interrupted work requires an
 explicit Retry; a server restart never reruns lost work. New unsuccessful meals
 contribute no nutrition. There is no lifetime correction quota.
@@ -22,7 +22,7 @@ evidence validation. Every correction and explicit retry captures a fresh lease;
 it never resumes interrupted work or silently reuses a previous match.
 
 Photos, application-relevant USDA evidence, correction text, and result revisions
-are private SQLite records. Deleting a Food Entry (or an unsuccessful photo card)
+are private SQLite records. Deleting a Food Entry (or an unsuccessful photo row)
 cascades to its photo and history. Account deletion does the same. Database
 backups remain subject to the operator's retention policy. Images are sent to the
 configured AI provider; deleting local data does not promise provider-side deletion.
@@ -88,7 +88,7 @@ resumable execution system.
 
 Provider configuration stays behind the backend runtime boundary. Gemini and Jev
 requests use the captured generic API credentials and concrete model identifiers.
-The whole attempt, including readiness capture, has a five-second
+The whole attempt, including readiness capture, has a ten-second
 deadline. Unavailable models, credentials, or catalogs reject the request before
 an attempt card is stored and never save an unvalidated completion as nutrition.
 
@@ -123,7 +123,7 @@ The Gemini→Jev→USDA analyzer has an explicit opt-in live smoke seam. It veri
 that the requested Gemini and effective Jev models are available, installs a
 supplied Foundation archive in a temporary AI-capable catalog, checks one food
 image with source provenance, and checks one non-food image. Both analyses use
-the production five-second deadline. The smoke is not an accuracy study and is
+the production ten-second deadline. The smoke is not an accuracy study and is
 not part of ordinary verification. Run it explicitly with private inputs; it
 consumes both provider accounts:
 
@@ -151,8 +151,11 @@ distribution claims.
 
 Photo capture is available alongside search, barcode, and manual entry in **Add
 Food**, labeled **Take photo · AI calories**. Choosing a photo returns to the
-Daily Log immediately, which shows upload progress, analysis progress, or an
-explicit failure. Non-food results retain the photo and retry controls without
+Daily Log immediately. Accepted photos use a compact log row with a small
+photo thumbnail, a quiet **Analyzing photo** indicator, and no elapsed-seconds
+display. Failed attempts keep that row, replace the image with a failure marker,
+and reveal Retry on open.
+Retry uses the saved photo. Non-food results remain available for retry without
 creating a Food Entry. JPEG signature validation permits trailing camera metadata
 after the end-of-image marker.
 
