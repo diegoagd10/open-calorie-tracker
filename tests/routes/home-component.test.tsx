@@ -690,7 +690,7 @@ test("home renders food and water timeline entries with factual units", async ()
   await act(async () => singular.unmount());
 });
 
-test("historical Food Entries expose a copy menu without changing card editing", async () => {
+test("historical Food Entries expose copy in the editor, not the daily log", async () => {
   const historicalFood = {
     amountMicroliters: undefined,
     dataType: "Branded",
@@ -713,6 +713,7 @@ test("historical Food Entries expose a copy menu without changing card editing",
   };
   const historical = await renderHome({
     copyIdempotencyKeys: { [historicalFood.id]: "copy:historical-key" },
+    foodEntryEditor: { ...editableEntry, foodLogDate: "2026-08-29", id: 91, name: "Historical yogurt" },
     foodLog: {
       ...baseFoodLog,
       entries: [historicalFood],
@@ -721,15 +722,10 @@ test("historical Food Entries expose a copy menu without changing card editing",
     },
   });
 
-  expect(
-    historical.root.findByProps({
-      "aria-label": "More actions for Historical yogurt",
-    }).type,
-  ).toBe("button");
+  expect(historical.root.findAllByProps({ "aria-label": "More actions for Historical yogurt" })).toHaveLength(0);
+  expect(historical.root.findByProps({ "aria-label": "Copy entry" }).type).toBe("button");
   await act(async () =>
-    historical.root
-      .findByProps({ "aria-label": "More actions for Historical yogurt" })
-      .props.onClick(),
+    historical.root.findByProps({ "aria-label": "Copy entry" }).props.onClick(),
   );
   expect(
     historical.root.findByProps({ "data-entry-editor-trigger": true }).props.to,
@@ -755,21 +751,17 @@ test("historical Food Entries expose a copy menu without changing card editing",
     href: "/?date=2026-08-29&copy=91",
   });
   expect(
-    historical.root.findByProps({
-      "aria-label": "More actions for Historical yogurt",
-    }).props["data-copy-date-trigger"],
-  ).toBe(91);
-  expect(
     historical.root.findAll(
       (node) =>
         typeof node.props["aria-label"] === "string" &&
-        node.props["aria-label"].startsWith("More actions for"),
+        node.props["aria-label"] === "Copy entry",
     ),
   ).toHaveLength(1);
   await act(async () => historical.unmount());
 
   const today = await renderHome({
     copyIdempotencyKeys: {},
+    foodEntryEditor: { ...editableEntry, id: 91, name: "Historical yogurt" },
     foodLog: {
       ...baseFoodLog,
       entries: [{ ...historicalFood, foodLogDate: "2026-08-31" }],
@@ -780,7 +772,7 @@ test("historical Food Entries expose a copy menu without changing card editing",
     today.root.findAll(
       (node) =>
         typeof node.props["aria-label"] === "string" &&
-        node.props["aria-label"].startsWith("More actions for"),
+        node.props["aria-label"] === "Copy entry",
     ),
   ).toHaveLength(0);
   await act(async () => today.unmount());
@@ -791,6 +783,7 @@ test("historical Food Entries expose a copy menu without changing card editing",
   const pending = await renderPendingHome(
     {
       copyIdempotencyKeys: { [historicalFood.id]: "copy:historical-key" },
+      foodEntryEditor: { ...editableEntry, foodLogDate: "2026-08-29", id: 91, name: "Historical yogurt" },
       foodLog: {
         ...baseFoodLog,
         entries: [historicalFood],
@@ -802,7 +795,7 @@ test("historical Food Entries expose a copy menu without changing card editing",
   );
   await act(async () =>
     pending.root
-      .findByProps({ "aria-label": "More actions for Historical yogurt" })
+      .findByProps({ "aria-label": "Copy entry" })
       .props.onClick(),
   );
   expect(
@@ -1741,9 +1734,7 @@ test("home food editor exposes saved fields, recalculation, and delete confirmat
   expect(input(renderer, "quantity").props.value).toBe("");
   expect(input(renderer, "energyKcal").props.value).toBe("100.3");
 
-  const deleteButton = renderer.root.findAllByType("button").find(
-    (button) => nodeText(button) === "Delete entry",
-  )!;
+  const deleteButton = renderer.root.findByProps({ "aria-label": "Delete entry" });
   const focusTarget = modalFocusables[0];
   queriedSelectors.length = 0;
   focusTarget.lastFocusOptions = undefined;
@@ -2045,7 +2036,7 @@ test("home renders submission and navigation pending states", async () => {
   );
   expect(semanticDom(pendingEditor)).toMatchSnapshot();
   expect(pendingEditor.root.findByType("fieldset").props.disabled).toBe(true);
-  expect(allText(pendingEditor)).toContain("Saving…");
+  expect(pendingEditor.root.findByProps({ "aria-label": "Saving changes" }).props.disabled).toBe(true);
   await act(async () => pendingEditor.unmount());
 
   const deleteFood = new FormData();
@@ -2055,9 +2046,7 @@ test("home renders submission and navigation pending states", async () => {
     { foodEntryEditor: editableEntry },
     { formData: deleteFood, to: "/" },
   );
-  const revealFoodDelete = deletingEditor.root.findAllByType("button").find(
-    (button) => nodeText(button) === "Delete entry",
-  )!;
+  const revealFoodDelete = deletingEditor.root.findByProps({ "aria-label": "Delete entry" });
   await act(async () => revealFoodDelete.props.onClick());
   expect(allText(deletingEditor)).toContain("Deleting…");
   await act(async () => deletingEditor.unmount());
@@ -2070,7 +2059,7 @@ test("home renders submission and navigation pending states", async () => {
     { formData: wrongFood, to: "/" },
   );
   expect(idleEditor.root.findByType("fieldset").props.disabled).toBe(false);
-  expect(allText(idleEditor)).toContain("Save changes");
+  expect(idleEditor.root.findByProps({ "aria-label": "Save changes" }).props.disabled).toBe(false);
   await act(async () => idleEditor.unmount());
 
   const createWater = new FormData();
@@ -2327,7 +2316,7 @@ test("copy calendar links preserve the source and destination, highlight dates a
   expect(grid.findByProps({ "aria-label": "Friday, August 28" }).props).toMatchObject({ disabled: true, className: styles.calendarFuture });
   originalFocus.isConnected = false;
   await act(async () => renderer.unmount());
-  expect(documentSelectors).toContain('[data-copy-date-trigger="93"]');
+  expect(documentSelectors).toContain('[data-entry-editor-trigger][href="/?date=2026-08-28&entry=93"]');
   originalFocus.isConnected = true;
 });
 
@@ -2429,13 +2418,13 @@ test("photo meals share the food and water timeline in event order and expose co
     expect(row.findAllByType("strong").map(nodeText)).toEqual(["Photo dinner"]);
     expect(nodeText(row.findByProps({ className: styles.foodEntryEnergy }))).toBe("59 kcal");
     const buttons = row.findAllByType("button").map(nodeText);
-    expect(buttons).toEqual(active ? ["Cancel analysis"] : terminalError ? ["•••", "Retry analysis", "Delete photo meal"] : ["•••"]);
+    expect(buttons).toEqual(active ? ["Cancel analysis"] : terminalError ? ["Retry analysis", "Delete photo meal"] : []);
     if (active) {
       expect(row.findByProps({ className: styles.foodEntryContent }).type).toBe("div");
       expect(nodeText(row.findByProps({ className: styles.foodEntryContent }))).toContain("Updating this meal with AI");
       expect(nodeText(row)).toContain("Previous nutrition retained");
     } else {
-      expect(row.findByType("a").props.className).toBe(`${styles.foodEntryCard} ${styles.foodEntryCardWithMenu}`);
+      expect(row.findByType("a").props.className).toBe(styles.foodEntryCard);
       expect(nodeText(row).includes("Correction stopped")).toBe(terminalError);
     }
     expect(log.findAllByType("a").some(node => nodeText(node).includes("Copied photo"))).toBe(true);

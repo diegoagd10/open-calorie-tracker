@@ -2235,11 +2235,13 @@ function DialogBackdrop({
 
 function FoodEntryEditorDialog({
   actionData,
+  copyKey,
   csrfToken,
   entry,
   photoMeal,
 }: {
   actionData: HomeActionData | undefined;
+  copyKey?: string;
   csrfToken: string;
   photoMeal?: Route.ComponentProps["loaderData"]["photoMeals"][number];
   entry: EditableFoodEntry;
@@ -2288,22 +2290,81 @@ function FoodEntryEditorDialog({
         ref={dialogRef}
         role="dialog"
       >
-        <div className={styles.dialogHead}>
+        <div className={`${styles.dialogHead} ${styles.editDialogHead}`}>
           <div>
             <h2 id="edit-food-entry-title">Edit Food Entry</h2>
             <span className={styles.dialogChip}>Nutrition Snapshot</span>
             <p>Changes affect this occurrence only.</p>
           </div>
-          <Link
-            aria-label="Close edit form"
-            className={styles.dialogClose}
-            to={closeHref}
-          >
-            ×
-          </Link>
+          <div className={styles.editHeaderActions}>
+            {copyKey ? (
+              <FoodEntryCopyMenu
+                csrfToken={csrfToken}
+                entry={entry}
+                idempotencyKey={copyKey}
+                pending={pending}
+              />
+            ) : null}
+            <button
+              aria-label="Delete entry"
+              className={`${styles.editIconButton} ${styles.editDeleteButton}`}
+              disabled={pending}
+              onClick={() => setConfirmingDelete(true)}
+              title="Delete entry"
+              type="button"
+            >
+              <UiIcon name="delete" />
+            </button>
+            <Link
+              aria-label="Cancel"
+              className={styles.editIconButton}
+              title="Cancel"
+              to={closeHref}
+            >
+              <UiIcon name="cancel" />
+            </Link>
+            <button
+              aria-label={pendingIntent === "update-food" ? "Saving changes" : "Save changes"}
+              className={`${styles.editIconButton} ${styles.editSaveButton}`}
+              disabled={pending}
+              form="food-entry-edit-form"
+              name="intent"
+              title={pendingIntent === "update-food" ? "Saving changes" : "Save changes"}
+              type="submit"
+              value="update-food"
+            >
+              <UiIcon name="save" />
+            </button>
+          </div>
         </div>
+        {confirmingDelete ? (
+          <div className={`${styles.deleteConfirm} ${styles.editDeleteConfirm}`} role="alert">
+            <div>
+              <strong>Delete this Food Entry?</strong>
+              <p>Its nutrition will no longer contribute to this day.</p>
+            </div>
+            <button
+              className={styles.secondaryButton}
+              onClick={() => setConfirmingDelete(false)}
+              type="button"
+            >
+              Keep it
+            </button>
+            <button
+              className={styles.dangerSubmitButton}
+              disabled={pending}
+              form="food-entry-edit-form"
+              formNoValidate
+              name="intent"
+              type="submit"
+              value="delete-food"
+            >
+              {pendingIntent === "delete-food" ? "Deleting…" : "Delete"}
+            </button>
+          </div>
+        ) : null}
         {photoMeal ? <PhotoCorrection meal={photoMeal} csrfToken={csrfToken} /> : null}
-        <Form className={styles.editFoodForm} method="post" noValidate>
+        <Form className={styles.editFoodForm} id="food-entry-edit-form" method="post" noValidate>
           <input name="csrfToken" type="hidden" value={csrfToken} />
           <input name="date" type="hidden" value={entry.foodLogDate} />
           <input name="entryId" type="hidden" value={entry.id} />
@@ -2362,54 +2423,6 @@ function FoodEntryEditorDialog({
               <p className={styles.catalogError} role="alert">
                 {actionData.message}
               </p>
-            ) : null}
-            <div className={styles.editActions}>
-              <button
-                className={styles.dangerButton}
-                onClick={() => setConfirmingDelete(true)}
-                type="button"
-              >
-                Delete entry
-              </button>
-              <div>
-                <Link className={styles.secondaryButton} to={closeHref}>
-                  Cancel
-                </Link>
-                <button
-                  className={styles.primaryButton}
-                  name="intent"
-                  type="submit"
-                  value="update-food"
-                >
-                  {pendingIntent === "update-food"
-                    ? "Saving…"
-                    : "Save changes"}
-                </button>
-              </div>
-            </div>
-            {confirmingDelete ? (
-              <div className={styles.deleteConfirm} role="alert">
-                <div>
-                  <strong>Delete this Food Entry?</strong>
-                  <p>Its nutrition will no longer contribute to this day.</p>
-                </div>
-                <button
-                  className={styles.secondaryButton}
-                  onClick={() => setConfirmingDelete(false)}
-                  type="button"
-                >
-                  Keep it
-                </button>
-                <button
-                  className={styles.dangerSubmitButton}
-                  formNoValidate
-                  name="intent"
-                  type="submit"
-                  value="delete-food"
-                >
-                  {pendingIntent === "delete-food" ? "Deleting…" : "Delete"}
-                </button>
-              </div>
             ) : null}
           </fieldset>
         </Form>
@@ -3375,11 +3388,10 @@ function CatalogDialog({
   );
 }
 
-function FoodTimelineEntry({ entry, photoMeal, csrfToken, copyKey }: {
+function FoodTimelineEntry({ entry, photoMeal, csrfToken }: {
   entry: Extract<Route.ComponentProps["loaderData"]["foodLog"]["events"][number], { kind: "food" }>;
   photoMeal?: Route.ComponentProps["loaderData"]["photoMeals"][number];
   csrfToken: string;
-  copyKey?: string;
 }) {
   const correction = useFetcher<{ error?: string }>({
     key: photoMeal ? `photo-correction:${photoMeal.id}` : undefined,
@@ -3387,9 +3399,7 @@ function FoodTimelineEntry({ entry, photoMeal, csrfToken, copyKey }: {
   const startingCorrection = correction.state !== "idle";
   const active = startingCorrection || photoMeal?.status === "active";
   const ContentElement = active ? "div" : "span";
-  const className = copyKey && !active
-    ? `${styles.foodEntryCard} ${styles.foodEntryCardWithMenu}`
-    : styles.foodEntryCard;
+  const className = styles.foodEntryCard;
   const content = (
     <>
       <time
@@ -3446,9 +3456,6 @@ function FoodTimelineEntry({ entry, photoMeal, csrfToken, copyKey }: {
           {content}
         </Link>
       )}
-      {copyKey && !active ? (
-        <FoodEntryCopyMenu csrfToken={csrfToken} entry={entry} idempotencyKey={copyKey} key={copyKey} />
-      ) : null}
       {!active && correction.data?.error ? (
         <p className={styles.catalogError} role="alert">
           Correction could not start: {correction.data.error} Open this meal to try again.
@@ -3503,34 +3510,34 @@ function FoodEntryCopyMenu({
   csrfToken,
   entry,
   idempotencyKey,
+  pending: editorPending,
 }: {
   csrfToken: string;
-  entry: Extract<
-    Route.ComponentProps["loaderData"]["foodLog"]["events"][number],
-    { kind: "food" }
-  >;
+  entry: EditableFoodEntry;
   idempotencyKey: string;
+  pending: boolean;
 }) {
   const navigation = useNavigation();
   const [open, setOpen] = useState(false);
-  const pending =
+  const copyPending =
     navigation.formData?.get("intent") === "copy-food-to-today" &&
     navigation.formData.get("entryId") === String(entry.id);
 
   return (
-    <div className={styles.foodEntryMenu}>
+    <div className={styles.editorCopyMenu}>
       <button
         aria-expanded={open}
-        aria-label={`More actions for ${entry.name}`}
-        className={styles.foodEntryMenuTrigger}
-        data-copy-date-trigger={entry.id}
+        aria-label="Copy entry"
+        className={styles.editIconButton}
+        disabled={editorPending}
         onClick={() => setOpen((current) => !current)}
+        title="Copy entry"
         type="button"
       >
-        <span aria-hidden="true">•••</span>
+        <UiIcon name="copy" />
       </button>
       {open ? (
-        <div className={styles.foodEntryMenuPopover}>
+        <div className={styles.editorCopyMenuPopover}>
           <Form method="post">
             <input name="csrfToken" type="hidden" value={csrfToken} />
             <input name="date" type="hidden" value={entry.foodLogDate} />
@@ -3541,12 +3548,12 @@ function FoodEntryCopyMenu({
               value={idempotencyKey}
             />
             <button
-              disabled={pending}
+              disabled={editorPending || copyPending}
               name="intent"
               type="submit"
               value="copy-food-to-today"
             >
-              {pending ? "Copying…" : "Copy to today"}
+              {copyPending ? "Copying…" : "Copy to today"}
             </button>
           </Form>
           <Link
@@ -3578,7 +3585,7 @@ function CopyFoodEntryDialog({
   const { closeDialog, dialogRef, handleDialogKeyDown } = useModalDialog({
     closeHref,
     initialFocusSelector: "[data-copy-calendar-day]",
-    restoreFocusSelector: `[data-copy-date-trigger="${dialog.entry.id}"]`,
+    restoreFocusSelector: `[data-entry-editor-trigger][href="${closeHref}&entry=${dialog.entry.id}"]`,
   });
   const pending =
     navigation.formData?.get("intent") === "copy-food-to-date" &&
@@ -3907,7 +3914,7 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
                     ))}
                     {foodLog.events.map((entry) => {
                       return entry.kind === "food" ? (
-                        <FoodTimelineEntry key={`food-${entry.id}`} entry={entry} photoMeal={photoMeals.find((meal) => meal.entryId === entry.id)} csrfToken={csrfToken} copyKey={copyIdempotencyKeys[entry.id]} />
+                        <FoodTimelineEntry key={`food-${entry.id}`} entry={entry} photoMeal={photoMeals.find((meal) => meal.entryId === entry.id)} csrfToken={csrfToken} />
                       ) : (
                         <article key={`water-${entry.id}`}>
                           <Link
@@ -3992,6 +3999,7 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
       {activeFoodEntryEditor ? (
         <FoodEntryEditorDialog
           actionData={actionData}
+          copyKey={copyIdempotencyKeys[activeFoodEntryEditor.id]}
           csrfToken={csrfToken}
           entry={activeFoodEntryEditor}
           photoMeal={photoMeals.find((meal) => meal.entryId === activeFoodEntryEditor.id)}
