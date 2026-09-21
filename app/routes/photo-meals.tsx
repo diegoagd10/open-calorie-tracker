@@ -166,6 +166,7 @@ export function PhotoMealCard({
 }) {
   const active = meal.status === "active";
   const unsuccessful = !active && meal.status !== "succeeded";
+  const ContentTag = unsuccessful ? "div" : "span";
   const title = meal.name ?? meal.result?.name ?? "Plate photo";
   const status = active
     ? "Analyzing photo"
@@ -189,7 +190,7 @@ export function PhotoMealCard({
         )}
       </span>
       <span className={styles.rowLabel}>AI photo estimate</span>
-      <span className={foodStyles.foodEntryContent}>
+      <ContentTag className={foodStyles.foodEntryContent}>
         <strong>{title}</strong>
         <small
           className={unsuccessful ? styles.failedStatus : undefined}
@@ -198,8 +199,8 @@ export function PhotoMealCard({
           {active ? <span className={foodStyles.photoActivityDot} aria-hidden="true" /> : null}
           {status}
         </small>
-        {unsuccessful && meal.error ? <small className={styles.failureReason} role="alert">{meal.error}</small> : null}
-      </span>
+        {unsuccessful && meal.error ? <PhotoFailureReason error={meal.error} /> : null}
+      </ContentTag>
       {meal.energyMilliKcal !== null ? (
         <span className={foodStyles.foodEntryEnergy}>
           {Math.round(meal.energyMilliKcal / 1000)} <small>kcal</small>
@@ -241,6 +242,21 @@ export function PhotoMealCard({
         </div>
       </details>
     </article>
+  );
+}
+
+export function PhotoFailureReason({ error }: { error: string }) {
+  return (
+    <>
+      <small className={styles.failureReasonDesktop} role="alert">{error}</small>
+      <details className={styles.failureReasonMobile}>
+        <summary>
+          <span className={styles.failureReasonPreview}>{error}</span>
+          <span className={styles.failureReasonClose}>Hide details</span>
+        </summary>
+        <small role="alert">{error}</small>
+      </details>
+    </>
   );
 }
 

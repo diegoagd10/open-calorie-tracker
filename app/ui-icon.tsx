@@ -43,7 +43,7 @@ export function UiIcon({ name }: { name: UiIconName }) {
       ) : name === "pencil" ? (
         <path d="m16 3 5 5L9 20l-6 1 1-6ZM13 6l5 5" />
       ) : name === "retry" ? (
-        <><path d="M20 7v5h-5" /><path d="M4.8 16a8 8 0 1 0 1.6-9.2L4 9" /></>
+        <><path d="M21 12a9 9 0 1 1-3.36-7.03L21 8" /><path d="M21 3v5h-5" /></>
       ) : name === "trash" ? (
         <><path d="M4 7h16M9 7V4h6v3M6 7l1 14h10l1-14M10 11v6M14 11v6" /></>
       ) : name === "lock" ? (

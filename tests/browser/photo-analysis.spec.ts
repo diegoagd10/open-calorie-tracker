@@ -252,7 +252,7 @@ test("plate capture returns to Daily Log, survives reload, and supports correcti
     meals.getByRole("button", { name: "Retry analysis" }),
   ).toBeVisible();
   const failedCorrection = meals.getByRole("article").filter({ hasText: "Photo rice plate" });
-  await expect(failedCorrection.locator("details")).toHaveCount(0);
+  await expect(failedCorrection.locator(":scope > details")).toHaveCount(0);
   await expect(failedCorrection.getByRole("button", { name: "Delete photo meal" }).locator("svg")).toHaveCount(1);
   const correctionViewport = page.viewportSize()!;
   await page.setViewportSize({ width: 740, height: 900 });
@@ -302,16 +302,26 @@ test("non-food photos show a persistent failure and rejected uploads explain the
   await expect(meals).toContainText("No food or drink detected");
   await expect(meals).toContainText("Analysis failed");
   const failedCard = meals.getByRole("article", { name: "Plate photo" });
-  await expect(failedCard.locator("details")).toHaveCount(0);
+  await expect(failedCard.locator(":scope > details")).toHaveCount(0);
   await expect(failedCard.getByRole("button", { name: "Retry analysis" }).locator("svg")).toHaveCount(1);
   await expect(failedCard.getByRole("button", { name: "Delete photo meal" }).locator("svg")).toHaveCount(1);
   const priorViewport = page.viewportSize()!;
   await page.setViewportSize({ width: 740, height: 900 });
   await page.screenshot({ path: testInfo.outputPath("failed-photo-row.png") });
-  await failedCard.screenshot({ path: testInfo.outputPath("failed-photo-card.png") });
+  const desktopHeight = (await failedCard.boundingBox())!.height;
+  await failedCard.screenshot({ path: testInfo.outputPath("failed-photo-card.png"), scale: "css" });
   await page.setViewportSize({ width: 390, height: 844 });
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-  await failedCard.screenshot({ path: testInfo.outputPath("failed-photo-card-mobile.png") });
+  expect((await failedCard.boundingBox())!.height).toBeLessThanOrEqual(desktopHeight + 2);
+  await failedCard.screenshot({ path: testInfo.outputPath("failed-photo-card-mobile.png"), scale: "css" });
+  const reason = failedCard.locator("details");
+  await reason.locator("summary").click();
+  await expect(reason).toHaveAttribute("open", "");
+  await expect(reason.getByRole("alert")).toContainText("Try a clear photo of your meal");
+  await expect(reason.getByRole("alert")).toHaveCSS("white-space", "normal");
+  expect((await failedCard.boundingBox())!.height).toBeGreaterThan(desktopHeight);
+  await failedCard.screenshot({ path: testInfo.outputPath("failed-photo-card-mobile-expanded.png"), scale: "css" });
+  await reason.locator("summary").click();
   await page.setViewportSize(priorViewport);
   await expect(meals.getByRole("button", { name: "Retry analysis" })).toBeVisible();
   await meals.getByRole("button", { name: "Retry analysis" }).click();

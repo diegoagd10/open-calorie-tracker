@@ -2379,7 +2379,7 @@ test("photo meals share the food and water timeline in event order and expose co
       expect(nodeText(row.findByProps({ className: styles.foodEntryContent }))).toContain("Analyzing photo");
       expect(nodeText(row)).toContain("Previous nutrition retained");
     } else if (terminalError) {
-      expect(row.findAllByType("details")).toHaveLength(0);
+      expect(row.findAllByType("details")).toHaveLength(1);
       expect(row.findByProps({ className: `${styles.foodEntryCard} ${styles.photoRecoveryCard}` })).toBeDefined();
       expect(nodeText(row.findByProps({ role: "status" }))).toContain("Analysis");
       expect(nodeText(row.findByType("a"))).toBe("Open meal details");

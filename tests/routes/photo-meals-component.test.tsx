@@ -223,7 +223,7 @@ test("failed photo rows keep a placeholder and expose recovery using the saved p
   expect(text()).toContain("Plate photo");
   expect(text()).toContain("Analysis failed");
   expect(renderer.root.findAllByType("img")).toHaveLength(0);
-  expect(renderer.root.findAllByType("details")).toHaveLength(0);
+  expect(renderer.root.findAllByType("details")).toHaveLength(1);
   expect(renderer.root.findAll(node => typeof node.props.className === "string" && node.props.className.includes("recoveryCard"))).toHaveLength(1);
   expect(text()).not.toContain("kcal");
   expect(text()).toContain("Analysis timed out");

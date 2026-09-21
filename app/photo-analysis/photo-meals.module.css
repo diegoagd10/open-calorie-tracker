@@ -27,8 +27,11 @@
   border-color: var(--rule);
   background: var(--surface);
 }
-.recoveryCard .failureReason {
+.failureReasonDesktop.failureReasonDesktop {
   white-space: normal;
+}
+.failureReasonMobile {
+  display: none;
 }
 .inlineStatus {
   grid-column: 3;
@@ -76,13 +79,45 @@
   height: 1.2rem;
 }
 @media (max-width: 540px) {
-  .recoveryCard {
-    grid-template-columns: 2.75rem minmax(0, 1fr);
-    grid-template-rows: auto minmax(3.25rem, auto) auto;
+  .failureReasonDesktop.failureReasonDesktop {
+    display: none;
   }
-  .inlineStatus {
-    grid-column: 2;
-    grid-row: 3;
+  .failureReasonMobile {
+    display: block;
+    min-width: 0;
+    color: var(--muted);
+    font-size: 0.66rem;
+  }
+  .failureReasonMobile summary {
+    overflow: hidden;
+    max-width: 100%;
+    text-decoration: underline dotted;
+    text-underline-offset: 0.15rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .failureReasonMobile summary::marker {
+    content: "";
+  }
+  .failureReasonPreview {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .failureReasonClose,
+  .failureReasonMobile[open] .failureReasonPreview {
+    display: none;
+  }
+  .failureReasonMobile[open] .failureReasonClose {
+    display: block;
+  }
+  .failureReasonMobile.failureReasonMobile small {
+    display: block;
+    margin-top: 0.35rem;
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
   }
 }
 .rowSummary::-webkit-details-marker {

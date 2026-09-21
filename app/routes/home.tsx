@@ -28,7 +28,7 @@ import {
 } from "../auth/http.server";
 import { getPhotoAnalysisReadiness, getPhotoAnalysisService } from "../photo-analysis/runtime.server";
 import { presentPhotoAnalysisReadiness } from "./photo-analysis-readiness";
-import { PhotoMealCard, PhotoMealStatus, PhotoCorrection, usePhotoMealPolling, usePhotoUpload } from "./photo-meals";
+import { PhotoMealCard, PhotoMealStatus, PhotoCorrection, PhotoFailureReason, usePhotoMealPolling, usePhotoUpload } from "./photo-meals";
 import { DateRail } from "../date-rail";
 import { AppNavigation } from "../app-navigation";
 import { isTestEnvironment } from "../runtime.server";
@@ -3302,6 +3302,7 @@ function FoodTimelineEntry({ entry, photoMeal, csrfToken, copyKey }: {
   const startingCorrection = correction.state !== "idle";
   const active = startingCorrection || photoMeal?.status === "active";
   const unsuccessful = !active && photoMeal !== undefined && photoMeal.status !== "succeeded";
+  const ContentTag = unsuccessful ? "div" : "span";
   const expandable = active || unsuccessful;
   const className = copyKey && !expandable
     ? `${styles.foodEntryCard} ${styles.foodEntryCardWithMenu}`
@@ -3319,7 +3320,7 @@ function FoodTimelineEntry({ entry, photoMeal, csrfToken, copyKey }: {
       >
         <UiIcon name="utensils" />
       </span>
-      <span className={styles.foodEntryContent}>
+      <ContentTag className={styles.foodEntryContent}>
         <strong>{entry.name}</strong>
         <small>
           {entry.provider === "open-food-facts"
@@ -3338,15 +3339,13 @@ function FoodTimelineEntry({ entry, photoMeal, csrfToken, copyKey }: {
             <>{entry.selectedMeasurementLabel} × {entry.quantityMicrounits / 1_000_000}</>
           )}
         </small>
-        {unsuccessful && photoMeal.error ? (
-          <small className={styles.photoFailureReason} role="alert">{photoMeal.error}</small>
-        ) : null}
+        {unsuccessful && photoMeal.error ? <PhotoFailureReason error={photoMeal.error} /> : null}
         {unsuccessful ? (
           <Link className={styles.photoRecoveryLink} data-entry-editor-trigger to={`${foodLogHref(entry.foodLogDate)}&entry=${entry.id}`}>
             Open meal details
           </Link>
         ) : null}
-      </span>
+      </ContentTag>
       <span className={styles.foodEntryEnergy}>
         {formatEnergy(entry.energyMilliKcal)}{" "}
         <small>kcal</small>
