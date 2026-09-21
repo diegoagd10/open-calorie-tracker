@@ -2991,7 +2991,7 @@ function ManualFoodStage({
           <div className={styles.foodDetailGrid}>
             <div className={styles.stackedField}>
               <span>Measurement</span>
-              <strong>1 serving</strong>
+              <strong className={styles.readOnlyMeasurement}>1 serving</strong>
               <small>Serving values are used without weight conversion.</small>
             </div>
             <label className={styles.stackedField}>
