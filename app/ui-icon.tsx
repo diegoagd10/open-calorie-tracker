@@ -2,6 +2,8 @@ export type UiIconName =
   | "barcode"
   | "calendar"
   | "camera"
+  | "copy"
+  | "delete"
   | "external"
   | "help"
   | "info"
@@ -30,6 +32,15 @@ export function UiIcon({ name }: { name: UiIconName }) {
         <>
           <path d="M8 5l1.5-2h5L16 5h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Z" />
           <circle cx="12" cy="13" r="4" />
+        </>
+      ) : name === "copy" ? (
+        <>
+          <rect height="13" rx="2" width="13" x="8" y="8" />
+          <path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3" />
+        </>
+      ) : name === "delete" ? (
+        <>
+          <path d="M4 7h16M9 7V4h6v3M6 7l1 14h10l1-14M10 11v6M14 11v6" />
         </>
       ) : name === "search" ? (
         <>

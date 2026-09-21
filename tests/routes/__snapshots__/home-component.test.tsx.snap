@@ -30,11 +30,11 @@ exports[`home distinguishes past, future, no-goal, and incomplete summaries 1`] 
 
 exports[`home distinguishes past, future, no-goal, and incomplete summaries 2`] = `"560e4f57dd4dfb7791f22f31caed4acf47a54e6590853d87cdc4d3eb56be8896"`;
 
-exports[`home food editor exposes saved fields, recalculation, and delete confirmation 1`] = `"0f6e2d45c5df1a20e1931b85829b76ed1b00c6937942a5760f18100b1c300360"`;
+exports[`home food editor exposes saved fields, recalculation, and delete confirmation 1`] = `"e5a441bfe98a6fb685fa8dd0297a0723cf239fc689383b6136f82cb4a927dd51"`;
 
-exports[`home food editor exposes saved fields, recalculation, and delete confirmation 2`] = `"e354918e33caec3d78ca8d30586bd2fcbc42ad339793a952e3b7172e620a924b"`;
+exports[`home food editor exposes saved fields, recalculation, and delete confirmation 2`] = `"5af363cde2403ce03b403ddb456d0a9fb8453892e8f05be4e70ee4423505beb3"`;
 
-exports[`home food editor exposes saved fields, recalculation, and delete confirmation 3`] = `"bdd60da40a015d13d5866d63b5f3f7cc6660a051514f1096b20c0e88374e9d71"`;
+exports[`home food editor exposes saved fields, recalculation, and delete confirmation 3`] = `"f990f6b3e6adf132058f83bbcc999ca748a900e4c4edb3ed778459ae4301f728"`;
 
 exports[`home renders calendar navigation, selected dates, and future days 1`] = `"5168090024909a538456e0ee671e2ecb5eec77fd40bf40eb9bf7096d7a8e64a8"`;
 
@@ -44,7 +44,7 @@ exports[`home renders food and water timeline entries with factual units 1`] = `
 
 exports[`home renders submission and navigation pending states 1`] = `"7f815e255cd5a0a287c8c30f80292f1b3a2b54dbd57eeb43c4b676e1d5a8ff5e"`;
 
-exports[`home renders submission and navigation pending states 2`] = `"1041e8e14c3883697640163e317abeb6c5d712230f735700e3fc1eff01be8cee"`;
+exports[`home renders submission and navigation pending states 2`] = `"e0b4b55b244b54191a6bfae6124e57f11c0731195fa198990cff7cb6571c1958"`;
 
 exports[`home renders submission and navigation pending states 3`] = `"ae477d1e29e8470676507bca710f8e652f77303b89ef3ddbcb8e82229c9fee1c"`;
 
