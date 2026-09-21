@@ -55,6 +55,7 @@ test("a user can add, inspect, edit, and delete one Water Event", async ({
 
   const editDialog = page.getByRole("dialog", { name: "Edit Water Event" });
   await expect(editDialog).toBeVisible();
+  await expect(editDialog.getByLabel("Amount fl oz")).toHaveValue("16");
   await editDialog.getByRole("button", { name: /Exact amount.*Custom/ }).click();
   await editDialog.getByLabel("Amount fl oz").fill("20");
   await editDialog.getByLabel("Event time").fill("09:15");
@@ -155,4 +156,71 @@ test("metric display converts the canonical US water presets", async ({
 
   await expect(page.getByRole("link", { name: /Water.*236\.588 ml/ })).toBeVisible();
   await expect(page.getByText(/1 equivalent glass · 8 fl oz \/ 237 ml/)).toBeVisible();
+
+  await page.getByRole("button", { name: "Add Water" }).click();
+  await dialog.getByRole("button", { name: /^Add one 473 ml Bottle/ }).click();
+  await dialog.getByRole("button", { name: /^Add one 473 ml Bottle/ }).click();
+  await dialog.getByRole("button", { name: /^Add one 237 ml Glass/ }).click();
+  await dialog.getByRole("button", { name: "Add 1,183 ml" }).click();
+  const grouped = page.getByRole("link", { name: /473 ml Bottle × 2.*237 ml Glass × 1.*1,182\.94 ml/ });
+  await expect(grouped).toBeVisible();
+});
+
+test("repeated and mixed preset taps save one Water Event with a breakdown", async ({
+  context,
+  page,
+}) => {
+  await context.setExtraHTTPHeaders({ "X-Test-Client-IP": "203.0.113.93" });
+  await completeSetupForTestUser(page, "water.grouped.full.stack");
+
+  await page.getByRole("button", { name: "Add Water" }).click();
+  const addDialog = page.getByRole("dialog", { name: "Add Water" });
+  await expect(addDialog.getByRole("button", { name: "Select water amount" })).toBeDisabled();
+  await addDialog.getByRole("button", { name: /^Add one 16 fl oz Bottle/ }).click();
+  await addDialog.getByRole("button", { name: /^Add one 16 fl oz Bottle/ }).click();
+  await addDialog.getByRole("button", { name: /^Add one 8 fl oz Glass/ }).click();
+  await expect(addDialog.getByRole("button", { name: "Add 40 fl oz" })).toBeEnabled();
+  await addDialog.getByRole("button", { name: "Add 40 fl oz" }).click();
+
+  const waterEntries = page.locator("[data-water-editor-trigger]");
+  await expect(waterEntries).toHaveCount(1);
+  await expect(waterEntries.first()).toContainText("16 fl oz Bottle × 2");
+  await expect(waterEntries.first()).toContainText("8 fl oz Glass × 1");
+  await expect(waterEntries.first()).toContainText("40 fl oz");
+
+  await waterEntries.first().click();
+  const editDialog = page.getByRole("dialog", { name: "Edit Water Event" });
+  await expect(editDialog.getByLabel("Amount fl oz")).toHaveValue("40");
+  await editDialog.getByLabel("Event time").fill("09:15");
+  await editDialog.getByRole("button", { name: "Save changes" }).click();
+  await expect(waterEntries.first()).toContainText("16 fl oz Bottle × 2");
+
+  await waterEntries.first().click();
+  await editDialog.getByLabel("Amount fl oz").fill("41");
+  await editDialog.getByRole("button", { name: "Save changes" }).click();
+  await expect(waterEntries.first()).toContainText("41 fl oz");
+  await expect(waterEntries.first()).not.toContainText("Bottle × 2");
+});
+
+test("Exact receives the selected total and returning to presets starts at zero", async ({
+  context,
+  page,
+}) => {
+  await context.setExtraHTTPHeaders({ "X-Test-Client-IP": "203.0.113.94" });
+  await completeSetupForTestUser(page, "water.exact.switch");
+
+  await page.getByRole("button", { name: "Add Water" }).click();
+  const dialog = page.getByRole("dialog", { name: "Add Water" });
+  await dialog.getByRole("button", { name: /^Add one 8 fl oz Glass/ }).click();
+  await dialog.getByRole("button", { name: /^Add one 8 fl oz Glass/ }).click();
+  await dialog.getByRole("button", { name: "Remove one 8 fl oz Glass" }).click();
+  await expect(dialog.getByText("1 serving · 8 fl oz")).toBeVisible();
+
+  await dialog.getByRole("button", { name: /Exact amount.*Custom/ }).click();
+  await expect(dialog.getByLabel("Amount fl oz")).toHaveValue("8");
+  await dialog.getByRole("button", { name: /^Return to preset sizes using 16 fl oz Bottle/ }).click();
+  await expect(dialog.getByText("Tap a size to add a serving.")).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Select water amount" })).toBeDisabled();
+  await dialog.getByRole("button", { name: /^Add one 16 fl oz Bottle/ }).click();
+  await expect(dialog.getByText("1 serving · 16 fl oz")).toBeVisible();
 });
