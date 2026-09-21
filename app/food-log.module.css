@@ -2027,6 +2027,11 @@
 }
 
 @media (max-width: 560px) {
+  .editHeaderActions {
+    justify-content: flex-end;
+    width: 100%;
+  }
+
   .floatingUtilities {
     align-items: flex-end;
     flex-direction: column;

@@ -47,7 +47,10 @@ export function UiIcon({ name }: { name: UiIconName }) {
           <path d="M4 7h16M9 7V4h6v3M6 7l1 14h10l1-14M10 11v6M14 11v6" />
         </>
       ) : name === "save" ? (
-        <path d="m4 12 5 5L20 6" />
+        <>
+          <path d="M3 3h14l4 4v14H3V3Z" />
+          <path d="M7 3v6h9V3M7 21v-8h10v8M14 5v3" />
+        </>
       ) : name === "search" ? (
         <>
           <circle cx="10.5" cy="10.5" r="6.5" />

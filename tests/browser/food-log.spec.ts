@@ -2013,6 +2013,9 @@ for (const width of [390, 430]) {
       expect(bounds!.y - titleBounds!.y).toBeLessThan(110);
       expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(width);
     }
+    const saveBounds = await save.boundingBox();
+    expect(saveBounds).not.toBeNull();
+    expect(width - (saveBounds!.x + saveBounds!.width)).toBeLessThanOrEqual(20);
     await editor.evaluate((element) => { element.scrollTop = element.scrollHeight; });
     const scrolledCopyBounds = await copyTrigger.boundingBox();
     expect(scrolledCopyBounds).not.toBeNull();
