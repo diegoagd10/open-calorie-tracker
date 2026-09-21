@@ -232,7 +232,7 @@ export function PhotoMealCard({
     );
   }
   return (
-    <article className={styles.mealRow} aria-label={title} aria-busy={active || undefined}>
+    <article className={styles.mealRow} aria-label={title} aria-busy="true">
       <details>
         <summary className={`${foodStyles.foodEntryCard} ${styles.rowSummary}`}>
           {content}
@@ -291,22 +291,22 @@ export function PhotoMealStatus({ meal, csrfToken, inline = false }: { meal: Pho
         ) : meal.status !== "succeeded" ? (
           <>
             <button
-              aria-label={inline ? "Retry analysis" : undefined}
+              aria-label="Retry analysis"
               disabled={action.state !== "idle"}
               name="intent"
-              title={inline ? "Retry analysis" : undefined}
+              title="Retry analysis"
               value="retry"
             >
-              {inline ? <UiIcon name="retry" /> : "Retry analysis"}
+              <UiIcon name="retry" />
             </button>
             <button
-              aria-label={inline ? "Delete photo meal" : undefined}
+              aria-label="Delete photo meal"
               disabled={action.state !== "idle"}
               name="intent"
-              title={inline ? "Delete photo meal" : undefined}
+              title="Delete photo meal"
               value="delete"
             >
-              {inline ? <UiIcon name="trash" /> : "Delete photo meal"}
+              <UiIcon name="trash" />
             </button>
           </>
         ) : null}

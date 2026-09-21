@@ -238,6 +238,19 @@ test("failed photo rows keep a placeholder and expose recovery using the saved p
 });
 
 test.each([
+  ["canceled", "Analysis canceled"],
+  ["interrupted", "Analysis interrupted"],
+] as const)("%s photo rows explain the stopped analysis and retain recovery", async (status, label) => {
+  await render([{ ...meal, entryId: null, name: null, result: null, status, error: null, energyMilliKcal: null }]);
+  expect(text()).toContain(label);
+  expect(renderer.root.findAllByType("button").map(button => button.props["aria-label"])).toEqual([
+    "Retry analysis",
+    "Delete photo meal",
+  ]);
+  expect(renderer.root.findAllByType("details")).toHaveLength(0);
+});
+
+test.each([
   { url: "blob:photo-preview", src: "blob:photo-preview" },
   { url: 'blob:photo-preview<"&>', src: "blob:photo-preview%3C%22&%3E" },
 ])("capture uploads once, renders the encoded preview $src, and retries the identical request", async ({ url, src }) => {
