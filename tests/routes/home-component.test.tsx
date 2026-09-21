@@ -1980,7 +1980,7 @@ test("home renders submission and navigation pending states", async () => {
   );
   expect(semanticDom(pendingEditor)).toMatchSnapshot();
   expect(pendingEditor.root.findByType("fieldset").props.disabled).toBe(true);
-  expect(allText(pendingEditor)).toContain("Saving…");
+  expect(pendingEditor.root.findByProps({ "aria-label": "Saving changes" }).props.disabled).toBe(true);
   await act(async () => pendingEditor.unmount());
 
   const deleteFood = new FormData();
@@ -2003,7 +2003,7 @@ test("home renders submission and navigation pending states", async () => {
     { formData: wrongFood, to: "/" },
   );
   expect(idleEditor.root.findByType("fieldset").props.disabled).toBe(false);
-  expect(allText(idleEditor)).toContain("Save changes");
+  expect(idleEditor.root.findByProps({ "aria-label": "Save changes" }).props.disabled).toBe(false);
   await act(async () => idleEditor.unmount());
 
   const createWater = new FormData();

@@ -2263,18 +2263,25 @@ function FoodEntryEditorDialog({
             >
               <UiIcon name="delete" />
             </button>
-            <Link className={styles.secondaryButton} to={closeHref}>
-              Cancel
+            <Link
+              aria-label="Cancel"
+              className={styles.editIconButton}
+              title="Cancel"
+              to={closeHref}
+            >
+              <UiIcon name="cancel" />
             </Link>
             <button
-              className={styles.primaryButton}
+              aria-label={pendingIntent === "update-food" ? "Saving changes" : "Save changes"}
+              className={`${styles.editIconButton} ${styles.editSaveButton}`}
               disabled={pending}
               form="food-entry-edit-form"
               name="intent"
+              title={pendingIntent === "update-food" ? "Saving changes" : "Save changes"}
               type="submit"
               value="update-food"
             >
-              {pendingIntent === "update-food" ? "Saving…" : "Save changes"}
+              <UiIcon name="save" />
             </button>
           </div>
         </div>

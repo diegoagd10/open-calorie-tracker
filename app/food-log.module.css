@@ -969,6 +969,7 @@
   color: var(--ink);
   background: var(--surface);
   cursor: pointer;
+  text-decoration: none;
 }
 
 .editIconButton svg {
@@ -985,6 +986,22 @@
 .editDeleteButton {
   border-color: var(--danger-border);
   color: var(--danger);
+}
+
+.editSaveButton {
+  border-color: var(--green);
+  color: white;
+  background: var(--green-dark);
+}
+
+.editSaveButton:hover,
+.editSaveButton:focus-visible {
+  background: var(--green-hover);
+}
+
+.editHeaderActions button:disabled {
+  cursor: wait;
+  opacity: 0.65;
 }
 
 .editorCopyMenu {

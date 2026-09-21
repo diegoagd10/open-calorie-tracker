@@ -1479,9 +1479,9 @@ test("an authenticated user can correct and delete one Food Entry", async ({
   };
   await page.route("**/*", delayUpdate);
   const saveClick = page.getByRole("button", { name: "Save changes" }).click();
-  await expect(page.getByRole("button", { name: "Saving…" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Saving changes" })).toBeDisabled();
   await expectFoodEntryEditorResponsive(page);
-  await expect(page.getByRole("button", { name: "Saving…" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Saving changes" })).toBeDisabled();
   releaseUpdate();
   await saveClick;
   await page.unroute("**/*", delayUpdate);
@@ -2139,7 +2139,7 @@ test("delete pending state names only the destructive mutation", async ({
     await expect(
       page.getByRole("button", { name: "Save changes" }),
     ).toBeDisabled();
-    await expect(page.getByRole("button", { name: "Saving…" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Saving changes" })).toHaveCount(0);
   } finally {
     releaseDelete();
   }
