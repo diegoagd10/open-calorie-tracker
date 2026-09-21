@@ -198,6 +198,7 @@ export function PhotoMealCard({
           {active ? <span className={foodStyles.photoActivityDot} aria-hidden="true" /> : null}
           {status}
         </small>
+        {unsuccessful && meal.error ? <small className={styles.failureReason} role="alert">{meal.error}</small> : null}
       </span>
       {meal.energyMilliKcal !== null ? (
         <span className={foodStyles.foodEntryEnergy}>
@@ -219,6 +220,16 @@ export function PhotoMealCard({
       </article>
     );
   }
+  if (unsuccessful) {
+    return (
+      <article className={styles.mealRow} aria-label={title}>
+        <div className={`${foodStyles.foodEntryCard} ${styles.rowSummary} ${styles.recoveryCard}`}>
+          {content}
+          <PhotoMealStatus meal={meal} csrfToken={csrfToken} inline />
+        </div>
+      </article>
+    );
+  }
   return (
     <article className={styles.mealRow} aria-label={title} aria-busy={active || undefined}>
       <details>
@@ -233,17 +244,17 @@ export function PhotoMealCard({
   );
 }
 
-export function PhotoMealStatus({ meal, csrfToken }: { meal: PhotoMeal; csrfToken: string }) {
+export function PhotoMealStatus({ meal, csrfToken, inline = false }: { meal: PhotoMeal; csrfToken: string; inline?: boolean }) {
   const action = useFetcher<PhotoAction>();
   const active = meal.status === "active";
   return (
-    <div className={styles.status}>
+    <div className={inline ? styles.inlineStatus : styles.status}>
       {active && meal.entryId ? <small>Previous nutrition retained</small> : null}
-      {meal.error ? <p role="alert">{meal.error}</p> : null}
+      {!inline && meal.error ? <p role="alert">{meal.error}</p> : null}
       <action.Form
         action="/photo-analysis"
         method="post"
-        className={styles.actions}
+        className={`${styles.actions} ${inline ? styles.iconActions : ""}`}
       >
         <input type="hidden" name="csrfToken" value={csrfToken} />
         <input type="hidden" name="id" value={meal.id} />
@@ -264,18 +275,22 @@ export function PhotoMealStatus({ meal, csrfToken }: { meal: PhotoMeal; csrfToke
         ) : meal.status !== "succeeded" ? (
           <>
             <button
+              aria-label={inline ? "Retry analysis" : undefined}
               disabled={action.state !== "idle"}
               name="intent"
+              title={inline ? "Retry analysis" : undefined}
               value="retry"
             >
-              Retry analysis
+              {inline ? <UiIcon name="retry" /> : "Retry analysis"}
             </button>
             <button
+              aria-label={inline ? "Delete photo meal" : undefined}
               disabled={action.state !== "idle"}
               name="intent"
+              title={inline ? "Delete photo meal" : undefined}
               value="delete"
             >
-              Delete photo meal
+              {inline ? <UiIcon name="trash" /> : "Delete photo meal"}
             </button>
           </>
         ) : null}

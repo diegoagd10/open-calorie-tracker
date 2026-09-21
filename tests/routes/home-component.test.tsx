@@ -2372,14 +2372,15 @@ test("photo meals share the food and water timeline in event order and expose co
     expect(row.findAllByType("progress")).toHaveLength(0);
     expect(row.findAllByType("strong").map(nodeText)).toEqual(["Photo dinner"]);
     expect(nodeText(row.findByProps({ className: styles.foodEntryEnergy }))).toBe("59 kcal");
-    const buttons = row.findAllByType("button").map(nodeText);
-    expect(buttons).toEqual(active ? ["Cancel analysis"] : terminalError ? ["Retry analysis", "Delete photo meal"] : ["•••"]);
+    const buttons = row.findAllByType("button");
+    expect(buttons.map(button => button.props["aria-label"] ?? nodeText(button))).toEqual(active ? ["Cancel analysis"] : terminalError ? ["Retry analysis", "Delete photo meal"] : ["More actions for Photo dinner"]);
     if (active) {
       expect(row.findByProps({ className: styles.foodEntryContent }).type).toBe("span");
       expect(nodeText(row.findByProps({ className: styles.foodEntryContent }))).toContain("Analyzing photo");
       expect(nodeText(row)).toContain("Previous nutrition retained");
     } else if (terminalError) {
-      expect(row.findByType("summary").props.className).toBe(styles.foodEntryCard);
+      expect(row.findAllByType("details")).toHaveLength(0);
+      expect(row.findByProps({ className: `${styles.foodEntryCard} ${styles.photoRecoveryCard}` })).toBeDefined();
       expect(nodeText(row.findByProps({ role: "status" }))).toContain("Analysis");
       expect(nodeText(row.findByType("a"))).toBe("Open meal details");
       expect(nodeText(row)).toContain("Correction stopped");

@@ -3338,6 +3338,14 @@ function FoodTimelineEntry({ entry, photoMeal, csrfToken, copyKey }: {
             <>{entry.selectedMeasurementLabel} × {entry.quantityMicrounits / 1_000_000}</>
           )}
         </small>
+        {unsuccessful && photoMeal.error ? (
+          <small className={styles.photoFailureReason} role="alert">{photoMeal.error}</small>
+        ) : null}
+        {unsuccessful ? (
+          <Link className={styles.photoRecoveryLink} data-entry-editor-trigger to={`${foodLogHref(entry.foodLogDate)}&entry=${entry.id}`}>
+            Open meal details
+          </Link>
+        ) : null}
       </span>
       <span className={styles.foodEntryEnergy}>
         {formatEnergy(entry.energyMilliKcal)}{" "}
@@ -3347,7 +3355,12 @@ function FoodTimelineEntry({ entry, photoMeal, csrfToken, copyKey }: {
   );
   return (
     <article aria-busy={active || undefined}>
-      {expandable ? (
+      {unsuccessful && photoMeal ? (
+        <div className={`${styles.foodEntryCard} ${styles.photoRecoveryCard}`}>
+          {content}
+          <PhotoMealStatus meal={photoMeal} csrfToken={csrfToken} inline />
+        </div>
+      ) : expandable ? (
         <details className={styles.photoCorrectionDetails}>
           <summary className={className}>{content}</summary>
           <div className={styles.photoEntryStatus}>
@@ -3356,11 +3369,6 @@ function FoodTimelineEntry({ entry, photoMeal, csrfToken, copyKey }: {
             ) : (
               <p>Starting correction. Previous nutrition retained.</p>
             )}
-            {unsuccessful ? (
-              <Link data-entry-editor-trigger to={`${foodLogHref(entry.foodLogDate)}&entry=${entry.id}`}>
-                Open meal details
-              </Link>
-            ) : null}
           </div>
         </details>
       ) : (

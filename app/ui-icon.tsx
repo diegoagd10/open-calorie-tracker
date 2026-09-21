@@ -9,8 +9,10 @@ export type UiIconName =
   | "log"
   | "plus"
   | "pencil"
+  | "retry"
   | "search"
   | "settings"
+  | "trash"
   | "utensils"
   | "water";
 
@@ -40,6 +42,10 @@ export function UiIcon({ name }: { name: UiIconName }) {
         <path d="M3 7V3h4M17 3h4v4M21 17v4h-4M7 21H3v-4M7 8v8M10 8v8M14 8v8M17 8v8" />
       ) : name === "pencil" ? (
         <path d="m16 3 5 5L9 20l-6 1 1-6ZM13 6l5 5" />
+      ) : name === "retry" ? (
+        <><path d="M20 7v5h-5" /><path d="M4.8 16a8 8 0 1 0 1.6-9.2L4 9" /></>
+      ) : name === "trash" ? (
+        <><path d="M4 7h16M9 7V4h6v3M6 7l1 14h10l1-14M10 11v6M14 11v6" /></>
       ) : name === "lock" ? (
         <>
           <rect height="10" rx="2" width="14" x="5" y="10" />

@@ -223,7 +223,8 @@ test("failed photo rows keep a placeholder and expose recovery using the saved p
   expect(text()).toContain("Plate photo");
   expect(text()).toContain("Analysis failed");
   expect(renderer.root.findAllByType("img")).toHaveLength(0);
-  expect(renderer.root.findByType("summary").props.className).toContain("foodEntryCard");
+  expect(renderer.root.findAllByType("details")).toHaveLength(0);
+  expect(renderer.root.findAll(node => typeof node.props.className === "string" && node.props.className.includes("recoveryCard"))).toHaveLength(1);
   expect(text()).not.toContain("kcal");
   expect(text()).toContain("Analysis timed out");
   expect(text()).toContain("Request rejected");
@@ -232,6 +233,7 @@ test("failed photo rows keep a placeholder and expose recovery using the saved p
     "retry",
     "delete",
   ]);
+  expect(actions.map((button) => button.props["aria-label"])).toEqual(["Retry analysis", "Delete photo meal"]);
   expect(actions.every((button) => button.props.disabled === true)).toBe(true);
 });
 
