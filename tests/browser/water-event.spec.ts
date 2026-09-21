@@ -55,6 +55,7 @@ test("a user can add, inspect, edit, and delete one Water Event", async ({
 
   const editDialog = page.getByRole("dialog", { name: "Edit Water Event" });
   await expect(editDialog).toBeVisible();
+  await expect(editDialog.getByLabel("Amount fl oz")).toHaveValue("16");
   await editDialog.getByRole("button", { name: /Exact amount.*Custom/ }).click();
   await editDialog.getByLabel("Amount fl oz").fill("20");
   await editDialog.getByLabel("Event time").fill("09:15");
@@ -217,7 +218,7 @@ test("Exact receives the selected total and returning to presets starts at zero"
 
   await dialog.getByRole("button", { name: /Exact amount.*Custom/ }).click();
   await expect(dialog.getByLabel("Amount fl oz")).toHaveValue("8");
-  await dialog.getByRole("button", { name: /^Add one 16 fl oz Bottle/ }).click();
+  await dialog.getByRole("button", { name: /^Return to preset sizes using 16 fl oz Bottle/ }).click();
   await expect(dialog.getByText("Tap a size to add a serving.")).toBeVisible();
   await expect(dialog.getByRole("button", { name: "Select water amount" })).toBeDisabled();
   await dialog.getByRole("button", { name: /^Add one 16 fl oz Bottle/ }).click();

@@ -1840,7 +1840,7 @@ test("home water dialogs cover create, presets, exact values, edit, and deletion
   }, { message: "Water validation message" });
   expect(semanticDom(edit)).toMatchSnapshot();
   expect(allText(edit)).toContain("Edit Water Event");
-  expect(input(edit, "waterSelection").props.value).toBe("16");
+  expect(input(edit, "waterSelection").props.value).toBe("exact");
   expect(input(edit, "eventId").props.value).toBe(51);
   expect(input(edit, "waterEventTime").props.defaultValue).toBe("13:15");
   expect(allText(edit)).toContain("Water validation message");

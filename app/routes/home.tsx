@@ -2452,7 +2452,7 @@ function WaterEventDialog({
 }) {
   const event = dialog.mode === "edit" ? dialog.event : undefined;
   const matchingPreset = event
-    ? event.preset8Count + event.preset16Count + event.preset24Count > 1
+    ? event.preset8Count + event.preset16Count + event.preset24Count > 0
       ? undefined
       : (Object.entries(WATER_PRESET_MICROLITERS).find(
         ([, microliters]) => microliters === event.amountMicroliters,
@@ -2572,7 +2572,11 @@ function WaterEventDialog({
                 return (
                   <div className={styles.waterPresetOption} key={preset.selection}>
                     <button
-                      aria-label={!event ? `Add one ${presetAmount} ${unit} ${preset.label}; ${count} selected` : undefined}
+                      aria-label={!event
+                        ? selection === "exact"
+                          ? `Return to preset sizes using ${presetAmount} ${unit} ${preset.label}; counts reset to zero`
+                          : `Add one ${presetAmount} ${unit} ${preset.label}; ${count} selected`
+                        : undefined}
                       aria-pressed={event ? selection === preset.selection : undefined}
                       className={styles.waterPresetButton}
                       data-counted={!event && count > 0 ? "true" : undefined}
@@ -2638,6 +2642,11 @@ function WaterEventDialog({
                   <em>{unit}</em>
                 </span>
               </label>
+            ) : null}
+            {!event && selection === "exact" ? (
+              <p className={styles.waterSelectionSummary}>
+                Tap a size to return to presets, then tap again to add a serving.
+              </p>
             ) : null}
             {event ? (
               <label className={styles.waterTimeField}>
