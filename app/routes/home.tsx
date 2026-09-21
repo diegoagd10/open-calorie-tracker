@@ -2988,7 +2988,7 @@ function ManualFoodStage({
         <input name="intent" type="hidden" value="log-manual-food" />
         <fieldset disabled={pending}>
           <FoodNameField value={fields.name} onChange={name => setFields(current => ({ ...current, name }))} />
-          <div className={styles.foodDetailGrid}>
+          <div className={styles.editNutritionGrid}>
             <div className={styles.stackedField}>
               <span>Measurement</span>
               <strong className={styles.readOnlyMeasurement}>1 serving</strong>
