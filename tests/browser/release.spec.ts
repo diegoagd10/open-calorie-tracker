@@ -321,7 +321,10 @@ test("a second user cannot list, read, edit, or delete another user's records", 
     .evaluate((form) =>
       Object.fromEntries(new FormData(form as HTMLFormElement).entries()),
     );
-  await page.getByRole("link", { name: "Close edit form" }).click();
+  await page
+    .getByRole("dialog", { name: "Edit Food Entry" })
+    .getByRole("link", { name: "Cancel" })
+    .click();
 
   await page.getByRole("button", { name: "Add Water" }).click();
   await page

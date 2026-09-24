@@ -306,7 +306,7 @@ export function PhotoMealStatus({ meal, csrfToken, inline = false }: { meal: Pho
               title="Delete photo meal"
               value="delete"
             >
-              <UiIcon name="trash" />
+              <UiIcon name="delete" />
             </button>
           </>
         ) : null}

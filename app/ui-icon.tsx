@@ -2,6 +2,9 @@ export type UiIconName =
   | "barcode"
   | "calendar"
   | "camera"
+  | "cancel"
+  | "copy"
+  | "delete"
   | "external"
   | "help"
   | "info"
@@ -11,8 +14,8 @@ export type UiIconName =
   | "pencil"
   | "retry"
   | "search"
+  | "save"
   | "settings"
-  | "trash"
   | "utensils"
   | "water";
 
@@ -33,6 +36,22 @@ export function UiIcon({ name }: { name: UiIconName }) {
           <path d="M8 5l1.5-2h5L16 5h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Z" />
           <circle cx="12" cy="13" r="4" />
         </>
+      ) : name === "cancel" ? (
+        <path d="M5 5l14 14M19 5 5 19" />
+      ) : name === "copy" ? (
+        <>
+          <rect height="13" rx="2" width="13" x="8" y="8" />
+          <path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3" />
+        </>
+      ) : name === "delete" ? (
+        <>
+          <path d="M4 7h16M9 7V4h6v3M6 7l1 14h10l1-14M10 11v6M14 11v6" />
+        </>
+      ) : name === "save" ? (
+        <>
+          <path d="M3 3h14l4 4v14H3V3Z" />
+          <path d="M7 3v6h9V3M7 21v-8h10v8M14 5v3" />
+        </>
       ) : name === "search" ? (
         <>
           <circle cx="10.5" cy="10.5" r="6.5" />
@@ -44,8 +63,6 @@ export function UiIcon({ name }: { name: UiIconName }) {
         <path d="m16 3 5 5L9 20l-6 1 1-6ZM13 6l5 5" />
       ) : name === "retry" ? (
         <><path d="M21 12a9 9 0 1 1-3.36-7.03L21 8" /><path d="M21 3v5h-5" /></>
-      ) : name === "trash" ? (
-        <><path d="M4 7h16M9 7V4h6v3M6 7l1 14h10l1-14M10 11v6M14 11v6" /></>
       ) : name === "lock" ? (
         <>
           <rect height="10" rx="2" width="14" x="5" y="10" />

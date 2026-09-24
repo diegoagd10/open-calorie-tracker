@@ -82,12 +82,10 @@ async function expectFoodEntryStatusResponsive(page: Page, message: string) {
 }
 
 async function copyActionIdempotencyKey(
-  page: Page,
   submitButton: Locator,
 ): Promise<string> {
-  return page
-    .locator("form")
-    .filter({ has: submitButton })
+  return submitButton
+    .locator("xpath=ancestor::form")
     .locator('input[name="idempotencyKey"]')
     .inputValue();
 }
@@ -1481,9 +1479,9 @@ test("an authenticated user can correct and delete one Food Entry", async ({
   };
   await page.route("**/*", delayUpdate);
   const saveClick = page.getByRole("button", { name: "Save changes" }).click();
-  await expect(page.getByRole("button", { name: "Saving…" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Saving changes" })).toBeDisabled();
   await expectFoodEntryEditorResponsive(page);
-  await expect(page.getByRole("button", { name: "Saving…" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Saving changes" })).toBeDisabled();
   releaseUpdate();
   await saveClick;
   await page.unroute("**/*", delayUpdate);
@@ -1662,17 +1660,15 @@ test("an authenticated user can copy a historical Food Entry to today", async ({
   });
   await expect(correctedSourceCard).toBeVisible();
 
-  const menuTrigger = page.getByRole("button", {
-    name: "More actions for Reusable yogurt",
-  });
+  await correctedSourceCard.click();
+  const editor = page.getByRole("dialog", { name: "Edit Food Entry" });
+  const menuTrigger = editor.getByRole("button", { name: "Copy entry" });
   await expect(menuTrigger).toBeVisible();
-  await expect(
-    page.getByRole("button", { name: /More actions for/ }),
-  ).toHaveCount(1);
+  await expect(page.getByRole("button", { name: /More actions for/ })).toHaveCount(0);
   await menuTrigger.click();
-  const copyButton = page.getByRole("button", { name: "Copy to today" });
+  const copyButton = editor.getByRole("button", { name: "Copy to today" });
   await expect(copyButton).toBeVisible();
-  const firstIdempotencyKey = await copyActionIdempotencyKey(page, copyButton);
+  const firstIdempotencyKey = await copyActionIdempotencyKey(copyButton);
   const openMenuAccessibility = await new AxeBuilder({ page }).analyze();
   expect(openMenuAccessibility.violations).toEqual([]);
 
@@ -1716,15 +1712,12 @@ test("an authenticated user can copy a historical Food Entry to today", async ({
     page.getByRole("progressbar", { name: "Calorie progress" }),
   ).toHaveAttribute("aria-valuetext", /111\.1 of 2,050 kcal target/);
 
-  const reopenedMenu = page.getByRole("button", {
-    name: "More actions for Reusable yogurt",
-  });
+  await correctedSourceCard.click();
+  const reopenedMenu = page.getByRole("dialog", { name: "Edit Food Entry" })
+    .getByRole("button", { name: "Copy entry" });
   await reopenedMenu.click();
   const laterCopyButton = page.getByRole("button", { name: "Copy to today" });
-  const laterIdempotencyKey = await copyActionIdempotencyKey(
-    page,
-    laterCopyButton,
-  );
+  const laterIdempotencyKey = await copyActionIdempotencyKey(laterCopyButton);
   expect(laterIdempotencyKey).not.toBe(firstIdempotencyKey);
 
   await page.goto("/");
@@ -1735,11 +1728,9 @@ test("an authenticated user can copy a historical Food Entry to today", async ({
   await expect(
     page.getByRole("progressbar", { name: "Calorie progress" }),
   ).toHaveAttribute("aria-valuetext", /111\.1 of 2,050 kcal target/);
-  await expect(
-    page.getByRole("button", { name: /More actions for/ }),
-  ).toHaveCount(0);
   await copiedCard.click();
   const copiedEditor = page.getByRole("dialog", { name: "Edit Food Entry" });
+  await expect(copiedEditor.getByRole("button", { name: "Copy entry" })).toHaveCount(0);
   await expect(copiedEditor.getByLabel("Food name")).toHaveValue(
     "Reusable yogurt",
   );
@@ -1812,9 +1803,11 @@ test("an authenticated user can review and copy a Food Entry to another eligible
   await page.getByRole("link", { name: /Plain nonfat Greek yogurt/ }).click();
   await page.getByRole("button", { name: "Add to Food Log" }).click();
 
-  const menuTrigger = page.getByRole("button", {
-    name: "More actions for Plain nonfat Greek yogurt",
-  });
+  await page.getByRole("link", {
+    name: /Plain nonfat Greek yogurt.*100\.3 kcal/,
+  }).click();
+  const menuTrigger = page.getByRole("dialog", { name: "Edit Food Entry" })
+    .getByRole("button", { name: "Copy entry" });
   await menuTrigger.click();
   await expect(page.getByRole("button", { name: "Copy to today" })).toBeVisible();
   const copyToDateLink = page.getByRole("link", {
@@ -1854,12 +1847,18 @@ test("an authenticated user can review and copy a Food Entry to another eligible
 
   await dialog.getByRole("link", { name: "Cancel" }).click();
   await expect(page).toHaveURL("/?date=2026-08-26");
-  await expect(menuTrigger).toBeFocused();
+  await expect(page.getByRole("link", {
+    name: /Plain nonfat Greek yogurt.*100\.3 kcal/,
+  })).toBeFocused();
   await expect(
     page.getByRole("link", { name: /Plain nonfat Greek yogurt.*100\.3 kcal/ }),
   ).toHaveCount(1);
 
-  await menuTrigger.click();
+  await page.getByRole("link", {
+    name: /Plain nonfat Greek yogurt.*100\.3 kcal/,
+  }).click();
+  await page.getByRole("dialog", { name: "Edit Food Entry" })
+    .getByRole("button", { name: "Copy entry" }).click();
   await page.getByRole("link", { name: "Copy to another date…" }).click();
   dialog = page.getByRole("dialog", {
     name: "Copy Plain nonfat Greek yogurt",
@@ -1927,9 +1926,11 @@ test("an authenticated user can review and copy a Food Entry to another eligible
   ).toHaveAttribute("aria-valuetext", /100\.3 of 2,050 kcal target/);
 
   await page.goto("/?date=2026-08-26");
-  await page
-    .getByRole("button", { name: "More actions for Plain nonfat Greek yogurt" })
-    .click();
+  await page.getByRole("link", {
+    name: /Plain nonfat Greek yogurt.*100\.3 kcal/,
+  }).click();
+  await page.getByRole("dialog", { name: "Edit Food Entry" })
+    .getByRole("button", { name: "Copy entry" }).click();
   await page.getByRole("link", { name: "Copy to another date…" }).click();
   dialog = page.getByRole("dialog", {
     name: "Copy Plain nonfat Greek yogurt",
@@ -1951,9 +1952,11 @@ test("an authenticated user can review and copy a Food Entry to another eligible
   ).toHaveAttribute("aria-valuetext", /200\.6 of 2,050 kcal target/);
 
   await page.goto("/?date=2026-08-26");
-  await page
-    .getByRole("button", { name: "More actions for Plain nonfat Greek yogurt" })
-    .click();
+  await page.getByRole("link", {
+    name: /Plain nonfat Greek yogurt.*100\.3 kcal/,
+  }).click();
+  await page.getByRole("dialog", { name: "Edit Food Entry" })
+    .getByRole("button", { name: "Copy entry" }).click();
   await page.getByRole("link", { name: "Copy to another date…" }).click();
   dialog = page.getByRole("dialog", {
     name: "Copy Plain nonfat Greek yogurt",
@@ -1974,7 +1977,7 @@ test("an authenticated user can review and copy a Food Entry to another eligible
 });
 
 for (const width of [390, 430]) {
-  test(`a historical Food Entry copy menu remains fully actionable above mobile navigation at ${width}×844`, async ({
+  test(`historical Food Entry actions are visible at the top of the editor at ${width}×844`, async ({
     context,
     page,
   }) => {
@@ -1993,12 +1996,33 @@ for (const width of [390, 430]) {
     await page.getByRole("link", { name: /Plain nonfat Greek yogurt/ }).click();
     await page.getByRole("button", { name: "Add to Food Log" }).click();
 
-    await page
-      .getByRole("button", {
-        name: "More actions for Plain nonfat Greek yogurt",
-      })
-      .click();
-    const copyToDate = page.getByRole("link", {
+    await page.getByRole("link", {
+      name: /Plain nonfat Greek yogurt.*100\.3 kcal/,
+    }).click();
+    const editor = page.getByRole("dialog", { name: "Edit Food Entry" });
+    const copyTrigger = editor.getByRole("button", { name: "Copy entry" });
+    const deleteTrigger = editor.getByRole("button", { name: "Delete entry" });
+    const save = editor.getByRole("button", { name: "Save changes" });
+    const cancel = editor.getByRole("link", { name: "Cancel" });
+    const titleBounds = await editor.getByRole("heading", { name: "Edit Food Entry" }).boundingBox();
+    expect(titleBounds).not.toBeNull();
+    for (const action of [copyTrigger, deleteTrigger, save, cancel]) {
+      await expect(action).toBeVisible();
+      const bounds = await action.boundingBox();
+      expect(bounds).not.toBeNull();
+      expect(bounds!.y - titleBounds!.y).toBeLessThan(110);
+      expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(width);
+    }
+    const saveBounds = await save.boundingBox();
+    expect(saveBounds).not.toBeNull();
+    expect(width - (saveBounds!.x + saveBounds!.width)).toBeLessThanOrEqual(20);
+    await editor.evaluate((element) => { element.scrollTop = element.scrollHeight; });
+    const scrolledCopyBounds = await copyTrigger.boundingBox();
+    expect(scrolledCopyBounds).not.toBeNull();
+    expect(scrolledCopyBounds!.y).toBeGreaterThanOrEqual(0);
+    expect(scrolledCopyBounds!.y + scrolledCopyBounds!.height).toBeLessThan(844);
+    await copyTrigger.click();
+    const copyToDate = editor.getByRole("link", {
       name: "Copy to another date…",
     });
     const mobileNavigation = page.getByRole("navigation", {
@@ -2118,7 +2142,7 @@ test("delete pending state names only the destructive mutation", async ({
     await expect(
       page.getByRole("button", { name: "Save changes" }),
     ).toBeDisabled();
-    await expect(page.getByRole("button", { name: "Saving…" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Saving changes" })).toHaveCount(0);
   } finally {
     releaseDelete();
   }
