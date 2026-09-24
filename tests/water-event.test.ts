@@ -147,6 +147,99 @@ test.each([
   },
 );
 
+test("one mixed preset operation creates one Water Event with a serving breakdown", async () => {
+  const database = await setupDatabase();
+  const client = database.getClient();
+  const userId = insertConfiguredUser(client, "water.mixed.presets");
+  const service = new WaterEventService(
+    client,
+    () => new Date("2026-08-29T18:45:30.000Z"),
+  );
+
+  const event = service.create(userId, {
+    foodLogDate: "2026-08-29",
+    selection: "presets",
+    counts: { "8": 1, "16": 2, "24": 0 },
+  });
+  const log = new FoodLogService(client).read(userId, "2026-08-29");
+  if (!log) throw new Error("Expected a food log");
+
+  expect(event).toMatchObject({
+    amountMicroliters: 1_182_940,
+    preset8Count: 1,
+    preset16Count: 2,
+    preset24Count: 0,
+  });
+  expect(log.waterEvents).toHaveLength(1);
+  expect(log.waterTotalMicroliters).toBe(1_182_940);
+  database.close();
+});
+
+test("editing only the time preserves the preset breakdown, while changing the total clears it", async () => {
+  const database = await setupDatabase();
+  const client = database.getClient();
+  const userId = insertConfiguredUser(client, "water.grouped.edit");
+  const service = new WaterEventService(
+    client,
+    () => new Date("2026-08-29T18:45:30.000Z"),
+  );
+  const event = service.create(userId, {
+    foodLogDate: "2026-08-29",
+    selection: "presets",
+    counts: { "8": 1, "16": 2, "24": 0 },
+  });
+
+  const retimed = service.update(userId, event.id, {
+    amount: "40",
+    expectedUpdatedAt: event.updatedAt,
+    foodLogDate: event.foodLogDate,
+    localEventTime: "09:15",
+    selection: "exact",
+  });
+  expect(retimed).toMatchObject({
+    amountMicroliters: 1_182_940,
+    localEventTime: "09:15:00",
+    preset8Count: 1,
+    preset16Count: 2,
+  });
+
+  const changed = service.update(userId, event.id, {
+    amount: "41",
+    expectedUpdatedAt: retimed.updatedAt,
+    foodLogDate: event.foodLogDate,
+    localEventTime: "09:15",
+    selection: "exact",
+  });
+  expect(changed).toMatchObject({
+    amountMicroliters: 1_212_515,
+    preset8Count: 0,
+    preset16Count: 0,
+    preset24Count: 0,
+  });
+  database.close();
+});
+
+test("preset operations require whole servings within the Exact edit limit", async () => {
+  const database = await setupDatabase();
+  const client = database.getClient();
+  const userId = insertConfiguredUser(client, "water.grouped.bounds");
+  const service = new WaterEventService(client);
+
+  for (const counts of [
+    { "8": 0, "16": 0, "24": 0 },
+    { "8": 0, "16": 0, "24": 21 },
+    { "8": 1.5, "16": 0, "24": 0 },
+  ]) {
+    expect(() => service.create(userId, {
+      counts,
+      foodLogDate: "2026-08-29",
+      selection: "presets",
+    })).toThrow(InvalidWaterEventInputError);
+  }
+
+  database.close();
+});
+
 test("retroactive Water Events start at noon and advance newest-first", async () => {
   const database = await setupDatabase();
   const client = database.getClient();

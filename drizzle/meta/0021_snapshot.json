@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "8f8088fb-f9b4-450a-8dcf-85f5873abd3a",
+  "id": "68c36d8e-3a5d-4e47-b667-d3f6a33dae73",
   "prevId": "f0ae9637-724c-4ac8-b0b0-4b943b96ec02",
   "tables": {
     "application_metadata": {
@@ -903,89 +903,6 @@
       "uniqueConstraints": {},
       "checkConstraints": {}
     },
-    "saved_foods": {
-      "name": "saved_foods",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "integer",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": true
-        },
-        "user_id": {
-          "name": "user_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "source_entry_id": {
-          "name": "source_entry_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "name": {
-          "name": "name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "snapshot": {
-          "name": "snapshot",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        }
-      },
-      "indexes": {
-        "saved_foods_user_source_unique": {
-          "name": "saved_foods_user_source_unique",
-          "columns": [
-            "user_id",
-            "source_entry_id"
-          ],
-          "isUnique": true
-        },
-        "saved_foods_user_name_index": {
-          "name": "saved_foods_user_name_index",
-          "columns": [
-            "user_id",
-            "name"
-          ],
-          "isUnique": false
-        }
-      },
-      "foreignKeys": {
-        "saved_foods_user_id_users_id_fk": {
-          "name": "saved_foods_user_id_users_id_fk",
-          "tableFrom": "saved_foods",
-          "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {}
-    },
     "sessions": {
       "name": "sessions",
       "columns": {
@@ -1257,6 +1174,30 @@
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false
+        },
+        "preset_8_count": {
+          "name": "preset_8_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "preset_16_count": {
+          "name": "preset_16_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "preset_24_count": {
+          "name": "preset_24_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
         },
         "local_event_time": {
           "name": "local_event_time",

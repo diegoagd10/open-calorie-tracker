@@ -32,7 +32,9 @@ function readRepresentativeData(client: ApplicationDatabaseClient) {
       usernameNormalized: string;
     }>(sql`SELECT id, username_normalized AS usernameNormalized,
       created_at AS createdAt FROM users ORDER BY id`),
-    waterEvents: client.select().from(schema.waterEvents).all(),
+    waterEvents: client.all(sql`SELECT id, user_id, food_log_date,
+      amount_microliters, local_event_time, created_at, updated_at
+      FROM water_events ORDER BY id`),
   };
 }
 
@@ -60,7 +62,7 @@ test("startup applies the initial migration and configures writable SQLite stora
     foreignKeysEnabled: true,
     journalMode: "wal",
     migrationsCurrent: true,
-    schemaVersion: "19",
+    schemaVersion: "20",
     writable: true,
   });
 
@@ -82,7 +84,7 @@ test("starting twice preserves the applied migration state", async () => {
   const replacementStartup = openApplicationDatabase(options);
   expect(replacementStartup.getStatus()).toMatchObject({
     appliedMigrations: 23,
-    schemaVersion: "19",
+    schemaVersion: "20",
     writable: true,
   });
   replacementStartup.close();
@@ -240,14 +242,9 @@ test("the production migration preserves every representative field from the pri
       'migration-food-entry', ${timestamp}, ${timestamp}
     )
   `);
-  client.insert(schema.waterEvents).values({
-    amountMicroliters: 236_588,
-    createdAt: timestamp,
-    foodLogDate: "2026-08-30",
-    localEventTime: "10:05:00",
-    updatedAt: timestamp,
-    userId: user.id,
-  }).run();
+  client.run(sql`INSERT INTO water_events
+    (user_id, food_log_date, amount_microliters, local_event_time, created_at, updated_at)
+    VALUES (${user.id}, '2026-08-30', 236588, '10:05:00', ${timestamp}, ${timestamp})`);
   const representativeData = readRepresentativeData(client);
   previousRelease.close();
 
@@ -260,13 +257,18 @@ test("the production migration preserves every representative field from the pri
     appliedMigrations: 23,
     availableMigrations: 23,
     migrationsCurrent: true,
-    schemaVersion: "19",
+    schemaVersion: "20",
     writable: true,
   });
   expect(isDatabaseReady(upgraded.getStatus())).toBe(true);
   expect(readRepresentativeData(upgraded.getClient())).toEqual(
     representativeData,
   );
+  expect(upgraded.getClient().select().from(schema.waterEvents).get()).toMatchObject({
+    preset8Count: 0,
+    preset16Count: 0,
+    preset24Count: 0,
+  });
   expect(
     upgraded
       .getClient()
@@ -319,7 +321,7 @@ test("the password-onboarding migration leaves existing credentials unrestricted
     passwordChangeRequired: 0,
     passwordHash: "argon2id:existing-credential",
   });
-  expect(upgraded.getStatus().schemaVersion).toBe("19");
+  expect(upgraded.getStatus().schemaVersion).toBe("20");
   upgraded.close();
 });
 
@@ -398,7 +400,7 @@ test("readiness requires every database invariant", () => {
     foreignKeysEnabled: true,
     journalMode: "wal",
     migrationsCurrent: true,
-    schemaVersion: "19",
+    schemaVersion: "20",
     writable: true,
   };
 

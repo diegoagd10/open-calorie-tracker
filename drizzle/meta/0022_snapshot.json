@@ -1,8 +1,8 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "d888d3de-b631-4e9f-bbce-f7748014f618",
-  "prevId": "8f8088fb-f9b4-450a-8dcf-85f5873abd3a",
+  "id": "bf2a83cf-5646-413b-9abe-07a672d82982",
+  "prevId": "68c36d8e-3a5d-4e47-b667-d3f6a33dae73",
   "tables": {
     "application_metadata": {
       "name": "application_metadata",
@@ -1264,6 +1264,30 @@
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false
+        },
+        "preset_8_count": {
+          "name": "preset_8_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "preset_16_count": {
+          "name": "preset_16_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "preset_24_count": {
+          "name": "preset_24_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
         },
         "local_event_time": {
           "name": "local_event_time",

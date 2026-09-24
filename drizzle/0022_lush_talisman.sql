@@ -9,4 +9,5 @@ CREATE TABLE `saved_foods` (
 );
 --> statement-breakpoint
 CREATE UNIQUE INDEX `saved_foods_user_source_unique` ON `saved_foods` (`user_id`,`source_entry_id`);--> statement-breakpoint
-CREATE INDEX `saved_foods_user_name_index` ON `saved_foods` (`user_id`,`name`);
+CREATE INDEX `saved_foods_user_name_index` ON `saved_foods` (`user_id`,`name`);--> statement-breakpoint
+ALTER TABLE `food_entries` ADD `source_saved_food_id` integer;

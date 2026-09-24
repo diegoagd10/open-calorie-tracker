@@ -603,10 +603,6 @@
   z-index: 1;
 }
 
-.entryList > article:has(.foodEntryMenuTrigger[aria-expanded="true"]) {
-  z-index: 4;
-}
-
 .foodEntryCard {
   position: relative;
   display: grid;
@@ -687,6 +683,10 @@
   white-space: nowrap;
 }
 
+.foodEntryContent .waterEntryBreakdown {
+  white-space: normal;
+}
+
 .foodEntryContent small {
   overflow: hidden;
   margin-top: 0.15rem;
@@ -734,61 +734,8 @@
   border-color: var(--blue-border);
 }
 
-.foodEntryCardWithMenu {
-  grid-template-columns: 2.75rem minmax(0, 1fr) auto 2.5rem;
-}
-
-.foodEntryCardWithMenu::after {
-  color: transparent;
-  content: "";
-}
-
-.foodEntryMenu {
-  position: absolute;
-  z-index: 3;
-  top: 50%;
-  right: 0.3rem;
-  transform: translateY(-50%);
-}
-
-.foodEntryMenuTrigger {
-  display: grid;
-  width: 2.25rem;
-  height: 2.25rem;
-  place-items: center;
-  border: 0;
-  border-radius: 50%;
-  color: var(--muted);
-  background: transparent;
-  cursor: pointer;
-}
-
-.foodEntryMenuTrigger:hover,
-.foodEntryMenuTrigger:focus-visible,
-.foodEntryMenuTrigger[aria-expanded="true"] {
-  color: var(--ink);
-  background: var(--surface-soft);
-}
-
-.foodEntryMenuTrigger:focus-visible {
-  outline: 2px solid var(--green-dark);
-  outline-offset: 2px;
-}
-
-.foodEntryMenuPopover {
-  position: absolute;
-  bottom: calc(100% + 0.35rem);
-  right: 0;
-  min-width: 10rem;
-  padding: 0.35rem;
-  border: 1px solid var(--rule-strong);
-  border-radius: 0.65rem;
-  background: var(--surface);
-  box-shadow: 0 -0.75rem 2rem rgb(0 0 0 / 16%);
-}
-
-.foodEntryMenuPopover button,
-.foodEntryMenuPopover a {
+.editorCopyMenuPopover button,
+.editorCopyMenuPopover a {
   display: block;
   width: 100%;
   padding: 0.65rem 0.75rem;
@@ -805,14 +752,14 @@
   cursor: pointer;
 }
 
-.foodEntryMenuPopover button:hover,
-.foodEntryMenuPopover button:focus-visible,
-.foodEntryMenuPopover a:hover,
-.foodEntryMenuPopover a:focus-visible {
+.editorCopyMenuPopover button:hover,
+.editorCopyMenuPopover button:focus-visible,
+.editorCopyMenuPopover a:hover,
+.editorCopyMenuPopover a:focus-visible {
   background: var(--surface-soft);
 }
 
-.foodEntryMenuPopover button:disabled {
+.editorCopyMenuPopover button:disabled {
   color: var(--muted);
   cursor: progress;
 }
@@ -996,6 +943,86 @@
   margin: 0.45rem 0 0;
   color: var(--ink-2);
   font-size: 0.76rem;
+}
+
+.editDialogHead {
+  position: sticky;
+  z-index: 5;
+  top: -1rem;
+  flex-wrap: wrap;
+  align-items: center;
+  padding-top: 1rem;
+  margin-top: -1rem;
+  background: var(--surface);
+}
+
+.editHeaderActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.editIconButton {
+  display: grid;
+  width: 2.75rem;
+  height: 2.75rem;
+  place-items: center;
+  border: 1px solid var(--rule-strong);
+  border-radius: 0.7rem;
+  color: var(--ink);
+  background: var(--surface);
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.editIconButton svg {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+.editIconButton:hover,
+.editIconButton:focus-visible,
+.editIconButton[aria-expanded="true"] {
+  background: var(--surface-soft);
+}
+
+.editDeleteButton {
+  border-color: var(--danger-border);
+  color: var(--danger);
+}
+
+.editSaveButton {
+  border-color: var(--green);
+  color: white;
+  background: var(--green-dark);
+}
+
+.editSaveButton:hover,
+.editSaveButton:focus-visible {
+  background: var(--green-hover);
+}
+
+.editHeaderActions button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.editorCopyMenu {
+  position: relative;
+}
+
+.editorCopyMenuPopover {
+  position: absolute;
+  z-index: 6;
+  top: calc(100% + 0.35rem);
+  left: 0;
+  min-width: 11rem;
+  padding: 0.35rem;
+  border: 1px solid var(--rule-strong);
+  border-radius: 0.65rem;
+  background: var(--surface);
+  box-shadow: 0 0.75rem 2rem rgb(0 0 0 / 16%);
 }
 
 .dialogChip,
@@ -1467,17 +1494,6 @@
   line-height: 1.45;
 }
 
-.editActions,
-.editActions > div {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-}
-
-.editActions {
-  justify-content: space-between;
-}
-
 .dangerButton,
 .dangerSubmitButton {
   min-height: 2.75rem;
@@ -1514,6 +1530,10 @@
   margin: 0;
 }
 
+.editDeleteConfirm {
+  margin-top: 0.75rem;
+}
+
 .deleteConfirm p {
   margin-top: 0.15rem;
   color: var(--danger-muted);
@@ -1548,6 +1568,15 @@
   gap: 0.45rem;
 }
 
+.waterPresetOption {
+  position: relative;
+  min-width: 0;
+}
+
+.waterPresetOption > .waterPresetButton {
+  width: 100%;
+}
+
 .waterPresetButton {
   display: grid;
   min-height: 5.9rem;
@@ -1563,10 +1592,45 @@
   cursor: pointer;
 }
 
-.waterPresetButton[aria-pressed="true"] {
+.waterPresetButton[aria-pressed="true"],
+.waterPresetButton[data-counted="true"] {
   border: 2px solid var(--blue);
   color: var(--blue-strong);
   background: var(--blue-soft);
+}
+
+.waterPresetButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.waterPresetCount {
+  position: absolute;
+  top: 0.35rem;
+  right: 0.4rem;
+  font-size: 0.72rem;
+}
+
+.waterPresetRemove {
+  position: absolute;
+  right: 0.35rem;
+  bottom: 0.35rem;
+  display: grid;
+  width: 1.4rem;
+  height: 1.4rem;
+  place-items: center;
+  border: 1px solid var(--blue-border);
+  border-radius: 50%;
+  color: var(--blue-strong);
+  background: var(--surface);
+  font: inherit;
+  cursor: pointer;
+}
+
+.waterSelectionSummary {
+  margin: -0.35rem 0 0;
+  color: var(--muted);
+  font-size: 0.72rem;
 }
 
 .waterPresetButton strong {
@@ -2008,16 +2072,6 @@
     grid-template-columns: 1fr;
   }
 
-  .editActions {
-    align-items: stretch;
-    flex-direction: column-reverse;
-  }
-
-  .editActions > div {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
   .deleteConfirm {
     grid-template-columns: 1fr 1fr;
   }
@@ -2028,6 +2082,11 @@
 }
 
 @media (max-width: 560px) {
+  .editHeaderActions {
+    justify-content: flex-end;
+    width: 100%;
+  }
+
   .floatingUtilities {
     align-items: flex-end;
     flex-direction: column;

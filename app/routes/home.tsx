@@ -86,6 +86,12 @@ import {
 } from "../water-event/water-event.server";
 import { getWaterEventService } from "../water-event/runtime.server";
 import {
+  WATER_PRESET_MICROLITERS,
+  waterPresetTotalMicroliters,
+  waterPresetTotalOunces,
+  type WaterPreset,
+} from "../water-event/presets";
+import {
   waterTargetThousandthsFromMicroliters,
   type DisplayUnits,
 } from "../goals/water-conversion";
@@ -110,7 +116,10 @@ function foodLogIntentSchema() {
       eventId: z.string(),
       intent: z.literal("create-water"),
       waterAmount: z.string(),
-      waterSelection: z.enum(["8", "16", "24", "exact"]),
+      waterSelection: z.enum(["8", "16", "24", "presets", "exact"]),
+      waterPreset8Count: z.string(),
+      waterPreset16Count: z.string(),
+      waterPreset24Count: z.string(),
     }),
     z.object({
       date: z.string(),
@@ -868,7 +877,7 @@ export async function action({ request }: Route.ActionArgs) {
   const formData = await readApplicationMutationForm(request, session);
 
   const formFields = Object.fromEntries([
-    "carbohydrateGrams", "date", "destinationDate", "energyKcal", "entryId", "eventId", "expectedUpdatedAt", "fatGrams", "fiberGrams", "idempotencyKey", "intent", "name", "proteinGrams", "providerFoodId", "provider", "quantity", "savedFoodId", "selectedMeasurementId", "sodiumMilligrams", "sugarGrams", "waterAmount", "waterEventTime", "waterSelection"
+    "carbohydrateGrams", "date", "destinationDate", "energyKcal", "entryId", "eventId", "expectedUpdatedAt", "fatGrams", "fiberGrams", "idempotencyKey", "intent", "name", "proteinGrams", "providerFoodId", "provider", "quantity", "savedFoodId", "selectedMeasurementId", "sodiumMilligrams", "sugarGrams", "waterAmount", "waterEventTime", "waterSelection", "waterPreset8Count", "waterPreset16Count", "waterPreset24Count"
   ].map(name => [name, formString(formData, name)]));
   const parsed = foodLogIntentSchema().safeParse({
     ...formFields,
@@ -1017,6 +1026,16 @@ export async function action({ request }: Route.ActionArgs) {
                 foodLogDate: parsed.data.date,
                 selection: "exact",
               }
+            : parsed.data.waterSelection === "presets"
+              ? {
+                  counts: {
+                    "8": Number(parsed.data.waterPreset8Count),
+                    "16": Number(parsed.data.waterPreset16Count),
+                    "24": Number(parsed.data.waterPreset24Count),
+                  },
+                  foodLogDate: parsed.data.date,
+                  selection: "presets",
+                }
             : {
                 foodLogDate: parsed.data.date,
                 selection: parsed.data.waterSelection,
@@ -2114,6 +2133,39 @@ const FOOD_NUTRIENT_FIELDS = [
   ["sodiumMilligrams", "Sodium (mg)"],
 ] as const;
 
+type FoodNutrientName = (typeof FOOD_NUTRIENT_FIELDS)[number][0];
+
+function FoodNutritionInputs({
+  fields,
+  onChange,
+  required,
+}: {
+  fields: FoodEntryFields;
+  onChange: (name: FoodNutrientName, value: string) => void;
+  required: (name: FoodNutrientName) => boolean | undefined;
+}) {
+  return (
+    <div className={styles.editNutritionGrid}>
+      {FOOD_NUTRIENT_FIELDS.map(([name, label]) => (
+        <label className={styles.stackedField} key={name}>
+          <span>{label}</span>
+          <input
+            inputMode="decimal"
+            max={name === "sodiumMilligrams" ? "9999999" : "999999.999"}
+            min="0"
+            name={name}
+            onChange={(event) => onChange(name, event.target.value)}
+            required={required(name)}
+            step={name === "sodiumMilligrams" ? "1" : "0.001"}
+            type="number"
+            value={fields[name]}
+          />
+        </label>
+      ))}
+    </div>
+  );
+}
+
 function storedNutrientInput(
   value: number | null,
   integerMilligrams = false,
@@ -2295,12 +2347,14 @@ function DialogBackdrop({
 
 function FoodEntryEditorDialog({
   actionData,
+  copyKey,
   csrfToken,
   entry,
   manualEntrySaved,
   photoMeal,
 }: {
   actionData: HomeActionData | undefined;
+  copyKey?: string;
   csrfToken: string;
   manualEntrySaved: boolean;
   photoMeal?: Route.ComponentProps["loaderData"]["photoMeals"][number];
@@ -2350,19 +2404,52 @@ function FoodEntryEditorDialog({
         ref={dialogRef}
         role="dialog"
       >
-        <div className={styles.dialogHead}>
+        <div className={`${styles.dialogHead} ${styles.editDialogHead}`}>
           <div>
             <h2 id="edit-food-entry-title">Edit Food Entry</h2>
             <span className={styles.dialogChip}>Nutrition Snapshot</span>
             <p>Changes affect this occurrence only.</p>
           </div>
-          <Link
-            aria-label="Close edit form"
-            className={styles.dialogClose}
-            to={closeHref}
-          >
-            ×
-          </Link>
+          <div className={styles.editHeaderActions}>
+            {copyKey ? (
+              <FoodEntryCopyMenu
+                csrfToken={csrfToken}
+                entry={entry}
+                idempotencyKey={copyKey}
+                pending={pending}
+              />
+            ) : null}
+            <button
+              aria-label="Delete entry"
+              className={`${styles.editIconButton} ${styles.editDeleteButton}`}
+              disabled={pending}
+              onClick={() => setConfirmingDelete(true)}
+              title="Delete entry"
+              type="button"
+            >
+              <UiIcon name="delete" />
+            </button>
+            <Link
+              aria-label="Cancel"
+              className={styles.editIconButton}
+              title="Cancel"
+              to={closeHref}
+            >
+              <UiIcon name="cancel" />
+            </Link>
+            <button
+              aria-label={pendingIntent === "update-food" ? "Saving changes" : "Save changes"}
+              className={`${styles.editIconButton} ${styles.editSaveButton}`}
+              disabled={pending}
+              form="food-entry-edit-form"
+              name="intent"
+              title={pendingIntent === "update-food" ? "Saving changes" : "Save changes"}
+              type="submit"
+              value="update-food"
+            >
+              <UiIcon name="save" />
+            </button>
+          </div>
         </div>
         {entry.provider === "manual" ? (
           manualEntrySaved ? (
@@ -2380,8 +2467,34 @@ function FoodEntryEditorDialog({
             </Form>
           )
         ) : null}
+        {confirmingDelete ? (
+          <div className={`${styles.deleteConfirm} ${styles.editDeleteConfirm}`} role="alert">
+            <div>
+              <strong>Delete this Food Entry?</strong>
+              <p>Its nutrition will no longer contribute to this day.</p>
+            </div>
+            <button
+              className={styles.secondaryButton}
+              onClick={() => setConfirmingDelete(false)}
+              type="button"
+            >
+              Keep it
+            </button>
+            <button
+              className={styles.dangerSubmitButton}
+              disabled={pending}
+              form="food-entry-edit-form"
+              formNoValidate
+              name="intent"
+              type="submit"
+              value="delete-food"
+            >
+              {pendingIntent === "delete-food" ? "Deleting…" : "Delete"}
+            </button>
+          </div>
+        ) : null}
         {photoMeal ? <PhotoCorrection meal={photoMeal} csrfToken={csrfToken} /> : null}
-        <Form className={styles.editFoodForm} method="post" noValidate>
+        <Form className={styles.editFoodForm} id="food-entry-edit-form" method="post" noValidate>
           <input name="csrfToken" type="hidden" value={csrfToken} />
           <input name="date" type="hidden" value={entry.foodLogDate} />
           <input name="entryId" type="hidden" value={entry.id} />
@@ -2426,33 +2539,11 @@ function FoodEntryEditorDialog({
                 />
               </label>
             </div>
-            <div className={styles.editNutritionGrid}>
-              {FOOD_NUTRIENT_FIELDS.map(([name, label]) => (
-                <label className={styles.stackedField} key={name}>
-                  <span>{label}</span>
-                  <input
-                    inputMode="decimal"
-                    max={name === "sodiumMilligrams" ? "9999999" : "999999.999"}
-                    min="0"
-                    name={name}
-                    onChange={(event) =>
-                      setFields((current) => ({
-                        ...current,
-                        [name]: event.target.value,
-                      }))
-                    }
-                    required={
-                      entry.provider === "manual" && name === "energyKcal"
-                        ? true
-                        : undefined
-                    }
-                    step={name === "sodiumMilligrams" ? "1" : "0.001"}
-                    type="number"
-                    value={fields[name]}
-                  />
-                </label>
-              ))}
-            </div>
+            <FoodNutritionInputs
+              fields={fields}
+              onChange={(name, value) => setFields((current) => ({ ...current, [name]: value }))}
+              required={(name) => entry.provider === "manual" && name === "energyKcal" ? true : undefined}
+            />
             <p className={styles.authoritativeNote}>
               Quantity and measurement recalculate from the saved authoritative
               base, not from previously rounded values. Empty nutrients save as
@@ -2462,54 +2553,6 @@ function FoodEntryEditorDialog({
               <p className={styles.catalogError} role="alert">
                 {actionData.message}
               </p>
-            ) : null}
-            <div className={styles.editActions}>
-              <button
-                className={styles.dangerButton}
-                onClick={() => setConfirmingDelete(true)}
-                type="button"
-              >
-                Delete entry
-              </button>
-              <div>
-                <Link className={styles.secondaryButton} to={closeHref}>
-                  Cancel
-                </Link>
-                <button
-                  className={styles.primaryButton}
-                  name="intent"
-                  type="submit"
-                  value="update-food"
-                >
-                  {pendingIntent === "update-food"
-                    ? "Saving…"
-                    : "Save changes"}
-                </button>
-              </div>
-            </div>
-            {confirmingDelete ? (
-              <div className={styles.deleteConfirm} role="alert">
-                <div>
-                  <strong>Delete this Food Entry?</strong>
-                  <p>Its nutrition will no longer contribute to this day.</p>
-                </div>
-                <button
-                  className={styles.secondaryButton}
-                  onClick={() => setConfirmingDelete(false)}
-                  type="button"
-                >
-                  Keep it
-                </button>
-                <button
-                  className={styles.dangerSubmitButton}
-                  formNoValidate
-                  name="intent"
-                  type="submit"
-                  value="delete-food"
-                >
-                  {pendingIntent === "delete-food" ? "Deleting…" : "Delete"}
-                </button>
-              </div>
             ) : null}
           </fieldset>
         </Form>
@@ -2522,11 +2565,20 @@ type WaterDialogState = NonNullable<
   Route.ComponentProps["loaderData"]["waterDialog"]
 >;
 
-const waterPresetMicroliters = {
-  "8": 236_588,
-  "16": 473_176,
-  "24": 709_765,
-} as const;
+function formatWaterPresetBreakdown(
+  event: { preset8Count: number; preset16Count: number; preset24Count: number },
+  displayUnits: DisplayUnits,
+): string | undefined {
+  const unit = displayUnits === "metric" ? "ml" : "fl oz";
+  const parts = ([
+    ["24", "Large", event.preset24Count],
+    ["16", "Bottle", event.preset16Count],
+    ["8", "Glass", event.preset8Count],
+  ] as const).filter(([, , count]) => count > 0).map(([size, label, count]) =>
+    `${formatWaterAmount(WATER_PRESET_MICROLITERS[size], displayUnits, displayUnits === "metric" ? 0 : 1)} ${unit} ${label} × ${count}`
+  );
+  return parts.length > 0 ? parts.join(" · ") : undefined;
+}
 
 function WaterEventDialog({
   actionData,
@@ -2543,13 +2595,16 @@ function WaterEventDialog({
 }) {
   const event = dialog.mode === "edit" ? dialog.event : undefined;
   const matchingPreset = event
-    ? (Object.entries(waterPresetMicroliters).find(
+    ? event.preset8Count + event.preset16Count + event.preset24Count > 0
+      ? undefined
+      : (Object.entries(WATER_PRESET_MICROLITERS).find(
         ([, microliters]) => microliters === event.amountMicroliters,
       )?.[0] as "8" | "16" | "24" | undefined)
-    : "8";
-  const [selection, setSelection] = useState<"8" | "16" | "24" | "exact">(
-    matchingPreset ?? "exact",
+    : undefined;
+  const [selection, setSelection] = useState<"8" | "16" | "24" | "presets" | "exact">(
+    event ? matchingPreset ?? "exact" : "presets",
   );
+  const [presetCounts, setPresetCounts] = useState({ "8": 0, "16": 0, "24": 0 });
   const [amount, setAmount] = useState(
     event
       ? waterInputValue(event.amountMicroliters, displayUnits)
@@ -2571,12 +2626,33 @@ function WaterEventDialog({
     ? navigation.formData?.get("eventId") === String(event.id)
     : navigation.formData?.get("intent") === "create-water";
   const pendingIntent = pending ? navigation.formData!.get("intent") : undefined;
+  const presetTotalMicroliters = waterPresetTotalMicroliters(presetCounts);
+  const presetTotalOunces = waterPresetTotalOunces(presetCounts);
+  const servingCount = presetCounts["8"] + presetCounts["16"] + presetCounts["24"];
 
   const presets = [
     { label: "Glass", selection: "8" as const },
     { label: "Bottle", selection: "16" as const },
     { label: "Large", selection: "24" as const },
   ];
+
+  function selectPreset(preset: WaterPreset) {
+    if (event) {
+      setSelection(preset);
+    } else if (selection === "exact") {
+      setPresetCounts({ "8": 0, "16": 0, "24": 0 });
+      setSelection("presets");
+    } else {
+      setPresetCounts((counts) => ({ ...counts, [preset]: counts[preset] + 1 }));
+    }
+  }
+
+  function selectExact() {
+    if (!event && selection === "presets" && servingCount > 0) {
+      setAmount(waterInputValue(presetTotalMicroliters, displayUnits));
+    }
+    setSelection("exact");
+  }
 
   return (
     <DialogBackdrop onClose={closeDialog}>
@@ -2593,7 +2669,7 @@ function WaterEventDialog({
             <h2 id="water-event-title">
               {event ? "Edit Water Event" : "Add Water"}
             </h2>
-            <p>Exact plain-water amount</p>
+            <p>{event ? "Edit the amount or time" : "Add one or more plain-water servings"}</p>
           </div>
           <Link
             aria-label="Close water sheet"
@@ -2607,6 +2683,13 @@ function WaterEventDialog({
           <input name="csrfToken" type="hidden" value={csrfToken} />
           <input name="date" type="hidden" value={date} />
           <input name="waterSelection" type="hidden" value={selection} />
+          {!event ? (
+            <>
+              <input name="waterPreset8Count" type="hidden" value={presetCounts["8"]} />
+              <input name="waterPreset16Count" type="hidden" value={presetCounts["16"]} />
+              <input name="waterPreset24Count" type="hidden" value={presetCounts["24"]} />
+            </>
+          ) : null}
           {selection === "exact" ? null : (
             <input name="waterAmount" type="hidden" value="" />
           )}
@@ -2622,30 +2705,51 @@ function WaterEventDialog({
           ) : null}
           <fieldset disabled={pending}>
             <div aria-label="Water presets" className={styles.waterPresets}>
-              {presets.map((preset) => (
-                <button
-                  aria-pressed={selection === preset.selection}
-                  className={styles.waterPresetButton}
-                  key={preset.selection}
-                  onClick={() => setSelection(preset.selection)}
-                  type="button"
-                >
-                  <span aria-hidden="true">♢</span>
-                  <strong>
-                    {formatWaterAmount(
-                      waterPresetMicroliters[preset.selection],
-                      displayUnits,
-                      displayUnits === "metric" ? 0 : 1,
-                    )}
-                  </strong>
-                  <span>{unit}</span>
-                  <small>{preset.label}</small>
-                </button>
-              ))}
+              {presets.map((preset) => {
+                const presetAmount = formatWaterAmount(
+                  WATER_PRESET_MICROLITERS[preset.selection],
+                  displayUnits,
+                  displayUnits === "metric" ? 0 : 1,
+                );
+                const count = presetCounts[preset.selection];
+                return (
+                  <div className={styles.waterPresetOption} key={preset.selection}>
+                    <button
+                      aria-label={!event
+                        ? selection === "exact"
+                          ? `Return to preset sizes using ${presetAmount} ${unit} ${preset.label}; counts reset to zero`
+                          : `Add one ${presetAmount} ${unit} ${preset.label}; ${count} selected`
+                        : undefined}
+                      aria-pressed={event ? selection === preset.selection : undefined}
+                      className={styles.waterPresetButton}
+                      data-counted={!event && count > 0 ? "true" : undefined}
+                      disabled={!event && selection === "presets" && presetTotalOunces + Number(preset.selection) > 500}
+                      onClick={() => selectPreset(preset.selection)}
+                      type="button"
+                    >
+                      <span aria-hidden="true">♢</span>
+                      <strong>{presetAmount}</strong>
+                      <span>{unit}</span>
+                      <small>{preset.label}</small>
+                      {!event && count > 0 ? <b className={styles.waterPresetCount}>× {count}</b> : null}
+                    </button>
+                    {!event && selection === "presets" && count > 0 ? (
+                      <button
+                        aria-label={`Remove one ${presetAmount} ${unit} ${preset.label}`}
+                        className={styles.waterPresetRemove}
+                        onClick={() => setPresetCounts((counts) => ({ ...counts, [preset.selection]: counts[preset.selection] - 1 }))}
+                        type="button"
+                      >
+                        −
+                      </button>
+                    ) : null}
+                  </div>
+                );
+              })}
               <button
                 aria-pressed={selection === "exact"}
                 className={styles.waterPresetButton}
-                onClick={() => setSelection("exact")}
+                onClick={selectExact}
                 type="button"
               >
                 <span aria-hidden="true">✎</span>
@@ -2654,6 +2758,14 @@ function WaterEventDialog({
                 <small>Custom</small>
               </button>
             </div>
+            {!event && selection === "presets" ? (
+              <p aria-live="polite" className={styles.waterSelectionSummary}>
+                {servingCount === 0
+                  ? "Tap a size to add a serving."
+                  : `${servingCount} ${servingCount === 1 ? "serving" : "servings"} · ${formatWaterAmount(presetTotalMicroliters, displayUnits)} ${unit}`}
+                {presetTotalOunces + 8 > 500 ? " · Maximum amount reached" : null}
+              </p>
+            ) : null}
             {selection === "exact" ? (
               <label className={styles.waterAmountField}>
                 <span>Amount</span>
@@ -2673,6 +2785,11 @@ function WaterEventDialog({
                   <em>{unit}</em>
                 </span>
               </label>
+            ) : null}
+            {!event && selection === "exact" ? (
+              <p className={styles.waterSelectionSummary}>
+                Tap a size to return to presets, then tap again to add a serving.
+              </p>
             ) : null}
             {event ? (
               <label className={styles.waterTimeField}>
@@ -2708,6 +2825,7 @@ function WaterEventDialog({
                 </Link>
                 <button
                   className={styles.waterSubmitButton}
+                  disabled={!event && selection === "presets" && servingCount === 0}
                   name="intent"
                   type="submit"
                   value={event ? "update-water" : "create-water"}
@@ -2720,11 +2838,9 @@ function WaterEventDialog({
                         ? "Save changes"
                         : selection === "exact"
                           ? "Add exact amount"
-                          : `Add ${formatWaterAmount(
-                              waterPresetMicroliters[selection],
-                              displayUnits,
-                              displayUnits === "metric" ? 0 : 1,
-                            )} ${unit}`}
+                          : servingCount === 0
+                            ? "Select water amount"
+                            : `Add ${formatWaterAmount(presetTotalMicroliters, displayUnits, displayUnits === "metric" ? 0 : 1)} ${unit}`}
                 </button>
               </div>
             </div>
@@ -3014,29 +3130,11 @@ function ManualFoodStage({
               />
             </label>
           </div>
-          <div className={styles.editNutritionGrid}>
-            {FOOD_NUTRIENT_FIELDS.map(([name, label]) => (
-              <label className={styles.stackedField} key={name}>
-                <span>{label}</span>
-                <input
-                  inputMode="decimal"
-                  max={name === "sodiumMilligrams" ? "9999999" : "999999.999"}
-                  min="0"
-                  name={name}
-                  onChange={(event) =>
-                    setFields((current) => ({
-                      ...current,
-                      [name]: event.target.value,
-                    }))
-                  }
-                  required={name === "energyKcal"}
-                  step={name === "sodiumMilligrams" ? "1" : "0.001"}
-                  type="number"
-                  value={fields[name]}
-                />
-              </label>
-            ))}
-          </div>
+          <FoodNutritionInputs
+            fields={fields}
+            onChange={(name, value) => setFields((current) => ({ ...current, [name]: value }))}
+            required={(name) => name === "energyKcal"}
+          />
           <p className={styles.authoritativeNote}>
             Nutrition is the total for this quantity. Changing quantity here
             does not change the values you entered.
@@ -3585,11 +3683,10 @@ function CatalogDialog({
   );
 }
 
-function FoodTimelineEntry({ entry, photoMeal, csrfToken, copyKey }: {
+function FoodTimelineEntry({ entry, photoMeal, csrfToken }: {
   entry: Extract<Route.ComponentProps["loaderData"]["foodLog"]["events"][number], { kind: "food" }>;
   photoMeal?: Route.ComponentProps["loaderData"]["photoMeals"][number];
   csrfToken: string;
-  copyKey?: string;
 }) {
   const correction = useFetcher<{ error?: string }>({
     key: photoMeal ? `photo-correction:${photoMeal.id}` : undefined,
@@ -3597,9 +3694,7 @@ function FoodTimelineEntry({ entry, photoMeal, csrfToken, copyKey }: {
   const startingCorrection = correction.state !== "idle";
   const active = startingCorrection || photoMeal?.status === "active";
   const ContentElement = active ? "div" : "span";
-  const className = copyKey && !active
-    ? `${styles.foodEntryCard} ${styles.foodEntryCardWithMenu}`
-    : styles.foodEntryCard;
+  const className = styles.foodEntryCard;
   const content = (
     <>
       <time
@@ -3656,9 +3751,6 @@ function FoodTimelineEntry({ entry, photoMeal, csrfToken, copyKey }: {
           {content}
         </Link>
       )}
-      {copyKey && !active ? (
-        <FoodEntryCopyMenu csrfToken={csrfToken} entry={entry} idempotencyKey={copyKey} key={copyKey} />
-      ) : null}
       {!active && correction.data?.error ? (
         <p className={styles.catalogError} role="alert">
           Correction could not start: {correction.data.error} Open this meal to try again.
@@ -3713,34 +3805,34 @@ function FoodEntryCopyMenu({
   csrfToken,
   entry,
   idempotencyKey,
+  pending: editorPending,
 }: {
   csrfToken: string;
-  entry: Extract<
-    Route.ComponentProps["loaderData"]["foodLog"]["events"][number],
-    { kind: "food" }
-  >;
+  entry: EditableFoodEntry;
   idempotencyKey: string;
+  pending: boolean;
 }) {
   const navigation = useNavigation();
   const [open, setOpen] = useState(false);
-  const pending =
+  const copyPending =
     navigation.formData?.get("intent") === "copy-food-to-today" &&
     navigation.formData.get("entryId") === String(entry.id);
 
   return (
-    <div className={styles.foodEntryMenu}>
+    <div className={styles.editorCopyMenu}>
       <button
         aria-expanded={open}
-        aria-label={`More actions for ${entry.name}`}
-        className={styles.foodEntryMenuTrigger}
-        data-copy-date-trigger={entry.id}
+        aria-label="Copy entry"
+        className={styles.editIconButton}
+        disabled={editorPending}
         onClick={() => setOpen((current) => !current)}
+        title="Copy entry"
         type="button"
       >
-        <span aria-hidden="true">•••</span>
+        <UiIcon name="copy" />
       </button>
       {open ? (
-        <div className={styles.foodEntryMenuPopover}>
+        <div className={styles.editorCopyMenuPopover}>
           <Form method="post">
             <input name="csrfToken" type="hidden" value={csrfToken} />
             <input name="date" type="hidden" value={entry.foodLogDate} />
@@ -3751,12 +3843,12 @@ function FoodEntryCopyMenu({
               value={idempotencyKey}
             />
             <button
-              disabled={pending}
+              disabled={editorPending || copyPending}
               name="intent"
               type="submit"
               value="copy-food-to-today"
             >
-              {pending ? "Copying…" : "Copy to today"}
+              {copyPending ? "Copying…" : "Copy to today"}
             </button>
           </Form>
           <Link
@@ -3788,7 +3880,7 @@ function CopyFoodEntryDialog({
   const { closeDialog, dialogRef, handleDialogKeyDown } = useModalDialog({
     closeHref,
     initialFocusSelector: "[data-copy-calendar-day]",
-    restoreFocusSelector: `[data-copy-date-trigger="${dialog.entry.id}"]`,
+    restoreFocusSelector: `[data-entry-editor-trigger][href="${closeHref}&entry=${dialog.entry.id}"]`,
   });
   const pending =
     navigation.formData?.get("intent") === "copy-food-to-date" &&
@@ -4118,7 +4210,7 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
                     ))}
                     {foodLog.events.map((entry) => {
                       return entry.kind === "food" ? (
-                        <FoodTimelineEntry key={`food-${entry.id}`} entry={entry} photoMeal={photoMeals.find((meal) => meal.entryId === entry.id)} csrfToken={csrfToken} copyKey={copyIdempotencyKeys[entry.id]} />
+                        <FoodTimelineEntry key={`food-${entry.id}`} entry={entry} photoMeal={photoMeals.find((meal) => meal.entryId === entry.id)} csrfToken={csrfToken} />
                       ) : (
                         <article key={`water-${entry.id}`}>
                           <Link
@@ -4139,7 +4231,9 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
                             </span>
                             <span className={styles.foodEntryContent}>
                               <strong>Water</strong>
-                              <small>Plain water</small>
+                              <small className={styles.waterEntryBreakdown}>
+                                {formatWaterPresetBreakdown(entry, foodLog.displayUnits) ?? "Plain water"}
+                              </small>
                             </span>
                             <span className={styles.foodEntryEnergy}>
                               {formatWaterAmount(
@@ -4201,6 +4295,7 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
       {activeFoodEntryEditor ? (
         <FoodEntryEditorDialog
           actionData={actionData}
+          copyKey={copyIdempotencyKeys[activeFoodEntryEditor.id]}
           csrfToken={csrfToken}
           entry={activeFoodEntryEditor}
           manualEntrySaved={manualEntrySaved}

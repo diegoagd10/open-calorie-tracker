@@ -38,6 +38,6 @@ test.each(["0014_breezy_eternals", "0015_outstanding_stature", "0016_first_key"]
     expect(updated.map(entry => entry.energyMilliKcal)).toEqual([118000, 360000]);
     const copies = updated.map(entry => entries.copyToToday(user.id, entry.id, { foodLogDate: entry.foodLogDate, idempotencyKey: `copy:${entry.id}:migration-test` }));
     expect(copies.map(entry => [entry.authoritativeNutrition, entry.supportedMeasurements, entry.name, entry.energyMilliKcal])).toEqual(updated.map(entry => [entry.authoritativeNutrition, entry.supportedMeasurements, entry.name, entry.energyMilliKcal]));
-    expect(database.getStatus()).toMatchObject({ schemaVersion: "19", foreignKeysEnabled: true });
+    expect(database.getStatus()).toMatchObject({ schemaVersion: "20", foreignKeysEnabled: true });
   } finally { database.close(); await rm(directory, { recursive: true, force: true }); }
 });

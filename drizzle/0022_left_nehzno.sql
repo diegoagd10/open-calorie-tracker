@@ -1,1 +1,0 @@
-ALTER TABLE `food_entries` ADD `source_saved_food_id` integer;
