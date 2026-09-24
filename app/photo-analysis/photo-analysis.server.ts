@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
+import { PHOTO_ANALYSIS_DEADLINE_MS } from "./deadline.server";
 import type { UsdaAnalysisReader, UsdaEvidence } from "../catalog/usda-evidence";
 import type { ApplicationDatabaseClient } from "../database/database.server";
 import {
@@ -77,7 +78,7 @@ export class PhotoAnalysisService {
     this.now = options.now ?? (() => new Date());
     this.usda = options.usda;
     this.rounds = options.rounds ?? 3;
-    this.deadlineMs = options.deadlineMs ?? 5000;
+    this.deadlineMs = options.deadlineMs ?? PHOTO_ANALYSIS_DEADLINE_MS;
     this.attempts = "capture" in analyzer
       ? analyzer
       : fixedPhotoAnalysisAttemptSource(analyzer);

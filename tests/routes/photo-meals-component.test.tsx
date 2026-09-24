@@ -123,20 +123,17 @@ function buttons() {
     .map((button) => button.children.join(""));
 }
 
-test("completed photo cards use edited names, private image URLs, rounded calories and owned entry links", async () => {
+test("completed photo meals use the compact log row, edited name, rounded calories and owned entry link", async () => {
   await render();
   expect(renderer.root.findByType("article").props["aria-label"]).toBe(
     "Renamed dinner",
   );
-  expect(renderer.root.findByType("img").props).toMatchObject({
-    src: "/photo-analysis?id=meal%26photo&image=1",
-    alt: "Your plate",
-  });
+  expect(renderer.root.findAllByType("img")).toHaveLength(0);
   expect(renderer.root.findByType("a").props).toMatchObject({
     href: "/?date=2026-09-04&entry=42",
     "data-entry-editor-trigger": true,
   });
-  expect(text()).toContain("250 kcal");
+  expect(renderer.root.findAllByType("span").find(node => String(node.props.className).includes("foodEntryEnergy"))?.children[0]).toBe("250");
   expect(buttons()).toEqual([]);
   expect(renderer.root.findAllByType("progress")).toHaveLength(0);
   await act(() => {
@@ -153,17 +150,22 @@ test("completed photo cards use edited names, private image URLs, rounded calori
   });
 });
 
-test("active cards block entry access, announce progress and elapsed time, and poll only when idle", async () => {
+test("active photo rows stay compact, announce analysis without elapsed time, and poll only when idle", async () => {
   await render([
     { ...meal, status: "active", stage: "Consulting USDA", finishedAt: null },
   ]);
   expect(renderer.root.findAllByType("a")).toHaveLength(0);
-  expect(renderer.root.findByType("progress").props["aria-label"]).toBe(
-    "Consulting USDA",
-  );
+  expect(renderer.root.findByType("img").props).toMatchObject({
+    src: "/photo-analysis?id=meal%26photo&image=1",
+    alt: "Your plate",
+  });
+  expect(renderer.root.findAllByType("progress")).toHaveLength(0);
   expect(renderer.root.findByProps({ role: "status" }).children).toEqual([
-    "Consulting USDA",
+    expect.anything(),
+    "Analyzing photo",
   ]);
+  expect(renderer.root.findByType("summary").props.className).toContain("foodEntryCard");
+  expect(text()).not.toContain("seconds elapsed");
   expect(buttons()).toEqual(["Cancel analysis"]);
   expect(text()).toContain("Previous nutrition retained");
   expect(renderer.root.findByType("form").props).toMatchObject({
@@ -188,7 +190,7 @@ test("active cards block entry access, announce progress and elapsed time, and p
   await act(() => {
     vi.advanceTimersByTime(2200);
   });
-  expect(text()).toContain('"2"," seconds elapsed"');
+  expect(text()).not.toContain("seconds elapsed");
   expect(state.revalidator.revalidate).toHaveBeenCalledTimes(2);
   state.revalidator.state = "loading";
   await act(() => {
@@ -204,7 +206,7 @@ test("active cards block entry access, announce progress and elapsed time, and p
   expect(state.revalidator.revalidate).toHaveBeenCalledTimes(2);
 });
 
-test("new pending and unsuccessful cards display no nutrition and expose recovery actions", async () => {
+test("failed photo rows keep a placeholder and expose recovery using the saved photo", async () => {
   state.fetcher.state = "submitting";
   state.fetcher.data = { error: "Request rejected" };
   await render([
@@ -219,6 +221,10 @@ test("new pending and unsuccessful cards display no nutrition and expose recover
     },
   ]);
   expect(text()).toContain("Plate photo");
+  expect(text()).toContain("Analysis failed");
+  expect(renderer.root.findAllByType("img")).toHaveLength(0);
+  expect(renderer.root.findAllByType("details")).toHaveLength(1);
+  expect(renderer.root.findAll(node => typeof node.props.className === "string" && node.props.className.includes("recoveryCard"))).toHaveLength(1);
   expect(text()).not.toContain("kcal");
   expect(text()).toContain("Analysis timed out");
   expect(text()).toContain("Request rejected");
@@ -227,7 +233,21 @@ test("new pending and unsuccessful cards display no nutrition and expose recover
     "retry",
     "delete",
   ]);
+  expect(actions.map((button) => button.props["aria-label"])).toEqual(["Retry analysis", "Delete photo meal"]);
   expect(actions.every((button) => button.props.disabled === true)).toBe(true);
+});
+
+test.each([
+  ["canceled", "Analysis canceled"],
+  ["interrupted", "Analysis interrupted"],
+] as const)("%s photo rows explain the stopped analysis and retain recovery", async (status, label) => {
+  await render([{ ...meal, entryId: null, name: null, result: null, status, error: null, energyMilliKcal: null }]);
+  expect(text()).toContain(label);
+  expect(renderer.root.findAllByType("button").map(button => button.props["aria-label"])).toEqual([
+    "Retry analysis",
+    "Delete photo meal",
+  ]);
+  expect(renderer.root.findAllByType("details")).toHaveLength(0);
 });
 
 test.each([
@@ -489,7 +509,9 @@ test("polling follows active status changes among multiple meals and stops when 
   const pending: Meal = { ...meal, id: "pending-photo", entryId: null, name: null, result: null, energyMilliKcal: null, status: "active", stage: "Analyzing photo", finishedAt: null };
   await act(() => renderer.update(createElement(PhotoMeals, { meals: [meal, pending], date: "2026-09-04", csrfToken: "csrf-photo" })));
   const card = renderer.root.findByProps({ "aria-label": "Plate photo" });
-  expect(card.findAllByType("small").map(node => node.children.join(""))).toEqual(["AI photo estimate", "0 seconds elapsed"]);
+  expect(card.findAllByType("small")).toHaveLength(1);
+  expect(text()).toContain("Analyzing photo");
+  expect(text()).not.toContain("seconds elapsed");
   await act(() => { vi.advanceTimersByTime(1000); });
   expect(state.revalidator.revalidate).toHaveBeenCalledTimes(1);
   await act(() => renderer.update(createElement(PhotoMeals, { meals: [meal, { ...pending, status: "failed", error: "Try again" }], date: "2026-09-04", csrfToken: "csrf-photo" })));
@@ -504,7 +526,7 @@ test("multiple simultaneous photo analyses share one refresh per second", async 
     { ...meal, status: "active" },
     { ...meal, id: "second-photo", status: "active" },
   ]);
-  expect(renderer.root.findAllByType("progress")).toHaveLength(2);
+  expect(renderer.root.findAllByProps({ role: "status" })).toHaveLength(2);
   await act(() => { vi.advanceTimersByTime(1000); });
   expect(state.revalidator.revalidate).toHaveBeenCalledTimes(1);
 });

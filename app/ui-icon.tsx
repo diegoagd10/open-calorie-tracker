@@ -12,6 +12,7 @@ export type UiIconName =
   | "log"
   | "plus"
   | "pencil"
+  | "retry"
   | "search"
   | "save"
   | "settings"
@@ -60,6 +61,8 @@ export function UiIcon({ name }: { name: UiIconName }) {
         <path d="M3 7V3h4M17 3h4v4M21 17v4h-4M7 21H3v-4M7 8v8M10 8v8M14 8v8M17 8v8" />
       ) : name === "pencil" ? (
         <path d="m16 3 5 5L9 20l-6 1 1-6ZM13 6l5 5" />
+      ) : name === "retry" ? (
+        <><path d="M21 12a9 9 0 1 1-3.36-7.03L21 8" /><path d="M21 3v5h-5" /></>
       ) : name === "lock" ? (
         <>
           <rect height="10" rx="2" width="14" x="5" y="10" />

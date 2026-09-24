@@ -40,9 +40,9 @@ exports[`home renders calendar navigation, selected dates, and future days 1`] =
 
 exports[`home renders calendar navigation, selected dates, and future days 2`] = `"f4b3be22f28a9e816bbd3f69b5957117ef84d5d8e6e7ab08b68c4448d0520ff1"`;
 
-exports[`home renders food and water timeline entries with factual units 1`] = `"7f37aa0fd40650e534936083bf30516f25b5093af42b5a3e087163aa26805efb"`;
+exports[`home renders food and water timeline entries with factual units 1`] = `"b7c9b9a50e169da5af5c57a9f465390c0e92ea76ab038a2e5036584985d8c0fb"`;
 
-exports[`home renders submission and navigation pending states 1`] = `"7f815e255cd5a0a287c8c30f80292f1b3a2b54dbd57eeb43c4b676e1d5a8ff5e"`;
+exports[`home renders submission and navigation pending states 1`] = `"36148b5a3b3c5e0e7cc7082e7d369fdd78a32d611e54b00f1ac06a626564037f"`;
 
 exports[`home renders submission and navigation pending states 2`] = `"05800179333faa3e204e19582b5e77d2ac9592a184e6fcc6db452ce363c067a6"`;
 

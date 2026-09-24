@@ -2414,18 +2414,24 @@ test("photo meals share the food and water timeline in event order and expose co
     const row = rows.find(node => nodeText(node).includes("Photo dinner"))!;
     expect(row.props["aria-busy"]).toBe(active || undefined);
     expect(row.findAllByType("a")).toHaveLength(active ? 0 : 1);
-    expect(row.findAllByType("progress")).toHaveLength(active ? 1 : 0);
+    expect(row.findAllByType("progress")).toHaveLength(0);
     expect(row.findAllByType("strong").map(nodeText)).toEqual(["Photo dinner"]);
     expect(nodeText(row.findByProps({ className: styles.foodEntryEnergy }))).toBe("59 kcal");
-    const buttons = row.findAllByType("button").map(nodeText);
-    expect(buttons).toEqual(active ? ["Cancel analysis"] : terminalError ? ["Retry analysis", "Delete photo meal"] : []);
+    const buttons = row.findAllByType("button");
+    expect(buttons.map(button => button.props["aria-label"] ?? nodeText(button))).toEqual(active ? ["Cancel analysis"] : terminalError ? ["Retry analysis", "Delete photo meal"] : []);
     if (active) {
-      expect(row.findByProps({ className: styles.foodEntryContent }).type).toBe("div");
-      expect(nodeText(row.findByProps({ className: styles.foodEntryContent }))).toContain("Updating this meal with AI");
+      expect(row.findByProps({ className: styles.foodEntryContent }).type).toBe("span");
+      expect(nodeText(row.findByProps({ className: styles.foodEntryContent }))).toContain("Analyzing photo");
       expect(nodeText(row)).toContain("Previous nutrition retained");
+    } else if (terminalError) {
+      expect(row.findAllByType("details")).toHaveLength(1);
+      expect(row.findByProps({ className: `${styles.foodEntryCard} ${styles.photoRecoveryCard}` })).toBeDefined();
+      expect(nodeText(row.findByProps({ role: "status" }))).toContain("Analysis");
+      expect(nodeText(row.findByType("a"))).toBe("Open meal details");
+      expect(nodeText(row)).toContain("Correction stopped");
     } else {
       expect(row.findByType("a").props.className).toBe(styles.foodEntryCard);
-      expect(nodeText(row).includes("Correction stopped")).toBe(terminalError);
+      expect(nodeText(row)).not.toContain("Correction stopped");
     }
     expect(log.findAllByType("a").some(node => nodeText(node).includes("Copied photo"))).toBe(true);
     expect(log.findAllByType("a").some(node => node.props.href === "/?date=2026-08-31&water=41")).toBe(true);
@@ -2461,7 +2467,8 @@ test("photo meals share the food and water timeline in event order and expose co
   expect(busyLog.findAllByType("article")).toHaveLength(2);
   const busyRow = busyLog.findByProps({ "aria-busy": true });
   expect(nodeText(busyRow)).toContain("Starting correction. Previous nutrition retained.");
-  expect(busyRow.findByType("progress").props["aria-label"]).toBe("Starting correction");
+  expect(busyRow.findAllByType("progress")).toHaveLength(0);
+  expect(nodeText(busyRow.findByProps({ role: "status" }))).toBe("Starting correction");
   expect(busyRow.findAllByType("a")).toHaveLength(0);
   expect(busyRow.findAllByType("button")).toHaveLength(0);
   expect(busyLog.findByType("a").props.href).toBe("/?date=2026-08-31&entry=77");

@@ -1,5 +1,5 @@
 import AxeBuilder from "@axe-core/playwright";
-import type { Browser, Page } from "@playwright/test";
+import type { Browser, Locator, Page } from "@playwright/test";
 import {
   bootstrapOrSignInBrowserTestUser,
   expect,
@@ -12,6 +12,14 @@ import { PHOTO_ANALYSIS_TEST_READINESS_KEY } from "../../app/photo-analysis/test
 
 const publicOrigin = `https://localhost:${playwrightBrowserPorts.public}`;
 const escapedPublicOrigin = publicOrigin.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+async function openPhotoDetails(meals: Locator, name: string) {
+  const disclosure = meals.getByRole("article").filter({ hasText: name }).locator("details");
+  await expect(disclosure).toBeVisible();
+  if (!(await disclosure.evaluate((element: HTMLDetailsElement) => element.open))) {
+    await disclosure.locator("summary").click();
+  }
+}
 
 const photo = {
   name: "plate.png",
@@ -162,9 +170,8 @@ test("plate capture returns to Daily Log, survives reload, and supports correcti
   } finally {
     resumeUpload();
   }
-  await expect(
-    meals.getByRole("progressbar", { name: "Analyzing photo" }),
-  ).toBeVisible();
+  await expect(meals.getByRole("article", { name: "Plate photo" })).toContainText("Analyzing photo");
+  await expect(meals.getByRole("img", { name: "Your plate" })).toBeVisible();
   await expect(page).toHaveURL(/date=2026-08-28/);
   await page.reload();
   await expect(
@@ -218,8 +225,7 @@ test("plate capture returns to Daily Log, survives reload, and supports correcti
     await expect(meals.getByRole("article")).toHaveCount(2);
     const updating = meals.getByRole("article").filter({ hasText: "Photo rice plate" });
     await expect(updating).toHaveAttribute("aria-busy", "true");
-    await expect(updating.getByRole("progressbar")).toBeVisible();
-    await expect(updating).toContainText("Updating this meal");
+    await expect(updating).toContainText("Starting correction");
     await expect(updating).toContainText("250 kcal");
     await expect(updating.getByRole("button", { name: /Copy/ })).toHaveCount(0);
     await expect(meals.getByRole("link", { name: /Timeline egg/ })).toBeEnabled();
@@ -227,7 +233,7 @@ test("plate capture returns to Daily Log, survives reload, and supports correcti
   } finally {
     resumeCorrection();
   }
-  await expect(meals.getByRole("progressbar")).toBeVisible();
+  await expect(meals).toContainText("Analyzing photo");
   await expect(meals.getByRole("link", { name: /Photo rice plate/ })).toHaveCount(0);
   await expect(meals).toContainText("250 kcal");
   await expect(
@@ -245,12 +251,21 @@ test("plate capture returns to Daily Log, survives reload, and supports correcti
   await expect(
     meals.getByRole("button", { name: "Retry analysis" }),
   ).toBeVisible();
+  const failedCorrection = meals.getByRole("article").filter({ hasText: "Photo rice plate" });
+  await expect(failedCorrection.locator(":scope > details")).toHaveCount(0);
+  await expect(failedCorrection.getByRole("button", { name: "Delete photo meal" }).locator("svg")).toHaveCount(1);
+  const correctionViewport = page.viewportSize()!;
+  await page.setViewportSize({ width: 740, height: 900 });
+  await failedCorrection.scrollIntoViewIfNeeded();
+  await failedCorrection.screenshot({ path: testInfo.outputPath("failed-correction-card.png") });
+  await page.setViewportSize(correctionViewport);
   await expect(meals).toContainText("350 kcal");
   await meals.getByRole("button", { name: "Retry analysis" }).click();
+  await openPhotoDetails(meals, "Photo rice plate");
   await meals.getByRole("button", { name: "Cancel analysis" }).click();
   await expect(meals).toContainText("Analysis canceled");
   await expect(meals).toContainText("350 kcal");
-  await meals.getByRole("link", { name: /Photo rice plate/ }).click();
+  await meals.getByRole("link", { name: "Open meal details" }).click();
   await page.getByRole("button", { name: "Correct with AI" }).click();
   await page.getByRole("textbox", { name: "Correction", exact: true }).fill("Diet soda");
   await page.route("**/photo-analysis.data", async route => {
@@ -260,9 +275,9 @@ test("plate capture returns to Daily Log, survives reload, and supports correcti
   }, { times: 1 });
   await page.getByRole("button", { name: "Apply correction" }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
-  await expect(meals.getByRole("alert")).toContainText("Correction could not start");
+  await expect(meals.getByRole("alert").filter({ hasText: "Correction could not start" })).toBeVisible();
   await expect(meals.getByRole("article")).toHaveCount(2);
-  await expect(meals.getByRole("link", { name: /Photo rice plate/ })).toHaveAttribute("href", originalEntryHref!);
+  await expect(meals.getByRole("link", { name: "Open meal details" })).toHaveAttribute("href", originalEntryHref!);
   await expect(meals.getByRole("progressbar")).toHaveCount(0);
   await expect(meals).toContainText("350 kcal");
   expect(
@@ -273,7 +288,7 @@ test("plate capture returns to Daily Log, survives reload, and supports correcti
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
 });
 
-test("non-food photos show a persistent failure and rejected uploads explain the error @camera-matrix", async ({ page }) => {
+test("non-food photos show a persistent failure and rejected uploads explain the error @camera-matrix", async ({ page }, testInfo) => {
   await bootstrapOrSignInBrowserTestUser(page, "photo.failure", "correct horse 🔐 battery");
   await page.getByRole("button", { name: "Finish setup" }).click();
   await page.getByRole("button", { name: "Add Food", exact: true }).click();
@@ -282,13 +297,41 @@ test("non-food photos show a persistent failure and rejected uploads explain the
   });
   const meals = page.getByRole("region", { name: "Daily log entries", exact: true });
   await expect(page.getByRole("dialog")).toHaveCount(0);
-  await expect(meals.getByRole("progressbar", { name: "Analyzing photo" })).toBeVisible();
+  await expect(meals.getByRole("article", { name: "Plate photo" })).toContainText("Analyzing photo");
+  await expect(meals.getByRole("img", { name: "Your plate" })).toBeVisible();
   await expect(meals).toContainText("No food or drink detected");
+  await expect(meals).toContainText("Analysis failed");
+  const failedCard = meals.getByRole("article", { name: "Plate photo" });
+  await expect(failedCard.locator(":scope > details")).toHaveCount(0);
+  await expect(failedCard.getByRole("button", { name: "Retry analysis" }).locator("svg")).toHaveCount(1);
+  await expect(failedCard.getByRole("button", { name: "Delete photo meal" }).locator("svg")).toHaveCount(1);
+  const priorViewport = page.viewportSize()!;
+  await page.setViewportSize({ width: 740, height: 900 });
+  await page.screenshot({ path: testInfo.outputPath("failed-photo-row.png") });
+  const desktopHeight = (await failedCard.boundingBox())!.height;
+  await failedCard.screenshot({ path: testInfo.outputPath("failed-photo-card.png"), scale: "css" });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  expect((await failedCard.boundingBox())!.height).toBeLessThanOrEqual(desktopHeight + 2);
+  await failedCard.screenshot({ path: testInfo.outputPath("failed-photo-card-mobile.png"), scale: "css" });
+  const reason = failedCard.locator("details");
+  await reason.locator("summary").click();
+  await expect(reason).toHaveAttribute("open", "");
+  await expect(reason.getByRole("alert")).toContainText("Try a clear photo of your meal");
+  await expect(reason.getByRole("alert")).toHaveCSS("white-space", "normal");
+  expect((await failedCard.boundingBox())!.height).toBeGreaterThan(desktopHeight);
+  await failedCard.screenshot({ path: testInfo.outputPath("failed-photo-card-mobile-expanded.png"), scale: "css" });
+  await reason.locator("summary").click();
+  await page.setViewportSize(priorViewport);
   await expect(meals.getByRole("button", { name: "Retry analysis" })).toBeVisible();
+  await meals.getByRole("button", { name: "Retry analysis" }).click();
+  await expect(meals.getByRole("article", { name: "Plate photo" })).toHaveAttribute("aria-busy", "true");
+  await expect(meals.getByRole("article", { name: "Plate photo" })).not.toHaveAttribute("aria-busy", "true");
+  await expect(meals).toContainText("No food or drink detected");
   await expect(meals.getByRole("link")).toHaveCount(0);
   await page.reload();
   await expect(meals).toContainText("No food or drink detected");
-  await expect(meals.getByRole("img", { name: "Your plate" })).toBeVisible();
+  await expect(meals.getByRole("img", { name: "Your plate" })).toHaveCount(0);
   await meals.getByRole("button", { name: "Delete photo meal" }).click();
   await expect(meals).toHaveCount(0);
   await page.getByRole("button", { name: "Add Food", exact: true }).click();

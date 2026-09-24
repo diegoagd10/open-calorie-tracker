@@ -195,7 +195,7 @@ password replacement. It never uses the deployment's persistent database.
 The opt-in smoke uses real Gemini and TypeSafe accounts, imports a supplied USDA
 Foundation archive into a temporary catalog, verifies selected model
 availability, analyzes one food image with source provenance, rejects one
-non-food image, and applies the production five-second deadline:
+non-food image, and applies the production ten-second deadline:
 
 ```sh
 GEMINI_API_KEY=... \

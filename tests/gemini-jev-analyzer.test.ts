@@ -671,14 +671,14 @@ test("a product-stage failure reports the completed category decision", async ()
   });
 });
 
-test("one five-second signal cancels ignored provider work without retrying", async () => {
+test("the ten-second default cancels ignored provider work without retrying", async () => {
   vi.useFakeTimers();
   let providerSignal: AbortSignal | undefined;
   let catalogSignal: AbortSignal | undefined;
   const gemini: GeminiMealClient = {
     analyzeMeal: geminiMock(async (_request, signal) => {
       providerSignal = signal;
-      await new Promise(resolve => setTimeout(resolve, 6_000));
+      await new Promise(resolve => setTimeout(resolve, 11_000));
       return { status: "no_food" };
     }),
   };
@@ -695,10 +695,12 @@ test("one five-second signal cancels ignored provider work without retrying", as
       });
     },
   };
-  const analyzer: PhotoAnalyzer = new GeminiJevPhotoAnalyzer(gemini, jev, catalog, { deadlineMs: 5_000 });
+  const analyzer: PhotoAnalyzer = new GeminiJevPhotoAnalyzer(gemini, jev, catalog);
 
   const pending = analyzer.analyze(analyzerInput());
   const rejection = pending.then(() => null, (error: unknown) => error);
+  await vi.advanceTimersByTimeAsync(5_000);
+  expect(providerSignal?.aborted).toBe(false);
   await vi.advanceTimersByTimeAsync(5_000);
 
   await expect(rejection).resolves.toMatchObject({ message: "Photo analysis timed out" });
@@ -815,7 +817,7 @@ test("late readiness completion cannot dispatch provider work after the deadline
   const jev: JevChoiceClient = { choose: jevMock() };
   const catalog: UsdaPhotoAnalysisCatalog = {
     photoAnalysisReadiness: async () => {
-      await new Promise(resolve => setTimeout(resolve, 6_000));
+      await new Promise(resolve => setTimeout(resolve, 11_000));
       return { state: "ready", generation: "generation-one" };
     },
     withPhotoAnalysisSnapshot: async () => {
@@ -827,7 +829,7 @@ test("late readiness completion cannot dispatch provider work after the deadline
 
   const pending = analyzer.analyze(analyzerInput());
   const rejection = pending.then(() => null, (error: unknown) => error);
-  await vi.advanceTimersByTimeAsync(5_000);
+  await vi.advanceTimersByTimeAsync(10_000);
   await expect(rejection).resolves.toMatchObject({ message: "Photo analysis timed out" });
   await vi.advanceTimersByTimeAsync(1_000);
 
