@@ -20,7 +20,8 @@ const temporaryDirectories: string[] = [];
 
 function readRepresentativeData(client: ApplicationDatabaseClient) {
   return {
-    foodEntries: client.select().from(schema.foodEntries).all(),
+    foodEntries: client.all<Record<string, unknown>>(sql`SELECT * FROM food_entries ORDER BY id`)
+      .map(({ source_saved_food_id: _sourceSavedFoodId, ...entry }) => entry),
     goalVersions: client.select().from(schema.goalVersions).all(),
     passwordCredentials: client.select().from(schema.passwordCredentials).all(),
     sessions: client.select().from(schema.sessions).all(),
@@ -55,8 +56,8 @@ test("startup applies the initial migration and configures writable SQLite stora
   });
 
   expect(database.getStatus()).toEqual({
-    appliedMigrations: 22,
-    availableMigrations: 22,
+    appliedMigrations: 23,
+    availableMigrations: 23,
     busyTimeoutMs: 5_000,
     foreignKeysEnabled: true,
     journalMode: "wal",
@@ -77,12 +78,12 @@ test("starting twice preserves the applied migration state", async () => {
   };
 
   const firstStartup = openApplicationDatabase(options);
-  expect(firstStartup.getStatus().appliedMigrations).toBe(22);
+  expect(firstStartup.getStatus().appliedMigrations).toBe(23);
   firstStartup.close();
 
   const replacementStartup = openApplicationDatabase(options);
   expect(replacementStartup.getStatus()).toMatchObject({
-    appliedMigrations: 22,
+    appliedMigrations: 23,
     schemaVersion: "20",
     writable: true,
   });
@@ -220,35 +221,27 @@ test("the production migration preserves every representative field from the pri
     userId: user.id,
     waterTargetMicroliters: 2_000_000,
   }).run();
-  client.insert(schema.foodEntries).values({
-    authoritativeBaseQuantityMicrounits: 100_000_000,
-    authoritativeBaseUnit: "g",
-    authoritativeNutrition: JSON.stringify({ energyMilliKcal: 95_000 }),
-    brand: "Migration Fixture",
-    carbohydrateMilligrams: 25_000,
-    createdAt: timestamp,
-    energyMilliKcal: 95_000,
-    fatMilligrams: 300,
-    fiberMilligrams: 4_400,
-    foodLogDate: "2026-08-30",
-    idempotencyKey: "migration-food-entry",
-    localEventTime: "10:00:00",
-    originalName: "Representative apple",
-    proteinMilligrams: 500,
-    provider: "usda-fdc",
-    providerFoodId: "171688",
-    quantityMicrounits: 1_000_000,
-    selectedMeasurementBaseQuantityMicrounits: 100_000_000,
-    selectedMeasurementId: "gram",
-    selectedMeasurementLabel: "100 g",
-    selectedMeasurementUnit: "g",
-    sodiumMilligrams: 1,
-    sourceDataType: "Foundation",
-    sugarMilligrams: 19_000,
-    supportedMeasurements: "[]",
-    updatedAt: timestamp,
-    userId: user.id,
-  }).run();
+  client.run(sql`
+    INSERT INTO food_entries (
+      user_id, food_log_date, local_event_time, provider, provider_food_id,
+      source_data_type, original_name, brand, authoritative_base_unit,
+      authoritative_base_quantity_microunits, authoritative_nutrition,
+      selected_measurement_id, selected_measurement_label,
+      selected_measurement_unit, selected_measurement_base_quantity_microunits,
+      supported_measurements, quantity_microunits,
+      authoritative_energy_milli_kcal, authoritative_protein_milligrams,
+      authoritative_carbohydrate_milligrams, authoritative_fat_milligrams,
+      authoritative_fiber_milligrams, authoritative_sugar_milligrams,
+      authoritative_sodium_milligrams, idempotency_key, created_at, updated_at
+    ) VALUES (
+      ${user.id}, '2026-08-30', '10:00:00', 'usda-fdc', '171688',
+      'Foundation', 'Representative apple', 'Migration Fixture', 'g',
+      100000000, ${JSON.stringify({ energyMilliKcal: 95_000 })},
+      'gram', '100 g', 'g', 100000000, '[]', 1000000,
+      95000, 500, 25000, 300, 4400, 19000, 1,
+      'migration-food-entry', ${timestamp}, ${timestamp}
+    )
+  `);
   client.run(sql`INSERT INTO water_events
     (user_id, food_log_date, amount_microliters, local_event_time, created_at, updated_at)
     VALUES (${user.id}, '2026-08-30', 236588, '10:05:00', ${timestamp}, ${timestamp})`);
@@ -261,8 +254,8 @@ test("the production migration preserves every representative field from the pri
   });
 
   expect(upgraded.getStatus()).toMatchObject({
-    appliedMigrations: 22,
-    availableMigrations: 22,
+    appliedMigrations: 23,
+    availableMigrations: 23,
     migrationsCurrent: true,
     schemaVersion: "20",
     writable: true,
@@ -375,7 +368,7 @@ THIS IS NOT VALID SQL;\n`,
   ).toEqual([]);
   expect(recovered.getClient().select().from(schema.users).all()).toEqual([]);
   expect(recovered.getStatus()).toMatchObject({
-    appliedMigrations: 22,
+    appliedMigrations: 23,
     migrationsCurrent: true,
   });
   recovered.close();
@@ -401,8 +394,8 @@ test("read-only application storage prevents startup", async () => {
 
 test("readiness requires every database invariant", () => {
   const readyStatus: DatabaseStatus = {
-    appliedMigrations: 22,
-    availableMigrations: 22,
+    appliedMigrations: 23,
+    availableMigrations: 23,
     busyTimeoutMs: 5_000,
     foreignKeysEnabled: true,
     journalMode: "wal",
@@ -457,8 +450,8 @@ test("status detects tampered migration history, metadata, and pragmas", async (
   client.run(sql`DELETE FROM __drizzle_migrations
     WHERE created_at = (SELECT MAX(created_at) FROM __drizzle_migrations)`);
   expect(database.getStatus()).toMatchObject({
-    appliedMigrations: 21,
-    availableMigrations: 22,
+    appliedMigrations: 22,
+    availableMigrations: 23,
     migrationsCurrent: false,
   });
   client.delete(schema.applicationMetadata)

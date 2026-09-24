@@ -15,6 +15,8 @@ test.each(["0014_breezy_eternals", "0015_outstanding_stature", "0016_first_key"]
   const databasePath = path.join(directory, "app.sqlite");
   let database = openApplicationDatabase({ databasePath, migrationsFolder: oldMigrations });
   try {
+    // Let the current service seed legacy rows, then restore the old schema before upgrade.
+    database.getClient().$client.exec("ALTER TABLE food_entries ADD COLUMN source_saved_food_id integer");
     const createdAt = "2026-01-01T00:00:00.000Z";
     const user = database.getClient().$client.prepare("INSERT INTO users (username_normalized, created_at) VALUES (?, ?) RETURNING id").get("old.off.member", createdAt) as { id: number };
     database.getClient().insert(userPreferences).values({ userId: user.id, timeZone: "UTC", displayUnits: "metric", createdAt, updatedAt: createdAt }).run();
@@ -26,6 +28,7 @@ test.each(["0014_breezy_eternals", "0015_outstanding_stature", "0016_first_key"]
     ]);
     database.getClient().insert(photoMeals).values({ id: "historical-photo", userId: user.id, entryId: history[0].id, foodLogDate: "2026-09-06", localEventTime: createdAt, photo: Buffer.alloc(12), mimeType: "image/png", createdAt }).run();
     const photos = database.getClient().select().from(photoMeals).all();
+    database.getClient().$client.exec("ALTER TABLE food_entries DROP COLUMN source_saved_food_id");
     database.close();
     database = openApplicationDatabase({ databasePath, migrationsFolder: path.resolve("drizzle") });
     const entries = new FoodEntryService(database.getClient(), new FoodCatalog([]), () => new Date("2026-09-08T12:00:00Z"));

@@ -176,6 +176,7 @@ export const foodEntries = sqliteTable(
     localEventTime: text("local_event_time").notNull(),
     provider: text().notNull(),
     providerFoodId: text("provider_food_id").notNull(),
+    sourceSavedFoodId: integer("source_saved_food_id"),
     providerPublishedDate: text("provider_published_date"),
     providerModifiedDate: text("provider_modified_date"),
     sourceDataType: text("source_data_type").notNull(),
@@ -265,6 +266,25 @@ export const foodEntries = sqliteTable(
         AND ${table.selectedMeasurementBaseQuantityMicrounits} > 0
         AND ${table.quantityMicrounits} > 0`,
     ),
+  ],
+);
+
+export const savedFoods = sqliteTable(
+  "saved_foods",
+  {
+    id: integer().primaryKey({ autoIncrement: true }),
+    userId: requiredUserId(),
+    sourceEntryId: integer("source_entry_id").notNull(),
+    name: text().notNull(),
+    snapshot: text().notNull(),
+    createdAt: text("created_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("saved_foods_user_source_unique").on(
+      table.userId,
+      table.sourceEntryId,
+    ),
+    index("saved_foods_user_name_index").on(table.userId, table.name),
   ],
 );
 

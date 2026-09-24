@@ -120,6 +120,7 @@ const baseLoaderData = {
   copyIdempotencyKeys: {},
   csrfToken: "home-component-csrf",
   foodEntryEditor: undefined,
+  manualEntrySaved: false,
   foodLog: baseFoodLog,
   nearbyDates: [
     { date: "2026-08-30", isFuture: false, isSelected: false },
@@ -131,12 +132,26 @@ const baseLoaderData = {
   waterDialog: undefined,
 };
 
+function withSavedSearchResults(overrides: Record<string, unknown>) {
+  const catalog = overrides.catalog;
+  if (
+    catalog &&
+    typeof catalog === "object" &&
+    "mode" in catalog &&
+    catalog.mode === "search" &&
+    !("savedResults" in catalog)
+  ) {
+    return { ...overrides, catalog: { ...catalog, savedResults: [] } };
+  }
+  return overrides;
+}
+
 async function renderHome(
   loaderOverrides: Record<string, unknown> = {},
   actionData?: Record<string, unknown>,
   initialPath = "/",
 ): Promise<ReactTestRenderer> {
-  const loaderData = { ...baseLoaderData, ...loaderOverrides };
+  const loaderData = { ...baseLoaderData, ...withSavedSearchResults(loaderOverrides) };
   const Routes = createRoutesStub([{
     Component: Home,
     id: "home",
@@ -168,7 +183,7 @@ async function renderPendingHome(
   loaderOverrides: Record<string, unknown>,
   navigation: { formData?: FormData; to: string },
 ) {
-  const loaderData = { ...baseLoaderData, ...loaderOverrides };
+  const loaderData = { ...baseLoaderData, ...withSavedSearchResults(loaderOverrides) };
   const never = new Promise<never>(() => undefined);
   const PendingHome = () => Home({ actionData: undefined, loaderData } as never);
   const router = createMemoryRouter(
@@ -953,6 +968,7 @@ test("Add Food offers search, barcode, and manual paths before any provider runs
   const renderer = await renderHome({ catalog: { mode: "choose", query: "" } });
   expect(semanticDom(renderer)).toMatchSnapshot();
   expect(allText(renderer)).toContain("Search food");
+  expect(allText(renderer)).toContain("My foods");
   expect(allText(renderer)).toContain("Scan barcode");
   expect(allText(renderer)).toContain("Manual");
   const methods = renderer.root.findByProps({ "aria-label": "Add Food methods" });
@@ -963,6 +979,9 @@ test("Add Food offers search, barcode, and manual paths before any provider runs
   expect(allText(renderer)).not.toContain("Nothing changes in your Food Log until a later confirmation step.");
   expect(renderer.root.findByProps({
     href: "/?date=2026-08-31&food=search",
+  })).toBeDefined();
+  expect(renderer.root.findByProps({
+    href: "/?date=2026-08-31&food=my",
   })).toBeDefined();
   expect(renderer.root.findByProps({
     href: "/?date=2026-08-31&food=barcode",
@@ -983,7 +1002,7 @@ test("Add Food disables only AI photo capture and presents role-appropriate reco
     },
   });
   expect(member.root.findByProps({ "aria-label": "Take photo · AI calories" }).props.disabled).toBe(true);
-  expect(member.root.findByProps({ "aria-label": "Add Food methods" }).children).toHaveLength(4);
+  expect(member.root.findByProps({ "aria-label": "Add Food methods" }).children).toHaveLength(5);
   expect(allText(member)).toContain("AI photo analysis is not available right now.");
   expect(allText(member)).toContain("Search food");
   expect(allText(member)).toContain("Manual");
@@ -1765,6 +1784,124 @@ test("manual Food Entry editor keeps calories required", async () => {
   expect(input(renderer, "energyKcal").props.required).toBe(true);
   expect(input(renderer, "proteinGrams").props.required).toBeUndefined();
   await act(async () => renderer.unmount());
+});
+
+const savedTortilla = {
+  carbohydrateMilligrams: 18_000,
+  energyMilliKcal: 100_000,
+  fatMilligrams: 2_000,
+  fiberMilligrams: null,
+  id: 77,
+  name: "Mexican tortilla",
+  proteinMilligrams: 3_000,
+  quantityMicrounits: 2_000_000,
+  selectedMeasurementLabel: "1 serving",
+  sodiumMilligrams: 25,
+  sugarMilligrams: 0,
+};
+
+test("My foods can be browsed and searched before selecting a saved food", async () => {
+  const listed = await renderHome({
+    catalog: { mode: "my", query: "", results: [savedTortilla] },
+  });
+  expect(allText(listed)).toContain("Mexican tortilla");
+  expect(allText(listed)).toContain("1 serving × 2");
+  expect(listed.root.findByProps({
+    href: "/?date=2026-08-31&food=saved%3A77",
+  })).toBeDefined();
+  expect(input(listed, "query").props.defaultValue).toBe("");
+  await act(async () => listed.unmount());
+
+  const noMatches = await renderHome({
+    catalog: { mode: "my", query: "rice", results: [] },
+  });
+  expect(allText(noMatches)).toContain("No matching foods");
+  await act(async () => noMatches.unmount());
+
+  const noFoods = await renderHome({
+    catalog: { mode: "my", query: "", results: [] },
+  });
+  expect(allText(noFoods)).toContain("No foods saved yet");
+  expect(allText(noFoods)).toContain("Open an older manual entry");
+  await act(async () => noFoods.unmount());
+
+  const searched = await renderHome({
+    catalog: {
+      mode: "search",
+      query: "tortilla",
+      results: [{
+        brand: null,
+        catalogGeneration: "current-generation",
+        isSelectable: false,
+        measurementSummary: null,
+        name: "Unusable catalog tortilla",
+        provider: "usda-fdc",
+        providerFoodId: "9999",
+        providerPublishedDate: null,
+      }],
+      savedResults: [savedTortilla],
+    },
+  });
+  expect(allText(searched)).toContain("My foods");
+  expect(allText(searched)).toContain("Mexican tortilla");
+  expect(allText(searched)).toContain("Nutrition unavailable");
+  expect(allText(searched)).not.toContain("No foods found");
+  await act(async () => searched.unmount());
+});
+
+test("saved food review keeps its recorded values and targets the displayed day", async () => {
+  const catalog = {
+    food: savedTortilla,
+    idempotencyKey: "saved-review-key",
+    mode: "saved",
+    query: "",
+  };
+  const reviewed = await renderHome({
+    catalog,
+    foodLog: { ...baseFoodLog, selectedDate: "2026-08-29" },
+  });
+  expect(allText(reviewed)).toContain("Mexican tortilla");
+  expect(allText(reviewed)).toContain("Review the saved values before adding this food to");
+  expect(allText(reviewed)).toContain("100");
+  expect(allText(reviewed)).toContain("Unknown");
+  expect(input(reviewed, "date").props.value).toBe("2026-08-29");
+  expect(input(reviewed, "savedFoodId").props.value).toBe(77);
+  expect(input(reviewed, "idempotencyKey").props.value).toBe("saved-review-key");
+  expect(reviewed.root.findByProps({ value: "log-saved-food" }).props.disabled)
+    .toBe(false);
+  await act(async () => reviewed.unmount());
+
+  const formData = new FormData();
+  formData.set("intent", "log-saved-food");
+  const pending = await renderPendingHome(
+    { catalog },
+    { formData, to: "/?date=2026-08-31&food=saved%3A77" },
+  );
+  expect(allText(pending)).toContain("Adding…");
+  expect(pending.root.findByProps({ value: "log-saved-food" }).props.disabled)
+    .toBe(true);
+  await act(async () => pending.unmount());
+});
+
+test("an older manual entry offers a top action to save its independent food", async () => {
+  const manualEntry = { ...editableEntry, provider: "manual" };
+  const unsaved = await renderHome({
+    foodEntryEditor: manualEntry,
+    manualEntrySaved: false,
+  });
+  expect(allText(unsaved)).toContain("Add to My foods");
+  expect(unsaved.root.findByProps({ value: "save-manual-food" }).type)
+    .toBe("button");
+  await act(async () => unsaved.unmount());
+
+  const saved = await renderHome({
+    foodEntryEditor: manualEntry,
+    manualEntrySaved: true,
+  });
+  expect(allText(saved)).toContain("In My foods");
+  expect(allText(saved)).toContain("Changes to this daily entry do not change the saved food");
+  expect(saved.root.findAllByProps({ value: "save-manual-food" })).toHaveLength(0);
+  await act(async () => saved.unmount());
 });
 
 test("home water dialogs cover create, presets, exact values, edit, and deletion", async () => {
