@@ -264,7 +264,7 @@ test("one mobile Chromium journey verifies the complete private MVP", async ({
   await page.getByRole("button", { name: "Delete entry" }).click();
   await page.getByRole("button", { name: "Delete", exact: true }).click();
   await page.getByRole("link", { name: /Water.*20 fl oz/ }).click();
-  await page.getByRole("button", { name: "Delete Water Event" }).click();
+  await page.getByRole("button", { name: "Delete entry" }).click();
   await page.getByRole("button", { name: "Delete", exact: true }).click();
   await expect(page.getByText("No entries for this day")).toBeVisible();
 
@@ -634,7 +634,7 @@ test("the critical mobile experience is operable with only a keyboard", async ({
   await tabTo(page, updatedWaterEvent);
   await page.keyboard.press("Enter");
   const deleteWater = page.getByRole("button", {
-    name: "Delete Water Event",
+    name: "Delete entry",
   });
   await tabTo(page, deleteWater);
   await page.keyboard.press("Enter");

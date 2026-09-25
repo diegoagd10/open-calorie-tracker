@@ -56,7 +56,7 @@ async function setupDatabase() {
 
 function insertConfiguredUser(
   client: ApplicationDatabaseClient,
-  options: { timeZone: string; username: string },
+  options: { effectiveDate?: string; timeZone: string; username: string },
 ): number {
   const createdAt = "2026-01-01T00:00:00.000Z";
   const userId = client
@@ -81,7 +81,7 @@ function insertConfiguredUser(
       calorieTargetMilliKcal: 2_050_000,
       carbohydrateTargetMilligrams: 230_000,
       createdAt,
-      effectiveDate: "2025-01-01",
+      effectiveDate: options.effectiveDate ?? "2025-01-01",
       fatTargetMilligrams: 70_000,
       fiberTargetMilligrams: 25_000,
       proteinTargetMilligrams: 120_000,
@@ -210,7 +210,7 @@ test("nearby dates and calendar months use civil-date arithmetic", () => {
   expect(calendar.label).toBe("February 2024");
   expect(calendar.previousMonth).toBe("2024-01");
   expect(calendar.nextMonth).toBeUndefined();
-  expect(calendar.leadingEmptyDays).toBe(4);
+  expect(calendar.leadingEmptyDays).toBe(3);
   expect(calendar.days).toHaveLength(29);
   expect(calendar.days.at(-1)).toEqual({
     date: "2024-02-29",
@@ -376,6 +376,26 @@ test("Food Log errors retain their public contract", () => {
     message: "Future Food Logs cannot be changed",
     name: "FutureFoodLogDateError",
   });
+});
+
+test("the earliest Goal Version applies to Food Logs before it becomes effective", async () => {
+  const database = await setupDatabase();
+  const client = database.getClient();
+  const userId = insertConfiguredUser(client, {
+    effectiveDate: "2026-09-24",
+    timeZone: "America/New_York",
+    username: "earliest.foodlog",
+  });
+  const service = new FoodLogService(
+    client,
+    () => new Date("2026-09-24T16:00:00.000Z"),
+  );
+
+  expect(service.read(userId, "2026-09-23")?.goal).toMatchObject({
+    calorieTargetMilliKcal: 2_050_000,
+    effectiveDate: "2026-09-24",
+  });
+  database.close();
 });
 
 test("a selected historical Food Log survives travel between time zones", async () => {

@@ -492,7 +492,8 @@ test("home distinguishes past, future, no-goal, and incomplete summaries", async
   expect(past.root.findByType("h1").children.join("")).toBe("Food Log");
   expect(allText(past)).toContain("1,234.6 known / No active goal");
   expect(allText(past)).toContain("Protein12.345 known / No active goalIncomplete");
-  expect(allText(past)).toContain("1 equivalent glass");
+  expect(allText(past)).toContain("1 equivalent glass · 237 ml");
+  expect(allText(past)).not.toContain("8 fl oz");
   expect(allText(past)).toContain("/ No active goal");
   expect(allText(past)).toContain("Food Entry updated. Daily totals refreshed.");
   expect(allText(past)).toContain("Visible route message");
@@ -560,7 +561,7 @@ test("home renders calendar navigation, selected dates, and future days", async 
   expect(renderer.root.findAllByProps({ "aria-hidden": "true" }).filter(
     (node) => String(node.props.key ?? "").startsWith("empty-"),
   )).toHaveLength(0);
-  expect(allText(renderer)).toContain("SunMonTueWedThuFriSat");
+  expect(allText(renderer)).toContain("MonTueWedThuFriSatSun");
   await act(async () => renderer.unmount());
 
   const withNext = await renderHome({
@@ -980,9 +981,13 @@ test("Add Food offers search, barcode, and manual paths before any provider runs
   expect(renderer.root.findByProps({
     href: "/?date=2026-08-31&food=search",
   })).toBeDefined();
-  expect(renderer.root.findByProps({
+  const myFoods = renderer.root.findByProps({
     href: "/?date=2026-08-31&food=my",
-  })).toBeDefined();
+  });
+  const search = renderer.root.findByProps({
+    href: "/?date=2026-08-31&food=search",
+  });
+  expect(myFoods.props.className).toBe(search.props.className);
   expect(renderer.root.findByProps({
     href: "/?date=2026-08-31&food=barcode",
   })).toBeDefined();
@@ -1408,6 +1413,18 @@ test("home catalog renders initial, empty, failure, and selectable result states
       { message: "Untitled failure", mode: "search", query: "error", results: [] },
       "Search unavailable",
     ],
+    [
+      {
+        actionHref: "/settings/catalogs",
+        actionLabel: "Open Food Catalogs",
+        message: "USDA Foundation is not installed.",
+        mode: "search",
+        query: "error",
+        results: [],
+        title: "USDA Foundation is not installed",
+      },
+      "Open Food Catalogs",
+    ],
   ] as const;
   for (const [catalog, expected] of states) {
     const renderer = await renderHome({ catalog });
@@ -1417,6 +1434,10 @@ test("home catalog renders initial, empty, failure, and selectable result states
     expect(allText(renderer)).toContain("Add Food");
     expect(allText(renderer)).toContain(expected);
     expect(input(renderer, "csrfToken").props.value).toBe("home-component-csrf");
+    if ("actionHref" in catalog && catalog.actionHref) {
+      expect(nodeText(renderer.root.findByProps({ to: catalog.actionHref })))
+        .toBe(catalog.actionLabel);
+    }
     await act(async () => renderer.unmount());
   }
 
@@ -1913,7 +1934,7 @@ test("home water dialogs cover create, presets, exact values, edit, and deletion
   const createDialog = await renderHome({ waterDialog: { mode: "create" } });
   expect(semanticDom(createDialog)).toMatchSnapshot();
   expect(allText(createDialog)).toContain("Add Water");
-  expect(queriedSelectors).toContain("button:not([disabled])");
+  expect(queriedSelectors).toContain('[aria-label="Water presets"] button');
   expect(input(createDialog, "waterSelection").props.value).toBe("presets");
   expect(allText(createDialog)).toContain("Select water amount");
   const large = createDialog.root.findAllByType("button").find(
@@ -1976,12 +1997,10 @@ test("home water dialogs cover create, presets, exact values, edit, and deletion
     .toMatchObject({
       "aria-valuemax": 2365.882,
       "aria-valuenow": 2365.882,
-      "aria-valuetext": "3,000 of 2,365.882 ml target",
+      "aria-valuetext": "3,000 of 2,366 ml target",
       style: { "--progress": "100%" },
     });
-  const deleteButton = edit.root.findAllByType("button").find(
-    (button) => nodeText(button) === "Delete Water Event",
-  )!;
+  const deleteButton = edit.root.findByProps({ "aria-label": "Delete entry" });
   await act(async () => deleteButton.props.onClick());
   expect(semanticDom(edit)).toMatchSnapshot();
   expect(allText(edit)).toContain("Delete this Water Event?");
@@ -2033,7 +2052,7 @@ test("home water dialogs cover create, presets, exact values, edit, and deletion
     waterDialog: { mode: "create" },
   });
   expect(allText(metricCreate)).toContain("Select water amount");
-  expect(allText(metricCreate)).toContain("473.176 ml");
+  expect(allText(metricCreate)).toContain("473 ml");
   expect(metricCreate.root.findByProps({ "aria-label": "Water progress" }).props)
     .toMatchObject({ "aria-valuenow": 1000 });
   const metricExact = metricCreate.root.findAllByType("button").find(
@@ -2054,6 +2073,58 @@ test("home water dialogs cover create, presets, exact values, edit, and deletion
   expect(allText(actionEditor)).toContain("Reloaded conflicting Water Event");
   expect(input(actionEditor, "eventId").props.value).toBe(51);
   await act(async () => actionEditor.unmount());
+});
+
+test("metric glass servings add as advertised 237 ml and label inferred glasses", async () => {
+  const singleGlass = {
+    amountMicroliters: 236_588,
+    foodLogDate: "2026-08-31",
+    id: 61,
+    kind: "water" as const,
+    localEventTime: "19:08:00",
+    preset8Count: 0,
+    preset16Count: 0,
+    preset24Count: 0,
+  };
+  const twoGlasses = {
+    ...singleGlass,
+    amountMicroliters: 473_176,
+    id: 62,
+    localEventTime: "19:44:00",
+    preset8Count: 2,
+  };
+  const renderer = await renderHome({
+    foodLog: {
+      ...baseFoodLog,
+      displayUnits: "metric",
+      events: [singleGlass, twoGlasses],
+      waterTotalMicroliters: 709_764,
+    },
+  });
+  expect(allText(renderer)).toContain("3 equivalent glasses · 237 ml");
+  expect(allText(renderer)).toContain("711 / 2,366 ml");
+  expect(allText(renderer)).toContain("237 ml Glass × 1");
+  expect(allText(renderer)).toContain("237 ml Glass × 2");
+  expect(allText(renderer)).toContain("474 ml");
+  expect(allText(renderer)).not.toContain("Plain water");
+  expect(renderer.root.findByProps({ "aria-label": "Water progress" }).props)
+    .toMatchObject({
+      "aria-valuetext": "711 of 2,366 ml target",
+    });
+
+  const createDialog = await renderHome({
+    foodLog: { ...baseFoodLog, displayUnits: "metric" },
+    waterDialog: { mode: "create" },
+  });
+  const glass = createDialog.root.findAllByType("button").find(
+    (button) => nodeText(button).includes("Glass"),
+  )!;
+  await act(async () => glass.props.onClick());
+  await act(async () => glass.props.onClick());
+  expect(allText(createDialog)).toContain("2 servings · 474 ml");
+  expect(allText(createDialog)).toContain("Add 474 ml");
+  await act(async () => createDialog.unmount());
+  await act(async () => renderer.unmount());
 });
 
 test("water preset counts reset after Exact and grouped edits open with the total", async () => {
@@ -2229,7 +2300,7 @@ test("home renders submission and navigation pending states", async () => {
     { formData: updateWater, to: "/" },
   );
   expect(pendingWaterEdit.root.findByType("fieldset").props.disabled).toBe(true);
-  expect(allText(pendingWaterEdit)).toContain("Saving…");
+  expect(pendingWaterEdit.root.findByProps({ "aria-label": "Saving changes" })).toBeDefined();
   await act(async () => pendingWaterEdit.unmount());
 
   const deleteWater = new FormData();
@@ -2250,9 +2321,7 @@ test("home renders submission and navigation pending states", async () => {
     },
     { formData: deleteWater, to: "/" },
   );
-  const revealWaterDelete = deletingWater.root.findAllByType("button").find(
-    (button) => nodeText(button) === "Delete Water Event",
-  )!;
+  const revealWaterDelete = deletingWater.root.findByProps({ "aria-label": "Delete entry" });
   await act(async () => revealWaterDelete.props.onClick());
   expect(allText(deletingWater)).toContain("Deleting…");
   await act(async () => deletingWater.unmount());
@@ -2439,8 +2508,8 @@ test("copy calendar links preserve the source and destination, highlight dates a
   expect(dialog.findByProps({ "aria-label": "Previous month" }).props.to).toBe("/?date=2026-08-28&copy=93&copyDate=2026-08-29&copyMonth=2026-07");
   expect(dialog.findByProps({ "aria-label": "Next month" }).props.to).toBe("/?date=2026-08-28&copy=93&copyDate=2026-08-29&copyMonth=2026-09");
   const grid = dialog.findByProps({ "aria-label": "August 2026 destination calendar" });
-  expect(grid.findAllByProps({ className: styles.weekday }).map(nodeText)).toEqual(["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]);
-  expect(grid.findAllByProps({ "aria-hidden": "true" })).toHaveLength(6);
+  expect(grid.findAllByProps({ className: styles.weekday }).map(nodeText)).toEqual(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]);
+  expect(grid.findAllByProps({ "aria-hidden": "true" })).toHaveLength(5);
   const selected = grid.findByProps({ "aria-label": "Saturday, August 29" });
   expect(selected.props).toMatchObject({
     "aria-current": "date", className: `${styles.calendarDay} ${styles.calendarSelected}`,

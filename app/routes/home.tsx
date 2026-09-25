@@ -57,6 +57,7 @@ import {
 } from "../catalog/runtime.server";
 import {
   buildCalendarMonth,
+  CALENDAR_WEEKDAY_LABELS,
   formatLocalDate,
   getNearbyLocalDates,
   parseIsoLocalDate,
@@ -258,13 +259,33 @@ function FoodNameField({ value, onChange }: { value: string; onChange: (value: s
   </label>;
 }
 
+type CatalogFailure = {
+  actionHref?: string;
+  actionLabel?: string;
+  message: string;
+  status: number;
+  title: string;
+};
+
+function catalogFailurePresentation(failure: CatalogFailure) {
+  return {
+    message: failure.message,
+    title: failure.title,
+    ...(failure.actionHref && failure.actionLabel
+      ? { actionHref: failure.actionHref, actionLabel: failure.actionLabel }
+      : {}),
+  };
+}
+
 function catalogFailure(
   error: unknown,
-): { message: string; status: number; title: string } | undefined {
+): CatalogFailure | undefined {
   if (error instanceof CatalogStaleReviewError) return { message: error.message, status: 409, title: "Review food again" };
   if (error instanceof CatalogNutritionUnavailableError) return { message: "This food has no usable calories in the installed catalog.", status: 422, title: "Nutrition unavailable" };
   if (error instanceof CatalogNotInstalledError) {
     return {
+      actionHref: "/settings/catalogs",
+      actionLabel: "Open Food Catalogs",
       message:
         "USDA Foundation is not installed. Ask your administrator to install it in Food Catalogs Settings. Your saved Food Entries remain available.",
       status: 503,
@@ -306,9 +327,11 @@ function catalogFailure(
 
 function barcodeCatalogFailure(
   error: unknown,
-): { message: string; status: number; title: string } | undefined {
+): CatalogFailure | undefined {
   if (error instanceof CatalogNotInstalledError) {
     return {
+      actionHref: "/settings/catalogs",
+      actionLabel: "Open Food Catalogs",
       message:
         "An administrator can install Open Food Facts in Settings → Food Catalogs. USDA search and saved Food Entries remain available.",
       status: 503,
@@ -588,6 +611,8 @@ export async function loader({ request }: Route.LoaderArgs) {
         title?: never;
       }
     | {
+        actionHref?: string;
+        actionLabel?: string;
         barcode: string;
         food?: undefined;
         idempotencyKey?: undefined;
@@ -597,6 +622,8 @@ export async function loader({ request }: Route.LoaderArgs) {
         title?: string;
       }
     | {
+        actionHref?: string;
+        actionLabel?: string;
         mode: "search";
         query: string;
         results: CatalogSearchResult[];
@@ -675,10 +702,9 @@ export async function loader({ request }: Route.LoaderArgs) {
             responseStatus = failure.status;
             catalog = {
               barcode: parsedBarcode,
-              message: failure.message,
               mode: "barcode",
               query: "",
-              title: failure.title,
+              ...catalogFailurePresentation(failure),
             };
           }
         }
@@ -717,13 +743,12 @@ export async function loader({ request }: Route.LoaderArgs) {
           if (!failure) throw error;
           responseStatus = failure.status;
           catalog = {
-            message: failure.message,
             mode: "search",
             query: parsedQuery,
             results: [],
             savedResults: getFoodEntryService(testRequestInstant(request))
               .listSavedFoods(session.user.id, parsedQuery),
-            title: failure.title,
+            ...catalogFailurePresentation(failure),
           };
         }
       }
@@ -758,13 +783,12 @@ export async function loader({ request }: Route.LoaderArgs) {
           }
         }
         catalog = {
-          message: failure.message,
           mode: "search",
           query: requestedQuery,
           results,
           savedResults: getFoodEntryService(testRequestInstant(request))
             .listSavedFoods(session.user.id, requestedQuery),
-          title: failure.title,
+          ...catalogFailurePresentation(failure),
         };
       }
     }
@@ -1286,11 +1310,7 @@ function waterGoalValues(
   displayUnits: DisplayUnits,
 ) {
   return {
-    water: formatWaterAmount(
-      waterTargetMicroliters,
-      displayUnits,
-      3,
-    ),
+    water: formatWaterAmount(waterTargetMicroliters, displayUnits),
     waterUnit: displayUnits === "metric" ? "ml" : "fl oz",
   };
 }
@@ -1313,12 +1333,117 @@ function waterInputValue(
 function formatWaterAmount(
   microliters: number,
   displayUnits: DisplayUnits,
-  maximumFractionDigits = 3,
+  maximumFractionDigits?: number,
 ): string {
-  return new Intl.NumberFormat("en-US", { maximumFractionDigits }).format(
+  const amount =
     Number(waterTargetThousandthsFromMicroliters(microliters, displayUnits)) /
-      1_000,
+    1_000;
+  const digits =
+    maximumFractionDigits ??
+    (displayUnits === "metric" && Math.abs(amount) >= 1 ? 0 : 3);
+  return new Intl.NumberFormat("en-US", { maximumFractionDigits: digits }).format(
+    amount,
   );
+}
+
+const METRIC_PRESET_DISPLAY_ML = { "8": 237, "16": 473, "24": 710 } as const;
+
+function inferWaterPresetCounts(event: {
+  amountMicroliters: number;
+  preset8Count: number;
+  preset16Count: number;
+  preset24Count: number;
+}): { "8": number; "16": number; "24": number } | undefined {
+  const stored = {
+    "8": event.preset8Count,
+    "16": event.preset16Count,
+    "24": event.preset24Count,
+  };
+  if (stored["8"] + stored["16"] + stored["24"] > 0) {
+    return stored;
+  }
+  if (event.amountMicroliters === WATER_PRESET_MICROLITERS["24"]) {
+    return { "8": 0, "16": 0, "24": 1 };
+  }
+  if (event.amountMicroliters === WATER_PRESET_MICROLITERS["16"]) {
+    return { "8": 0, "16": 1, "24": 0 };
+  }
+  if (event.amountMicroliters === WATER_PRESET_MICROLITERS["8"]) {
+    return { "8": 1, "16": 0, "24": 0 };
+  }
+  const glass = WATER_PRESET_MICROLITERS["8"];
+  if (event.amountMicroliters > 0 && event.amountMicroliters % glass === 0) {
+    return { "8": event.amountMicroliters / glass, "16": 0, "24": 0 };
+  }
+  return undefined;
+}
+
+function advertisedPresetMilliliters(counts: {
+  "8": number;
+  "16": number;
+  "24": number;
+}): number {
+  return (
+    counts["8"] * METRIC_PRESET_DISPLAY_ML["8"] +
+    counts["16"] * METRIC_PRESET_DISPLAY_ML["16"] +
+    counts["24"] * METRIC_PRESET_DISPLAY_ML["24"]
+  );
+}
+
+function formatAdvertisedPresetAmount(
+  counts: { "8": number; "16": number; "24": number },
+  displayUnits: DisplayUnits,
+  maximumFractionDigits?: number,
+): string {
+  if (displayUnits === "metric") {
+    return new Intl.NumberFormat("en-US", {
+      maximumFractionDigits: maximumFractionDigits ?? 0,
+    }).format(advertisedPresetMilliliters(counts));
+  }
+  return formatWaterAmount(
+    waterPresetTotalMicroliters(counts),
+    displayUnits,
+    maximumFractionDigits,
+  );
+}
+
+function formatLoggedWaterTotal(
+  events: ReadonlyArray<{
+    amountMicroliters?: number;
+    kind: string;
+    preset8Count?: number;
+    preset16Count?: number;
+    preset24Count?: number;
+  }>,
+  displayUnits: DisplayUnits,
+  waterTotalMicroliters: number,
+): string {
+  if (displayUnits === "metric") {
+    let advertised = 0;
+    let waterEvents = 0;
+    for (const event of events) {
+      if (event.kind !== "water" || event.amountMicroliters === undefined) {
+        continue;
+      }
+      const counts = inferWaterPresetCounts({
+        amountMicroliters: event.amountMicroliters,
+        preset8Count: event.preset8Count ?? 0,
+        preset16Count: event.preset16Count ?? 0,
+        preset24Count: event.preset24Count ?? 0,
+      });
+      if (!counts) {
+        return formatWaterAmount(waterTotalMicroliters, displayUnits);
+      }
+      waterEvents += 1;
+      advertised += advertisedPresetMilliliters(counts);
+    }
+    if (waterEvents > 0) {
+      return new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(
+        advertised,
+      );
+    }
+  }
+  return formatWaterAmount(waterTotalMicroliters, displayUnits);
 }
 
 function CalendarView({
@@ -1375,7 +1500,7 @@ function CalendarView({
           className={styles.calendarGrid}
           aria-label={`${calendar.label} calendar`}
         >
-          {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => (
+          {CALENDAR_WEEKDAY_LABELS.map((day) => (
             <span className={styles.weekday} key={day}>
               {day}
             </span>
@@ -1678,10 +1803,10 @@ function DailySummary({
   const calorieKnown = formatEnergy(calorieTotal.known);
   const calorieGoalDisplay = calorieGoal ? formatEnergy(calorieGoal) : undefined;
   const waterTotal = foodLog.waterTotalMicroliters;
-  const waterTotalDisplay = formatWaterAmount(
-    waterTotal,
+  const waterTotalDisplay = formatLoggedWaterTotal(
+    foodLog.events,
     foodLog.displayUnits,
-    3,
+    waterTotal,
   );
   const waterUnit = foodLog.displayUnits === "metric" ? "ml" : "fl oz";
   const equivalentGlasses = new Intl.NumberFormat("en-US", {
@@ -1866,7 +1991,7 @@ function DailySummary({
           <span>
             <strong id="water-heading">Water</strong>
             <small>
-              {equivalentGlasses} equivalent {equivalentGlasses === "1" ? "glass" : "glasses"} · 8 fl oz / 237 ml
+              {equivalentGlasses} equivalent {equivalentGlasses === "1" ? "glass" : "glasses"} · {foodLog.displayUnits === "metric" ? "237 ml" : "8 fl oz"}
             </small>
           </span>
           <strong>
@@ -2566,14 +2691,23 @@ type WaterDialogState = NonNullable<
 >;
 
 function formatWaterPresetBreakdown(
-  event: { preset8Count: number; preset16Count: number; preset24Count: number },
+  event: {
+    amountMicroliters: number;
+    preset8Count: number;
+    preset16Count: number;
+    preset24Count: number;
+  },
   displayUnits: DisplayUnits,
 ): string | undefined {
+  const counts = inferWaterPresetCounts(event);
+  if (!counts) {
+    return undefined;
+  }
   const unit = displayUnits === "metric" ? "ml" : "fl oz";
   const parts = ([
-    ["24", "Large", event.preset24Count],
-    ["16", "Bottle", event.preset16Count],
-    ["8", "Glass", event.preset8Count],
+    ["24", "Large", counts["24"]],
+    ["16", "Bottle", counts["16"]],
+    ["8", "Glass", counts["8"]],
   ] as const).filter(([, , count]) => count > 0).map(([size, label, count]) =>
     `${formatWaterAmount(WATER_PRESET_MICROLITERS[size], displayUnits, displayUnits === "metric" ? 0 : 1)} ${unit} ${label} × ${count}`
   );
@@ -2617,7 +2751,7 @@ function WaterEventDialog({
   const closeHref = foodLogHref(date);
   const { closeDialog, dialogRef, handleDialogKeyDown } = useModalDialog({
     closeHref,
-    initialFocusSelector: "button:not([disabled])",
+    initialFocusSelector: '[aria-label="Water presets"] button',
     restoreFocusSelector:
       "[data-water-editor-trigger], [data-water-dialog-trigger]",
   });
@@ -2664,22 +2798,57 @@ function WaterEventDialog({
         ref={dialogRef}
         role="dialog"
       >
-        <div className={styles.dialogHead}>
+        <div className={`${styles.dialogHead} ${event ? styles.editDialogHead : ""}`}>
           <div>
             <h2 id="water-event-title">
               {event ? "Edit Water Event" : "Add Water"}
             </h2>
             <p>{event ? "Edit the amount or time" : "Add one or more plain-water servings"}</p>
           </div>
-          <Link
-            aria-label="Close water sheet"
-            className={styles.dialogClose}
-            to={closeHref}
-          >
-            ×
-          </Link>
+          {event ? (
+            <div className={styles.editHeaderActions}>
+              <button
+                aria-label="Delete entry"
+                className={`${styles.editIconButton} ${styles.editDeleteButton}`}
+                disabled={pending}
+                onClick={() => setConfirmingDelete(true)}
+                title="Delete entry"
+                type="button"
+              >
+                <UiIcon name="delete" />
+              </button>
+              <Link
+                aria-label="Cancel"
+                className={styles.editIconButton}
+                title="Cancel"
+                to={closeHref}
+              >
+                <UiIcon name="cancel" />
+              </Link>
+              <button
+                aria-label={pendingIntent === "update-water" ? "Saving changes" : "Save changes"}
+                className={`${styles.editIconButton} ${styles.editSaveButton}`}
+                disabled={pending}
+                form="water-event-form"
+                name="intent"
+                title={pendingIntent === "update-water" ? "Saving changes" : "Save changes"}
+                type="submit"
+                value="update-water"
+              >
+                <UiIcon name="save" />
+              </button>
+            </div>
+          ) : (
+            <Link
+              aria-label="Close water sheet"
+              className={styles.dialogClose}
+              to={closeHref}
+            >
+              ×
+            </Link>
+          )}
         </div>
-        <Form className={styles.waterForm} method="post" noValidate>
+        <Form className={styles.waterForm} id="water-event-form" method="post" noValidate>
           <input name="csrfToken" type="hidden" value={csrfToken} />
           <input name="date" type="hidden" value={date} />
           <input name="waterSelection" type="hidden" value={selection} />
@@ -2762,7 +2931,7 @@ function WaterEventDialog({
               <p aria-live="polite" className={styles.waterSelectionSummary}>
                 {servingCount === 0
                   ? "Tap a size to add a serving."
-                  : `${servingCount} ${servingCount === 1 ? "serving" : "servings"} · ${formatWaterAmount(presetTotalMicroliters, displayUnits)} ${unit}`}
+                  : `${servingCount} ${servingCount === 1 ? "serving" : "servings"} · ${formatAdvertisedPresetAmount(presetCounts, displayUnits)} ${unit}`}
                 {presetTotalOunces + 8 > 500 ? " · Maximum amount reached" : null}
               </p>
             ) : null}
@@ -2807,43 +2976,31 @@ function WaterEventDialog({
                 {actionData.message}
               </p>
             ) : null}
+            {event ? null : (
             <div className={styles.waterActions}>
-              {event ? (
-                <button
-                  className={styles.dangerButton}
-                  onClick={() => setConfirmingDelete(true)}
-                  type="button"
-                >
-                  Delete Water Event
-                </button>
-              ) : (
-                <span />
-              )}
+              <span />
               <div>
                 <Link className={styles.secondaryButton} to={closeHref}>
                   Cancel
                 </Link>
                 <button
                   className={styles.waterSubmitButton}
-                  disabled={!event && selection === "presets" && servingCount === 0}
+                  disabled={selection === "presets" && servingCount === 0}
                   name="intent"
                   type="submit"
-                  value={event ? "update-water" : "create-water"}
+                  value="create-water"
                 >
                   {pendingIntent === "create-water"
                     ? "Adding…"
-                    : pendingIntent === "update-water"
-                      ? "Saving…"
-                      : event
-                        ? "Save changes"
-                        : selection === "exact"
-                          ? "Add exact amount"
-                          : servingCount === 0
-                            ? "Select water amount"
-                            : `Add ${formatWaterAmount(presetTotalMicroliters, displayUnits, displayUnits === "metric" ? 0 : 1)} ${unit}`}
+                    : selection === "exact"
+                      ? "Add exact amount"
+                      : servingCount === 0
+                        ? "Select water amount"
+                        : `Add ${formatAdvertisedPresetAmount(presetCounts, displayUnits, displayUnits === "metric" ? 0 : 1)} ${unit}`}
                 </button>
               </div>
             </div>
+            )}
             {event && confirmingDelete ? (
               <div className={styles.deleteConfirm} role="alert">
                 <div>
@@ -2879,7 +3036,7 @@ function CatalogChoiceStage({ date, photoCapture }: { date: string; photoCapture
   return (
     <>
     <div className={methodStyles.methods} aria-label="Add Food methods">
-      <Link className={`${methodStyles.method} ${methodStyles.savedMethod}`} to={catalogHref(date, "my")}>
+      <Link className={methodStyles.method} to={catalogHref(date, "my")}>
         <span className={methodStyles.icon}>
           <UiIcon name="utensils" />
         </span>
@@ -3153,7 +3310,7 @@ function ManualFoodStage({
 function FoodLogFormActions({ date, message, children }: { date: string; message?: string; children: ReactNode }) {
   return <>
     {message ? <p className={styles.catalogError} role="alert">{message}</p> : null}
-    <div className={styles.dialogActions}>
+    <div className={`${styles.dialogActions} ${styles.stickyDialogActions}`}>
       <Link className={styles.secondaryButton} to={foodLogHref(date)}>Cancel</Link>
       {children}
     </div>
@@ -3401,6 +3558,11 @@ function BarcodeCatalogStage({
         <div className={styles.catalogState} role="alert">
           <h3>{catalog.title}</h3>
           <p>{catalog.message}</p>
+          {catalog.actionHref && catalog.actionLabel ? (
+            <Link className={styles.catalogAction} to={catalog.actionHref}>
+              {catalog.actionLabel}
+            </Link>
+          ) : null}
         </div>
       ) : (
         <div className={styles.catalogState}>
@@ -3607,6 +3769,11 @@ function CatalogDialog({
                   <div className={styles.catalogState} role="alert">
                     <h3>{catalog.title ?? "Search unavailable"}</h3>
                     <p>{catalog.message}</p>
+                    {catalog.actionHref && catalog.actionLabel ? (
+                      <Link className={styles.catalogAction} to={catalog.actionHref}>
+                        {catalog.actionLabel}
+                      </Link>
+                    ) : null}
                   </div>
                 ) : null}
                 {catalog.results.length > 0 ? (
@@ -3957,13 +4124,11 @@ function CopyFoodEntryDialog({
             aria-label={`${dialog.calendar.label} destination calendar`}
             className={styles.calendarGrid}
           >
-            {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map(
-              (day) => (
+            {CALENDAR_WEEKDAY_LABELS.map((day) => (
                 <span className={styles.weekday} key={day}>
                   {day}
                 </span>
-              ),
-            )}
+            ))}
             {Array.from(
               { length: dialog.calendar.leadingEmptyDays },
               (_, index) => (
@@ -4135,7 +4300,7 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
           selectedDate={foodLog.selectedDate}
           today={foodLog.today}
         />
-        <main className={styles.appSurface} id="food-log-content">
+        <main className={`${styles.appSurface} ${styles.foodLogSurface}`} id="food-log-content">
           <header className={styles.mobileHeader}>
             <div className={styles.titleLine}>
               <h1
@@ -4216,9 +4381,13 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
                       <PhotoMealCard key={meal.id} meal={meal} csrfToken={csrfToken} />
                     ))}
                     {foodLog.events.map((entry) => {
-                      return entry.kind === "food" ? (
-                        <FoodTimelineEntry key={`food-${entry.id}`} entry={entry} photoMeal={photoMeals.find((meal) => meal.entryId === entry.id)} csrfToken={csrfToken} />
-                      ) : (
+                      if (entry.kind === "food") {
+                        return (
+                          <FoodTimelineEntry key={`food-${entry.id}`} entry={entry} photoMeal={photoMeals.find((meal) => meal.entryId === entry.id)} csrfToken={csrfToken} />
+                        );
+                      }
+                      const presetCounts = inferWaterPresetCounts(entry);
+                      return (
                         <article key={`water-${entry.id}`}>
                           <Link
                             className={`${styles.foodEntryCard} ${styles.waterEventCard}`}
@@ -4243,10 +4412,15 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
                               </small>
                             </span>
                             <span className={styles.foodEntryEnergy}>
-                              {formatWaterAmount(
-                                entry.amountMicroliters,
-                                foodLog.displayUnits,
-                              )}{" "}
+                              {presetCounts && foodLog.displayUnits === "metric"
+                                ? formatAdvertisedPresetAmount(
+                                    presetCounts,
+                                    foodLog.displayUnits,
+                                  )
+                                : formatWaterAmount(
+                                    entry.amountMicroliters,
+                                    foodLog.displayUnits,
+                                  )}{" "}
                               <small>
                                 {foodLog.displayUnits === "metric"
                                   ? "ml"

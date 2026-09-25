@@ -8,6 +8,7 @@ import { AppNavigation } from "../../app/app-navigation";
 import { AuthShell } from "../../app/auth/auth-shell";
 import routeConfig from "../../app/routes";
 import { loader as liveLoader } from "../../app/routes/health.live";
+import { loader as settingsLoader } from "../../app/routes/settings";
 import { UiIcon, type UiIconName } from "../../app/ui-icon";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean })
@@ -24,6 +25,12 @@ async function renderInRoute(children: ReactNode): Promise<ReactTestRenderer> {
 }
 
 describe("static route contracts", () => {
+  test("the settings index sends people to Display and goals", () => {
+    const response = settingsLoader();
+    expect(response.status).toBe(302);
+    expect(response.headers.get("Location")).toBe("/settings/goals");
+  });
+
   test("the liveness endpoint returns an uncached live response", async () => {
     const response = liveLoader();
     expect(response.status).toBe(200);
@@ -43,6 +50,7 @@ describe("static route contracts", () => {
       { children: undefined, file: "./routes/logout.tsx", path: "logout" },
       { children: undefined, file: "./routes/register.tsx", path: "register" },
       { children: undefined, file: "./routes/setup.tsx", path: "setup" },
+      { children: undefined, file: "./routes/settings.ts", path: "settings" },
       {
         children: undefined,
         file: "./routes/settings.goals.tsx",

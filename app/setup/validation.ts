@@ -91,7 +91,7 @@ function integerPattern(): RegExp {
 }
 
 function parseThousandths(value: string): bigint | undefined {
-  const candidate = value.trim();
+  const candidate = value.trim().replace(/,/g, "");
   if (!decimalPattern().test(candidate)) return undefined;
   const [whole, fraction = ""] = candidate.split(".");
   return BigInt(whole) * 1_000n + BigInt(fraction.padEnd(3, "0"));

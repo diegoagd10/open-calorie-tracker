@@ -32,6 +32,21 @@
   padding: 1.15rem var(--surface-gutter) 6rem;
 }
 
+.foodLogSurface {
+  display: flex;
+  flex-direction: column;
+}
+
+.foodLogSurface > * {
+  flex-shrink: 0;
+}
+
+.foodLogSurface::after {
+  content: "";
+  flex: 1 0 auto;
+  min-height: calc(3.25rem + 1.25rem);
+}
+
 .mobileHeader {
   padding: 0.4rem 0 1rem;
 }
@@ -1067,7 +1082,7 @@
 .searchControl {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 0.45rem;
+  gap: 1rem;
 }
 
 .searchControl input,
@@ -1101,6 +1116,14 @@
 .catalogState h3,
 .catalogState p {
   margin: 0;
+}
+
+.catalogAction {
+  display: inline-flex;
+  margin-top: 0.85rem;
+  color: var(--blue);
+  font-size: 0.78rem;
+  font-weight: 750;
 }
 
 .barcodeScanner {
@@ -1466,6 +1489,16 @@
   justify-content: flex-end;
   gap: 0.6rem;
   margin-top: 1rem;
+}
+
+.stickyDialogActions,
+.editActions {
+  position: sticky;
+  z-index: 2;
+  bottom: 0;
+  padding-top: 0.75rem;
+  padding-bottom: 0.15rem;
+  background: var(--surface);
 }
 
 .editFoodForm {
@@ -1971,6 +2004,36 @@
   font-size: 0.7rem;
 }
 
+.contextCard {
+  display: grid;
+  gap: 0.15rem;
+  padding: 1rem;
+  border: 1px solid var(--rule);
+  border-radius: 1rem;
+  background: var(--surface);
+}
+
+.contextCard span,
+.contextCard strong,
+.contextCard small {
+  display: block;
+}
+
+.contextCard span,
+.contextCard small {
+  color: var(--muted);
+  font-size: 0.68rem;
+}
+
+.contextCard strong {
+  margin-bottom: 0.7rem;
+  font-size: 0.9rem;
+}
+
+.contextCard strong:last-of-type {
+  margin-bottom: 0.35rem;
+}
+
 .railPrivacy p {
   margin: 0.15rem 0 0;
   font-size: 0.62rem;
@@ -1994,12 +2057,16 @@
     bottom: calc(4.75rem + env(safe-area-inset-bottom));
   }
 
-  .dateRailWrap {
-    grid-template-columns: minmax(0, 1fr);
+  .appSurface {
+    padding-bottom: calc(10.5rem + env(safe-area-inset-bottom));
   }
 
-  .dateArrow {
-    display: none;
+  .foodLogSurface {
+    padding-bottom: calc(4.75rem + env(safe-area-inset-bottom));
+  }
+
+  .foodLogSurface::after {
+    min-height: calc(3.25rem + 0.75rem);
   }
 
   .dateRail {
@@ -2129,7 +2196,8 @@
   .appSurface {
     width: min(100%, var(--page-width));
     margin-inline: auto;
-    padding: 1.5rem var(--surface-gutter) 6rem;
+    padding-top: 1.5rem;
+    padding-inline: var(--surface-gutter);
   }
 
   .mobileNav {
@@ -2193,6 +2261,15 @@
     margin-inline: 0;
     padding: 1.5rem var(--surface-gutter) 2.5rem;
     background: var(--ground);
+  }
+
+  .foodLogSurface {
+    min-height: 100%;
+    padding-bottom: 1.5rem;
+  }
+
+  .foodLogSurface::after {
+    min-height: calc(3.25rem + 1.75rem);
   }
 
   .mobileHeader {

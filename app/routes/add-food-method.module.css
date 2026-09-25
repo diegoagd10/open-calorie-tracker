@@ -24,15 +24,6 @@
   transition: background 150ms ease, border-color 150ms ease;
 }
 
-.savedMethod {
-  grid-column: 1 / -1;
-  min-height: 5rem;
-  flex-direction: row;
-  justify-content: flex-start;
-  gap: 1rem;
-  padding-inline: 1rem;
-}
-
 .captureMethod {
   position: relative;
   display: flex;
@@ -156,11 +147,20 @@
 .label {
   font-size: 0.8rem;
   font-weight: 650;
+  text-align: center;
+}
+
+@media (max-width: 759px) {
+  .methods > :last-child:nth-child(odd) {
+    grid-column: 1 / -1;
+    justify-self: center;
+    width: calc(50% - 0.375rem);
+  }
 }
 
 @media (min-width: 760px) {
   .methods {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
   }
 }
 

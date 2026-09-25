@@ -29,6 +29,20 @@ import {
 } from "../setup/validation";
 import { formatLocalDate } from "../food-log/date";
 
+function formatGroupedNumber(value: string): string {
+  const candidate = value.trim();
+  if (!/^\d+(\.\d+)?$/.test(candidate)) {
+    return value;
+  }
+  const [whole, fraction] = candidate.split(".");
+  const grouped = new Intl.NumberFormat("en-US").format(Number(whole));
+  return fraction === undefined ? grouped : `${grouped}.${fraction}`;
+}
+
+function ungroupedNumber(value: string): string {
+  return value.replace(/,/g, "");
+}
+
 type GoalsActionData = {
   error?: string;
   field?: keyof GoalVersionFields;
@@ -355,21 +369,28 @@ export default function Goals({ actionData, loaderData }: Route.ComponentProps) 
                     min={field.name === "sodium" ? "1" : "0.001"}
                     name={field.name}
                     onChange={(event) => {
+                      const nextValue = field.name === "water"
+                        ? ungroupedNumber(event.target.value)
+                        : event.target.value;
                       if (field.name === "water") {
                         setWaterSource({
                           units: displayUnits,
-                          value: event.target.value,
+                          value: nextValue,
                         });
                       }
                       setFields((current) => ({
                         ...current,
-                        [field.name]: event.target.value,
+                        [field.name]: nextValue,
                       }));
                     }}
                     required
                     step={field.name === "sodium" ? "1" : "0.001"}
-                    type="number"
-                    value={fields[field.name]}
+                    type={field.name === "water" ? "text" : "number"}
+                    value={
+                      field.name === "water"
+                        ? formatGroupedNumber(fields.water)
+                        : fields[field.name]
+                    }
                   />
                   <em>
                     {field.name === "water"

@@ -108,7 +108,7 @@ export function validateGoalVersionFields(
   const { timeZone: _timeZone, ...replacement } = setup.data;
   if (
     sourceGoal &&
-    fields.water.trim() ===
+    fields.water.trim().replace(/,/g, "") ===
       goalFieldsFromCanonical(sourceGoal, setup.data.displayUnits).water
   ) {
     replacement.waterTargetMicroliters = sourceGoal.waterTargetMicroliters;
@@ -124,7 +124,7 @@ export function validateGoalVersionFields(
       : undefined;
     if (
       sourceCanonical !== undefined &&
-      fields.water.trim() ===
+      fields.water.trim().replace(/,/g, "") ===
         waterFieldFromCanonical(sourceCanonical, setup.data.displayUnits)
     ) {
       replacement.waterTargetMicroliters = sourceCanonical;

@@ -11,6 +11,7 @@ export default [
   route("logout", "./routes/logout.tsx"),
   route("register", "./routes/register.tsx"),
   route("setup", "./routes/setup.tsx"),
+  route("settings", "./routes/settings.ts"),
   route("settings/goals", "./routes/settings.goals.tsx"),
   route("settings/catalogs", "./routes/settings.catalogs.tsx"),
   route("settings/ai", "./routes/settings.ai.tsx"),

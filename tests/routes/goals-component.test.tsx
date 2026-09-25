@@ -118,7 +118,7 @@ test("goals renders the complete effective-dated form contract", async () => {
     min: "0.001",
     required: true,
     step: "0.001",
-    type: "number",
+    type: "text",
     value: "80",
   });
   expect(input(renderer, "sodium").props).toMatchObject({
@@ -207,6 +207,40 @@ test("goals announces successful persistence", async () => {
   renderer.unmount();
 });
 
+test("metric water targets group thousands like the Food Log", async () => {
+  const Routes = createRoutesStub([
+    { Component: Goals, id: "goals", path: "/settings/goals" },
+  ]);
+  let renderer: ReactTestRenderer | undefined;
+  await act(async () => {
+    renderer = create(
+      createElement(Routes, {
+        hydrationData: {
+          loaderData: {
+            goals: {
+              ...loaderData,
+              displayUnits: "metric",
+              fields: { ...loaderData.fields, water: "2366" },
+            },
+          },
+        },
+        initialEntries: ["/settings/goals"],
+      }),
+    );
+  });
+  expect(input(renderer!, "water").props).toMatchObject({
+    inputMode: "decimal",
+    type: "text",
+    value: "2,366",
+  });
+  await act(async () =>
+    input(renderer!, "water").props.onChange({ target: { value: "2,400" } }),
+  );
+  expect(input(renderer!, "waterSourceValue").props.value).toBe("2400");
+  expect(input(renderer!, "water").props.value).toBe("2,400");
+  renderer!.unmount();
+});
+
 test("changing units converts water from the last user-authored source", async () => {
   const renderer = await renderGoals();
   await act(async () => input(renderer, "displayUnits", "metric").props.onChange());
@@ -214,7 +248,7 @@ test("changing units converts water from the last user-authored source", async (
   expect(input(renderer, "displayUnits", "metric").props.checked).toBe(true);
   expect(input(renderer, "water").props).toMatchObject({
     max: "15000",
-    value: "2365.882",
+    value: "2,365.882",
   });
   expect(renderer.root.findAllByType("em").map((node) => nodeText(node))[1])
     .toBe("ml");

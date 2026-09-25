@@ -1,4 +1,4 @@
-import { and, desc, eq, lte } from "drizzle-orm";
+import { and, asc, desc, eq, lte } from "drizzle-orm";
 
 import type { ApplicationDatabaseClient } from "../database/database.server";
 import {
@@ -91,28 +91,37 @@ export class FoodLogService {
       : today;
     if (!selectedDate) throw new InvalidFoodLogDateError();
 
-    const goal = this.#database
-      .select({
-        calorieTargetMilliKcal: goalVersions.calorieTargetMilliKcal,
-        carbohydrateTargetMilligrams: goalVersions.carbohydrateTargetMilligrams,
-        effectiveDate: goalVersions.effectiveDate,
-        fatTargetMilligrams: goalVersions.fatTargetMilligrams,
-        fiberTargetMilligrams: goalVersions.fiberTargetMilligrams,
-        proteinTargetMilligrams: goalVersions.proteinTargetMilligrams,
-        sodiumMaximumMilligrams: goalVersions.sodiumMaximumMilligrams,
-        sugarMaximumMilligrams: goalVersions.sugarMaximumMilligrams,
-        waterTargetMicroliters: goalVersions.waterTargetMicroliters,
-      })
-      .from(goalVersions)
-      .where(
-        and(
-          eq(goalVersions.userId, userId),
-          lte(goalVersions.effectiveDate, selectedDate),
-        ),
-      )
-      .orderBy(desc(goalVersions.effectiveDate), desc(goalVersions.id))
-      .limit(1)
-      .get();
+    const goalFields = {
+      calorieTargetMilliKcal: goalVersions.calorieTargetMilliKcal,
+      carbohydrateTargetMilligrams: goalVersions.carbohydrateTargetMilligrams,
+      effectiveDate: goalVersions.effectiveDate,
+      fatTargetMilligrams: goalVersions.fatTargetMilligrams,
+      fiberTargetMilligrams: goalVersions.fiberTargetMilligrams,
+      proteinTargetMilligrams: goalVersions.proteinTargetMilligrams,
+      sodiumMaximumMilligrams: goalVersions.sodiumMaximumMilligrams,
+      sugarMaximumMilligrams: goalVersions.sugarMaximumMilligrams,
+      waterTargetMicroliters: goalVersions.waterTargetMicroliters,
+    };
+    const goal =
+      this.#database
+        .select(goalFields)
+        .from(goalVersions)
+        .where(
+          and(
+            eq(goalVersions.userId, userId),
+            lte(goalVersions.effectiveDate, selectedDate),
+          ),
+        )
+        .orderBy(desc(goalVersions.effectiveDate), desc(goalVersions.id))
+        .limit(1)
+        .get() ??
+      this.#database
+        .select(goalFields)
+        .from(goalVersions)
+        .where(eq(goalVersions.userId, userId))
+        .orderBy(asc(goalVersions.effectiveDate), asc(goalVersions.id))
+        .limit(1)
+        .get();
 
     const entries = this.#database
       .select()

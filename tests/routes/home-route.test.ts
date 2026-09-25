@@ -398,6 +398,8 @@ test("missing USDA search returns a friendly user-safe response", async () => {
 
   expect(result.init?.status).toBe(503);
   expect(result.data.catalog).toMatchObject({
+    actionHref: "/settings/catalogs",
+    actionLabel: "Open Food Catalogs",
     message:
       "USDA Foundation is not installed. Ask your administrator to install it in Food Catalogs Settings. Your saved Food Entries remain available.",
     mode: "search",
@@ -500,6 +502,12 @@ test("home loader exposes barcode lookup without creating a Food Entry", async (
     expect(result.data.catalog.query).toBe("");
     expect(result.data.catalog.title).toBe(title);
     expect(result.data.catalog.message).toContain(message);
+    if (title === "Open Food Facts is not installed") {
+      expect(result.data.catalog).toMatchObject({
+        actionHref: "/settings/catalogs",
+        actionLabel: "Open Food Catalogs",
+      });
+    }
   }
 });
 

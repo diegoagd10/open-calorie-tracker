@@ -330,6 +330,22 @@ test.each([
   ).toMatchObject({ field, success: false });
 });
 
+test("the earliest Goal Version applies to dates before it becomes effective", async () => {
+  const database = await setupDatabase();
+  const client = database.getClient();
+  const userId = insertConfiguredUser(client, "earliest.goal");
+  const service = new GoalVersionService(
+    client,
+    () => new Date("2026-08-29T16:00:00.000Z"),
+  );
+
+  expect(service.read(userId, "2025-12-31")?.goal).toMatchObject({
+    calorieTargetMilliKcal: 2_050_000,
+    effectiveDate: "2026-01-01",
+  });
+  database.close();
+});
+
 test("multiple Goal Versions resolve without changing earlier Food Log goals", async () => {
   const database = await setupDatabase();
   const client = database.getClient();

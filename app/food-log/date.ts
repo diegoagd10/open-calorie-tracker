@@ -1,3 +1,13 @@
+export const CALENDAR_WEEKDAY_LABELS = [
+  "Mon",
+  "Tue",
+  "Wed",
+  "Thu",
+  "Fri",
+  "Sat",
+  "Sun",
+] as const;
+
 export type FoodLogEventOrderKey = {
   createdAt: string;
   id: number;
@@ -130,7 +140,7 @@ export function buildCalendarMonth(
       timeZone: "UTC",
       year: "numeric",
     }).format(first),
-    leadingEmptyDays: first.getUTCDay(),
+    leadingEmptyDays: (first.getUTCDay() + 6) % 7,
     month,
     nextMonth: month < todayMonth ? shiftLocalMonth(month, 1) : undefined,
     previousMonth: shiftLocalMonth(month, -1),
