@@ -502,12 +502,14 @@ test("home loader exposes barcode lookup without creating a Food Entry", async (
     expect(result.data.catalog.query).toBe("");
     expect(result.data.catalog.title).toBe(title);
     expect(result.data.catalog.message).toContain(message);
-    if (title === "Open Food Facts is not installed") {
-      expect(result.data.catalog).toMatchObject({
-        actionHref: "/settings/catalogs",
-        actionLabel: "Open Food Catalogs",
-      });
-    }
+    expect(result.data.catalog).toMatchObject(
+      barcode === "0000000000000"
+        ? {
+            actionHref: "/settings/catalogs",
+            actionLabel: "Open Food Catalogs",
+          }
+        : {},
+    );
   }
 });
 
