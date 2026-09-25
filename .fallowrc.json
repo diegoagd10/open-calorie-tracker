@@ -11,7 +11,7 @@
     "app/catalog-management/import-worker.ts",
     "tests/support/restored-usda-worker.mjs"
   ],
-  "ignorePatterns": ["docs/mocks/**"],
+  "ignorePatterns": ["docs/mocks/**", "**/*.module.css"],
   "ignoreDependencies": ["@react-router/dev", "isbot", "react-dom"],
   "typeAware": {
     "enabled": true,
