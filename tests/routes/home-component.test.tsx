@@ -2127,6 +2127,88 @@ test("metric glass servings add as advertised 237 ml and label inferred glasses"
   await act(async () => renderer.unmount());
 });
 
+test("metric water infers legacy preset amounts and ignores other timeline rows", async () => {
+  const foodEvent = {
+    amountMicroliters: undefined,
+    dataType: "Branded",
+    energyMilliKcal: 59_000,
+    foodLogDate: "2026-08-31",
+    id: 71,
+    kind: "food" as const,
+    localEventTime: "12:00:00",
+    name: "Lunch",
+    provider: "open-food-facts",
+    quantityMicrounits: 1_000_000,
+    selectedMeasurementLabel: "1 serving",
+  };
+  const counts = { preset8Count: 0, preset16Count: 0, preset24Count: 0 };
+  const renderer = await renderHome({
+    foodLog: {
+      ...baseFoodLog,
+      displayUnits: "metric",
+      events: [
+        foodEvent,
+        {
+          amountMicroliters: 709_765,
+          foodLogDate: "2026-08-31",
+          id: 72,
+          kind: "water" as const,
+          localEventTime: "08:00:00",
+          ...counts,
+        },
+        {
+          amountMicroliters: 473_176,
+          foodLogDate: "2026-08-31",
+          id: 73,
+          kind: "water" as const,
+          localEventTime: "09:00:00",
+          ...counts,
+        },
+        {
+          amountMicroliters: 709_764,
+          foodLogDate: "2026-08-31",
+          id: 74,
+          kind: "water" as const,
+          localEventTime: "10:00:00",
+          ...counts,
+        },
+        {
+          amountMicroliters: 236_588,
+          foodLogDate: "2026-08-31",
+          id: 75,
+          kind: "water" as const,
+          localEventTime: "11:00:00",
+        },
+      ],
+      waterTotalMicroliters: 709_765 + 473_176 + 709_764 + 236_588,
+    },
+  });
+  expect(allText(renderer)).toContain("710 ml Large × 1");
+  expect(allText(renderer)).toContain("473 ml Bottle × 1");
+  expect(allText(renderer)).toContain("237 ml Glass × 3");
+  expect(allText(renderer)).toContain("2,131 / 2,366 ml");
+  await act(async () => renderer.unmount());
+
+  const custom = await renderHome({
+    foodLog: {
+      ...baseFoodLog,
+      displayUnits: "metric",
+      events: [{
+        amountMicroliters: 50_000,
+        foodLogDate: "2026-08-31",
+        id: 76,
+        kind: "water" as const,
+        localEventTime: "12:30:00",
+        ...counts,
+      }],
+      waterTotalMicroliters: 50_000,
+    },
+  });
+  expect(allText(custom)).toContain("Plain water");
+  expect(allText(custom)).toContain("50 / 2,366 ml");
+  await act(async () => custom.unmount());
+});
+
 test("water preset counts reset after Exact and grouped edits open with the total", async () => {
   const createDialog = await renderHome({
     foodLog: { ...baseFoodLog, displayUnits: "metric" },
