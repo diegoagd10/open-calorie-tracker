@@ -20,6 +20,7 @@ import {
 } from "../auth/http.server";
 import { getAuthenticationService } from "../auth/runtime.server";
 import { loginSchema } from "../auth/validation";
+import { publicAuthorizationReturnPath } from "../oauth/authorization.server";
 
 type LoginActionData = {
   error: string;
@@ -40,10 +41,11 @@ export function headers() {
 }
 
 export async function loader({ request }: Route.LoaderArgs) {
+  const returnPath = publicAuthorizationReturnPath(new URL(request.url).searchParams.get("next")) ?? "/";
   const session = await getSessionForAccountAccess(request);
   if (session) {
     return redirect(
-      session.user.passwordChangeRequired ? "/account/password" : "/",
+      session.user.passwordChangeRequired ? "/account/password" : returnPath,
     );
   }
 
@@ -52,12 +54,15 @@ export async function loader({ request }: Route.LoaderArgs) {
   }
 
   const csrf = loadPreAuthenticationCsrf(request);
+  const loginAction = returnPath === "/" ? "/login" : `/login?next=${encodeURIComponent(returnPath)}`;
   return data(
     {
       csrfToken: csrf.csrfToken,
+      loginAction,
+      returnPath,
       publicKeyUrl:
         effectiveRequestPolicy().entry === "lan"
-          ? `${applicationOrigin()}/login`
+          ? `${applicationOrigin()}${loginAction}`
           : null,
     },
     { headers: csrf.headers },
@@ -117,7 +122,9 @@ export async function action({ request }: Route.ActionArgs) {
   }
 
   return redirect(
-    result.session.user.passwordChangeRequired ? "/account/password" : "/",
+    result.session.user.passwordChangeRequired
+      ? "/account/password"
+      : publicAuthorizationReturnPath(new URL(request.url).searchParams.get("next")) ?? "/",
     {
       headers: authenticatedSessionHeaders(request, result.session),
     },
@@ -132,7 +139,7 @@ export default function Login({
   const [keyBusy, setKeyBusy] = useState(false);
   return (
     <AuthShell>
-      <Form className={styles.form} method="post" noValidate>
+      <Form action={loaderData.loginAction} className={styles.form} method="post" noValidate>
         <input name="csrfToken" type="hidden" value={loaderData.csrfToken} />
         <div className={styles.field}>
           <label htmlFor="login-username">Username</label>
@@ -183,7 +190,7 @@ export default function Login({
                     loaderData.csrfToken,
                     username,
                   );
-                  window.location.assign(result.nextPath);
+                  window.location.assign(result.nextPath === "/" ? loaderData.returnPath : result.nextPath);
                 } catch (error) {
                   setKeyError(keyProviderError(error));
                   setKeyBusy(false);

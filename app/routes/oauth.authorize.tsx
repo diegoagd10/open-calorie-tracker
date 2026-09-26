@@ -1,6 +1,6 @@
 import { Form, redirect } from "react-router";
 import type { Route } from "./+types/oauth.authorize";
-import { getApplicationMutationSession, readApplicationMutationForm, requireApplicationSession } from "../auth/http.server";
+import { getApplicationMutationSession, getSessionForApplicationAccess, readApplicationMutationForm } from "../auth/http.server";
 import { approvePublicAuthorization, authorizationRedirect, readPublicAuthorizationRequest } from "../oauth/authorization.server";
 import styles from "../account.module.css";
 
@@ -17,15 +17,17 @@ function invalidAuthorizationRequest() {
 }
 
 export async function loader({ request }: Route.LoaderArgs) {
-  const session = await requireApplicationSession(request);
-  const authorization = readPublicAuthorizationRequest(new URL(request.url).searchParams);
+  const url = new URL(request.url);
+  const authorization = readPublicAuthorizationRequest(url.searchParams);
   if (!authorization) return invalidAuthorizationRequest();
+  const session = await getSessionForApplicationAccess(request);
+  if (!session) throw redirect(`/login?next=${encodeURIComponent(url.pathname + url.search)}`);
   return {
     client: { id: authorization.clientId, name: authorization.clientName },
     permission: "Read your daily Food Log",
     scope: "daily-log:read" as const,
     csrfToken: session.csrfToken,
-    action: new URL(request.url).pathname + new URL(request.url).search,
+    action: url.pathname + url.search,
   };
 }
 

@@ -10,6 +10,7 @@ import { getAuthenticationService } from "../../app/auth/runtime.server";
 import { getApplicationDatabase, initializeApplicationDatabase, shutdownApplicationDatabase } from "../../app/database/runtime.server";
 import { action as registerClient } from "../../app/routes/settings.oauth-clients";
 import { action as authorize, loader as consent } from "../../app/routes/oauth.authorize";
+import { action as loginAction, loader as loginLoader } from "../../app/routes/login";
 import { action as exchangeCode } from "../../app/routes/oauth.token";
 import { loader as readDailyLog } from "../../app/routes/api.v1.daily-log";
 import { action as mutateDailyLog } from "../../app/routes/api.v1.daily-log";
@@ -158,6 +159,44 @@ test("a public client gains a scoped, short-lived token only after consent and P
     foodEntries: [], waterEvents: [], events: [], waterTotalMicroliters: 0,
   });
   expect(daily.headers.get("Cache-Control")).toContain("no-store");
+});
+
+test("sign-in resumes a valid public authorization request without accepting arbitrary destinations", async () => {
+  const authorization = authorizationUrl();
+  const returnPath = authorization.pathname + authorization.search;
+  const anonymous = await consent(authorizationRequest("")).catch((error: unknown) => error);
+  expect(anonymous).toBeInstanceOf(Response);
+  const loginLocation = (anonymous as Response).headers.get("Location") ?? "";
+  expect((anonymous as Response).status).toBe(302);
+  expect(new URL(loginLocation, origin).searchParams.get("next")).toBe(returnPath);
+
+  const loginPage = await loginLoader(args(new Request(`${origin}${loginLocation}`), "/login"));
+  if (loginPage instanceof Response) throw new Error("Expected login form");
+  expect(loginPage.data.returnPath).toBe(returnPath);
+  expect(loginPage.data.loginAction).toBe(loginLocation);
+  const preAuthCookie = new Headers(loginPage.init?.headers).get("Set-Cookie")?.split(";", 1)[0] ?? "";
+  const signedIn = await loginAction(args(new Request(`${origin}${loginLocation}`, {
+    method: "POST", headers: { Cookie: preAuthCookie, Origin: origin },
+    body: new URLSearchParams({ csrfToken: loginPage.data.csrfToken, username: "oauth.reader", password: "correct horse battery staple" }),
+  }), "/login"));
+  expect(signedIn).toBeInstanceOf(Response);
+  expect((signedIn as Response).headers.get("Location")).toBe(returnPath);
+  const signedInCookie = (signedIn as Response).headers.get("Set-Cookie")?.split(";", 1)[0] ?? "";
+  expect(await consent(authorizationRequest(signedInCookie))).toMatchObject({ client: { id: clientId } });
+  const alreadySignedIn = await loginLoader(args(new Request(`${origin}${loginLocation}`, { headers: { Cookie: readerCookie } }), "/login"));
+  expect((alreadySignedIn as Response).headers.get("Location")).toBe(returnPath);
+
+  const invalidAuthorization = authorizationUrl();
+  invalidAuthorization.searchParams.set("redirect_uri", "https://attacker.example/callback");
+  const rejectedAuthorization = await consent(authorizationRequest("", invalidAuthorization));
+  expect((rejectedAuthorization as Response).status).toBe(400);
+  expect((rejectedAuthorization as Response).headers.get("Location")).toBeNull();
+
+  for (const next of ["https://attacker.example/", "//attacker.example/", "/oauth/authorize?client_id=unknown", "/settings/users"]) {
+    const rejected = await loginLoader(args(new Request(`${origin}/login?next=${encodeURIComponent(next)}`), "/login"));
+    if (rejected instanceof Response) throw new Error("Expected login form");
+    expect(rejected.data.returnPath).toBe("/");
+  }
 });
 
 test("metadata describes the public PKCE flow and denial creates no code", async () => {
@@ -335,9 +374,10 @@ test("API errors are machine readable, private, and account scoped", async () =>
   const duplicateDate = readDailyLog(args(new Request(`${origin}/api/v1/daily-log?date=${date}&date=${date}`, { headers: { Authorization: `Bearer ${token}` } })));
   expect(duplicateDate.status).toBe(400);
   expect(await duplicateDate.json()).toEqual({ error: "invalid_date" });
-  const ignoredUserId = readDailyLog(args(new Request(`${origin}/api/v1/daily-log?date=2026-08-30&userId=${incompleteId}`, { headers: { Authorization: `Bearer ${token}` } })));
+  const ownDay = readDailyLog(apiGet(token));
+  const ignoredUserId = readDailyLog(args(new Request(`${origin}/api/v1/daily-log?date=${date}&userId=${incompleteId}`, { headers: { Authorization: `Bearer ${token}` } })));
   expect(ignoredUserId.status).toBe(200);
-  expect((await ignoredUserId.json() as { foodEntries: Array<{ name: string }> }).foodEntries).toContainEqual(expect.objectContaining({ name: "Tortillas" }));
+  expect(await ignoredUserId.json()).toEqual(await ownDay.json());
 
   const incompleteToken = await issueToken(incompleteCookie, incompleteCsrf);
   const missingSetup = readDailyLog(apiGet(incompleteToken));

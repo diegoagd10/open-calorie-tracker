@@ -39,6 +39,17 @@ export function readPublicAuthorizationRequest(parameters: URLSearchParams): Pub
   return { clientId, clientName: client.name, redirectUri, codeChallenge: challenge, state };
 }
 
+export function publicAuthorizationReturnPath(candidate: string | null): string | undefined {
+  if (!candidate?.startsWith("/oauth/authorize?") || candidate.length > 4_096) return undefined;
+  try {
+    const url = new URL(candidate, "http://application.local");
+    if (url.pathname !== "/oauth/authorize" || url.hash || !readPublicAuthorizationRequest(url.searchParams)) return undefined;
+    return url.pathname + url.search;
+  } catch {
+    return undefined;
+  }
+}
+
 function opaqueValue(): string {
   return randomBytes(32).toString("base64url");
 }
