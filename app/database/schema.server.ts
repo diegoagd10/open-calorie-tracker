@@ -112,6 +112,17 @@ export const oauthAccessTokens = sqliteTable(
   (table) => [index("oauth_access_tokens_grant_id_index").on(table.grantId)],
 );
 
+export const oauthRefreshTokens = sqliteTable(
+  "oauth_refresh_tokens",
+  {
+    tokenHash: text("token_hash").primaryKey(),
+    grantId: integer("grant_id").notNull().references(() => oauthGrants.id, { onDelete: "cascade" }),
+    createdAt: text("created_at").notNull(),
+    rotatedAt: text("rotated_at"),
+  },
+  (table) => [index("oauth_refresh_tokens_grant_id_index").on(table.grantId)],
+);
+
 export const passwordCredentials = sqliteTable("password_credentials", {
   userId: integer("user_id")
     .primaryKey()

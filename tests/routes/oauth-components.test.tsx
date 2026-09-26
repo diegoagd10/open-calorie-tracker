@@ -49,7 +49,7 @@ test("account settings review client IDs and show registration validation feedba
     redirectUris: ["http://127.0.0.1:4567/callback"], createdAt: "2026-09-26T12:00:00.000Z",
   };
   const renderer = await renderRoute(OAuthClientsSettings, "/settings/oauth-clients", {
-    csrfToken: "csrf-token", clients: [client],
+    csrfToken: "csrf-token", clients: [client], connections: [],
   }, { errors: { name: "Enter a name of 1 to 80 printable characters.", redirectUris: "Enter one to ten redirect URIs, one per line." } });
   const content = visibleText(renderer);
   expect(content).toContain(client.name);
@@ -60,9 +60,24 @@ test("account settings review client IDs and show registration validation feedba
   await act(() => renderer.unmount());
 
   const empty = await renderRoute(OAuthClientsSettings, "/settings/oauth-clients", {
-    csrfToken: "csrf-token", clients: [],
+    csrfToken: "csrf-token", clients: [], connections: [],
   }, { error: "The client could not be registered. Please try again." });
   expect(visibleText(empty)).toContain("No clients registered yet.");
   expect(visibleText(empty)).toContain("The client could not be registered.");
   await act(() => empty.unmount());
+});
+
+test("account settings show connected clients, their permission, and revoke controls", async () => {
+  const clientId = "a".repeat(32);
+  const renderer = await renderRoute(OAuthClientsSettings, "/settings/oauth-clients", {
+    csrfToken: "csrf-token", clients: [],
+    connections: [{ clientId, name: "Phone app", scope: "daily-log:read", connectedAt: "2026-09-26T12:00:00.000Z" }],
+  });
+  const content = visibleText(renderer);
+  expect(content).toContain("Connected clients");
+  expect(content).toContain("Phone app");
+  expect(content).toContain("Read your daily Food Log");
+  expect(renderer.root.findAllByType("button").map((button) => button.children.join(""))).toContain("Revoke Phone app");
+  expect(renderer.root.findAllByProps({ name: "clientId", value: clientId })).toHaveLength(1);
+  await act(() => renderer.unmount());
 });

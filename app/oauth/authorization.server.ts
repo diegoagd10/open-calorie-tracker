@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import { findOAuthClient } from "../database/oauth-clients.server";
-import { exchangeOAuthAuthorizationCode, findOAuthAccessToken, saveOAuthAuthorizationCode } from "../database/oauth-authorization.server";
+import { exchangeOAuthAuthorizationCode, findOAuthAccessToken, listOAuthConnections, revokeOAuthConnection, rotateOAuthRefreshToken, saveOAuthAuthorizationCode } from "../database/oauth-authorization.server";
 
 export const DAILY_LOG_READ_SCOPE = "daily-log:read";
 export const ACCESS_TOKEN_SECONDS = 900;
@@ -82,13 +82,10 @@ export function approvePublicAuthorization(userId: number, request: PublicAuthor
 }
 
 export type OAuthTokenExchange =
-  | { ok: true; accessToken: string }
-  | { ok: false; error: "invalid_request" | "invalid_client" | "invalid_grant" | "unsupported_grant_type" };
+  | { ok: true; accessToken: string; refreshToken: string }
+  | { ok: false; error: "invalid_request" | "invalid_client" | "invalid_grant" | "invalid_scope" | "unsupported_grant_type" };
 
-export function exchangePublicAuthorizationCode(parameters: URLSearchParams): OAuthTokenExchange {
-  if (oneParameter(parameters, "grant_type") !== "authorization_code") {
-    return { ok: false, error: "unsupported_grant_type" };
-  }
+function exchangePublicAuthorizationCode(parameters: URLSearchParams): OAuthTokenExchange {
   const code = oneParameter(parameters, "code");
   const clientId = oneParameter(parameters, "client_id");
   const redirectUri = oneParameter(parameters, "redirect_uri");
@@ -102,6 +99,7 @@ export function exchangePublicAuthorizationCode(parameters: URLSearchParams): OA
   if (!client || client.type !== "public") return { ok: false, error: "invalid_client" };
   const challenge = createHash("sha256").update(verifier, "ascii").digest("base64url");
   const accessToken = opaqueValue();
+  const refreshToken = opaqueValue();
   const now = new Date();
   const exchanged = exchangeOAuthAuthorizationCode({
     codeHash: hashValue(code),
@@ -109,10 +107,54 @@ export function exchangePublicAuthorizationCode(parameters: URLSearchParams): OA
     redirectUri,
     codeChallenge: challenge,
     tokenHash: hashValue(accessToken),
+    refreshHash: hashValue(refreshToken),
     now: now.toISOString(),
     expiresAt: new Date(now.getTime() + ACCESS_TOKEN_SECONDS * 1_000).toISOString(),
   });
-  return exchanged ? { ok: true, accessToken } : { ok: false, error: "invalid_grant" };
+  return exchanged ? { ok: true, accessToken, refreshToken } : { ok: false, error: "invalid_grant" };
+}
+
+function renewPublicAccessToken(parameters: URLSearchParams): OAuthTokenExchange {
+  const clientId = oneParameter(parameters, "client_id");
+  const refreshToken = oneParameter(parameters, "refresh_token");
+  if (!clientId || !refreshToken || !/^[A-Za-z0-9_-]{43}$/u.test(refreshToken)) {
+    return { ok: false, error: "invalid_request" };
+  }
+  const client = findOAuthClient(clientId);
+  if (!client || client.type !== "public") return { ok: false, error: "invalid_client" };
+  const scopes = parameters.getAll("scope");
+  if (scopes.length > 1) return { ok: false, error: "invalid_request" };
+  if (scopes.length === 1 && scopes[0] !== DAILY_LOG_READ_SCOPE) return { ok: false, error: "invalid_scope" };
+  const accessToken = opaqueValue();
+  const nextRefreshToken = opaqueValue();
+  const now = new Date();
+  const rotated = rotateOAuthRefreshToken({
+    clientId,
+    refreshHash: hashValue(refreshToken),
+    nextRefreshHash: hashValue(nextRefreshToken),
+    accessHash: hashValue(accessToken),
+    now: now.toISOString(),
+    accessExpiresAt: new Date(now.getTime() + ACCESS_TOKEN_SECONDS * 1_000).toISOString(),
+  });
+  return rotated
+    ? { ok: true, accessToken, refreshToken: nextRefreshToken }
+    : { ok: false, error: "invalid_grant" };
+}
+
+export function exchangePublicToken(parameters: URLSearchParams): OAuthTokenExchange {
+  switch (oneParameter(parameters, "grant_type")) {
+    case "authorization_code": return exchangePublicAuthorizationCode(parameters);
+    case "refresh_token": return renewPublicAccessToken(parameters);
+    default: return { ok: false, error: "unsupported_grant_type" };
+  }
+}
+
+export function connectedDailyLogClients(userId: number) {
+  return listOAuthConnections(userId);
+}
+
+export function revokeDailyLogClient(userId: number, clientId: string) {
+  return revokeOAuthConnection(userId, clientId);
 }
 
 export function authenticateDailyLogBearer(header: string | null):

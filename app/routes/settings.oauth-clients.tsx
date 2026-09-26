@@ -2,12 +2,14 @@ import { data, Form, Link, useActionData } from "react-router";
 import type { Route } from "./+types/settings.oauth-clients";
 import { getApplicationMutationSession, readApplicationMutationForm, requireApplicationSession } from "../auth/http.server";
 import { listPublicClients, registerPublicClient, type PublicOAuthClient, type RegistrationErrors } from "../oauth/client-registration.server";
+import { connectedDailyLogClients, revokeDailyLogClient } from "../oauth/authorization.server";
 import styles from "../account.module.css";
 
 type ActionData = {
   client?: PublicOAuthClient;
   errors?: RegistrationErrors;
   error?: string;
+  revokedClient?: { clientId: string; name: string };
 };
 
 export function meta() {
@@ -23,6 +25,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   return {
     csrfToken: session.csrfToken,
     clients: listPublicClients(session.user.id),
+    connections: connectedDailyLogClients(session.user.id),
   };
 }
 
@@ -30,6 +33,17 @@ export async function action({ request }: Route.ActionArgs) {
   const session = await getApplicationMutationSession(request);
   if (session instanceof Response) throw session;
   const form = await readApplicationMutationForm(request, session);
+  if (form.get("intent") === "revoke") {
+    const clientId = form.get("clientId");
+    if (typeof clientId !== "string" || !/^[A-Za-z0-9_-]{32}$/u.test(clientId)) {
+      return data<ActionData>({ error: "Connection is no longer available. Refresh and try again." }, { status: 400 });
+    }
+    const revokedClient = revokeDailyLogClient(session.user.id, clientId);
+    if (!revokedClient) {
+      return data<ActionData>({ error: "Connection is no longer available. Refresh and try again." }, { status: 404 });
+    }
+    return data<ActionData>({ revokedClient }, { status: 200 });
+  }
   if (form.get("intent") !== "register") {
     return data<ActionData>({ error: "Unsupported action." }, { status: 400 });
   }
@@ -52,8 +66,31 @@ export default function OAuthClientsSettings({ loaderData }: Route.ComponentProp
       <section className={styles.panel} aria-labelledby="oauth-clients-title">
         <Link className={styles.backLink} to="/settings/goals">Back to settings</Link>
         <h1 id="oauth-clients-title">OAuth clients</h1>
-        <p>Register an app that can ask an account holder for Food Log read access. Registration alone gives it no access.</p>
+        <p>Review apps connected to your Food Log and register public clients for account holders to authorize.</p>
+        <h2>Connected clients</h2>
+        <p>These clients can read your daily Food Log. Revoking a connection stops its current and future tokens.</p>
+        {loaderData.connections.length ? (
+          <ul className={styles.keyList}>
+            {loaderData.connections.map((connection) => (
+              <li className={styles.keyRow} key={connection.clientId}>
+                <div>
+                  <strong>{connection.name}</strong>
+                  <p>Permission: {connection.scope === "daily-log:read" ? "Read your daily Food Log" : connection.scope}</p>
+                  <p>Client ID: <code>{connection.clientId}</code></p>
+                  <Form method="post">
+                    <input type="hidden" name="intent" value="revoke" />
+                    <input type="hidden" name="clientId" value={connection.clientId} />
+                    <input type="hidden" name="csrfToken" value={loaderData.csrfToken} />
+                    <button type="submit">Revoke {connection.name}</button>
+                  </Form>
+                </div>
+              </li>
+            ))}
+          </ul>
+        ) : <p>No connected clients yet.</p>}
+        {result?.revokedClient ? <p role="status">Revoked {result.revokedClient.name}.</p> : null}
         <h2>Registered public clients</h2>
+        <p>Registration alone gives a client no Food Log access.</p>
         {loaderData.clients.length ? (
           <ul className={styles.keyList}>
             {loaderData.clients.map((client) => (

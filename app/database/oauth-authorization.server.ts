@@ -1,6 +1,6 @@
 import { and, eq } from "drizzle-orm";
 import { getApplicationDatabase } from "./runtime.server";
-import { oauthAccessTokens, oauthAuthorizationCodes, oauthGrants, users } from "./schema.server";
+import { oauthAccessTokens, oauthAuthorizationCodes, oauthClients, oauthGrants, oauthRefreshTokens, users } from "./schema.server";
 
 export function saveOAuthAuthorizationCode(input: {
   clientId: string;
@@ -41,6 +41,7 @@ export function exchangeOAuthAuthorizationCode(input: {
   redirectUri: string;
   codeChallenge: string;
   tokenHash: string;
+  refreshHash: string;
   now: string;
   expiresAt: string;
 }): boolean {
@@ -68,7 +69,80 @@ export function exchangeOAuthAuthorizationCode(input: {
       createdAt: input.now,
       expiresAt: input.expiresAt,
     }).run();
+    transaction.insert(oauthRefreshTokens).values({
+      tokenHash: input.refreshHash,
+      grantId: code.grantId,
+      createdAt: input.now,
+    }).run();
     return true;
+  });
+}
+
+export function rotateOAuthRefreshToken(input: {
+  clientId: string;
+  refreshHash: string;
+  nextRefreshHash: string;
+  accessHash: string;
+  now: string;
+  accessExpiresAt: string;
+}): boolean {
+  return getApplicationDatabase().getClient().transaction((transaction) => {
+    const current = transaction.select({
+      grantId: oauthRefreshTokens.grantId,
+      clientId: oauthGrants.clientId,
+      scope: oauthGrants.scope,
+      accessState: users.accessState,
+      rotatedAt: oauthRefreshTokens.rotatedAt,
+    }).from(oauthRefreshTokens)
+      .innerJoin(oauthGrants, eq(oauthRefreshTokens.grantId, oauthGrants.id))
+      .innerJoin(users, eq(oauthGrants.userId, users.id))
+      .where(eq(oauthRefreshTokens.tokenHash, input.refreshHash)).get();
+    if (!current || current.clientId !== input.clientId || current.scope !== "daily-log:read" || current.accessState !== "active") {
+      return false;
+    }
+    if (current.rotatedAt) {
+      transaction.delete(oauthRefreshTokens).where(eq(oauthRefreshTokens.grantId, current.grantId)).run();
+      return false;
+    }
+    transaction.update(oauthRefreshTokens).set({ rotatedAt: input.now })
+      .where(eq(oauthRefreshTokens.tokenHash, input.refreshHash)).run();
+    transaction.insert(oauthRefreshTokens).values({
+      tokenHash: input.nextRefreshHash,
+      grantId: current.grantId,
+      createdAt: input.now,
+    }).run();
+    transaction.insert(oauthAccessTokens).values({
+      tokenHash: input.accessHash,
+      grantId: current.grantId,
+      createdAt: input.now,
+      expiresAt: input.accessExpiresAt,
+    }).run();
+    return true;
+  });
+}
+
+export function listOAuthConnections(userId: number) {
+  return getApplicationDatabase().getClient().select({
+    clientId: oauthGrants.clientId,
+    name: oauthClients.name,
+    scope: oauthGrants.scope,
+    connectedAt: oauthGrants.createdAt,
+  }).from(oauthGrants)
+    .innerJoin(oauthClients, eq(oauthGrants.clientId, oauthClients.id))
+    .where(eq(oauthGrants.userId, userId))
+    .orderBy(oauthGrants.createdAt, oauthGrants.id).all();
+}
+
+export function revokeOAuthConnection(userId: number, clientId: string) {
+  return getApplicationDatabase().getClient().transaction((transaction) => {
+    const connection = transaction.select({ clientId: oauthGrants.clientId, name: oauthClients.name })
+      .from(oauthGrants)
+      .innerJoin(oauthClients, eq(oauthGrants.clientId, oauthClients.id))
+      .where(and(eq(oauthGrants.userId, userId), eq(oauthGrants.clientId, clientId))).get();
+    if (!connection) return undefined;
+    transaction.delete(oauthGrants)
+      .where(and(eq(oauthGrants.userId, userId), eq(oauthGrants.clientId, clientId))).run();
+    return connection;
   });
 }
 

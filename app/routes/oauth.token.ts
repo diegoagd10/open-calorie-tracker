@@ -1,5 +1,5 @@
 import type { Route } from "./+types/oauth.token";
-import { ACCESS_TOKEN_SECONDS, DAILY_LOG_READ_SCOPE, exchangePublicAuthorizationCode } from "../oauth/authorization.server";
+import { ACCESS_TOKEN_SECONDS, DAILY_LOG_READ_SCOPE, exchangePublicToken } from "../oauth/authorization.server";
 
 const responseHeaders = { "Cache-Control": "no-store", Pragma: "no-cache" };
 
@@ -13,10 +13,11 @@ export async function action({ request }: Route.ActionArgs) {
   }
   const body = await request.text();
   if (body.length > 4_096) return tokenError("invalid_request");
-  const result = exchangePublicAuthorizationCode(new URLSearchParams(body));
+  const result = exchangePublicToken(new URLSearchParams(body));
   if (!result.ok) return tokenError(result.error);
   return Response.json({
     access_token: result.accessToken,
+    refresh_token: result.refreshToken,
     token_type: "Bearer",
     expires_in: ACCESS_TOKEN_SECONDS,
     scope: DAILY_LOG_READ_SCOPE,
