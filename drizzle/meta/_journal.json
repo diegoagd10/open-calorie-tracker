@@ -162,6 +162,13 @@
       "when": 1790288908419,
       "tag": "0022_lush_talisman",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "6",
+      "when": 1790448973444,
+      "tag": "0023_polite_galactus",
+      "breakpoints": true
     }
   ]
 }

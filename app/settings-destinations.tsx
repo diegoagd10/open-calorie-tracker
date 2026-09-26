@@ -67,6 +67,11 @@ export function SettingsDestinations({
           </span>
           <span aria-hidden="true">›</span>
         </Link>
+        <Link className={styles.accountAccessRow} to="/settings/oauth-clients">
+          <span className={styles.accountAccessIcon} aria-hidden="true">◇</span>
+          <span><strong>OAuth clients</strong><small>Register and review public clients.</small></span>
+          <span aria-hidden="true">›</span>
+        </Link>
       </nav>
 
       <Form action="/logout" className={styles.mobileSignOutForm} method="post">

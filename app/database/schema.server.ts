@@ -57,6 +57,22 @@ export const users = sqliteTable(
   ],
 );
 
+export const oauthClients = sqliteTable(
+  "oauth_clients",
+  {
+    id: text().primaryKey(),
+    ownerId: integer("owner_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    name: text().notNull(),
+    type: text({ enum: ["public"] }).notNull(),
+    redirectUris: text("redirect_uris").notNull(),
+    createdAt: text("created_at").notNull(),
+  },
+  (table) => [
+    index("oauth_clients_owner_id_index").on(table.ownerId),
+    check("oauth_clients_type_check", sql`type = 'public'`),
+  ],
+);
+
 export const passwordCredentials = sqliteTable("password_credentials", {
   userId: integer("user_id")
     .primaryKey()

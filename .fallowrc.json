@@ -73,6 +73,7 @@
         "patterns": ["app/database/**"]
       },
       { "name": "credentials", "patterns": ["app/credentials/**"] },
+      { "name": "oauth", "patterns": ["app/oauth/**"] },
       { "name": "photo-analysis", "patterns": ["app/photo-analysis/**"] },
       {
         "name": "food-entry",
@@ -140,7 +141,8 @@
           "server",
           "setup",
           "water-event",
-          "appearance"
+          "appearance",
+          "oauth"
         ]
       },
       { "from": "auth", "allow": ["database", "server"] },
@@ -149,6 +151,7 @@
       { "from": "catalog", "allow": ["server", "database", "catalog-management"] },
       { "from": "database", "allow": [], "allowTypeOnly": ["catalog", "catalog-management", "credentials"] },
       { "from": "credentials", "allow": ["database"] },
+      { "from": "oauth", "allow": ["database"] },
       { "from": "catalog-management", "allow": ["database", "catalog"] },
       {
         "from": "food-entry",
@@ -184,7 +187,8 @@
           "tooling",
           "water-event",
           "web",
-          "appearance"
+          "appearance",
+          "oauth"
         ]
       },
       { "from": "tooling", "allow": ["auth"] }

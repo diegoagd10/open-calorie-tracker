@@ -79,6 +79,7 @@ test("Drizzle schema metadata matches the migrated SQLite contract", async () =>
     schema.users,
     schema.passwordCredentials,
     schema.sessions,
+    schema.oauthClients,
     schema.preAuthenticationCsrfSessions,
     schema.rateLimitCounters,
     schema.userPreferences,

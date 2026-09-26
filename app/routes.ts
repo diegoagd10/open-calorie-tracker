@@ -7,6 +7,7 @@ export default [
   route("photo-analysis", "./routes/photo-analysis.ts"),
   route("key-ceremony", "./routes/key-ceremony.ts"),
   route("settings/security", "./routes/settings.security.tsx"),
+  route("settings/oauth-clients", "./routes/settings.oauth-clients.tsx"),
   route("login", "./routes/login.tsx"),
   route("logout", "./routes/logout.tsx"),
   route("register", "./routes/register.tsx"),
