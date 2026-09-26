@@ -2,7 +2,11 @@
 
 ### Issue tracker
 
-Specs and tickets live in Cairn. Before ticket operations, read `docs/agents/issue-tracker.md`.
+Specs and tickets live as local Markdown outside Git. Before spec, ticket, triage, or implementation tracking operations, read `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Use the local Markdown triage vocabulary in `docs/agents/triage-labels.md`.
 
 ### Domain docs
 
