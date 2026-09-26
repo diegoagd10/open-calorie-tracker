@@ -1,7 +1,7 @@
 import { data, Form, Link, useActionData } from "react-router";
 import type { Route } from "./+types/settings.oauth-clients";
 import { getApplicationMutationSession, readApplicationMutationForm, requireApplicationSession } from "../auth/http.server";
-import { listPublicClients, registerPublicClient, validatePublicClientRegistration, type PublicOAuthClient, type RegistrationErrors } from "../oauth/client-registration.server";
+import { listPublicClients, registerPublicClient, type PublicOAuthClient, type RegistrationErrors } from "../oauth/client-registration.server";
 import styles from "../account.module.css";
 
 type ActionData = {
@@ -33,13 +33,13 @@ export async function action({ request }: Route.ActionArgs) {
   if (form.get("intent") !== "register") {
     return data<ActionData>({ error: "Unsupported action." }, { status: 400 });
   }
-  const parsed = validatePublicClientRegistration({
-    name: String(form.get("name") ?? ""),
-    redirectUris: String(form.get("redirectUris") ?? ""),
-  });
-  if (!parsed.ok) return data<ActionData>({ errors: parsed.errors }, { status: 400 });
   try {
-    return data<ActionData>({ client: registerPublicClient(session.user.id, parsed) }, { status: 201 });
+    const result = registerPublicClient(session.user.id, {
+      name: String(form.get("name") ?? ""),
+      redirectUris: String(form.get("redirectUris") ?? ""),
+    });
+    if (!result.ok) return data<ActionData>({ errors: result.errors }, { status: 400 });
+    return data<ActionData>({ client: result.client }, { status: 201 });
   } catch {
     return data<ActionData>({ error: "The client could not be registered. Please try again." }, { status: 503 });
   }

@@ -1,7 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { and, eq } from "drizzle-orm";
-import { getApplicationDatabase } from "../database/runtime.server";
-import { oauthClients } from "../database/schema.server";
+import { createOAuthClient, listOAuthClientsForOwner } from "../database/oauth-clients.server";
 
 export type PublicOAuthClient = {
   id: string;
@@ -34,7 +32,7 @@ function validateRedirectUris(input: string): string[] | string {
     const loopback = ["localhost", "127.0.0.1", "[::1]"].includes(parsed.hostname);
     if (
       (parsed.protocol !== "https:" && !(parsed.protocol === "http:" && loopback)) ||
-      !parsed.hostname || parsed.hostname.includes("*") ||
+      !parsed.hostname || value.includes("*") ||
       parsed.username || parsed.password || parsed.hash
     ) {
       return "Use HTTPS, or HTTP on localhost, 127.0.0.1, or [::1]; omit credentials, fragments, and wildcards.";
@@ -45,7 +43,7 @@ function validateRedirectUris(input: string): string[] | string {
   return result;
 }
 
-export function validatePublicClientRegistration(input: { name: string; redirectUris: string }):
+function validatePublicClientRegistration(input: { name: string; redirectUris: string }):
   | { ok: true; name: string; redirectUris: string[] }
   | { ok: false; errors: RegistrationErrors } {
   const name = input.name.trim();
@@ -59,7 +57,7 @@ export function validatePublicClientRegistration(input: { name: string; redirect
   return { ok: true, name, redirectUris: redirectUris as string[] };
 }
 
-function present(client: typeof oauthClients.$inferSelect): PublicOAuthClient {
+function present(client: ReturnType<typeof createOAuthClient>): PublicOAuthClient {
   return {
     id: client.id,
     name: client.name,
@@ -69,21 +67,19 @@ function present(client: typeof oauthClients.$inferSelect): PublicOAuthClient {
   };
 }
 
-export function registerPublicClient(ownerId: number, input: { name: string; redirectUris: string[] }): PublicOAuthClient {
-  const client = getApplicationDatabase().getClient().insert(oauthClients).values({
+export function registerPublicClient(ownerId: number, input: { name: string; redirectUris: string }):
+  | { ok: true; client: PublicOAuthClient }
+  | { ok: false; errors: RegistrationErrors } {
+  const validated = validatePublicClientRegistration(input);
+  if (!validated.ok) return validated;
+  const client = createOAuthClient(ownerId, {
     id: randomBytes(24).toString("base64url"),
-    ownerId,
-    name: input.name,
-    type: "public",
-    redirectUris: JSON.stringify(input.redirectUris),
-    createdAt: new Date().toISOString(),
-  }).returning().get();
-  return present(client);
+    name: validated.name,
+    redirectUris: validated.redirectUris,
+  });
+  return { ok: true, client: present(client) };
 }
 
 export function listPublicClients(ownerId: number): PublicOAuthClient[] {
-  return getApplicationDatabase().getClient().select().from(oauthClients)
-    .where(and(eq(oauthClients.ownerId, ownerId), eq(oauthClients.type, "public")))
-    .orderBy(oauthClients.createdAt)
-    .all().map(present);
+  return listOAuthClientsForOwner(ownerId).map(present);
 }

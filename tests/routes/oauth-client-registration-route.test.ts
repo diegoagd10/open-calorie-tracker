@@ -7,6 +7,7 @@ import { serializeSessionCookie } from "../../app/auth/http.server";
 import { getAuthenticationService } from "../../app/auth/runtime.server";
 import { getApplicationDatabase, initializeApplicationDatabase, shutdownApplicationDatabase } from "../../app/database/runtime.server";
 import { action, loader } from "../../app/routes/settings.oauth-clients";
+import { loader as homeLoader } from "../../app/routes/home";
 import { seedAuthenticatedAccount } from "../support/authentication";
 
 const origin = "http://localhost:3000";
@@ -68,6 +69,12 @@ test("a signed-in account registers and reviews a public client without a secret
   expect(response.data.client).not.toHaveProperty("accessToken");
   expect((await loader(get(ownerCookie))).clients).toContainEqual(response.data.client);
   expect((await loader(get(otherCookie))).clients).toEqual([]);
+  const bearerOnly = await homeLoader(args(new Request(`${origin}/`, {
+    headers: { Authorization: `Bearer ${response.data.client?.id ?? ""}` },
+  })));
+  expect(bearerOnly).toBeInstanceOf(Response);
+  expect((bearerOnly as Response).status).toBe(302);
+  expect((bearerOnly as Response).headers.get("Location")).toBe("/login");
 });
 
 test("invalid names and redirect URIs do not register a client", async () => {
@@ -79,6 +86,7 @@ test("invalid names and redirect URIs do not register a client", async () => {
     { name: "Bad callback", redirectUris: "https://client.example/callback#fragment" },
     { name: "Bad callback", redirectUris: "https://user:password@client.example/callback" },
     { name: "Bad callback", redirectUris: "https://*.example/callback" },
+    { name: "Bad callback", redirectUris: "https://client.example/*" },
     { name: "Bad callback", redirectUris: "http://localhost.evil/callback" },
     { name: "Bad callback", redirectUris: "https://client.example/callback\nhttps://client.example/callback" },
   ]) {
