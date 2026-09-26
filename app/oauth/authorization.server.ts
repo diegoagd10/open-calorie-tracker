@@ -1,0 +1,118 @@
+import { createHash, randomBytes } from "node:crypto";
+import { findOAuthClient } from "../database/oauth-clients.server";
+import { exchangeOAuthAuthorizationCode, findOAuthAccessToken, saveOAuthAuthorizationCode } from "../database/oauth-authorization.server";
+
+export const DAILY_LOG_READ_SCOPE = "daily-log:read";
+export const ACCESS_TOKEN_SECONDS = 900;
+const CODE_LIFETIME_MS = 5 * 60 * 1_000;
+
+export type PublicAuthorizationRequest = {
+  clientId: string;
+  clientName: string;
+  redirectUri: string;
+  codeChallenge: string;
+  state: string;
+};
+
+function oneParameter(parameters: URLSearchParams, name: string): string | undefined {
+  const values = parameters.getAll(name);
+  return values.length === 1 ? values[0] : undefined;
+}
+
+export function readPublicAuthorizationRequest(parameters: URLSearchParams): PublicAuthorizationRequest | undefined {
+  const clientId = oneParameter(parameters, "client_id");
+  const redirectUri = oneParameter(parameters, "redirect_uri");
+  const state = oneParameter(parameters, "state");
+  const challenge = oneParameter(parameters, "code_challenge");
+  if (
+    oneParameter(parameters, "response_type") !== "code" ||
+    oneParameter(parameters, "scope") !== DAILY_LOG_READ_SCOPE ||
+    oneParameter(parameters, "code_challenge_method") !== "S256" ||
+    !clientId || !redirectUri || !state || !challenge ||
+    state.length < 16 || state.length > 512 || /[\p{Cc}\p{Cf}]/u.test(state) ||
+    !/^[A-Za-z0-9_-]{43}$/u.test(challenge)
+  ) return undefined;
+  const client = findOAuthClient(clientId);
+  if (!client || client.type !== "public" || !(JSON.parse(client.redirectUris) as string[]).includes(redirectUri)) {
+    return undefined;
+  }
+  return { clientId, clientName: client.name, redirectUri, codeChallenge: challenge, state };
+}
+
+function opaqueValue(): string {
+  return randomBytes(32).toString("base64url");
+}
+
+function hashValue(value: string): string {
+  return createHash("sha256").update(value, "ascii").digest("hex");
+}
+
+export function authorizationRedirect(request: PublicAuthorizationRequest, response: { code: string } | { error: "access_denied" }): string {
+  const callback = new URL(request.redirectUri);
+  if ("code" in response) callback.searchParams.set("code", response.code);
+  else callback.searchParams.set("error", response.error);
+  callback.searchParams.set("state", request.state);
+  return callback.href;
+}
+
+export function approvePublicAuthorization(userId: number, request: PublicAuthorizationRequest): string {
+  const code = opaqueValue();
+  const now = new Date();
+  saveOAuthAuthorizationCode({
+    clientId: request.clientId,
+    userId,
+    codeHash: hashValue(code),
+    redirectUri: request.redirectUri,
+    codeChallenge: request.codeChallenge,
+    createdAt: now.toISOString(),
+    expiresAt: new Date(now.getTime() + CODE_LIFETIME_MS).toISOString(),
+  });
+  return code;
+}
+
+export type OAuthTokenExchange =
+  | { ok: true; accessToken: string }
+  | { ok: false; error: "invalid_request" | "invalid_client" | "invalid_grant" | "unsupported_grant_type" };
+
+export function exchangePublicAuthorizationCode(parameters: URLSearchParams): OAuthTokenExchange {
+  if (oneParameter(parameters, "grant_type") !== "authorization_code") {
+    return { ok: false, error: "unsupported_grant_type" };
+  }
+  const code = oneParameter(parameters, "code");
+  const clientId = oneParameter(parameters, "client_id");
+  const redirectUri = oneParameter(parameters, "redirect_uri");
+  const verifier = oneParameter(parameters, "code_verifier");
+  if (!code || !clientId || !redirectUri || !verifier ||
+      !/^[A-Za-z0-9_-]{43}$/u.test(code) ||
+      !/^[A-Za-z0-9._~-]{43,128}$/u.test(verifier)) {
+    return { ok: false, error: "invalid_request" };
+  }
+  const client = findOAuthClient(clientId);
+  if (!client || client.type !== "public") return { ok: false, error: "invalid_client" };
+  const challenge = createHash("sha256").update(verifier, "ascii").digest("base64url");
+  const accessToken = opaqueValue();
+  const now = new Date();
+  const exchanged = exchangeOAuthAuthorizationCode({
+    codeHash: hashValue(code),
+    clientId,
+    redirectUri,
+    codeChallenge: challenge,
+    tokenHash: hashValue(accessToken),
+    now: now.toISOString(),
+    expiresAt: new Date(now.getTime() + ACCESS_TOKEN_SECONDS * 1_000).toISOString(),
+  });
+  return exchanged ? { ok: true, accessToken } : { ok: false, error: "invalid_grant" };
+}
+
+export function authenticateDailyLogBearer(header: string | null):
+  | { ok: true; userId: number }
+  | { ok: false; error: "invalid_token" | "insufficient_scope" } {
+  const match = /^Bearer +([A-Za-z0-9_-]{43})$/iu.exec(header ?? "");
+  if (!match) return { ok: false, error: "invalid_token" };
+  const stored = findOAuthAccessToken(hashValue(match[1]));
+  if (!stored || stored.expiresAt <= new Date().toISOString() || stored.accessState !== "active") {
+    return { ok: false, error: "invalid_token" };
+  }
+  if (stored.scope !== DAILY_LOG_READ_SCOPE) return { ok: false, error: "insufficient_scope" };
+  return { ok: true, userId: stored.userId };
+}

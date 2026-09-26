@@ -95,6 +95,9 @@ test("invalid names and redirect URIs do not register a client", async () => {
     expect(response.data.errors).toBeDefined();
   }
   expect((await loader(get(ownerCookie))).clients).toHaveLength(before);
+  const missingFields = await action(post({ intent: "register" }));
+  expect(missingFields.init?.status).toBe(400);
+  expect(missingFields.data.errors).toMatchObject({ name: expect.any(String) as unknown, redirectUris: expect.any(String) as unknown });
 });
 
 test("anonymous and cross-site requests cannot register or review clients", async () => {

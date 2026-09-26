@@ -19,3 +19,8 @@ export function listOAuthClientsForOwner(ownerId: number) {
     .orderBy(oauthClients.createdAt)
     .all();
 }
+
+export function findOAuthClient(clientId: string) {
+  return getApplicationDatabase().getClient().select().from(oauthClients)
+    .where(eq(oauthClients.id, clientId)).get();
+}

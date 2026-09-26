@@ -1,0 +1,68 @@
+import { createElement } from "react";
+import { createRoutesStub } from "react-router";
+import { act, create, type ReactTestRenderer } from "react-test-renderer";
+import { expect, test } from "vitest";
+import OAuthConsent from "../../app/routes/oauth.authorize";
+import OAuthClientsSettings from "../../app/routes/settings.oauth-clients";
+
+(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
+async function renderRoute(Component: (props: never) => React.JSX.Element | null, path: string, loaderData: object, actionData?: object) {
+  const Routes = createRoutesStub([{ path, id: "subject", Component: Component as never }]);
+  let renderer!: ReactTestRenderer;
+  await act(async () => {
+    renderer = create(createElement(Routes, {
+      initialEntries: [path],
+      hydrationData: {
+        loaderData: { subject: loaderData },
+        actionData: actionData ? { subject: actionData } : undefined,
+      },
+    }));
+  });
+  return renderer;
+}
+
+function visibleText(renderer: ReactTestRenderer) {
+  return renderer.root.findAll((node) => typeof node.type === "string")
+    .flatMap((node) => node.children)
+    .filter((value): value is string => typeof value === "string")
+    .join(" ");
+}
+
+test("consent names the client and read permission before approval or denial", async () => {
+  const renderer = await renderRoute(OAuthConsent, "/oauth/authorize", {
+    client: { id: "public-client-id", name: "Daily Log CLI" },
+    permission: "Read your daily Food Log", scope: "daily-log:read",
+    csrfToken: "csrf-token", action: "/oauth/authorize?client_id=public-client-id",
+  });
+  const content = visibleText(renderer);
+  expect(content).toContain("Daily Log CLI");
+  expect(content).toContain("read your daily food log");
+  expect(content).toContain("cannot edit your Food Log");
+  expect(renderer.root.findAllByType("button").map((button) => button.props.value as string)).toEqual(["approve", "deny"]);
+  await act(() => renderer.unmount());
+});
+
+test("account settings review client IDs and show registration validation feedback", async () => {
+  const client = {
+    id: "public-client-id", name: "Daily Log CLI", type: "public" as const,
+    redirectUris: ["http://127.0.0.1:4567/callback"], createdAt: "2026-09-26T12:00:00.000Z",
+  };
+  const renderer = await renderRoute(OAuthClientsSettings, "/settings/oauth-clients", {
+    csrfToken: "csrf-token", clients: [client],
+  }, { errors: { name: "Enter a name of 1 to 80 printable characters.", redirectUris: "Enter one to ten redirect URIs, one per line." } });
+  const content = visibleText(renderer);
+  expect(content).toContain(client.name);
+  expect(content).toContain(client.id);
+  expect(content).toContain(client.redirectUris[0]);
+  expect(content).toContain("No client secret");
+  expect(renderer.root.findAllByProps({ role: "alert" })).toHaveLength(2);
+  await act(() => renderer.unmount());
+
+  const empty = await renderRoute(OAuthClientsSettings, "/settings/oauth-clients", {
+    csrfToken: "csrf-token", clients: [],
+  }, { error: "The client could not be registered. Please try again." });
+  expect(visibleText(empty)).toContain("No clients registered yet.");
+  expect(visibleText(empty)).toContain("The client could not be registered.");
+  await act(() => empty.unmount());
+});

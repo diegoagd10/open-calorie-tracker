@@ -275,7 +275,7 @@
   },
   "overrides": [
     {
-      "files": ["app/routes/health.live.ts"],
+      "files": ["app/routes/health.live.ts", "app/routes/oauth.metadata.ts"],
       "rules": {
         "unused-load-data-keys": "off"
       }
