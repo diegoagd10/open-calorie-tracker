@@ -63,13 +63,14 @@ export const oauthClients = sqliteTable(
     id: text().primaryKey(),
     ownerId: integer("owner_id").notNull().references(() => users.id, { onDelete: "cascade" }),
     name: text().notNull(),
-    type: text({ enum: ["public"] }).notNull(),
+    type: text({ enum: ["public", "confidential"] }).notNull(),
+    secretHash: text("secret_hash"),
     redirectUris: text("redirect_uris").notNull(),
     createdAt: text("created_at").notNull(),
   },
   (table) => [
     index("oauth_clients_owner_id_index").on(table.ownerId),
-    check("oauth_clients_type_check", sql`type = 'public'`),
+    check("oauth_clients_type_check", sql`(type = 'public' AND secret_hash IS NULL) OR (type = 'confidential' AND secret_hash IS NOT NULL)`),
   ],
 );
 

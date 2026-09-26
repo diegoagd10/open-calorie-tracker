@@ -1,17 +1,17 @@
-# Daily Food Log API v1 and public OAuth clients
+# Daily Food Log API v1 and OAuth clients
 
-The API and OAuth routes run in the same Open Calorie Tracker instance as the browser UI. The API reads one account's Food Log; it does not provide write operations. A public client must be registered by a signed-in account holder at `/settings/oauth-clients` before it can ask any account holder for access. Registration alone grants nothing.
+The API and OAuth routes run in the same Open Calorie Tracker instance as the browser UI. The API reads one account's Food Log; it does not provide write operations. A public or confidential client must be registered by a signed-in account holder at `/settings/oauth-clients` before it can ask any account holder for access. Registration alone grants nothing.
 
 ## Discover and authorize
 
-Read `/.well-known/oauth-authorization-server` for the instance's `issuer`, authorization endpoint, token endpoint, supported scope, and PKCE method. The instance supports authorization code with `S256` PKCE for public clients. A public client has no shared secret. It must retain a fresh, high-entropy `code_verifier` for each attempt and send its SHA-256 base64url challenge in the authorization request. See [RFC 7636](https://www.rfc-editor.org/rfc/rfc7636.html) and the [OAuth security best current practice](https://www.rfc-editor.org/rfc/rfc9700.html).
+Read `/.well-known/oauth-authorization-server` for the instance's `issuer`, authorization endpoint, token endpoint, supported scope, PKCE method, and client authentication methods (`none` and `client_secret_basic`). Both client types use authorization code with `S256` PKCE. Retain a fresh, high-entropy `code_verifier` for each attempt and send its SHA-256 base64url challenge in the authorization request. A public client has no shared secret; a confidential server client also authenticates at the token endpoint. See [RFC 7636](https://www.rfc-editor.org/rfc/rfc7636.html) and the [OAuth security best current practice](https://www.rfc-editor.org/rfc/rfc9700.html).
 
 Open `/oauth/authorize` in the account holder's browser with these query parameters:
 
 | Parameter | Value |
 | --- | --- |
 | `response_type` | `code` |
-| `client_id` | The registered public client ID |
+| `client_id` | The registered client ID |
 | `redirect_uri` | One exact URI displayed in the client's registration |
 | `scope` | `daily-log:read` |
 | `code_challenge` | Base64url SHA-256 of the verifier, without padding |
@@ -20,17 +20,19 @@ Open `/oauth/authorize` in the account holder's browser with these query paramet
 
 The user signs in if needed, then sees the client name and its Food Log read permission and can approve or decline. Sign-in returns to the same authorization request. Approval redirects to the registered URI with a one-time `code` and the original `state`; denial redirects with `error=access_denied` and the original `state`. The client must check `state` before exchanging a code. Invalid client or redirect requests receive an error at the instance and are never redirected to an unregistered URI. Codes expire after five minutes and can be exchanged once.
 
-Send a `POST` to `/oauth/token` with `Content-Type: application/x-www-form-urlencoded` and `grant_type=authorization_code`, `code`, `client_id`, the same `redirect_uri`, and the original `code_verifier`. The response has `access_token`, `refresh_token`, `token_type: "Bearer"`, `expires_in: 900`, and `scope: "daily-log:read"`. A failed exchange returns JSON `{ "error": "invalid_request" | "invalid_client" | "invalid_grant" | "invalid_scope" | "unsupported_grant_type" }` with HTTP 400. Codes and tokens are stored as SHA-256 hashes; plaintext tokens appear only in token responses.
+Send a `POST` to `/oauth/token` with `Content-Type: application/x-www-form-urlencoded` and `grant_type=authorization_code`, `code`, `client_id`, the same `redirect_uri`, and the original `code_verifier`. For a confidential client, also send `Authorization: Basic <base64(client_id:client_secret)>`; use the client ID and one-time secret from registration. Keep this header on the server. The body may omit `client_id` when Basic supplies it, but if included it must match. Do not put `client_secret` in the form body. Public clients send no Basic header.
+
+The response has `access_token`, `refresh_token`, `token_type: "Bearer"`, `expires_in: 900`, and `scope: "daily-log:read"`. A failed exchange returns JSON `{ "error": "invalid_request" | "invalid_client" | "invalid_grant" | "invalid_scope" | "unsupported_grant_type" }` with HTTP 400, or HTTP 401 and a Basic challenge for failed confidential-client authentication. Codes and tokens are stored as SHA-256 hashes; plaintext tokens appear only in token responses. The client secret alone is never a Food Log credential.
 
 ## Renew and revoke a connection
 
-When the access token expires, send `POST /oauth/token` with `Content-Type: application/x-www-form-urlencoded`, `grant_type=refresh_token`, `client_id`, and the latest `refresh_token`. The response has the same fields as the code exchange, including a **new** access token and refresh token. Replace the stored refresh token atomically in the client before relying on another renewal. An optional `scope` must be exactly `daily-log:read`; a broader scope returns `invalid_scope`. The metadata endpoint lists both supported grant types.
+When the access token expires, send `POST /oauth/token` with `Content-Type: application/x-www-form-urlencoded`, `grant_type=refresh_token`, `client_id`, and the latest `refresh_token`. Confidential clients must again supply the same Basic client authentication header. The response has the same fields as the code exchange, including a **new** access token and refresh token. Replace the stored refresh token atomically in the client before relying on another renewal. An optional `scope` must be exactly `daily-log:read`; a broader scope returns `invalid_scope`. The metadata endpoint lists both supported grant types.
 
 Each refresh token is single-use. Reusing an older rotated token returns `invalid_grant` and invalidates the connection's active renewal credentials as replay protection. The account holder can review connected clients and their permission at `/settings/oauth-clients` and revoke one there. Revocation immediately invalidates that client's access and refresh tokens for that account, without affecting other connections. Refresh credentials remain available until revocation or detected replay; keep them in secure client storage and do not put them in URLs or logs.
 
 An account's disabled state blocks both Food Log reads and token renewal without deleting its grants. After re-enabling, the existing refresh token can obtain a new access token. Resetting the login password leaves OAuth grants and tokens in place. Browser sessions and OAuth credentials have separate lifecycles.
 
-The callback rules are in [Public OAuth client registration](oauth-client-registration.md). For external clients, serve the instance and callback over trusted HTTPS. An instance accessed over LAN HTTP exposes the same routes and behavior, but the operator must provide HTTPS before sending OAuth credentials across an untrusted network. Loopback HTTP callbacks remain available for local development. This feature does not provision TLS.
+The callback and secret handling rules are in [OAuth client registration](oauth-client-registration.md). For external clients, serve the instance and callback over trusted HTTPS. An instance accessed over LAN HTTP exposes the same routes and behavior, but the operator must provide HTTPS before sending OAuth credentials across an untrusted network. Loopback HTTP callbacks remain available for local development. This feature does not provision TLS.
 
 ## Read a day
 

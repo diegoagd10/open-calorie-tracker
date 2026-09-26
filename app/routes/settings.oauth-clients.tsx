@@ -1,12 +1,13 @@
 import { data, Form, Link, useActionData } from "react-router";
 import type { Route } from "./+types/settings.oauth-clients";
 import { getApplicationMutationSession, readApplicationMutationForm, requireApplicationSession } from "../auth/http.server";
-import { listPublicClients, registerPublicClient, type PublicOAuthClient, type RegistrationErrors } from "../oauth/client-registration.server";
+import { listOAuthClients, registerOAuthClient, type OAuthClientSummary, type RegistrationErrors } from "../oauth/client-registration.server";
 import { connectedDailyLogClients, revokeDailyLogClient } from "../oauth/authorization.server";
 import styles from "../account.module.css";
 
 type ActionData = {
-  client?: PublicOAuthClient;
+  client?: OAuthClientSummary;
+  clientSecret?: string;
   errors?: RegistrationErrors;
   error?: string;
   revokedClient?: { clientId: string; name: string };
@@ -24,7 +25,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   const session = await requireApplicationSession(request);
   return {
     csrfToken: session.csrfToken,
-    clients: listPublicClients(session.user.id),
+    clients: listOAuthClients(session.user.id),
     connections: connectedDailyLogClients(session.user.id),
   };
 }
@@ -48,12 +49,13 @@ export async function action({ request }: Route.ActionArgs) {
     return data<ActionData>({ error: "Unsupported action." }, { status: 400 });
   }
   try {
-    const result = registerPublicClient(session.user.id, {
+    const result = registerOAuthClient(session.user.id, {
+      clientType: String(form.get("clientType") ?? "public"),
       name: String(form.get("name") ?? ""),
       redirectUris: String(form.get("redirectUris") ?? ""),
     });
     if (!result.ok) return data<ActionData>({ errors: result.errors }, { status: 400 });
-    return data<ActionData>({ client: result.client }, { status: 201 });
+    return data<ActionData>({ client: result.client, ...(result.clientSecret ? { clientSecret: result.clientSecret } : {}) }, { status: 201 });
   } catch {
     return data<ActionData>({ error: "The client could not be registered. Please try again." }, { status: 503 });
   }
@@ -66,7 +68,7 @@ export default function OAuthClientsSettings({ loaderData }: Route.ComponentProp
       <section className={styles.panel} aria-labelledby="oauth-clients-title">
         <Link className={styles.backLink} to="/settings/goals">Back to settings</Link>
         <h1 id="oauth-clients-title">OAuth clients</h1>
-        <p>Review apps connected to your Food Log and register public clients for account holders to authorize.</p>
+        <p>Review apps connected to your Food Log and register clients for account holders to authorize.</p>
         <h2>Connected clients</h2>
         <p>These clients can read your daily Food Log. Revoking a connection stops its current and future tokens.</p>
         {loaderData.connections.length ? (
@@ -89,7 +91,7 @@ export default function OAuthClientsSettings({ loaderData }: Route.ComponentProp
           </ul>
         ) : <p>No connected clients yet.</p>}
         {result?.revokedClient ? <p role="status">Revoked {result.revokedClient.name}.</p> : null}
-        <h2>Registered public clients</h2>
+        <h2>Registered clients</h2>
         <p>Registration alone gives a client no Food Log access.</p>
         {loaderData.clients.length ? (
           <ul className={styles.keyList}>
@@ -98,17 +100,25 @@ export default function OAuthClientsSettings({ loaderData }: Route.ComponentProp
                 <div>
                   <strong>{client.name}</strong>
                   <p>Client ID: <code>{client.id}</code></p>
-                  <p>Public client · No client secret</p>
+                  <p>{client.type === "public" ? "Public client · No client secret" : "Confidential server client · Secret shown only at registration"}</p>
                   <ul>{client.redirectUris.map((uri) => <li key={uri}><code>{uri}</code></li>)}</ul>
                 </div>
               </li>
             ))}
           </ul>
         ) : <p>No clients registered yet.</p>}
-        <h2>Register a public client</h2>
+        <h2>Register a client</h2>
         <Form className={styles.form} method="post">
           <input type="hidden" name="intent" value="register" />
           <input type="hidden" name="csrfToken" value={loaderData.csrfToken} />
+          <div className={styles.field}>
+            <label htmlFor="client-type">Client type</label>
+            <select id="client-type" name="clientType" defaultValue="public">
+              <option value="public">Public client</option>
+              <option value="confidential">Confidential server client</option>
+            </select>
+            {result?.errors?.clientType ? <p role="alert">{result.errors.clientType}</p> : null}
+          </div>
           <div className={styles.field}>
             <label htmlFor="client-name">Client name</label>
             <input id="client-name" name="name" required maxLength={80} />
@@ -122,7 +132,8 @@ export default function OAuthClientsSettings({ loaderData }: Route.ComponentProp
           </div>
           {result?.error ? <p role="alert">{result.error}</p> : null}
           {result?.client ? <p role="status">Registered {result.client.name}. Its client ID is {result.client.id}.</p> : null}
-          <button className={styles.submit} type="submit">Register public client</button>
+          {result?.clientSecret ? <p role="status">Copy this client secret now. It will not be shown again: <code>{result.clientSecret}</code></p> : null}
+          <button className={styles.submit} type="submit">Register client</button>
         </Form>
       </section>
     </main>

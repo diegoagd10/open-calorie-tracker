@@ -1,4 +1,6 @@
 import { mkdtemp, rm } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { sql } from "drizzle-orm";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { RouterContextProvider } from "react-router";
@@ -75,6 +77,40 @@ test("a signed-in account registers and reviews a public client without a secret
   expect(bearerOnly).toBeInstanceOf(Response);
   expect((bearerOnly as Response).status).toBe(302);
   expect((bearerOnly as Response).headers.get("Location")).toBe("/login");
+});
+
+test("a confidential client receives a one-time secret while ordinary reads expose only public metadata", async () => {
+  const response = await action(post({
+    intent: "register", clientType: "confidential", name: "Server app",
+    redirectUris: "https://server.example/callback",
+  }));
+  expect(response.init?.status).toBe(201);
+  expect(response.data.client).toMatchObject({ name: "Server app", type: "confidential" });
+  const secret = response.data.clientSecret ?? "";
+  expect(secret).toMatch(/^[A-Za-z0-9_-]{43}$/u);
+  const clients = (await loader(get(ownerCookie))).clients;
+  expect(clients).toContainEqual(response.data.client);
+  expect(JSON.stringify(clients)).not.toContain(secret);
+  const stored = getApplicationDatabase().getClient().get<{ secret_hash: string }>(sql`SELECT secret_hash FROM oauth_clients WHERE id = ${response.data.client?.id}`);
+  expect(stored?.secret_hash).toBe(createHash("sha256").update(secret, "ascii").digest("hex"));
+  expect(stored?.secret_hash).not.toBe(secret);
+  expect((await loader(get(otherCookie))).clients).not.toContainEqual(response.data.client);
+});
+
+test("an invalid client type cannot be registered", async () => {
+  const result = await action(post({ intent: "register", clientType: "unknown", name: "Bad", redirectUris: "https://server.example/callback" }));
+  expect(result.init?.status).toBe(400);
+  expect(result.data.errors?.clientType).toBeDefined();
+});
+
+test("confidential registration enforces the same redirect URI validation", async () => {
+  const result = await action(post({
+    intent: "register", clientType: "confidential", name: "Server app",
+    redirectUris: "https://attacker.example/callback#fragment",
+  }));
+  expect(result.init?.status).toBe(400);
+  expect(result.data.errors?.redirectUris).toBeDefined();
+  expect(result.data.clientSecret).toBeUndefined();
 });
 
 test("invalid names and redirect URIs do not register a client", async () => {

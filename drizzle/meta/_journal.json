@@ -183,6 +183,13 @@
       "when": 1790456417424,
       "tag": "0025_first_jamie_braddock",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "6",
+      "when": 1790457917661,
+      "tag": "0026_fuzzy_wendell_vaughn",
+      "breakpoints": true
     }
   ]
 }

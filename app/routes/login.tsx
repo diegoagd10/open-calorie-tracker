@@ -20,7 +20,7 @@ import {
 } from "../auth/http.server";
 import { getAuthenticationService } from "../auth/runtime.server";
 import { loginSchema } from "../auth/validation";
-import { publicAuthorizationReturnPath } from "../oauth/authorization.server";
+import { oauthAuthorizationReturnPath } from "../oauth/authorization.server";
 
 type LoginActionData = {
   error: string;
@@ -41,7 +41,7 @@ export function headers() {
 }
 
 export async function loader({ request }: Route.LoaderArgs) {
-  const returnPath = publicAuthorizationReturnPath(new URL(request.url).searchParams.get("next")) ?? "/";
+  const returnPath = oauthAuthorizationReturnPath(new URL(request.url).searchParams.get("next")) ?? "/";
   const session = await getSessionForAccountAccess(request);
   if (session) {
     return redirect(
@@ -124,7 +124,7 @@ export async function action({ request }: Route.ActionArgs) {
   return redirect(
     result.session.user.passwordChangeRequired
       ? "/account/password"
-      : publicAuthorizationReturnPath(new URL(request.url).searchParams.get("next")) ?? "/",
+      : oauthAuthorizationReturnPath(new URL(request.url).searchParams.get("next")) ?? "/",
     {
       headers: authenticatedSessionHeaders(request, result.session),
     },

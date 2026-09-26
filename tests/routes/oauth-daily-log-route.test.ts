@@ -207,7 +207,7 @@ test("metadata describes the public PKCE flow and denial creates no code", async
     token_endpoint: `${origin}/oauth/token`,
     code_challenge_methods_supported: ["S256"],
     scopes_supported: ["daily-log:read"],
-    token_endpoint_auth_methods_supported: ["none"],
+    token_endpoint_auth_methods_supported: ["none", "client_secret_basic"],
   });
   const denied = await authorize(consentPost("deny", declinerCookie, declinerCsrf));
   const callback = new URL(denied.headers.get("Location") ?? "");

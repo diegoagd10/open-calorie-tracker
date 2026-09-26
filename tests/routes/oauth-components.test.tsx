@@ -81,3 +81,24 @@ test("account settings show connected clients, their permission, and revoke cont
   expect(renderer.root.findAllByProps({ name: "clientId", value: clientId })).toHaveLength(1);
   await act(() => renderer.unmount());
 });
+
+test("confidential registration displays the secret once while the ordinary client list omits it", async () => {
+  const client = {
+    id: "c".repeat(32), name: "Server reader", type: "confidential" as const,
+    redirectUris: ["https://server.example/callback"], createdAt: "2026-09-26T12:00:00.000Z",
+  };
+  const secret = "s".repeat(43);
+  const registered = await renderRoute(OAuthClientsSettings, "/settings/oauth-clients", {
+    csrfToken: "csrf-token", clients: [client], connections: [],
+  }, { client, clientSecret: secret });
+  expect(visibleText(registered)).toContain("Copy this client secret now");
+  expect(visibleText(registered)).toContain(secret);
+  await act(() => registered.unmount());
+
+  const listed = await renderRoute(OAuthClientsSettings, "/settings/oauth-clients", {
+    csrfToken: "csrf-token", clients: [client], connections: [],
+  });
+  expect(visibleText(listed)).toContain("Confidential server client");
+  expect(visibleText(listed)).not.toContain(secret);
+  await act(() => listed.unmount());
+});

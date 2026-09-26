@@ -1,15 +1,16 @@
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { createOAuthClient, listOAuthClientsForOwner } from "../database/oauth-clients.server";
 
-export type PublicOAuthClient = {
+export type OAuthClientSummary = {
   id: string;
   name: string;
-  type: "public";
+  type: "public" | "confidential";
   redirectUris: string[];
   createdAt: string;
 };
 
 export type RegistrationErrors = {
+  clientType?: string;
   name?: string;
   redirectUris?: string;
 };
@@ -43,43 +44,47 @@ function validateRedirectUris(input: string): string[] | string {
   return result;
 }
 
-function validatePublicClientRegistration(input: { name: string; redirectUris: string }):
-  | { ok: true; name: string; redirectUris: string[] }
+function validateClientRegistration(input: { clientType: string; name: string; redirectUris: string }):
+  | { ok: true; type: "public" | "confidential"; name: string; redirectUris: string[] }
   | { ok: false; errors: RegistrationErrors } {
   const name = input.name.trim();
   const errors: RegistrationErrors = {};
+  if (input.clientType !== "public" && input.clientType !== "confidential") errors.clientType = "Choose a public or confidential client.";
   if (!name || name.length > 80 || /[\p{Cc}\p{Cf}]/u.test(name)) {
     errors.name = "Enter a name of 1 to 80 printable characters.";
   }
   const redirectUris = validateRedirectUris(input.redirectUris);
   if (typeof redirectUris === "string") errors.redirectUris = redirectUris;
-  if (errors.name || errors.redirectUris) return { ok: false, errors };
-  return { ok: true, name, redirectUris: redirectUris as string[] };
+  if (errors.clientType || errors.name || errors.redirectUris) return { ok: false, errors };
+  return { ok: true, type: input.clientType as "public" | "confidential", name, redirectUris: redirectUris as string[] };
 }
 
-function present(client: ReturnType<typeof createOAuthClient>): PublicOAuthClient {
+function present(client: ReturnType<typeof listOAuthClientsForOwner>[number]): OAuthClientSummary {
   return {
     id: client.id,
     name: client.name,
-    type: "public",
+    type: client.type,
     redirectUris: JSON.parse(client.redirectUris) as string[],
     createdAt: client.createdAt,
   };
 }
 
-export function registerPublicClient(ownerId: number, input: { name: string; redirectUris: string }):
-  | { ok: true; client: PublicOAuthClient }
+export function registerOAuthClient(ownerId: number, input: { clientType: string; name: string; redirectUris: string }):
+  | { ok: true; client: OAuthClientSummary; clientSecret?: string }
   | { ok: false; errors: RegistrationErrors } {
-  const validated = validatePublicClientRegistration(input);
+  const validated = validateClientRegistration(input);
   if (!validated.ok) return validated;
+  const clientSecret = validated.type === "confidential" ? randomBytes(32).toString("base64url") : undefined;
   const client = createOAuthClient(ownerId, {
     id: randomBytes(24).toString("base64url"),
     name: validated.name,
+    type: validated.type,
+    secretHash: clientSecret ? createHash("sha256").update(clientSecret, "ascii").digest("hex") : null,
     redirectUris: validated.redirectUris,
   });
-  return { ok: true, client: present(client) };
+  return { ok: true, client: present(client), ...(clientSecret ? { clientSecret } : {}) };
 }
 
-export function listPublicClients(ownerId: number): PublicOAuthClient[] {
+export function listOAuthClients(ownerId: number): OAuthClientSummary[] {
   return listOAuthClientsForOwner(ownerId).map(present);
 }

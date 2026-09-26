@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { findOAuthClient } from "../database/oauth-clients.server";
 import { exchangeOAuthAuthorizationCode, findOAuthAccessToken, listOAuthConnections, revokeOAuthConnection, rotateOAuthRefreshToken, saveOAuthAuthorizationCode } from "../database/oauth-authorization.server";
 
@@ -6,7 +6,7 @@ export const DAILY_LOG_READ_SCOPE = "daily-log:read";
 export const ACCESS_TOKEN_SECONDS = 900;
 const CODE_LIFETIME_MS = 5 * 60 * 1_000;
 
-export type PublicAuthorizationRequest = {
+export type OAuthAuthorizationRequest = {
   clientId: string;
   clientName: string;
   redirectUri: string;
@@ -19,7 +19,7 @@ function oneParameter(parameters: URLSearchParams, name: string): string | undef
   return values.length === 1 ? values[0] : undefined;
 }
 
-export function readPublicAuthorizationRequest(parameters: URLSearchParams): PublicAuthorizationRequest | undefined {
+export function readOAuthAuthorizationRequest(parameters: URLSearchParams): OAuthAuthorizationRequest | undefined {
   const clientId = oneParameter(parameters, "client_id");
   const redirectUri = oneParameter(parameters, "redirect_uri");
   const state = oneParameter(parameters, "state");
@@ -33,17 +33,17 @@ export function readPublicAuthorizationRequest(parameters: URLSearchParams): Pub
     !/^[A-Za-z0-9_-]{43}$/u.test(challenge)
   ) return undefined;
   const client = findOAuthClient(clientId);
-  if (!client || client.type !== "public" || !(JSON.parse(client.redirectUris) as string[]).includes(redirectUri)) {
+  if (!client || !(JSON.parse(client.redirectUris) as string[]).includes(redirectUri)) {
     return undefined;
   }
   return { clientId, clientName: client.name, redirectUri, codeChallenge: challenge, state };
 }
 
-export function publicAuthorizationReturnPath(candidate: string | null): string | undefined {
+export function oauthAuthorizationReturnPath(candidate: string | null): string | undefined {
   if (!candidate?.startsWith("/oauth/authorize?") || candidate.length > 4_096) return undefined;
   try {
     const url = new URL(candidate, "http://application.local");
-    if (url.pathname !== "/oauth/authorize" || url.hash || !readPublicAuthorizationRequest(url.searchParams)) return undefined;
+    if (url.pathname !== "/oauth/authorize" || url.hash || !readOAuthAuthorizationRequest(url.searchParams)) return undefined;
     return url.pathname + url.search;
   } catch {
     return undefined;
@@ -58,7 +58,7 @@ function hashValue(value: string): string {
   return createHash("sha256").update(value, "ascii").digest("hex");
 }
 
-export function authorizationRedirect(request: PublicAuthorizationRequest, response: { code: string } | { error: "access_denied" }): string {
+export function authorizationRedirect(request: OAuthAuthorizationRequest, response: { code: string } | { error: "access_denied" }): string {
   const callback = new URL(request.redirectUri);
   if ("code" in response) callback.searchParams.set("code", response.code);
   else callback.searchParams.set("error", response.error);
@@ -66,7 +66,7 @@ export function authorizationRedirect(request: PublicAuthorizationRequest, respo
   return callback.href;
 }
 
-export function approvePublicAuthorization(userId: number, request: PublicAuthorizationRequest): string {
+export function approveOAuthAuthorization(userId: number, request: OAuthAuthorizationRequest): string {
   const code = opaqueValue();
   const now = new Date();
   saveOAuthAuthorizationCode({
@@ -83,11 +83,27 @@ export function approvePublicAuthorization(userId: number, request: PublicAuthor
 
 export type OAuthTokenExchange =
   | { ok: true; accessToken: string; refreshToken: string }
-  | { ok: false; error: "invalid_request" | "invalid_client" | "invalid_grant" | "invalid_scope" | "unsupported_grant_type" };
+  | { ok: false; error: "invalid_request" | "invalid_client" | "invalid_grant" | "invalid_scope" | "unsupported_grant_type"; challenge?: boolean };
 
-function exchangePublicAuthorizationCode(parameters: URLSearchParams): OAuthTokenExchange {
+export type OAuthClientAuthentication = { clientId: string; secret: string };
+
+function authenticateTokenClient(clientId: string, authentication?: OAuthClientAuthentication): OAuthTokenExchange | undefined {
+  const client = findOAuthClient(clientId);
+  if (!client) return { ok: false, error: "invalid_client", challenge: Boolean(authentication) };
+  if (client.type === "public") return authentication ? { ok: false, error: "invalid_client", challenge: true } : undefined;
+  if (!authentication || authentication.clientId !== clientId || !client.secretHash) {
+    return { ok: false, error: "invalid_client", challenge: true };
+  }
+  const received = Buffer.from(hashValue(authentication.secret), "hex");
+  const expected = Buffer.from(client.secretHash, "hex");
+  return received.length === expected.length && timingSafeEqual(received, expected)
+    ? undefined : { ok: false, error: "invalid_client", challenge: true };
+}
+
+function redeemOAuthAuthorizationCode(parameters: URLSearchParams, authentication?: OAuthClientAuthentication): OAuthTokenExchange {
+  if (parameters.has("client_id") && !oneParameter(parameters, "client_id")) return { ok: false, error: "invalid_request" };
   const code = oneParameter(parameters, "code");
-  const clientId = oneParameter(parameters, "client_id");
+  const clientId = oneParameter(parameters, "client_id") ?? authentication?.clientId;
   const redirectUri = oneParameter(parameters, "redirect_uri");
   const verifier = oneParameter(parameters, "code_verifier");
   if (!code || !clientId || !redirectUri || !verifier ||
@@ -95,8 +111,8 @@ function exchangePublicAuthorizationCode(parameters: URLSearchParams): OAuthToke
       !/^[A-Za-z0-9._~-]{43,128}$/u.test(verifier)) {
     return { ok: false, error: "invalid_request" };
   }
-  const client = findOAuthClient(clientId);
-  if (!client || client.type !== "public") return { ok: false, error: "invalid_client" };
+  const clientFailure = authenticateTokenClient(clientId, authentication);
+  if (clientFailure) return clientFailure;
   const challenge = createHash("sha256").update(verifier, "ascii").digest("base64url");
   const accessToken = opaqueValue();
   const refreshToken = opaqueValue();
@@ -114,14 +130,15 @@ function exchangePublicAuthorizationCode(parameters: URLSearchParams): OAuthToke
   return exchanged ? { ok: true, accessToken, refreshToken } : { ok: false, error: "invalid_grant" };
 }
 
-function renewPublicAccessToken(parameters: URLSearchParams): OAuthTokenExchange {
-  const clientId = oneParameter(parameters, "client_id");
+function renewOAuthAccessToken(parameters: URLSearchParams, authentication?: OAuthClientAuthentication): OAuthTokenExchange {
+  if (parameters.has("client_id") && !oneParameter(parameters, "client_id")) return { ok: false, error: "invalid_request" };
+  const clientId = oneParameter(parameters, "client_id") ?? authentication?.clientId;
   const refreshToken = oneParameter(parameters, "refresh_token");
   if (!clientId || !refreshToken || !/^[A-Za-z0-9_-]{43}$/u.test(refreshToken)) {
     return { ok: false, error: "invalid_request" };
   }
-  const client = findOAuthClient(clientId);
-  if (!client || client.type !== "public") return { ok: false, error: "invalid_client" };
+  const clientFailure = authenticateTokenClient(clientId, authentication);
+  if (clientFailure) return clientFailure;
   const scopes = parameters.getAll("scope");
   if (scopes.length > 1) return { ok: false, error: "invalid_request" };
   if (scopes.length === 1 && scopes[0] !== DAILY_LOG_READ_SCOPE) return { ok: false, error: "invalid_scope" };
@@ -141,10 +158,11 @@ function renewPublicAccessToken(parameters: URLSearchParams): OAuthTokenExchange
     : { ok: false, error: "invalid_grant" };
 }
 
-export function exchangePublicToken(parameters: URLSearchParams): OAuthTokenExchange {
+export function exchangeOAuthToken(parameters: URLSearchParams, authentication?: OAuthClientAuthentication): OAuthTokenExchange {
+  if (parameters.has("client_secret")) return { ok: false, error: "invalid_request" };
   switch (oneParameter(parameters, "grant_type")) {
-    case "authorization_code": return exchangePublicAuthorizationCode(parameters);
-    case "refresh_token": return renewPublicAccessToken(parameters);
+    case "authorization_code": return redeemOAuthAuthorizationCode(parameters, authentication);
+    case "refresh_token": return renewOAuthAccessToken(parameters, authentication);
     default: return { ok: false, error: "unsupported_grant_type" };
   }
 }
