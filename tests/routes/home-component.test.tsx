@@ -2067,7 +2067,7 @@ test("home water dialogs cover create, presets, exact values, edit, and deletion
     .toMatchObject({
       "aria-valuemax": 2365.882,
       "aria-valuenow": 2365.882,
-      "aria-valuetext": "3,000 of 2,365.882 ml target",
+      "aria-valuetext": "3,000 of 2,366 ml target",
       style: { "--progress": "100%" },
     });
   const deleteButton = edit.root.findAllByType("button").find(
@@ -2124,7 +2124,8 @@ test("home water dialogs cover create, presets, exact values, edit, and deletion
     waterDialog: { mode: "create" },
   });
   expect(allText(metricCreate)).toContain("Select water amount");
-  expect(allText(metricCreate)).toContain("473.176 ml");
+  expect(allText(metricCreate)).toContain("473 ml");
+  expect(allText(metricCreate)).not.toContain("473.176");
   expect(metricCreate.root.findByProps({ "aria-label": "Water progress" }).props)
     .toMatchObject({ "aria-valuenow": 1000 });
   const metricExact = metricCreate.root.findAllByType("button").find(

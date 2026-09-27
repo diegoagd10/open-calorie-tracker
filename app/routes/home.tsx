@@ -1297,11 +1297,7 @@ function waterGoalValues(
   displayUnits: DisplayUnits,
 ) {
   return {
-    water: formatWaterAmount(
-      waterTargetMicroliters,
-      displayUnits,
-      3,
-    ),
+    water: formatWaterReading(waterTargetMicroliters, displayUnits),
     waterUnit: displayUnits === "metric" ? "ml" : "fl oz",
   };
 }
@@ -1330,6 +1326,18 @@ function formatWaterAmount(
     Number(waterTargetThousandthsFromMicroliters(microliters, displayUnits)) /
       1_000,
   );
+}
+
+/**
+ * A water amount as people read it: whole ml or tenths of a fl oz, matching the
+ * preset labels, so unit conversion never shows noise like 473.176 ml. Amounts
+ * under one unit keep their exact thousandths.
+ */
+function formatWaterReading(microliters: number, displayUnits: DisplayUnits): string {
+  const oneUnitMicroliters = displayUnits === "metric" ? 1_000 : 29_573.529_562_5;
+  const digits =
+    microliters < oneUnitMicroliters ? 3 : displayUnits === "metric" ? 0 : 1;
+  return formatWaterAmount(microliters, displayUnits, digits);
 }
 
 /** How a day's calories compare with that day's goal, for the week strip and calendar. */
@@ -1733,11 +1741,7 @@ function DailySummary({
   const calorieKnown = formatEnergy(calorieTotal.known);
   const calorieGoalDisplay = calorieGoal ? formatEnergy(calorieGoal) : undefined;
   const waterTotal = foodLog.waterTotalMicroliters;
-  const waterTotalDisplay = formatWaterAmount(
-    waterTotal,
-    foodLog.displayUnits,
-    3,
-  );
+  const waterTotalDisplay = formatWaterReading(waterTotal, foodLog.displayUnits);
   const waterUnit = foodLog.displayUnits === "metric" ? "ml" : "fl oz";
   const equivalentGlasses = new Intl.NumberFormat("en-US", {
     maximumFractionDigits: 1,
@@ -2821,7 +2825,7 @@ function WaterEventDialog({
               <p aria-live="polite" className={styles.waterSelectionSummary}>
                 {servingCount === 0
                   ? "Tap a size to add a serving."
-                  : `${servingCount} ${servingCount === 1 ? "serving" : "servings"} · ${formatWaterAmount(presetTotalMicroliters, displayUnits)} ${unit}`}
+                  : `${servingCount} ${servingCount === 1 ? "serving" : "servings"} · ${formatWaterReading(presetTotalMicroliters, displayUnits)} ${unit}`}
                 {presetTotalOunces + 8 > 500 ? " · Maximum amount reached" : null}
               </p>
             ) : null}
@@ -4307,7 +4311,7 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
                               </small>
                             </span>
                             <span className={styles.foodEntryEnergy}>
-                              {formatWaterAmount(
+                              {formatWaterReading(
                                 entry.amountMicroliters,
                                 foodLog.displayUnits,
                               )}{" "}
