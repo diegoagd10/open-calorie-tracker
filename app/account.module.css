@@ -221,3 +221,98 @@
     margin-top: 1rem;
   }
 }
+
+.primaryLink {
+  display: inline-flex;
+  min-height: 2.75rem;
+  align-items: center;
+  justify-content: center;
+  margin: 0.75rem 0 1.25rem;
+  padding: 0.65rem 1rem;
+  border-radius: 0.65rem;
+  color: white;
+  background: var(--green-dark);
+  font-size: 0.8rem;
+  font-weight: 750;
+  text-decoration: none;
+}
+
+.primaryLink:hover {
+  background: var(--green-hover);
+}
+
+.clientList {
+  display: grid;
+  gap: 0.75rem;
+  margin: 1rem 0 2rem;
+  padding: 0;
+  list-style: none;
+}
+
+.clientCard,
+.detailBlock {
+  min-width: 0;
+  padding: 1rem;
+  border: 1px solid var(--color-border);
+  border-radius: 0.75rem;
+  background: var(--ground);
+}
+
+.detailBlock {
+  margin-top: 0.75rem;
+}
+
+.clientCard h3,
+.detailBlock h2 {
+  margin: 0 0 0.5rem;
+}
+
+.clientCard p,
+.detailBlock p {
+  margin: 0.5rem 0 1rem;
+  color: var(--color-text-muted);
+}
+
+.clientCard strong {
+  display: block;
+  margin-top: 0.9rem;
+  font-size: 0.8rem;
+}
+
+.credential {
+  display: block;
+  margin-top: 0.4rem;
+  padding: 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: 0.6rem;
+  overflow-wrap: anywhere;
+  background: var(--color-surface);
+  user-select: all;
+}
+
+.uriList {
+  margin: 0.5rem 0 0;
+  padding-left: 1.25rem;
+  overflow-wrap: anywhere;
+}
+
+.uriList li {
+  margin-top: 0.35rem;
+}
+
+.confirmation {
+  margin: 0.5rem 0 1.25rem;
+  padding: 1rem;
+  border: 1px solid var(--color-ready);
+  border-radius: 0.75rem;
+  background: var(--green-soft);
+}
+
+.confirmation h1,
+.confirmation p {
+  margin: 0;
+}
+
+.confirmation p {
+  margin-top: 0.5rem;
+}
