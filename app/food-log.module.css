@@ -2817,3 +2817,27 @@
     display: none;
   }
 }
+
+/* Tablets center the tab bar in the page column; the action bar matches it and keeps natural button sizes. */
+@media (min-width: 760px) and (max-width: 1119px) {
+  .floatingUtilities {
+    right: auto;
+    left: 50%;
+    width: var(--page-width);
+    padding-inline: var(--surface-gutter);
+    border-inline: 1px solid var(--rule);
+    transform: translateX(-50%);
+  }
+
+  .floatingUtilities .quickLogActions {
+    justify-content: center;
+  }
+
+  .floatingUtilities .quickLogActions > form:first-child {
+    flex: none;
+  }
+
+  .floatingUtilities .quickLogFood {
+    width: auto;
+  }
+}
