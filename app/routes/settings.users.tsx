@@ -17,7 +17,7 @@ import {
 } from "../auth/validation";
 import { formatLocalDate } from "../food-log/date";
 import shellStyles from "../food-log.module.css";
-import { SettingsDestinations } from "../settings-destinations";
+import { SettingsDestinations, SettingsSideNav } from "../settings-destinations";
 import styles from "../users.module.css";
 import { navigationToday } from "../goals/runtime.server";
 
@@ -355,7 +355,7 @@ export default function Users({ actionData, loaderData }: Route.ComponentProps) 
   }, [actionData, dismissPasswordReset, resettingUsername]);
 
   return (
-    <div className={shellStyles.shell}>
+    <div className={`${shellStyles.shell} ${shellStyles.settingsShell}`}>
       <a className={shellStyles.skipLink} href="#member-directory-content">
         Skip to member directory
       </a>
@@ -365,6 +365,7 @@ export default function Users({ actionData, loaderData }: Route.ComponentProps) 
         selectedDate={loaderData.today}
         today={loaderData.today}
       />
+      <SettingsSideNav active="users" isAdministrator />
       <main className={shellStyles.appSurface} id="member-directory-content">
         <header className={shellStyles.mobileHeader}>
           <div className={shellStyles.titleLine}>

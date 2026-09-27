@@ -2491,3 +2491,57 @@
 @media (prefers-reduced-motion: reduce) {
   .photoActivityDot { animation: none; }
 }
+
+@media (min-width: 1120px) {
+  .shell.settingsShell {
+    grid-template-columns: 15.5rem 17rem minmax(0, 1fr);
+    grid-template-areas:
+      "rail side context"
+      "rail side main";
+    grid-template-rows: auto 1fr;
+  }
+
+  .settingsShell > .desktopRail {
+    grid-area: rail;
+  }
+
+  .settingsShell > nav[aria-label="Settings sections"] {
+    grid-area: side;
+  }
+
+  .settingsShell > .appSurface {
+    grid-area: main;
+  }
+
+  .settingsShell > .desktopContext {
+    position: static;
+    grid-area: context;
+    height: auto;
+    max-width: 52rem;
+    padding: 2rem var(--surface-gutter) 0;
+  }
+
+  .settingsShell .contextCard {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.25rem 0.5rem;
+    padding: 0.8rem 1.1rem;
+  }
+
+  .settingsShell .contextCard > span,
+  .settingsShell .contextCard > span:first-child {
+    margin: 0;
+  }
+
+  .settingsShell .contextCard > strong {
+    margin-right: 1.25rem;
+    font-size: 0.9rem;
+  }
+
+  .settingsShell .contextCard > small {
+    margin: 0 0 0 auto;
+    padding: 0;
+    border: 0;
+  }
+}

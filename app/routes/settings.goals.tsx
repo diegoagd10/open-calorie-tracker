@@ -4,7 +4,7 @@ import { data, Form, redirect } from "react-router";
 import type { Route } from "./+types/settings.goals";
 import { AppearanceSelector } from "../appearance/selector";
 import { AppNavigation } from "../app-navigation";
-import { SettingsDestinations } from "../settings-destinations";
+import { SettingsDestinations, SettingsSideNav } from "../settings-destinations";
 import {
   getSessionForApplicationAccess,
   getApplicationMutationSession,
@@ -208,7 +208,7 @@ export default function Goals({ actionData, loaderData }: Route.ComponentProps) 
   }
 
   return (
-    <div className={shellStyles.shell}>
+    <div className={`${shellStyles.shell} ${shellStyles.settingsShell}`}>
       <a className={shellStyles.skipLink} href="#goal-settings-content">
         Skip to goal settings
       </a>
@@ -218,6 +218,7 @@ export default function Goals({ actionData, loaderData }: Route.ComponentProps) 
         selectedDate={loaderData.today}
         today={loaderData.today}
       />
+      <SettingsSideNav active="goals" isAdministrator={loaderData.isAdministrator} />
       <main className={shellStyles.appSurface} id="goal-settings-content">
         <header className={shellStyles.mobileHeader}>
           <div className={shellStyles.titleLine}>

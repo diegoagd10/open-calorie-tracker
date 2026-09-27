@@ -4,6 +4,7 @@ import { getApplicationMutationSession, readApplicationMutationForm, requireAppl
 import { listOAuthClients, registerOAuthClient, type OAuthClientSummary, type RegistrationErrors } from "../oauth/client-registration.server";
 import { connectedDailyLogClients, revokeDailyLogClient } from "../oauth/authorization.server";
 import { AppNavigation } from "../app-navigation";
+import { SettingsSideNav } from "../settings-destinations";
 import { navigationToday } from "../goals/runtime.server";
 import styles from "../account.module.css";
 import shellStyles from "../food-log.module.css";
@@ -30,6 +31,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   const session = await requireApplicationSession(request);
   return {
     csrfToken: session.csrfToken,
+    isAdministrator: session.user.role === "admin",
     today: navigationToday(session.user.id),
     clients: listOAuthClients(session.user.id),
     connections: connectedDailyLogClients(session.user.id),
@@ -72,7 +74,7 @@ export default function OAuthClientsSettings({ loaderData }: Route.ComponentProp
   const result = useActionData<typeof action>();
   const registered = loaderData.view === "new" ? result?.client : undefined;
   return (
-    <div className={shellStyles.shell}>
+    <div className={`${shellStyles.shell} ${shellStyles.settingsShell}`}>
       <a className={shellStyles.skipLink} href="#oauth-clients-settings">
         Skip to OAuth clients
       </a>
@@ -82,6 +84,7 @@ export default function OAuthClientsSettings({ loaderData }: Route.ComponentProp
         selectedDate={loaderData.today}
         today={loaderData.today}
       />
+      <SettingsSideNav active="oauth" isAdministrator={loaderData.isAdministrator} />
       <main className={shellStyles.appSurface} id="oauth-clients-settings">
       <section className={styles.settingsPanel} aria-labelledby="oauth-clients-title">
         {registered ? (

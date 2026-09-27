@@ -19,7 +19,7 @@ import {
 } from "../photo-analysis/credentials.server";
 import { getPhotoAnalysisConfiguration, getPhotoAnalysisCredentials, getPhotoAnalysisCredentialStatus, getPhotoAnalysisReadiness } from "../photo-analysis/runtime.server";
 import { presentPhotoAnalysisReadiness } from "./photo-analysis-readiness";
-import { SettingsDestinations } from "../settings-destinations";
+import { SettingsDestinations, SettingsSideNav } from "../settings-destinations";
 import shellStyles from "../food-log.module.css";
 import styles from "../photo-analysis/connection.module.css";
 import { navigationToday } from "../goals/runtime.server";
@@ -299,9 +299,10 @@ export default function AiSettings({ loaderData, actionData }: Route.ComponentPr
   const configurationError = actionData?.area === "configuration" ? actionData.error : undefined;
   const configurationSuccess = actionData?.area === "configuration" ? actionData.success : undefined;
   return (
-    <div className={shellStyles.shell}>
+    <div className={`${shellStyles.shell} ${shellStyles.settingsShell}`}>
       <a className={shellStyles.skipLink} href="#ai-settings">Skip to AI settings</a>
       <AppNavigation active="settings" csrfToken={loaderData.csrfToken} selectedDate={loaderData.today} today={loaderData.today} />
+      <SettingsSideNav active="ai" isAdministrator />
       <main className={shellStyles.appSurface} id="ai-settings">
         <header className={shellStyles.mobileHeader}>
           <div className={shellStyles.titleLine}><h1>AI photo estimates</h1></div>

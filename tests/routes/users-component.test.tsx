@@ -68,7 +68,7 @@ test("directory distinguishes active and disabled members and exposes safe accou
     { name: "description", content: "Manage member access without exposing private nutrition data" },
   ]);
   const { renderer } = await renderUsers();
-  const rows = renderer.root.findAllByType("li");
+  const rows = renderer.root.findByType("main").findAllByType("li");
   expect(rows).toHaveLength(2);
   expect(text(rows[0])).toContain("alice.memberCreated August 29, 2026Password change requiredActive");
   expect(text(rows[1])).toContain("bob.memberCreated December 1, 2025Disabled");
@@ -88,7 +88,7 @@ test("directory distinguishes active and disabled members and exposes safe accou
   expect(renderer.root.findAllByType("dialog")).toHaveLength(0);
   const empty = await renderUsers(undefined, []);
   expect(text(empty.renderer.root)).toContain("No member accounts yet.");
-  expect(empty.renderer.root.findAllByType("li")).toHaveLength(0);
+  expect(empty.renderer.root.findByType("main").findAllByType("li")).toHaveLength(0);
 });
 
 test.each([

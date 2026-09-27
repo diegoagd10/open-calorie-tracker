@@ -94,3 +94,49 @@ export function SettingsDestinations({
     </>
   );
 }
+
+type SettingsSection = "goals" | "security" | "oauth" | "users" | "ai" | "catalogs";
+
+const personalSections = [
+  { icon: "goals", key: "goals", label: "Display and goals", to: "/settings/goals" },
+  { icon: "key", key: "security", label: "Account security", to: "/settings/security" },
+  { icon: "link", key: "oauth", label: "OAuth clients", to: "/settings/oauth-clients" },
+] as const;
+
+const administratorSections = [
+  { icon: "users", key: "users", label: "Users", to: "/settings/users" },
+  { icon: "sparkle", key: "ai", label: "AI photo estimates", to: "/settings/ai" },
+  { icon: "database", key: "catalogs", label: "Food Catalogs", to: "/settings/catalogs" },
+] as const;
+
+/** Desktop-only column listing every settings section; phones keep the in-page list. */
+export function SettingsSideNav({
+  active,
+  isAdministrator,
+}: {
+  active: SettingsSection;
+  isAdministrator: boolean;
+}) {
+  const link = (
+    section: (typeof personalSections)[number] | (typeof administratorSections)[number],
+  ) => (
+    <li key={section.key}>
+      <Link aria-current={section.key === active ? "page" : undefined} to={section.to}>
+        <UiIcon name={section.icon} />
+        <span>{section.label}</span>
+      </Link>
+    </li>
+  );
+  return (
+    <nav aria-label="Settings sections" className={styles.settingsSideNav}>
+      <p className={styles.settingsSideTitle}>Settings</p>
+      <ul>{personalSections.map(link)}</ul>
+      {isAdministrator ? (
+        <>
+          <p className={styles.settingsSideGroup}>Administration</p>
+          <ul>{administratorSections.map(link)}</ul>
+        </>
+      ) : null}
+    </nav>
+  );
+}

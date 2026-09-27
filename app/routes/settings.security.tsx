@@ -14,6 +14,7 @@ import {
 import { getGoalSetupService } from "../setup/runtime.server";
 import { applicationOrigin, effectiveRequestPolicy } from "../runtime.server";
 import { AppNavigation } from "../app-navigation";
+import { SettingsSideNav } from "../settings-destinations";
 import { navigationToday } from "../goals/runtime.server";
 import styles from "../account.module.css";
 import shellStyles from "../food-log.module.css";
@@ -32,6 +33,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     return redirect(`${applicationOrigin()}/settings/security`);
   return {
     csrfToken: session.csrfToken,
+    isAdministrator: session.user.role === "admin",
     username: session.user.username,
     preview: enrollmentPreviewEnabled(),
     today: navigationToday(session.user.id),
@@ -46,7 +48,7 @@ export default function SecuritySettings({ loaderData }: Route.ComponentProps) {
     (typeof loaderData.credentials)[number] | undefined
   >();
   return (
-    <div className={shellStyles.shell}>
+    <div className={`${shellStyles.shell} ${shellStyles.settingsShell}`}>
       <a className={shellStyles.skipLink} href="#security-settings">
         Skip to account security
       </a>
@@ -56,6 +58,7 @@ export default function SecuritySettings({ loaderData }: Route.ComponentProps) {
         selectedDate={loaderData.today}
         today={loaderData.today}
       />
+      <SettingsSideNav active="security" isAdministrator={loaderData.isAdministrator} />
       <main className={shellStyles.appSurface} id="security-settings">
       <section className={styles.settingsPanel} aria-labelledby="security-title">
         <Link className={styles.backLink} to="/settings/goals">
