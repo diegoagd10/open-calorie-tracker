@@ -2124,8 +2124,35 @@
 
 
 @media (max-width: 1119px) {
+  /*
+   * Phones and tablets dock the actions in an opaque bar above the tab bar,
+   * so a button never sits on top of a visible, tappable entry.
+   */
   .floatingUtilities {
-    bottom: calc(5.5rem + env(safe-area-inset-bottom));
+    right: 0;
+    bottom: calc(4.5rem + env(safe-area-inset-bottom));
+    left: 0;
+    padding: 0.625rem max(1rem, env(safe-area-inset-right)) 0.625rem max(1rem, env(safe-area-inset-left));
+    border-top: 1px solid var(--rule);
+    background: var(--rail-overlay);
+    backdrop-filter: blur(12px);
+    pointer-events: auto;
+  }
+
+  .floatingUtilities > .quickLogActions {
+    width: 100%;
+  }
+
+  .floatingUtilities .quickLogActions > form:first-child {
+    flex: 1;
+  }
+
+  .floatingUtilities .quickLogFood {
+    width: 100%;
+  }
+
+  .floatingUtilities .quickLogButton {
+    box-shadow: none;
   }
 
   .dateRailWrap {
