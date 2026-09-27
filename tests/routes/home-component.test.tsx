@@ -267,9 +267,14 @@ test("home renders today's empty log and all goal progress contracts", async () 
   expect(renderer.root.findByType("h1").children.join("")).toBe("Today");
   expect(allText(renderer)).toContain("Monday, August 31, 2026");
   expect(allText(renderer)).toContain("No entries for this day");
-  expect(allText(renderer)).toContain(
-    "Use the floating food or water action when you’re ready.",
-  );
+  expect(allText(renderer)).toContain("Add food or water when you’re ready.");
+  const emptyDayActions = renderer.root.findByProps({
+    "aria-label": "Add to this day",
+    role: "group",
+  });
+  expect(
+    emptyDayActions.findAllByType("button").map((button) => button.props.value),
+  ).toEqual(["add-food", "add-water"]);
   const quickLog = renderer.root.findByProps({
     "aria-label": "Quick log",
     role: "group",
@@ -289,9 +294,10 @@ test("home renders today's empty log and all goal progress contracts", async () 
     { label: "Add Food", value: "add-food" },
     { label: "Add Water", value: "add-water" },
   ]);
+  // Floating actions plus the empty day's own actions; CSS shows one set per width.
   expect(renderer.root.findAllByType("button").filter(
     (button) => ["add-food", "add-water"].includes(button.props.value),
-  )).toHaveLength(2);
+  )).toHaveLength(4);
   expect(renderer.root.findByProps({ "aria-label": "Calorie progress" }).props)
     .toMatchObject({
       "aria-valuemax": 2050,
@@ -333,6 +339,15 @@ test("home renders today's empty log and all goal progress contracts", async () 
   expect(renderer.root.findAllByProps({ "aria-current": "page" })
     .map((node) => node.props.to)
     .filter(Boolean)).toContain("/?date=2026-08-31");
+  await act(async () => renderer.unmount());
+});
+
+test("nutrients stay exposed to assistive technology until the layout is measured", async () => {
+  // No window here, as in server rendering or a browser without JavaScript.
+  const renderer = await renderHome();
+  const carousel = renderer.root.findByProps({ "aria-label": "Daily nutrient progress" });
+  expect(carousel.findAll((node) => node.props["aria-hidden"] === true)).toHaveLength(0);
+  expect(carousel.findAll((node) => node.type === "article")).toHaveLength(6);
   await act(async () => renderer.unmount());
 });
 
@@ -570,10 +585,13 @@ test("week strip and calendar compare each logged day with that day's calorie go
     node.props["data-calorie-tone"],
     node.children.join(""),
   ]);
+  // An incomplete day under its goal stays undecided rather than "within".
   expect(tones).toEqual([
     ["over", "2,346 kcal"],
-    ["within", "640 kcal known"],
+    ["incomplete", "640 kcal known"],
   ]);
+  expect(rail.findAll((node) => node.props.style?.["--progress"] !== undefined)
+    .map((node) => node.props.style["--progress"])).toEqual(["100.0%", "32.0%"]);
   await act(async () => week.unmount());
 
   const history = await renderHome({

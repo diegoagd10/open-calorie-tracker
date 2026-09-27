@@ -3,8 +3,7 @@ import { data, Form, redirect } from "react-router";
 
 import type { Route } from "./+types/settings.goals";
 import { AppearanceSelector } from "../appearance/selector";
-import { AppNavigation } from "../app-navigation";
-import { SettingsDestinations, SettingsSideNav } from "../settings-destinations";
+import { SettingsDestinations, SettingsShell } from "../settings-destinations";
 import {
   getSessionForApplicationAccess,
   getApplicationMutationSession,
@@ -212,17 +211,14 @@ export default function Goals({ actionData, loaderData }: Route.ComponentProps) 
   }
 
   return (
-    <div className={`${shellStyles.shell} ${shellStyles.settingsShell}`}>
-      <a className={shellStyles.skipLink} href="#goal-settings-content">
-        Skip to goal settings
-      </a>
-      <AppNavigation
-        active="settings"
-        csrfToken={loaderData.csrfToken}
-        selectedDate={loaderData.today}
-        today={loaderData.today}
-      />
-      <SettingsSideNav active="goals" isAdministrator={loaderData.isAdministrator} />
+    <SettingsShell
+      active="goals"
+      csrfToken={loaderData.csrfToken}
+      isAdministrator={loaderData.isAdministrator}
+      skipLabel="Skip to goal settings"
+      skipTarget="goal-settings-content"
+      today={loaderData.today}
+    >
       <main className={shellStyles.appSurface} id="goal-settings-content">
         <header className={shellStyles.mobileHeader}>
           <div className={shellStyles.titleLine}>
@@ -420,7 +416,7 @@ export default function Goals({ actionData, loaderData }: Route.ComponentProps) 
           <small>Private to {loaderData.username}</small>
         </div>
       </aside>
-    </div>
+    </SettingsShell>
   );
 }
 

@@ -136,8 +136,13 @@ test("today, historical navigation, calendar access, travel, and future rejectio
     { height: 900, width: 1_120 },
   ]) {
     await page.setViewportSize(viewport);
-    await expect(quickLog).toBeVisible();
-    const quickLogBox = await quickLog.boundingBox();
+    // An empty day carries its own actions below the desktop layout, so
+    // floating buttons never cover the empty-state guidance.
+    const emptyDayActions = page.getByRole("group", { name: "Add to this day" });
+    const visibleActions = viewport.width < 1_120 ? emptyDayActions : quickLog;
+    await expect(viewport.width < 1_120 ? quickLog : emptyDayActions).toBeHidden();
+    await expect(visibleActions).toBeVisible();
+    const quickLogBox = await visibleActions.boundingBox();
     expect(quickLogBox).not.toBeNull();
     expect(quickLogBox!.x).toBeGreaterThanOrEqual(0);
     expect(quickLogBox!.x + quickLogBox!.width).toBeLessThanOrEqual(viewport.width);

@@ -33,6 +33,7 @@ import { DateRail } from "../date-rail";
 import { AppNavigation } from "../app-navigation";
 import { isTestEnvironment } from "../runtime.server";
 import { UiIcon } from "../ui-icon";
+import { useWideLayout } from "./wide-layout";
 import methodStyles from "./add-food-method.module.css";
 import { BarcodeCameraScanner } from "./barcode-camera-scanner";
 import { getAuthenticationService } from "../auth/runtime.server";
@@ -1339,7 +1340,15 @@ function calorieDaySummary(summary: DailyCalories | undefined) {
   return {
     label: `${kcal} kcal${summary.isIncomplete ? " known" : ""}`,
     progress: goal ? `${Math.min(100, (summary.knownMilliKcal / goal) * 100).toFixed(1)}%` : undefined,
-    tone: goal === null ? "logged" : summary.knownMilliKcal > goal ? "over" : "within",
+    // Known calories already past the goal are over; otherwise an incomplete day stays undecided.
+    tone:
+      goal === null
+        ? "logged"
+        : summary.knownMilliKcal > goal
+          ? "over"
+          : summary.isIncomplete
+            ? "incomplete"
+            : "within",
   } as const;
 }
 
@@ -1503,14 +1512,16 @@ function QuickLogActionForm({
 function QuickLogActions({
   csrfToken,
   date,
+  inline = false,
 }: {
   csrfToken: string;
   date: string;
+  inline?: boolean;
 }) {
   return (
     <div
-      aria-label="Quick log"
-      className={styles.quickLogActions}
+      aria-label={inline ? "Add to this day" : "Quick log"}
+      className={inline ? `${styles.quickLogActions} ${styles.emptyDayActions}` : styles.quickLogActions}
       role="group"
     >
       <QuickLogActionForm
@@ -1529,6 +1540,7 @@ function QuickLogActions({
         icon="water"
         intent="add-water"
         label="Add Water"
+        visibleLabel={inline ? "Add water" : undefined}
       />
     </div>
   );
@@ -1620,22 +1632,6 @@ function NutrientMetric({ metric }: { metric: NutritionMetric }) {
       {metric.isIncomplete ? <em>Incomplete</em> : null}
     </article>
   );
-}
-
-// Matches the desktop breakpoint in food-log.module.css, where both nutrient pages are shown.
-const wideLayoutQuery = "(min-width: 1120px)";
-
-function useWideLayout(): boolean {
-  const [wide, setWide] = useState(false);
-  useEffect(() => {
-    if (typeof window === "undefined" || !window.matchMedia) return;
-    const media = window.matchMedia(wideLayoutQuery);
-    const update = () => setWide(media.matches);
-    update();
-    media.addEventListener("change", update);
-    return () => media.removeEventListener("change", update);
-  }, []);
-  return wide;
 }
 
 function DailySummary({
@@ -1874,7 +1870,9 @@ function DailySummary({
           >
             {metricPages.map((metrics, page) => (
               <div
-                aria-hidden={!wideLayout && nutrientPage !== page}
+                // Only a measured phone layout hides the off-screen page; desktop and
+                // server-rendered markup keep every nutrient exposed.
+                aria-hidden={wideLayout === false && nutrientPage !== page}
                 className={styles.nutrientPage}
                 key={page}
               >
@@ -1884,7 +1882,7 @@ function DailySummary({
               </div>
             ))}
           </div>
-          {wideLayout ? null : (
+          {wideLayout === true ? null : (
             <div
               aria-label="Nutrition pages"
               className={styles.carouselControls}
@@ -4337,9 +4335,14 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
                     <h3>No entries for this day</h3>
                     <p>
                       {foodLog.selectedDate === foodLog.today
-                        ? "Use the floating food or water action when you’re ready."
-                        : "Past-day entries start at 12:00 PM. Use the floating food or water action when you’re ready."}
+                        ? "Add food or water when you’re ready."
+                        : "Past-day entries start at 12:00 PM. Add food or water when you’re ready."}
                     </p>
+                    <QuickLogActions
+                      csrfToken={csrfToken}
+                      date={foodLog.selectedDate}
+                      inline
+                    />
                     {actionData?.message ? (
                       <p className={styles.actionMessage} role="status">
                         {actionData.message}

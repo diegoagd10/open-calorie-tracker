@@ -544,7 +544,7 @@
 
 .emptyDay,
 .futureDay {
-  padding: 2.5rem 1rem;
+  padding: 1.75rem 1rem;
   border: 1px dashed var(--rule-strong);
   border-radius: var(--radius-panel);
   background: transparent;
@@ -2558,7 +2558,8 @@
   --calorie-tone: var(--green-strong);
 }
 
-[data-calorie-tone="over"] {
+[data-calorie-tone="over"],
+[data-calorie-tone="incomplete"] {
   --calorie-tone: var(--warning);
 }
 
@@ -2575,8 +2576,32 @@
   font-style: normal;
 }
 
+/* On the accent-filled selected day, settled totals use the contrast color and over stays amber. */
 .selectedDate .dateCalories {
+  width: 0.4rem;
+  height: 0.4rem;
   background: var(--on-accent);
+}
+
+.selectedDate .dateCalories[data-calorie-tone="over"] {
+  background: var(--warning);
+  box-shadow: 0 0 0 1.5px var(--on-accent);
+}
+
+/* Incomplete days use a hollow marker so they never read as a settled total. */
+.dateCalories[data-calorie-tone="incomplete"],
+[data-calorie-tone="incomplete"] .calendarCalories {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--calorie-tone);
+}
+
+.selectedDate .dateCalories[data-calorie-tone="incomplete"] {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--on-accent);
+}
+
+.dateProgress {
+  display: none;
 }
 
 .calendarCalories {
@@ -2616,8 +2641,11 @@
   }
 
   .selectedDate .dateCalories {
+    width: auto;
+    height: auto;
     color: inherit;
     background: none;
+    box-shadow: none;
   }
 
   .appSurface .calendarDay {
@@ -2688,6 +2716,77 @@
   }
 
   .carouselControls {
+    display: none;
+  }
+}
+
+@media (min-width: 1120px) {
+  .dateProgress {
+    display: block;
+    height: 0.2rem;
+    margin: 0.35rem 0.75rem 0;
+    overflow: hidden;
+    border-radius: 999px;
+    background: var(--well);
+  }
+
+  .dateProgress > span {
+    display: block;
+    width: var(--progress, 0%);
+    height: 100%;
+    border-radius: inherit;
+    background: var(--calorie-tone);
+  }
+
+  .selectedDate .dateProgress {
+    background: rgb(0 0 0 / 18%);
+  }
+
+  .selectedDate .dateProgress > span {
+    background: var(--on-accent);
+  }
+
+  .dateCalories[data-calorie-tone="incomplete"],
+  .selectedDate .dateCalories[data-calorie-tone="incomplete"] {
+    box-shadow: none;
+  }
+
+  .appSurface [data-calorie-tone="incomplete"] .calendarCalories {
+    box-shadow: none;
+  }
+}
+
+/* An empty day carries its own actions on phones, where floating buttons would cover it. */
+.emptyDayActions {
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.emptyDayActions > form:last-child {
+  order: 0;
+}
+
+.emptyDayActions .quickLogButton {
+  width: auto;
+  min-height: 3rem;
+  padding: 0 1.2rem 0 1rem;
+  box-shadow: none;
+}
+
+@media (max-width: 1119px) {
+  .foodLogShell:has(.emptyDay) .floatingUtilities {
+    display: none;
+  }
+}
+
+@media (min-width: 1120px) {
+  .emptyDayActions {
+    display: none;
+  }
+}
+
+@media (max-width: 1119px) {
+  .emptyDay .emptyIcon {
     display: none;
   }
 }

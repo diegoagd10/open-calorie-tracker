@@ -1,6 +1,10 @@
-import { and, asc, desc, eq, gte, lte } from "drizzle-orm";
+import { and, desc, eq, lte } from "drizzle-orm";
 
 import type { ApplicationDatabaseClient } from "../database/database.server";
+import {
+  readFoodEntryCalories,
+  readGoalVersionsInOrder,
+} from "../database/goal-history.server";
 import {
   foodEntries,
   goalVersions,
@@ -184,34 +188,8 @@ export class FoodLogService {
     const ordered = [...dates].sort();
     const first = ordered[0];
     const last = ordered[ordered.length - 1];
-    const entries = this.#database
-      .select({
-        energyMilliKcal: foodEntries.energyMilliKcal,
-        foodLogDate: foodEntries.foodLogDate,
-      })
-      .from(foodEntries)
-      .where(
-        and(
-          eq(foodEntries.userId, userId),
-          gte(foodEntries.foodLogDate, first),
-          lte(foodEntries.foodLogDate, last),
-        ),
-      )
-      .all();
-    const goals = this.#database
-      .select({
-        calorieTargetMilliKcal: goalVersions.calorieTargetMilliKcal,
-        effectiveDate: goalVersions.effectiveDate,
-      })
-      .from(goalVersions)
-      .where(
-        and(
-          eq(goalVersions.userId, userId),
-          lte(goalVersions.effectiveDate, last),
-        ),
-      )
-      .orderBy(asc(goalVersions.effectiveDate), asc(goalVersions.id))
-      .all();
+    const entries = readFoodEntryCalories(this.#database, userId, first, last);
+    const goals = readGoalVersionsInOrder(this.#database, userId, last);
 
     return Object.fromEntries(
       ordered.map((date) => {

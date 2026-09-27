@@ -16,6 +16,7 @@
 
 .settingsPanel {
   max-width: 44rem;
+  margin-bottom: 1.5rem;
   color: var(--ink-2);
   font-size: 0.95rem;
   line-height: 1.55;

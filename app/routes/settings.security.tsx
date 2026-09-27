@@ -13,8 +13,7 @@ import {
 } from "../auth/key-ceremony.client";
 import { getGoalSetupService } from "../setup/runtime.server";
 import { applicationOrigin, effectiveRequestPolicy } from "../runtime.server";
-import { AppNavigation } from "../app-navigation";
-import { SettingsSideNav } from "../settings-destinations";
+import { SettingsDestinations, SettingsShell } from "../settings-destinations";
 import { navigationToday } from "../goals/runtime.server";
 import styles from "../account.module.css";
 import shellStyles from "../food-log.module.css";
@@ -48,17 +47,14 @@ export default function SecuritySettings({ loaderData }: Route.ComponentProps) {
     (typeof loaderData.credentials)[number] | undefined
   >();
   return (
-    <div className={`${shellStyles.shell} ${shellStyles.settingsShell}`}>
-      <a className={shellStyles.skipLink} href="#security-settings">
-        Skip to account security
-      </a>
-      <AppNavigation
-        active="settings"
-        csrfToken={loaderData.csrfToken}
-        selectedDate={loaderData.today}
-        today={loaderData.today}
-      />
-      <SettingsSideNav active="security" isAdministrator={loaderData.isAdministrator} />
+    <SettingsShell
+      active="security"
+      csrfToken={loaderData.csrfToken}
+      isAdministrator={loaderData.isAdministrator}
+      skipLabel="Skip to account security"
+      skipTarget="security-settings"
+      today={loaderData.today}
+    >
       <main className={shellStyles.appSurface} id="security-settings">
       <section className={styles.settingsPanel} aria-labelledby="security-title">
         <Link className={styles.backLink} to="/settings/goals">
@@ -284,7 +280,12 @@ export default function SecuritySettings({ loaderData }: Route.ComponentProps) {
         </p>
         <Link to="/account/password">Change account password</Link>
       </section>
+      <SettingsDestinations
+        active="security"
+        csrfToken={loaderData.csrfToken}
+        isAdministrator={loaderData.isAdministrator}
+      />
       </main>
-    </div>
+    </SettingsShell>
   );
 }

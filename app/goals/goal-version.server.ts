@@ -1,10 +1,11 @@
-import { and, asc, desc, eq, lte } from "drizzle-orm";
+import { and, desc, eq, lte } from "drizzle-orm";
 
 import type { ApplicationDatabaseClient } from "../database/database.server";
 import {
   goalVersions,
   userPreferences,
 } from "../database/schema.server";
+import { goalTargetColumns, readGoalVersionsInOrder } from "../database/goal-history.server";
 import { readUserTimeZone } from "../database/user-preferences.server";
 import { addLocalDays, localDateAt, parseIsoLocalDate } from "../food-log/date";
 import type { DisplayUnits } from "../setup/validation";
@@ -38,18 +39,6 @@ export class GoalVersionUnavailableError extends Error {
   }
 }
 
-const goalTargetColumns = {
-  calorieTargetMilliKcal: goalVersions.calorieTargetMilliKcal,
-  carbohydrateTargetMilligrams: goalVersions.carbohydrateTargetMilligrams,
-  effectiveDate: goalVersions.effectiveDate,
-  fatTargetMilligrams: goalVersions.fatTargetMilligrams,
-  fiberTargetMilligrams: goalVersions.fiberTargetMilligrams,
-  proteinTargetMilligrams: goalVersions.proteinTargetMilligrams,
-  sodiumMaximumMilligrams: goalVersions.sodiumMaximumMilligrams,
-  sugarMaximumMilligrams: goalVersions.sugarMaximumMilligrams,
-  waterTargetMicroliters: goalVersions.waterTargetMicroliters,
-};
-
 export class GoalVersionService {
   readonly #database: ApplicationDatabaseClient;
   readonly #now: () => Date;
@@ -67,12 +56,7 @@ export class GoalVersionService {
    * date it applies to before the next version takes over.
    */
   history(userId: number) {
-    const rows = this.#database
-      .select(goalTargetColumns)
-      .from(goalVersions)
-      .where(eq(goalVersions.userId, userId))
-      .orderBy(asc(goalVersions.effectiveDate), asc(goalVersions.id))
-      .all();
+    const rows = readGoalVersionsInOrder(this.#database, userId);
     const latestPerDate = [
       ...new Map(rows.map((row) => [row.effectiveDate, row])).values(),
     ];

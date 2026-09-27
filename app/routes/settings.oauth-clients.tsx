@@ -3,8 +3,7 @@ import type { Route } from "./+types/settings.oauth-clients";
 import { getApplicationMutationSession, readApplicationMutationForm, requireApplicationSession } from "../auth/http.server";
 import { listOAuthClients, registerOAuthClient, type OAuthClientSummary, type RegistrationErrors } from "../oauth/client-registration.server";
 import { connectedDailyLogClients, revokeDailyLogClient } from "../oauth/authorization.server";
-import { AppNavigation } from "../app-navigation";
-import { SettingsSideNav } from "../settings-destinations";
+import { SettingsDestinations, SettingsShell } from "../settings-destinations";
 import { navigationToday } from "../goals/runtime.server";
 import styles from "../account.module.css";
 import shellStyles from "../food-log.module.css";
@@ -74,17 +73,14 @@ export default function OAuthClientsSettings({ loaderData }: Route.ComponentProp
   const result = useActionData<typeof action>();
   const registered = loaderData.view === "new" ? result?.client : undefined;
   return (
-    <div className={`${shellStyles.shell} ${shellStyles.settingsShell}`}>
-      <a className={shellStyles.skipLink} href="#oauth-clients-settings">
-        Skip to OAuth clients
-      </a>
-      <AppNavigation
-        active="settings"
-        csrfToken={loaderData.csrfToken}
-        selectedDate={loaderData.today}
-        today={loaderData.today}
-      />
-      <SettingsSideNav active="oauth" isAdministrator={loaderData.isAdministrator} />
+    <SettingsShell
+      active="oauth"
+      csrfToken={loaderData.csrfToken}
+      isAdministrator={loaderData.isAdministrator}
+      skipLabel="Skip to OAuth clients"
+      skipTarget="oauth-clients-settings"
+      today={loaderData.today}
+    >
       <main className={shellStyles.appSurface} id="oauth-clients-settings">
       <section className={styles.settingsPanel} aria-labelledby="oauth-clients-title">
         {registered ? (
@@ -192,7 +188,12 @@ export default function OAuthClientsSettings({ loaderData }: Route.ComponentProp
           </>
         )}
       </section>
+      <SettingsDestinations
+        active="oauth"
+        csrfToken={loaderData.csrfToken}
+        isAdministrator={loaderData.isAdministrator}
+      />
       </main>
-    </div>
+    </SettingsShell>
   );
 }

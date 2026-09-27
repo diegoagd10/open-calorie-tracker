@@ -1,10 +1,14 @@
+import type { ReactNode } from "react";
 import { Form, Link } from "react-router";
+
+import { AppNavigation } from "./app-navigation";
+import shellStyles from "./food-log.module.css";
 
 import styles from "./goals.module.css";
 import { UiIcon } from "./ui-icon";
 
 export type SettingsDestinationsProps = {
-  active: "goals" | "users" | "ai" | "catalogs";
+  active: SettingsSection;
   csrfToken: string;
   isAdministrator: boolean;
 };
@@ -62,23 +66,27 @@ export function SettingsDestinations({
             <span aria-hidden="true">›</span>
           </Link>
         ) : null}
-        <Link className={styles.accountAccessRow} to="/settings/security">
-          <span className={styles.accountAccessIcon}>
-            <UiIcon name="key" />
-          </span>
-          <span>
-            <strong>Account security</strong>
-            <small>Manage your password and key sign-in.</small>
-          </span>
-          <span aria-hidden="true">›</span>
-        </Link>
-        <Link className={styles.accountAccessRow} to="/settings/oauth-clients">
-          <span className={styles.accountAccessIcon}>
-            <UiIcon name="link" />
-          </span>
-          <span><strong>OAuth clients</strong><small>Review connections and register public clients.</small></span>
-          <span aria-hidden="true">›</span>
-        </Link>
+        {active !== "security" ? (
+          <Link className={styles.accountAccessRow} to="/settings/security">
+            <span className={styles.accountAccessIcon}>
+              <UiIcon name="key" />
+            </span>
+            <span>
+              <strong>Account security</strong>
+              <small>Manage your password and key sign-in.</small>
+            </span>
+            <span aria-hidden="true">›</span>
+          </Link>
+        ) : null}
+        {active !== "oauth" ? (
+          <Link className={styles.accountAccessRow} to="/settings/oauth-clients">
+            <span className={styles.accountAccessIcon}>
+              <UiIcon name="link" />
+            </span>
+            <span><strong>OAuth clients</strong><small>Review connections and register public clients.</small></span>
+            <span aria-hidden="true">›</span>
+          </Link>
+        ) : null}
       </nav>
 
       <Form action="/logout" className={styles.mobileSignOutForm} method="post">
@@ -110,7 +118,7 @@ const administratorSections = [
 ] as const;
 
 /** Desktop-only column listing every settings section; phones keep the in-page list. */
-export function SettingsSideNav({
+function SettingsSideNav({
   active,
   isAdministrator,
 }: {
@@ -138,5 +146,40 @@ export function SettingsSideNav({
         </>
       ) : null}
     </nav>
+  );
+}
+
+/** The page frame every settings route shares: skip link, app rail, and section column. */
+export function SettingsShell({
+  active,
+  children,
+  csrfToken,
+  isAdministrator,
+  skipLabel,
+  skipTarget,
+  today,
+}: {
+  active: SettingsSection;
+  children: ReactNode;
+  csrfToken: string;
+  isAdministrator: boolean;
+  skipLabel: string;
+  skipTarget: string;
+  today: string;
+}) {
+  return (
+    <div className={`${shellStyles.shell} ${shellStyles.settingsShell}`}>
+      <a className={shellStyles.skipLink} href={`#${skipTarget}`}>
+        {skipLabel}
+      </a>
+      <AppNavigation
+        active="settings"
+        csrfToken={csrfToken}
+        selectedDate={today}
+        today={today}
+      />
+      <SettingsSideNav active={active} isAdministrator={isAdministrator} />
+      {children}
+    </div>
   );
 }

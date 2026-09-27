@@ -2,7 +2,6 @@ import { useEffect, useId, useRef, useState } from "react";
 import { data, Form, Link, useNavigation } from "react-router";
 import { z } from "zod";
 import type { Route } from "./+types/settings.ai";
-import { AppNavigation } from "../app-navigation";
 import { requireAdministratorSession, requireValidOrigin } from "../auth/http.server";
 import { getAuthenticationService } from "../auth/runtime.server";
 import {
@@ -19,7 +18,7 @@ import {
 } from "../photo-analysis/credentials.server";
 import { getPhotoAnalysisConfiguration, getPhotoAnalysisCredentials, getPhotoAnalysisCredentialStatus, getPhotoAnalysisReadiness } from "../photo-analysis/runtime.server";
 import { presentPhotoAnalysisReadiness } from "./photo-analysis-readiness";
-import { SettingsDestinations, SettingsSideNav } from "../settings-destinations";
+import { SettingsDestinations, SettingsShell } from "../settings-destinations";
 import shellStyles from "../food-log.module.css";
 import styles from "../photo-analysis/connection.module.css";
 import { navigationToday } from "../goals/runtime.server";
@@ -299,10 +298,14 @@ export default function AiSettings({ loaderData, actionData }: Route.ComponentPr
   const configurationError = actionData?.area === "configuration" ? actionData.error : undefined;
   const configurationSuccess = actionData?.area === "configuration" ? actionData.success : undefined;
   return (
-    <div className={`${shellStyles.shell} ${shellStyles.settingsShell}`}>
-      <a className={shellStyles.skipLink} href="#ai-settings">Skip to AI settings</a>
-      <AppNavigation active="settings" csrfToken={loaderData.csrfToken} selectedDate={loaderData.today} today={loaderData.today} />
-      <SettingsSideNav active="ai" isAdministrator />
+    <SettingsShell
+      active="ai"
+      csrfToken={loaderData.csrfToken}
+      isAdministrator={true}
+      skipLabel="Skip to AI settings"
+      skipTarget="ai-settings"
+      today={loaderData.today}
+    >
       <main className={shellStyles.appSurface} id="ai-settings">
         <header className={shellStyles.mobileHeader}>
           <div className={shellStyles.titleLine}><h1>AI photo estimates</h1></div>
@@ -372,6 +375,6 @@ export default function AiSettings({ loaderData, actionData }: Route.ComponentPr
         </section>
         <SettingsDestinations active="ai" csrfToken={loaderData.csrfToken} isAdministrator />
       </main>
-    </div>
+    </SettingsShell>
   );
 }
