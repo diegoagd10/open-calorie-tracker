@@ -154,7 +154,7 @@ test("metric display converts the canonical US water presets", async ({
   await dialog.getByRole("button", { name: /237 ml.*Glass/ }).click();
   await dialog.getByRole("button", { name: "Add 237 ml" }).click();
 
-  await expect(page.getByRole("link", { name: /Water.*236\.588 ml/ })).toBeVisible();
+  await expect(page.getByRole("link", { name: /Water.*237 ml/ })).toBeVisible();
   await expect(page.getByText(/1 equivalent glass · 8 fl oz \/ 237 ml/)).toBeVisible();
 
   await page.getByRole("button", { name: "Add Water" }).click();
@@ -162,7 +162,7 @@ test("metric display converts the canonical US water presets", async ({
   await dialog.getByRole("button", { name: /^Add one 473 ml Bottle/ }).click();
   await dialog.getByRole("button", { name: /^Add one 237 ml Glass/ }).click();
   await dialog.getByRole("button", { name: "Add 1,183 ml" }).click();
-  const grouped = page.getByRole("link", { name: /473 ml Bottle × 2.*237 ml Glass × 1.*1,182\.94 ml/ });
+  const grouped = page.getByRole("link", { name: /473 ml Bottle × 2.*237 ml Glass × 1.*1,183 ml/ });
   await expect(grouped).toBeVisible();
 });
 

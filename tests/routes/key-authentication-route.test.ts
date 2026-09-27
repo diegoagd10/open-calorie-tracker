@@ -478,9 +478,16 @@ async function renderPage(
   });
   return renderer!;
 }
+// Forms owned by the page content, ignoring the navigation's sign-out form.
+function contentForms(renderer: ReactTestRenderer) {
+  const [section] = renderer.root.findAll(
+    (node) => node.type === "section" && node.props["aria-labelledby"] === "security-title",
+  );
+  return (section ?? renderer.root).findAllByType("form");
+}
 function formSubmit(renderer: ReactTestRenderer) {
   return (
-    renderer.root.findAllByType("form")[0].props as {
+    contentForms(renderer)[0].props as {
       onSubmit: (event: {
         preventDefault(): void;
         currentTarget: object;
@@ -746,10 +753,9 @@ test("security page shows enabled credential names and omits preview enrollment 
       ...pageData,
       username: "owner",
       csrfToken: "csrf",
+      today: "2026-09-27",
     });
-    expect(renderer.root.findAllByType("form")).toHaveLength(
-      pageData.preview ? 1 : 0,
-    );
+    expect(contentForms(renderer)).toHaveLength(pageData.preview ? 1 : 0);
     expect(allText(renderer)).toContain(
       pageData.enabled ? "Key login is enabled" : "Password login is enabled",
     );

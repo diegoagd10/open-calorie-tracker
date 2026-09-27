@@ -18,10 +18,10 @@ test("theme switches on desktop and mobile, survives reload and sign-out", async
       await page.reload();
       await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
       expect(await page.locator("html").evaluate(el => getComputedStyle(el).colorScheme)).toBe(theme);
-      await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute("content", theme === "dark" ? "#111820" : "#fafbfd");
+      await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute("content", theme === "dark" ? "#12110e" : "#f5f1e8");
       await page.goto("/?food=manual");
       await expect(page.getByRole("dialog")).toBeVisible();
-      expect(await page.getByRole("dialog").evaluate(el => getComputedStyle(el).backgroundColor)).toBe(theme === "dark" ? "rgb(24, 34, 44)" : "rgb(255, 255, 255)");
+      expect(await page.getByRole("dialog").evaluate(el => getComputedStyle(el).backgroundColor)).toBe(theme === "dark" ? "rgb(27, 26, 22)" : "rgb(255, 255, 255)");
       const notFoundResponse = await page.goto("/appearance-qa-not-found");
       expect(notFoundResponse?.status()).toBe(404);
       await expect(page.getByRole("heading", { name: "Page not found" })).toBeVisible();

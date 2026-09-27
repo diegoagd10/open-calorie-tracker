@@ -3,7 +3,10 @@ import type { Route } from "./+types/settings.oauth-clients";
 import { getApplicationMutationSession, readApplicationMutationForm, requireApplicationSession } from "../auth/http.server";
 import { listOAuthClients, registerOAuthClient, type OAuthClientSummary, type RegistrationErrors } from "../oauth/client-registration.server";
 import { connectedDailyLogClients, revokeDailyLogClient } from "../oauth/authorization.server";
+import { SettingsDestinations, SettingsShell } from "../settings-destinations";
+import { navigationToday } from "../goals/runtime.server";
 import styles from "../account.module.css";
+import shellStyles from "../food-log.module.css";
 
 const integrationGuideUrl = "https://diegoagd10.github.io/open-calory-tracker-docs/";
 
@@ -27,6 +30,8 @@ export async function loader({ request }: Route.LoaderArgs) {
   const session = await requireApplicationSession(request);
   return {
     csrfToken: session.csrfToken,
+    isAdministrator: session.user.role === "admin",
+    today: navigationToday(session.user.id),
     clients: listOAuthClients(session.user.id),
     connections: connectedDailyLogClients(session.user.id),
     view: new URL(request.url).searchParams.get("view") === "new" ? "new" : "list",
@@ -68,8 +73,16 @@ export default function OAuthClientsSettings({ loaderData }: Route.ComponentProp
   const result = useActionData<typeof action>();
   const registered = loaderData.view === "new" ? result?.client : undefined;
   return (
-    <main className={styles.shell}>
-      <section className={styles.panel} aria-labelledby="oauth-clients-title">
+    <SettingsShell
+      active="oauth"
+      csrfToken={loaderData.csrfToken}
+      isAdministrator={loaderData.isAdministrator}
+      skipLabel="Skip to OAuth clients"
+      skipTarget="oauth-clients-settings"
+      today={loaderData.today}
+    >
+      <main className={shellStyles.appSurface} id="oauth-clients-settings">
+      <section className={styles.settingsPanel} aria-labelledby="oauth-clients-title">
         {registered ? (
           <>
             <Link className={styles.backLink} to="/settings/oauth-clients">All OAuth clients</Link>
@@ -175,6 +188,12 @@ export default function OAuthClientsSettings({ loaderData }: Route.ComponentProp
           </>
         )}
       </section>
-    </main>
+      <SettingsDestinations
+        active="oauth"
+        csrfToken={loaderData.csrfToken}
+        isAdministrator={loaderData.isAdministrator}
+      />
+      </main>
+    </SettingsShell>
   );
 }

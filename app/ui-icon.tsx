@@ -4,10 +4,14 @@ export type UiIconName =
   | "camera"
   | "cancel"
   | "copy"
+  | "database"
   | "delete"
   | "external"
+  | "goals"
   | "help"
   | "info"
+  | "key"
+  | "link"
   | "lock"
   | "log"
   | "plus"
@@ -16,6 +20,8 @@ export type UiIconName =
   | "search"
   | "save"
   | "settings"
+  | "sparkle"
+  | "users"
   | "utensils"
   | "water";
 
@@ -86,6 +92,30 @@ export function UiIcon({ name }: { name: UiIconName }) {
         <>
           <rect height="18" rx="2" width="16" x="4" y="3" />
           <path d="M8 8h8M8 12h8M8 16h5" />
+        </>
+      ) : name === "database" ? (
+        <>
+          <ellipse cx="12" cy="6" rx="7" ry="2.5" />
+          <path d="M5 6v12c0 1.4 3.1 2.5 7 2.5s7-1.1 7-2.5V6M5 12c0 1.4 3.1 2.5 7 2.5s7-1.1 7-2.5" />
+        </>
+      ) : name === "goals" ? (
+        <>
+          <circle cx="12" cy="12" r="8" />
+          <circle cx="12" cy="12" r="4" />
+        </>
+      ) : name === "key" ? (
+        <>
+          <circle cx="8" cy="15" r="4" />
+          <path d="m11 12 8-8M16 7l2 2" />
+        </>
+      ) : name === "link" ? (
+        <path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1" />
+      ) : name === "sparkle" ? (
+        <path d="m12 3 1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8Z" />
+      ) : name === "users" ? (
+        <>
+          <circle cx="9" cy="8.5" r="3.5" />
+          <path d="M3 20c.6-3.4 3-5.5 6-5.5s5.4 2.1 6 5.5M16 5.2a3.5 3.5 0 0 1 0 6.6M18 14.8c1.6.7 2.7 2.6 3 5.2" />
         </>
       ) : name === "plus" ? (
         <path d="M12 5v14M5 12h14" />

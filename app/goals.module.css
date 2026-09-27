@@ -5,7 +5,11 @@
 }
 
 .settingsDestinations {
-  margin-bottom: 0.75rem;
+  overflow: hidden;
+  margin-bottom: 1rem;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-panel);
+  background: var(--surface);
 }
 
 .mobileSignOutForm {
@@ -22,12 +26,12 @@
   gap: 1rem;
   padding: 0.65rem 1rem;
   border: 1px solid var(--danger-border);
-  border-radius: 0.65rem;
+  border-radius: var(--radius-panel);
   color: var(--danger);
-  background: var(--danger-soft);
+  background: transparent;
   font: inherit;
-  font-size: 0.78rem;
-  font-weight: 750;
+  font-size: 0.875rem;
+  font-weight: 600;
   cursor: pointer;
   text-align: left;
 }
@@ -50,7 +54,7 @@
 .mobileSignOutForm small {
   margin-top: 0.15rem;
   color: var(--danger-muted);
-  font-size: 0.68rem;
+  font-size: 0.75rem;
   font-weight: 500;
 }
 
@@ -63,19 +67,35 @@
   margin-bottom: 0.5rem;
   padding: 0.8rem 1rem;
   border: 1px solid var(--rule);
-  border-radius: 1rem;
+  border-radius: var(--radius-panel);
   color: var(--ink);
   background: var(--surface);
-  box-shadow: 0 8px 24px rgb(0 0 0 / 14%);
   text-decoration: none;
 }
 
+.settingsDestinations .accountAccessRow {
+  margin: 0;
+  border: 0;
+  border-bottom: 1px solid var(--rule);
+  border-radius: 0;
+}
+
 .settingsDestinations .accountAccessRow:last-child {
-  margin-bottom: 0;
+  border-bottom: 0;
 }
 
 .accountAccessRow:hover {
   border-color: var(--rule-strong);
+  background: var(--surface-soft);
+}
+
+.settingsDestinations .accountAccessRow:hover {
+  border-color: var(--rule);
+}
+
+.accountAccessRow > span:last-child {
+  color: var(--muted);
+  font-size: 1.2rem;
 }
 
 .accountAccessRow strong,
@@ -84,13 +104,13 @@
 }
 
 .accountAccessRow strong {
-  font-size: 0.82rem;
+  font-size: 0.9rem;
 }
 
 .accountAccessRow small {
   margin-top: 0.15rem;
   color: var(--muted);
-  font-size: 0.68rem;
+  font-size: 0.75rem;
 }
 
 .accountAccessIcon {
@@ -98,17 +118,21 @@
   width: 2.25rem;
   height: 2.25rem;
   place-items: center;
-  border-radius: 0.7rem;
+  border-radius: 0.75rem;
   color: var(--green-strong);
   background: var(--green-soft);
+}
+
+.accountAccessIcon svg {
+  width: 1.15rem;
+  height: 1.15rem;
 }
 
 .settingsGroup {
   padding: clamp(1rem, 3vw, 1.5rem);
   border: 1px solid var(--rule);
-  border-radius: 1rem;
+  border-radius: var(--radius-panel);
   background: var(--surface);
-  box-shadow: 0 8px 24px rgb(0 0 0 / 14%);
 }
 
 .groupHeading {
@@ -132,7 +156,7 @@
 .groupHeading p {
   margin-top: 0.2rem;
   color: var(--muted);
-  font-size: 0.72rem;
+  font-size: 0.8rem;
 }
 
 .segmentedField {
@@ -147,8 +171,8 @@
 .segmentedField legend {
   grid-column: 1 / -1;
   margin-bottom: 0.4rem;
-  font-size: 0.75rem;
-  font-weight: 700;
+  font-size: 0.82rem;
+  font-weight: 600;
 }
 
 .segmentedField label {
@@ -167,8 +191,8 @@
   border: 1px solid var(--rule);
   border-radius: 0.6rem;
   color: var(--ink-2);
-  font-size: 0.8rem;
-  font-weight: 700;
+  font-size: 0.875rem;
+  font-weight: 600;
   cursor: pointer;
 }
 
@@ -198,14 +222,14 @@
 }
 
 .fieldRow > span {
-  font-size: 0.8rem;
-  font-weight: 700;
+  font-size: 0.875rem;
+  font-weight: 600;
 }
 
 .fieldRow small {
   margin-top: 0.15rem;
   color: var(--muted);
-  font-size: 0.65rem;
+  font-size: 0.75rem;
   font-weight: 500;
 }
 
@@ -240,8 +264,8 @@
 }
 
 .goalGrid label > span:first-child {
-  font-size: 0.7rem;
-  font-weight: 700;
+  font-size: 0.8rem;
+  font-weight: 600;
 }
 
 .goalGrid label small {
@@ -264,7 +288,7 @@
   right: 0.7rem;
   bottom: 0.85rem;
   color: var(--muted);
-  font-size: 0.65rem;
+  font-size: 0.75rem;
   font-style: normal;
   pointer-events: none;
 }
@@ -274,7 +298,7 @@
   margin: 0 0 0.85rem;
   padding: 0.75rem;
   border-radius: 0.6rem;
-  font-size: 0.78rem;
+  font-size: 0.875rem;
 }
 
 .error {
@@ -291,12 +315,12 @@
   min-height: 2.75rem;
   padding: 0.65rem 1rem;
   border: 1px solid var(--green);
-  border-radius: 0.65rem;
-  color: white;
+  border-radius: 999px;
+  color: var(--on-accent);
   background: var(--green-dark);
   font: inherit;
-  font-size: 0.8rem;
-  font-weight: 750;
+  font-size: 0.9rem;
+  font-weight: 600;
   cursor: pointer;
 }
 
@@ -328,4 +352,135 @@
   .mobileSignOutForm {
     display: none;
   }
+}
+
+.settingsSideNav {
+  display: none;
+}
+
+.settingsSideTitle {
+  margin: 0 0 1.25rem;
+  padding-inline: 0.75rem;
+  font-family: var(--font-display);
+  font-size: 1.75rem;
+  letter-spacing: -0.01em;
+}
+
+.settingsSideGroup {
+  margin: 1.5rem 0 0.4rem;
+  padding-inline: 0.75rem;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+@media (min-width: 1120px) {
+  .settingsDestinations {
+    display: none;
+  }
+
+  .settingsSideNav {
+    position: sticky;
+    top: 0;
+    display: block;
+    height: 100dvh;
+    padding: 2.5rem 1rem 1.5rem;
+    overflow-y: auto;
+    border-right: 1px solid var(--rule);
+  }
+
+  .settingsSideNav ul {
+    display: grid;
+    gap: 0.2rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .settingsSideNav a {
+    display: grid;
+    grid-template-columns: 1.25rem 1fr;
+    align-items: center;
+    gap: 0.65rem;
+    min-height: 2.75rem;
+    padding: 0 0.75rem;
+    border-radius: 0.8rem;
+    color: var(--ink-2);
+    font-size: 0.92rem;
+    font-weight: 500;
+    text-decoration: none;
+  }
+
+  .settingsSideNav a:hover {
+    background: var(--surface-soft);
+  }
+
+  .settingsSideNav a[aria-current="page"] {
+    color: var(--ink);
+    background: var(--surface);
+    box-shadow: inset 0 0 0 1px var(--rule);
+  }
+
+  .settingsSideNav svg {
+    width: 1.15rem;
+    height: 1.15rem;
+    color: var(--muted);
+  }
+
+  .settingsSideNav a[aria-current="page"] svg {
+    color: var(--green-strong);
+  }
+}
+
+.goalHistory {
+  margin-top: 1rem;
+}
+
+.goalHistory ol {
+  display: grid;
+  margin: 0.75rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.goalHistory li {
+  display: grid;
+  gap: 0.25rem;
+  padding: 0.85rem 0;
+}
+
+.goalHistory li + li {
+  border-top: 1px solid var(--rule);
+}
+
+.goalHistoryState[data-state="scheduled"] {
+  color: var(--ink-2);
+  background: var(--surface-soft);
+}
+
+.goalHistoryDates {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--ink);
+  font-size: 0.92rem;
+  font-weight: 600;
+}
+
+.goalHistoryState {
+  padding: 0.1rem 0.55rem;
+  border-radius: 999px;
+  color: var(--green-strong);
+  background: var(--green-soft);
+  font-size: 0.75rem;
+  font-style: normal;
+  font-weight: 500;
+}
+
+.goalHistoryValues {
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
 }

@@ -3,7 +3,6 @@ import { data, Form } from "react-router";
 
 import { cancelKeyPrompt, keyProviderError, recoverMemberKeyLogin } from "../auth/key-ceremony.client";
 import { applicationOrigin, effectiveRequestPolicy } from "../runtime.server";
-import { AppNavigation } from "../app-navigation";
 import type { Route } from "./+types/settings.users";
 import {
   requireAdministratorSession,
@@ -17,8 +16,9 @@ import {
 } from "../auth/validation";
 import { formatLocalDate } from "../food-log/date";
 import shellStyles from "../food-log.module.css";
-import { SettingsDestinations } from "../settings-destinations";
+import { SettingsDestinations, SettingsShell } from "../settings-destinations";
 import styles from "../users.module.css";
+import { navigationToday } from "../goals/runtime.server";
 
 type UsersActionData = {
   accessChanged?: {
@@ -100,7 +100,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     recoveryPublicUrl: effectiveRequestPolicy().entry === "lan" ? `${applicationOrigin()}/settings/users` : undefined,
     csrfToken: session.csrfToken,
     members: getAuthenticationService().listManageableMembers(),
-    today: new Date().toISOString().slice(0, 10),
+    today: navigationToday(session.user.id),
   };
 }
 
@@ -354,16 +354,14 @@ export default function Users({ actionData, loaderData }: Route.ComponentProps) 
   }, [actionData, dismissPasswordReset, resettingUsername]);
 
   return (
-    <div className={shellStyles.shell}>
-      <a className={shellStyles.skipLink} href="#member-directory-content">
-        Skip to member directory
-      </a>
-      <AppNavigation
-        active="settings"
-        csrfToken={loaderData.csrfToken}
-        selectedDate={loaderData.today}
-        today={loaderData.today}
-      />
+    <SettingsShell
+      active="users"
+      csrfToken={loaderData.csrfToken}
+      isAdministrator={true}
+      skipLabel="Skip to member directory"
+      skipTarget="member-directory-content"
+      today={loaderData.today}
+    >
       <main className={shellStyles.appSurface} id="member-directory-content">
         <header className={shellStyles.mobileHeader}>
           <div className={shellStyles.titleLine}>
@@ -847,6 +845,6 @@ export default function Users({ actionData, loaderData }: Route.ComponentProps) 
           <small>The administrator account is not listed.</small>
         </div>
       </aside>
-    </div>
+    </SettingsShell>
   );
 }

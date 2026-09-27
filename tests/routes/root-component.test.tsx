@@ -27,6 +27,8 @@ async function renderInRoute(children: ReactNode): Promise<ReactTestRenderer> {
 test("root publishes the complete installable-app link contract", () => {
   expect(links()).toEqual([
     { href: "", rel: "stylesheet" },
+    { href: "", rel: "stylesheet" },
+    { href: "", rel: "stylesheet" },
     {
       href: "/favicon.png",
       rel: "icon",
@@ -65,7 +67,7 @@ test("root layout exposes the document and mobile metadata", async () => {
   expect(metas).toEqual(expect.arrayContaining([
     { charSet: "utf-8" },
     { content: "width=device-width, initial-scale=1", name: "viewport" },
-    { content: "#111820", name: "theme-color" },
+    { content: "#12110e", name: "theme-color" },
     { content: "yes", name: "apple-mobile-web-app-capable" },
     { content: "yes", name: "mobile-web-app-capable" },
     { content: "Open Calorie Tracker", name: "apple-mobile-web-app-title" },

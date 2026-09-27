@@ -119,7 +119,7 @@ test("Settings presents readiness recovery without linking back to the current p
   expect(text(catalog.root)).toContain("Unavailable");
   expect(text(catalog.root)).toContain("AI photo is hidden from Add Food until this is fixed");
   expect(text(catalog.root)).toContain("Reimport USDA Foundation for Photo Analysis.");
-  expect(catalog.root.findAllByProps({ href: "/settings/catalogs" })).toHaveLength(2);
+  expect(catalog.root.findByType("main").findAllByProps({ href: "/settings/catalogs" })).toHaveLength(2);
   await act(() => catalog.unmount());
 
   const credentials = await render(configured, settings, undefined, {
@@ -128,7 +128,7 @@ test("Settings presents readiness recovery without linking back to the current p
     destination: "/settings/ai",
   });
   expect(text(credentials.root)).toContain("Refresh the selected Gemini and Jev models.");
-  expect(credentials.root.findAllByProps({ href: "/settings/ai" })).toHaveLength(0);
+  expect(credentials.root.findByType("main").findAllByProps({ href: "/settings/ai" })).toHaveLength(0);
   await act(() => credentials.unmount());
 });
 

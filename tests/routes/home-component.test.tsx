@@ -267,9 +267,14 @@ test("home renders today's empty log and all goal progress contracts", async () 
   expect(renderer.root.findByType("h1").children.join("")).toBe("Today");
   expect(allText(renderer)).toContain("Monday, August 31, 2026");
   expect(allText(renderer)).toContain("No entries for this day");
-  expect(allText(renderer)).toContain(
-    "Use the floating food or water action when you’re ready.",
-  );
+  expect(allText(renderer)).toContain("Add food or water when you’re ready.");
+  const emptyDayActions = renderer.root.findByProps({
+    "aria-label": "Add to this day",
+    role: "group",
+  });
+  expect(
+    emptyDayActions.findAllByType("button").map((button) => button.props.value),
+  ).toEqual(["add-food", "add-water"]);
   const quickLog = renderer.root.findByProps({
     "aria-label": "Quick log",
     role: "group",
@@ -289,9 +294,10 @@ test("home renders today's empty log and all goal progress contracts", async () 
     { label: "Add Food", value: "add-food" },
     { label: "Add Water", value: "add-water" },
   ]);
+  // Floating actions plus the empty day's own actions; CSS shows one set per width.
   expect(renderer.root.findAllByType("button").filter(
     (button) => ["add-food", "add-water"].includes(button.props.value),
-  )).toHaveLength(2);
+  )).toHaveLength(4);
   expect(renderer.root.findByProps({ "aria-label": "Calorie progress" }).props)
     .toMatchObject({
       "aria-valuemax": 2050,
@@ -334,6 +340,39 @@ test("home renders today's empty log and all goal progress contracts", async () 
     .map((node) => node.props.to)
     .filter(Boolean)).toContain("/?date=2026-08-31");
   await act(async () => renderer.unmount());
+});
+
+test("nutrients stay exposed to assistive technology until the layout is measured", async () => {
+  // No window here, as in server rendering or a browser without JavaScript.
+  const renderer = await renderHome();
+  const carousel = renderer.root.findByProps({ "aria-label": "Daily nutrient progress" });
+  expect(carousel.findAll((node) => node.props["aria-hidden"] === true)).toHaveLength(0);
+  expect(carousel.findAll((node) => node.type === "article")).toHaveLength(6);
+  await act(async () => renderer.unmount());
+});
+
+test("wide screens expose all six daily nutrients without page controls", async () => {
+  const listeners = new Set<() => void>();
+  const media = {
+    addEventListener: (_: string, listener: () => void) => listeners.add(listener),
+    matches: true,
+    removeEventListener: (_: string, listener: () => void) => listeners.delete(listener),
+  };
+  vi.stubGlobal("window", { matchMedia: vi.fn(() => media) });
+  try {
+    const renderer = await renderHome();
+    expect(renderer.root.findAllByProps({ "aria-label": "Nutrition pages" })).toHaveLength(0);
+    const carousel = renderer.root.findByProps({ "aria-label": "Daily nutrient progress" });
+    expect(carousel.findAll((node) => node.props["aria-hidden"] === true)).toHaveLength(0);
+
+    media.matches = false;
+    await act(async () => listeners.forEach((listener) => listener()));
+    expect(renderer.root.findAllByProps({ "aria-label": "Nutrition pages" }).length).toBeGreaterThan(0);
+    await act(async () => renderer.unmount());
+    expect(listeners.size).toBe(0);
+  } finally {
+    vi.unstubAllGlobals();
+  }
 });
 
 test("daily nutrients support guarded touch swipes, cancellation, and both directions", async () => {
@@ -524,6 +563,58 @@ test("home distinguishes past, future, no-goal, and incomplete summaries", async
   expect(future.root.findAllByProps({ "aria-label": "Quick log" }))
     .toHaveLength(0);
   await act(async () => future.unmount());
+});
+
+test("week strip and calendar compare each logged day with that day's calorie goal", async () => {
+  const dailyCalories = {
+    "2026-08-29": { entryCount: 2, goalMilliKcal: 2_000_000, isIncomplete: false, knownMilliKcal: 2_345_600 },
+    "2026-08-30": { entryCount: 1, goalMilliKcal: 2_000_000, isIncomplete: true, knownMilliKcal: 640_000 },
+    "2026-08-31": { entryCount: 1, goalMilliKcal: null, isIncomplete: false, knownMilliKcal: 95_000 },
+    "2026-08-28": { entryCount: 0, goalMilliKcal: 2_000_000, isIncomplete: false, knownMilliKcal: 0 },
+  };
+  const week = await renderHome({
+    dailyCalories,
+    nearbyDates: [
+      { date: "2026-08-28", isFuture: false, isSelected: false },
+      { date: "2026-08-29", isFuture: false, isSelected: false },
+      { date: "2026-08-30", isFuture: false, isSelected: true },
+    ],
+  });
+  const rail = week.root.findByProps({ "aria-label": "Nearby dates" });
+  const tones = rail.findAll((node) => node.type === "em").map((node) => [
+    node.props["data-calorie-tone"],
+    node.children.join(""),
+  ]);
+  // An incomplete day under its goal stays undecided rather than "within".
+  expect(tones).toEqual([
+    ["over", "2,346 kcal"],
+    ["incomplete", "640 kcal known"],
+  ]);
+  expect(rail.findAll((node) => node.props.style?.["--progress"] !== undefined)
+    .map((node) => node.props.style["--progress"])).toEqual(["100.0%", "32.0%"]);
+  await act(async () => week.unmount());
+
+  const history = await renderHome({
+    calendar: {
+      days: [
+        { date: "2026-08-29", day: 29, isFuture: false, isSelected: false, isToday: false },
+        { date: "2026-08-31", day: 31, isFuture: false, isSelected: true, isToday: true },
+        { date: "2026-09-01", day: 1, isFuture: true, isSelected: false, isToday: false },
+      ],
+      label: "August 2026",
+      leadingEmptyDays: 6,
+      nextMonth: undefined,
+      previousMonth: "2026-07",
+    },
+    dailyCalories,
+  });
+  expect(history.root.findByProps({ "aria-label": "Saturday, August 29, 2,346 kcal" }).props)
+    .toMatchObject({ "data-calorie-tone": "over", to: "/?date=2026-08-29" });
+  expect(history.root.findByProps({ "aria-label": "Monday, August 31, 95 kcal" }).props["data-calorie-tone"])
+    .toBe("logged");
+  expect(history.root.findAll((node) => node.props.style?.["--progress"] !== undefined)
+    .map((node) => node.props.style["--progress"])).toEqual(["100.0%"]);
+  await act(async () => history.unmount());
 });
 
 test("home renders calendar navigation, selected dates, and future days", async () => {
@@ -1976,7 +2067,7 @@ test("home water dialogs cover create, presets, exact values, edit, and deletion
     .toMatchObject({
       "aria-valuemax": 2365.882,
       "aria-valuenow": 2365.882,
-      "aria-valuetext": "3,000 of 2,365.882 ml target",
+      "aria-valuetext": "3,000 of 2,366 ml target",
       style: { "--progress": "100%" },
     });
   const deleteButton = edit.root.findAllByType("button").find(
@@ -2033,7 +2124,8 @@ test("home water dialogs cover create, presets, exact values, edit, and deletion
     waterDialog: { mode: "create" },
   });
   expect(allText(metricCreate)).toContain("Select water amount");
-  expect(allText(metricCreate)).toContain("473.176 ml");
+  expect(allText(metricCreate)).toContain("473 ml");
+  expect(allText(metricCreate)).not.toContain("473.176");
   expect(metricCreate.root.findByProps({ "aria-label": "Water progress" }).props)
     .toMatchObject({ "aria-valuenow": 1000 });
   const metricExact = metricCreate.root.findAllByType("button").find(

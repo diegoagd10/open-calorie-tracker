@@ -1,9 +1,14 @@
+import type { ReactNode } from "react";
 import { Form, Link } from "react-router";
 
+import { AppNavigation } from "./app-navigation";
+import shellStyles from "./food-log.module.css";
+
 import styles from "./goals.module.css";
+import { UiIcon } from "./ui-icon";
 
 export type SettingsDestinationsProps = {
-  active: "goals" | "users" | "ai" | "catalogs";
+  active: SettingsSection;
   csrfToken: string;
   isAdministrator: boolean;
 };
@@ -18,8 +23,8 @@ export function SettingsDestinations({
       <nav className={styles.settingsDestinations} aria-label="Settings">
         {active !== "goals" ? (
           <Link className={styles.accountAccessRow} to="/settings/goals">
-            <span className={styles.accountAccessIcon} aria-hidden="true">
-              ◇
+            <span className={styles.accountAccessIcon}>
+              <UiIcon name="goals" />
             </span>
             <span>
               <strong>Display and goals</strong>
@@ -30,14 +35,18 @@ export function SettingsDestinations({
         ) : null}
         {isAdministrator && active !== "catalogs" ? (
           <Link className={styles.accountAccessRow} to="/settings/catalogs">
-            <span className={styles.accountAccessIcon} aria-hidden="true">▤</span>
+            <span className={styles.accountAccessIcon}>
+              <UiIcon name="database" />
+            </span>
             <span><strong>Food Catalogs</strong><small>View installed catalogs and check for updates.</small></span>
             <span aria-hidden="true">›</span>
           </Link>
         ) : null}
         {isAdministrator && active !== "ai" ? (
           <Link className={styles.accountAccessRow} to="/settings/ai">
-            <span className={styles.accountAccessIcon} aria-hidden="true">✧</span>
+            <span className={styles.accountAccessIcon}>
+              <UiIcon name="sparkle" />
+            </span>
             <span>
               <strong>AI photo estimates</strong>
               <small>Connect your account to estimate calories from photos.</small>
@@ -47,8 +56,8 @@ export function SettingsDestinations({
         ) : null}
         {isAdministrator && active !== "users" ? (
           <Link className={styles.accountAccessRow} to="/settings/users">
-            <span className={styles.accountAccessIcon} aria-hidden="true">
-              ◎
+            <span className={styles.accountAccessIcon}>
+              <UiIcon name="users" />
             </span>
             <span>
               <strong>Users</strong>
@@ -57,21 +66,27 @@ export function SettingsDestinations({
             <span aria-hidden="true">›</span>
           </Link>
         ) : null}
-        <Link className={styles.accountAccessRow} to="/settings/security">
-          <span className={styles.accountAccessIcon} aria-hidden="true">
-            ◇
-          </span>
-          <span>
-            <strong>Account security</strong>
-            <small>Manage your password and key sign-in.</small>
-          </span>
-          <span aria-hidden="true">›</span>
-        </Link>
-        <Link className={styles.accountAccessRow} to="/settings/oauth-clients">
-          <span className={styles.accountAccessIcon} aria-hidden="true">◇</span>
-          <span><strong>OAuth clients</strong><small>Review connections and register public clients.</small></span>
-          <span aria-hidden="true">›</span>
-        </Link>
+        {active !== "security" ? (
+          <Link className={styles.accountAccessRow} to="/settings/security">
+            <span className={styles.accountAccessIcon}>
+              <UiIcon name="key" />
+            </span>
+            <span>
+              <strong>Account security</strong>
+              <small>Manage your password and key sign-in.</small>
+            </span>
+            <span aria-hidden="true">›</span>
+          </Link>
+        ) : null}
+        {active !== "oauth" ? (
+          <Link className={styles.accountAccessRow} to="/settings/oauth-clients">
+            <span className={styles.accountAccessIcon}>
+              <UiIcon name="link" />
+            </span>
+            <span><strong>OAuth clients</strong><small>Review connections and register public clients.</small></span>
+            <span aria-hidden="true">›</span>
+          </Link>
+        ) : null}
       </nav>
 
       <Form action="/logout" className={styles.mobileSignOutForm} method="post">
@@ -85,5 +100,86 @@ export function SettingsDestinations({
         </button>
       </Form>
     </>
+  );
+}
+
+export type SettingsSection = "goals" | "security" | "oauth" | "users" | "ai" | "catalogs";
+
+const personalSections = [
+  { icon: "goals", key: "goals", label: "Display and goals", to: "/settings/goals" },
+  { icon: "key", key: "security", label: "Account security", to: "/settings/security" },
+  { icon: "link", key: "oauth", label: "OAuth clients", to: "/settings/oauth-clients" },
+] as const;
+
+const administratorSections = [
+  { icon: "users", key: "users", label: "Users", to: "/settings/users" },
+  { icon: "sparkle", key: "ai", label: "AI photo estimates", to: "/settings/ai" },
+  { icon: "database", key: "catalogs", label: "Food Catalogs", to: "/settings/catalogs" },
+] as const;
+
+/** Desktop-only column listing every settings section; phones keep the in-page list. */
+function SettingsSideNav({
+  active,
+  isAdministrator,
+}: {
+  active: SettingsSection;
+  isAdministrator: boolean;
+}) {
+  const link = (
+    section: (typeof personalSections)[number] | (typeof administratorSections)[number],
+  ) => (
+    <li key={section.key}>
+      <Link aria-current={section.key === active ? "page" : undefined} to={section.to}>
+        <UiIcon name={section.icon} />
+        <span>{section.label}</span>
+      </Link>
+    </li>
+  );
+  return (
+    <nav aria-label="Settings sections" className={styles.settingsSideNav}>
+      <p className={styles.settingsSideTitle}>Settings</p>
+      <ul>{personalSections.map(link)}</ul>
+      {isAdministrator ? (
+        <>
+          <p className={styles.settingsSideGroup}>Administration</p>
+          <ul>{administratorSections.map(link)}</ul>
+        </>
+      ) : null}
+    </nav>
+  );
+}
+
+/** The page frame every settings route shares: skip link, app rail, and section column. */
+export function SettingsShell({
+  active,
+  children,
+  csrfToken,
+  isAdministrator,
+  skipLabel,
+  skipTarget,
+  today,
+}: {
+  active: SettingsSection;
+  children: ReactNode;
+  csrfToken: string;
+  isAdministrator: boolean;
+  skipLabel: string;
+  skipTarget: string;
+  today: string;
+}) {
+  return (
+    <div className={`${shellStyles.shell} ${shellStyles.settingsShell}`}>
+      <a className={shellStyles.skipLink} href={`#${skipTarget}`}>
+        {skipLabel}
+      </a>
+      <AppNavigation
+        active="settings"
+        csrfToken={csrfToken}
+        selectedDate={today}
+        today={today}
+      />
+      <SettingsSideNav active={active} isAdministrator={isAdministrator} />
+      {children}
+    </div>
   );
 }

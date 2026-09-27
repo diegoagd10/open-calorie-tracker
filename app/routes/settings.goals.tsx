@@ -3,8 +3,7 @@ import { data, Form, redirect } from "react-router";
 
 import type { Route } from "./+types/settings.goals";
 import { AppearanceSelector } from "../appearance/selector";
-import { AppNavigation } from "../app-navigation";
-import { SettingsDestinations } from "../settings-destinations";
+import { SettingsDestinations, SettingsShell } from "../settings-destinations";
 import {
   getSessionForApplicationAccess,
   getApplicationMutationSession,
@@ -109,6 +108,10 @@ export async function loader({ request }: Route.LoaderArgs) {
       current.displayUnits,
     ),
     goal: current.goal,
+    goalHistory: service.history(session.user.id).map((version) => ({
+      ...goalFieldsFromCanonical(version, current.displayUnits),
+      lastDate: version.lastDate,
+    })),
     isAdministrator: session.user.role === "admin",
     timeZone: current.timeZone,
     today: current.today,
@@ -208,16 +211,14 @@ export default function Goals({ actionData, loaderData }: Route.ComponentProps) 
   }
 
   return (
-    <div className={shellStyles.shell}>
-      <a className={shellStyles.skipLink} href="#goal-settings-content">
-        Skip to goal settings
-      </a>
-      <AppNavigation
-        active="settings"
-        csrfToken={loaderData.csrfToken}
-        selectedDate={loaderData.today}
-        today={loaderData.today}
-      />
+    <SettingsShell
+      active="goals"
+      csrfToken={loaderData.csrfToken}
+      isAdministrator={loaderData.isAdministrator}
+      skipLabel="Skip to goal settings"
+      skipTarget="goal-settings-content"
+      today={loaderData.today}
+    >
       <main className={shellStyles.appSurface} id="goal-settings-content">
         <header className={shellStyles.mobileHeader}>
           <div className={shellStyles.titleLine}>
@@ -396,6 +397,12 @@ export default function Goals({ actionData, loaderData }: Route.ComponentProps) 
             Save goal version
           </button>
         </Form>
+
+        <GoalHistory
+          displayUnits={loaderData.displayUnits}
+          today={loaderData.today}
+          versions={loaderData.goalHistory}
+        />
       </main>
       <aside
         className={shellStyles.desktopContext}
@@ -409,6 +416,60 @@ export default function Goals({ actionData, loaderData }: Route.ComponentProps) 
           <small>Private to {loaderData.username}</small>
         </div>
       </aside>
-    </div>
+    </SettingsShell>
+  );
+}
+
+function formatHistoryDate(date: string): string {
+  return formatLocalDate(date, { day: "numeric", month: "short", year: "numeric" });
+}
+
+function GoalHistory({
+  displayUnits,
+  today,
+  versions,
+}: {
+  displayUnits: "metric" | "us";
+  today: string;
+  versions: Route.ComponentProps["loaderData"]["goalHistory"];
+}) {
+  const waterUnit = WATER_UNIT_OPTIONS[displayUnits].unit;
+  return (
+    <section
+      aria-labelledby="goal-history-heading"
+      className={`${styles.settingsGroup} ${styles.goalHistory}`}
+    >
+      <div className={styles.groupHeading}>
+        <div>
+          <h2 id="goal-history-heading">Goal Versions</h2>
+          <p>Each Food Log uses the version effective on its date.</p>
+        </div>
+      </div>
+      <ol>
+        {versions.map((version) => {
+          const scheduled = version.effectiveDate > today;
+          const current = !scheduled && (version.lastDate === null || version.lastDate >= today);
+          return (
+            <li key={version.effectiveDate}>
+              <span className={styles.goalHistoryDates}>
+                {version.lastDate
+                  ? `${formatHistoryDate(version.effectiveDate)} – ${formatHistoryDate(version.lastDate)}`
+                  : `From ${formatHistoryDate(version.effectiveDate)}`}
+                {current ? (
+                  <span className={styles.goalHistoryState}>Current</span>
+                ) : scheduled ? (
+                  <span className={styles.goalHistoryState} data-state="scheduled">Scheduled</span>
+                ) : null}
+              </span>
+              <span className={styles.goalHistoryValues}>
+                {version.calories} kcal · Protein {version.protein} g · Carbohydrate{" "}
+                {version.carbohydrate} g · Fat {version.fat} g · Water {version.water}{" "}
+                {waterUnit}
+              </span>
+            </li>
+          );
+        })}
+      </ol>
+    </section>
   );
 }

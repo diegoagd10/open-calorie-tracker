@@ -39,6 +39,32 @@ const loaderData = {
     sugarMaximumMilligrams: 50_000,
     waterTargetMicroliters: 2_365_882,
   },
+  goalHistory: [
+    {
+      calories: "1950",
+      carbohydrate: "220",
+      effectiveDate: "2026-09-05",
+      fat: "65",
+      fiber: "25",
+      lastDate: null,
+      protein: "125",
+      sodium: "2300",
+      sugar: "45",
+      water: "90",
+    },
+    {
+      calories: "2050",
+      carbohydrate: "230",
+      effectiveDate: "2026-08-31",
+      fat: "70",
+      fiber: "25",
+      lastDate: "2026-09-04",
+      protein: "120",
+      sodium: "2300",
+      sugar: "50",
+      water: "80",
+    },
+  ],
   timeZone: "America/New_York",
   today: "2026-08-31",
   username: "goal.owner",
@@ -92,6 +118,16 @@ test("goals route publishes private uncached metadata", () => {
     },
   ]);
   expect(headers()).toEqual({ "Cache-Control": "no-store" });
+});
+
+test("goals lists every Goal Version with its active range", async () => {
+  const renderer = await renderGoals();
+  const history = renderer.root.findByProps({ "aria-labelledby": "goal-history-heading" });
+  const rows = history.findAllByType("li").map((row) => nodeText(row));
+  expect(rows).toEqual([
+    "From Sep 5, 2026Scheduled1950 kcal · Protein 125 g · Carbohydrate 220 g · Fat 65 g · Water 90 fl oz",
+    "Aug 31, 2026 – Sep 4, 2026Current2050 kcal · Protein 120 g · Carbohydrate 230 g · Fat 70 g · Water 80 fl oz",
+  ]);
 });
 
 test("goals renders the complete effective-dated form contract", async () => {

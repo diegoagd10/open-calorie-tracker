@@ -57,7 +57,7 @@
   height: 1.75rem;
   padding: 0;
   place-items: center;
-  border: 1px solid #9aac9d;
+  border: 1px solid var(--green-border);
   border-radius: 999px;
   color: var(--green-dark);
   background: var(--surface);
@@ -67,7 +67,7 @@
 
 .availabilityTrigger:hover {
   border-color: var(--green);
-  background: #edf6ed;
+  background: var(--green-soft);
 }
 
 .availabilityTrigger:focus-visible {
@@ -91,8 +91,8 @@
   border-radius: 0.75rem;
   color: var(--ink);
   background: var(--surface);
-  box-shadow: 0 0.5rem 1.5rem rgb(22 39 29 / 14%);
-  font-size: 0.75rem;
+  box-shadow: var(--shadow-panel);
+  font-size: 0.82rem;
   line-height: 1.4;
 }
 
@@ -110,7 +110,7 @@
   display: inline-block;
   margin-top: 0.45rem;
   color: var(--green-dark);
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .method:hover {
@@ -154,8 +154,8 @@
 }
 
 .label {
-  font-size: 0.8rem;
-  font-weight: 650;
+  font-size: 0.875rem;
+  font-weight: 500;
 }
 
 @media (min-width: 760px) {

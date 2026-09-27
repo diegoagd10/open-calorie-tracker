@@ -6,10 +6,10 @@ import type { CatalogState, FoundationReleaseMetadata } from "../catalog-managem
 import { getCatalogManagement } from "../catalog-management/runtime.server";
 import { getUsdaPhotoAnalysisCatalog } from "../catalog/runtime.server";
 import type { UsdaPhotoAnalysisReadiness } from "../catalog/usda-evidence";
-import { AppNavigation } from "../app-navigation";
-import { SettingsDestinations } from "../settings-destinations";
+import { SettingsDestinations, SettingsShell } from "../settings-destinations";
 import shellStyles from "../food-log.module.css";
 import styles from "../photo-analysis/connection.module.css";
+import { navigationToday } from "../goals/runtime.server";
 
 export function meta() { return [{ title: "Food Catalogs · Open Calorie Tracker" }]; }
 export function headers() { return { "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" }; }
@@ -22,7 +22,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     offCatalog.checkForUpdate(),
     getUsdaPhotoAnalysisCatalog().photoAnalysisReadiness(),
   ]);
-  return { csrfToken: session.csrfToken, today: new Date().toISOString().slice(0, 10), catalog: catalogInformation(catalog.read(), photoAnalysisReadiness), offCatalog: catalogInformation(offCatalog.read()) };
+  return { csrfToken: session.csrfToken, today: navigationToday(session.user.id), catalog: catalogInformation(catalog.read(), photoAnalysisReadiness), offCatalog: catalogInformation(offCatalog.read()) };
 }
 export async function action({ request }: Route.ActionArgs) {
   requireValidOrigin(request);
@@ -121,14 +121,19 @@ function CatalogCard({ catalog, csrfToken, provider }: { catalog: CatalogInforma
 
 export default function CatalogSettings({ loaderData }: Route.ComponentProps) {
   const { catalog, offCatalog, csrfToken, today } = loaderData;
-  return <div className={shellStyles.shell}>
-    <a className={shellStyles.skipLink} href="#catalog-settings">Skip to Food Catalogs</a>
-    <AppNavigation active="settings" csrfToken={csrfToken} selectedDate={today} today={today} />
+  return <SettingsShell
+    active="catalogs"
+    csrfToken={csrfToken}
+    isAdministrator={true}
+    skipLabel="Skip to Food Catalogs"
+    skipTarget="catalog-settings"
+    today={today}
+  >
     <main className={shellStyles.appSurface} id="catalog-settings">
       <header className={shellStyles.mobileHeader}><div className={shellStyles.titleLine}><h1>Food Catalogs</h1></div><p className={shellStyles.selectedDateLabel}>Shared reference foods for local search and logging.</p></header>
       <CatalogCard catalog={catalog} csrfToken={csrfToken} provider="usda-fdc" />
       <CatalogCard catalog={offCatalog} csrfToken={csrfToken} provider="open-food-facts" />
       <SettingsDestinations active="catalogs" csrfToken={csrfToken} isAdministrator />
     </main>
-  </div>;
+  </SettingsShell>;
 }

@@ -136,8 +136,13 @@ test("today, historical navigation, calendar access, travel, and future rejectio
     { height: 900, width: 1_120 },
   ]) {
     await page.setViewportSize(viewport);
-    await expect(quickLog).toBeVisible();
-    const quickLogBox = await quickLog.boundingBox();
+    // An empty day carries its own actions below the desktop layout, so
+    // floating buttons never cover the empty-state guidance.
+    const emptyDayActions = page.getByRole("group", { name: "Add to this day" });
+    const visibleActions = viewport.width < 1_120 ? emptyDayActions : quickLog;
+    await expect(viewport.width < 1_120 ? quickLog : emptyDayActions).toBeHidden();
+    await expect(visibleActions).toBeVisible();
+    const quickLogBox = await visibleActions.boundingBox();
     expect(quickLogBox).not.toBeNull();
     expect(quickLogBox!.x).toBeGreaterThanOrEqual(0);
     expect(quickLogBox!.x + quickLogBox!.width).toBeLessThanOrEqual(viewport.width);
@@ -408,14 +413,10 @@ test("daily calorie and nutrient progress is factual, responsive, and accessible
   await expect(
     page.getByRole("article", { name: /Protein: 0 of 120 g target/ }),
   ).toBeVisible();
+  // Desktop lays out both nutrient pages, so the second page stays exposed.
   await expect(
-    page
-      .getByRole("article", {
-        includeHidden: true,
-        name: /Sugar: 0 of 50 g maximum/,
-      })
-      .locator(".."),
-  ).toHaveAttribute("aria-hidden", "true");
+    page.getByRole("article", { name: /Sugar: 0 of 50 g maximum/ }),
+  ).toBeVisible();
 
   await openUsdaSearch(page);
   await page
@@ -484,12 +485,10 @@ test("daily calorie and nutrient progress is factual, responsive, and accessible
     }),
   ).toBeVisible();
 
-  const secondPage = page.getByRole("button", {
-    name: "Show fiber, sugar, and sodium",
-  });
-  await secondPage.focus();
-  await page.keyboard.press("Enter");
-  await expect(secondPage).toHaveAttribute("aria-pressed", "true");
+  // Desktop shows both nutrient pages at once, so it has no page controls.
+  await expect(
+    page.getByRole("group", { name: "Nutrition pages" }),
+  ).toHaveCount(0);
   await expect(
     page.getByRole("article", {
       name: "Fiber: 0 known of 20 g target; incomplete",
@@ -528,6 +527,20 @@ test("daily calorie and nutrient progress is factual, responsive, and accessible
   });
   const touchPage = await touchContext.newPage();
   await touchPage.goto("/?date=2026-08-29");
+  const secondPage = touchPage.getByRole("button", {
+    name: "Show fiber, sugar, and sodium",
+  });
+  await secondPage.focus();
+  await touchPage.keyboard.press("Enter");
+  await expect(secondPage).toHaveAttribute("aria-pressed", "true");
+  await expect(
+    touchPage.getByRole("article", {
+      name: "Fiber: 0 known of 20 g target; incomplete",
+    }),
+  ).toBeVisible();
+  await touchPage
+    .getByRole("button", { name: "Show protein, carbohydrate, and fat" })
+    .click();
   const nutrientCarousel = touchPage.getByRole("region", {
     name: "Daily nutrient progress",
   });
@@ -623,9 +636,6 @@ test("daily calorie and nutrient progress is factual, responsive, and accessible
       name: "Protein: 120.5; no active target",
     }),
   ).toBeVisible();
-  await page
-    .getByRole("button", { name: "Show fiber, sugar, and sodium" })
-    .click();
   await expect(
     page.getByRole("article", {
       name: "Fiber: 0 known; no active target; incomplete",

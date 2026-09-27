@@ -29,16 +29,21 @@
 
 .appSurface {
   min-height: 100dvh;
-  padding: 1.15rem var(--surface-gutter) 6rem;
+  padding: 1.25rem var(--surface-gutter) 10rem;
 }
 
 .mobileHeader {
-  padding: 0.4rem 0 1rem;
+  padding: 0.5rem 0.25rem 1rem;
 }
 
 .quickLogActions {
   display: flex;
-  gap: 0.5rem;
+  align-items: center;
+  gap: 0.625rem;
+}
+
+.quickLogActions > form:last-child {
+  order: -1;
 }
 
 .quickLogActions form {
@@ -67,35 +72,44 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  gap: 0.5rem;
   width: 3.25rem;
   min-height: 3.25rem;
   padding: 0;
-  border: 0;
-  border-radius: 0.7rem;
+  border: 1px solid transparent;
+  border-radius: 999px;
   font: inherit;
+  font-size: 1rem;
+  font-weight: 600;
   cursor: pointer;
-  box-shadow: 0 5px 16px rgb(0 0 0 / 14%);
+  box-shadow: 0 0.75rem 2rem rgb(0 0 0 / 28%);
 }
 
 .quickLogButton svg {
-  width: 1.25rem;
-  height: 1.25rem;
+  width: 1.35rem;
+  height: 1.35rem;
 }
 
 .quickLogFood {
-  color: var(--green-strong);
-  background: var(--green-soft);
+  width: auto;
+  min-height: 3.5rem;
+  padding: 0 1.4rem 0 1.1rem;
+  color: var(--on-accent);
+  background: var(--green-dark);
 }
 
 .quickLogWater {
-  color: var(--blue-strong);
-  background: var(--blue-soft);
+  border-color: var(--rule);
+  color: var(--blue);
+  background: var(--surface-soft);
 }
 
-.quickLogButton:hover,
-.quickLogButton:focus-visible {
-  box-shadow: 0 7px 20px rgb(0 0 0 / 20%);
-  filter: brightness(0.98);
+.quickLogFood:hover {
+  background: var(--green-hover);
+}
+
+.quickLogWater:hover {
+  background: var(--surface-muted);
 }
 
 .titleLine,
@@ -113,24 +127,26 @@
 
 .titleLine h1 {
   margin: 0;
-  font-size: clamp(2rem, 7vw, 3rem);
-  letter-spacing: -0.04em;
-  line-height: 1;
+  font-size: clamp(2.125rem, 7vw, 2.625rem);
+  line-height: 1.05;
 }
 
 .selectedDateLabel {
-  margin: 0.45rem 0 0;
+  margin: 0.5rem 0 0;
   color: var(--muted);
-  font-size: 0.78rem;
+  font-size: 0.9rem;
+  line-height: 1.45;
 }
 
 .privacyCue {
-  gap: 0.3rem;
-  color: var(--muted);
-  font-size: 0.7rem;
-  font-weight: 750;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  gap: 0.35rem;
+  padding: 0.3rem 0.7rem;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  color: var(--ink-2);
+  background: var(--surface);
+  font-size: 0.75rem;
+  font-weight: 500;
 }
 
 .dateRailWrap {
@@ -186,9 +202,9 @@
 .futureDate {
   display: block;
   min-height: 3.65rem;
-  padding: 0.35rem 0.15rem;
+  padding: 0.5rem 0.15rem;
   border: 0;
-  border-radius: 0.7rem;
+  border-radius: 0.9rem;
   color: var(--ink-2);
   background: transparent;
   font: inherit;
@@ -206,22 +222,20 @@
 
 .dateButton small,
 .futureDate small {
-  margin-bottom: 0.15rem;
-  font-size: 0.64rem;
-  font-weight: 750;
-  text-transform: uppercase;
+  margin-bottom: 0.2rem;
+  font-size: 0.72rem;
+  font-weight: 500;
 }
 
 .dateButton strong,
 .futureDate strong {
-  font-size: 1.1rem;
-  font-weight: 650;
+  font-size: 1.06rem;
+  font-weight: 600;
 }
 
 .selectedDate {
-  color: white;
+  color: var(--on-accent);
   background: var(--green-dark);
-  box-shadow: 0 7px 16px rgb(0 0 0 / 20%);
 }
 
 .selectedDate:hover {
@@ -237,19 +251,19 @@
 .calendarCard {
   overflow: hidden;
   border: 1px solid var(--rule);
-  border-radius: 1rem;
+  border-radius: var(--radius-panel);
   background: var(--surface);
-  box-shadow: 0 8px 24px rgb(0 0 0 / 14%);
 }
 
 .calorieRow {
-  padding: 1.15rem 1rem 1rem;
+  padding: 1.15rem 1.15rem 1rem;
 }
 
 .calorieRow h2 {
-  margin: 0 0 0.35rem;
-  font-size: 0.9rem;
-  font-weight: 650;
+  margin: 0 0 0.3rem;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 500;
   letter-spacing: 0;
 }
 
@@ -261,22 +275,30 @@
 }
 
 .calorieRow p strong {
-  font-size: 1.5rem;
+  font-family: var(--font-display);
+  font-size: 2.75rem;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  line-height: 1;
 }
 
-.calorieRow p span,
+.calorieRow p span {
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
 .calorieRow > small {
   color: var(--muted);
-  font-size: 0.72rem;
+  font-size: 0.8rem;
 }
 
 .linearProgress,
 .waterProgress {
   overflow: hidden;
-  height: 0.44rem;
-  margin: 0.7rem 0 0.4rem;
+  height: 0.625rem;
+  margin: 0.9rem 0 0.55rem;
   border-radius: 999px;
-  background: var(--surface-muted);
+  background: var(--well);
 }
 
 .linearProgress span,
@@ -285,7 +307,7 @@
   width: var(--progress, 0%);
   height: 100%;
   border-radius: inherit;
-  background: var(--green);
+  background: var(--green-strong);
 }
 
 .nutrientCarousel {
@@ -334,32 +356,36 @@
 .nutrientCell > span {
   overflow: hidden;
   margin-bottom: 0.3rem;
-  font-size: 0.72rem;
-  font-weight: 650;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 500;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .nutrientCell > strong {
   overflow: hidden;
-  font-size: 0.86rem;
+  font-size: 0.95rem;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .nutrientCell > strong small {
+  display: block;
+  margin-top: 0.1rem;
   color: var(--muted);
-  font-size: 0.68rem;
-  font-weight: 500;
+  font-size: 0.78rem;
+  font-weight: 400;
 }
 
 .nutrientProgress {
   overflow: hidden;
-  height: 0.25rem;
+  height: 0.3rem;
   margin-top: 0.55rem;
   border-radius: 999px;
-  background: var(--surface-muted);
+  background: var(--well);
 }
 
 .nutrientProgress span {
@@ -367,16 +393,36 @@
   width: var(--progress, 0%);
   height: 100%;
   border-radius: inherit;
-  background: var(--blue);
+  background: var(--nutrient-color, var(--blue));
+}
+
+.nutrientPage > .nutrientCell:nth-child(1) {
+  --nutrient-color: var(--protein);
+}
+
+.nutrientPage > .nutrientCell:nth-child(2) {
+  --nutrient-color: var(--carbohydrate);
+}
+
+.nutrientPage > .nutrientCell:nth-child(3) {
+  --nutrient-color: var(--fat);
+}
+
+.nutrientPage + .nutrientPage > .nutrientCell {
+  --nutrient-color: var(--blue);
 }
 
 .nutrientCell > em,
 .incompleteLabel {
-  margin-top: 0.35rem;
+  width: fit-content;
+  margin-top: 0.45rem;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
   color: var(--warning);
-  font-size: 0.62rem;
+  background: var(--warning-soft);
+  font-size: 0.7rem;
   font-style: normal;
-  font-weight: 750;
+  font-weight: 500;
 }
 
 .calorieRow .incompleteLabel {
@@ -386,9 +432,8 @@
 .carouselControls {
   display: flex;
   justify-content: center;
-  gap: 0.42rem;
-  padding: 0.55rem;
-  border-top: 1px solid var(--rule);
+  gap: 0;
+  padding: 0 0.5rem 0.25rem;
 }
 
 .carouselDot {
@@ -404,10 +449,10 @@
 }
 
 .carouselDot::after {
-  width: 0.5rem;
-  height: 0.5rem;
-  border-radius: 50%;
-  background: var(--rule);
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 999px;
+  background: var(--rule-strong);
   content: "";
 }
 
@@ -417,16 +462,16 @@
 }
 
 .activeCarouselDot::after {
-  background: var(--ink);
+  width: 1.1rem;
+  background: var(--ink-2);
 }
 
 .waterOverview {
-  margin-top: 0.75rem;
-  padding: 0.75rem 0.85rem 0.8rem;
+  margin-top: 0.875rem;
+  padding: 0.9rem 1rem 0.95rem;
   border: 1px solid var(--rule);
-  border-radius: 1rem;
+  border-radius: var(--radius-panel);
   background: var(--surface);
-  box-shadow: 0 8px 24px rgb(0 0 0 / 14%);
 }
 
 .waterOverviewRow {
@@ -444,28 +489,31 @@
 }
 
 .waterOverviewRow > span > strong {
-  font-size: 0.88rem;
+  font-size: 0.95rem;
+  font-weight: 600;
 }
 
 .waterOverviewRow > span > small {
-  margin-top: 0.1rem;
+  margin-top: 0.15rem;
   color: var(--muted);
-  font-size: 0.62rem;
+  font-size: 0.75rem;
 }
 
 .waterOverviewRow > strong {
-  font-size: 0.88rem;
+  font-size: 0.95rem;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
 
 .waterOverviewRow > strong small {
   color: var(--muted);
-  font-size: 0.68rem;
-  font-weight: 500;
+  font-size: 0.8rem;
+  font-weight: 400;
 }
 
 .waterProgress {
-  margin-bottom: 0;
+  height: 0.375rem;
+  margin: 0.7rem 0 0;
 }
 
 .waterProgress span {
@@ -473,30 +521,32 @@
 }
 
 .timelineSection {
-  margin-top: 1.25rem;
+  margin-top: 1.5rem;
 }
 
 .sectionHeading {
   justify-content: space-between;
   gap: 1rem;
   margin-bottom: 0.7rem;
+  padding-inline: 0.25rem;
 }
 
 .sectionHeading h2 {
   margin: 0;
-  font-size: 1.05rem;
+  font-size: 1.1rem;
+  font-weight: 600;
 }
 
 .sectionHeading span {
   color: var(--muted);
-  font-size: 0.72rem;
+  font-size: 0.82rem;
 }
 
 .emptyDay,
 .futureDay {
-  padding: 2.5rem 1rem;
+  padding: 1.75rem 1rem;
   border: 1px dashed var(--rule-strong);
-  border-radius: 1rem;
+  border-radius: var(--radius-panel);
   background: transparent;
   text-align: center;
 }
@@ -533,18 +583,18 @@
   align-items: center;
   justify-content: center;
   min-height: 2.75rem;
-  padding: 0.7rem 1rem;
-  border: 1px solid var(--green);
-  border-radius: 0.7rem;
+  padding: 0.7rem 1.2rem;
+  border: 1px solid var(--green-dark);
+  border-radius: 999px;
   font: inherit;
-  font-size: 0.78rem;
-  font-weight: 750;
+  font-size: 0.9rem;
+  font-weight: 600;
   cursor: pointer;
   text-decoration: none;
 }
 
 .primaryButton {
-  color: white;
+  color: var(--on-accent);
   background: var(--green-dark);
 }
 
@@ -577,13 +627,13 @@
 .dateNote {
   margin: 1rem 0 0;
   color: var(--muted);
-  font-size: 0.68rem;
+  font-size: 0.75rem;
   text-align: center;
 }
 
 .entryList {
   display: grid;
-  gap: 0.75rem;
+  gap: 0.5rem;
 }
 
 .entryList form {
@@ -606,14 +656,14 @@
 .foodEntryCard {
   position: relative;
   display: grid;
-  grid-template-columns: 2.75rem minmax(0, 1fr) auto 1.25rem;
-  grid-template-rows: auto minmax(3.25rem, auto);
+  grid-template-columns: 2.5rem minmax(0, 1fr) auto 1rem;
+  grid-template-rows: auto auto;
   align-items: center;
-  gap: 0 0.75rem;
-  min-height: 5.5rem;
-  padding: 0.75rem;
+  gap: 0 0.8rem;
+  min-height: 4.5rem;
+  padding: 0.8rem 0.9rem;
   border: 1px solid var(--rule);
-  border-radius: 0.8rem;
+  border-radius: 1.1rem;
   color: var(--ink);
   background: var(--surface);
   text-decoration: none;
@@ -630,8 +680,8 @@
   align-self: end;
   margin-bottom: 0.1rem;
   color: var(--muted);
-  font-size: 0.68rem;
-  font-weight: 650;
+  font-size: 0.75rem;
+  font-weight: 500;
   font-variant-numeric: tabular-nums;
 }
 
@@ -639,11 +689,10 @@
   display: grid;
   grid-column: 1;
   grid-row: 1 / 3;
-  width: 2.6rem;
-  height: 2.6rem;
+  width: 2.5rem;
+  height: 2.5rem;
   place-items: center;
-  border: 1px solid var(--green-border);
-  border-radius: 50%;
+  border-radius: 0.8rem;
   color: var(--green-strong);
   background: var(--green-soft);
 }
@@ -652,11 +701,10 @@
   display: grid;
   grid-column: 1;
   grid-row: 1 / 3;
-  width: 2.6rem;
-  height: 2.6rem;
+  width: 2.5rem;
+  height: 2.5rem;
   place-items: center;
-  border: 1px solid var(--blue-border);
-  border-radius: 50%;
+  border-radius: 0.8rem;
   color: var(--blue);
   background: var(--blue-soft);
 }
@@ -678,7 +726,8 @@
 
 .foodEntryContent strong {
   overflow: hidden;
-  font-size: 0.86rem;
+  font-size: 0.95rem;
+  font-weight: 500;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -691,7 +740,7 @@
   overflow: hidden;
   margin-top: 0.15rem;
   color: var(--muted);
-  font-size: 0.66rem;
+  font-size: 0.78rem;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -702,15 +751,20 @@
   align-self: center;
   display: grid;
   align-content: center;
-  font-size: 0.82rem;
-  font-weight: 750;
+  justify-items: end;
+  font-family: var(--font-display);
+  font-size: 1.2rem;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
   white-space: nowrap;
 }
 
 .foodEntryEnergy small {
   color: var(--muted);
-  font-size: 0.62rem;
-  font-weight: 500;
+  font-family: var(--font-sans);
+  font-size: 0.72rem;
+  font-weight: 400;
 }
 
 .foodEntryCard::after {
@@ -744,8 +798,8 @@
   color: var(--green-strong);
   background: transparent;
   font: inherit;
-  font-size: 0.78rem;
-  font-weight: 750;
+  font-size: 0.875rem;
+  font-weight: 600;
   text-align: left;
   text-decoration: none;
   white-space: nowrap;
@@ -786,8 +840,8 @@
 
 .copyDestination span {
   color: var(--muted);
-  font-size: 0.68rem;
-  font-weight: 750;
+  font-size: 0.75rem;
+  font-weight: 600;
   text-transform: uppercase;
 }
 
@@ -865,7 +919,7 @@
 
 .pendingEntryContent strong {
   overflow: hidden;
-  font-size: 0.86rem;
+  font-size: 0.92rem;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -915,11 +969,13 @@
   width: min(100%, 42rem);
   max-height: calc(100dvh - 2rem);
   margin-inline: auto;
-  padding: 1rem;
+  padding: 1.25rem 1rem 1.5rem;
   overflow-y: auto;
-  border-radius: 1.4rem 1.4rem 0 0;
+  border: 1px solid var(--rule);
+  border-bottom: 0;
+  border-radius: 1.75rem 1.75rem 0 0;
   background: var(--surface);
-  box-shadow: 0 -1rem 3rem rgb(0 0 0 / 18%);
+  box-shadow: var(--shadow-panel);
 }
 
 .dialogHead {
@@ -934,15 +990,17 @@
 .dialogHead h2 {
   display: inline;
   margin: 0;
-  font-size: 1.4rem;
-  letter-spacing: -0.025em;
+  font-family: var(--font-display);
+  font-size: 1.75rem;
+  font-weight: 500;
+  letter-spacing: -0.01em;
 }
 
 .dialogHead p {
   max-width: 48ch;
   margin: 0.45rem 0 0;
   color: var(--ink-2);
-  font-size: 0.76rem;
+  font-size: 0.875rem;
 }
 
 .editDialogHead {
@@ -994,7 +1052,7 @@
 
 .editSaveButton {
   border-color: var(--green);
-  color: white;
+  color: var(--on-accent);
   background: var(--green-dark);
 }
 
@@ -1028,14 +1086,15 @@
 .dialogChip,
 .catalogType {
   display: inline-flex;
-  margin-left: 0.45rem;
-  padding: 0.2rem 0.45rem;
-  border-radius: 999px;
-  color: var(--blue-strong);
-  background: var(--blue-soft);
-  font-size: 0.6rem;
-  font-weight: 750;
-  text-transform: uppercase;
+  margin-left: 0.5rem;
+  padding: 0.15rem 0.55rem;
+  border: 1px solid var(--rule);
+  border-radius: 0.4rem;
+  color: var(--ink-2);
+  background: transparent;
+  font-size: 0.75rem;
+  font-weight: 500;
+  vertical-align: middle;
 }
 
 .dialogClose {
@@ -1044,10 +1103,11 @@
   width: 2.75rem;
   height: 2.75rem;
   place-items: center;
-  border: 1px solid var(--rule-strong);
+  border: 0;
   border-radius: 50%;
   color: var(--ink-2);
-  font-size: 1.7rem;
+  background: var(--surface-soft);
+  font-size: 1.5rem;
   line-height: 1;
   text-decoration: none;
 }
@@ -1060,8 +1120,8 @@
 .stackedField > span {
   display: block;
   margin-bottom: 0.4rem;
-  font-size: 0.76rem;
-  font-weight: 750;
+  font-size: 0.875rem;
+  font-weight: 600;
 }
 
 .searchControl {
@@ -1087,7 +1147,7 @@
 .readOnlyMeasurement {
   display: flex;
   align-items: center;
-  font-weight: 650;
+  font-weight: 500;
 }
 
 .catalogState {
@@ -1128,7 +1188,7 @@
 .barcodeScannerStatus p {
   margin-top: 0.3rem;
   color: var(--muted);
-  font-size: 0.72rem;
+  font-size: 0.8rem;
   line-height: 1.45;
 }
 
@@ -1200,17 +1260,17 @@
   min-height: 2.75rem;
   padding: 0.65rem 0.9rem;
   border: 0;
-  border-radius: 0.7rem;
-  color: white;
+  border-radius: 999px;
+  color: var(--on-accent);
   background: var(--green-dark);
   font: inherit;
-  font-weight: 750;
+  font-weight: 600;
 }
 
 .catalogState p {
   margin-top: 0.35rem;
   color: var(--muted);
-  font-size: 0.78rem;
+  font-size: 0.875rem;
 }
 
 .foodDetailSkeleton {
@@ -1221,8 +1281,8 @@
   display: block;
   margin-top: 0.9rem;
   color: var(--muted);
-  font-size: 0.72rem;
-  font-weight: 700;
+  font-size: 0.8rem;
+  font-weight: 600;
 }
 
 .skeletonBackLink,
@@ -1344,26 +1404,26 @@
 .catalogResults small {
   margin-top: 0.2rem;
   color: var(--muted);
-  font-size: 0.68rem;
+  font-size: 0.75rem;
 }
 
 .providerAttribution {
   margin: 0.9rem 0 0;
   color: var(--muted);
-  font-size: 0.68rem;
+  font-size: 0.75rem;
   text-align: center;
 }
 
 .providerAttribution a,
 .backToResults {
   color: var(--green-strong);
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .backToResults {
   display: inline-flex;
   margin: 0.9rem 0 0;
-  font-size: 0.75rem;
+  font-size: 0.82rem;
 }
 
 .foodIdentity {
@@ -1382,7 +1442,7 @@
 .foodIdentity p {
   margin: 0;
   color: var(--muted);
-  font-size: 0.7rem;
+  font-size: 0.8rem;
 }
 
 .snapshotNote {
@@ -1402,7 +1462,7 @@
 
 .snapshotNote p {
   color: var(--ink-2);
-  font-size: 0.7rem;
+  font-size: 0.8rem;
 }
 
 .snapshotNote strong {
@@ -1424,7 +1484,7 @@
   display: block;
   margin-top: 0.3rem;
   color: var(--muted);
-  font-size: 0.65rem;
+  font-size: 0.75rem;
 }
 
 .nutritionPreview {
@@ -1452,13 +1512,13 @@
 
 .nutritionPreview dt {
   color: var(--muted);
-  font-size: 0.62rem;
+  font-size: 0.75rem;
 }
 
 .nutritionPreview dd {
   margin: 0.2rem 0 0;
-  font-size: 0.75rem;
-  font-weight: 750;
+  font-size: 0.82rem;
+  font-weight: 600;
 }
 
 .dialogActions {
@@ -1490,7 +1550,7 @@
 .authoritativeNote {
   margin: 0;
   color: var(--muted);
-  font-size: 0.7rem;
+  font-size: 0.8rem;
   line-height: 1.45;
 }
 
@@ -1503,8 +1563,8 @@
   color: var(--danger);
   background: var(--ground);
   font: inherit;
-  font-size: 0.78rem;
-  font-weight: 750;
+  font-size: 0.875rem;
+  font-weight: 600;
   cursor: pointer;
 }
 
@@ -1537,7 +1597,7 @@
 .deleteConfirm p {
   margin-top: 0.15rem;
   color: var(--danger-muted);
-  font-size: 0.66rem;
+  font-size: 0.75rem;
 }
 
 .editFoodForm :is(button, input, select):disabled {
@@ -1584,8 +1644,8 @@
   align-content: center;
   gap: 0.12rem;
   padding: 0.55rem 0.25rem;
-  border: 1px solid var(--rule-strong);
-  border-radius: 0.75rem;
+  border: 1px solid var(--rule);
+  border-radius: 1.1rem;
   color: var(--ink-2);
   background: var(--surface);
   font: inherit;
@@ -1608,7 +1668,7 @@
   position: absolute;
   top: 0.35rem;
   right: 0.4rem;
-  font-size: 0.72rem;
+  font-size: 0.8rem;
 }
 
 .waterPresetRemove {
@@ -1630,16 +1690,25 @@
 .waterSelectionSummary {
   margin: -0.35rem 0 0;
   color: var(--muted);
-  font-size: 0.72rem;
+  font-size: 0.8rem;
 }
 
 .waterPresetButton strong {
-  font-size: 0.85rem;
+  font-size: 1.15rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.waterPresetButton > svg {
+  width: 1.1rem;
+  height: 1.1rem;
+  margin-bottom: 0.15rem;
+  color: var(--blue);
 }
 
 .waterPresetButton span,
 .waterPresetButton small {
-  font-size: 0.62rem;
+  font-size: 0.75rem;
 }
 
 .waterAmountField,
@@ -1649,8 +1718,8 @@
   padding: 0.75rem;
   border-radius: 0.75rem;
   background: var(--surface-soft);
-  font-size: 0.76rem;
-  font-weight: 750;
+  font-size: 0.875rem;
+  font-weight: 600;
 }
 
 .waterAmountField > span:last-child {
@@ -1673,7 +1742,7 @@
 
 .waterAmountField em {
   color: var(--muted);
-  font-size: 0.68rem;
+  font-size: 0.75rem;
   font-style: normal;
   font-weight: 500;
 }
@@ -1693,12 +1762,12 @@
   min-height: 2.75rem;
   padding: 0.7rem 1rem;
   border: 1px solid var(--blue);
-  border-radius: 0.7rem;
-  color: white;
+  border-radius: 999px;
+  color: var(--on-blue);
   background: var(--blue-action);
   font: inherit;
-  font-size: 0.78rem;
-  font-weight: 750;
+  font-size: 0.9rem;
+  font-weight: 600;
   cursor: pointer;
 }
 
@@ -1724,7 +1793,7 @@
   border-radius: 0.7rem;
   color: var(--danger);
   background: var(--danger-soft);
-  font-size: 0.75rem;
+  font-size: 0.82rem;
 }
 
 .historyIntro {
@@ -1732,25 +1801,30 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: 1rem;
+  max-width: 52rem;
   margin: 0.35rem 0 1.35rem;
 }
 
 .historyIntro h2 {
-  margin: 0 0 0.25rem;
-  font-size: 1.8rem;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 .historyIntro p {
   max-width: 50ch;
   margin: 0;
   color: var(--ink-2);
-  font-size: 0.85rem;
+  font-size: 0.92rem;
 }
 
 .backLink {
   color: var(--green-strong);
-  font-size: 0.75rem;
-  font-weight: 750;
+  font-size: 0.82rem;
+  font-weight: 600;
   white-space: nowrap;
 }
 
@@ -1764,7 +1838,9 @@
 }
 
 .calendarHead strong {
-  font-size: 0.92rem;
+  font-family: var(--font-display);
+  font-size: 1.3rem;
+  font-weight: 500;
 }
 
 .calendarNav,
@@ -1789,36 +1865,35 @@
 .calendarGrid {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
-  gap: 0.12rem;
-  padding: 0.65rem;
+  gap: 0.25rem;
+  padding: 0.75rem;
 }
 
 .weekday {
   padding: 0.35rem 0;
   color: var(--muted);
-  font-size: 0.58rem;
-  font-weight: 750;
+  font-size: 0.75rem;
+  font-weight: 500;
   text-align: center;
-  text-transform: uppercase;
 }
 
 .calendarDay,
 .calendarFuture {
   display: grid;
-  min-height: 2.65rem;
+  min-height: 2.75rem;
   place-items: center;
   border: 0;
-  border-radius: 0.55rem;
+  border-radius: 0.8rem;
   color: var(--ink-2);
   background: transparent;
   font: inherit;
-  font-size: 0.78rem;
+  font-size: 0.875rem;
   font-variant-numeric: tabular-nums;
   text-decoration: none;
 }
 
 .calendarToday {
-  color: white;
+  color: var(--on-accent);
   background: var(--green-dark);
 }
 
@@ -1839,10 +1914,12 @@
   left: 0;
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  min-height: 4.25rem;
+  gap: 0.5rem;
+  min-height: 4.5rem;
+  padding: 0.5rem 1.5rem calc(0.5rem + env(safe-area-inset-bottom));
   border-top: 1px solid var(--rule);
   background: var(--rail-overlay);
-  box-shadow: 0 -8px 28px rgb(0 0 0 / 14%);
+  backdrop-filter: blur(12px);
 }
 
 .mobileNav a {
@@ -1850,20 +1927,27 @@
   min-width: 4.5rem;
   place-items: center;
   align-content: center;
-  gap: 0.12rem;
+  gap: 0.25rem;
   color: var(--muted);
-  font-size: 0.7rem;
-  font-weight: 650;
+  font-size: 0.75rem;
+  font-weight: 500;
   text-decoration: none;
 }
 
 .mobileNav a[aria-current="page"] {
-  color: var(--green-strong);
+  color: var(--ink);
 }
 
 .mobileNav svg {
-  width: 1.05rem;
-  height: 1.05rem;
+  box-sizing: content-box;
+  width: 1.25rem;
+  height: 1.25rem;
+  padding: 0.25rem 1.1rem;
+  border-radius: 999px;
+}
+
+.mobileNav a[aria-current="page"] svg {
+  background: var(--green-soft);
 }
 
 .railBrand {
@@ -1872,33 +1956,33 @@
 
 .brandMark {
   display: grid;
-  grid-template-columns: repeat(3, 0.3rem);
-  align-items: end;
-  gap: 0.18rem;
-  width: 2rem;
-  height: 2rem;
-  padding: 0.45rem;
-  border-radius: 0.65rem;
-  color: white;
+  align-content: center;
+  gap: 0.2rem;
+  width: 2.25rem;
+  height: 2.25rem;
+  padding: 0 0.5rem;
+  border-radius: 0.7rem;
+  color: var(--on-accent);
   background: var(--green-dark);
 }
 
 .brandMark > span {
   display: block;
+  height: 0.22rem;
   border-radius: 2px;
-  background: white;
+  background: currentColor;
 }
 
 .brandMark > span:nth-child(1) {
-  height: 0.55rem;
+  width: 1.25rem;
 }
 
 .brandMark > span:nth-child(2) {
-  height: 1rem;
+  width: 0.875rem;
 }
 
 .brandMark > span:nth-child(3) {
-  height: 0.75rem;
+  width: 0.55rem;
 }
 
 .railBrand strong,
@@ -1906,40 +1990,49 @@
   display: block;
 }
 
+.railBrand {
+  padding-inline: 0.5rem;
+}
+
+.railBrand strong {
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
 .railBrand small {
   margin-top: 0.1rem;
   color: var(--muted);
-  font-size: 0.65rem;
+  font-size: 0.75rem;
 }
 
 .railNav {
   display: grid;
-  gap: 0.3rem;
-  margin-top: 2rem;
+  gap: 0.25rem;
+  margin-top: 2.25rem;
 }
 
 .railNav a {
   display: grid;
   grid-template-columns: 1.5rem 1fr;
   align-items: center;
-  gap: 0.65rem;
+  gap: 0.6rem;
   min-height: 2.75rem;
-  padding: 0.75rem;
-  border-radius: 0.7rem;
-  color: var(--ink-2);
-  font-size: 0.82rem;
-  font-weight: 700;
+  padding: 0 0.75rem;
+  border-radius: 0.8rem;
+  color: var(--muted);
+  font-size: 0.95rem;
+  font-weight: 500;
   text-decoration: none;
 }
 
 .railNav a[aria-current="page"] {
-  color: var(--green-strong);
+  color: var(--ink);
   background: var(--green-soft);
 }
 
 .railNav svg {
-  width: 1.05rem;
-  height: 1.05rem;
+  width: 1.25rem;
+  height: 1.25rem;
 }
 
 .railFooter {
@@ -1953,9 +2046,9 @@
   display: grid;
   grid-template-columns: 1.5rem 1fr;
   gap: 0.55rem;
-  padding: 0.8rem;
-  border-radius: 0.7rem;
-  color: var(--ink-2);
+  padding: 0.9rem;
+  border-radius: 0.9rem;
+  color: var(--muted);
   background: var(--surface-soft);
 }
 
@@ -1968,30 +2061,98 @@
 .railPrivacy strong {
   display: block;
   color: var(--ink);
-  font-size: 0.7rem;
+  font-size: 0.82rem;
+  font-weight: 600;
 }
 
 .railPrivacy p {
   margin: 0.15rem 0 0;
-  font-size: 0.62rem;
-  line-height: 1.45;
+  font-size: 0.75rem;
+  line-height: 1.4;
 }
 
 .logout {
-  min-height: 2.5rem;
-  border: 0;
-  color: var(--muted);
+  width: 100%;
+  min-height: 2.75rem;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  color: var(--ink-2);
   background: transparent;
   font: inherit;
-  font-size: 0.72rem;
-  font-weight: 700;
+  font-size: 0.875rem;
+  font-weight: 500;
   cursor: pointer;
+}
+
+.logout:hover {
+  color: var(--ink);
+  background: var(--surface-soft);
+}
+
+.contextCard {
+  display: grid;
+  gap: 0.2rem;
+  padding: 1.1rem;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-panel);
+  background: var(--surface);
+}
+
+.contextCard > span {
+  margin-top: 0.6rem;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.contextCard > span:first-child {
+  margin-top: 0;
+}
+
+.contextCard > strong {
+  font-size: 0.95rem;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.contextCard > small {
+  margin-top: 0.8rem;
+  padding-top: 0.8rem;
+  border-top: 1px solid var(--rule);
+  color: var(--muted);
+  font-size: 0.75rem;
 }
 
 
 @media (max-width: 1119px) {
+  /*
+   * Phones and tablets dock the actions in an opaque bar above the tab bar,
+   * so a button never sits on top of a visible, tappable entry.
+   */
   .floatingUtilities {
-    bottom: calc(4.75rem + env(safe-area-inset-bottom));
+    right: 0;
+    bottom: calc(4.5rem + env(safe-area-inset-bottom));
+    left: 0;
+    padding: 0.625rem max(1rem, env(safe-area-inset-right)) 0.625rem max(1rem, env(safe-area-inset-left));
+    border-top: 1px solid var(--rule);
+    background: var(--rail-overlay);
+    backdrop-filter: blur(12px);
+    pointer-events: auto;
+  }
+
+  .floatingUtilities > .quickLogActions {
+    width: 100%;
+  }
+
+  .floatingUtilities .quickLogActions > form:first-child {
+    flex: 1;
+  }
+
+  .floatingUtilities .quickLogFood {
+    width: 100%;
+  }
+
+  .floatingUtilities .quickLogButton {
+    box-shadow: none;
   }
 
   .dateRailWrap {
@@ -2014,41 +2175,40 @@
   }
 
   .dateRailWrap {
-    margin-inline: -0.45rem;
+    margin-inline: 0;
   }
 
   .dateRail {
-    gap: 0;
+    gap: 0.15rem;
   }
 
   .calorieRow {
-    padding-inline: 0.75rem;
+    padding-inline: 1rem;
   }
 
   .calorieRow p strong {
-    font-size: 1.3rem;
+    font-size: 2.5rem;
   }
 
   .nutrientCell {
-    padding-inline: 0.5rem;
+    padding-inline: 0.6rem;
   }
 
   .foodEntryCard time,
   .pendingTime {
-    margin-bottom: 0.3rem;
-    font-size: 0.65rem;
-  }
-
-  .foodEntryContent strong {
-    font-size: 0.76rem;
-  }
-
-  .foodEntryEnergy {
     font-size: 0.72rem;
   }
 
+  .foodEntryContent strong {
+    font-size: 0.9rem;
+  }
+
+  .foodEntryEnergy {
+    font-size: 1.1rem;
+  }
+
   .pendingEntryContent strong {
-    font-size: 0.76rem;
+    font-size: 0.9rem;
   }
 
   .pendingEntryEnergy {
@@ -2088,8 +2248,7 @@
   }
 
   .floatingUtilities {
-    align-items: flex-end;
-    flex-direction: column;
+    align-items: center;
   }
 }
 
@@ -2129,7 +2288,7 @@
   .appSurface {
     width: min(100%, var(--page-width));
     margin-inline: auto;
-    padding: 1.5rem var(--surface-gutter) 6rem;
+    padding: 1.5rem var(--surface-gutter) 10rem;
   }
 
   .mobileNav {
@@ -2151,22 +2310,31 @@
 
 @media (min-width: 1120px) {
   .shell {
-    --page-width: 77.5rem;
-    --surface-gutter: 2.25rem;
+    --page-width: 100%;
+    --surface-gutter: 3rem;
     display: grid;
-    grid-template-columns: 15.5rem minmax(35rem, 41.25rem) 16.5rem;
-    gap: 1px;
-    width: min(var(--page-width), 100%);
+    grid-template-columns: 15.5rem minmax(0, 1fr) 19rem;
+    width: 100%;
     min-height: 100dvh;
-    margin-inline: auto;
     padding: 0;
-    background: var(--rule);
-    box-shadow: 0 0 70px rgb(0 0 0 / 14%);
+  }
+
+  .shell:has(> .desktopContext) {
+    grid-template-columns: 15.5rem minmax(0, 52rem) 19rem;
   }
 
   .foodLogShell {
-    --page-width: 63.5rem;
-    grid-template-columns: 15.5rem minmax(0, 48rem);
+    grid-template-columns: 15.5rem minmax(0, 1fr);
+  }
+
+  .calendarCard {
+    max-width: 52rem;
+  }
+
+  .appSurface .calendarDay,
+  .appSurface .calendarFuture {
+    min-height: 4.5rem;
+    font-size: 1rem;
   }
 
   .desktopRail,
@@ -2175,32 +2343,101 @@
     top: 0;
     display: flex;
     height: 100dvh;
-    padding: 1.35rem 1.1rem;
-    background: var(--rail);
+    padding: 1.75rem 1rem 1.5rem;
   }
 
   .desktopRail {
     flex-direction: column;
+    border-right: 1px solid var(--rule);
+    background: var(--rail);
   }
 
   .desktopContext {
     flex-direction: column;
-    padding: 1.5rem 1.15rem;
+    padding: 2.5rem 2rem 1.5rem 1rem;
   }
 
   .appSurface {
     width: 100%;
+    max-width: 52rem;
     margin-inline: 0;
-    padding: 1.5rem var(--surface-gutter) 2.5rem;
-    background: var(--ground);
+    padding: 2.25rem var(--surface-gutter) 3rem;
+  }
+
+  .foodLogShell .appSurface {
+    max-width: 80rem;
+    padding-bottom: 7rem;
   }
 
   .mobileHeader {
-    padding-top: 0;
+    padding: 0.5rem 0 1.25rem;
   }
 
   .mobileNav {
     display: none;
+  }
+
+  .floatingUtilities {
+    right: 3rem;
+    bottom: 2rem;
+  }
+
+  .foodLogLayout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 23.75rem;
+    grid-template-areas:
+      "dates dates"
+      "log summary"
+      "log water"
+      "log ."
+      "note .";
+    grid-template-rows: auto auto auto 1fr auto;
+    column-gap: 1.5rem;
+    align-items: start;
+  }
+
+  .foodLogLayout > .dateRailWrap {
+    grid-area: dates;
+    margin-bottom: 1.5rem;
+  }
+
+  .foodLogLayout > .summarySurface {
+    grid-area: summary;
+  }
+
+  .foodLogLayout > .waterOverview {
+    grid-area: water;
+  }
+
+  .foodLogLayout > .timelineSection {
+    grid-area: log;
+    margin-top: 0;
+  }
+
+  .foodLogLayout > .dateNote {
+    grid-area: note;
+    text-align: left;
+  }
+
+  .dateButton,
+  .futureDate {
+    min-height: 4rem;
+    border: 1px solid var(--rule);
+    background: var(--surface);
+  }
+
+  .selectedDate {
+    border-color: var(--green-dark);
+    background: var(--green-dark);
+  }
+
+  .futureDate {
+    border-style: dashed;
+    background: transparent;
+  }
+
+  .dateRail {
+    gap: 0.5rem;
   }
 }
 
@@ -2284,4 +2521,323 @@
 
 @media (prefers-reduced-motion: reduce) {
   .photoActivityDot { animation: none; }
+}
+
+@media (min-width: 1120px) {
+  .shell.settingsShell {
+    grid-template-columns: 15.5rem 17rem minmax(0, 1fr);
+    grid-template-areas:
+      "rail side context"
+      "rail side main";
+    grid-template-rows: auto 1fr;
+  }
+
+  .settingsShell > .desktopRail {
+    grid-area: rail;
+  }
+
+  .settingsShell > nav[aria-label="Settings sections"] {
+    grid-area: side;
+  }
+
+  .settingsShell > .appSurface {
+    grid-area: main;
+  }
+
+  .settingsShell > .desktopContext {
+    position: static;
+    grid-area: context;
+    height: auto;
+    max-width: 52rem;
+    padding: 2rem var(--surface-gutter) 0;
+  }
+
+  .settingsShell .contextCard {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.25rem 0.5rem;
+    padding: 0.8rem 1.1rem;
+  }
+
+  .settingsShell .contextCard > span,
+  .settingsShell .contextCard > span:first-child {
+    margin: 0;
+  }
+
+  .settingsShell .contextCard > strong {
+    margin-right: 1.25rem;
+    font-size: 0.9rem;
+  }
+
+  .settingsShell .contextCard > small {
+    margin: 0 0 0 auto;
+    padding: 0;
+    border: 0;
+  }
+}
+
+[data-calorie-tone] {
+  --calorie-tone: var(--muted);
+}
+
+[data-calorie-tone="within"] {
+  --calorie-tone: var(--green-strong);
+}
+
+[data-calorie-tone="over"],
+[data-calorie-tone="incomplete"] {
+  --calorie-tone: var(--warning);
+}
+
+.dateCalories {
+  display: block;
+  width: 0.3rem;
+  height: 0.3rem;
+  margin: 0.3rem auto 0;
+  overflow: hidden;
+  border-radius: 50%;
+  color: transparent;
+  background: var(--calorie-tone);
+  font-size: 0;
+  font-style: normal;
+}
+
+/* On the accent-filled selected day, settled totals use the contrast color and over stays amber. */
+.selectedDate .dateCalories {
+  width: 0.4rem;
+  height: 0.4rem;
+  background: var(--on-accent);
+}
+
+.selectedDate .dateCalories[data-calorie-tone="over"] {
+  background: var(--warning);
+  box-shadow: 0 0 0 1.5px var(--on-accent);
+}
+
+/* Incomplete days use a hollow marker so they never read as a settled total. */
+.dateCalories[data-calorie-tone="incomplete"],
+[data-calorie-tone="incomplete"] .calendarCalories {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--calorie-tone);
+}
+
+.selectedDate .dateCalories[data-calorie-tone="incomplete"] {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--on-accent);
+}
+
+.dateProgress {
+  display: none;
+}
+
+.calendarCalories {
+  display: block;
+  width: 0.3rem;
+  height: 0.3rem;
+  border-radius: 50%;
+  background: var(--calorie-tone);
+}
+
+.calendarCalories small,
+.calendarCalories > span {
+  display: none;
+}
+
+.calendarDay {
+  align-content: center;
+  gap: 0.2rem;
+}
+
+@media (min-width: 1120px) {
+  .dateCalories {
+    width: auto;
+    height: auto;
+    margin-top: 0.2rem;
+    overflow: visible;
+    border-radius: 0;
+    color: var(--muted);
+    background: none;
+    font-size: 0.72rem;
+    font-weight: 400;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .dateCalories[data-calorie-tone="over"] {
+    color: var(--warning);
+  }
+
+  .selectedDate .dateCalories {
+    width: auto;
+    height: auto;
+    color: inherit;
+    background: none;
+    box-shadow: none;
+  }
+
+  .appSurface .calendarDay {
+    place-items: stretch;
+    align-content: space-between;
+    padding: 0.6rem 0.7rem;
+    text-align: left;
+  }
+
+  .appSurface .calendarCalories {
+    display: grid;
+    gap: 0.3rem;
+    width: auto;
+    height: auto;
+    border-radius: 0;
+    background: none;
+  }
+
+  .appSurface .calendarCalories small {
+    display: block;
+    color: var(--muted);
+    font-size: 0.72rem;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .appSurface [data-calorie-tone="over"] .calendarCalories small {
+    color: var(--warning);
+  }
+
+  .appSurface .calendarToday .calendarCalories small {
+    color: inherit;
+  }
+
+  .appSurface .calendarCalories > span {
+    display: block;
+    height: 0.25rem;
+    overflow: hidden;
+    border-radius: 999px;
+    background: var(--well);
+  }
+
+  .appSurface .calendarCalories > span > span {
+    display: block;
+    width: var(--progress, 0%);
+    height: 100%;
+    border-radius: inherit;
+    background: var(--calorie-tone);
+  }
+
+  .appSurface .calendarToday .calendarCalories > span > span {
+    background: currentColor;
+  }
+}
+
+@media (min-width: 1120px) {
+  .nutrientTrack {
+    width: 100%;
+    flex-direction: column;
+    transform: none !important;
+  }
+
+  .nutrientPage {
+    flex-basis: auto;
+  }
+
+  .nutrientPage + .nutrientPage {
+    border-top: 1px solid var(--rule);
+  }
+
+  .carouselControls {
+    display: none;
+  }
+}
+
+@media (min-width: 1120px) {
+  .dateProgress {
+    display: block;
+    height: 0.2rem;
+    margin: 0.35rem 0.75rem 0;
+    overflow: hidden;
+    border-radius: 999px;
+    background: var(--well);
+  }
+
+  .dateProgress > span {
+    display: block;
+    width: var(--progress, 0%);
+    height: 100%;
+    border-radius: inherit;
+    background: var(--calorie-tone);
+  }
+
+  .selectedDate .dateProgress {
+    background: rgb(0 0 0 / 18%);
+  }
+
+  .selectedDate .dateProgress > span {
+    background: var(--on-accent);
+  }
+
+  .dateCalories[data-calorie-tone="incomplete"],
+  .selectedDate .dateCalories[data-calorie-tone="incomplete"] {
+    box-shadow: none;
+  }
+
+  .appSurface [data-calorie-tone="incomplete"] .calendarCalories {
+    box-shadow: none;
+  }
+}
+
+/* An empty day carries its own actions on phones, where floating buttons would cover it. */
+.emptyDayActions {
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.emptyDayActions > form:last-child {
+  order: 0;
+}
+
+.emptyDayActions .quickLogButton {
+  width: auto;
+  min-height: 3rem;
+  padding: 0 1.2rem 0 1rem;
+  box-shadow: none;
+}
+
+@media (max-width: 1119px) {
+  .foodLogShell:has(.emptyDay) .floatingUtilities {
+    display: none;
+  }
+}
+
+@media (min-width: 1120px) {
+  .emptyDayActions {
+    display: none;
+  }
+}
+
+@media (max-width: 1119px) {
+  .emptyDay .emptyIcon {
+    display: none;
+  }
+}
+
+/* Tablets center the tab bar in the page column; the action bar matches it and keeps natural button sizes. */
+@media (min-width: 760px) and (max-width: 1119px) {
+  .floatingUtilities {
+    right: auto;
+    left: 50%;
+    width: var(--page-width);
+    padding-inline: var(--surface-gutter);
+    border-inline: 1px solid var(--rule);
+    transform: translateX(-50%);
+  }
+
+  .floatingUtilities .quickLogActions {
+    justify-content: center;
+  }
+
+  .floatingUtilities .quickLogActions > form:first-child {
+    flex: none;
+  }
+
+  .floatingUtilities .quickLogFood {
+    width: auto;
+  }
 }

@@ -127,5 +127,5 @@ test.each(["light", "dark"] as const)("connection verification errors follow the
   expect(response.status).toBe(503);
   const html = await response.text();
   expect(html).toContain(`color-scheme:${theme}`);
-  expect(html).toContain(theme === "light" ? "background:#eef2f4;color:#17212b" : "background:#0a0f14;color:#edf2f7");
+  expect(html).toContain(theme === "light" ? "background:#f5f1e8;color:#1d1a15" : "background:#12110e;color:#f3efe7");
 });

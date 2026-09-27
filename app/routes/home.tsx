@@ -33,6 +33,7 @@ import { DateRail } from "../date-rail";
 import { AppNavigation } from "../app-navigation";
 import { isTestEnvironment } from "../runtime.server";
 import { UiIcon } from "../ui-icon";
+import { useWideLayout } from "./wide-layout";
 import methodStyles from "./add-food-method.module.css";
 import { BarcodeCameraScanner } from "./barcode-camera-scanner";
 import { getAuthenticationService } from "../auth/runtime.server";
@@ -62,6 +63,7 @@ import {
   parseIsoLocalDate,
 } from "../food-log/date";
 import {
+  type DailyCalories,
   FutureFoodLogDateError,
   InvalidFoodLogDateError,
 } from "../food-log/food-log.server";
@@ -444,6 +446,14 @@ export async function loader({ request }: Route.LoaderArgs) {
   const calendar = requestedCalendar
     ? buildCalendarMonth(requestedCalendar, foodLog.today, foodLog.selectedDate)
     : undefined;
+  const summarizedDates = [
+    ...nearbyDates.map((day) => day.date),
+    ...(calendar?.days.map((day) => day.date) ?? []),
+  ].filter((date) => date <= foodLog.today);
+  const dailyCalories = foodLogServiceForRequest(request).dailyCalories(
+    session.user.id,
+    [...new Set(summarizedDates)],
+  );
 
   const requestedEntry = url.searchParams.get("entry");
   let foodEntryEditor;
@@ -778,6 +788,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       copyError,
       copyIdempotencyKeys,
       csrfToken: session.csrfToken,
+      dailyCalories,
       foodEntryEditor,
       manualEntrySaved,
       photoMeals,
@@ -1286,11 +1297,7 @@ function waterGoalValues(
   displayUnits: DisplayUnits,
 ) {
   return {
-    water: formatWaterAmount(
-      waterTargetMicroliters,
-      displayUnits,
-      3,
-    ),
+    water: formatWaterReading(waterTargetMicroliters, displayUnits),
     waterUnit: displayUnits === "metric" ? "ml" : "fl oz",
   };
 }
@@ -1321,11 +1328,45 @@ function formatWaterAmount(
   );
 }
 
+/**
+ * A water amount as people read it: whole ml or tenths of a fl oz, matching the
+ * preset labels, so unit conversion never shows noise like 473.176 ml. Amounts
+ * under one unit keep their exact thousandths.
+ */
+function formatWaterReading(microliters: number, displayUnits: DisplayUnits): string {
+  const oneUnitMicroliters = displayUnits === "metric" ? 1_000 : 29_573.529_562_5;
+  const digits =
+    microliters < oneUnitMicroliters ? 3 : displayUnits === "metric" ? 0 : 1;
+  return formatWaterAmount(microliters, displayUnits, digits);
+}
+
+/** How a day's calories compare with that day's goal, for the week strip and calendar. */
+function calorieDaySummary(summary: DailyCalories | undefined) {
+  if (!summary || summary.entryCount === 0) return undefined;
+  const kcal = Math.round(summary.knownMilliKcal / 1_000).toLocaleString("en-US");
+  const goal = summary.goalMilliKcal;
+  return {
+    label: `${kcal} kcal${summary.isIncomplete ? " known" : ""}`,
+    progress: goal ? `${Math.min(100, (summary.knownMilliKcal / goal) * 100).toFixed(1)}%` : undefined,
+    // Known calories already past the goal are over; otherwise an incomplete day stays undecided.
+    tone:
+      goal === null
+        ? "logged"
+        : summary.knownMilliKcal > goal
+          ? "over"
+          : summary.isIncomplete
+            ? "incomplete"
+            : "within",
+  } as const;
+}
+
 function CalendarView({
   calendar,
+  dailyCalories,
   selectedDate,
 }: {
   calendar: NonNullable<Route.ComponentProps["loaderData"]["calendar"]>;
+  dailyCalories: Record<string, DailyCalories>;
   selectedDate: string;
 }) {
   return (
@@ -1384,6 +1425,9 @@ function CalendarView({
             <span aria-hidden="true" key={`empty-${index}`} />
           ))}
           {calendar.days.map((day) => {
+            const calories = day.isFuture
+              ? undefined
+              : calorieDaySummary(dailyCalories[day.date]);
             const label = formatLocalDate(day.date, {
               day: "numeric",
               month: "long",
@@ -1409,12 +1453,23 @@ function CalendarView({
             ) : (
               <Link
                 aria-current={day.isSelected ? "date" : undefined}
-                aria-label={label}
+                aria-label={calories ? `${label}, ${calories.label}` : label}
                 className={className}
+                data-calorie-tone={calories?.tone}
                 key={day.date}
                 to={foodLogHref(day.date)}
               >
-                {day.day}
+                <span>{day.day}</span>
+                {calories ? (
+                  <span className={styles.calendarCalories} aria-hidden="true">
+                    <small>{calories.label}</small>
+                    {calories.progress ? (
+                      <span style={{ "--progress": calories.progress } as CSSProperties}>
+                        <span />
+                      </span>
+                    ) : null}
+                  </span>
+                ) : null}
               </Link>
             );
           })}
@@ -1431,13 +1486,15 @@ function QuickLogActionForm({
   icon,
   intent,
   label,
+  visibleLabel,
 }: {
   className: string;
   csrfToken: string;
   date: string;
-  icon: "utensils" | "water";
+  icon: "plus" | "water";
   intent: "add-food" | "add-water";
   label: string;
+  visibleLabel?: string;
 }) {
   return (
     <Form method="post">
@@ -1454,6 +1511,7 @@ function QuickLogActionForm({
         value={intent}
       >
         <UiIcon name={icon} />
+        {visibleLabel ? <span>{visibleLabel}</span> : null}
       </button>
     </Form>
   );
@@ -1462,23 +1520,26 @@ function QuickLogActionForm({
 function QuickLogActions({
   csrfToken,
   date,
+  inline = false,
 }: {
   csrfToken: string;
   date: string;
+  inline?: boolean;
 }) {
   return (
     <div
-      aria-label="Quick log"
-      className={styles.quickLogActions}
+      aria-label={inline ? "Add to this day" : "Quick log"}
+      className={inline ? `${styles.quickLogActions} ${styles.emptyDayActions}` : styles.quickLogActions}
       role="group"
     >
       <QuickLogActionForm
         className={`${styles.quickLogButton} ${styles.quickLogFood}`}
         csrfToken={csrfToken}
         date={date}
-        icon="utensils"
+        icon="plus"
         intent="add-food"
         label="Add Food"
+        visibleLabel="Add food"
       />
       <QuickLogActionForm
         className={`${styles.quickLogButton} ${styles.quickLogWater}`}
@@ -1487,6 +1548,7 @@ function QuickLogActions({
         icon="water"
         intent="add-water"
         label="Add Water"
+        visibleLabel={inline ? "Add water" : undefined}
       />
     </div>
   );
@@ -1585,6 +1647,7 @@ function DailySummary({
 }: {
   foodLog: Route.ComponentProps["loaderData"]["foodLog"];
 }) {
+  const wideLayout = useWideLayout();
   const [nutrientDragX, setNutrientDragX] = useState(0);
   const [nutrientPage, setNutrientPage] = useState(0);
   const [nutrientSettling, setNutrientSettling] = useState(false);
@@ -1678,11 +1741,7 @@ function DailySummary({
   const calorieKnown = formatEnergy(calorieTotal.known);
   const calorieGoalDisplay = calorieGoal ? formatEnergy(calorieGoal) : undefined;
   const waterTotal = foodLog.waterTotalMicroliters;
-  const waterTotalDisplay = formatWaterAmount(
-    waterTotal,
-    foodLog.displayUnits,
-    3,
-  );
+  const waterTotalDisplay = formatWaterReading(waterTotal, foodLog.displayUnits);
   const waterUnit = foodLog.displayUnits === "metric" ? "ml" : "fl oz";
   const equivalentGlasses = new Intl.NumberFormat("en-US", {
     maximumFractionDigits: 1,
@@ -1815,7 +1874,9 @@ function DailySummary({
           >
             {metricPages.map((metrics, page) => (
               <div
-                aria-hidden={nutrientPage !== page}
+                // Only a measured phone layout hides the off-screen page; desktop and
+                // server-rendered markup keep every nutrient exposed.
+                aria-hidden={wideLayout === false && nutrientPage !== page}
                 className={styles.nutrientPage}
                 key={page}
               >
@@ -1825,32 +1886,34 @@ function DailySummary({
               </div>
             ))}
           </div>
-          <div
-            aria-label="Nutrition pages"
-            className={styles.carouselControls}
-            role="group"
-          >
-            <button
-              aria-label="Show protein, carbohydrate, and fat"
-              aria-pressed={nutrientPage === 0}
-              className={`${styles.carouselDot} ${nutrientPage === 0 ? styles.activeCarouselDot : ""}`}
-              onClick={() => {
-                setNutrientSettling(false);
-                setNutrientPage(0);
-              }}
-              type="button"
-            />
-            <button
-              aria-label="Show fiber, sugar, and sodium"
-              aria-pressed={nutrientPage === 1}
-              className={`${styles.carouselDot} ${nutrientPage === 1 ? styles.activeCarouselDot : ""}`}
-              onClick={() => {
-                setNutrientSettling(false);
-                setNutrientPage(1);
-              }}
-              type="button"
-            />
-          </div>
+          {wideLayout === true ? null : (
+            <div
+              aria-label="Nutrition pages"
+              className={styles.carouselControls}
+              role="group"
+            >
+              <button
+                aria-label="Show protein, carbohydrate, and fat"
+                aria-pressed={nutrientPage === 0}
+                className={`${styles.carouselDot} ${nutrientPage === 0 ? styles.activeCarouselDot : ""}`}
+                onClick={() => {
+                  setNutrientSettling(false);
+                  setNutrientPage(0);
+                }}
+                type="button"
+              />
+              <button
+                aria-label="Show fiber, sugar, and sodium"
+                aria-pressed={nutrientPage === 1}
+                className={`${styles.carouselDot} ${nutrientPage === 1 ? styles.activeCarouselDot : ""}`}
+                onClick={() => {
+                  setNutrientSettling(false);
+                  setNutrientPage(1);
+                }}
+                type="button"
+              />
+            </div>
+          )}
         </section>
       </section>
 
@@ -2727,7 +2790,7 @@ function WaterEventDialog({
                       onClick={() => selectPreset(preset.selection)}
                       type="button"
                     >
-                      <span aria-hidden="true">♢</span>
+                      <UiIcon name="water" />
                       <strong>{presetAmount}</strong>
                       <span>{unit}</span>
                       <small>{preset.label}</small>
@@ -2752,7 +2815,7 @@ function WaterEventDialog({
                 onClick={selectExact}
                 type="button"
               >
-                <span aria-hidden="true">✎</span>
+                <UiIcon name="pencil" />
                 <strong>Exact</strong>
                 <span>amount</span>
                 <small>Custom</small>
@@ -2762,7 +2825,7 @@ function WaterEventDialog({
               <p aria-live="polite" className={styles.waterSelectionSummary}>
                 {servingCount === 0
                   ? "Tap a size to add a serving."
-                  : `${servingCount} ${servingCount === 1 ? "serving" : "servings"} · ${formatWaterAmount(presetTotalMicroliters, displayUnits)} ${unit}`}
+                  : `${servingCount} ${servingCount === 1 ? "serving" : "servings"} · ${formatWaterReading(presetTotalMicroliters, displayUnits)} ${unit}`}
                 {presetTotalOunces + 8 > 500 ? " · Maximum amount reached" : null}
               </p>
             ) : null}
@@ -4076,6 +4139,7 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
     copyError,
     copyIdempotencyKeys,
     csrfToken,
+    dailyCalories = {},
     foodEntryEditor,
     manualEntrySaved,
     foodLog,
@@ -4160,13 +4224,17 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
           {calendar ? (
             <CalendarView
               calendar={calendar}
+              dailyCalories={dailyCalories}
               selectedDate={foodLog.selectedDate}
             />
           ) : (
-            <section aria-label="Food Log">
+            <section aria-label="Food Log" className={styles.foodLogLayout}>
               <DateRail
                 key={foodLog.selectedDate}
-                nearbyDates={nearbyDates}
+                nearbyDates={nearbyDates.map((day) => ({
+                  ...day,
+                  calories: calorieDaySummary(dailyCalories[day.date]),
+                }))}
                 selectedDate={foodLog.selectedDate}
                 today={foodLog.today}
               />
@@ -4243,7 +4311,7 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
                               </small>
                             </span>
                             <span className={styles.foodEntryEnergy}>
-                              {formatWaterAmount(
+                              {formatWaterReading(
                                 entry.amountMicroliters,
                                 foodLog.displayUnits,
                               )}{" "}
@@ -4271,9 +4339,14 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
                     <h3>No entries for this day</h3>
                     <p>
                       {foodLog.selectedDate === foodLog.today
-                        ? "Use the floating food or water action when you’re ready."
-                        : "Past-day entries start at 12:00 PM. Use the floating food or water action when you’re ready."}
+                        ? "Add food or water when you’re ready."
+                        : "Past-day entries start at 12:00 PM. Add food or water when you’re ready."}
                     </p>
+                    <QuickLogActions
+                      csrfToken={csrfToken}
+                      date={foodLog.selectedDate}
+                      inline
+                    />
                     {actionData?.message ? (
                       <p className={styles.actionMessage} role="status">
                         {actionData.message}

@@ -64,7 +64,7 @@ test("administrator opens the safe member directory from Settings", async ({
 
   await expect(page).toHaveURL("/settings/users");
   await expect(page.getByRole("heading", { name: "Users" })).toBeVisible();
-  const memberRows = page.getByRole("listitem");
+  const memberRows = page.getByRole("main").getByRole("listitem");
   await expect(memberRows).toHaveCount(2);
   await expect(memberRows.nth(0)).toContainText("alpha.member");
   await expect(memberRows.nth(0)).toContainText("Active");

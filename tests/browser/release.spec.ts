@@ -194,6 +194,26 @@ test("one mobile Chromium journey verifies the complete private MVP", async ({
     name: /Plain nonfat Greek yogurt.*150\.5 kcal/,
   });
   await expect(foodEntry).toBeVisible();
+  // Phone actions dock in a full-width bar, so no button sits over a visible entry.
+  const actionBar = page.getByRole("complementary", { name: "Floating utilities" });
+  expect((await actionBar.boundingBox())!.width).toBe(390);
+  expect(
+    await actionBar.evaluate((bar) => getComputedStyle(bar).backgroundColor),
+  ).not.toBe("rgba(0, 0, 0, 0)");
+  const coveredEntryPoints = await foodEntry.evaluate((entry) => {
+    const bar = document
+      .querySelector('[aria-label="Floating utilities"]')!
+      .getBoundingClientRect();
+    const box = entry.getBoundingClientRect();
+    const covered: number[][] = [];
+    for (let y = box.top + 8; y < Math.min(box.bottom - 8, bar.top); y += 6) {
+      for (let x = box.left + 12; x < box.right - 12; x += 12) {
+        if (!entry.contains(document.elementFromPoint(x, y))) covered.push([x, y]);
+      }
+    }
+    return covered;
+  });
+  expect(coveredEntryPoints).toEqual([]);
   await expect(
     page.getByRole("progressbar", { name: "Calorie progress" }),
   ).toHaveAttribute("aria-valuetext", /150\.5 of 2,050 kcal target/);

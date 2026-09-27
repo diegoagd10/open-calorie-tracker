@@ -3,11 +3,11 @@
   margin-bottom: 1rem;
   padding: 1rem;
   border: 1px solid var(--rule);
-  border-radius: 1rem;
+  border-radius: var(--radius-panel);
   background: var(--surface);
 }
 .card h2 { margin: 0 0 0.35rem; font-size: 1rem; }
-.card p { margin: 0 0 1rem; color: var(--muted); font-size: 0.8rem; line-height: 1.5; }
+.card p { margin: 0 0 1rem; color: var(--muted); font-size: 0.875rem; line-height: 1.5; }
 .options { display: flex; gap: 0.5rem; }
 .options button {
   min-height: 44px;
@@ -20,5 +20,5 @@
   font: inherit;
   cursor: pointer;
 }
-.options button[aria-pressed="true"] { color: var(--green-strong); border-color: var(--green-border); background: var(--green-soft); font-weight: 750; }
+.options button[aria-pressed="true"] { color: var(--green-strong); border-color: var(--green-border); background: var(--green-soft); font-weight: 600; }
 .options button:disabled { cursor: wait; }

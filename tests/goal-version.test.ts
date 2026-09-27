@@ -382,6 +382,48 @@ test("effective dates use the account local day across DST boundaries", async ()
   database.close();
 });
 
+test("Goal Version history lists one version per date with the date it stops applying", async () => {
+  const database = await setupDatabase();
+  const client = database.getClient();
+  const userId = insertConfiguredUser(client, "history.goals");
+  const service = new GoalVersionService(
+    client,
+    () => new Date("2026-03-01T17:00:00.000Z"),
+  );
+  service.replace(userId, "2026-03-10", replacement);
+  service.replace(userId, "2026-03-10", { ...replacement, calorieTargetMilliKcal: 1_800_000 });
+  service.replace(userId, "2026-04-01", replacement);
+
+  const history = service.history(userId);
+  expect(history.map(({ effectiveDate, lastDate }) => [effectiveDate, lastDate])).toEqual([
+    ["2026-04-01", null],
+    ["2026-03-10", "2026-03-31"],
+    ["2026-01-01", "2026-03-09"],
+  ]);
+  expect(history[1].calorieTargetMilliKcal).toBe(1_800_000);
+  expect(service.history(userId + 1)).toEqual([]);
+  database.close();
+});
+
+test("navigation today follows the account time zone and is absent before setup", async () => {
+  const database = await setupDatabase();
+  const client = database.getClient();
+  const userId = insertConfiguredUser(client, "local.today");
+  const unconfiguredUserId = client
+    .insert(users)
+    .values({ createdAt: "2026-01-01T00:00:00.000Z", usernameNormalized: "no.setup" })
+    .returning({ id: users.id })
+    .get().id;
+  const eveningInNewYork = new GoalVersionService(
+    client,
+    () => new Date("2026-09-28T02:30:00.000Z"),
+  );
+
+  expect(eveningInNewYork.localToday(userId)).toBe("2026-09-27");
+  expect(eveningInNewYork.localToday(unconfiguredUserId)).toBeUndefined();
+  database.close();
+});
+
 test("a failed Goal Version replacement leaves goals and display units unchanged", async () => {
   const database = await setupDatabase();
   const client = database.getClient();

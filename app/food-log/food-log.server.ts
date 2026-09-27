@@ -2,6 +2,10 @@ import { and, desc, eq, lte } from "drizzle-orm";
 
 import type { ApplicationDatabaseClient } from "../database/database.server";
 import {
+  readFoodEntryCalories,
+  readGoalVersionsInOrder,
+} from "../database/goal-history.server";
+import {
   foodEntries,
   goalVersions,
   userPreferences,
@@ -40,6 +44,13 @@ const nutritionFields = [
 ] as const;
 
 type FoodEntrySnapshot = ReturnType<typeof foodEntrySnapshot>;
+
+export type DailyCalories = {
+  entryCount: number;
+  goalMilliKcal: number | null;
+  isIncomplete: boolean;
+  knownMilliKcal: number;
+};
 
 function nutritionTotals(entries: FoodEntrySnapshot[]) {
   return Object.fromEntries(
@@ -166,6 +177,38 @@ export class FoodLogService {
         0,
       ),
     };
+  }
+
+  /**
+   * Calorie totals for several local dates at once, each with the calorie goal
+   * of the Goal Version effective on that date.
+   */
+  dailyCalories(userId: number, dates: readonly string[]): Record<string, DailyCalories> {
+    if (!dates.length) return {};
+    const ordered = [...dates].sort();
+    const first = ordered[0];
+    const last = ordered[ordered.length - 1];
+    const entries = readFoodEntryCalories(this.#database, userId, first, last);
+    const goals = readGoalVersionsInOrder(this.#database, userId, last);
+
+    return Object.fromEntries(
+      ordered.map((date) => {
+        const dayEntries = entries.filter((entry) => entry.foodLogDate === date);
+        const goal = goals.filter((version) => version.effectiveDate <= date).pop();
+        return [
+          date,
+          {
+            entryCount: dayEntries.length,
+            goalMilliKcal: goal?.calorieTargetMilliKcal ?? null,
+            isIncomplete: dayEntries.some((entry) => entry.energyMilliKcal === null),
+            knownMilliKcal: dayEntries.reduce(
+              (total, entry) => total + (entry.energyMilliKcal ?? 0),
+              0,
+            ),
+          },
+        ];
+      }),
+    );
   }
 
   requireWritableDate(userId: number, requestedDate: string): string {
