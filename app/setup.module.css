@@ -43,7 +43,8 @@
 }
 
 .header h1 {
-  font-size: 1.35rem;
+  font-size: clamp(1.875rem, 6vw, 2.25rem);
+  line-height: 1.1;
 }
 
 .header p {
