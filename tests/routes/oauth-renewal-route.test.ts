@@ -34,6 +34,10 @@ let memberSequence = 0;
 function args(request: Request) {
   return { request, params: {}, context: new RouterContextProvider(), pattern: new URL(request.url).pathname, url: new URL(request.url) };
 }
+function asResponse(value: unknown): Response {
+  if (!(value instanceof Response)) throw new Error("Expected an OAuth redirect");
+  return value;
+}
 function post(pathname: string, fields: Record<string, string>, cookie = memberCookie, csrfToken = memberCsrf) {
   return args(new Request(`${origin}${pathname}`, {
     method: "POST", headers: { Cookie: cookie, Origin: origin },
@@ -70,7 +74,7 @@ async function register(name: string) {
 }
 async function issue(clientId: string) {
   const url = authorizationUrl(clientId);
-  const approval = await authorize(post(url.pathname + url.search, { decision: "approve" }));
+  const approval = asResponse(await authorize(post(url.pathname + url.search, { decision: "approve", scope: "daily-log:read" })));
   const code = new URL(approval.headers.get("Location") ?? "").searchParams.get("code") ?? "";
   const response = await tokenAction(tokenPost({
     grant_type: "authorization_code", code, client_id: clientId,

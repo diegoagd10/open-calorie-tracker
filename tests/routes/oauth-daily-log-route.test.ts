@@ -42,6 +42,10 @@ let clientId: string;
 function args(request: Request, pattern = new URL(request.url).pathname) {
   return { request, params: {}, context: new RouterContextProvider(), pattern, url: new URL(request.url) };
 }
+function asResponse(value: unknown): Response {
+  if (!(value instanceof Response)) throw new Error("Expected an OAuth redirect");
+  return value;
+}
 function authorizationUrl(state = "client-state-0123456789") {
   const url = new URL("/oauth/authorize", origin);
   for (const [key, value] of Object.entries({
@@ -54,10 +58,12 @@ function authorizationUrl(state = "client-state-0123456789") {
 function authorizationRequest(cookie = readerCookie, url = authorizationUrl()) {
   return args(new Request(url, { headers: { Cookie: cookie } }));
 }
-function consentPost(decision: "approve" | "deny", cookie = readerCookie, csrfToken = readerCsrf, url = authorizationUrl()) {
+function consentPost(decision: "approve" | "deny", cookie = readerCookie, csrfToken = readerCsrf, url = authorizationUrl(), selectedScope: string | null = decision === "approve" ? "daily-log:read" : null) {
+  const body = new URLSearchParams({ decision, csrfToken });
+  if (selectedScope !== null) body.set("scope", selectedScope);
   return args(new Request(url, {
     method: "POST", headers: { Cookie: cookie, Origin: origin },
-    body: new URLSearchParams({ decision, csrfToken }),
+    body,
   }));
 }
 function tokenPost(code: string, overrides: Record<string, string> = {}) {
@@ -75,7 +81,7 @@ function apiGet(token: string, requestedDate = date) {
   }));
 }
 async function issueToken(cookie = readerCookie, csrfToken = readerCsrf) {
-  const approval = await authorize(consentPost("approve", cookie, csrfToken));
+  const approval = asResponse(await authorize(consentPost("approve", cookie, csrfToken)));
   const code = new URL(approval.headers.get("Location") ?? "").searchParams.get("code") ?? "";
   const response = await exchangeCode(tokenPost(code));
   expect(response.status).toBe(200);
@@ -137,7 +143,7 @@ test("a public client gains a scoped, short-lived token only after consent and P
     permission: "Read your daily Food Log",
     csrfToken: readerCsrf,
   });
-  const approved = await authorize(consentPost("approve"));
+  const approved = asResponse(await authorize(consentPost("approve")));
   expect(approved.status).toBe(302);
   const callback = new URL(approved.headers.get("Location") ?? "");
   expect(callback.origin + callback.pathname).toBe(redirectUri.replace("/callback", "") + "/callback");
@@ -159,6 +165,20 @@ test("a public client gains a scoped, short-lived token only after consent and P
     foodEntries: [], waterEvents: [], events: [], waterTotalMicroliters: 0,
   });
   expect(daily.headers.get("Cache-Control")).toContain("no-store");
+});
+
+test("approval without the displayed permission creates no grant or authorization code", async () => {
+  const database = getApplicationDatabase().getClient();
+  const count = () => ({
+    grants: database.get<{ total: number }>(sql`SELECT COUNT(*) AS total FROM oauth_grants`)?.total,
+    codes: database.get<{ total: number }>(sql`SELECT COUNT(*) AS total FROM oauth_authorization_codes`)?.total,
+  });
+  const before = count();
+  for (const selectedScope of [null, "daily-log:write"]) {
+    const response = await authorize(consentPost("approve", readerCookie, readerCsrf, authorizationUrl(), selectedScope));
+    expect(response).toMatchObject({ data: { error: "Select the Food Log permission before allowing access." }, init: { status: 400 } });
+  }
+  expect(count()).toEqual(before);
 });
 
 test("sign-in resumes a valid public authorization request without accepting arbitrary destinations", async () => {
@@ -209,7 +229,7 @@ test("metadata describes the public PKCE flow and denial creates no code", async
     scopes_supported: ["daily-log:read"],
     token_endpoint_auth_methods_supported: ["none", "client_secret_basic"],
   });
-  const denied = await authorize(consentPost("deny", declinerCookie, declinerCsrf));
+  const denied = asResponse(await authorize(consentPost("deny", declinerCookie, declinerCsrf)));
   const callback = new URL(denied.headers.get("Location") ?? "");
   expect(callback.searchParams.get("error")).toBe("access_denied");
   expect(callback.searchParams.get("code")).toBeNull();
@@ -242,18 +262,18 @@ test("authorization rejects unsafe requests and never redirects to an unregister
   }
   const badRedirect = authorizationUrl();
   badRedirect.searchParams.set("redirect_uri", "https://attacker.example/callback");
-  const rejectedPost = await authorize(consentPost("approve", readerCookie, readerCsrf, badRedirect));
+  const rejectedPost = asResponse(await authorize(consentPost("approve", readerCookie, readerCsrf, badRedirect)));
   expect(rejectedPost.status).toBe(400);
   expect(rejectedPost.headers.get("Location")).toBeNull();
-  const invalidDecision = await authorize(args(new Request(authorizationUrl(), {
+  const invalidDecision = asResponse(await authorize(args(new Request(authorizationUrl(), {
     method: "POST", headers: { Cookie: readerCookie, Origin: origin },
     body: new URLSearchParams({ csrfToken: readerCsrf, decision: "maybe" }),
-  })));
+  }))));
   expect(invalidDecision.status).toBe(400);
 });
 
 test("code exchange binds the public client, exact redirect, verifier, and one use", async () => {
-  const approved = await authorize(consentPost("approve"));
+  const approved = asResponse(await authorize(consentPost("approve")));
   const code = new URL(approved.headers.get("Location") ?? "").searchParams.get("code") ?? "";
   const invalidExchanges: Record<string, string>[] = [
     { code_verifier: "b".repeat(43) },

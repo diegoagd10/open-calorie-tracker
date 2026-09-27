@@ -1,0 +1,239 @@
+.shell {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  padding: 1.5rem;
+  background: var(--color-background);
+}
+
+.card {
+  width: min(100%, 56rem);
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: 1.5rem;
+  background: var(--color-surface);
+  box-shadow: var(--shadow-panel);
+}
+
+.brand {
+  display: flex;
+  min-height: 4.75rem;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1rem 1.75rem;
+  border-bottom: 1px solid var(--color-border-muted);
+  font-size: 0.9rem;
+  font-weight: 750;
+}
+
+.brandMark,
+.appMark {
+  display: grid;
+  flex: none;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--color-ready);
+  background: var(--green-soft);
+  font-weight: 800;
+}
+
+.brandMark {
+  width: 2rem;
+  height: 2rem;
+  font-size: 0.7rem;
+}
+
+.content {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+  gap: clamp(1.5rem, 4vw, 3rem);
+  padding: clamp(1.5rem, 4vw, 2.5rem);
+}
+
+.intro,
+.permissionSection {
+  min-width: 0;
+}
+
+.appMark {
+  width: 3.5rem;
+  height: 3.5rem;
+  font-size: 1.5rem;
+}
+
+.eyebrow {
+  margin: 1.75rem 0 0.5rem;
+  color: var(--color-text-muted);
+  font-size: 0.75rem;
+  font-weight: 750;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.intro h1 {
+  margin: 0;
+  font-size: clamp(1.6rem, 3.5vw, 2.2rem);
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.intro p {
+  line-height: 1.5;
+}
+
+.accountLabel {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.5rem;
+  margin-top: 0.5rem;
+  padding: 0.5rem 0.85rem;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  color: var(--color-text);
+  font-size: 0.85rem;
+  font-weight: 650;
+}
+
+.clientId {
+  margin: 1.25rem 0 0;
+  color: var(--color-text-muted);
+  font-size: 0.75rem;
+  overflow-wrap: anywhere;
+}
+
+.clientId code {
+  color: var(--color-text);
+}
+
+.permissions {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.permissions legend {
+  margin-bottom: 1rem;
+  font-size: 1.05rem;
+  font-weight: 750;
+  overflow-wrap: anywhere;
+}
+
+.permissionRow {
+  display: flex;
+  gap: 0.9rem;
+  padding: 1rem;
+  border: 1px solid var(--color-border);
+  border-radius: 0.85rem;
+  background: var(--ground);
+  cursor: pointer;
+}
+
+.permissionRow input {
+  flex: none;
+  width: 1.25rem;
+  height: 1.25rem;
+  margin: 0.1rem 0 0;
+  accent-color: var(--green-dark);
+  cursor: pointer;
+}
+
+.permissionRow span {
+  display: grid;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.permissionRow strong {
+  font-size: 0.9rem;
+}
+
+.permissionRow small {
+  color: var(--color-text-muted);
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+.help {
+  margin: 1rem 0 0;
+  color: var(--color-text-muted);
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+.error {
+  margin: 1rem 0 0;
+  padding: 0.75rem;
+  border-radius: 0.6rem;
+  color: var(--danger);
+  background: var(--danger-soft);
+  font-size: 0.8rem;
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  padding: 1.25rem 1.75rem;
+  border-top: 1px solid var(--color-border-muted);
+}
+
+.actions button {
+  min-width: 8rem;
+  min-height: 2.75rem;
+  padding: 0.65rem 1.25rem;
+  border-radius: 0.65rem;
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.decline {
+  border: 1px solid var(--color-border);
+  color: var(--color-text);
+  background: var(--color-surface);
+}
+
+.decline:hover {
+  background: var(--surface-soft);
+}
+
+.allow {
+  border: 1px solid var(--green-dark);
+  color: white;
+  background: var(--green-dark);
+}
+
+.allow:hover {
+  background: var(--green-hover);
+}
+
+@media (max-width: 700px) {
+  .content {
+    grid-template-columns: 1fr;
+  }
+
+  .eyebrow {
+    margin-top: 1rem;
+  }
+}
+
+@media (max-width: 420px) {
+  .shell {
+    align-items: start;
+    padding: 0.75rem;
+  }
+
+  .brand {
+    padding-inline: 1.25rem;
+  }
+
+  .actions {
+    padding-inline: 1.25rem;
+  }
+
+  .actions button {
+    min-width: 0;
+    flex: 1;
+  }
+}

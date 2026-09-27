@@ -37,10 +37,19 @@ test("consent names the client and read permission before approval or denial", a
   });
   const content = visibleText(renderer);
   expect(content).toContain("Daily Log CLI");
-  expect(content).toContain("read your daily food log");
-  expect(content).toContain("cannot edit your Food Log");
-  expect(renderer.root.findAllByType("button").map((button) => button.props.value as string)).toEqual(["approve", "deny"]);
+  expect(content).toContain("Read your daily Food Log");
+  expect(content).toContain("cannot add, edit, or delete your Food Log");
+  expect(renderer.root.findAllByProps({ type: "checkbox", name: "scope", required: true })).toHaveLength(1);
+  expect(renderer.root.findAllByType("button").map((button) => button.props.value as string)).toEqual(["deny", "approve"]);
   await act(() => renderer.unmount());
+
+  const rejected = await renderRoute(OAuthConsent, "/oauth/authorize", {
+    client: { id: "public-client-id", name: "Daily Log CLI" },
+    permission: "Read your daily Food Log", scope: "daily-log:read",
+    csrfToken: "csrf-token", action: "/oauth/authorize?client_id=public-client-id",
+  }, { error: "Select the Food Log permission before allowing access." });
+  expect(rejected.root.findAllByProps({ role: "alert" })).toHaveLength(1);
+  await act(() => rejected.unmount());
 });
 
 test("account settings review client IDs and show registration validation feedback", async () => {

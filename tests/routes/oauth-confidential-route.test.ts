@@ -33,6 +33,10 @@ let sequence = 0;
 function args(request: Request) {
   return { request, params: {}, context: new RouterContextProvider(), pattern: new URL(request.url).pathname, url: new URL(request.url) };
 }
+function asResponse(value: unknown): Response {
+  if (!(value instanceof Response)) throw new Error("Expected an OAuth redirect");
+  return value;
+}
 function post(pathname: string, fields: Record<string, string>, cookie = memberCookie, csrfToken = memberCsrf) {
   return args(new Request(`${origin}${pathname}`, {
     method: "POST", headers: { Cookie: cookie, Origin: origin },
@@ -73,7 +77,7 @@ async function register() {
 }
 async function approve(clientId: string) {
   const url = authorizationUrl(clientId);
-  const result = await authorize(post(url.pathname + url.search, { decision: "approve" }));
+  const result = asResponse(await authorize(post(url.pathname + url.search, { decision: "approve", scope: "daily-log:read" })));
   expect(result.status).toBe(302);
   return new URL(result.headers.get("Location") ?? "").searchParams.get("code") ?? "";
 }
@@ -129,7 +133,7 @@ test("registration, consent, denial, and metadata support confidential clients",
   expect(JSON.stringify(ownerList)).not.toContain(secret);
   const url = authorizationUrl(clientId);
   expect(await consent(args(new Request(url, { headers: { Cookie: memberCookie } })))).toMatchObject({ client: { id: clientId, name: "Server reader" } });
-  const denied = await authorize(post(url.pathname + url.search, { decision: "deny" }));
+  const denied = asResponse(await authorize(post(url.pathname + url.search, { decision: "deny" })));
   expect(new URL(denied.headers.get("Location") ?? "").searchParams.get("error")).toBe("access_denied");
   expect(new URL(denied.headers.get("Location") ?? "").searchParams.get("code")).toBeNull();
   const invalid = authorizationUrl(clientId);
@@ -241,7 +245,7 @@ test("connections remain account scoped and account state preserves grants", asy
   getGoalSetupService().completeInitial(secondMember.user.id, otherSetup.data);
   const otherCookie = serializeSessionCookie(secondMember).split(";", 1)[0];
   const otherCsrf = secondMember.csrfToken;
-  const otherCodeResponse = await authorize(post(authorizationUrl(clientId).pathname + authorizationUrl(clientId).search, { decision: "approve" }, otherCookie, otherCsrf));
+  const otherCodeResponse = asResponse(await authorize(post(authorizationUrl(clientId).pathname + authorizationUrl(clientId).search, { decision: "approve", scope: "daily-log:read" }, otherCookie, otherCsrf)));
   const otherCode = new URL(otherCodeResponse.headers.get("Location") ?? "").searchParams.get("code") ?? "";
   const otherTokenResponse = await tokenAction(tokenPost(codeFields(clientId, otherCode), clientId, secret));
   expect(otherTokenResponse.status).toBe(200);
@@ -274,7 +278,7 @@ test("revocation invalidates one account's confidential tokens without affecting
   const other = await seedAuthenticatedAccount(getAuthenticationService(), getApplicationDatabase().getClient(), `confidential.revocation.${sequence}`, password, "203.0.113.213");
   const otherCookie = serializeSessionCookie(other).split(";", 1)[0];
   const url = authorizationUrl(clientId);
-  const approval = await authorize(post(url.pathname + url.search, { decision: "approve" }, otherCookie, other.csrfToken));
+  const approval = asResponse(await authorize(post(url.pathname + url.search, { decision: "approve", scope: "daily-log:read" }, otherCookie, other.csrfToken)));
   const code = new URL(approval.headers.get("Location") ?? "").searchParams.get("code") ?? "";
   const response = await tokenAction(tokenPost(codeFields(clientId, code), clientId, secret));
   expect(response.status).toBe(200);
