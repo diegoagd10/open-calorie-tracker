@@ -5,6 +5,8 @@ import { listOAuthClients, registerOAuthClient, type OAuthClientSummary, type Re
 import { connectedDailyLogClients, revokeDailyLogClient } from "../oauth/authorization.server";
 import styles from "../account.module.css";
 
+const integrationGuideUrl = "https://diegoagd10.github.io/open-calory-tracker-docs/";
+
 type ActionData = {
   client?: OAuthClientSummary;
   clientSecret?: string;
@@ -98,6 +100,7 @@ export default function OAuthClientsSettings({ loaderData }: Route.ComponentProp
             <Link className={styles.backLink} to="/settings/oauth-clients">All OAuth clients</Link>
             <h1 id="oauth-clients-title">Register a client</h1>
             <p>Register an app to get its Client ID. Registration alone does not give it access to a Food Log.</p>
+            <p><a className={styles.guideLink} href={integrationGuideUrl} target="_blank" rel="noopener noreferrer">Read the integration guide (new tab)</a> for callback rules and the authorization flow.</p>
             <Form className={styles.form} method="post">
               <input type="hidden" name="intent" value="register" />
               <input type="hidden" name="csrfToken" value={loaderData.csrfToken} />
@@ -129,6 +132,7 @@ export default function OAuthClientsSettings({ loaderData }: Route.ComponentProp
             <Link className={styles.backLink} to="/settings/goals">Back to settings</Link>
             <h1 id="oauth-clients-title">OAuth clients</h1>
             <p>Manage the apps you registered and the apps connected to your Food Log.</p>
+            <p><a className={styles.guideLink} href={integrationGuideUrl} target="_blank" rel="noopener noreferrer">Read the integration guide (new tab)</a> to connect an app to your Food Log.</p>
             <Link className={styles.primaryLink} to="/settings/oauth-clients?view=new">Register client</Link>
             <h2>Registered clients</h2>
             <p>These apps have a Client ID. Registration alone gives them no Food Log access.</p>

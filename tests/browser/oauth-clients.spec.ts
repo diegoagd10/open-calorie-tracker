@@ -10,9 +10,11 @@ test("registration confirms the Client ID and leads back to the saved client lis
   await page.goto("/settings/oauth-clients");
 
   await expect(page.getByRole("heading", { name: "Registered clients" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Read the integration guide (new tab)" })).toHaveAttribute("href", "https://diegoagd10.github.io/open-calory-tracker-docs/");
   await expect(page.getByLabel("Client name")).toHaveCount(0);
   await page.getByRole("link", { name: "Register client" }).click();
   await expect(page.getByRole("heading", { name: "Register a client" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Read the integration guide (new tab)" })).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath("oauth-registration-form-dark.png"), fullPage: true });
   await page.getByLabel("Client name").fill("My terminal");
   await page.getByLabel("Allowed redirect URIs, one per line").fill("http://127.0.0.1:4567/callback");

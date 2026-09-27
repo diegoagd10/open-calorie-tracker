@@ -1,5 +1,7 @@
 # OAuth client registration
 
+For a step-by-step integration guide, see the [public OAuth documentation](https://diegoagd10.github.io/open-calory-tracker-docs/).
+
 Signed-in account holders can register and review public or confidential clients at **Settings → OAuth clients** (`/settings/oauth-clients`). A registration stores the client name, a generated client ID, the registering account, and its allowed redirect URIs. Choose **Public client** for software that cannot keep a secret, or **Confidential server client** for a server that can keep a secret. Registration alone does not approve access to a Food Log or issue any credential; authorization and tokens are separate steps.
 
 Public clients have no shared client secret. A confidential client receives a randomly generated secret in the registration response. Copy it immediately into the server's secret storage; the settings page will never display it again. The instance stores only its SHA-256 hash, and client listings contain neither the secret nor its hash. Losing the secret requires registering a new client. Never embed it in a browser app, URL, source repository, or log.

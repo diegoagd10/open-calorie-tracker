@@ -1,5 +1,7 @@
 # Daily Food Log API v1 and OAuth clients
 
+For a step-by-step integration guide, see the [public OAuth documentation](https://diegoagd10.github.io/open-calory-tracker-docs/).
+
 The API and OAuth routes run in the same Open Calorie Tracker instance as the browser UI. The API reads one account's Food Log; it does not provide write operations. A public or confidential client must be registered by a signed-in account holder at `/settings/oauth-clients` before it can ask any account holder for access. Registration alone grants nothing.
 
 ## Discover and authorize
