@@ -1431,13 +1431,15 @@ function QuickLogActionForm({
   icon,
   intent,
   label,
+  visibleLabel,
 }: {
   className: string;
   csrfToken: string;
   date: string;
-  icon: "utensils" | "water";
+  icon: "plus" | "water";
   intent: "add-food" | "add-water";
   label: string;
+  visibleLabel?: string;
 }) {
   return (
     <Form method="post">
@@ -1454,6 +1456,7 @@ function QuickLogActionForm({
         value={intent}
       >
         <UiIcon name={icon} />
+        {visibleLabel ? <span>{visibleLabel}</span> : null}
       </button>
     </Form>
   );
@@ -1476,9 +1479,10 @@ function QuickLogActions({
         className={`${styles.quickLogButton} ${styles.quickLogFood}`}
         csrfToken={csrfToken}
         date={date}
-        icon="utensils"
+        icon="plus"
         intent="add-food"
         label="Add Food"
+        visibleLabel="Add food"
       />
       <QuickLogActionForm
         className={`${styles.quickLogButton} ${styles.quickLogWater}`}
@@ -2727,7 +2731,7 @@ function WaterEventDialog({
                       onClick={() => selectPreset(preset.selection)}
                       type="button"
                     >
-                      <span aria-hidden="true">♢</span>
+                      <UiIcon name="water" />
                       <strong>{presetAmount}</strong>
                       <span>{unit}</span>
                       <small>{preset.label}</small>
@@ -2752,7 +2756,7 @@ function WaterEventDialog({
                 onClick={selectExact}
                 type="button"
               >
-                <span aria-hidden="true">✎</span>
+                <UiIcon name="pencil" />
                 <strong>Exact</strong>
                 <span>amount</span>
                 <small>Custom</small>
@@ -4163,7 +4167,7 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
               selectedDate={foodLog.selectedDate}
             />
           ) : (
-            <section aria-label="Food Log">
+            <section aria-label="Food Log" className={styles.foodLogLayout}>
               <DateRail
                 key={foodLog.selectedDate}
                 nearbyDates={nearbyDates}

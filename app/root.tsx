@@ -14,6 +14,9 @@ import { CatalogNotifications } from "./catalog-management/notifications";
 
 import { readTheme, themeColors } from "./appearance/theme";
 
+import displayFont from "@fontsource-variable/fraunces/opsz.css?url";
+import sansFont from "@fontsource-variable/geist/index.css?url";
+
 import stylesheet from "./styles.css?url";
 import readinessStyles from "./readiness.module.css";
 
@@ -25,6 +28,8 @@ export async function loader({ request }: Route.LoaderArgs) {
 export function headers() { return { "Cache-Control": "no-store" }; }
 
 export const links = () => [
+  { rel: "stylesheet", href: sansFont },
+  { rel: "stylesheet", href: displayFont },
   { rel: "stylesheet", href: stylesheet },
   { rel: "icon", href: "/favicon.png", sizes: "64x64", type: "image/png" },
   {

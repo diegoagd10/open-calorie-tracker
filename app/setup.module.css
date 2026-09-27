@@ -10,7 +10,7 @@
   width: min(100%, 39rem);
   padding: clamp(1rem, 4vw, 1.5rem);
   border: 1px solid var(--color-border);
-  border-radius: 1.25rem;
+  border-radius: var(--radius-panel);
   background: var(--color-surface);
   box-shadow: var(--shadow-panel);
 }
@@ -49,14 +49,14 @@
 .header p {
   margin-top: 0.35rem;
   color: var(--color-text-muted);
-  font-size: 0.8rem;
+  font-size: 0.875rem;
 }
 
 .privacyCue {
   display: block;
   margin-top: 0.35rem;
   color: var(--color-text-muted);
-  font-size: 0.7rem;
+  font-size: 0.8rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
@@ -79,8 +79,8 @@
 .segmented legend {
   grid-column: 1 / -1;
   margin-bottom: 0.35rem;
-  font-size: 0.8rem;
-  font-weight: 700;
+  font-size: 0.875rem;
+  font-weight: 600;
 }
 
 .segmented label {
@@ -98,8 +98,8 @@
   place-items: center;
   border: 1px solid var(--color-border);
   border-radius: 0.65rem;
-  font-size: 0.8rem;
-  font-weight: 700;
+  font-size: 0.875rem;
+  font-weight: 600;
   cursor: pointer;
 }
 
@@ -118,8 +118,8 @@
 .goalGrid label {
   display: grid;
   gap: 0.35rem;
-  font-size: 0.75rem;
-  font-weight: 700;
+  font-size: 0.82rem;
+  font-weight: 600;
 }
 
 .timeZoneField input,
@@ -160,7 +160,7 @@
   right: 0.75rem;
   bottom: 0.85rem;
   color: var(--color-text-muted);
-  font-size: 0.7rem;
+  font-size: 0.8rem;
   font-style: normal;
   font-weight: 400;
 }
@@ -168,12 +168,12 @@
 .submit {
   min-height: 2.75rem;
   border: 0;
-  border-radius: 0.65rem;
-  color: white;
+  border-radius: 999px;
+  color: var(--on-accent);
   background: var(--green-dark);
   font: inherit;
-  font-size: 0.8rem;
-  font-weight: 750;
+  font-size: 0.9rem;
+  font-weight: 600;
   cursor: pointer;
 }
 
@@ -187,7 +187,7 @@
   border-radius: 0.65rem;
   color: var(--danger);
   background: var(--danger-soft);
-  font-size: 0.8rem;
+  font-size: 0.875rem;
 }
 
 @media (max-width: 420px) {

@@ -23,7 +23,7 @@
   padding: 1rem 1.75rem;
   border-bottom: 1px solid var(--color-border-muted);
   font-size: 0.9rem;
-  font-weight: 750;
+  font-weight: 600;
 }
 
 .brandMark,
@@ -34,13 +34,13 @@
   border-radius: 50%;
   color: var(--color-ready);
   background: var(--green-soft);
-  font-weight: 800;
+  font-weight: 600;
 }
 
 .brandMark {
   width: 2rem;
   height: 2rem;
-  font-size: 0.7rem;
+  font-size: 0.8rem;
 }
 
 .content {
@@ -64,8 +64,8 @@
 .eyebrow {
   margin: 1.75rem 0 0.5rem;
   color: var(--color-text-muted);
-  font-size: 0.75rem;
-  font-weight: 750;
+  font-size: 0.82rem;
+  font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
@@ -90,14 +90,14 @@
   border: 1px solid var(--color-border);
   border-radius: 999px;
   color: var(--color-text);
-  font-size: 0.85rem;
-  font-weight: 650;
+  font-size: 0.92rem;
+  font-weight: 500;
 }
 
 .clientId {
   margin: 1.25rem 0 0;
   color: var(--color-text-muted);
-  font-size: 0.75rem;
+  font-size: 0.82rem;
   overflow-wrap: anywhere;
 }
 
@@ -114,7 +114,7 @@
 .permissions legend {
   margin-bottom: 1rem;
   font-size: 1.05rem;
-  font-weight: 750;
+  font-weight: 600;
   overflow-wrap: anywhere;
 }
 
@@ -149,14 +149,14 @@
 
 .permissionRow small {
   color: var(--color-text-muted);
-  font-size: 0.8rem;
+  font-size: 0.875rem;
   line-height: 1.5;
 }
 
 .help {
   margin: 1rem 0 0;
   color: var(--color-text-muted);
-  font-size: 0.8rem;
+  font-size: 0.875rem;
   line-height: 1.5;
 }
 
@@ -166,7 +166,7 @@
   border-radius: 0.6rem;
   color: var(--danger);
   background: var(--danger-soft);
-  font-size: 0.8rem;
+  font-size: 0.875rem;
 }
 
 .actions {
@@ -183,8 +183,8 @@
   padding: 0.65rem 1.25rem;
   border-radius: 0.65rem;
   font: inherit;
-  font-size: 0.85rem;
-  font-weight: 750;
+  font-size: 0.92rem;
+  font-weight: 600;
   cursor: pointer;
 }
 
@@ -200,7 +200,7 @@
 
 .allow {
   border: 1px solid var(--green-dark);
-  color: white;
+  color: var(--on-accent);
   background: var(--green-dark);
 }
 

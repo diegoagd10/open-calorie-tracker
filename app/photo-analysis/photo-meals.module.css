@@ -86,7 +86,7 @@
     display: block;
     min-width: 0;
     color: var(--muted);
-    font-size: 0.66rem;
+    font-size: 0.75rem;
   }
   .failureReasonMobile summary {
     overflow: hidden;
@@ -133,8 +133,8 @@
   align-self: end;
   margin-bottom: 0.1rem;
   color: var(--muted);
-  font-size: 0.68rem;
-  font-weight: 650;
+  font-size: 0.75rem;
+  font-weight: 500;
 }
 .mealPhoto {
   width: 100%;
@@ -156,7 +156,7 @@
   border: 1px solid var(--rule);
   border-radius: 0.7rem;
   background: var(--surface);
-  font-size: 0.78rem;
+  font-size: 0.875rem;
 }
 .rowDetails p:first-child {
   margin-top: 0;

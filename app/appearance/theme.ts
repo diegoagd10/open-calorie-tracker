@@ -1,8 +1,8 @@
 export type Theme = "light" | "dark";
 
 export const themeColors = {
-  dark: { background: "#0a0f14", surface: "#111820", text: "#edf2f7", link: "#64cb70", focus: "#a7f1ad" },
-  light: { background: "#eef2f4", surface: "#fafbfd", text: "#17212b", link: "#206628", focus: "#287c30" },
+  dark: { background: "#12110e", surface: "#12110e", text: "#f3efe7", link: "#a6d08f", focus: "#c3e3b1" },
+  light: { background: "#f5f1e8", surface: "#f5f1e8", text: "#1d1a15", link: "#2f5e2a", focus: "#2f5e2a" },
 } satisfies Record<Theme, Record<string, string>>;
 
 export function readTheme(cookie: string | null | undefined): Theme {

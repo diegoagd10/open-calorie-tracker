@@ -1,6 +1,7 @@
 import { Form, Link } from "react-router";
 
 import styles from "./goals.module.css";
+import { UiIcon } from "./ui-icon";
 
 export type SettingsDestinationsProps = {
   active: "goals" | "users" | "ai" | "catalogs";
@@ -18,8 +19,8 @@ export function SettingsDestinations({
       <nav className={styles.settingsDestinations} aria-label="Settings">
         {active !== "goals" ? (
           <Link className={styles.accountAccessRow} to="/settings/goals">
-            <span className={styles.accountAccessIcon} aria-hidden="true">
-              ◇
+            <span className={styles.accountAccessIcon}>
+              <UiIcon name="goals" />
             </span>
             <span>
               <strong>Display and goals</strong>
@@ -30,14 +31,18 @@ export function SettingsDestinations({
         ) : null}
         {isAdministrator && active !== "catalogs" ? (
           <Link className={styles.accountAccessRow} to="/settings/catalogs">
-            <span className={styles.accountAccessIcon} aria-hidden="true">▤</span>
+            <span className={styles.accountAccessIcon}>
+              <UiIcon name="database" />
+            </span>
             <span><strong>Food Catalogs</strong><small>View installed catalogs and check for updates.</small></span>
             <span aria-hidden="true">›</span>
           </Link>
         ) : null}
         {isAdministrator && active !== "ai" ? (
           <Link className={styles.accountAccessRow} to="/settings/ai">
-            <span className={styles.accountAccessIcon} aria-hidden="true">✧</span>
+            <span className={styles.accountAccessIcon}>
+              <UiIcon name="sparkle" />
+            </span>
             <span>
               <strong>AI photo estimates</strong>
               <small>Connect your account to estimate calories from photos.</small>
@@ -47,8 +52,8 @@ export function SettingsDestinations({
         ) : null}
         {isAdministrator && active !== "users" ? (
           <Link className={styles.accountAccessRow} to="/settings/users">
-            <span className={styles.accountAccessIcon} aria-hidden="true">
-              ◎
+            <span className={styles.accountAccessIcon}>
+              <UiIcon name="users" />
             </span>
             <span>
               <strong>Users</strong>
@@ -58,8 +63,8 @@ export function SettingsDestinations({
           </Link>
         ) : null}
         <Link className={styles.accountAccessRow} to="/settings/security">
-          <span className={styles.accountAccessIcon} aria-hidden="true">
-            ◇
+          <span className={styles.accountAccessIcon}>
+            <UiIcon name="key" />
           </span>
           <span>
             <strong>Account security</strong>
@@ -68,7 +73,9 @@ export function SettingsDestinations({
           <span aria-hidden="true">›</span>
         </Link>
         <Link className={styles.accountAccessRow} to="/settings/oauth-clients">
-          <span className={styles.accountAccessIcon} aria-hidden="true">◇</span>
+          <span className={styles.accountAccessIcon}>
+            <UiIcon name="link" />
+          </span>
           <span><strong>OAuth clients</strong><small>Review connections and register public clients.</small></span>
           <span aria-hidden="true">›</span>
         </Link>
