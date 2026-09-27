@@ -1,4 +1,4 @@
-import { and, desc, eq, lte } from "drizzle-orm";
+import { and, asc, desc, eq, lte } from "drizzle-orm";
 
 import type { ApplicationDatabaseClient } from "../database/database.server";
 import {
@@ -6,7 +6,7 @@ import {
   userPreferences,
 } from "../database/schema.server";
 import { readUserTimeZone } from "../database/user-preferences.server";
-import { localDateAt, parseIsoLocalDate } from "../food-log/date";
+import { addLocalDays, localDateAt, parseIsoLocalDate } from "../food-log/date";
 import type { DisplayUnits } from "../setup/validation";
 
 export type CanonicalGoalValues = {
@@ -48,6 +48,41 @@ export class GoalVersionService {
   ) {
     this.#database = database;
     this.#now = now;
+  }
+
+  /**
+   * Every Goal Version newest first, one per effective date, with the last local
+   * date it applies to before the next version takes over.
+   */
+  history(userId: number) {
+    const rows = this.#database
+      .select({
+        calorieTargetMilliKcal: goalVersions.calorieTargetMilliKcal,
+        carbohydrateTargetMilligrams: goalVersions.carbohydrateTargetMilligrams,
+        effectiveDate: goalVersions.effectiveDate,
+        fatTargetMilligrams: goalVersions.fatTargetMilligrams,
+        fiberTargetMilligrams: goalVersions.fiberTargetMilligrams,
+        proteinTargetMilligrams: goalVersions.proteinTargetMilligrams,
+        sodiumMaximumMilligrams: goalVersions.sodiumMaximumMilligrams,
+        sugarMaximumMilligrams: goalVersions.sugarMaximumMilligrams,
+        waterTargetMicroliters: goalVersions.waterTargetMicroliters,
+      })
+      .from(goalVersions)
+      .where(eq(goalVersions.userId, userId))
+      .orderBy(asc(goalVersions.effectiveDate), asc(goalVersions.id))
+      .all();
+    const latestPerDate = [
+      ...new Map(rows.map((row) => [row.effectiveDate, row])).values(),
+    ];
+    return latestPerDate
+      .map((version, index) => {
+        const next = latestPerDate[index + 1];
+        return {
+          ...version,
+          lastDate: next ? addLocalDays(next.effectiveDate, -1) : null,
+        };
+      })
+      .reverse();
   }
 
   /** The account's current local date, or undefined before Food Log setup saves a time zone. */
