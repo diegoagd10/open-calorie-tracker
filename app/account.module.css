@@ -135,11 +135,17 @@
   font-weight: 700;
 }
 
-.field input {
+.field input,
+.field select,
+.field textarea {
+  width: 100%;
+  min-width: 0;
   min-height: 2.75rem;
   padding: 0.7rem;
   border: 1px solid var(--color-border);
   border-radius: 0.6rem;
+  color: var(--color-text);
+  background: var(--ground);
   font: inherit;
   font-weight: 400;
 }
