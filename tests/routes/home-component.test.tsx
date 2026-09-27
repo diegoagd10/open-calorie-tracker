@@ -336,6 +336,30 @@ test("home renders today's empty log and all goal progress contracts", async () 
   await act(async () => renderer.unmount());
 });
 
+test("wide screens expose all six daily nutrients without page controls", async () => {
+  const listeners = new Set<() => void>();
+  const media = {
+    addEventListener: (_: string, listener: () => void) => listeners.add(listener),
+    matches: true,
+    removeEventListener: (_: string, listener: () => void) => listeners.delete(listener),
+  };
+  vi.stubGlobal("window", { matchMedia: vi.fn(() => media) });
+  try {
+    const renderer = await renderHome();
+    expect(renderer.root.findAllByProps({ "aria-label": "Nutrition pages" })).toHaveLength(0);
+    const carousel = renderer.root.findByProps({ "aria-label": "Daily nutrient progress" });
+    expect(carousel.findAll((node) => node.props["aria-hidden"] === true)).toHaveLength(0);
+
+    media.matches = false;
+    await act(async () => listeners.forEach((listener) => listener()));
+    expect(renderer.root.findAllByProps({ "aria-label": "Nutrition pages" }).length).toBeGreaterThan(0);
+    await act(async () => renderer.unmount());
+    expect(listeners.size).toBe(0);
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
 test("daily nutrients support guarded touch swipes, cancellation, and both directions", async () => {
   const renderer = await renderHome();
   const carousel = () =>

@@ -408,6 +408,10 @@
   --nutrient-color: var(--fat);
 }
 
+.nutrientPage + .nutrientPage > .nutrientCell {
+  --nutrient-color: var(--blue);
+}
+
 .nutrientCell > em,
 .incompleteLabel {
   width: fit-content;
@@ -2665,5 +2669,25 @@
 
   .appSurface .calendarToday .calendarCalories > span > span {
     background: currentColor;
+  }
+}
+
+@media (min-width: 1120px) {
+  .nutrientTrack {
+    width: 100%;
+    flex-direction: column;
+    transform: none !important;
+  }
+
+  .nutrientPage {
+    flex-basis: auto;
+  }
+
+  .nutrientPage + .nutrientPage {
+    border-top: 1px solid var(--rule);
+  }
+
+  .carouselControls {
+    display: none;
   }
 }

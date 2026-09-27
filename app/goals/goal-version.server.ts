@@ -38,6 +38,18 @@ export class GoalVersionUnavailableError extends Error {
   }
 }
 
+const goalTargetColumns = {
+  calorieTargetMilliKcal: goalVersions.calorieTargetMilliKcal,
+  carbohydrateTargetMilligrams: goalVersions.carbohydrateTargetMilligrams,
+  effectiveDate: goalVersions.effectiveDate,
+  fatTargetMilligrams: goalVersions.fatTargetMilligrams,
+  fiberTargetMilligrams: goalVersions.fiberTargetMilligrams,
+  proteinTargetMilligrams: goalVersions.proteinTargetMilligrams,
+  sodiumMaximumMilligrams: goalVersions.sodiumMaximumMilligrams,
+  sugarMaximumMilligrams: goalVersions.sugarMaximumMilligrams,
+  waterTargetMicroliters: goalVersions.waterTargetMicroliters,
+};
+
 export class GoalVersionService {
   readonly #database: ApplicationDatabaseClient;
   readonly #now: () => Date;
@@ -56,17 +68,7 @@ export class GoalVersionService {
    */
   history(userId: number) {
     const rows = this.#database
-      .select({
-        calorieTargetMilliKcal: goalVersions.calorieTargetMilliKcal,
-        carbohydrateTargetMilligrams: goalVersions.carbohydrateTargetMilligrams,
-        effectiveDate: goalVersions.effectiveDate,
-        fatTargetMilligrams: goalVersions.fatTargetMilligrams,
-        fiberTargetMilligrams: goalVersions.fiberTargetMilligrams,
-        proteinTargetMilligrams: goalVersions.proteinTargetMilligrams,
-        sodiumMaximumMilligrams: goalVersions.sodiumMaximumMilligrams,
-        sugarMaximumMilligrams: goalVersions.sugarMaximumMilligrams,
-        waterTargetMicroliters: goalVersions.waterTargetMicroliters,
-      })
+      .select(goalTargetColumns)
       .from(goalVersions)
       .where(eq(goalVersions.userId, userId))
       .orderBy(asc(goalVersions.effectiveDate), asc(goalVersions.id))
@@ -109,17 +111,7 @@ export class GoalVersionService {
     if (!selectedDate) throw new InvalidGoalVersionDateError();
 
     const goal = this.#database
-      .select({
-        calorieTargetMilliKcal: goalVersions.calorieTargetMilliKcal,
-        carbohydrateTargetMilligrams: goalVersions.carbohydrateTargetMilligrams,
-        effectiveDate: goalVersions.effectiveDate,
-        fatTargetMilligrams: goalVersions.fatTargetMilligrams,
-        fiberTargetMilligrams: goalVersions.fiberTargetMilligrams,
-        proteinTargetMilligrams: goalVersions.proteinTargetMilligrams,
-        sodiumMaximumMilligrams: goalVersions.sodiumMaximumMilligrams,
-        sugarMaximumMilligrams: goalVersions.sugarMaximumMilligrams,
-        waterTargetMicroliters: goalVersions.waterTargetMicroliters,
-      })
+      .select(goalTargetColumns)
       .from(goalVersions)
       .where(
         and(

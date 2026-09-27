@@ -95,7 +95,7 @@ export function SettingsDestinations({
   );
 }
 
-type SettingsSection = "goals" | "security" | "oauth" | "users" | "ai" | "catalogs";
+export type SettingsSection = "goals" | "security" | "oauth" | "users" | "ai" | "catalogs";
 
 const personalSections = [
   { icon: "goals", key: "goals", label: "Display and goals", to: "/settings/goals" },

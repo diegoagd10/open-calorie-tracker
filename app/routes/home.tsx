@@ -1622,11 +1622,28 @@ function NutrientMetric({ metric }: { metric: NutritionMetric }) {
   );
 }
 
+// Matches the desktop breakpoint in food-log.module.css, where both nutrient pages are shown.
+const wideLayoutQuery = "(min-width: 1120px)";
+
+function useWideLayout(): boolean {
+  const [wide, setWide] = useState(false);
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return;
+    const media = window.matchMedia(wideLayoutQuery);
+    const update = () => setWide(media.matches);
+    update();
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, []);
+  return wide;
+}
+
 function DailySummary({
   foodLog,
 }: {
   foodLog: Route.ComponentProps["loaderData"]["foodLog"];
 }) {
+  const wideLayout = useWideLayout();
   const [nutrientDragX, setNutrientDragX] = useState(0);
   const [nutrientPage, setNutrientPage] = useState(0);
   const [nutrientSettling, setNutrientSettling] = useState(false);
@@ -1857,7 +1874,7 @@ function DailySummary({
           >
             {metricPages.map((metrics, page) => (
               <div
-                aria-hidden={nutrientPage !== page}
+                aria-hidden={!wideLayout && nutrientPage !== page}
                 className={styles.nutrientPage}
                 key={page}
               >
@@ -1867,32 +1884,34 @@ function DailySummary({
               </div>
             ))}
           </div>
-          <div
-            aria-label="Nutrition pages"
-            className={styles.carouselControls}
-            role="group"
-          >
-            <button
-              aria-label="Show protein, carbohydrate, and fat"
-              aria-pressed={nutrientPage === 0}
-              className={`${styles.carouselDot} ${nutrientPage === 0 ? styles.activeCarouselDot : ""}`}
-              onClick={() => {
-                setNutrientSettling(false);
-                setNutrientPage(0);
-              }}
-              type="button"
-            />
-            <button
-              aria-label="Show fiber, sugar, and sodium"
-              aria-pressed={nutrientPage === 1}
-              className={`${styles.carouselDot} ${nutrientPage === 1 ? styles.activeCarouselDot : ""}`}
-              onClick={() => {
-                setNutrientSettling(false);
-                setNutrientPage(1);
-              }}
-              type="button"
-            />
-          </div>
+          {wideLayout ? null : (
+            <div
+              aria-label="Nutrition pages"
+              className={styles.carouselControls}
+              role="group"
+            >
+              <button
+                aria-label="Show protein, carbohydrate, and fat"
+                aria-pressed={nutrientPage === 0}
+                className={`${styles.carouselDot} ${nutrientPage === 0 ? styles.activeCarouselDot : ""}`}
+                onClick={() => {
+                  setNutrientSettling(false);
+                  setNutrientPage(0);
+                }}
+                type="button"
+              />
+              <button
+                aria-label="Show fiber, sugar, and sodium"
+                aria-pressed={nutrientPage === 1}
+                className={`${styles.carouselDot} ${nutrientPage === 1 ? styles.activeCarouselDot : ""}`}
+                onClick={() => {
+                  setNutrientSettling(false);
+                  setNutrientPage(1);
+                }}
+                type="button"
+              />
+            </div>
+          )}
         </section>
       </section>
 
