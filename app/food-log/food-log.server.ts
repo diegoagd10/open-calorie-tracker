@@ -1,4 +1,4 @@
-import { and, desc, eq, lte } from "drizzle-orm";
+import { and, asc, desc, eq, gte, lte } from "drizzle-orm";
 
 import type { ApplicationDatabaseClient } from "../database/database.server";
 import {
@@ -40,6 +40,13 @@ const nutritionFields = [
 ] as const;
 
 type FoodEntrySnapshot = ReturnType<typeof foodEntrySnapshot>;
+
+export type DailyCalories = {
+  entryCount: number;
+  goalMilliKcal: number | null;
+  isIncomplete: boolean;
+  knownMilliKcal: number;
+};
 
 function nutritionTotals(entries: FoodEntrySnapshot[]) {
   return Object.fromEntries(
@@ -166,6 +173,64 @@ export class FoodLogService {
         0,
       ),
     };
+  }
+
+  /**
+   * Calorie totals for several local dates at once, each with the calorie goal
+   * of the Goal Version effective on that date.
+   */
+  dailyCalories(userId: number, dates: readonly string[]): Record<string, DailyCalories> {
+    if (!dates.length) return {};
+    const ordered = [...dates].sort();
+    const first = ordered[0];
+    const last = ordered[ordered.length - 1];
+    const entries = this.#database
+      .select({
+        energyMilliKcal: foodEntries.energyMilliKcal,
+        foodLogDate: foodEntries.foodLogDate,
+      })
+      .from(foodEntries)
+      .where(
+        and(
+          eq(foodEntries.userId, userId),
+          gte(foodEntries.foodLogDate, first),
+          lte(foodEntries.foodLogDate, last),
+        ),
+      )
+      .all();
+    const goals = this.#database
+      .select({
+        calorieTargetMilliKcal: goalVersions.calorieTargetMilliKcal,
+        effectiveDate: goalVersions.effectiveDate,
+      })
+      .from(goalVersions)
+      .where(
+        and(
+          eq(goalVersions.userId, userId),
+          lte(goalVersions.effectiveDate, last),
+        ),
+      )
+      .orderBy(asc(goalVersions.effectiveDate), asc(goalVersions.id))
+      .all();
+
+    return Object.fromEntries(
+      ordered.map((date) => {
+        const dayEntries = entries.filter((entry) => entry.foodLogDate === date);
+        const goal = goals.filter((version) => version.effectiveDate <= date).pop();
+        return [
+          date,
+          {
+            entryCount: dayEntries.length,
+            goalMilliKcal: goal?.calorieTargetMilliKcal ?? null,
+            isIncomplete: dayEntries.some((entry) => entry.energyMilliKcal === null),
+            knownMilliKcal: dayEntries.reduce(
+              (total, entry) => total + (entry.energyMilliKcal ?? 0),
+              0,
+            ),
+          },
+        ];
+      }),
+    );
   }
 
   requireWritableDate(userId: number, requestedDate: string): string {

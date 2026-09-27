@@ -618,6 +618,58 @@ test("daily nutrition totals are recomputed after edits and deletes and empty Lo
   database.close();
 });
 
+test("daily calories summarize each requested date against that date's Goal Version", async () => {
+  const database = await setupDatabase();
+  const client = database.getClient();
+  const userId = insertConfiguredUser(client, {
+    timeZone: "America/New_York",
+    username: "daily.calories",
+  });
+  const otherUserId = insertConfiguredUser(client, {
+    timeZone: "America/New_York",
+    username: "daily.calories.other",
+  });
+  client
+    .insert(goalVersions)
+    .values({
+      calorieTargetMilliKcal: 1_800_000,
+      carbohydrateTargetMilligrams: 200_000,
+      createdAt: "2026-08-28T00:00:00.000Z",
+      effectiveDate: "2026-08-28",
+      fatTargetMilligrams: 60_000,
+      fiberTargetMilligrams: 25_000,
+      proteinTargetMilligrams: 120_000,
+      sodiumMaximumMilligrams: 2_300,
+      sugarMaximumMilligrams: 50_000,
+      userId,
+      waterTargetMicroliters: 2_365_882,
+    })
+    .run();
+  const nutrients = (energyMilliKcal: number | null) => ({
+    carbohydrateMilligrams: null,
+    energyMilliKcal,
+    fatMilligrams: null,
+    fiberMilligrams: null,
+    proteinMilligrams: null,
+    sodiumMilligrams: null,
+    sugarMilligrams: null,
+  });
+  insertFoodEntry(client, { date: "2026-08-27", id: "day-one", nutrients: nutrients(2_100_000), userId });
+  insertFoodEntry(client, { date: "2026-08-28", id: "day-two-a", nutrients: nutrients(900_000), userId });
+  insertFoodEntry(client, { date: "2026-08-28", id: "day-two-b", nutrients: nutrients(null), userId });
+  insertFoodEntry(client, { date: "2026-08-28", id: "other-user", nutrients: nutrients(5_000_000), userId: otherUserId });
+  const service = new FoodLogService(client, () => new Date("2026-08-29T16:00:00.000Z"));
+
+  expect(service.dailyCalories(userId, ["2026-08-29", "2026-08-27", "2026-08-28"])).toEqual({
+    "2026-08-27": { entryCount: 1, goalMilliKcal: 2_050_000, isIncomplete: false, knownMilliKcal: 2_100_000 },
+    "2026-08-28": { entryCount: 2, goalMilliKcal: 1_800_000, isIncomplete: true, knownMilliKcal: 900_000 },
+    "2026-08-29": { entryCount: 0, goalMilliKcal: 1_800_000, isIncomplete: false, knownMilliKcal: 0 },
+  });
+  expect(service.dailyCalories(userId, [])).toEqual({});
+  expect(service.dailyCalories(userId, ["2024-12-31"])["2024-12-31"].goalMilliKcal).toBeNull();
+  database.close();
+});
+
 test("Food Log events sort by local time, creation instant, then id descending", () => {
   const events = [
     {

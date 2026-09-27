@@ -526,6 +526,55 @@ test("home distinguishes past, future, no-goal, and incomplete summaries", async
   await act(async () => future.unmount());
 });
 
+test("week strip and calendar compare each logged day with that day's calorie goal", async () => {
+  const dailyCalories = {
+    "2026-08-29": { entryCount: 2, goalMilliKcal: 2_000_000, isIncomplete: false, knownMilliKcal: 2_345_600 },
+    "2026-08-30": { entryCount: 1, goalMilliKcal: 2_000_000, isIncomplete: true, knownMilliKcal: 640_000 },
+    "2026-08-31": { entryCount: 1, goalMilliKcal: null, isIncomplete: false, knownMilliKcal: 95_000 },
+    "2026-08-28": { entryCount: 0, goalMilliKcal: 2_000_000, isIncomplete: false, knownMilliKcal: 0 },
+  };
+  const week = await renderHome({
+    dailyCalories,
+    nearbyDates: [
+      { date: "2026-08-28", isFuture: false, isSelected: false },
+      { date: "2026-08-29", isFuture: false, isSelected: false },
+      { date: "2026-08-30", isFuture: false, isSelected: true },
+    ],
+  });
+  const rail = week.root.findByProps({ "aria-label": "Nearby dates" });
+  const tones = rail.findAll((node) => node.type === "em").map((node) => [
+    node.props["data-calorie-tone"],
+    node.children.join(""),
+  ]);
+  expect(tones).toEqual([
+    ["over", "2,346 kcal"],
+    ["within", "640 kcal known"],
+  ]);
+  await act(async () => week.unmount());
+
+  const history = await renderHome({
+    calendar: {
+      days: [
+        { date: "2026-08-29", day: 29, isFuture: false, isSelected: false, isToday: false },
+        { date: "2026-08-31", day: 31, isFuture: false, isSelected: true, isToday: true },
+        { date: "2026-09-01", day: 1, isFuture: true, isSelected: false, isToday: false },
+      ],
+      label: "August 2026",
+      leadingEmptyDays: 6,
+      nextMonth: undefined,
+      previousMonth: "2026-07",
+    },
+    dailyCalories,
+  });
+  expect(history.root.findByProps({ "aria-label": "Saturday, August 29, 2,346 kcal" }).props)
+    .toMatchObject({ "data-calorie-tone": "over", to: "/?date=2026-08-29" });
+  expect(history.root.findByProps({ "aria-label": "Monday, August 31, 95 kcal" }).props["data-calorie-tone"])
+    .toBe("logged");
+  expect(history.root.findAll((node) => node.props.style?.["--progress"] !== undefined)
+    .map((node) => node.props.style["--progress"])).toEqual(["100.0%"]);
+  await act(async () => history.unmount());
+});
+
 test("home renders calendar navigation, selected dates, and future days", async () => {
   const renderer = await renderHome({
     calendar: {

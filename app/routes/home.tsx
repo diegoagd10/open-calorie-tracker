@@ -62,6 +62,7 @@ import {
   parseIsoLocalDate,
 } from "../food-log/date";
 import {
+  type DailyCalories,
   FutureFoodLogDateError,
   InvalidFoodLogDateError,
 } from "../food-log/food-log.server";
@@ -444,6 +445,14 @@ export async function loader({ request }: Route.LoaderArgs) {
   const calendar = requestedCalendar
     ? buildCalendarMonth(requestedCalendar, foodLog.today, foodLog.selectedDate)
     : undefined;
+  const summarizedDates = [
+    ...nearbyDates.map((day) => day.date),
+    ...(calendar?.days.map((day) => day.date) ?? []),
+  ].filter((date) => date <= foodLog.today);
+  const dailyCalories = foodLogServiceForRequest(request).dailyCalories(
+    session.user.id,
+    [...new Set(summarizedDates)],
+  );
 
   const requestedEntry = url.searchParams.get("entry");
   let foodEntryEditor;
@@ -778,6 +787,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       copyError,
       copyIdempotencyKeys,
       csrfToken: session.csrfToken,
+      dailyCalories,
       foodEntryEditor,
       manualEntrySaved,
       photoMeals,
@@ -1321,11 +1331,25 @@ function formatWaterAmount(
   );
 }
 
+/** How a day's calories compare with that day's goal, for the week strip and calendar. */
+function calorieDaySummary(summary: DailyCalories | undefined) {
+  if (!summary || summary.entryCount === 0) return undefined;
+  const kcal = Math.round(summary.knownMilliKcal / 1_000).toLocaleString("en-US");
+  const goal = summary.goalMilliKcal;
+  return {
+    label: `${kcal} kcal${summary.isIncomplete ? " known" : ""}`,
+    progress: goal ? `${Math.min(100, (summary.knownMilliKcal / goal) * 100).toFixed(1)}%` : undefined,
+    tone: goal === null ? "logged" : summary.knownMilliKcal > goal ? "over" : "within",
+  } as const;
+}
+
 function CalendarView({
   calendar,
+  dailyCalories,
   selectedDate,
 }: {
   calendar: NonNullable<Route.ComponentProps["loaderData"]["calendar"]>;
+  dailyCalories: Record<string, DailyCalories>;
   selectedDate: string;
 }) {
   return (
@@ -1384,6 +1408,9 @@ function CalendarView({
             <span aria-hidden="true" key={`empty-${index}`} />
           ))}
           {calendar.days.map((day) => {
+            const calories = day.isFuture
+              ? undefined
+              : calorieDaySummary(dailyCalories[day.date]);
             const label = formatLocalDate(day.date, {
               day: "numeric",
               month: "long",
@@ -1409,12 +1436,23 @@ function CalendarView({
             ) : (
               <Link
                 aria-current={day.isSelected ? "date" : undefined}
-                aria-label={label}
+                aria-label={calories ? `${label}, ${calories.label}` : label}
                 className={className}
+                data-calorie-tone={calories?.tone}
                 key={day.date}
                 to={foodLogHref(day.date)}
               >
-                {day.day}
+                <span>{day.day}</span>
+                {calories ? (
+                  <span className={styles.calendarCalories} aria-hidden="true">
+                    <small>{calories.label}</small>
+                    {calories.progress ? (
+                      <span style={{ "--progress": calories.progress } as CSSProperties}>
+                        <span />
+                      </span>
+                    ) : null}
+                  </span>
+                ) : null}
               </Link>
             );
           })}
@@ -4080,6 +4118,7 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
     copyError,
     copyIdempotencyKeys,
     csrfToken,
+    dailyCalories = {},
     foodEntryEditor,
     manualEntrySaved,
     foodLog,
@@ -4164,13 +4203,17 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
           {calendar ? (
             <CalendarView
               calendar={calendar}
+              dailyCalories={dailyCalories}
               selectedDate={foodLog.selectedDate}
             />
           ) : (
             <section aria-label="Food Log" className={styles.foodLogLayout}>
               <DateRail
                 key={foodLog.selectedDate}
-                nearbyDates={nearbyDates}
+                nearbyDates={nearbyDates.map((day) => ({
+                  ...day,
+                  calories: calorieDaySummary(dailyCalories[day.date]),
+                }))}
                 selectedDate={foodLog.selectedDate}
                 today={foodLog.today}
               />

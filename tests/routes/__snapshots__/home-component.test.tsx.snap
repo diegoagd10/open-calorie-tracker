@@ -36,7 +36,7 @@ exports[`home food editor exposes saved fields, recalculation, and delete confir
 
 exports[`home food editor exposes saved fields, recalculation, and delete confirmation 3`] = `"9adb6546488ae4cd228f3e091b74f1ebdedffe0a7773dc809f8b421606f5aead"`;
 
-exports[`home renders calendar navigation, selected dates, and future days 1`] = `"5168090024909a538456e0ee671e2ecb5eec77fd40bf40eb9bf7096d7a8e64a8"`;
+exports[`home renders calendar navigation, selected dates, and future days 1`] = `"5e037fe934b7dea3b829901db3040d31c97be184246cc1c685e542105cc4da2d"`;
 
 exports[`home renders calendar navigation, selected dates, and future days 2`] = `"f4b3be22f28a9e816bbd3f69b5957117ef84d5d8e6e7ab08b68c4448d0520ff1"`;
 

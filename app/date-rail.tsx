@@ -4,7 +4,12 @@ import { Link, useNavigate } from "react-router";
 import { addLocalDays, formatLocalDate, getNearbyLocalDates } from "./food-log/date";
 import styles from "./food-log.module.css";
 
-export type DateRailDay = { date: string; isFuture: boolean; isSelected: boolean };
+export type DateRailDay = {
+  calories?: { label: string; tone: "logged" | "over" | "within" };
+  date: string;
+  isFuture: boolean;
+  isSelected: boolean;
+};
 
 function DateWeek({ days, preview = false }: { days: DateRailDay[]; preview?: boolean }) {
   return (
@@ -14,6 +19,11 @@ function DateWeek({ days, preview = false }: { days: DateRailDay[]; preview?: bo
           <>
             <small>{formatLocalDate(day.date, { weekday: "short" })}</small>
             <strong>{formatLocalDate(day.date, { day: "numeric" })}</strong>
+            {day.calories ? (
+              <em className={styles.dateCalories} data-calorie-tone={day.calories.tone}>
+                {day.calories.label}
+              </em>
+            ) : null}
           </>
         );
         const className = day.isFuture
