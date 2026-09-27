@@ -57,6 +57,73 @@ export const users = sqliteTable(
   ],
 );
 
+export const oauthClients = sqliteTable(
+  "oauth_clients",
+  {
+    id: text().primaryKey(),
+    ownerId: integer("owner_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    name: text().notNull(),
+    type: text({ enum: ["public", "confidential"] }).notNull(),
+    secretHash: text("secret_hash"),
+    redirectUris: text("redirect_uris").notNull(),
+    createdAt: text("created_at").notNull(),
+  },
+  (table) => [
+    index("oauth_clients_owner_id_index").on(table.ownerId),
+    check("oauth_clients_type_check", sql`(type = 'public' AND secret_hash IS NULL) OR (type = 'confidential' AND secret_hash IS NOT NULL)`),
+  ],
+);
+
+export const oauthGrants = sqliteTable(
+  "oauth_grants",
+  {
+    id: integer().primaryKey({ autoIncrement: true }),
+    clientId: text("client_id").notNull().references(() => oauthClients.id, { onDelete: "cascade" }),
+    userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    scope: text().notNull(),
+    createdAt: text("created_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("oauth_grants_client_user_unique").on(table.clientId, table.userId),
+    index("oauth_grants_user_id_index").on(table.userId),
+  ],
+);
+
+export const oauthAuthorizationCodes = sqliteTable(
+  "oauth_authorization_codes",
+  {
+    codeHash: text("code_hash").primaryKey(),
+    grantId: integer("grant_id").notNull().references(() => oauthGrants.id, { onDelete: "cascade" }),
+    redirectUri: text("redirect_uri").notNull(),
+    codeChallenge: text("code_challenge").notNull(),
+    expiresAt: text("expires_at").notNull(),
+    createdAt: text("created_at").notNull(),
+  },
+  (table) => [index("oauth_authorization_codes_grant_id_index").on(table.grantId)],
+);
+
+export const oauthAccessTokens = sqliteTable(
+  "oauth_access_tokens",
+  {
+    tokenHash: text("token_hash").primaryKey(),
+    grantId: integer("grant_id").notNull().references(() => oauthGrants.id, { onDelete: "cascade" }),
+    expiresAt: text("expires_at").notNull(),
+    createdAt: text("created_at").notNull(),
+  },
+  (table) => [index("oauth_access_tokens_grant_id_index").on(table.grantId)],
+);
+
+export const oauthRefreshTokens = sqliteTable(
+  "oauth_refresh_tokens",
+  {
+    tokenHash: text("token_hash").primaryKey(),
+    grantId: integer("grant_id").notNull().references(() => oauthGrants.id, { onDelete: "cascade" }),
+    createdAt: text("created_at").notNull(),
+    rotatedAt: text("rotated_at"),
+  },
+  (table) => [index("oauth_refresh_tokens_grant_id_index").on(table.grantId)],
+);
+
 export const passwordCredentials = sqliteTable("password_credentials", {
   userId: integer("user_id")
     .primaryKey()

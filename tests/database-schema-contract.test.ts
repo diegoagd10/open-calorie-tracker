@@ -79,6 +79,10 @@ test("Drizzle schema metadata matches the migrated SQLite contract", async () =>
     schema.users,
     schema.passwordCredentials,
     schema.sessions,
+    schema.oauthClients,
+    schema.oauthGrants,
+    schema.oauthAuthorizationCodes,
+    schema.oauthAccessTokens,
     schema.preAuthenticationCsrfSessions,
     schema.rateLimitCounters,
     schema.userPreferences,
@@ -163,14 +167,14 @@ test("Drizzle schema metadata matches the migrated SQLite contract", async () =>
             table: getTableConfig(reference.foreignTable).name,
             to: reference.foreignColumns[0]?.name,
           };
-        }),
+        }).sort((left, right) => left.from.localeCompare(right.from)),
       ).toEqual(
         foreignKeys.map((foreignKey) => ({
           from: foreignKey.from,
           onDelete: foreignKey.on_delete,
           table: foreignKey.table,
           to: foreignKey.to,
-        })),
+        })).sort((left, right) => left.from.localeCompare(right.from)),
       );
 
       const indexes = rows<IndexRow>(

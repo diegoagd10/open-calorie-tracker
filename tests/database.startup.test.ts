@@ -56,8 +56,8 @@ test("startup applies the initial migration and configures writable SQLite stora
   });
 
   expect(database.getStatus()).toEqual({
-    appliedMigrations: 23,
-    availableMigrations: 23,
+    appliedMigrations: 27,
+    availableMigrations: 27,
     busyTimeoutMs: 5_000,
     foreignKeysEnabled: true,
     journalMode: "wal",
@@ -78,16 +78,44 @@ test("starting twice preserves the applied migration state", async () => {
   };
 
   const firstStartup = openApplicationDatabase(options);
-  expect(firstStartup.getStatus().appliedMigrations).toBe(23);
+  expect(firstStartup.getStatus().appliedMigrations).toBe(27);
   firstStartup.close();
 
   const replacementStartup = openApplicationDatabase(options);
   expect(replacementStartup.getStatus()).toMatchObject({
-    appliedMigrations: 23,
+    appliedMigrations: 27,
     schemaVersion: "20",
     writable: true,
   });
   replacementStartup.close();
+});
+
+test("confidential-client migration preserves public registrations and their grants", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "oauth-client-upgrade-"));
+  temporaryDirectories.push(directory);
+  const databasePath = path.join(directory, "application.sqlite");
+  const previousMigrations = await createMigrationFolder(path.join(directory, "previous-migrations"), {
+    throughTag: "0025_first_jamie_braddock",
+  });
+  const previous = openApplicationDatabase({ databasePath, migrationsFolder: previousMigrations });
+  const client = previous.getClient();
+  const owner = client.get<{ id: number }>(sql`
+    INSERT INTO users (username_normalized, created_at)
+    VALUES ('oauth.upgrade.owner', '2026-09-26T12:00:00.000Z') RETURNING id
+  `);
+  client.run(sql`INSERT INTO oauth_clients (id, owner_id, name, type, redirect_uris, created_at)
+    VALUES ('existing-public-client', ${owner.id}, 'Existing client', 'public', '["https://existing.example/callback"]', '2026-09-26T12:00:00.000Z')`);
+  client.run(sql`INSERT INTO oauth_grants (client_id, user_id, scope, created_at)
+    VALUES ('existing-public-client', ${owner.id}, 'daily-log:read', '2026-09-26T12:00:00.000Z')`);
+  previous.close();
+
+  const upgraded = openApplicationDatabase({ databasePath, migrationsFolder: path.resolve("drizzle") });
+  expect(upgraded.getClient().get(sql`SELECT type, secret_hash AS secretHash FROM oauth_clients WHERE id = 'existing-public-client'`))
+    .toEqual({ type: "public", secretHash: null });
+  expect(upgraded.getClient().get(sql`SELECT client_id AS clientId, scope FROM oauth_grants WHERE client_id = 'existing-public-client'`))
+    .toEqual({ clientId: "existing-public-client", scope: "daily-log:read" });
+  expect(upgraded.getStatus().foreignKeysEnabled).toBe(true);
+  upgraded.close();
 });
 
 test.each([
@@ -254,8 +282,8 @@ test("the production migration preserves every representative field from the pri
   });
 
   expect(upgraded.getStatus()).toMatchObject({
-    appliedMigrations: 23,
-    availableMigrations: 23,
+    appliedMigrations: 27,
+    availableMigrations: 27,
     migrationsCurrent: true,
     schemaVersion: "20",
     writable: true,
@@ -368,7 +396,7 @@ THIS IS NOT VALID SQL;\n`,
   ).toEqual([]);
   expect(recovered.getClient().select().from(schema.users).all()).toEqual([]);
   expect(recovered.getStatus()).toMatchObject({
-    appliedMigrations: 23,
+    appliedMigrations: 27,
     migrationsCurrent: true,
   });
   recovered.close();
@@ -394,8 +422,8 @@ test("read-only application storage prevents startup", async () => {
 
 test("readiness requires every database invariant", () => {
   const readyStatus: DatabaseStatus = {
-    appliedMigrations: 23,
-    availableMigrations: 23,
+    appliedMigrations: 27,
+    availableMigrations: 27,
     busyTimeoutMs: 5_000,
     foreignKeysEnabled: true,
     journalMode: "wal",
@@ -450,8 +478,8 @@ test("status detects tampered migration history, metadata, and pragmas", async (
   client.run(sql`DELETE FROM __drizzle_migrations
     WHERE created_at = (SELECT MAX(created_at) FROM __drizzle_migrations)`);
   expect(database.getStatus()).toMatchObject({
-    appliedMigrations: 22,
-    availableMigrations: 23,
+    appliedMigrations: 26,
+    availableMigrations: 27,
     migrationsCurrent: false,
   });
   client.delete(schema.applicationMetadata)
