@@ -29,3 +29,8 @@ export function getGoalVersionService(now?: Date): GoalVersionService {
   );
   return goalVersionService;
 }
+
+/** The date navigation links treat as today: the account's local date once setup saved a time zone. */
+export function navigationToday(userId: number): string {
+  return getGoalVersionService().localToday(userId) ?? new Date().toISOString().slice(0, 10);
+}

@@ -22,6 +22,7 @@ import { presentPhotoAnalysisReadiness } from "./photo-analysis-readiness";
 import { SettingsDestinations } from "../settings-destinations";
 import shellStyles from "../food-log.module.css";
 import styles from "../photo-analysis/connection.module.css";
+import { navigationToday } from "../goals/runtime.server";
 
 export function meta() { return [{ title: "AI photo estimates · Open Calorie Tracker" }]; }
 export function headers() { return { "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" }; }
@@ -54,7 +55,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   );
   return {
     csrfToken: session.csrfToken,
-    today: new Date().toISOString().slice(0, 10),
+    today: navigationToday(session.user.id),
     credentials,
     readiness,
     settings,

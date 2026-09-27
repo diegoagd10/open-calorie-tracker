@@ -58,7 +58,7 @@ test("account settings review client IDs and show registration validation feedba
     redirectUris: ["http://127.0.0.1:4567/callback"], createdAt: "2026-09-26T12:00:00.000Z",
   };
   const renderer = await renderRoute(OAuthClientsSettings, "/settings/oauth-clients", {
-    csrfToken: "csrf-token", clients: [client], connections: [], view: "list",
+    csrfToken: "csrf-token", today: "2026-09-27", clients: [client], connections: [], view: "list",
   });
   const content = visibleText(renderer);
   expect(content).toContain(client.name);
@@ -70,7 +70,7 @@ test("account settings review client IDs and show registration validation feedba
   await act(() => renderer.unmount());
 
   const empty = await renderRoute(OAuthClientsSettings, "/settings/oauth-clients", {
-    csrfToken: "csrf-token", clients: [], connections: [], view: "new",
+    csrfToken: "csrf-token", today: "2026-09-27", clients: [], connections: [], view: "new",
   }, { errors: { name: "Enter a name of 1 to 80 printable characters.", redirectUris: "Enter one to ten redirect URIs, one per line." } }, "/settings/oauth-clients?view=new");
   expect(visibleText(empty)).toContain("Register a client");
   expect(empty.root.findAllByProps({ role: "alert" })).toHaveLength(2);
@@ -78,7 +78,7 @@ test("account settings review client IDs and show registration validation feedba
   await act(() => empty.unmount());
 
   const failed = await renderRoute(OAuthClientsSettings, "/settings/oauth-clients", {
-    csrfToken: "csrf-token", clients: [], connections: [], view: "new",
+    csrfToken: "csrf-token", today: "2026-09-27", clients: [], connections: [], view: "new",
   }, { error: "The client could not be registered. Please try again." }, "/settings/oauth-clients?view=new");
   expect(visibleText(failed)).toContain("The client could not be registered.");
   await act(() => failed.unmount());
@@ -87,7 +87,7 @@ test("account settings review client IDs and show registration validation feedba
 test("account settings show connected clients, their permission, and revoke controls", async () => {
   const clientId = "a".repeat(32);
   const renderer = await renderRoute(OAuthClientsSettings, "/settings/oauth-clients", {
-    csrfToken: "csrf-token", clients: [], view: "list",
+    csrfToken: "csrf-token", today: "2026-09-27", clients: [], view: "list",
     connections: [{ clientId, name: "Phone app", scope: "daily-log:read", connectedAt: "2026-09-26T12:00:00.000Z" }],
   });
   const content = visibleText(renderer);
@@ -106,7 +106,7 @@ test("confidential registration displays the secret once while the ordinary clie
   };
   const secret = "s".repeat(43);
   const registered = await renderRoute(OAuthClientsSettings, "/settings/oauth-clients", {
-    csrfToken: "csrf-token", clients: [client], connections: [], view: "new",
+    csrfToken: "csrf-token", today: "2026-09-27", clients: [client], connections: [], view: "new",
   }, { client, clientSecret: secret }, "/settings/oauth-clients?view=new");
   expect(visibleText(registered)).toContain("Client registered");
   expect(visibleText(registered)).toContain("View registered clients");
@@ -117,7 +117,7 @@ test("confidential registration displays the secret once while the ordinary clie
   await act(() => registered.unmount());
 
   const listed = await renderRoute(OAuthClientsSettings, "/settings/oauth-clients", {
-    csrfToken: "csrf-token", clients: [client], connections: [], view: "list",
+    csrfToken: "csrf-token", today: "2026-09-27", clients: [client], connections: [], view: "list",
   });
   expect(visibleText(listed)).toContain("Confidential server client");
   expect(visibleText(listed)).not.toContain(secret);

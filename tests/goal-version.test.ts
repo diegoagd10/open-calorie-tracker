@@ -382,6 +382,25 @@ test("effective dates use the account local day across DST boundaries", async ()
   database.close();
 });
 
+test("navigation today follows the account time zone and is absent before setup", async () => {
+  const database = await setupDatabase();
+  const client = database.getClient();
+  const userId = insertConfiguredUser(client, "local.today");
+  const unconfiguredUserId = client
+    .insert(users)
+    .values({ createdAt: "2026-01-01T00:00:00.000Z", usernameNormalized: "no.setup" })
+    .returning({ id: users.id })
+    .get().id;
+  const eveningInNewYork = new GoalVersionService(
+    client,
+    () => new Date("2026-09-28T02:30:00.000Z"),
+  );
+
+  expect(eveningInNewYork.localToday(userId)).toBe("2026-09-27");
+  expect(eveningInNewYork.localToday(unconfiguredUserId)).toBeUndefined();
+  database.close();
+});
+
 test("a failed Goal Version replacement leaves goals and display units unchanged", async () => {
   const database = await setupDatabase();
   const client = database.getClient();

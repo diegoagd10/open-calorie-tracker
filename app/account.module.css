@@ -14,6 +14,58 @@
   box-shadow: var(--shadow-panel);
 }
 
+.settingsPanel {
+  max-width: 44rem;
+  color: var(--ink-2);
+  font-size: 0.95rem;
+  line-height: 1.55;
+}
+
+.settingsPanel h1 {
+  margin: 0.25rem 0 0.5rem;
+  color: var(--ink);
+  font-size: clamp(2.125rem, 7vw, 2.625rem);
+  line-height: 1.05;
+}
+
+.settingsPanel h2 {
+  margin: 2rem 0 0.4rem;
+  color: var(--ink);
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.settingsPanel h1 + p {
+  margin-top: 0;
+  color: var(--muted);
+}
+
+.settingsPanel .clientCard,
+.settingsPanel .detailBlock,
+.settingsPanel .form,
+.settingsPanel .keyList {
+  padding: 1.1rem 1.25rem;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-panel);
+  background: var(--surface);
+}
+
+.settingsPanel .keyRow {
+  margin-block: 0;
+  padding-block: 0.6rem;
+  border-bottom: 1px solid var(--rule);
+}
+
+.settingsPanel .keyRow:last-child {
+  border-bottom: 0;
+}
+
+@media (min-width: 1120px) {
+  .settingsPanel > .backLink[href="/settings/goals"] {
+    display: none;
+  }
+}
+
 .backLink {
   display: inline-flex;
   min-height: 2.75rem;

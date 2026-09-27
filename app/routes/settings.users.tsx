@@ -19,6 +19,7 @@ import { formatLocalDate } from "../food-log/date";
 import shellStyles from "../food-log.module.css";
 import { SettingsDestinations } from "../settings-destinations";
 import styles from "../users.module.css";
+import { navigationToday } from "../goals/runtime.server";
 
 type UsersActionData = {
   accessChanged?: {
@@ -100,7 +101,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     recoveryPublicUrl: effectiveRequestPolicy().entry === "lan" ? `${applicationOrigin()}/settings/users` : undefined,
     csrfToken: session.csrfToken,
     members: getAuthenticationService().listManageableMembers(),
-    today: new Date().toISOString().slice(0, 10),
+    today: navigationToday(session.user.id),
   };
 }
 

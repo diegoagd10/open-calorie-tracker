@@ -13,7 +13,10 @@ import {
 } from "../auth/key-ceremony.client";
 import { getGoalSetupService } from "../setup/runtime.server";
 import { applicationOrigin, effectiveRequestPolicy } from "../runtime.server";
+import { AppNavigation } from "../app-navigation";
+import { navigationToday } from "../goals/runtime.server";
 import styles from "../account.module.css";
+import shellStyles from "../food-log.module.css";
 
 export function meta() {
   return [{ title: "Account security · Open Calorie Tracker" }];
@@ -31,6 +34,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     csrfToken: session.csrfToken,
     username: session.user.username,
     preview: enrollmentPreviewEnabled(),
+    today: navigationToday(session.user.id),
     ...getAuthenticationService().keys.status(session.token),
   };
 }
@@ -42,8 +46,18 @@ export default function SecuritySettings({ loaderData }: Route.ComponentProps) {
     (typeof loaderData.credentials)[number] | undefined
   >();
   return (
-    <main className={styles.shell}>
-      <section className={styles.panel} aria-labelledby="security-title">
+    <div className={shellStyles.shell}>
+      <a className={shellStyles.skipLink} href="#security-settings">
+        Skip to account security
+      </a>
+      <AppNavigation
+        active="settings"
+        csrfToken={loaderData.csrfToken}
+        selectedDate={loaderData.today}
+        today={loaderData.today}
+      />
+      <main className={shellStyles.appSurface} id="security-settings">
+      <section className={styles.settingsPanel} aria-labelledby="security-title">
         <Link className={styles.backLink} to="/settings/goals">
           Back to settings
         </Link>
@@ -267,6 +281,7 @@ export default function SecuritySettings({ loaderData }: Route.ComponentProps) {
         </p>
         <Link to="/account/password">Change account password</Link>
       </section>
-    </main>
+      </main>
+    </div>
   );
 }

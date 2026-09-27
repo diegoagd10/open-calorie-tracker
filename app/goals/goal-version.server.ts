@@ -5,6 +5,7 @@ import {
   goalVersions,
   userPreferences,
 } from "../database/schema.server";
+import { readUserTimeZone } from "../database/user-preferences.server";
 import { localDateAt, parseIsoLocalDate } from "../food-log/date";
 import type { DisplayUnits } from "../setup/validation";
 
@@ -47,6 +48,12 @@ export class GoalVersionService {
   ) {
     this.#database = database;
     this.#now = now;
+  }
+
+  /** The account's current local date, or undefined before Food Log setup saves a time zone. */
+  localToday(userId: number): string | undefined {
+    const timeZone = readUserTimeZone(this.#database, userId);
+    return timeZone ? localDateAt(this.#now(), timeZone) : undefined;
   }
 
   read(userId: number, requestedDate?: string) {

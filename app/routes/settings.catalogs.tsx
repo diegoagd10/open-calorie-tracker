@@ -10,6 +10,7 @@ import { AppNavigation } from "../app-navigation";
 import { SettingsDestinations } from "../settings-destinations";
 import shellStyles from "../food-log.module.css";
 import styles from "../photo-analysis/connection.module.css";
+import { navigationToday } from "../goals/runtime.server";
 
 export function meta() { return [{ title: "Food Catalogs · Open Calorie Tracker" }]; }
 export function headers() { return { "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" }; }
@@ -22,7 +23,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     offCatalog.checkForUpdate(),
     getUsdaPhotoAnalysisCatalog().photoAnalysisReadiness(),
   ]);
-  return { csrfToken: session.csrfToken, today: new Date().toISOString().slice(0, 10), catalog: catalogInformation(catalog.read(), photoAnalysisReadiness), offCatalog: catalogInformation(offCatalog.read()) };
+  return { csrfToken: session.csrfToken, today: navigationToday(session.user.id), catalog: catalogInformation(catalog.read(), photoAnalysisReadiness), offCatalog: catalogInformation(offCatalog.read()) };
 }
 export async function action({ request }: Route.ActionArgs) {
   requireValidOrigin(request);
