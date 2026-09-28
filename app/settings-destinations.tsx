@@ -78,6 +78,15 @@ export function SettingsDestinations({
             <span aria-hidden="true">›</span>
           </Link>
         ) : null}
+        {active !== "api-keys" ? (
+          <Link className={styles.accountAccessRow} to="/settings/api-keys">
+            <span className={styles.accountAccessIcon}>
+              <UiIcon name="key" />
+            </span>
+            <span><strong>API keys</strong><small>Let apps and AI assistants read your Food Log.</small></span>
+            <span aria-hidden="true">›</span>
+          </Link>
+        ) : null}
         {active !== "oauth" ? (
           <Link className={styles.accountAccessRow} to="/settings/oauth-clients">
             <span className={styles.accountAccessIcon}>
@@ -103,11 +112,12 @@ export function SettingsDestinations({
   );
 }
 
-export type SettingsSection = "goals" | "security" | "oauth" | "users" | "ai" | "catalogs";
+export type SettingsSection = "goals" | "security" | "api-keys" | "oauth" | "users" | "ai" | "catalogs";
 
 const personalSections = [
   { icon: "goals", key: "goals", label: "Display and goals", to: "/settings/goals" },
   { icon: "key", key: "security", label: "Account security", to: "/settings/security" },
+  { icon: "key", key: "api-keys", label: "API keys", to: "/settings/api-keys" },
   { icon: "link", key: "oauth", label: "OAuth clients", to: "/settings/oauth-clients" },
 ] as const;
 

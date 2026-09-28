@@ -7,6 +7,8 @@ export default [
   route("photo-analysis", "./routes/photo-analysis.ts"),
   route("key-ceremony", "./routes/key-ceremony.ts"),
   route("settings/security", "./routes/settings.security.tsx"),
+  route("settings/api-keys", "./routes/settings.api-keys.tsx"),
+  route("settings/api-keys/copy", "./routes/settings.api-keys.copy.ts"),
   route("settings/oauth-clients", "./routes/settings.oauth-clients.tsx"),
   route("oauth/authorize", "./routes/oauth.authorize.tsx"),
   route("oauth/token", "./routes/oauth.token.ts"),

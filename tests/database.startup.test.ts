@@ -56,8 +56,8 @@ test("startup applies the initial migration and configures writable SQLite stora
   });
 
   expect(database.getStatus()).toEqual({
-    appliedMigrations: 27,
-    availableMigrations: 27,
+    appliedMigrations: 28,
+    availableMigrations: 28,
     busyTimeoutMs: 5_000,
     foreignKeysEnabled: true,
     journalMode: "wal",
@@ -78,12 +78,12 @@ test("starting twice preserves the applied migration state", async () => {
   };
 
   const firstStartup = openApplicationDatabase(options);
-  expect(firstStartup.getStatus().appliedMigrations).toBe(27);
+  expect(firstStartup.getStatus().appliedMigrations).toBe(28);
   firstStartup.close();
 
   const replacementStartup = openApplicationDatabase(options);
   expect(replacementStartup.getStatus()).toMatchObject({
-    appliedMigrations: 27,
+    appliedMigrations: 28,
     schemaVersion: "20",
     writable: true,
   });
@@ -282,8 +282,8 @@ test("the production migration preserves every representative field from the pri
   });
 
   expect(upgraded.getStatus()).toMatchObject({
-    appliedMigrations: 27,
-    availableMigrations: 27,
+    appliedMigrations: 28,
+    availableMigrations: 28,
     migrationsCurrent: true,
     schemaVersion: "20",
     writable: true,
@@ -396,7 +396,7 @@ THIS IS NOT VALID SQL;\n`,
   ).toEqual([]);
   expect(recovered.getClient().select().from(schema.users).all()).toEqual([]);
   expect(recovered.getStatus()).toMatchObject({
-    appliedMigrations: 27,
+    appliedMigrations: 28,
     migrationsCurrent: true,
   });
   recovered.close();
@@ -422,8 +422,8 @@ test("read-only application storage prevents startup", async () => {
 
 test("readiness requires every database invariant", () => {
   const readyStatus: DatabaseStatus = {
-    appliedMigrations: 27,
-    availableMigrations: 27,
+    appliedMigrations: 28,
+    availableMigrations: 28,
     busyTimeoutMs: 5_000,
     foreignKeysEnabled: true,
     journalMode: "wal",
@@ -478,8 +478,8 @@ test("status detects tampered migration history, metadata, and pragmas", async (
   client.run(sql`DELETE FROM __drizzle_migrations
     WHERE created_at = (SELECT MAX(created_at) FROM __drizzle_migrations)`);
   expect(database.getStatus()).toMatchObject({
-    appliedMigrations: 26,
-    availableMigrations: 27,
+    appliedMigrations: 27,
+    availableMigrations: 28,
     migrationsCurrent: false,
   });
   client.delete(schema.applicationMetadata)

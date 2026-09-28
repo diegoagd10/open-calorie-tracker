@@ -321,6 +321,7 @@
   margin-top: 0.75rem;
 }
 
+.clientCard h2,
 .clientCard h3,
 .detailBlock h2 {
   margin: 0 0 0.5rem;
@@ -374,4 +375,75 @@
 
 .confirmation p {
   margin-top: 0.5rem;
+}
+
+.apiKeyHelp {
+  line-height: 2;
+  overflow-wrap: anywhere;
+}
+
+.apiKeyHelp code {
+  overflow-wrap: anywhere;
+}
+
+.permissions {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.permissions legend {
+  margin-bottom: 0.4rem;
+  padding: 0;
+}
+
+.checkboxRow {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 400;
+}
+
+.checkboxRow input {
+  width: auto;
+  min-height: 0;
+}
+
+.keyValue {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.keyValue .credential {
+  margin: 0;
+  user-select: none;
+}
+
+.copyButton {
+  min-height: 2.25rem;
+  margin-left: 0.35rem;
+  padding: 0.3rem 0.8rem;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  color: var(--color-text);
+  background: var(--color-surface);
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  line-height: 1.2;
+  cursor: pointer;
+}
+
+.copyButton:hover {
+  border-color: var(--green-dark);
+}
+
+.copyNotice {
+  margin-left: 0.35rem;
+  color: var(--color-ready);
+  font-size: 0.8rem;
+  font-weight: 600;
 }

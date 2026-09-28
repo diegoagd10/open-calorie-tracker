@@ -124,6 +124,27 @@ export const oauthRefreshTokens = sqliteTable(
   (table) => [index("oauth_refresh_tokens_grant_id_index").on(table.grantId)],
 );
 
+export const apiKeys = sqliteTable(
+  "api_keys",
+  {
+    id: integer().primaryKey({ autoIncrement: true }),
+    ownerId: integer("owner_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    name: text().notNull(),
+    keyHash: text("key_hash").notNull(),
+    keyCiphertext: text("key_ciphertext").notNull(),
+    keyPrefix: text("key_prefix").notNull(),
+    keyLastFour: text("key_last_four").notNull(),
+    scopes: text().notNull(),
+    createdAt: text("created_at").notNull(),
+    expiresAt: text("expires_at"),
+    lastUsedAt: text("last_used_at"),
+  },
+  (table) => [
+    uniqueIndex("api_keys_key_hash_unique").on(table.keyHash),
+    uniqueIndex("api_keys_owner_name_unique").on(table.ownerId, sql`${table.name} COLLATE NOCASE`),
+  ],
+);
+
 export const passwordCredentials = sqliteTable("password_credentials", {
   userId: integer("user_id")
     .primaryKey()

@@ -39,6 +39,8 @@ describe("static route contracts", () => {
       { children: undefined, file: "./routes/photo-analysis.ts", path: "photo-analysis" },
       { children: undefined, file: "./routes/key-ceremony.ts", path: "key-ceremony" },
       { children: undefined, file: "./routes/settings.security.tsx", path: "settings/security" },
+      { children: undefined, file: "./routes/settings.api-keys.tsx", path: "settings/api-keys" },
+      { children: undefined, file: "./routes/settings.api-keys.copy.ts", path: "settings/api-keys/copy" },
       { children: undefined, file: "./routes/settings.oauth-clients.tsx", path: "settings/oauth-clients" },
       { children: undefined, file: "./routes/oauth.authorize.tsx", path: "oauth/authorize" },
       { children: undefined, file: "./routes/oauth.token.ts", path: "oauth/token" },
