@@ -190,6 +190,20 @@
       "when": 1790457917661,
       "tag": "0026_fuzzy_wendell_vaughn",
       "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "6",
+      "when": 1790614554155,
+      "tag": "0027_api_keys",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "6",
+      "when": 1790618905813,
+      "tag": "0028_remove_oauth",
+      "breakpoints": true
     }
   ]
 }

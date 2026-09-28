@@ -2,7 +2,8 @@ import type { Route } from "./+types/api.v1.daily-log";
 import type { FoodLogService } from "../food-log/food-log.server";
 import { parseIsoLocalDate } from "../food-log/date";
 import { getFoodLogService } from "../food-log/runtime.server";
-import { authenticateDailyLogBearer } from "../oauth/authorization.server";
+import { getApiKeyAuthenticator } from "../api-keys/runtime.server";
+import { getClientIp } from "../auth/http.server";
 
 type FoodLog = NonNullable<ReturnType<FoodLogService["read"]>>;
 type Food = FoodLog["entries"][number];
@@ -10,11 +11,8 @@ type Water = FoodLog["waterEvents"][number];
 
 const privateHeaders = { "Cache-Control": "private, no-store", "Referrer-Policy": "no-referrer" };
 
-function apiError(error: string, status: number, authenticate?: string) {
-  return Response.json({ error }, {
-    status,
-    headers: authenticate ? { ...privateHeaders, "WWW-Authenticate": authenticate } : privateHeaders,
-  });
+function apiError(error: string, status: number, headers: Record<string, string> = {}) {
+  return Response.json({ error }, { status, headers: { ...privateHeaders, ...headers } });
 }
 
 function presentFood(entry: Food) {
@@ -113,13 +111,16 @@ export function headers() {
 }
 
 export function loader({ request }: Route.LoaderArgs) {
-  const bearer = authenticateDailyLogBearer(request.headers.get("Authorization"));
-  if (!bearer.ok) return bearer.error === "insufficient_scope"
-    ? apiError("insufficient_scope", 403, 'Bearer realm="daily-log", error="insufficient_scope", scope="daily-log:read"')
-    : apiError("invalid_token", 401, 'Bearer realm="daily-log", error="invalid_token"');
+  const caller = getApiKeyAuthenticator().authenticate(request.headers.get("Authorization"), getClientIp(request), "daily-log:read");
+  if (!caller.ok) {
+    if (caller.error === "rate_limited") return apiError("rate_limited", 429, { "Retry-After": String(caller.retryAfterSeconds) });
+    return caller.error === "insufficient_scope"
+      ? apiError("insufficient_scope", 403, { "WWW-Authenticate": 'Bearer realm="daily-log", error="insufficient_scope", scope="daily-log:read"' })
+      : apiError("invalid_token", 401, { "WWW-Authenticate": 'Bearer realm="daily-log", error="invalid_token"' });
+  }
   const dates = new URL(request.url).searchParams.getAll("date");
   if (dates.length !== 1 || !parseIsoLocalDate(dates[0])) return apiError("invalid_date", 400);
-  const foodLog = getFoodLogService().read(bearer.userId, dates[0]);
+  const foodLog = getFoodLogService().read(caller.userId, dates[0]);
   if (!foodLog) return apiError("missing_setup", 409);
   return Response.json(presentDailyFoodLog(foodLog), { headers: privateHeaders });
 }

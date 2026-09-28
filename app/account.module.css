@@ -41,8 +41,7 @@
   color: var(--muted);
 }
 
-.settingsPanel .clientCard,
-.settingsPanel .detailBlock,
+.settingsPanel .keyCard,
 .settingsPanel .form,
 .settingsPanel .keyList {
   padding: 1.1rem 1.25rem;
@@ -80,12 +79,6 @@
 
 .backLink:hover {
   color: var(--color-text);
-}
-
-.guideLink {
-  color: var(--color-ready);
-  font-weight: 600;
-  text-underline-offset: 0.2rem;
 }
 
 .header {
@@ -175,6 +168,12 @@
 
 .cancelRemovalButton:hover {
   background: var(--ground);
+}
+
+a.cancelRemovalButton {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
 }
 
 .removalActions button:disabled,
@@ -300,7 +299,7 @@
   background: var(--green-hover);
 }
 
-.clientList {
+.apiKeyList {
   display: grid;
   gap: 0.75rem;
   margin: 1rem 0 2rem;
@@ -308,8 +307,7 @@
   list-style: none;
 }
 
-.clientCard,
-.detailBlock {
+.keyCard {
   min-width: 0;
   padding: 1rem;
   border: 1px solid var(--color-border);
@@ -317,22 +315,17 @@
   background: var(--ground);
 }
 
-.detailBlock {
-  margin-top: 0.75rem;
-}
-
-.clientCard h3,
-.detailBlock h2 {
+.keyCard h2,
+.keyCard h3 {
   margin: 0 0 0.5rem;
 }
 
-.clientCard p,
-.detailBlock p {
+.keyCard p {
   margin: 0.5rem 0 1rem;
   color: var(--color-text-muted);
 }
 
-.clientCard strong {
+.keyCard strong {
   display: block;
   margin-top: 0.9rem;
   font-size: 0.875rem;
@@ -349,29 +342,143 @@
   user-select: all;
 }
 
-.uriList {
-  margin: 0.5rem 0 0;
-  padding-left: 1.25rem;
+.apiKeyHelp {
+  line-height: 2;
   overflow-wrap: anywhere;
 }
 
-.uriList li {
-  margin-top: 0.35rem;
+.apiKeyHelp code {
+  overflow-wrap: anywhere;
 }
 
-.confirmation {
-  margin: 0.5rem 0 1.25rem;
-  padding: 1rem;
-  border: 1px solid var(--color-ready);
-  border-radius: 0.75rem;
-  background: var(--green-soft);
+/* The URL may wrap inside itself, but its Copy button never leaves it. */
+.endpoint {
+  display: inline-flex;
+  max-width: 100%;
+  align-items: center;
+  vertical-align: middle;
 }
 
-.confirmation h1,
-.confirmation p {
+.endpoint code {
+  min-width: 0;
+}
+
+.endpoint .copyButton {
+  flex: none;
+}
+
+.permissions {
   margin: 0;
+  padding: 0;
+  border: 0;
 }
 
-.confirmation p {
+.permissions legend {
+  margin-bottom: 0.4rem;
+  padding: 0;
+}
+
+.checkboxRow {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 400;
+}
+
+.checkboxRow input {
+  width: auto;
+  min-height: 0;
+}
+
+.keyValue {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
   margin-top: 0.5rem;
+}
+
+.keyValue .credential {
+  margin: 0;
+  user-select: none;
+}
+
+.copyButton {
+  min-height: 2.25rem;
+  margin-left: 0.35rem;
+  padding: 0.3rem 0.8rem;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  color: var(--color-text);
+  background: var(--color-surface);
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  line-height: 1.2;
+  cursor: pointer;
+}
+
+.copyButton:hover {
+  border-color: var(--green-dark);
+}
+
+.copyNotice {
+  margin-left: 0.35rem;
+  color: var(--color-ready);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.keyActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.keyActions a {
+  display: inline-flex;
+  min-height: 2.75rem;
+  align-items: center;
+  padding: 0.5rem 1rem;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  color: var(--color-text);
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.keyActions a:hover {
+  border-color: var(--green-dark);
+}
+
+.keyActions .deleteKeyLink {
+  border-color: var(--danger-border);
+  color: var(--danger);
+}
+
+.keyActions .deleteKeyLink:hover {
+  border-color: var(--danger-border);
+  background: var(--danger-soft);
+}
+
+.keyCard.expiredKey {
+  border-style: dashed;
+  background: transparent;
+}
+
+.expiredKey h2,
+.expiredKey .credential {
+  color: var(--color-text-muted);
+}
+
+.expiredBadge {
+  margin-left: 0.5rem;
+  padding: 0.1rem 0.5rem;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  color: var(--color-text-muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  vertical-align: middle;
 }

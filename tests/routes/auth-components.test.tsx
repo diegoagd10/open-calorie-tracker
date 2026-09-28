@@ -84,15 +84,6 @@ describe("authentication route metadata", () => {
 });
 
 describe("login component", () => {
-  test("submits credentials back to an in-progress authorization request", async () => {
-    const loginAction = "/login?next=%2Foauth%2Fauthorize%3Fclient_id%3Dexample";
-    const renderer = await renderRoute(Login, "/login", {
-      csrfToken: "login-csrf", loginAction, returnPath: "/oauth/authorize?client_id=example", publicKeyUrl: null,
-    });
-    expect(renderer.root.findByType("form").props.action).toBe(loginAction);
-    renderer.unmount();
-  });
-
   test("renders its complete submission contract without an error", async () => {
     const renderer = await renderRoute(
       Login,

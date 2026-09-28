@@ -11,7 +11,6 @@ export type UiIconName =
   | "help"
   | "info"
   | "key"
-  | "link"
   | "lock"
   | "log"
   | "plus"
@@ -108,8 +107,6 @@ export function UiIcon({ name }: { name: UiIconName }) {
           <circle cx="8" cy="15" r="4" />
           <path d="m11 12 8-8M16 7l2 2" />
         </>
-      ) : name === "link" ? (
-        <path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1" />
       ) : name === "sparkle" ? (
         <path d="m12 3 1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8Z" />
       ) : name === "users" ? (

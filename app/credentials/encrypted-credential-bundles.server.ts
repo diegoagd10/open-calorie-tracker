@@ -112,19 +112,38 @@ export class EncryptedCredentialBundles {
     private readonly now: () => Date,
   ) {}
 
-  async read(name: string): Promise<Buffer | undefined> {
-    const purpose = bundleNameSchema.parse(name);
-    const stored = this.persistence.read(purpose);
-    if (!stored) return undefined;
+  /** Encrypts a value that its owner stores elsewhere, bound to its purpose. */
+  seal(purpose: string, plaintext: Uint8Array): string {
+    const nonce = randomBytes(NONCE_BYTES);
+    const cipher = createCipheriv("aes-256-gcm", this.masterKey, nonce, {
+      authTagLength: AUTHENTICATION_TAG_BYTES,
+    });
+    cipher.setAAD(authenticatedMetadata(bundleNameSchema.parse(purpose)));
+    const ciphertext = Buffer.concat([
+      cipher.update(Buffer.from(plaintext)),
+      cipher.final(),
+    ]);
+    return JSON.stringify({
+      algorithm: "AES-256-GCM",
+      ciphertext: encodeBase64Url(ciphertext),
+      nonce: encodeBase64Url(nonce),
+      tag: encodeBase64Url(cipher.getAuthTag()),
+      version: ENVELOPE_VERSION,
+    });
+  }
+
+  /** Decrypts a value sealed for the same purpose. */
+  unseal(purpose: string, sealed: string): Buffer {
+    const aad = authenticatedMetadata(bundleNameSchema.parse(purpose));
     try {
-      const envelope = envelopeSchema.parse(JSON.parse(stored.envelope) as unknown);
+      const envelope = envelopeSchema.parse(JSON.parse(sealed) as unknown);
       const decipher = createDecipheriv(
         "aes-256-gcm",
         this.masterKey,
         decodeCanonicalBase64Url(envelope.nonce, NONCE_BYTES),
         { authTagLength: AUTHENTICATION_TAG_BYTES },
       );
-      decipher.setAAD(authenticatedMetadata(purpose));
+      decipher.setAAD(aad);
       decipher.setAuthTag(decodeCanonicalBase64Url(envelope.tag, AUTHENTICATION_TAG_BYTES));
       return Buffer.concat([
         decipher.update(decodeCanonicalBase64Url(envelope.ciphertext)),
@@ -135,27 +154,18 @@ export class EncryptedCredentialBundles {
     }
   }
 
+  async read(name: string): Promise<Buffer | undefined> {
+    const purpose = bundleNameSchema.parse(name);
+    const stored = this.persistence.read(purpose);
+    return stored ? this.unseal(purpose, stored.envelope) : undefined;
+  }
+
   async replace(
     name: string,
     plaintext: Uint8Array,
   ): Promise<Extract<CredentialBundleStatus, { state: "configured" }>> {
     const purpose = bundleNameSchema.parse(name);
-    const nonce = randomBytes(NONCE_BYTES);
-    const cipher = createCipheriv("aes-256-gcm", this.masterKey, nonce, {
-      authTagLength: AUTHENTICATION_TAG_BYTES,
-    });
-    cipher.setAAD(authenticatedMetadata(purpose));
-    const ciphertext = Buffer.concat([
-      cipher.update(Buffer.from(plaintext)),
-      cipher.final(),
-    ]);
-    const envelope = JSON.stringify({
-      algorithm: "AES-256-GCM",
-      ciphertext: encodeBase64Url(ciphertext),
-      nonce: encodeBase64Url(nonce),
-      tag: encodeBase64Url(cipher.getAuthTag()),
-      version: ENVELOPE_VERSION,
-    });
+    const envelope = this.seal(purpose, plaintext);
     const previous = this.persistence.read(purpose);
     const updatedAt = this.now().toISOString();
     const configuredAt = previous?.configuredAt ?? updatedAt;

@@ -54,6 +54,8 @@
       },
       { "name": "appearance", "patterns": ["app/appearance/**"] },
       { "name": "browser-auth", "patterns": ["app/auth/**/*.client.ts"] },
+      { "name": "browser-api-keys", "patterns": ["app/api-keys/**/*.client.ts"] },
+      { "name": "api-keys", "patterns": ["app/api-keys/**"] },
       {
         "name": "auth",
         "patterns": [
@@ -73,7 +75,7 @@
         "patterns": ["app/database/**"]
       },
       { "name": "credentials", "patterns": ["app/credentials/**"] },
-      { "name": "oauth", "patterns": ["app/oauth/**"] },
+      { "name": "mcp", "patterns": ["app/mcp/**"] },
       { "name": "photo-analysis", "patterns": ["app/photo-analysis/**"] },
       {
         "name": "food-entry",
@@ -142,16 +144,20 @@
           "setup",
           "water-event",
           "appearance",
-          "oauth"
+          "api-keys",
+          "browser-api-keys",
+          "mcp"
         ]
       },
       { "from": "auth", "allow": ["database", "server"] },
       { "from": "appearance", "allow": [], "allowTypeOnly": ["web"] },
       { "from": "browser-auth", "allow": [] },
+      { "from": "browser-api-keys", "allow": [] },
+      { "from": "api-keys", "allow": ["auth", "credentials", "database", "server"] },
       { "from": "catalog", "allow": ["server", "database", "catalog-management"] },
       { "from": "database", "allow": [], "allowTypeOnly": ["catalog", "catalog-management", "credentials"] },
       { "from": "credentials", "allow": ["database"] },
-      { "from": "oauth", "allow": ["database"] },
+      { "from": "mcp", "allow": ["food-log"], "allowTypeOnly": ["api-keys"] },
       { "from": "catalog-management", "allow": ["database", "catalog"] },
       {
         "from": "food-entry",
@@ -188,7 +194,8 @@
           "water-event",
           "web",
           "appearance",
-          "oauth"
+          "api-keys",
+          "mcp"
         ]
       },
       { "from": "tooling", "allow": ["auth"] }
@@ -198,6 +205,7 @@
     },
     "calls": {
       "forbidden": [
+        { "from": "browser-api-keys", "callee": ["fs.*", "child_process.*", "process.exit", "better-sqlite3", "better-sqlite3.*", "drizzle-orm.*"] },
         { "from": "browser-auth", "callee": ["fs.*", "child_process.*", "process.exit", "better-sqlite3", "better-sqlite3.*", "drizzle-orm.*"] },
         {
           "from": "web",
@@ -245,6 +253,10 @@
           "callee": ["fetch", "fs.*", "child_process.*", "process.exit"]
         },
         {
+          "from": "mcp",
+          "callee": ["fetch", "fs.*", "child_process.*", "process.exit", "better-sqlite3", "better-sqlite3.*", "drizzle-orm.*"]
+        },
+        {
           "from": "goals",
           "callee": ["fetch", "fs.*", "child_process.*", "process.exit"]
         },
@@ -275,7 +287,7 @@
   },
   "overrides": [
     {
-      "files": ["app/routes/health.live.ts", "app/routes/oauth.metadata.ts"],
+      "files": ["app/routes/health.live.ts"],
       "rules": {
         "unused-load-data-keys": "off"
       }

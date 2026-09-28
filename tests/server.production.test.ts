@@ -11,6 +11,8 @@ import { networkInterfaces, tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { afterAll, beforeAll, expect, test } from "vitest";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 
 import { requestHttp, waitForHttpResponse } from "./support/http";
 import { offArchive, offWithBasis, offJsonlArchive } from "./support/off-archive";
@@ -406,4 +408,58 @@ test("key mode rejects password bypass on a real non-loopback HTTP LAN listener"
   expect(settings.headers.get("Location")).not.toContain(currentToken);
   running.child.kill("SIGTERM");
   await waitForExit(running.child);
+});
+
+test("a remote MCP client reads the Food Log through the running server with a bearer API key", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "mcp-remote-"));
+  temporaryDirectories.push(directory);
+  const port = await availablePort();
+  const lanPort = await availablePort();
+  const lanUrl = `http://127.0.0.1:${lanPort}`;
+  const databasePath = path.join(directory, "application.sqlite");
+  const database = openApplicationDatabase({ databasePath, migrationsFolder: path.resolve("drizzle") });
+  let session: { token: string; csrfToken: string };
+  try {
+    const account = await seedAuthenticatedAccount(new AuthenticationService(database.getClient()), database.getClient(), "mcp.remote.owner", "correct horse battery staple", "192.0.2.1", "admin");
+    new GoalSetupService(database.getClient()).completeInitial(account.user.id, { displayUnits: "metric", timeZone: "UTC", calorieTargetMilliKcal: 2_000_000, carbohydrateTargetMilligrams: 200_000, fatTargetMilligrams: 60_000, fiberTargetMilligrams: 30_000, proteinTargetMilligrams: 100_000, sodiumMaximumMilligrams: 2_000, sugarMaximumMilligrams: 40_000, waterTargetMicroliters: 2_000_000 });
+    session = { token: account.token, csrfToken: account.csrfToken };
+  } finally {
+    database.close();
+  }
+  const running = startProductionProcess({ APPLICATION_URL: "https://calories.example.test", DATABASE_PATH: databasePath, PORT: String(port), LAN_URL: lanUrl, LAN_PORT: String(lanPort), TRUST_PROXY: undefined });
+  await waitForHttpResponse(`${lanUrl}/health/live`);
+
+  const settingsPost = (pathname: string, fields: Record<string, string>) => requestHttp(`${lanUrl}${pathname}`, {
+    method: "POST",
+    headers: { Cookie: `calorie_lan_session=${session.token}`, Origin: lanUrl, "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ csrfToken: session.csrfToken, ...fields }).toString(),
+  });
+  const created = await settingsPost("/settings/api-keys", { intent: "create", name: "Remote MCP", scope: "daily-log:read", expiration: "1d" });
+  expect(created.status).toBe(302);
+  const copied = await settingsPost("/settings/api-keys/copy", { keyId: "1" });
+  expect(copied.status).toBe(200);
+  const { key } = await copied.json() as { key: string };
+
+  const unauthorized = new Client({ name: "unauthorized-test-client", version: "1.0.0" });
+  await expect(unauthorized.connect(new StreamableHTTPClientTransport(new URL(`${lanUrl}/mcp`)))).rejects.toThrow(/invalid_token/u);
+
+  const client = new Client({ name: "remote-test-client", version: "1.0.0" });
+  await client.connect(new StreamableHTTPClientTransport(new URL(`${lanUrl}/mcp`), {
+    requestInit: { headers: { Authorization: `Bearer ${key}` } },
+  }));
+  const { tools } = await client.listTools();
+  expect(tools.map((tool) => tool.name)).toEqual(["get_daily_log"]);
+  const result = await client.callTool({ name: "get_daily_log", arguments: {} });
+  expect(result.isError).toBeFalsy();
+  expect(result.structuredContent).toMatchObject({
+    timeZone: "UTC",
+    foods: [],
+    nutrients: { energy: { unit: "kcal", consumed: 0, goal: 2000 } },
+    water: { unit: "ml", consumed: 0, goal: 2000 },
+  });
+  await client.close();
+
+  running.child.kill("SIGTERM");
+  await waitForExit(running.child);
+  expect(`${running.stdout()}\n${running.stderr()}`).not.toContain(key);
 });

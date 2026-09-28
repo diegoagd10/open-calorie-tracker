@@ -78,12 +78,12 @@ export function SettingsDestinations({
             <span aria-hidden="true">›</span>
           </Link>
         ) : null}
-        {active !== "oauth" ? (
-          <Link className={styles.accountAccessRow} to="/settings/oauth-clients">
+        {active !== "api-keys" ? (
+          <Link className={styles.accountAccessRow} to="/settings/api-keys">
             <span className={styles.accountAccessIcon}>
-              <UiIcon name="link" />
+              <UiIcon name="key" />
             </span>
-            <span><strong>OAuth clients</strong><small>Review connections and register public clients.</small></span>
+            <span><strong>API keys</strong><small>Let apps and AI assistants read your Food Log.</small></span>
             <span aria-hidden="true">›</span>
           </Link>
         ) : null}
@@ -103,12 +103,12 @@ export function SettingsDestinations({
   );
 }
 
-export type SettingsSection = "goals" | "security" | "oauth" | "users" | "ai" | "catalogs";
+export type SettingsSection = "goals" | "security" | "api-keys" | "users" | "ai" | "catalogs";
 
 const personalSections = [
   { icon: "goals", key: "goals", label: "Display and goals", to: "/settings/goals" },
   { icon: "key", key: "security", label: "Account security", to: "/settings/security" },
-  { icon: "link", key: "oauth", label: "OAuth clients", to: "/settings/oauth-clients" },
+  { icon: "key", key: "api-keys", label: "API keys", to: "/settings/api-keys" },
 ] as const;
 
 const administratorSections = [
