@@ -1,6 +1,6 @@
 import { and, count, eq, sql } from "drizzle-orm";
 import { getApplicationDatabase } from "./runtime.server";
-import { apiKeys } from "./schema.server";
+import { apiKeys, users } from "./schema.server";
 
 export type NewApiKeyRow = {
   name: string;
@@ -50,4 +50,27 @@ export function findOwnedApiKeySecret(ownerId: number, keyId: number) {
   }).from(apiKeys)
     .where(and(eq(apiKeys.ownerId, ownerId), eq(apiKeys.id, keyId)))
     .get();
+}
+
+/** The key a bearer hash names, with what authentication needs to accept it. */
+export function findApiKeyByHash(keyHash: string) {
+  return getApplicationDatabase().getClient().select({
+    id: apiKeys.id,
+    ownerId: apiKeys.ownerId,
+    keyPrefix: apiKeys.keyPrefix,
+    scopes: apiKeys.scopes,
+    expiresAt: apiKeys.expiresAt,
+    accessState: users.accessState,
+  }).from(apiKeys)
+    .innerJoin(users, eq(apiKeys.ownerId, users.id))
+    .where(eq(apiKeys.keyHash, keyHash))
+    .get();
+}
+
+/** Records use at `usedAt`, writing only when the stored value differs. */
+export function recordApiKeyUse(keyId: number, usedAt: string): void {
+  getApplicationDatabase().getClient().update(apiKeys)
+    .set({ lastUsedAt: usedAt })
+    .where(and(eq(apiKeys.id, keyId), sql`${apiKeys.lastUsedAt} IS NOT ${usedAt}`))
+    .run();
 }

@@ -153,7 +153,7 @@
       { "from": "appearance", "allow": [], "allowTypeOnly": ["web"] },
       { "from": "browser-auth", "allow": [] },
       { "from": "browser-api-keys", "allow": [] },
-      { "from": "api-keys", "allow": ["credentials", "database", "server"] },
+      { "from": "api-keys", "allow": ["auth", "credentials", "database", "server"] },
       { "from": "catalog", "allow": ["server", "database", "catalog-management"] },
       { "from": "database", "allow": [], "allowTypeOnly": ["catalog", "catalog-management", "credentials"] },
       { "from": "credentials", "allow": ["database"] },

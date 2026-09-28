@@ -18,7 +18,7 @@ function redactText(value) {
   let redacted = value.replace(
     /((?:api.?key|authorization|cookie|credential|csrf|password|secret|session|token)=)[^&\s;]+/gi,
     "$1[REDACTED]",
-  );
+  ).replace(/\b(oct_[A-Za-z0-9_-]{4})[A-Za-z0-9_-]+/g, "$1[REDACTED]");
   for (const sensitiveValue of configuredSensitiveValues()) {
     redacted = redacted.replaceAll(sensitiveValue, "[REDACTED]");
   }

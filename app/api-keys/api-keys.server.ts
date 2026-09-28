@@ -5,7 +5,7 @@ import { getApplicationDatabase } from "../database/runtime.server";
 import { readUserTimeZone } from "../database/user-preferences.server";
 import { API_KEY_SCOPES, EXPIRATION_PRESETS, MAX_API_KEYS_PER_ACCOUNT, type ApiKeyScope } from "./presets";
 
-const KEY_PREFIX = "oct_";
+const API_KEY_PREFIX = "oct_";
 const CIPHER_PURPOSE = "api-key";
 const DAY_MS = 86_400_000;
 export type ApiKeySummary = {
@@ -26,7 +26,7 @@ export interface ApiKeyCipher {
   unseal(purpose: string, sealed: string): Buffer;
 }
 
-function hashKey(key: string): string {
+export function hashApiKey(key: string): string {
   return createHash("sha256").update(key, "ascii").digest("hex");
 }
 
@@ -84,13 +84,13 @@ export class ApiKeys {
     | { ok: false; errors: ApiKeyErrors } {
     const validated = validate(input);
     if (!validated.ok) return validated;
-    const key = `${KEY_PREFIX}${randomBytes(32).toString("base64url")}`;
+    const key = `${API_KEY_PREFIX}${randomBytes(32).toString("base64url")}`;
     const created = this.now();
     const outcome = insertApiKey(ownerId, {
       name: validated.name,
-      keyHash: hashKey(key),
+      keyHash: hashApiKey(key),
       keyCiphertext: this.cipher.seal(CIPHER_PURPOSE, Buffer.from(key, "ascii")),
-      keyPrefix: key.slice(0, KEY_PREFIX.length + 4),
+      keyPrefix: key.slice(0, API_KEY_PREFIX.length + 4),
       keyLastFour: key.slice(-4),
       scopes: validated.scopes,
       createdAt: created.toISOString(),
@@ -115,7 +115,7 @@ export class ApiKeys {
     const stored = findOwnedApiKeySecret(ownerId, keyId);
     if (!stored) return undefined;
     const key = this.cipher.unseal(CIPHER_PURPOSE, stored.keyCiphertext).toString("ascii");
-    if (hashKey(key) !== stored.keyHash) return undefined;
+    if (hashApiKey(key) !== stored.keyHash) return undefined;
     operationalLog("info", "api_key_copy", { userId: ownerId, keyPrefix: stored.keyPrefix });
     return key;
   }

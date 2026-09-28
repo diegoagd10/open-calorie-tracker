@@ -84,6 +84,21 @@ describe("operational logging", () => {
     });
   });
 
+  test("API keys anywhere in text keep only their display prefix", () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const key = `oct_abcd${"Z".repeat(35)}wxyz`;
+
+    operationalLog("info", "unsafe_text", {
+      message: `query k=${key} header Bearer ${key}`,
+      keyPrefix: "oct_abcd",
+    });
+
+    expect(loggedRecord("log")).toMatchObject({
+      message: "query k=oct_abcd[REDACTED] header Bearer oct_abcd[REDACTED]",
+      keyPrefix: "oct_abcd",
+    });
+  });
+
   test("configured secret values are redacted longest-first wherever they occur", () => {
     vi.stubEnv("MUTATION_PASSWORD", "deployment-secret");
     vi.stubEnv("MUTATION_SECRET", "deployment-secret-with-suffix");
