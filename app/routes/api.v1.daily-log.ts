@@ -2,10 +2,8 @@ import type { Route } from "./+types/api.v1.daily-log";
 import type { FoodLogService } from "../food-log/food-log.server";
 import { parseIsoLocalDate } from "../food-log/date";
 import { getFoodLogService } from "../food-log/runtime.server";
-import { presentsApiKey } from "../api-keys/authentication.server";
 import { getApiKeyAuthenticator } from "../api-keys/runtime.server";
 import { getClientIp } from "../auth/http.server";
-import { authenticateDailyLogBearer } from "../oauth/authorization.server";
 
 type FoodLog = NonNullable<ReturnType<FoodLogService["read"]>>;
 type Food = FoodLog["entries"][number];
@@ -112,15 +110,8 @@ export function headers() {
   return privateHeaders;
 }
 
-function authenticate(request: Request) {
-  const authorization = request.headers.get("Authorization");
-  return presentsApiKey(authorization)
-    ? getApiKeyAuthenticator().authenticate(authorization, getClientIp(request), "daily-log:read")
-    : authenticateDailyLogBearer(authorization);
-}
-
 export function loader({ request }: Route.LoaderArgs) {
-  const caller = authenticate(request);
+  const caller = getApiKeyAuthenticator().authenticate(request.headers.get("Authorization"), getClientIp(request), "daily-log:read");
   if (!caller.ok) {
     if (caller.error === "rate_limited") return apiError("rate_limited", 429, { "Retry-After": String(caller.retryAfterSeconds) });
     return caller.error === "insufficient_scope"

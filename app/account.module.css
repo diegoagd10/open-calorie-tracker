@@ -41,8 +41,7 @@
   color: var(--muted);
 }
 
-.settingsPanel .clientCard,
-.settingsPanel .detailBlock,
+.settingsPanel .keyCard,
 .settingsPanel .form,
 .settingsPanel .keyList {
   padding: 1.1rem 1.25rem;
@@ -80,12 +79,6 @@
 
 .backLink:hover {
   color: var(--color-text);
-}
-
-.guideLink {
-  color: var(--color-ready);
-  font-weight: 600;
-  text-underline-offset: 0.2rem;
 }
 
 .header {
@@ -306,7 +299,7 @@ a.cancelRemovalButton {
   background: var(--green-hover);
 }
 
-.clientList {
+.apiKeyList {
   display: grid;
   gap: 0.75rem;
   margin: 1rem 0 2rem;
@@ -314,8 +307,7 @@ a.cancelRemovalButton {
   list-style: none;
 }
 
-.clientCard,
-.detailBlock {
+.keyCard {
   min-width: 0;
   padding: 1rem;
   border: 1px solid var(--color-border);
@@ -323,23 +315,17 @@ a.cancelRemovalButton {
   background: var(--ground);
 }
 
-.detailBlock {
-  margin-top: 0.75rem;
-}
-
-.clientCard h2,
-.clientCard h3,
-.detailBlock h2 {
+.keyCard h2,
+.keyCard h3 {
   margin: 0 0 0.5rem;
 }
 
-.clientCard p,
-.detailBlock p {
+.keyCard p {
   margin: 0.5rem 0 1rem;
   color: var(--color-text-muted);
 }
 
-.clientCard strong {
+.keyCard strong {
   display: block;
   margin-top: 0.9rem;
   font-size: 0.875rem;
@@ -354,33 +340,6 @@ a.cancelRemovalButton {
   overflow-wrap: anywhere;
   background: var(--color-surface);
   user-select: all;
-}
-
-.uriList {
-  margin: 0.5rem 0 0;
-  padding-left: 1.25rem;
-  overflow-wrap: anywhere;
-}
-
-.uriList li {
-  margin-top: 0.35rem;
-}
-
-.confirmation {
-  margin: 0.5rem 0 1.25rem;
-  padding: 1rem;
-  border: 1px solid var(--color-ready);
-  border-radius: 0.75rem;
-  background: var(--green-soft);
-}
-
-.confirmation h1,
-.confirmation p {
-  margin: 0;
-}
-
-.confirmation p {
-  margin-top: 0.5rem;
 }
 
 .apiKeyHelp {
@@ -487,7 +446,7 @@ a.cancelRemovalButton {
   background: var(--danger-soft);
 }
 
-.clientCard.expiredKey {
+.keyCard.expiredKey {
   border-style: dashed;
   background: transparent;
 }

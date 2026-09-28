@@ -16,11 +16,6 @@ export type ApiKeyAuthentication =
   | { ok: false; error: "invalid_token" | "insufficient_scope" }
   | { ok: false; error: "rate_limited"; retryAfterSeconds: number };
 
-/** Whether an Authorization header presents an API key rather than another bearer credential. */
-export function presentsApiKey(authorization: string | null): boolean {
-  return /^Bearer +oct_/iu.test(authorization ?? "");
-}
-
 function minuteOf(instant: Date): string {
   const minute = new Date(instant);
   minute.setUTCSeconds(0, 0);

@@ -22,11 +22,9 @@ For production configuration, deployment, updates, and backups, follow the
 
 ## Connect an external application
 
-The [OAuth integration guide](https://diegoagd10.github.io/open-calory-tracker-docs/)
-explains how to register a public or confidential client, request a Food Log
-owner's permission, exchange an authorization code with PKCE, and call the
-read-only Daily Food Log API. The guide is published from a dedicated public
-repository.
+Create an API key in **Settings › API keys**. The page shows how to send it as
+`Authorization: Bearer <key>` to the MCP endpoint (`/mcp`) and the read-only
+Daily Food Log API (`/api/v1/daily-log`).
 
 ## Install food catalogs from the terminal
 

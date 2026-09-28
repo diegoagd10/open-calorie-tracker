@@ -56,8 +56,8 @@ test("startup applies the initial migration and configures writable SQLite stora
   });
 
   expect(database.getStatus()).toEqual({
-    appliedMigrations: 28,
-    availableMigrations: 28,
+    appliedMigrations: 29,
+    availableMigrations: 29,
     busyTimeoutMs: 5_000,
     foreignKeysEnabled: true,
     journalMode: "wal",
@@ -78,43 +78,48 @@ test("starting twice preserves the applied migration state", async () => {
   };
 
   const firstStartup = openApplicationDatabase(options);
-  expect(firstStartup.getStatus().appliedMigrations).toBe(28);
+  expect(firstStartup.getStatus().appliedMigrations).toBe(29);
   firstStartup.close();
 
   const replacementStartup = openApplicationDatabase(options);
   expect(replacementStartup.getStatus()).toMatchObject({
-    appliedMigrations: 28,
+    appliedMigrations: 29,
     schemaVersion: "20",
     writable: true,
   });
   replacementStartup.close();
 });
 
-test("confidential-client migration preserves public registrations and their grants", async () => {
-  const directory = await mkdtemp(path.join(tmpdir(), "oauth-client-upgrade-"));
+test("OAuth removal migrates a database holding OAuth clients, grants, and tokens and keeps its accounts", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "oauth-removal-upgrade-"));
   temporaryDirectories.push(directory);
   const databasePath = path.join(directory, "application.sqlite");
   const previousMigrations = await createMigrationFolder(path.join(directory, "previous-migrations"), {
-    throughTag: "0025_first_jamie_braddock",
+    throughTag: "0027_api_keys",
   });
   const previous = openApplicationDatabase({ databasePath, migrationsFolder: previousMigrations });
   const client = previous.getClient();
   const owner = client.get<{ id: number }>(sql`
     INSERT INTO users (username_normalized, created_at)
-    VALUES ('oauth.upgrade.owner', '2026-09-26T12:00:00.000Z') RETURNING id
+    VALUES ('oauth.removal.owner', '2026-09-26T12:00:00.000Z') RETURNING id
   `);
   client.run(sql`INSERT INTO oauth_clients (id, owner_id, name, type, redirect_uris, created_at)
-    VALUES ('existing-public-client', ${owner.id}, 'Existing client', 'public', '["https://existing.example/callback"]', '2026-09-26T12:00:00.000Z')`);
-  client.run(sql`INSERT INTO oauth_grants (client_id, user_id, scope, created_at)
-    VALUES ('existing-public-client', ${owner.id}, 'daily-log:read', '2026-09-26T12:00:00.000Z')`);
+    VALUES ('existing-client', ${owner.id}, 'Existing client', 'public', '["https://existing.example/callback"]', '2026-09-26T12:00:00.000Z')`);
+  const grant = client.get<{ id: number }>(sql`INSERT INTO oauth_grants (client_id, user_id, scope, created_at)
+    VALUES ('existing-client', ${owner.id}, 'daily-log:read', '2026-09-26T12:00:00.000Z') RETURNING id`);
+  client.run(sql`INSERT INTO oauth_authorization_codes (code_hash, grant_id, redirect_uri, code_challenge, expires_at, created_at)
+    VALUES ('code', ${grant.id}, 'https://existing.example/callback', 'challenge', '2026-09-26T12:10:00.000Z', '2026-09-26T12:00:00.000Z')`);
+  client.run(sql`INSERT INTO oauth_access_tokens (token_hash, grant_id, expires_at, created_at)
+    VALUES ('access', ${grant.id}, '2026-09-26T13:00:00.000Z', '2026-09-26T12:00:00.000Z')`);
+  client.run(sql`INSERT INTO oauth_refresh_tokens (token_hash, grant_id, created_at)
+    VALUES ('refresh', ${grant.id}, '2026-09-26T12:00:00.000Z')`);
   previous.close();
 
   const upgraded = openApplicationDatabase({ databasePath, migrationsFolder: path.resolve("drizzle") });
-  expect(upgraded.getClient().get(sql`SELECT type, secret_hash AS secretHash FROM oauth_clients WHERE id = 'existing-public-client'`))
-    .toEqual({ type: "public", secretHash: null });
-  expect(upgraded.getClient().get(sql`SELECT client_id AS clientId, scope FROM oauth_grants WHERE client_id = 'existing-public-client'`))
-    .toEqual({ clientId: "existing-public-client", scope: "daily-log:read" });
-  expect(upgraded.getStatus().foreignKeysEnabled).toBe(true);
+  expect(upgraded.getClient().all(sql`SELECT name FROM sqlite_master WHERE name LIKE 'oauth%'`)).toEqual([]);
+  expect(upgraded.getClient().get(sql`SELECT username_normalized AS username FROM users WHERE id = ${owner.id}`))
+    .toEqual({ username: "oauth.removal.owner" });
+  expect(upgraded.getStatus()).toMatchObject({ appliedMigrations: 29, foreignKeysEnabled: true });
   upgraded.close();
 });
 
@@ -282,8 +287,8 @@ test("the production migration preserves every representative field from the pri
   });
 
   expect(upgraded.getStatus()).toMatchObject({
-    appliedMigrations: 28,
-    availableMigrations: 28,
+    appliedMigrations: 29,
+    availableMigrations: 29,
     migrationsCurrent: true,
     schemaVersion: "20",
     writable: true,
@@ -396,7 +401,7 @@ THIS IS NOT VALID SQL;\n`,
   ).toEqual([]);
   expect(recovered.getClient().select().from(schema.users).all()).toEqual([]);
   expect(recovered.getStatus()).toMatchObject({
-    appliedMigrations: 28,
+    appliedMigrations: 29,
     migrationsCurrent: true,
   });
   recovered.close();
@@ -422,8 +427,8 @@ test("read-only application storage prevents startup", async () => {
 
 test("readiness requires every database invariant", () => {
   const readyStatus: DatabaseStatus = {
-    appliedMigrations: 28,
-    availableMigrations: 28,
+    appliedMigrations: 29,
+    availableMigrations: 29,
     busyTimeoutMs: 5_000,
     foreignKeysEnabled: true,
     journalMode: "wal",
@@ -478,8 +483,8 @@ test("status detects tampered migration history, metadata, and pragmas", async (
   client.run(sql`DELETE FROM __drizzle_migrations
     WHERE created_at = (SELECT MAX(created_at) FROM __drizzle_migrations)`);
   expect(database.getStatus()).toMatchObject({
-    appliedMigrations: 27,
-    availableMigrations: 28,
+    appliedMigrations: 28,
+    availableMigrations: 29,
     migrationsCurrent: false,
   });
   client.delete(schema.applicationMetadata)

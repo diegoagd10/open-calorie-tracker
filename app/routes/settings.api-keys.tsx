@@ -160,7 +160,7 @@ function KeyCard({ apiKey, csrfToken, timeZone }: { apiKey: ApiKeySummary; csrfT
     ? `${apiKey.expired ? "Expired" : "Expires"} ${formatDate(apiKey.expiresAt, timeZone)}`
     : "No expiration";
   return (
-    <li className={apiKey.expired ? `${styles.clientCard} ${styles.expiredKey}` : styles.clientCard}>
+    <li className={apiKey.expired ? `${styles.keyCard} ${styles.expiredKey}` : styles.keyCard}>
       <h2>
         {apiKey.name}
         {apiKey.expired ? <span className={styles.expiredBadge}>Expired</span> : null}
@@ -205,7 +205,7 @@ function ListView({ loaderData }: { loaderData: Route.ComponentProps["loaderData
         ? <Link className={styles.primaryLink} to={`${LIST_PATH}?view=new`}>Create key</Link>
         : <p>You have {MAX_API_KEYS_PER_ACCOUNT} keys, the most an account can hold.</p>}
       {loaderData.keys.length ? (
-        <ul className={styles.clientList}>
+        <ul className={styles.apiKeyList}>
           {loaderData.keys.map((key) => <KeyCard apiKey={key} csrfToken={csrfToken} key={key.id} timeZone={timeZone} />)}
         </ul>
       ) : <p>No API keys yet.</p>}

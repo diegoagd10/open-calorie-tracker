@@ -27,3 +27,6 @@ tokens at the API boundary. Each controller shapes its own response, with an
 explicit, documented v1 JSON contract for external clients. This is a project
 decision informed by the comparison, not behavior observed in Mastodon or
 Gitea. OAuth does not require the first-party UI to obtain its own grant.
+
+OAuth has since been removed: external clients now authenticate with API keys
+created in Settings, and the settings page replaces the written v1 contract.

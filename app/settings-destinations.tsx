@@ -87,15 +87,6 @@ export function SettingsDestinations({
             <span aria-hidden="true">›</span>
           </Link>
         ) : null}
-        {active !== "oauth" ? (
-          <Link className={styles.accountAccessRow} to="/settings/oauth-clients">
-            <span className={styles.accountAccessIcon}>
-              <UiIcon name="link" />
-            </span>
-            <span><strong>OAuth clients</strong><small>Review connections and register public clients.</small></span>
-            <span aria-hidden="true">›</span>
-          </Link>
-        ) : null}
       </nav>
 
       <Form action="/logout" className={styles.mobileSignOutForm} method="post">
@@ -112,13 +103,12 @@ export function SettingsDestinations({
   );
 }
 
-export type SettingsSection = "goals" | "security" | "api-keys" | "oauth" | "users" | "ai" | "catalogs";
+export type SettingsSection = "goals" | "security" | "api-keys" | "users" | "ai" | "catalogs";
 
 const personalSections = [
   { icon: "goals", key: "goals", label: "Display and goals", to: "/settings/goals" },
   { icon: "key", key: "security", label: "Account security", to: "/settings/security" },
   { icon: "key", key: "api-keys", label: "API keys", to: "/settings/api-keys" },
-  { icon: "link", key: "oauth", label: "OAuth clients", to: "/settings/oauth-clients" },
 ] as const;
 
 const administratorSections = [

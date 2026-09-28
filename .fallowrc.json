@@ -75,7 +75,6 @@
         "patterns": ["app/database/**"]
       },
       { "name": "credentials", "patterns": ["app/credentials/**"] },
-      { "name": "oauth", "patterns": ["app/oauth/**"] },
       { "name": "mcp", "patterns": ["app/mcp/**"] },
       { "name": "photo-analysis", "patterns": ["app/photo-analysis/**"] },
       {
@@ -145,7 +144,6 @@
           "setup",
           "water-event",
           "appearance",
-          "oauth",
           "api-keys",
           "browser-api-keys",
           "mcp"
@@ -159,7 +157,6 @@
       { "from": "catalog", "allow": ["server", "database", "catalog-management"] },
       { "from": "database", "allow": [], "allowTypeOnly": ["catalog", "catalog-management", "credentials"] },
       { "from": "credentials", "allow": ["database"] },
-      { "from": "oauth", "allow": ["database"] },
       { "from": "mcp", "allow": ["food-log"], "allowTypeOnly": ["api-keys"] },
       { "from": "catalog-management", "allow": ["database", "catalog"] },
       {
@@ -197,7 +194,6 @@
           "water-event",
           "web",
           "appearance",
-          "oauth",
           "api-keys",
           "mcp"
         ]
@@ -291,7 +287,7 @@
   },
   "overrides": [
     {
-      "files": ["app/routes/health.live.ts", "app/routes/oauth.metadata.ts"],
+      "files": ["app/routes/health.live.ts"],
       "rules": {
         "unused-load-data-keys": "off"
       }

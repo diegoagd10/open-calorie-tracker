@@ -45,17 +45,24 @@ function labels(renderer: ReactTestRenderer) {
     .map((node) => node.props["aria-label"] as string);
 }
 
-function routes(data: object, initialEntry = "/settings/api-keys") {
+function routes(data: object, initialEntry = "/settings/api-keys", actionData?: object) {
   const Routes = createRoutesStub([{ path: "/settings/api-keys", id: "subject", Component: ApiKeysSettings as never }]);
-  return createElement(Routes, { initialEntries: [initialEntry], hydrationData: { loaderData: { subject: data } } });
+  return createElement(Routes, {
+    initialEntries: [initialEntry],
+    hydrationData: { loaderData: { subject: data }, ...(actionData ? { actionData: { subject: actionData } } : {}) },
+  });
 }
 
-async function render(data: object, initialEntry?: string) {
+async function render(data: object, initialEntry?: string, actionData?: object) {
   let renderer!: ReactTestRenderer;
   await act(async () => {
-    renderer = create(routes(data, initialEntry));
+    renderer = create(routes(data, initialEntry, actionData));
   });
   return renderer;
+}
+
+function alerts(renderer: ReactTestRenderer) {
+  return renderer.root.findAllByProps({ role: "alert" }).map((node) => node.children.join(""));
 }
 
 function visibleText(renderer: ReactTestRenderer) {
@@ -215,4 +222,43 @@ test("the list confirms edits and deletions", async () => {
     expect(renderer.root.findByProps({ role: "status" }).children.join("")).toBe(notice);
     await act(() => renderer.unmount());
   }
+});
+
+test("the create form shows each rejected field next to it", async () => {
+  const errors = { name: "Enter a name.", scopes: "Choose a permission.", expiration: "Choose an expiration.", form: "Unsupported action." };
+  const renderer = await render({ ...loaderData, view: "new" }, "/settings/api-keys?view=new", { errors });
+  expect(alerts(renderer)).toEqual([errors.name, errors.scopes, errors.expiration, errors.form]);
+  await act(() => renderer.unmount());
+});
+
+test("a failed deletion says why on the confirmation", async () => {
+  const renderer = await render(
+    { ...loaderData, view: "delete", deleting: { id: 7, name: "Muse" } },
+    "/settings/api-keys?view=delete&key=7",
+    { errors: { form: "That API key no longer exists." } },
+  );
+  expect(alerts(renderer)).toEqual(["That API key no longer exists."]);
+  await act(() => renderer.unmount());
+});
+
+test("an empty list invites a first key, and a full list stops offering more", async () => {
+  const empty = await render({ ...loaderData, keys: [] });
+  expect(visibleText(empty)).toContain("No API keys yet.");
+  await act(() => empty.unmount());
+
+  const keys = Array.from({ length: 25 }, (_, index) => ({ ...loaderData.keys[0], id: index + 1, name: `Key ${index + 1}` }));
+  const full = await render({ ...loaderData, keys });
+  expect(visibleText(full)).toContain("You have 25 keys, the most an account can hold.");
+  expect(full.root.findAll((node) => node.type === "a" && node.props.href === "/settings/api-keys?view=new")).toHaveLength(0);
+  await act(() => full.unmount());
+});
+
+test("a used key without expiration shows its last use, and an unknown permission shows its raw scope", async () => {
+  const key = { ...loaderData.keys[0], expiresAt: null, lastUsedAt: "2026-09-28T11:31:00.000Z", scopes: ["daily-log:read", "other:read"] };
+  const renderer = await render({ ...loaderData, keys: [key] });
+  const text = visibleText(renderer);
+  expect(text).toContain("No expiration");
+  expect(text).toContain("Last used Sep 29, 2026");
+  expect(text).toContain("Permissions: Read Food Log, other:read");
+  await act(() => renderer.unmount());
 });

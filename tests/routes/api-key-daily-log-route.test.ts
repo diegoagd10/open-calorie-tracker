@@ -9,7 +9,7 @@ import { getAuthenticationService } from "../../app/auth/runtime.server";
 import { shutdownCredentialStorage } from "../../app/credentials/runtime.server";
 import { deleteMemberAccount } from "../../app/database/member-deletion.server";
 import { getApplicationDatabase, initializeApplicationDatabase, shutdownApplicationDatabase } from "../../app/database/runtime.server";
-import { loader as readDailyLog } from "../../app/routes/api.v1.daily-log";
+import { action as mutateDailyLog, loader as readDailyLog } from "../../app/routes/api.v1.daily-log";
 import { action as keysAction, loader as keysLoader } from "../../app/routes/settings.api-keys";
 import { action as copyAction } from "../../app/routes/settings.api-keys.copy";
 import { getGoalSetupService } from "../../app/setup/runtime.server";
@@ -231,4 +231,47 @@ test("logs never contain a full key", async () => {
     log.mockRestore();
     warn.mockRestore();
   }
+});
+
+test("former OAuth-style bearer tokens are rejected like any unknown key and count as failed attempts", async () => {
+  const { key } = await createKey(reader, "After OAuth");
+  const ip = freshIp();
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    await expectInvalidToken(apiGet(`Bearer ${"c".repeat(43)}`, ip));
+  }
+  expect(apiGet(`Bearer ${key}`, ip).status).toBe(429);
+});
+
+test("the versioned resource covers historical, empty, and future days", async () => {
+  const { key } = await createKey(reader, "History");
+  const read = (day: string) => apiGet(`Bearer ${key}`, freshIp(), `date=${day}`);
+  const empty: unknown = await read("2026-08-29").json();
+  expect(empty).toMatchObject({ selectedDate: "2026-08-29", isFuture: false, foodEntries: [], waterEvents: [], events: [], waterTotalMicroliters: 0 });
+  const future: unknown = await read("2026-09-01").json();
+  expect(future).toMatchObject({ selectedDate: "2026-09-01", isFuture: true, foodEntries: [], goal: { calorieTargetMilliKcal: 2_050_000 } });
+});
+
+test("API errors are machine readable, private, and account scoped", async () => {
+  const { key } = await createKey(reader, "Errors");
+  const incomplete = await account("keys.incomplete");
+  const incompleteKey = await createKey(incomplete, "Incomplete");
+  const cookieOnly = readDailyLog(args(new Request(`${origin}/api/v1/daily-log?date=${date}`, {
+    headers: { Cookie: reader.cookie, "X-Open-Calory-Client-IP": freshIp() },
+  })));
+  await expectInvalidToken(cookieOnly);
+  for (const query of ["date=2026-02-30", "date=not-a-date", "date=", "", `date=${date}&date=${date}`]) {
+    const response = apiGet(`Bearer ${key}`, freshIp(), query);
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "invalid_date" });
+  }
+  const own: unknown = await apiGet(`Bearer ${key}`, freshIp()).json();
+  const ignoredUserId: unknown = await apiGet(`Bearer ${key}`, freshIp(), `date=${date}&userId=${incomplete.id}`).json();
+  expect(ignoredUserId).toEqual(own);
+  const missingSetup = apiGet(`Bearer ${incompleteKey.key}`, freshIp());
+  expect(missingSetup.status).toBe(409);
+  expect(await missingSetup.json()).toEqual({ error: "missing_setup" });
+  expect(missingSetup.headers.get("Cache-Control")).toContain("no-store");
+  const write = mutateDailyLog();
+  expect(write.status).toBe(405);
+  expect(await write.json()).toEqual({ error: "method_not_allowed" });
 });
