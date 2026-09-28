@@ -10,7 +10,8 @@ import {
 } from "../database/api-keys.server";
 import { getApplicationDatabase } from "../database/runtime.server";
 import { readUserTimeZone } from "../database/user-preferences.server";
-import { API_KEY_SCOPES, EXPIRATION_PRESETS, MAX_API_KEYS_PER_ACCOUNT, type ApiKeyScope } from "./presets";
+import { EXPIRATION_PRESETS, isApiKeyScope, MAX_API_KEYS_PER_ACCOUNT, type ApiKeyScope } from "./presets";
+import type { ApiKeyFields, ExpirationValue } from "./validation";
 
 const API_KEY_PREFIX = "oct_";
 const CIPHER_PURPOSE = "api-key";
@@ -35,7 +36,6 @@ export type ApiKeyErrors = { name?: string; scopes?: string; expiration?: string
 
 export type ApiKeyOutcome = { ok: true } | { ok: false; missing?: true; errors: ApiKeyErrors };
 
-export type ApiKeyInput = {name: string; scopes: string[]; expiration: string };
 
 /** The master-key cipher that lets an owner copy a key after creation. */
 export interface ApiKeyCipher {
@@ -44,6 +44,7 @@ export interface ApiKeyCipher {
 }
 
 export const MISSING_API_KEY: ApiKeyOutcome = { ok: false, missing: true, errors: { form: "This key no longer exists or has expired." } };
+const PASSED_EXPIRATION: ApiKeyOutcome = { ok: false, errors: { expiration: "Choose an expiration." } };
 const DUPLICATE_NAME: ApiKeyOutcome = { ok: false, errors: { name: "You already have a key with this name." } };
 
 /** A key id from a form or query value, or undefined when it cannot name one. */
@@ -54,18 +55,6 @@ export function parseApiKeyId(value: unknown): number | undefined {
 
 export function hashApiKey(key: string): string {
   return createHash("sha256").update(key, "ascii").digest("hex");
-}
-
-function isScope(value: string): value is ApiKeyScope {
-  return API_KEY_SCOPES.some((entry) => entry.scope === value);
-}
-
-function isPrintableName(name: string): boolean {
-  return name.length > 0 && name.length <= 80 && !/[\p{Cc}\p{Cf}]/u.test(name);
-}
-
-function isScopeList(scopes: string[]): scopes is ApiKeyScope[] {
-  return scopes.length > 0 && scopes.every(isScope);
 }
 
 function isExpired(expiresAt: string | null, now: Date): boolean {
@@ -83,23 +72,9 @@ function expirationChoices(createdAt: string, now: Date): ExpirationChoice[] {
     .filter((choice) => !isExpired(choice.expiresAt, now));
 }
 
-function validate(input: ApiKeyInput, createdAt: string, now: Date):
-  | { ok: true; name: string; scopes: ApiKeyScope[]; expiresAt: string | null }
-  | { ok: false; errors: ApiKeyErrors } {
-  const name = input.name.trim();
-  const scopes = [...new Set(input.scopes)];
-  const choice = expirationChoices(createdAt, now).find((entry) => entry.value === input.expiration);
-  const nameValid = isPrintableName(name);
-  const scopesValid = isScopeList(scopes);
-  if (nameValid && scopesValid && choice) return { ok: true, name, scopes, expiresAt: choice.expiresAt };
-  return {
-    ok: false,
-    errors: {
-      ...(nameValid ? {} : { name: "Enter a name of 1 to 80 printable characters." }),
-      ...(scopesValid ? {} : { scopes: "Choose at least one permission." }),
-      ...(choice ? {} : { expiration: "Choose an expiration." }),
-    },
-  };
+/** The preset's instant counted from `createdAt`, or undefined once that instant has passed. */
+function expiresAtFor(expiration: ExpirationValue, createdAt: string, now: Date): string | null | undefined {
+  return expirationChoices(createdAt, now).find((entry) => entry.value === expiration)?.expiresAt;
 }
 
 function toSummary(row: ReturnType<typeof listApiKeysForOwner>[number], now: Date): ApiKeySummary {
@@ -107,7 +82,7 @@ function toSummary(row: ReturnType<typeof listApiKeysForOwner>[number], now: Dat
     id: row.id,
     name: row.name,
     maskedKey: `${row.keyPrefix}••••${row.keyLastFour}`,
-    scopes: (JSON.parse(row.scopes) as string[]).filter(isScope),
+    scopes: (JSON.parse(row.scopes) as string[]).filter(isApiKeyScope),
     createdAt: row.createdAt,
     expiresAt: row.expiresAt,
     lastUsedAt: row.lastUsedAt,
@@ -121,20 +96,20 @@ export class ApiKeys {
     private readonly now: () => Date = () => new Date(),
   ) {}
 
-  create(ownerId: number, input: ApiKeyInput): ApiKeyOutcome {
+  create(ownerId: number, fields: ApiKeyFields): ApiKeyOutcome {
     const created = this.now();
-    const validated = validate(input, created.toISOString(), created);
-    if (!validated.ok) return validated;
+    const expiresAt = expiresAtFor(fields.expiration, created.toISOString(), created);
+    if (expiresAt === undefined) return PASSED_EXPIRATION;
     const key = `${API_KEY_PREFIX}${randomBytes(32).toString("base64url")}`;
     const outcome = insertApiKey(ownerId, {
-      name: validated.name,
+      name: fields.name,
       keyHash: hashApiKey(key),
       keyCiphertext: this.cipher.seal(CIPHER_PURPOSE, Buffer.from(key, "ascii")),
       keyPrefix: key.slice(0, API_KEY_PREFIX.length + 4),
       keyLastFour: key.slice(-4),
-      scopes: validated.scopes,
+      scopes: fields.scopes,
       createdAt: created.toISOString(),
-      expiresAt: validated.expiresAt,
+      expiresAt,
     }, MAX_API_KEYS_PER_ACCOUNT);
     if (outcome === "limit") return { ok: false, errors: { form: `An account can have at most ${MAX_API_KEYS_PER_ACCOUNT} API keys. Delete one to create another.` } };
     if (outcome === "duplicate-name") return DUPLICATE_NAME;
@@ -142,17 +117,13 @@ export class ApiKeys {
   }
 
   /** Changes an unexpired key's name, permissions, or expiration; the key value never changes. */
-  update(ownerId: number, keyId: number, input: ApiKeyInput): ApiKeyOutcome {
+  update(ownerId: number, keyId: number, fields: ApiKeyFields): ApiKeyOutcome {
     const now = this.now();
     const stored = findOwnedApiKey(ownerId, keyId);
     if (!stored || isExpired(stored.expiresAt, now)) return MISSING_API_KEY;
-    const validated = validate(input, stored.createdAt, now);
-    if (!validated.ok) return validated;
-    const outcome = updateApiKey(ownerId, keyId, {
-      name: validated.name,
-      scopes: validated.scopes,
-      expiresAt: validated.expiresAt,
-    }, now.toISOString());
+    const expiresAt = expiresAtFor(fields.expiration, stored.createdAt, now);
+    if (expiresAt === undefined) return PASSED_EXPIRATION;
+    const outcome = updateApiKey(ownerId, keyId, { name: fields.name, scopes: fields.scopes, expiresAt }, now.toISOString());
     if (outcome === "missing") return MISSING_API_KEY;
     if (outcome === "duplicate-name") return DUPLICATE_NAME;
     return { ok: true };

@@ -93,8 +93,14 @@ test("the list shows masked keys with permissions and dates in the account's tim
     .map((button) => button.props["aria-label"] as string | undefined)
     .filter((label) => label?.startsWith("Copy"));
   expect(copyLabels).toEqual([
-    "Copy bearer header", "Copy MCP URL", "Copy API URL", "Copy Muse",
+    "Copy MCP URL", "Copy API URL", "Copy Muse",
   ]);
+  for (const [label, url] of [["Copy MCP URL", "https://calories.example/mcp"], ["Copy API URL", "https://calories.example/api/v1/daily-log"]]) {
+    // The URL and the button that copies it share one wrapper, so they wrap as a unit.
+    const code = renderer.root.find((node) => node.type === "code" && node.children.join("") === url);
+    expect(code.parent?.type).toBe("span");
+    expect(code.parent?.findAllByProps({ "aria-label": label }).length).toBeGreaterThan(0);
+  }
   await act(() => renderer.unmount());
 });
 
@@ -258,7 +264,8 @@ test("a used key without expiration shows its last use, and an unknown permissio
   const renderer = await render({ ...loaderData, keys: [key] });
   const text = visibleText(renderer);
   expect(text).toContain("No expiration");
-  expect(text).toContain("Last used Sep 29, 2026");
+  // 11:31 UTC is 1:31 the next morning in Kiritimati; last use keeps its time of day.
+  expect(text).toMatch(/Last used Sep 29, 2026, 1:31\sAM/u);
   expect(text).toContain("Permissions: Read Food Log, other:read");
   await act(() => renderer.unmount());
 });

@@ -4,6 +4,10 @@ export const MAX_API_KEYS_PER_ACCOUNT = 25;
 export const API_KEY_SCOPES = [{ scope: "daily-log:read", label: "Read Food Log" }] as const;
 export type ApiKeyScope = (typeof API_KEY_SCOPES)[number]["scope"];
 
+export function isApiKeyScope(value: string): value is ApiKeyScope {
+  return API_KEY_SCOPES.some((entry) => entry.scope === value);
+}
+
 export const EXPIRATION_PRESETS = [
   { value: "1d", label: "1 day", days: 1 },
   { value: "7d", label: "7 days", days: 7 },

@@ -9,6 +9,7 @@ import { getAuthenticationService } from "../../app/auth/runtime.server";
 import { shutdownCredentialStorage } from "../../app/credentials/runtime.server";
 import { getApplicationDatabase, initializeApplicationDatabase, shutdownApplicationDatabase } from "../../app/database/runtime.server";
 import { getFoodEntryService } from "../../app/food-entry/runtime.server";
+import { loader as readDailyLog } from "../../app/routes/api.v1.daily-log";
 import { action as mcpAction, loader as mcpLoader } from "../../app/routes/mcp";
 import { action as keysAction, loader as keysLoader } from "../../app/routes/settings.api-keys";
 import { action as copyAction } from "../../app/routes/settings.api-keys.copy";
@@ -42,6 +43,12 @@ function mcpRequest(authorization: string | null, body: unknown, method = "POST"
   if (authorization !== null) headers.set("Authorization", authorization);
   const request = new Request(`${origin}/mcp`, { method, headers, body: method === "GET" ? undefined : JSON.stringify(body) });
   return method === "GET" ? mcpLoader(args(request)) : mcpAction(args(request));
+}
+function restRequest(authorization: string, ip = freshIp()) {
+  const request = new Request(`${origin}/api/v1/daily-log?date=${today}`, {
+    headers: { Authorization: authorization, "X-Open-Calory-Client-IP": ip },
+  });
+  return readDailyLog({ ...args(request), pattern: "/api/v1/daily-log" });
 }
 async function rpc(key: string, method: string, params: Record<string, unknown> = {}): Promise<RpcResponse> {
   const response = await mcpRequest(`Bearer ${key}`, { jsonrpc: "2.0", id: 1, method, params });
@@ -205,14 +212,44 @@ test("nothing reaches the tools without a valid key", async () => {
   expect(get.status).toBe(401);
 });
 
-test("the failure rate limit is shared with the REST API", async () => {
-  const ip = freshIp();
-  for (let attempt = 0; attempt < 10; attempt += 1) {
-    expect((await mcpRequest(`Bearer oct_${"C".repeat(43)}`, {}, "POST", ip)).status).toBe(401);
+test("REST and MCP failures from one client IP count against one shared limit", async () => {
+  const unknown = `Bearer oct_${"C".repeat(43)}`;
+  const listTools = { jsonrpc: "2.0", id: 1, method: "tools/list" };
+  const blocked = freshIp();
+  // Five failures on each endpoint, interleaved, exhaust the ten-attempt budget together.
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    expect((await mcpRequest(unknown, listTools, "POST", blocked)).status).toBe(401);
+    expect(restRequest(unknown, blocked).status).toBe(401);
   }
-  const limited = await mcpRequest(`Bearer ${readerKey}`, { jsonrpc: "2.0", id: 1, method: "tools/list" }, "POST", ip);
-  expect(limited.status).toBe(429);
-  expect(limited.headers.get("Retry-After")).toBe("900");
+  const mcpLimited = await mcpRequest(`Bearer ${readerKey}`, listTools, "POST", blocked);
+  expect(mcpLimited.status).toBe(429);
+  expect(mcpLimited.headers.get("Retry-After")).toBe("900");
+  const restLimited = restRequest(`Bearer ${readerKey}`, blocked);
+  expect(restLimited.status).toBe(429);
+  expect(restLimited.headers.get("Retry-After")).toBe("900");
+
+  // Success on either endpoint clears the count for both.
+  const recovering = freshIp();
+  for (let attempt = 0; attempt < 9; attempt += 1) expect(restRequest(unknown, recovering).status).toBe(401);
+  expect((await mcpRequest(`Bearer ${readerKey}`, listTools, "POST", recovering)).status).toBe(200);
+  for (let attempt = 0; attempt < 9; attempt += 1) expect((await mcpRequest(unknown, listTools, "POST", recovering)).status).toBe(401);
+  expect(restRequest(`Bearer ${readerKey}`, recovering).status).toBe(200);
+});
+
+test("a key's 120 requests per minute are shared between REST and MCP", async () => {
+  const busy = await createKey(reader, "Busy across routes");
+  const listTools = { jsonrpc: "2.0", id: 1, method: "tools/list" };
+  for (let request = 0; request < 60; request += 1) {
+    expect(restRequest(`Bearer ${busy.key}`).status).toBe(200);
+    expect((await mcpRequest(`Bearer ${busy.key}`, listTools)).status).toBe(200);
+  }
+  const mcpLimited = await mcpRequest(`Bearer ${busy.key}`, listTools);
+  expect(mcpLimited.status).toBe(429);
+  expect(mcpLimited.headers.get("Retry-After")).toBe("60");
+  const restLimited = restRequest(`Bearer ${busy.key}`);
+  expect(restLimited.status).toBe(429);
+  expect(restLimited.headers.get("Retry-After")).toBe("60");
+  expect(restRequest(`Bearer ${readerKey}`).status).toBe(200);
 });
 
 test("tools are listed and callable only with their scope, and a key with no tool scope gets 403", async () => {

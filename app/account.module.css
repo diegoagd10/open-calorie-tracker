@@ -351,6 +351,22 @@ a.cancelRemovalButton {
   overflow-wrap: anywhere;
 }
 
+/* The URL may wrap inside itself, but its Copy button never leaves it. */
+.endpoint {
+  display: inline-flex;
+  max-width: 100%;
+  align-items: center;
+  vertical-align: middle;
+}
+
+.endpoint code {
+  min-width: 0;
+}
+
+.endpoint .copyButton {
+  flex: none;
+}
+
 .permissions {
   margin: 0;
   padding: 0;

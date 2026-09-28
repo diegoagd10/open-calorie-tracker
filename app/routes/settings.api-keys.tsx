@@ -2,7 +2,8 @@ import { useState } from "react";
 import { data, Form, Link, redirect, useActionData } from "react-router";
 import type { Route } from "./+types/settings.api-keys";
 import { getApplicationMutationSession, readApplicationMutationForm, requireApplicationSession } from "../auth/http.server";
-import { MISSING_API_KEY, parseApiKeyId, type ApiKeyErrors, type ApiKeySummary, type ExpirationChoice } from "../api-keys/api-keys.server";
+import { MISSING_API_KEY, parseApiKeyId, type ApiKeyErrors, type ApiKeyOutcome, type ApiKeys, type ApiKeySummary, type ExpirationChoice } from "../api-keys/api-keys.server";
+import { parseApiKeyFields } from "../api-keys/validation";
 import { API_KEY_SCOPES, DEFAULT_EXPIRATION, EXPIRATION_PRESETS, MAX_API_KEYS_PER_ACCOUNT } from "../api-keys/presets";
 import { copyText, requestApiKey } from "../api-keys/copy.client";
 import { getApiKeys } from "../api-keys/runtime.server";
@@ -61,6 +62,18 @@ export async function loader({ request }: Route.LoaderArgs) {
   }
 }
 
+/** Applies one form submission; name, permissions, and expiration are parsed here, before the service sees them. */
+function changeKeys(apiKeys: ApiKeys, ownerId: number, intent: keyof typeof COMPLETED, form: FormData): ApiKeyOutcome {
+  const keyId = parseApiKeyId(form.get("keyId"));
+  if (intent === "delete") return keyId === undefined ? MISSING_API_KEY : apiKeys.delete(ownerId, keyId);
+  if (intent === "update" && keyId === undefined) return MISSING_API_KEY;
+  const fields = parseApiKeyFields(form);
+  if (!fields.success) return { ok: false, errors: fields.errors };
+  return keyId === undefined || intent === "create"
+    ? apiKeys.create(ownerId, fields.data)
+    : apiKeys.update(ownerId, keyId, fields.data);
+}
+
 export async function action({ request }: Route.ActionArgs) {
   const session = await getApplicationMutationSession(request);
   if (session instanceof Response) throw session;
@@ -69,24 +82,17 @@ export async function action({ request }: Route.ActionArgs) {
   if (intent !== "create" && intent !== "update" && intent !== "delete") {
     return data<ActionData>({ errors: { form: "Unsupported action." } }, { status: 400 });
   }
-  const apiKeys = await getApiKeys();
-  const input = {
-    name: String(form.get("name") ?? ""),
-    scopes: form.getAll("scope").map(String),
-    expiration: String(form.get("expiration") ?? ""),
-  };
-  const keyId = parseApiKeyId(form.get("keyId"));
-  const result = intent === "create"
-    ? apiKeys.create(session.user.id, input)
-    : keyId === undefined
-      ? MISSING_API_KEY
-      : intent === "update" ? apiKeys.update(session.user.id, keyId, input) : apiKeys.delete(session.user.id, keyId);
+  const result = changeKeys(await getApiKeys(), session.user.id, intent, form);
   if (!result.ok) return data<ActionData>({ errors: result.errors }, { status: result.missing ? 404 : 400 });
   return redirect(`${LIST_PATH}?${COMPLETED[intent]}=1`);
 }
 
 function formatDate(value: string, timeZone: string) {
   return new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeZone }).format(new Date(value));
+}
+
+function formatDateTime(value: string, timeZone: string) {
+  return new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short", timeZone }).format(new Date(value));
 }
 
 function scopeLabel(scope: ApiKeySummary["scopes"][number]) {
@@ -113,10 +119,21 @@ function CopyButton({ label, value }: { label: string; value: () => Promise<stri
   );
 }
 
+/** A URL kept on the same line as the button that copies it. */
+function Endpoint({ label, url }: { label: string; url: string }) {
+  return (
+    <span className={styles.endpoint}>
+      <code>{url}</code>
+      <CopyButton label={label} value={() => Promise.resolve(url)} />
+    </span>
+  );
+}
+
 /** The name, permissions, and expiration fields shared by the create and edit forms. */
-function KeyFields({ errors, name, expiration, expirations }: {
+function KeyFields({ errors, name, scopes, expiration, expirations }: {
   errors: ApiKeyErrors | undefined;
   name?: string;
+  scopes: readonly string[];
   expiration: string;
   expirations: ReadonlyArray<{ value: string; label: string }>;
 }) {
@@ -129,14 +146,22 @@ function KeyFields({ errors, name, expiration, expirations }: {
       </div>
       <fieldset className={`${styles.field} ${styles.permissions}`}>
         <legend>Permissions</legend>
-        {API_KEY_SCOPES.map((entry) => (
+        {API_KEY_SCOPES.length === 1 ? (
+          <>
+            {/* The only permission is always granted, so it is shown checked and submitted as a hidden value. */}
+            <label className={styles.checkboxRow}>
+              <input type="checkbox" checked disabled readOnly />
+              <input type="hidden" name="scope" value={API_KEY_SCOPES[0].scope} />
+              {API_KEY_SCOPES[0].label}
+            </label>
+            <small>More permissions coming soon</small>
+          </>
+        ) : API_KEY_SCOPES.map((entry) => (
           <label className={styles.checkboxRow} key={entry.scope}>
-            <input type="checkbox" checked disabled readOnly />
-            <input type="hidden" name="scope" value={entry.scope} />
+            <input type="checkbox" name="scope" value={entry.scope} defaultChecked={scopes.includes(entry.scope)} />
             {entry.label}
           </label>
         ))}
-        <small>More permissions coming soon</small>
         {errors?.scopes ? <p role="alert">{errors.scopes}</p> : null}
       </fieldset>
       <div className={styles.field}>
@@ -173,7 +198,7 @@ function KeyCard({ apiKey, csrfToken, timeZone }: { apiKey: ApiKeySummary; csrfT
       <p>
         Created {formatDate(apiKey.createdAt, timeZone)}
         {" · "}{expiration}
-        {" · "}Last used {apiKey.lastUsedAt ? formatDate(apiKey.lastUsedAt, timeZone) : "—"}
+        {" · "}Last used {apiKey.lastUsedAt ? formatDateTime(apiKey.lastUsedAt, timeZone) : "—"}
       </p>
       <div className={styles.keyActions}>
         {apiKey.expired ? null : <Link aria-label={`Edit ${apiKey.name}`} to={`${LIST_PATH}?view=edit&key=${apiKey.id}`}>Edit</Link>}
@@ -193,12 +218,9 @@ function ListView({ loaderData }: { loaderData: Route.ComponentProps["loaderData
       <Link className={styles.backLink} to="/settings/goals">Back to settings</Link>
       <h1 id="api-keys-title">API keys</h1>
       <p className={styles.apiKeyHelp}>
-        Send a key as <code>Authorization: Bearer &lt;key&gt;</code>
-        <CopyButton label="Copy bearer header" value={() => Promise.resolve("Authorization: Bearer <key>")} />
-        {" "}to <code>{loaderData.mcpUrl}</code>
-        <CopyButton label="Copy MCP URL" value={() => Promise.resolve(loaderData.mcpUrl)} />
-        {" "}or <code>{loaderData.apiUrl}</code>
-        <CopyButton label="Copy API URL" value={() => Promise.resolve(loaderData.apiUrl)} />
+        Send a key as <code>Authorization: Bearer &lt;key&gt;</code> to{" "}
+        <Endpoint label="Copy MCP URL" url={loaderData.mcpUrl} /> or{" "}
+        <Endpoint label="Copy API URL" url={loaderData.apiUrl} />
       </p>
       {notice ? <p role="status" className={styles.success}>{notice}</p> : null}
       {loaderData.keys.length < MAX_API_KEYS_PER_ACCOUNT
@@ -234,7 +256,7 @@ export default function ApiKeysSettings({ loaderData }: Route.ComponentProps) {
             <Form className={styles.form} method="post">
               <input type="hidden" name="intent" value="create" />
               <input type="hidden" name="csrfToken" value={csrfToken} />
-              <KeyFields errors={result?.errors} expiration={DEFAULT_EXPIRATION} expirations={EXPIRATION_PRESETS} />
+              <KeyFields errors={result?.errors} scopes={[]} expiration={DEFAULT_EXPIRATION} expirations={EXPIRATION_PRESETS} />
               <button className={styles.submit} type="submit">Create key</button>
             </Form>
           </>
@@ -250,6 +272,7 @@ export default function ApiKeysSettings({ loaderData }: Route.ComponentProps) {
               <KeyFields
                 errors={result?.errors}
                 name={loaderData.editing.key.name}
+                scopes={loaderData.editing.key.scopes}
                 expiration={loaderData.editing.expiration}
                 expirations={loaderData.editing.expirations.map((choice) => expirationOption(choice, timeZone))}
               />

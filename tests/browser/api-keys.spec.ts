@@ -1,5 +1,19 @@
 import AxeBuilder from "@axe-core/playwright";
+import type { Page } from "@playwright/test";
 import { bootstrapOrSignInBrowserTestUser, expect, test } from "./reset-database";
+
+/** Each endpoint's Copy button stays on the URL's last line, just after it, at any width. */
+async function expectCopyBesideUrls(page: Page) {
+  for (const [label, suffix] of [["Copy MCP URL", /\/mcp$/u], ["Copy API URL", /\/api\/v1\/daily-log$/u]] as const) {
+    const url = await page.locator("code").filter({ hasText: suffix }).boundingBox();
+    const button = await page.getByRole("button", { name: label }).boundingBox();
+    if (!url || !button) throw new Error(`${label} or its URL is not rendered`);
+    const buttonMiddle = button.y + button.height / 2;
+    expect(buttonMiddle).toBeGreaterThanOrEqual(url.y);
+    expect(buttonMiddle).toBeLessThanOrEqual(url.y + url.height + button.height / 2);
+    expect(button.x).toBeGreaterThanOrEqual(url.x + url.width - 1);
+  }
+}
 
 test("an account holder creates, copies, edits, and deletes a key without it ever being rendered", async ({ context, page }, testInfo) => {
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
@@ -40,8 +54,10 @@ test("an account holder creates, copies, edits, and deletes a key without it eve
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
   await page.screenshot({ path: testInfo.outputPath("api-key-list-dark.png"), fullPage: true });
 
+  await expectCopyBesideUrls(page);
   await page.setViewportSize({ width: 390, height: 844 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await expectCopyBesideUrls(page);
   await page.screenshot({ path: testInfo.outputPath("api-key-list-mobile-dark.png"), fullPage: true });
 
   await page.goto("/settings/goals");
