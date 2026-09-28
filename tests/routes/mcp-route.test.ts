@@ -1,0 +1,233 @@
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { sql } from "drizzle-orm";
+import { RouterContextProvider } from "react-router";
+import { afterAll, beforeAll, expect, test, vi } from "vitest";
+import { serializeSessionCookie } from "../../app/auth/http.server";
+import { getAuthenticationService } from "../../app/auth/runtime.server";
+import { shutdownCredentialStorage } from "../../app/credentials/runtime.server";
+import { getApplicationDatabase, initializeApplicationDatabase, shutdownApplicationDatabase } from "../../app/database/runtime.server";
+import { getFoodEntryService } from "../../app/food-entry/runtime.server";
+import { action as mcpAction, loader as mcpLoader } from "../../app/routes/mcp";
+import { action as keysAction, loader as keysLoader } from "../../app/routes/settings.api-keys";
+import { action as copyAction } from "../../app/routes/settings.api-keys.copy";
+import { getGoalSetupService } from "../../app/setup/runtime.server";
+import { validateSetupFields } from "../../app/setup/validation";
+import { getWaterEventService } from "../../app/water-event/runtime.server";
+import { seedAuthenticatedAccount } from "../support/authentication";
+
+const origin = "http://localhost:3000";
+const today = "2026-08-31";
+type Account = { id: number; cookie: string; csrf: string };
+type RpcResponse = { jsonrpc: "2.0"; id: number; result?: Record<string, unknown>; error?: { code: number; message: string } };
+let directory: string;
+let reader: Account;
+let readerKey: string;
+let ipCounter = 0;
+
+function args(request: Request) {
+  return { request, params: {}, context: new RouterContextProvider(), pattern: "/mcp", url: new URL(request.url) };
+}
+function freshIp() {
+  ipCounter += 1;
+  return `198.51.100.${ipCounter}`;
+}
+function mcpRequest(authorization: string | null, body: unknown, method = "POST", ip = freshIp()) {
+  const headers = new Headers({
+    "X-Open-Calory-Client-IP": ip,
+    Accept: "application/json, text/event-stream",
+    "Content-Type": "application/json",
+  });
+  if (authorization !== null) headers.set("Authorization", authorization);
+  const request = new Request(`${origin}/mcp`, { method, headers, body: method === "GET" ? undefined : JSON.stringify(body) });
+  return method === "GET" ? mcpLoader(args(request)) : mcpAction(args(request));
+}
+async function rpc(key: string, method: string, params: Record<string, unknown> = {}): Promise<RpcResponse> {
+  const response = await mcpRequest(`Bearer ${key}`, { jsonrpc: "2.0", id: 1, method, params });
+  expect(response.status).toBe(200);
+  expect(response.headers.get("Content-Type")).toContain("application/json");
+  expect(response.headers.get("Mcp-Session-Id")).toBeNull();
+  return await response.json() as RpcResponse;
+}
+async function callDailyLog(key: string, toolArguments: Record<string, unknown> = {}) {
+  const { result } = await rpc(key, "tools/call", { name: "get_daily_log", arguments: toolArguments });
+  return result as { isError?: boolean; structuredContent?: Record<string, unknown>; content: { type: string; text: string }[] };
+}
+async function account(username: string): Promise<Account> {
+  const session = await seedAuthenticatedAccount(getAuthenticationService(), getApplicationDatabase().getClient(), username, "correct horse battery staple", "203.0.113.10");
+  return { id: session.user.id, cookie: serializeSessionCookie(session).split(";", 1)[0], csrf: session.csrfToken };
+}
+function completeSetup(userId: number, displayUnits: "us" | "metric", water: string) {
+  const setup = validateSetupFields({
+    calories: "2050", carbohydrate: "230", displayUnits, fat: "70", fiber: "25",
+    protein: "120", sodium: "2300", sugar: "50", timeZone: "America/New_York", water,
+  });
+  if (!setup.success) throw new Error("Invalid test setup");
+  getGoalSetupService().completeInitial(userId, setup.data);
+}
+async function createKey(owner: Account, name: string): Promise<{ id: number; key: string }> {
+  const request = (url: string, fields: Record<string, string>) => new Request(`${origin}${url}`, {
+    method: "POST",
+    headers: { Cookie: owner.cookie, Origin: origin },
+    body: new URLSearchParams({ csrfToken: owner.csrf, ...fields }),
+  });
+  await keysAction(args(request("/settings/api-keys", { intent: "create", name, scope: "daily-log:read", expiration: "90d" })));
+  const listed = (await keysLoader(args(new Request(`${origin}/settings/api-keys`, { headers: { Cookie: owner.cookie } })))).keys.find((entry) => entry.name === name);
+  if (!listed) throw new Error(`No key named ${name}`);
+  const copied = await copyAction(args(request("/settings/api-keys/copy", { keyId: String(listed.id) })));
+  return { id: listed.id, key: ((await copied.json()) as { key: string }).key };
+}
+
+beforeAll(async () => {
+  directory = await mkdtemp(path.join(tmpdir(), "mcp-route-"));
+  vi.stubEnv("APPLICATION_URL", origin);
+  vi.stubEnv("DATABASE_PATH", path.join(directory, "application.sqlite"));
+  vi.stubEnv("APPLICATION_SECRETS_PATH", path.join(directory, "secrets"));
+  vi.stubEnv("FOOD_LOG_TEST_NOW", "2026-08-31T16:00:00.000Z");
+  vi.stubEnv("SETUP_TEST_NOW", "2026-08-31T16:00:00.000Z");
+  initializeApplicationDatabase();
+  const owner = await getAuthenticationService().register("mcp.admin", "correct horse battery staple", "203.0.113.9");
+  if (!owner.ok) throw new Error("Could not register owner");
+  reader = await account("mcp.reader");
+  completeSetup(reader.id, "us", "80");
+  const now = new Date("2026-08-31T16:00:00.000Z");
+  getFoodEntryService(now).logManual(reader.id, {
+    carbohydrateGrams: "60", energyKcal: "350.4", fatGrams: "6.25", fiberGrams: "8", foodLogDate: today,
+    idempotencyKey: "mcp-oatmeal", name: "Oatmeal", proteinGrams: "12", quantity: "1", sodiumMilligrams: "", sugarGrams: "10",
+  });
+  getWaterEventService(now).create(reader.id, { foodLogDate: today, selection: "16" });
+  readerKey = (await createKey(reader, "Muse")).key;
+});
+afterAll(async () => {
+  shutdownCredentialStorage();
+  shutdownApplicationDatabase();
+  vi.unstubAllEnvs();
+  await rm(directory, { recursive: true, force: true });
+});
+
+test("a client initializes statelessly and lists the Food Log tool", async () => {
+  const initialized = await rpc(readerKey, "initialize", {
+    protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "1.0.0" },
+  });
+  expect(initialized.result).toMatchObject({ capabilities: { tools: {} }, serverInfo: { name: "open-calory-tracker" } });
+
+  const listed = await rpc(readerKey, "tools/list");
+  const tools = listed.result?.tools as { name: string; inputSchema: { properties: Record<string, unknown> }; annotations?: Record<string, unknown> }[];
+  expect(tools.map((tool) => tool.name)).toEqual(["get_daily_log"]);
+  expect(Object.keys(tools[0].inputSchema.properties)).toEqual(["date"]);
+  expect(tools[0].annotations).toMatchObject({ readOnlyHint: true });
+});
+
+test("get_daily_log summarizes today's Food Log in the account's units by default", async () => {
+  const result = await callDailyLog(readerKey);
+  expect(result.isError).toBeFalsy();
+  expect(result.structuredContent).toMatchObject({
+    date: today,
+    today,
+    timeZone: "America/New_York",
+    isFuture: false,
+    nutrients: {
+      energy: { unit: "kcal", consumed: 350, goal: 2050, goalType: "target", remaining: 1700, isIncomplete: false },
+      protein: { unit: "g", consumed: 12, goal: 120, goalType: "target", remaining: 108, isIncomplete: false },
+      carbohydrate: { unit: "g", consumed: 60, goal: 230, remaining: 170 },
+      fat: { unit: "g", consumed: 6.3, goal: 70, remaining: 63.8 },
+      fiber: { unit: "g", consumed: 8, goal: 25, remaining: 17 },
+      sugar: { unit: "g", consumed: 10, goal: 50, goalType: "maximum", remaining: 40 },
+      sodium: { unit: "mg", consumed: 0, goal: 2300, goalType: "maximum", remaining: 2300, isIncomplete: true },
+    },
+    water: { unit: "fl oz", consumed: 16, goal: 80, remaining: 64 },
+    incompleteNutrients: ["sodium"],
+    foods: [{ name: "Oatmeal", energyKcal: 350, proteinG: 12, carbohydrateG: 60, fatG: 6.3, sodiumMg: null }],
+  });
+  const text = result.content.map((part) => part.text).join("\n");
+  expect(text).toContain("2026-08-31");
+  expect(text).toContain("350 of 2050 kcal");
+  expect(text).toContain("16 of 80 fl oz");
+  expect(text).toMatch(/sodium/iu);
+  expect(text).toContain("Oatmeal");
+});
+
+test("get_daily_log reports water in ml for metric accounts", async () => {
+  const metric = await account("mcp.metric");
+  completeSetup(metric.id, "metric", "2000");
+  getWaterEventService(new Date("2026-08-31T16:00:00.000Z")).create(metric.id, { foodLogDate: today, selection: "8" });
+  const { key } = await createKey(metric, "Metric");
+
+  const result = await callDailyLog(key, { date: today });
+  expect(result.structuredContent).toMatchObject({
+    date: today,
+    water: { unit: "ml", consumed: 237, goal: 2000, remaining: 1763 },
+    nutrients: { energy: { consumed: 0, goal: 2050, remaining: 2050 } },
+    incompleteNutrients: [],
+    foods: [],
+  });
+});
+
+test("get_daily_log reads an earlier date, before any goal took effect", async () => {
+  const result = await callDailyLog(readerKey, { date: "2026-08-30" });
+  expect(result.isError).toBeFalsy();
+  expect(result.structuredContent).toMatchObject({
+    date: "2026-08-30",
+    today,
+    nutrients: { energy: { consumed: 0, goal: null, remaining: null }, sodium: { goal: null, isIncomplete: false } },
+    water: { unit: "fl oz", consumed: 0, goal: null, remaining: null },
+    foods: [],
+  });
+  expect(result.content[0].text).toContain("no goal set");
+});
+
+test("an invalid date and a missing account setup are tool errors, not HTTP errors", async () => {
+  for (const date of ["2026-02-30", "yesterday", "2026-8-1"]) {
+    const result = await callDailyLog(readerKey, { date });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toMatch(/date/iu);
+  }
+  const unset = await account("mcp.unset");
+  const { key } = await createKey(unset, "Unset");
+  const result = await callDailyLog(key);
+  expect(result.isError).toBe(true);
+  expect(result.content[0].text).toMatch(/setup/iu);
+});
+
+test("nothing reaches the tools without a valid key", async () => {
+  const listTools = { jsonrpc: "2.0", id: 1, method: "tools/list" };
+  const expired = await createKey(reader, "Expired");
+  getApplicationDatabase().getClient().run(sql`UPDATE api_keys SET expires_at = '2020-01-01T00:00:00.000Z' WHERE id = ${expired.id}`);
+  for (const authorization of [null, "Bearer", `Bearer oct_${"A".repeat(43)}`, `Bearer ${expired.key}`, "Basic dXNlcjpwYXNz"]) {
+    const response = await mcpRequest(authorization, listTools);
+    expect(response.status).toBe(401);
+    expect(await response.json()).toEqual({ error: "invalid_token" });
+    expect(response.headers.get("WWW-Authenticate")).toMatch(/^Bearer\b/u);
+    expect(response.headers.get("Cache-Control")).toContain("no-store");
+  }
+  const get = await mcpRequest(null, undefined, "GET");
+  expect(get.status).toBe(401);
+});
+
+test("the failure rate limit is shared with the REST API", async () => {
+  const ip = freshIp();
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    expect((await mcpRequest(`Bearer oct_${"C".repeat(43)}`, {}, "POST", ip)).status).toBe(401);
+  }
+  const limited = await mcpRequest(`Bearer ${readerKey}`, { jsonrpc: "2.0", id: 1, method: "tools/list" }, "POST", ip);
+  expect(limited.status).toBe(429);
+  expect(limited.headers.get("Retry-After")).toBe("900");
+});
+
+test("tools are listed and callable only with their scope, and a key with no tool scope gets 403", async () => {
+  const { id, key } = await createKey(reader, "Other scope");
+  getApplicationDatabase().getClient().run(sql`UPDATE api_keys SET scopes = '["other:read"]' WHERE id = ${id}`);
+  const response = await mcpRequest(`Bearer ${key}`, { jsonrpc: "2.0", id: 1, method: "tools/list" });
+  expect(response.status).toBe(403);
+  expect(await response.json()).toEqual({ error: "insufficient_scope" });
+  expect(response.headers.get("WWW-Authenticate")).toContain('error="insufficient_scope", scope="daily-log:read"');
+});
+
+test("only POST carries MCP messages; there are no sessions or streams", async () => {
+  const get = await mcpRequest(`Bearer ${readerKey}`, undefined, "GET");
+  expect(get.status).toBe(405);
+  expect(get.headers.get("Allow")).toBe("POST");
+  const remove = await mcpRequest(`Bearer ${readerKey}`, {}, "DELETE");
+  expect(remove.status).toBe(405);
+});

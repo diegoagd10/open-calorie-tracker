@@ -12,7 +12,7 @@ const REQUEST_LIMIT = { scope: "api-key-request", attempts: 120, windowMs: 60_00
 const BEARER_KEY = /^Bearer +(oct_[A-Za-z0-9_-]{43})$/iu;
 
 export type ApiKeyAuthentication =
-  | { ok: true; userId: number; keyId: number }
+  | { ok: true; userId: number; keyId: number; scopes: string[] }
   | { ok: false; error: "invalid_token" | "insufficient_scope" }
   | { ok: false; error: "rate_limited"; retryAfterSeconds: number };
 
@@ -37,7 +37,8 @@ export class ApiKeyAuthenticator {
     this.#now = now;
   }
 
-  authenticate(authorization: string | null, clientIp: string, requiredScope: ApiKeyScope): ApiKeyAuthentication {
+  /** With `requiredScope` null, any valid key passes and the caller checks its `scopes`. */
+  authenticate(authorization: string | null, clientIp: string, requiredScope: ApiKeyScope | null): ApiKeyAuthentication {
     const failureLimited = this.#consume(FAILURE_LIMIT, clientIp);
     if (failureLimited) return failureLimited;
     const now = this.#now();
@@ -47,8 +48,9 @@ export class ApiKeyAuthenticator {
     const requestLimited = this.#consume(REQUEST_LIMIT, String(stored.id), stored.keyPrefix);
     if (requestLimited) return requestLimited;
     recordApiKeyUse(stored.id, minuteOf(now));
-    if (!(JSON.parse(stored.scopes) as string[]).includes(requiredScope)) return { ok: false, error: "insufficient_scope" };
-    return { ok: true, userId: stored.ownerId, keyId: stored.id };
+    const scopes = JSON.parse(stored.scopes) as string[];
+    if (requiredScope && !scopes.includes(requiredScope)) return { ok: false, error: "insufficient_scope" };
+    return { ok: true, userId: stored.ownerId, keyId: stored.id, scopes };
   }
 
   /** The presented key when it exists, has not expired, and its account is active. */

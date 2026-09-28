@@ -14,6 +14,7 @@ export default [
   route("oauth/token", "./routes/oauth.token.ts"),
   route(".well-known/oauth-authorization-server", "./routes/oauth.metadata.ts"),
   route("api/v1/daily-log", "./routes/api.v1.daily-log.ts"),
+  route("mcp", "./routes/mcp.ts"),
   route("login", "./routes/login.tsx"),
   route("logout", "./routes/logout.tsx"),
   route("register", "./routes/register.tsx"),

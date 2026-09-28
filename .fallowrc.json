@@ -76,6 +76,7 @@
       },
       { "name": "credentials", "patterns": ["app/credentials/**"] },
       { "name": "oauth", "patterns": ["app/oauth/**"] },
+      { "name": "mcp", "patterns": ["app/mcp/**"] },
       { "name": "photo-analysis", "patterns": ["app/photo-analysis/**"] },
       {
         "name": "food-entry",
@@ -146,7 +147,8 @@
           "appearance",
           "oauth",
           "api-keys",
-          "browser-api-keys"
+          "browser-api-keys",
+          "mcp"
         ]
       },
       { "from": "auth", "allow": ["database", "server"] },
@@ -158,6 +160,7 @@
       { "from": "database", "allow": [], "allowTypeOnly": ["catalog", "catalog-management", "credentials"] },
       { "from": "credentials", "allow": ["database"] },
       { "from": "oauth", "allow": ["database"] },
+      { "from": "mcp", "allow": ["food-log"], "allowTypeOnly": ["api-keys"] },
       { "from": "catalog-management", "allow": ["database", "catalog"] },
       {
         "from": "food-entry",
@@ -195,7 +198,8 @@
           "web",
           "appearance",
           "oauth",
-          "api-keys"
+          "api-keys",
+          "mcp"
         ]
       },
       { "from": "tooling", "allow": ["auth"] }
@@ -251,6 +255,10 @@
         {
           "from": "food-log",
           "callee": ["fetch", "fs.*", "child_process.*", "process.exit"]
+        },
+        {
+          "from": "mcp",
+          "callee": ["fetch", "fs.*", "child_process.*", "process.exit", "better-sqlite3", "better-sqlite3.*", "drizzle-orm.*"]
         },
         {
           "from": "goals",

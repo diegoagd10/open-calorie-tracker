@@ -46,6 +46,7 @@ describe("static route contracts", () => {
       { children: undefined, file: "./routes/oauth.token.ts", path: "oauth/token" },
       { children: undefined, file: "./routes/oauth.metadata.ts", path: ".well-known/oauth-authorization-server" },
       { children: undefined, file: "./routes/api.v1.daily-log.ts", path: "api/v1/daily-log" },
+      { children: undefined, file: "./routes/mcp.ts", path: "mcp" },
       { children: undefined, file: "./routes/login.tsx", path: "login" },
       { children: undefined, file: "./routes/logout.tsx", path: "logout" },
       { children: undefined, file: "./routes/register.tsx", path: "register" },
