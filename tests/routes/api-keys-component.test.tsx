@@ -16,6 +16,8 @@ const loaderData = {
   apiUrl: "https://calories.example/api/v1/daily-log",
   view: "list",
   created: false,
+  updated: false,
+  deleted: false,
   keys: [{
     id: 7,
     name: "Muse",
@@ -24,8 +26,24 @@ const loaderData = {
     createdAt: "2026-09-28T11:30:00.000Z",
     expiresAt: "2026-12-27T11:30:00.000Z",
     lastUsedAt: null,
+    expired: false,
   }],
 };
+const expiredKey = {
+  id: 8,
+  name: "Old laptop",
+  maskedKey: "oct_zz99••••0000",
+  scopes: ["daily-log:read"],
+  createdAt: "2026-09-01T11:30:00.000Z",
+  expiresAt: "2026-09-08T11:30:00.000Z",
+  lastUsedAt: null,
+  expired: true,
+};
+
+function labels(renderer: ReactTestRenderer) {
+  return renderer.root.findAll((node) => typeof node.type === "string" && typeof node.props["aria-label"] === "string")
+    .map((node) => node.props["aria-label"] as string);
+}
 
 function routes(data: object, initialEntry = "/settings/api-keys") {
   const Routes = createRoutesStub([{ path: "/settings/api-keys", id: "subject", Component: ApiKeysSettings as never }]);
@@ -140,4 +158,61 @@ test("server-rendered HTML never contains a full key", () => {
   const html = renderToString(routes(loaderData));
   expect(html).toContain("oct_ab12••••9f3k");
   expect(html).not.toMatch(/oct_[A-Za-z0-9_-]{43}/u);
+});
+
+test("each live key offers copy, edit, and delete, while an expired key is marked expired and offers only delete", async () => {
+  const renderer = await render({ ...loaderData, keys: [...loaderData.keys, expiredKey] });
+  expect(labels(renderer).filter((label) => /Muse|Old laptop/u.test(label))).toEqual([
+    "Copy Muse", "Edit Muse", "Delete Muse", "Delete Old laptop",
+  ]);
+  const href = (label: string) => renderer.root.find((node) => node.type === "a" && node.props["aria-label"] === label).props.href as string;
+  expect(href("Edit Muse")).toBe("/settings/api-keys?view=edit&key=7");
+  expect(href("Delete Old laptop")).toBe("/settings/api-keys?view=delete&key=8");
+  const text = visibleText(renderer);
+  expect(text).toContain("Old laptopExpired");
+  expect(text).toContain("Expired Sep 9, 2026");
+  await act(() => renderer.unmount());
+});
+
+test("the edit form keeps the key's name and preset, and shows each remaining preset's date in the account's time zone", async () => {
+  const [key] = loaderData.keys;
+  const editing = {
+    key,
+    expiration: "90d",
+    expirations: [
+      { value: "90d", label: "90 days", expiresAt: "2026-12-27T11:30:00.000Z" },
+      { value: "1y", label: "1 year", expiresAt: "2027-09-28T11:30:00.000Z" },
+      { value: "never", label: "No expiration", expiresAt: null },
+    ],
+  };
+  const renderer = await render({ ...loaderData, view: "edit", editing }, "/settings/api-keys?view=edit&key=7");
+  expect(visibleText(renderer)).toContain("Edit Muse");
+  expect(renderer.root.findByProps({ name: "name" }).props.defaultValue).toBe("Muse");
+  expect(renderer.root.findByProps({ name: "intent" }).props.value).toBe("update");
+  expect(renderer.root.findByProps({ name: "keyId" }).props.value).toBe(7);
+  expect(renderer.root.findByProps({ type: "checkbox" }).props).toMatchObject({ checked: true, disabled: true });
+  const select = renderer.root.findByProps({ name: "expiration" });
+  expect(select.props.defaultValue).toBe("90d");
+  expect(select.findAllByType("option").map((option) => option.children.join(""))).toEqual([
+    "90 days · Dec 28, 2026", "1 year · Sep 29, 2027", "No expiration",
+  ]);
+  await act(() => renderer.unmount());
+});
+
+test("deleting asks for confirmation naming the key", async () => {
+  const renderer = await render({ ...loaderData, view: "delete", deleting: { id: 7, name: "Muse" } }, "/settings/api-keys?view=delete&key=7");
+  expect(visibleText(renderer)).toContain("Delete Muse?");
+  expect(visibleText(renderer)).toContain("stops working immediately");
+  expect(renderer.root.findByProps({ name: "intent" }).props.value).toBe("delete");
+  expect(renderer.root.findByProps({ name: "keyId" }).props.value).toBe(7);
+  expect(renderer.root.findAllByProps({ type: "submit" }).map((button) => button.children.join(""))).toContain("Delete key");
+  await act(() => renderer.unmount());
+});
+
+test("the list confirms edits and deletions", async () => {
+  for (const [flags, notice] of [[{ updated: true }, "API key updated."], [{ deleted: true }, "API key deleted."]] as const) {
+    const renderer = await render({ ...loaderData, ...flags });
+    expect(renderer.root.findByProps({ role: "status" }).children.join("")).toBe(notice);
+    await act(() => renderer.unmount());
+  }
 });

@@ -177,6 +177,12 @@
   background: var(--ground);
 }
 
+a.cancelRemovalButton {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+}
+
 .removalActions button:disabled,
 .keyRow button:disabled {
   opacity: 0.65;
@@ -446,4 +452,58 @@
   color: var(--color-ready);
   font-size: 0.8rem;
   font-weight: 600;
+}
+
+.keyActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.keyActions a {
+  display: inline-flex;
+  min-height: 2.75rem;
+  align-items: center;
+  padding: 0.5rem 1rem;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  color: var(--color-text);
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.keyActions a:hover {
+  border-color: var(--green-dark);
+}
+
+.keyActions .deleteKeyLink {
+  border-color: var(--danger-border);
+  color: var(--danger);
+}
+
+.keyActions .deleteKeyLink:hover {
+  border-color: var(--danger-border);
+  background: var(--danger-soft);
+}
+
+.clientCard.expiredKey {
+  border-style: dashed;
+  background: transparent;
+}
+
+.expiredKey h2,
+.expiredKey .credential {
+  color: var(--color-text-muted);
+}
+
+.expiredBadge {
+  margin-left: 0.5rem;
+  padding: 0.1rem 0.5rem;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  color: var(--color-text-muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  vertical-align: middle;
 }

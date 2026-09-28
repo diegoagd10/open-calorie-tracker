@@ -24,8 +24,8 @@ let otherCsrf: string;
 function args(request: Request, pattern = "/settings/api-keys") {
   return { request, params: {}, context: new RouterContextProvider(), pattern, url: new URL(request.url) };
 }
-function get(cookie: string) {
-  return args(new Request(`${origin}/settings/api-keys`, { headers: { Cookie: cookie } }));
+function get(cookie: string, query = "") {
+  return args(new Request(`${origin}/settings/api-keys${query}`, { headers: { Cookie: cookie } }));
 }
 function post(fields: Record<string, string | string[]>, cookie = ownerCookie, csrfToken = ownerCsrf) {
   const body = new URLSearchParams({ csrfToken });
@@ -52,6 +52,27 @@ async function keyNamed(name: string, cookie = ownerCookie) {
 }
 function create(name: string, fields: Record<string, string | string[]> = {}, cookie = ownerCookie, csrfToken = ownerCsrf) {
   return action(post({ intent: "create", name, scope: "daily-log:read", expiration: "90d", ...fields }, cookie, csrfToken));
+}
+
+function edit(keyId: number, fields: Record<string, string | string[]>, cookie = ownerCookie, csrfToken = ownerCsrf) {
+  return action(post({ intent: "update", keyId: String(keyId), scope: "daily-log:read", ...fields }, cookie, csrfToken));
+}
+function remove(keyId: number, cookie = ownerCookie, csrfToken = ownerCsrf) {
+  return action(post({ intent: "delete", keyId: String(keyId) }, cookie, csrfToken));
+}
+async function copiedKey(keyId: number) {
+  return ((await (await copy(keyId)).json()) as { key: string }).key;
+}
+function backdate(keyId: number, days: number, expiration: number | null) {
+  const created = Date.now() - days * 86_400_000;
+  const expires = expiration === null ? null : new Date(created + expiration * 86_400_000).toISOString();
+  getApplicationDatabase().getClient().run(sql`UPDATE api_keys SET created_at = ${new Date(created).toISOString()}, expires_at = ${expires} WHERE id = ${keyId}`);
+}
+function rejectedWith(response: Awaited<ReturnType<typeof action>>, status: number) {
+  expect(response).not.toBeInstanceOf(Response);
+  const rejected = response as Exclude<typeof response, Response>;
+  expect(rejected.init?.status).toBe(status);
+  return rejected.data.errors;
 }
 
 beforeAll(async () => {
@@ -196,4 +217,106 @@ test("deleting an account deletes its keys", async () => {
   await create("Doomed", {}, cookie, member.csrfToken);
   expect(deleteMemberAccount(database, { id: member.user.id, usernameNormalized: "keys.deleted" })).toBe(true);
   expect(database.get<{ total: number }>(sql`SELECT count(*) AS total FROM api_keys WHERE owner_id = ${member.user.id}`)?.total).toBe(0);
+});
+
+test("editing changes the name, permissions, and expiration counted from creation, never the key value", async () => {
+  await create("Before edit", { expiration: "1d" });
+  const { id } = await keyNamed("Before edit");
+  backdate(id, 10, 30);
+  const key = await copiedKey(id);
+  const response = await edit(id, { name: "After edit", expiration: "1y" });
+  expect(response).toBeInstanceOf(Response);
+  expect((response as Response).headers.get("Location")).toBe("/settings/api-keys?updated=1");
+  const edited = await keyNamed("After edit");
+  expect(edited.id).toBe(id);
+  expect(edited.scopes).toEqual(["daily-log:read"]);
+  expect(Date.parse(edited.expiresAt ?? "") - Date.parse(edited.createdAt)).toBe(365 * 86_400_000);
+  expect(await copiedKey(id)).toBe(key);
+  expect(await edit(id, { name: "After edit", expiration: "never" })).toBeInstanceOf(Response);
+  expect((await keyNamed("After edit")).expiresAt).toBeNull();
+});
+
+test("editing follows creation's validation, allows keeping the name, and rejects presets already in the past", async () => {
+  await create("Taken");
+  await create("Editable");
+  const { id } = await keyNamed("Editable");
+  backdate(id, 10, 90);
+  const invalid: Array<[Record<string, string | string[]>, string]> = [
+    [{ name: "  " }, "name"],
+    [{ name: "x".repeat(81) }, "name"],
+    [{ name: "Tab\u0009stop" }, "name"],
+    [{ name: "taken" }, "name"],
+    [{ scope: [] }, "scopes"],
+    [{ scope: "daily-log:write" }, "scopes"],
+    [{ expiration: "2027-01-01" }, "expiration"],
+    [{ expiration: "7d" }, "expiration"],
+  ];
+  for (const [fields, field] of invalid) {
+    expect(rejectedWith(await edit(id, { name: "Editable", expiration: "90d", ...fields }), 400)).toHaveProperty(field);
+  }
+  const unchanged = await keyNamed("Editable");
+  expect(Date.parse(unchanged.expiresAt ?? "") - Date.parse(unchanged.createdAt)).toBe(90 * 86_400_000);
+  expect(await edit(id, { name: "EDITABLE", expiration: "30d" })).toBeInstanceOf(Response);
+  expect((await keyNamed("EDITABLE")).id).toBe(id);
+});
+
+test("the edit view offers presets from creation that are still ahead, each with its date, and always No expiration", async () => {
+  await create("Aging");
+  const { id } = await keyNamed("Aging");
+  backdate(id, 10, 30);
+  const view = await loader(get(ownerCookie, `?view=edit&key=${id}`));
+  if (view.view !== "edit") throw new Error("Expected the edit view");
+  expect(view.editing.key.name).toBe("Aging");
+  expect(view.editing.expiration).toBe("30d");
+  const created = Date.parse(view.editing.key.createdAt);
+  expect(view.editing.expirations).toEqual([
+    { value: "30d", label: "30 days", expiresAt: new Date(created + 30 * 86_400_000).toISOString() },
+    { value: "90d", label: "90 days", expiresAt: new Date(created + 90 * 86_400_000).toISOString() },
+    { value: "1y", label: "1 year", expiresAt: new Date(created + 365 * 86_400_000).toISOString() },
+    { value: "never", label: "No expiration", expiresAt: null },
+  ]);
+});
+
+test("expired keys are listed as expired, cannot be edited or copied, and can be deleted", async () => {
+  await create("Lapsed");
+  const { id } = await keyNamed("Lapsed");
+  backdate(id, 10, 7);
+  expect((await keyNamed("Lapsed")).expired).toBe(true);
+  expect((await keyNamed("Taken")).expired).toBe(false);
+  await expect(loader(get(ownerCookie, `?view=edit&key=${id}`))).rejects.toMatchObject({ status: 302 });
+  expect(rejectedWith(await edit(id, { name: "Revived", expiration: "never" }), 404)).toHaveProperty("form");
+  expect((await keyNamed("Lapsed")).expiresAt).not.toBeNull();
+  expect((await copy(id)).status).toBe(404);
+
+  const view = await loader(get(ownerCookie, `?view=delete&key=${id}`));
+  if (view.view !== "delete") throw new Error("Expected the delete view");
+  expect(view.deleting).toEqual({ id, name: "Lapsed" });
+  expect(await remove(id)).toBeInstanceOf(Response);
+  expect((await loader(get(ownerCookie))).keys.map((key) => key.id)).not.toContain(id);
+});
+
+test("deleting a key removes it for good and confirms on the list", async () => {
+  await create("Deletable");
+  const { id } = await keyNamed("Deletable");
+  const response = await remove(id);
+  expect((response as Response).headers.get("Location")).toBe("/settings/api-keys?deleted=1");
+  expect(getApplicationDatabase().getClient().get(sql`SELECT id FROM api_keys WHERE id = ${id}`)).toBeUndefined();
+  expect((await copy(id)).status).toBe(404);
+  expect(rejectedWith(await remove(id), 404)).toHaveProperty("form");
+  await expect(loader(get(ownerCookie, `?view=delete&key=${id}`))).rejects.toMatchObject({ status: 302 });
+  expect((await loader(get(ownerCookie, "?deleted=1"))).deleted).toBe(true);
+});
+
+test("an account cannot view, edit, or delete another account's key, and edits need CSRF from this origin", async () => {
+  await create("Guarded");
+  const { id } = await keyNamed("Guarded");
+  await expect(loader(get(otherCookie, `?view=edit&key=${id}`))).rejects.toMatchObject({ status: 302 });
+  await expect(loader(get(otherCookie, `?view=delete&key=${id}`))).rejects.toMatchObject({ status: 302 });
+  expect(rejectedWith(await edit(id, { name: "Stolen", expiration: "never" }, otherCookie, otherCsrf), 404)).toHaveProperty("form");
+  expect(rejectedWith(await remove(id, otherCookie, otherCsrf), 404)).toHaveProperty("form");
+  expect(rejectedWith(await edit(0, { name: "Nothing", expiration: "never" }), 404)).toHaveProperty("form");
+  await expect(edit(id, { name: "No CSRF", expiration: "never" }, ownerCookie, "invalid")).rejects.toMatchObject({ status: 403 });
+  await expect(remove(id, ownerCookie, "invalid")).rejects.toMatchObject({ status: 403 });
+  await expect(remove(id, "")).rejects.toMatchObject({ status: 302 });
+  expect((await keyNamed("Guarded")).id).toBe(id);
 });

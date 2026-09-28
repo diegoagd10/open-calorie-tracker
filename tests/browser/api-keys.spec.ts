@@ -1,7 +1,7 @@
 import AxeBuilder from "@axe-core/playwright";
 import { bootstrapOrSignInBrowserTestUser, expect, test } from "./reset-database";
 
-test("an account holder creates a key and copies it without it ever being rendered", async ({ context, page }, testInfo) => {
+test("an account holder creates, copies, edits, and deletes a key without it ever being rendered", async ({ context, page }, testInfo) => {
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   await bootstrapOrSignInBrowserTestUser(page, "api.keys.browser", "correct horse 🔐 battery");
   await page.getByLabel("Time zone").fill("America/New_York");
@@ -52,4 +52,32 @@ test("an account holder creates a key and copies it without it ever being render
   await page.screenshot({ path: testInfo.outputPath("api-key-list-mobile-light.png"), fullPage: true });
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.screenshot({ path: testInfo.outputPath("api-key-list-light.png"), fullPage: true });
+
+  await page.getByRole("link", { name: "Edit Muse" }).click();
+  await expect(page.getByRole("heading", { name: "Edit Muse" })).toBeVisible();
+  await expect(page.getByLabel("Name")).toHaveValue("Muse");
+  await expect(page.getByLabel("Expiration")).toHaveValue("90d");
+  await expect(page.getByLabel("Expiration").locator("option")).toHaveText([
+    /^1 day · \w{3} \d{1,2}, \d{4}$/u, /^7 days · /u, /^30 days · /u, /^90 days · /u, /^1 year · /u, "No expiration",
+  ]);
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+  await page.screenshot({ path: testInfo.outputPath("api-key-edit-light.png"), fullPage: true });
+  await page.getByLabel("Name").fill("Muse phone");
+  await page.getByLabel("Expiration").selectOption("never");
+  await page.getByRole("button", { name: "Save changes" }).click();
+  await expect(page).toHaveURL("/settings/api-keys?updated=1");
+  await expect(page.getByRole("status")).toContainText("API key updated");
+  await expect(page.getByText("No expiration")).toBeVisible();
+  await page.getByRole("button", { name: "Copy Muse phone" }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Copied" })).toBeVisible();
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(key);
+
+  await page.getByRole("link", { name: "Delete Muse phone" }).click();
+  await expect(page.getByRole("heading", { name: "Delete Muse phone?" })).toBeVisible();
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+  await page.screenshot({ path: testInfo.outputPath("api-key-delete-light.png"), fullPage: true });
+  await page.getByRole("button", { name: "Delete key" }).click();
+  await expect(page).toHaveURL("/settings/api-keys?deleted=1");
+  await expect(page.getByRole("status")).toContainText("API key deleted");
+  await expect(page.getByText("No API keys yet.")).toBeVisible();
 });

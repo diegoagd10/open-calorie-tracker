@@ -148,6 +148,20 @@ test("missing, unknown, expired, deleted, and disabled-account keys all get the 
   await expectInvalidToken(apiGet(`Bearer ${disabledKey.key}`, freshIp()));
 });
 
+test("an edited key keeps authenticating with the same value, and a deleted key stops on the next request", async () => {
+  const { id, key } = await createKey(reader, "Short lived");
+  const settings = (fields: Record<string, string>) => keysAction(args(new Request(`${origin}/settings/api-keys`, {
+    method: "POST",
+    headers: { Cookie: reader.cookie, Origin: origin },
+    body: new URLSearchParams({ csrfToken: reader.csrf, keyId: String(id), ...fields }),
+  })));
+  expect(apiGet(`Bearer ${key}`, freshIp()).status).toBe(200);
+  expect(await settings({ intent: "update", name: "Renamed", scope: "daily-log:read", expiration: "never" })).toBeInstanceOf(Response);
+  expect(apiGet(`Bearer ${key}`, freshIp()).status).toBe(200);
+  expect(await settings({ intent: "delete" })).toBeInstanceOf(Response);
+  await expectInvalidToken(apiGet(`Bearer ${key}`, freshIp()));
+});
+
 test("a valid key without the Food Log permission gets 403 insufficient_scope", async () => {
   const { id, key } = await createKey(reader, "Unscoped");
   getApplicationDatabase().getClient().run(sql`UPDATE api_keys SET scopes = '["other:read"]' WHERE id = ${id}`);
