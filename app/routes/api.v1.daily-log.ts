@@ -9,6 +9,7 @@ type FoodLog = NonNullable<ReturnType<FoodLogService["read"]>>;
 type Food = FoodLog["entries"][number];
 type Water = FoodLog["waterEvents"][number];
 
+const acceptedScopes = ["daily-log:read"] as const;
 const privateHeaders = { "Cache-Control": "private, no-store", "Referrer-Policy": "no-referrer" };
 
 function apiError(error: string, status: number, headers: Record<string, string> = {}) {
@@ -111,11 +112,11 @@ export function headers() {
 }
 
 export function loader({ request }: Route.LoaderArgs) {
-  const caller = getApiKeyAuthenticator().authenticate(request.headers.get("Authorization"), getClientIp(request), "daily-log:read");
+  const caller = getApiKeyAuthenticator().authenticate(request.headers.get("Authorization"), getClientIp(request), acceptedScopes);
   if (!caller.ok) {
     if (caller.error === "rate_limited") return apiError("rate_limited", 429, { "Retry-After": String(caller.retryAfterSeconds) });
     return caller.error === "insufficient_scope"
-      ? apiError("insufficient_scope", 403, { "WWW-Authenticate": 'Bearer realm="daily-log", error="insufficient_scope", scope="daily-log:read"' })
+      ? apiError("insufficient_scope", 403, { "WWW-Authenticate": `Bearer realm="daily-log", error="insufficient_scope", scope="${acceptedScopes.join(" ")}"` })
       : apiError("invalid_token", 401, { "WWW-Authenticate": 'Bearer realm="daily-log", error="invalid_token"' });
   }
   const dates = new URL(request.url).searchParams.getAll("date");

@@ -6,9 +6,9 @@ import { parseIsoLocalDate } from "../food-log/date";
 import { getFoodLogService } from "../food-log/runtime.server";
 import { dailyLogSummarySchema, summarizeDailyLog } from "./daily-log-summary";
 
-/** An MCP tool and the API key scope a caller needs to see and call it. */
+/** An MCP tool and the API key scopes, any one of which lets a caller see and call it. */
 export type McpTool = {
-  scope: ApiKeyScope;
+  scopes: readonly ApiKeyScope[];
   register(server: McpServer, userId: number): ReturnType<McpServer["registerTool"]>;
 };
 
@@ -17,7 +17,7 @@ function toolError(text: string): CallToolResult {
 }
 
 const getDailyLog: McpTool = {
-  scope: "daily-log:read",
+  scopes: ["daily-log:read"],
   register: (server, userId) => server.registerTool("get_daily_log", {
     title: "Get daily Food Log",
     description: "Summarizes the account holder's Food Log for one day: energy, macronutrients, sodium, and water consumed, with goals, remaining amounts, and the foods logged.",
