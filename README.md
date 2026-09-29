@@ -27,7 +27,9 @@ Create an API key in **Settings › API keys**. The page shows how to send it as
 Daily Food Log API (`/api/v1/daily-log`). Keys with **Read Food Log** or **Log
 foods** can also search Saved Foods (`/api/v1/saved-foods?query=`). Keys with
 **Log foods** can create a Saved Food for one serving with `POST
-/api/v1/saved-foods`, a JSON body, and an `Idempotency-Key` header.
+/api/v1/saved-foods`, and log servings of a Saved Food with `POST
+/api/v1/food-entries` and `"source": "saved-food"`, each with a JSON body and an
+`Idempotency-Key` header.
 
 ## Install food catalogs from the terminal
 

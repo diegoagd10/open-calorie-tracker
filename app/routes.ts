@@ -11,6 +11,7 @@ export default [
   route("settings/api-keys/copy", "./routes/settings.api-keys.copy.ts"),
   route("api/v1/daily-log", "./routes/api.v1.daily-log.ts"),
   route("api/v1/saved-foods", "./routes/api.v1.saved-foods.ts"),
+  route("api/v1/food-entries", "./routes/api.v1.food-entries.ts"),
   route("mcp", "./routes/mcp.ts"),
   route("login", "./routes/login.tsx"),
   route("logout", "./routes/logout.tsx"),
