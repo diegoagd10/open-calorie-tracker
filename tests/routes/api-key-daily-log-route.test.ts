@@ -9,7 +9,9 @@ import { getAuthenticationService } from "../../app/auth/runtime.server";
 import { shutdownCredentialStorage } from "../../app/credentials/runtime.server";
 import { deleteMemberAccount } from "../../app/database/member-deletion.server";
 import { getApplicationDatabase, initializeApplicationDatabase, shutdownApplicationDatabase } from "../../app/database/runtime.server";
+import type { ApiKeyScope } from "../../app/api-keys/presets";
 import { action as mutateDailyLog, loader as readDailyLog } from "../../app/routes/api.v1.daily-log";
+import { authenticateApiKey } from "../../app/routes/api-v1.server";
 import { action as keysAction, loader as keysLoader } from "../../app/routes/settings.api-keys";
 import { action as copyAction } from "../../app/routes/settings.api-keys.copy";
 import { getGoalSetupService } from "../../app/setup/runtime.server";
@@ -169,6 +171,25 @@ test("a valid key without the Food Log permission gets 403 insufficient_scope", 
   expect(response.status).toBe(403);
   expect(await response.json()).toEqual({ error: "insufficient_scope" });
   expect(response.headers.get("WWW-Authenticate")).toContain('error="insufficient_scope"');
+});
+
+test("an endpoint accepting several scopes lets in a key with any one of them and challenges with all of them", async () => {
+  const futureWrite = "future:write" as ApiKeyScope;
+  const accepted: ApiKeyScope[] = ["daily-log:read", futureWrite];
+  const { id, key } = await createKey(reader, "Either scope");
+  const request = () => new Request(`${origin}/api/v1/either`, {
+    headers: { Authorization: `Bearer ${key}`, "X-Open-Calory-Client-IP": freshIp() },
+  });
+  expect(authenticateApiKey(request(), "either", accepted)).toEqual({ userId: reader.id });
+  getApplicationDatabase().getClient().run(sql`UPDATE api_keys SET scopes = '["future:write"]' WHERE id = ${id}`);
+  expect(authenticateApiKey(request(), "either", accepted)).toEqual({ userId: reader.id });
+  getApplicationDatabase().getClient().run(sql`UPDATE api_keys SET scopes = '["other:read"]' WHERE id = ${id}`);
+  const refused = authenticateApiKey(request(), "either", accepted);
+  if (!(refused instanceof Response)) throw new Error("Expected a refusal");
+  expect(refused.status).toBe(403);
+  expect(await refused.json()).toEqual({ error: "insufficient_scope" });
+  expect(refused.headers.get("WWW-Authenticate")).toBe('Bearer realm="either", error="insufficient_scope", scope="daily-log:read future:write"');
+  expect(refused.headers.get("Cache-Control")).toContain("no-store");
 });
 
 test("ten failed attempts per client IP in fifteen minutes block further attempts, and success clears the count", async () => {

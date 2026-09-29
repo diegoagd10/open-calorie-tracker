@@ -2,54 +2,12 @@ import type { Route } from "./+types/api.v1.daily-log";
 import type { FoodLogService } from "../food-log/food-log.server";
 import { parseIsoLocalDate } from "../food-log/date";
 import { getFoodLogService } from "../food-log/runtime.server";
-import { getApiKeyAuthenticator } from "../api-keys/runtime.server";
-import { getClientIp } from "../auth/http.server";
+import { apiError, authenticateApiKey, presentFood, privateHeaders } from "./api-v1.server";
 
 type FoodLog = NonNullable<ReturnType<FoodLogService["read"]>>;
-type Food = FoodLog["entries"][number];
 type Water = FoodLog["waterEvents"][number];
 
 const acceptedScopes = ["daily-log:read"] as const;
-const privateHeaders = { "Cache-Control": "private, no-store", "Referrer-Policy": "no-referrer" };
-
-function apiError(error: string, status: number, headers: Record<string, string> = {}) {
-  return Response.json({ error }, { status, headers: { ...privateHeaders, ...headers } });
-}
-
-function presentFood(entry: Food) {
-  return {
-    id: entry.id,
-    foodLogDate: entry.foodLogDate,
-    localEventTime: entry.localEventTime,
-    createdAt: entry.createdAt,
-    updatedAt: entry.updatedAt,
-    name: entry.name,
-    originalName: entry.originalName,
-    provider: entry.provider,
-    providerFoodId: entry.providerFoodId,
-    dataType: entry.dataType,
-    providerPublishedDate: entry.providerPublishedDate,
-    providerModifiedDate: entry.providerModifiedDate,
-    brand: entry.brand,
-    barcode: entry.barcode,
-    marketCountry: entry.marketCountry,
-    authoritativeBaseUnit: entry.authoritativeBaseUnit,
-    authoritativeBaseQuantityMicrounits: entry.authoritativeBaseQuantityMicrounits,
-    authoritativeNutrition: entry.authoritativeNutrition,
-    selectedMeasurementId: entry.selectedMeasurementId,
-    selectedMeasurementLabel: entry.selectedMeasurementLabel,
-    selectedMeasurementUnit: entry.selectedMeasurementUnit,
-    supportedMeasurements: entry.supportedMeasurements,
-    quantityMicrounits: entry.quantityMicrounits,
-    energyMilliKcal: entry.energyMilliKcal,
-    proteinMilligrams: entry.proteinMilligrams,
-    carbohydrateMilligrams: entry.carbohydrateMilligrams,
-    fatMilligrams: entry.fatMilligrams,
-    fiberMilligrams: entry.fiberMilligrams,
-    sugarMilligrams: entry.sugarMilligrams,
-    sodiumMilligrams: entry.sodiumMilligrams,
-  };
-}
 
 function presentWater(event: Water) {
   return {
@@ -112,13 +70,8 @@ export function headers() {
 }
 
 export function loader({ request }: Route.LoaderArgs) {
-  const caller = getApiKeyAuthenticator().authenticate(request.headers.get("Authorization"), getClientIp(request), acceptedScopes);
-  if (!caller.ok) {
-    if (caller.error === "rate_limited") return apiError("rate_limited", 429, { "Retry-After": String(caller.retryAfterSeconds) });
-    return caller.error === "insufficient_scope"
-      ? apiError("insufficient_scope", 403, { "WWW-Authenticate": `Bearer realm="daily-log", error="insufficient_scope", scope="${acceptedScopes.join(" ")}"` })
-      : apiError("invalid_token", 401, { "WWW-Authenticate": 'Bearer realm="daily-log", error="invalid_token"' });
-  }
+  const caller = authenticateApiKey(request, "daily-log", acceptedScopes);
+  if (caller instanceof Response) return caller;
   const dates = new URL(request.url).searchParams.getAll("date");
   if (dates.length !== 1 || !parseIsoLocalDate(dates[0])) return apiError("invalid_date", 400);
   const foodLog = getFoodLogService().read(caller.userId, dates[0]);

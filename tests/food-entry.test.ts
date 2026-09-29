@@ -1899,3 +1899,33 @@ test("manual decimal nutrition corrections preserve all units and later quantity
     expect(service.logManual(userId, input).id).toBe(created.id);
   } finally { database.close(); }
 });
+
+test("web keys for Food Entries cannot look like MCP or REST keys", async () => {
+  const database = await setupDatabase();
+  const client = database.getClient();
+  const userId = insertConfiguredUser(client, "external.prefixes");
+  const now = () => new Date("2026-08-29T18:00:00.000Z");
+  const service = new FoodEntryService(client, new FakeCatalogProvider(), now);
+  const manual = {
+    energyKcal: "100",
+    foodLogDate: "2026-08-29",
+    idempotencyKey: "web-manual-source",
+    name: "Oatmeal",
+    quantity: "1",
+  };
+  try {
+    const saved = service.logManual(userId, manual);
+    const savedFoodId = service.listSavedFoods(userId, "oatmeal")[0].id;
+
+    for (const idempotencyKey of ["mcp:agent-key-1", "api:client-key-1"]) {
+      await expect(service.log(userId, { ...validLogInput(), idempotencyKey }))
+        .rejects.toBeInstanceOf(InvalidFoodEntryInputError);
+      expect(() => service.logManual(userId, { ...manual, idempotencyKey }))
+        .toThrow(InvalidFoodEntryInputError);
+      expect(() => service.logSavedFood(userId, savedFoodId, "2026-08-29", idempotencyKey))
+        .toThrow(InvalidFoodEntryInputError);
+    }
+    expect(new FoodLogService(client, now).read(userId, "2026-08-29")?.entries.map((entry) => entry.id))
+      .toEqual([saved.id]);
+  } finally { database.close(); }
+});

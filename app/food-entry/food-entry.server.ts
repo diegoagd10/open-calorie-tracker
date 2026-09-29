@@ -25,6 +25,7 @@ import { readUserTimeZone } from "../database/user-preferences.server";
 import { isPhotoEntryProcessing } from "../database/photo-analysis.server";
 import { foodEntries, userPreferences } from "../database/schema.server";
 import { localDateAt, parseIsoLocalDate } from "../food-log/date";
+import { hasExternalChannelPrefix } from "../food-log/idempotency-key";
 import {
   localEventTimeForCopiedFoodEntry,
   localEventTimeForNewFoodLogEvent,
@@ -50,7 +51,12 @@ const idempotencyKeySchema = z
   .max(128)
   .refine((value) => /^[A-Za-z0-9._:-]+$/.test(value));
 
-export const savedFoodIdempotencyKeySchema = idempotencyKeySchema.refine(
+/** Keys the web sends; the `mcp:` and `api:` prefixes belong to external callers. */
+const webIdempotencyKeySchema = idempotencyKeySchema.refine(
+  (value) => !hasExternalChannelPrefix(value),
+);
+
+export const savedFoodIdempotencyKeySchema = webIdempotencyKeySchema.refine(
   (value) => !value.startsWith("copy:"),
 );
 
@@ -74,9 +80,7 @@ function logFoodInputSchema() {
   return z.object({
     catalogGeneration: z.string().uuid().optional(),
     foodLogDate: z.string(),
-    idempotencyKey: idempotencyKeySchema.refine(
-      (value) => !value.startsWith("copy:"),
-    ),
+    idempotencyKey: savedFoodIdempotencyKeySchema,
     provider: z.string().min(1).max(64),
     providerFoodId: z.string().min(1).max(128),
     quantity: z.string().min(1).max(32),
@@ -129,11 +133,7 @@ function logManualFoodInputSchema() {
     fatGrams: z.string().max(32).optional(),
     fiberGrams: z.string().max(32).optional(),
     foodLogDate: z.string(),
-    idempotencyKey: z
-      .string()
-      .min(8)
-      .max(128)
-      .refine((value) => /^[A-Za-z0-9._:-]+$/.test(value)),
+    idempotencyKey: webIdempotencyKeySchema,
     name: z.string().trim().min(1).max(200),
     proteinGrams: z.string().max(32).optional(),
     quantity: z.string().min(1).max(32),
