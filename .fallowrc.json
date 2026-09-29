@@ -157,7 +157,7 @@
       { "from": "catalog", "allow": ["server", "database", "catalog-management"] },
       { "from": "database", "allow": [], "allowTypeOnly": ["catalog", "catalog-management", "credentials"] },
       { "from": "credentials", "allow": ["database"] },
-      { "from": "mcp", "allow": ["food-log", "api-keys"] },
+      { "from": "mcp", "allow": ["food-log", "api-keys", "water-event"] },
       { "from": "catalog-management", "allow": ["database", "catalog"] },
       {
         "from": "food-entry",

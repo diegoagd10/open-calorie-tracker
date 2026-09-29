@@ -193,27 +193,15 @@ export class WaterEventService {
     const foodLogDate = parseIsoLocalDate(parsed.data.foodLogDate);
     if (!foodLogDate) throw new InvalidFoodLogDateError();
 
-    const preference = this.#database
-      .select({
-        displayUnits: userPreferences.displayUnits,
-        timeZone: userPreferences.timeZone,
-      })
-      .from(userPreferences)
-      .where(eq(userPreferences.userId, userId))
-      .get();
-    if (!preference || !["metric", "us"].includes(preference.displayUnits)) {
-      throw new InvalidFoodLogDateError();
-    }
+    const preference = this.#unitsAndTimeZone(userId);
+    if (!preference) throw new InvalidFoodLogDateError();
 
     const instant = this.#now();
     const today = localDateAt(instant, preference.timeZone);
     if (foodLogDate > today) throw new FutureFoodLogDateError();
     const amountMicroliters = parsed.data.selection === "presets"
       ? waterPresetTotalMicroliters(parsed.data.counts)
-      : canonicalWaterAmount(
-          parsed.data,
-          preference.displayUnits as "metric" | "us",
-        );
+      : canonicalWaterAmount(parsed.data, preference.displayUnits);
     const presetCounts = parsed.data.selection === "presets"
       ? storedPresetCounts(parsed.data.counts)
       : parsed.data.selection === "exact"
@@ -315,6 +303,22 @@ export class WaterEventService {
     });
   }
 
+  /** The account's display units and time zone, or undefined without setup or with unknown units. */
+  #unitsAndTimeZone(userId: number) {
+    const preference = this.#database
+      .select({
+        displayUnits: userPreferences.displayUnits,
+        timeZone: userPreferences.timeZone,
+      })
+      .from(userPreferences)
+      .where(eq(userPreferences.userId, userId))
+      .get();
+    if (!preference || !["metric", "us"].includes(preference.displayUnits)) {
+      return undefined;
+    }
+    return { ...preference, displayUnits: preference.displayUnits as "metric" | "us" };
+  }
+
   #newEventValues(
     database: Parameters<typeof localEventTimeForNewFoodLogEvent>[0],
     userId: number,
@@ -364,19 +368,9 @@ export class WaterEventService {
     if (existing.foodLogDate !== parsed.data.foodLogDate) {
       throw new WaterEventUnavailableError();
     }
-    const preference = this.#database
-      .select({ displayUnits: userPreferences.displayUnits })
-      .from(userPreferences)
-      .where(eq(userPreferences.userId, userId))
-      .get();
-    if (!preference || !["metric", "us"].includes(preference.displayUnits)) {
-      throw new WaterEventUnavailableError();
-    }
-    const values = updatedWaterValues(
-      existing,
-      parsed.data,
-      preference.displayUnits as "metric" | "us",
-    );
+    const preference = this.#unitsAndTimeZone(userId);
+    if (!preference) throw new WaterEventUnavailableError();
+    const values = updatedWaterValues(existing, parsed.data, preference.displayUnits);
     const updated = this.#database
       .update(waterEvents)
       .set({

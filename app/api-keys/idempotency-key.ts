@@ -1,5 +1,5 @@
 /** Idempotency keys sent by external callers: 8–124 characters from `[A-Za-z0-9._:-]`. */
-const EXTERNAL_IDEMPOTENCY_KEY = /^[A-Za-z0-9._:-]{8,124}$/u;
+export const EXTERNAL_IDEMPOTENCY_KEY = /^[A-Za-z0-9._:-]{8,124}$/u;
 
 /**
  * The stored form of an external caller's idempotency key, prefixed by its channel so

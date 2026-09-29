@@ -258,7 +258,7 @@ test("tools are listed and callable only with their scope, and a key with no too
   const response = await mcpRequest(`Bearer ${key}`, { jsonrpc: "2.0", id: 1, method: "tools/list" });
   expect(response.status).toBe(403);
   expect(await response.json()).toEqual({ error: "insufficient_scope" });
-  expect(response.headers.get("WWW-Authenticate")).toContain('error="insufficient_scope", scope="daily-log:read"');
+  expect(response.headers.get("WWW-Authenticate")).toContain('error="insufficient_scope", scope="daily-log:read water-log:write"');
 });
 
 test("only POST carries MCP messages; there are no sessions or streams", async () => {
