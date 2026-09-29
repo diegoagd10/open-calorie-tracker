@@ -9,6 +9,7 @@ export function listSavedFoodRows(
   database: SavedFoodDatabase,
   userId: number,
   query: string,
+  limit = -1,
 ) {
   const trimmed = query.trim();
   return database
@@ -23,6 +24,7 @@ export function listSavedFoodRows(
         : eq(savedFoods.userId, userId),
     )
     .orderBy(asc(savedFoods.name), asc(savedFoods.id))
+    .limit(limit)
     .all();
 }
 

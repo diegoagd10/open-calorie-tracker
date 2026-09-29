@@ -73,13 +73,13 @@ function completeSetup(userId: number, displayUnits: "us" | "metric", water: str
   if (!setup.success) throw new Error("Invalid test setup");
   getGoalSetupService().completeInitial(userId, setup.data);
 }
-async function createKey(owner: Account, name: string): Promise<{ id: number; key: string }> {
-  const request = (url: string, fields: Record<string, string>) => new Request(`${origin}${url}`, {
+async function createKey(owner: Account, name: string, scopes: readonly string[] = ["daily-log:read"]): Promise<{ id: number; key: string }> {
+  const request = (url: string, fields: Record<string, string>, repeated: [string, string][] = []) => new Request(`${origin}${url}`, {
     method: "POST",
     headers: { Cookie: owner.cookie, Origin: origin },
-    body: new URLSearchParams({ csrfToken: owner.csrf, ...fields }),
+    body: new URLSearchParams([...Object.entries({ csrfToken: owner.csrf, ...fields }), ...repeated]),
   });
-  await keysAction(args(request("/settings/api-keys", { intent: "create", name, scope: "daily-log:read", expiration: "90d" })));
+  await keysAction(args(request("/settings/api-keys", { intent: "create", name, expiration: "90d" }, scopes.map((scope) => ["scope", scope]))));
   const listed = (await keysLoader(args(new Request(`${origin}/settings/api-keys`, { headers: { Cookie: owner.cookie } })))).keys.find((entry) => entry.name === name);
   if (!listed) throw new Error(`No key named ${name}`);
   const copied = await copyAction(args(request("/settings/api-keys/copy", { keyId: String(listed.id) })));
@@ -121,7 +121,7 @@ test("a client initializes statelessly and lists the Food Log tool", async () =>
 
   const listed = await rpc(readerKey, "tools/list");
   const tools = listed.result?.tools as { name: string; inputSchema: { properties: Record<string, unknown> }; annotations?: Record<string, unknown> }[];
-  expect(tools.map((tool) => tool.name)).toEqual(["get_daily_log"]);
+  expect(tools.map((tool) => tool.name)).toEqual(["get_daily_log", "search_saved_foods"]);
   expect(Object.keys(tools[0].inputSchema.properties)).toEqual(["date"]);
   expect(tools[0].annotations).toMatchObject({ readOnlyHint: true });
 });
@@ -258,7 +258,7 @@ test("tools are listed and callable only with their scope, and a key with no too
   const response = await mcpRequest(`Bearer ${key}`, { jsonrpc: "2.0", id: 1, method: "tools/list" });
   expect(response.status).toBe(403);
   expect(await response.json()).toEqual({ error: "insufficient_scope" });
-  expect(response.headers.get("WWW-Authenticate")).toContain('error="insufficient_scope", scope="daily-log:read"');
+  expect(response.headers.get("WWW-Authenticate")).toContain('error="insufficient_scope", scope="daily-log:read food-log:write"');
 });
 
 test("only POST carries MCP messages; there are no sessions or streams", async () => {
@@ -267,4 +267,98 @@ test("only POST carries MCP messages; there are no sessions or streams", async (
   expect(get.headers.get("Allow")).toBe("POST");
   const remove = await mcpRequest(`Bearer ${readerKey}`, {}, "DELETE");
   expect(remove.status).toBe(405);
+});
+
+type SearchResult = { isError?: boolean; structuredContent?: { savedFoods: Record<string, unknown>[]; truncated: boolean }; content: { type: string; text: string }[] };
+async function searchSavedFoods(key: string, toolArguments: Record<string, unknown> = {}) {
+  const { result } = await rpc(key, "tools/call", { name: "search_saved_foods", arguments: toolArguments });
+  return result as SearchResult;
+}
+let savedFoodCounter = 0;
+function saveFood(userId: number, name: string, nutrients: Partial<Record<"energyKcal" | "proteinGrams" | "carbohydrateGrams" | "fatGrams" | "fiberGrams" | "sugarGrams" | "sodiumMilligrams" | "quantity", string>> = {}) {
+  savedFoodCounter += 1;
+  // Logging a manual food in the web also keeps it in My foods.
+  getFoodEntryService(new Date("2026-08-31T16:00:00.000Z")).logManual(userId, {
+    carbohydrateGrams: "", energyKcal: "100", fatGrams: "", fiberGrams: "", foodLogDate: today, idempotencyKey: `mcp-saved-${savedFoodCounter}`,
+    name, proteinGrams: "", quantity: "1", sodiumMilligrams: "", sugarGrams: "", ...nutrients,
+  });
+}
+function savedFoodNames(result: SearchResult) {
+  return result.structuredContent?.savedFoods.map((food) => food.name);
+}
+
+test("search_saved_foods is listed and callable with either the Food Log read scope or the Log foods scope", async () => {
+  const { key: writer } = await createKey(reader, "Writer only", ["food-log:write"]);
+  const listed = await rpc(writer, "tools/list");
+  const tools = listed.result?.tools as { name: string; annotations?: Record<string, unknown>; outputSchema?: unknown }[];
+  expect(tools.map((tool) => tool.name)).toEqual(["search_saved_foods"]);
+  expect(tools[0].annotations).toMatchObject({ readOnlyHint: true, openWorldHint: false });
+  expect(tools[0].outputSchema).toBeDefined();
+
+  for (const key of [readerKey, writer]) {
+    const result = await searchSavedFoods(key, { query: "oat" });
+    expect(result.isError).toBeFalsy();
+    expect(savedFoodNames(result)).toEqual(["Oatmeal"]);
+  }
+  const dailyLog = await rpc(writer, "tools/call", { name: "get_daily_log", arguments: {} });
+  expect(JSON.stringify(dailyLog)).toMatch(/disabled/u);
+  expect(dailyLog.result?.structuredContent).toBeUndefined();
+});
+
+test("search_saved_foods matches part of a name in any case and returns per-serving nutrition", async () => {
+  const pantry = await account("mcp.pantry");
+  completeSetup(pantry.id, "metric", "2000");
+  saveFood(pantry.id, "Huevo (1 grande)", { energyKcal: "78", proteinGrams: "6.3", carbohydrateGrams: "0.6", fatGrams: "5.3", sodiumMilligrams: "62" });
+  saveFood(pantry.id, "Pan tostado", { energyKcal: "80.125" });
+  // Saved from a Food Entry of two servings: the search shows one serving, not the entry's totals.
+  saveFood(pantry.id, "huevo revuelto", { energyKcal: "400", proteinGrams: "26", sodiumMilligrams: "300", quantity: "2" });
+  saveFood(pantry.id, "Huevo (1 grande)", { energyKcal: "72" });
+  const { key } = await createKey(pantry, "Pantry");
+
+  const eggs = await searchSavedFoods(key, { query: "HUEVO" });
+  expect(eggs.isError).toBeFalsy();
+  expect(eggs.structuredContent?.truncated).toBe(false);
+  const [first, second, scrambled] = eggs.structuredContent?.savedFoods ?? [];
+  expect(first).toEqual({
+    id: expect.any(Number) as number, name: "Huevo (1 grande)",
+    energyKcal: 78, proteinG: 6.3, carbohydrateG: 0.6, fatG: 5.3, fiberG: null, sugarG: null, sodiumMg: 62,
+  });
+  expect(second).toMatchObject({ name: "Huevo (1 grande)", energyKcal: 72 });
+  expect(second.id as number).toBeGreaterThan(first.id as number);
+  expect(scrambled).toMatchObject({ name: "huevo revuelto", energyKcal: 200, proteinG: 13, sodiumMg: 150, fatG: null });
+  expect(eggs.content).toHaveLength(1);
+  expect(eggs.content[0].text).not.toContain("\n");
+  expect(eggs.content[0].text).toContain("Huevo (1 grande)");
+
+  const everything = await searchSavedFoods(key);
+  expect(savedFoodNames(everything)).toEqual(["Huevo (1 grande)", "Huevo (1 grande)", "Pan tostado", "huevo revuelto"]);
+  expect(savedFoodNames(await searchSavedFoods(key, { query: "" }))).toEqual(savedFoodNames(everything));
+  expect(everything.structuredContent?.savedFoods[2]).toMatchObject({ energyKcal: 80.125 });
+
+  const none = await searchSavedFoods(key, { query: "pizza" });
+  expect(none.isError).toBeFalsy();
+  expect(none.structuredContent).toEqual({ savedFoods: [], truncated: false });
+  expect(none.content[0].text).toMatch(/no saved foods/iu);
+
+  const overlong = await searchSavedFoods(key, { query: "a".repeat(201) });
+  expect(overlong.isError).toBe(true);
+});
+
+test("search_saved_foods returns at most 25 Saved Foods and says when more exist, without changing the Food Log", async () => {
+  const bulk = await account("mcp.bulk");
+  completeSetup(bulk.id, "metric", "2000");
+  for (let index = 27; index >= 1; index -= 1) saveFood(bulk.id, `Food ${String(index).padStart(2, "0")}`);
+  const { key } = await createKey(bulk, "Bulk");
+  const before = (await callDailyLog(key)).structuredContent;
+
+  const all = await searchSavedFoods(key);
+  expect(all.structuredContent?.truncated).toBe(true);
+  expect(savedFoodNames(all)).toEqual(Array.from({ length: 25 }, (_, index) => `Food ${String(index + 1).padStart(2, "0")}`));
+  expect(all.content[0].text).toMatch(/more/iu);
+
+  const narrowed = await searchSavedFoods(key, { query: "food 2" });
+  expect(narrowed.structuredContent?.truncated).toBe(false);
+  expect(savedFoodNames(narrowed)).toEqual(["Food 20", "Food 21", "Food 22", "Food 23", "Food 24", "Food 25", "Food 26", "Food 27"]);
+
+  expect((await callDailyLog(key)).structuredContent).toEqual(before);
 });

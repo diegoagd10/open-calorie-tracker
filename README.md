@@ -24,7 +24,8 @@ For production configuration, deployment, updates, and backups, follow the
 
 Create an API key in **Settings › API keys**. The page shows how to send it as
 `Authorization: Bearer <key>` to the MCP endpoint (`/mcp`) and the read-only
-Daily Food Log API (`/api/v1/daily-log`).
+Daily Food Log API (`/api/v1/daily-log`). Keys with **Read Food Log** or **Log
+foods** can also search Saved Foods (`/api/v1/saved-foods?query=`).
 
 ## Install food catalogs from the terminal
 

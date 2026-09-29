@@ -448,7 +448,7 @@ test("a remote MCP client reads the Food Log through the running server with a b
     requestInit: { headers: { Authorization: `Bearer ${key}` } },
   }));
   const { tools } = await client.listTools();
-  expect(tools.map((tool) => tool.name)).toEqual(["get_daily_log"]);
+  expect(tools.map((tool) => tool.name)).toEqual(["get_daily_log", "search_saved_foods"]);
   const result = await client.callTool({ name: "get_daily_log", arguments: {} });
   expect(result.isError).toBeFalsy();
   expect(result.structuredContent).toMatchObject({

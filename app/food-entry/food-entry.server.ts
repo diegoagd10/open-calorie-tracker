@@ -45,6 +45,8 @@ import {
 } from "./snapshot.server";
 import { quantityMicrounitsFromDecimal } from "./nutrition";
 
+const SAVED_FOOD_SEARCH_LIMIT = 25;
+
 const idempotencyKeySchema = z
   .string()
   .min(8)
@@ -353,6 +355,30 @@ function savedFoodSnapshot(row: SavedFoodRow) {
   };
 }
 
+/** A Saved Food's id, name, and the nutrition of one serving, from its authoritative nutrition. */
+function savedFoodPerServing(row: SavedFoodRow) {
+  const saved = savedFoodSnapshot(row);
+  const nutrition = parseCatalogNutrition(saved.authoritativeNutrition);
+  const serving = (value: Parameters<typeof scaleCatalogNutrient>[0]) =>
+    scaleCatalogNutrient(
+      value,
+      saved.selectedMeasurementBaseQuantityMicrounits,
+      1_000_000,
+      saved.authoritativeBaseQuantityMicrounits,
+    );
+  return {
+    id: saved.id,
+    name: saved.name,
+    energyMilliKcal: serving(nutrition.energyMilliKcal),
+    proteinMilligrams: serving(nutrition.proteinMilligrams),
+    carbohydrateMilligrams: serving(nutrition.carbohydrateMilligrams),
+    fatMilligrams: serving(nutrition.fatMilligrams),
+    fiberMilligrams: serving(nutrition.fiberMilligrams),
+    sugarMilligrams: serving(nutrition.sugarMilligrams),
+    sodiumMilligrams: serving(nutrition.sodiumMilligrams),
+  };
+}
+
 function insertManualFoodSnapshot(
   database: Pick<ApplicationDatabaseClient, "insert" | "select">,
   userId: number,
@@ -658,6 +684,19 @@ export class FoodEntryService {
 
   listSavedFoods(userId: number, query = "") {
     return listSavedFoodRows(this.#database, userId, query).map(savedFoodSnapshot);
+  }
+
+  /**
+   * Up to `SAVED_FOOD_SEARCH_LIMIT` Saved Foods whose name contains `query` in
+   * any case, by name then id, each with one serving's nutrition, and whether
+   * more matched.
+   */
+  searchSavedFoods(userId: number, query = "") {
+    const rows = listSavedFoodRows(this.#database, userId, query, SAVED_FOOD_SEARCH_LIMIT + 1);
+    return {
+      savedFoods: rows.slice(0, SAVED_FOOD_SEARCH_LIMIT).map(savedFoodPerServing),
+      truncated: rows.length > SAVED_FOOD_SEARCH_LIMIT,
+    };
   }
 
   readSavedFood(userId: number, savedFoodId: number) {

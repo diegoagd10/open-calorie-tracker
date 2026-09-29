@@ -33,12 +33,13 @@ test("an account holder creates, copies, edits, and deletes a key without it eve
 
   await page.getByRole("link", { name: "Create key" }).click();
   await expect(page.getByRole("heading", { name: "Create API key" })).toBeVisible();
-  await expect(page.getByRole("checkbox", { name: "Read Food Log" })).toBeChecked();
-  await expect(page.getByRole("checkbox", { name: "Read Food Log" })).toBeDisabled();
+  await expect(page.getByRole("checkbox", { name: "Read Food Log" })).not.toBeChecked();
+  await expect(page.getByRole("checkbox", { name: "Log foods" })).not.toBeChecked();
   await expect(page.getByLabel("Expiration")).toHaveValue("90d");
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
   await page.screenshot({ path: testInfo.outputPath("api-key-form-dark.png"), fullPage: true });
   await page.getByLabel("Name").fill("Muse");
+  await page.getByRole("checkbox", { name: "Read Food Log" }).check();
   await page.getByRole("button", { name: "Create key" }).click();
 
   await expect(page).toHaveURL("/settings/api-keys?created=1");

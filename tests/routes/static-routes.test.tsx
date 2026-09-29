@@ -42,6 +42,7 @@ describe("static route contracts", () => {
       { children: undefined, file: "./routes/settings.api-keys.tsx", path: "settings/api-keys" },
       { children: undefined, file: "./routes/settings.api-keys.copy.ts", path: "settings/api-keys/copy" },
       { children: undefined, file: "./routes/api.v1.daily-log.ts", path: "api/v1/daily-log" },
+      { children: undefined, file: "./routes/api.v1.saved-foods.ts", path: "api/v1/saved-foods" },
       { children: undefined, file: "./routes/mcp.ts", path: "mcp" },
       { children: undefined, file: "./routes/login.tsx", path: "login" },
       { children: undefined, file: "./routes/logout.tsx", path: "logout" },

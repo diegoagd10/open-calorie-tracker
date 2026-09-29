@@ -152,12 +152,14 @@ test("help values copy through a pending clipboard item, and a failed copy says 
   await act(() => renderer.unmount());
 });
 
-test("the create form offers the only permission checked and disabled, and the expiration presets defaulting to 90 days", async () => {
+test("the create form offers each permission unchecked, and the expiration presets defaulting to 90 days", async () => {
   const renderer = await render({ ...loaderData, view: "new" }, "/settings/api-keys?view=new");
-  const checkbox = renderer.root.findByProps({ type: "checkbox" });
-  expect(checkbox.props).toMatchObject({ checked: true, disabled: true });
-  expect(renderer.root.findByProps({ type: "hidden", name: "scope" }).props.value).toBe("daily-log:read");
-  expect(visibleText(renderer)).toContain("More permissions coming soon");
+  expect(renderer.root.findAllByProps({ type: "checkbox" }).map((checkbox): unknown[] => [checkbox.props.value, checkbox.props.defaultChecked, Boolean(checkbox.props.disabled)])).toEqual([
+    ["daily-log:read", false, false],
+    ["food-log:write", false, false],
+  ]);
+  expect(visibleText(renderer)).toContain("Log foods");
+  expect(visibleText(renderer)).not.toContain("coming soon");
   const select = renderer.root.findByProps({ name: "expiration" });
   expect(select.props.defaultValue).toBe("90d");
   expect(select.findAllByType("option").map((option) => option.children.join(""))).toEqual([
@@ -203,7 +205,10 @@ test("the edit form keeps the key's name and preset, and shows each remaining pr
   expect(renderer.root.findByProps({ name: "name" }).props.defaultValue).toBe("Muse");
   expect(renderer.root.findByProps({ name: "intent" }).props.value).toBe("update");
   expect(renderer.root.findByProps({ name: "keyId" }).props.value).toBe(7);
-  expect(renderer.root.findByProps({ type: "checkbox" }).props).toMatchObject({ checked: true, disabled: true });
+  expect(renderer.root.findAllByProps({ type: "checkbox" }).map((checkbox): unknown[] => [checkbox.props.value, checkbox.props.defaultChecked])).toEqual([
+    ["daily-log:read", true],
+    ["food-log:write", false],
+  ]);
   const select = renderer.root.findByProps({ name: "expiration" });
   expect(select.props.defaultValue).toBe("90d");
   expect(select.findAllByType("option").map((option) => option.children.join(""))).toEqual([
