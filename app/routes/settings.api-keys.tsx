@@ -137,6 +137,9 @@ function KeyFields({ errors, name, scopes, expiration, expirations }: {
   expiration: string;
   expirations: ReadonlyArray<{ value: string; label: string }>;
 }) {
+  // Checking a permission satisfies "at least one", so that submission's scopes error no longer applies.
+  const [scopesSatisfiedFor, setScopesSatisfiedFor] = useState<ApiKeyErrors>();
+  const scopesError = scopesSatisfiedFor === errors ? undefined : errors?.scopes;
   return (
     <>
       <div className={styles.field}>
@@ -148,11 +151,15 @@ function KeyFields({ errors, name, scopes, expiration, expirations }: {
         <legend>Permissions</legend>
         {API_KEY_SCOPES.map((entry) => (
           <label className={styles.checkboxRow} key={entry.scope}>
-            <input type="checkbox" name="scope" value={entry.scope} defaultChecked={scopes.includes(entry.scope)} />
+            <input type="checkbox" name="scope" value={entry.scope} defaultChecked={scopes.includes(entry.scope)}
+              onChange={(event) => {
+                if (event.currentTarget.checked) setScopesSatisfiedFor(errors);
+              }}
+            />
             {entry.label}
           </label>
         ))}
-        {errors?.scopes ? <p role="alert">{errors.scopes}</p> : null}
+        {scopesError ? <p role="alert">{scopesError}</p> : null}
       </fieldset>
       <div className={styles.field}>
         <label htmlFor="api-key-expiration">Expiration</label>

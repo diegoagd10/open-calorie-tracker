@@ -82,3 +82,22 @@ test("a submission keeps exactly the scopes that were checked and requires at le
   expect(form(["daily-log:read", "water-log:write"])).toEqual({ success: true, data: { name: "Muse", scopes: ["daily-log:read", "water-log:write"], expiration: "never" } });
   expect(form([])).toEqual({ success: false, errors: { scopes: "Choose at least one permission." } });
 });
+
+test("the at-least-one-permission error clears as soon as a permission is checked", async () => {
+  const Routes = createRoutesStub([{ path: "/settings/api-keys", id: "subject", Component: ApiKeysSettings as never }]);
+  let renderer!: ReactTestRenderer;
+  await act(async () => {
+    renderer = create(createElement(Routes, {
+      initialEntries: ["/settings/api-keys?view=new"],
+      hydrationData: { loaderData: { subject: { ...loaderData, view: "new" } }, actionData: { subject: { errors: { scopes: "Choose at least one permission." } } } },
+    }));
+  });
+  const alerts = () => renderer.root.findAll((node) => node.type === "p" && node.props.role === "alert").map((node) => node.children.join(""));
+  expect(alerts()).toContain("Choose at least one permission.");
+
+  const logWater = renderer.root.find((node) => node.type === "input" && node.props.value === "water-log:write");
+  const check = logWater.props.onChange as (event: { currentTarget: { checked: boolean } }) => void;
+  await act(async () => check({ currentTarget: { checked: true } }));
+  expect(alerts()).not.toContain("Choose at least one permission.");
+  await act(() => renderer.unmount());
+});
