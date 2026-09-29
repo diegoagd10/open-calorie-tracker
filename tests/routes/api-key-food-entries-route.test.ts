@@ -10,6 +10,7 @@ import { getApplicationDatabase, initializeApplicationDatabase, shutdownApplicat
 import { getFoodEntryService } from "../../app/food-entry/runtime.server";
 import { loader as readDailyLog } from "../../app/routes/api.v1.daily-log";
 import { action as writeFoodEntries, loader as readFoodEntries } from "../../app/routes/api.v1.food-entries";
+import { action as homeAction, loader as homeLoader } from "../../app/routes/home";
 import { action as mcpAction } from "../../app/routes/mcp";
 import { action as keysAction, loader as keysLoader } from "../../app/routes/settings.api-keys";
 import { action as copyAction } from "../../app/routes/settings.api-keys.copy";
@@ -154,6 +155,58 @@ test("a retry with the same Idempotency-Key and data is 200 with the original, a
     expect(await conflict.json()).toEqual({ error: "idempotency_conflict" });
   }
   expect((await dailyLogFoods(eaterKey, today)).filter((entry) => entry.id === original.foodEntry.id)).toHaveLength(1);
+});
+
+/** Loads the web Food Log as `owner` would see it in the browser. */
+async function webPage(owner: Account, search: string) {
+  const request = new Request(`${origin}/${search}`, { headers: { Cookie: owner.cookie } });
+  const result = await homeLoader(args(request, "/"));
+  if (result instanceof Response) throw new Error(`home redirected from ${search}`);
+  return result.data;
+}
+async function webAction(owner: Account, fields: Record<string, string>) {
+  const request = new Request(`${origin}/`, {
+    method: "POST",
+    headers: { Cookie: owner.cookie, Origin: origin },
+    body: new URLSearchParams({ csrfToken: owner.csrf, ...fields }),
+  });
+  return await homeAction(args(request, "/")) as Response;
+}
+
+test("a Food Entry logged through REST is edited and deleted in the web like any other", async () => {
+  const cook = await account("entries.web.cook");
+  completeSetup(cook.id);
+  const food = saveFood(cook.id, "Huevo (1 grande)", { energyKcal: 78, proteinGrams: 6.3, sodiumMilligrams: 62 });
+  const key = await createKey(cook, "Cook", ["daily-log:read", "food-log:write"]);
+  const created = await apiPost(`Bearer ${key}`, "rest-web-edit-0001", { source: "saved-food", foodLogDate: yesterday, savedFoodId: food, quantity: 2 });
+  const { foodEntry } = await created.json() as LoggedBody;
+  const before = await webPage(cook, `?date=${yesterday}`);
+  expect(before.foodLog.entries).toEqual([expect.objectContaining({ id: foodEntry.id, name: "Huevo (1 grande)", energyMilliKcal: 156_000 })]);
+  expect(before.foodLog.nutritionTotals.energyMilliKcal).toEqual({ isIncomplete: false, known: 156_000 });
+
+  const editor = (await webPage(cook, `?date=${yesterday}&entry=${String(foodEntry.id)}`)).foodEntryEditor;
+  if (!editor) throw new Error("The REST Food Entry did not open in the web editor");
+  const updated = await webAction(cook, {
+    intent: "update-food", date: yesterday, entryId: String(foodEntry.id), expectedUpdatedAt: editor.updatedAt,
+    name: "Huevo revuelto", quantity: "1", selectedMeasurementId: editor.selectedMeasurementId,
+    energyKcal: "90", proteinGrams: "7", carbohydrateGrams: "", fatGrams: "", fiberGrams: "", sugarGrams: "", sodiumMilligrams: "70",
+  });
+  expect(updated.headers.get("Location")).toBe(`/?date=${yesterday}&notice=updated`);
+  const edited = await webPage(cook, `?date=${yesterday}`);
+  expect(edited.foodLog.entries).toEqual([expect.objectContaining({ id: foodEntry.id, name: "Huevo revuelto", energyMilliKcal: 90_000 })]);
+  expect(edited.foodLog.nutritionTotals.energyMilliKcal).toEqual({ isIncomplete: false, known: 90_000 });
+  expect(edited.foodLog.nutritionTotals.proteinMilligrams).toEqual({ isIncomplete: false, known: 7_000 });
+  expect(await dailyLogFoods(key, yesterday)).toEqual([expect.objectContaining({ id: foodEntry.id, name: "Huevo revuelto", energyMilliKcal: 90_000 })]);
+
+  const deleted = await webAction(cook, {
+    intent: "delete-food", date: yesterday, entryId: String(foodEntry.id),
+    expectedUpdatedAt: (await webPage(cook, `?date=${yesterday}&entry=${String(foodEntry.id)}`)).foodEntryEditor?.updatedAt ?? "",
+  });
+  expect(deleted.headers.get("Location")).toBe(`/?date=${yesterday}&notice=deleted`);
+  const emptied = await webPage(cook, `?date=${yesterday}`);
+  expect(emptied.foodLog.entries).toEqual([]);
+  expect(emptied.foodLog.nutritionTotals.energyMilliKcal).toEqual({ isIncomplete: false, known: 0 });
+  expect(await dailyLogFoods(key, yesterday)).toEqual([]);
 });
 
 test("the same key through MCP and REST logs two separate Food Entries", async () => {

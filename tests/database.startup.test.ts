@@ -1,6 +1,8 @@
 import { chmod, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { getTableName } from "drizzle-orm";
 import { getTableConfig, SQLiteSyncDialect } from "drizzle-orm/sqlite-core";
 import { eq, sql } from "drizzle-orm";
@@ -14,6 +16,7 @@ import {
   type ApplicationDatabaseClient,
   type DatabaseStatus,
 } from "../app/database/database.server";
+import { createMcpServer } from "../app/mcp/server.server";
 import { createMigrationFolder } from "./support/migrations";
 
 const temporaryDirectories: string[] = [];
@@ -201,7 +204,7 @@ test.each([
   upgraded.close();
 });
 
-test("the Saved Food idempotency migration keeps existing Saved Foods and allows ones without a source Food Entry", async () => {
+test("the Saved Food idempotency migration keeps existing Saved Foods and API keys, and allows Saved Foods without a source Food Entry", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "saved-food-idempotency-upgrade-"));
   temporaryDirectories.push(directory);
   const databasePath = path.join(directory, "application.sqlite");
@@ -215,6 +218,8 @@ test("the Saved Food idempotency migration keeps existing Saved Foods and allows
   `);
   previous.getClient().run(sql`INSERT INTO saved_foods (user_id, source_entry_id, name, snapshot, created_at)
     VALUES (${owner.id}, 7, 'Existing food', '{}', '2026-09-29T12:00:00.000Z')`);
+  previous.getClient().run(sql`INSERT INTO api_keys (owner_id, name, key_hash, key_ciphertext, key_prefix, key_last_four, scopes, created_at)
+    VALUES (${owner.id}, 'Read-only assistant', 'hash', 'ciphertext', 'oct_abcd', 'wxyz', '["daily-log:read"]', '2026-09-29T12:00:00.000Z')`);
   previous.close();
 
   const upgraded = openApplicationDatabase({ databasePath, migrationsFolder: path.resolve("drizzle") });
@@ -230,6 +235,20 @@ test("the Saved Food idempotency migration keeps existing Saved Foods and allows
   insert("mcp:saved-food-key");
   expect(() => insert("mcp:saved-food-key")).toThrow();
   expect(upgraded.getStatus()).toMatchObject({ appliedMigrations: 30, foreignKeysEnabled: true });
+
+  // A key made before "Log foods" existed stays read-only: it must be granted write access explicitly.
+  const [readOnlyKey] = client.select({ scopes: schema.apiKeys.scopes }).from(schema.apiKeys).all();
+  const scopes = JSON.parse(readOnlyKey.scopes) as string[];
+  expect(scopes).toEqual(["daily-log:read"]);
+  const mcp = new Client({ name: "upgrade-test", version: "1.0.0" });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  await Promise.all([createMcpServer({ userId: owner.id, scopes }).connect(serverTransport), mcp.connect(clientTransport)]);
+  expect((await mcp.listTools()).tools.map((tool) => tool.name)).toEqual(["get_daily_log", "search_saved_foods"]);
+  for (const name of ["create_saved_food", "log_saved_food"]) {
+    const refused = await mcp.callTool({ name, arguments: {} }).catch((error: unknown) => error);
+    expect(refused instanceof Error ? refused.message : JSON.stringify(refused), name).toMatch(/disabled/u);
+  }
+  await mcp.close();
   upgraded.close();
 });
 

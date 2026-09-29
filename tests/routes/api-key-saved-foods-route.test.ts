@@ -11,6 +11,7 @@ import { getApplicationDatabase, initializeApplicationDatabase, shutdownApplicat
 import { getFoodEntryService } from "../../app/food-entry/runtime.server";
 import { getFoodLogService } from "../../app/food-log/runtime.server";
 import { action as writeSavedFoods, loader as searchSavedFoods } from "../../app/routes/api.v1.saved-foods";
+import { action as homeAction, loader as homeLoader } from "../../app/routes/home";
 import { action as keysAction, loader as keysLoader } from "../../app/routes/settings.api-keys";
 import { action as copyAction } from "../../app/routes/settings.api-keys.copy";
 import { getGoalSetupService } from "../../app/setup/runtime.server";
@@ -240,6 +241,51 @@ test("REST keys never replay a Saved Food an MCP call created with the same key"
   const viaRest = await apiPost(`Bearer ${writerKey}`, "shared-key-0001", egg);
   expect(viaRest.status).toBe(201);
   expect(((await viaRest.json()) as CreatedBody).savedFood.id).not.toBe(viaMcp.savedFood.id);
+});
+
+test("fiber and sugar are kept per serving with up to three decimals", async () => {
+  const created = await apiPost(`Bearer ${writerKey}`, "rest-oats-0001", { name: "Avena (40 g)", energyKcal: 150.5, fiberGrams: 4.125, sugarGrams: 0.375 });
+  expect(created.status).toBe(201);
+  const { savedFood } = await created.json() as CreatedBody;
+  expect(savedFood).toEqual({
+    id: expect.any(Number) as number, name: "Avena (40 g)",
+    energyMilliKcal: 150_500, proteinMilligrams: null, carbohydrateMilligrams: null, fatMilligrams: null,
+    fiberMilligrams: 4_125, sugarMilligrams: 375, sodiumMilligrams: null,
+  });
+  expect((await apiGet(`Bearer ${writerKey}`, "?query=avena").json() as SavedFoodsBody).savedFoods).toEqual([savedFood]);
+});
+
+/** Loads the web Food Log as `owner` would see it in the browser. */
+async function webPage(owner: Account, search: string) {
+  const request = new Request(`${origin}/${search}`, { headers: { Cookie: owner.cookie } });
+  const result = await homeLoader({ ...args(request), pattern: "/" });
+  if (result instanceof Response) throw new Error(`home redirected from ${search}`);
+  return result.data;
+}
+
+test("a Saved Food created through REST is found in My foods and logged from the web", async () => {
+  const cook = await account("saved.web.cook");
+  completeSetup(cook.id);
+  const { key } = await createKey(cook, "Cook", ["food-log:write"]);
+  const created = await apiPost(`Bearer ${key}`, "rest-web-food-0001", { name: "Batido de proteína", energyKcal: 120, proteinGrams: 24, sugarGrams: 1.5 });
+  const { savedFood } = await created.json() as CreatedBody;
+
+  const myFoods = (await webPage(cook, `?date=${date}&food=my`)).catalog;
+  if (myFoods?.mode !== "my") throw new Error("My foods did not open");
+  expect(myFoods.results).toEqual([expect.objectContaining({ id: savedFood.id, name: "Batido de proteína", energyMilliKcal: 120_000, quantityMicrounits: 1_000_000 })]);
+  const detail = (await webPage(cook, `?date=${date}&food=saved:${String(savedFood.id)}`)).catalog;
+  if (detail?.mode !== "saved") throw new Error("The Saved Food did not open");
+  expect(detail.food).toMatchObject({ name: "Batido de proteína", energyMilliKcal: 120_000, proteinMilligrams: 24_000 });
+
+  const logged = await homeAction({ ...args(new Request(`${origin}/`, {
+    method: "POST",
+    headers: { Cookie: cook.cookie, Origin: origin },
+    body: new URLSearchParams({ csrfToken: cook.csrf, date, idempotencyKey: "web-log-shake", intent: "log-saved-food", savedFoodId: String(savedFood.id) }),
+  })), pattern: "/" }) as Response;
+  expect(logged.headers.get("Location")).toBe(`/?date=${date}`);
+  expect((await webPage(cook, `?date=${date}`)).foodLog.entries).toEqual([expect.objectContaining({
+    name: "Batido de proteína", energyMilliKcal: 120_000, proteinMilligrams: 24_000, sugarMilligrams: 1_500, quantityMicrounits: 1_000_000,
+  })]);
 });
 
 test("malformed bodies are 400 invalid_request and malformed keys are 400 invalid_idempotency_key", async () => {

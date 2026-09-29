@@ -405,6 +405,19 @@ test("create_saved_food returns the new Saved Food's id and one serving's nutrit
   expect(savedFoodNames(await searchSavedFoods(key, { query: "huevo" }))).toEqual(["Huevo (1 grande)", "Huevo (1 grande)"]);
 });
 
+test("create_saved_food keeps fiber and sugar per serving with up to three decimals", async () => {
+  const baker = await account("mcp.baker");
+  const { key } = await createKey(baker, "Baker", ["food-log:write"]);
+  const created = await createSavedFood(key, { name: "Avena (40 g)", energyKcal: 150.5, fiberGrams: 4.125, sugarGrams: 0.375, idempotencyKey: "create-oats-0001" });
+  expect(created.isError).toBeFalsy();
+  const oats = {
+    id: expect.any(Number) as number, name: "Avena (40 g)",
+    energyKcal: 150.5, proteinG: null, carbohydrateG: null, fatG: null, fiberG: 4.125, sugarG: 0.375, sodiumMg: null,
+  };
+  expect(created.structuredContent).toEqual({ ...oats, replayed: false });
+  expect((await searchSavedFoods(key, { query: "avena" })).structuredContent?.savedFoods).toEqual([{ ...oats, id: created.structuredContent?.id }]);
+});
+
 test("create_saved_food replays a retry with the same key and data, and refuses a reused key with different data", async () => {
   const retrier = await account("mcp.retrier");
   const { key } = await createKey(retrier, "Retrier", ["food-log:write"]);
