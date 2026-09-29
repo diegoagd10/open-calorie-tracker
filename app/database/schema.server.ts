@@ -322,8 +322,13 @@ export const waterEvents = sqliteTable(
     localEventTime: text("local_event_time").notNull(),
     createdAt: text("created_at").notNull(),
     updatedAt: text("updated_at").notNull(),
+    /** The external caller's channel-prefixed key (`api:…` or `mcp:…`); null for web-logged events. */
+    idempotencyKey: text("idempotency_key"),
   },
   (table) => [
+    uniqueIndex("water_events_user_idempotency_unique")
+      .on(table.userId, table.idempotencyKey)
+      .where(sql`${table.idempotencyKey} IS NOT NULL`),
     index("water_events_user_date_order_index").on(
       table.userId,
       table.foodLogDate,

@@ -1,7 +1,10 @@
 /** Choices shared by the API keys form and the service that validates them. */
 export const MAX_API_KEYS_PER_ACCOUNT = 25;
 
-export const API_KEY_SCOPES = [{ scope: "daily-log:read", label: "Read Food Log" }] as const;
+export const API_KEY_SCOPES = [
+  { scope: "daily-log:read", label: "Read Food Log" },
+  { scope: "water-log:write", label: "Log water" },
+] as const;
 export type ApiKeyScope = (typeof API_KEY_SCOPES)[number]["scope"];
 
 export function isApiKeyScope(value: string): value is ApiKeyScope {

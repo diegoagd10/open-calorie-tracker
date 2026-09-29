@@ -100,6 +100,29 @@ export class WaterEventUnavailableError extends Error {
   }
 }
 
+export class WaterEventSetupRequiredError extends Error {
+  constructor() {
+    super("This account has not finished setup");
+    this.name = "WaterEventSetupRequiredError";
+  }
+}
+
+export class WaterEventIdempotencyConflictError extends Error {
+  constructor() {
+    super("This idempotency key was already used for a different Water Event");
+    this.name = "WaterEventIdempotencyConflictError";
+  }
+}
+
+/** The channel-prefixed key stored with an external caller's Water Event. */
+const storedIdempotencyKeySchema = z.string().min(1).max(128);
+
+export type IdempotentWaterEventInput = {
+  counts: WaterPresetCounts;
+  /** Omitted means today in the account's time zone; a replay then accepts the stored date. */
+  foodLogDate?: string;
+};
+
 export class StaleWaterEventError extends Error {
   constructor() {
     super(
@@ -197,27 +220,127 @@ export class WaterEventService {
         ? noPresetCounts
         : singlePresetCounts(parsed.data.selection);
 
-    const createdAt = instant.toISOString();
     return this.#database
       .insert(waterEvents)
-      .values({
-        amountMicroliters,
-        ...presetCounts,
-        createdAt,
-        foodLogDate,
-        localEventTime: localEventTimeForNewFoodLogEvent(
-          this.#database,
-          userId,
-          foodLogDate,
-          today,
-          instant,
-          preference.timeZone,
-        ),
-        updatedAt: createdAt,
+      .values(this.#newEventValues(
+        this.#database,
         userId,
-      })
+        { amountMicroliters, ...presetCounts, foodLogDate },
+        today,
+        instant,
+        preference.timeZone,
+      ))
       .returning()
       .get();
+  }
+
+  /**
+   * Creates a container Water Event for an external caller once per stored idempotency key.
+   * A retry with the same counts, and either no date or the stored date, replays the original
+   * event even after "today" has moved on; any other reuse of the key is a conflict. The
+   * unique (user, key) index decides concurrent calls, so the loser resolves the same way.
+   */
+  createIdempotently(
+    userId: number,
+    input: IdempotentWaterEventInput,
+    idempotencyKey: string,
+  ): { event: typeof waterEvents.$inferSelect; replayed: boolean } {
+    const counts = presetCountsSchema.safeParse(input.counts);
+    if (!counts.success || !storedIdempotencyKeySchema.safeParse(idempotencyKey).success) {
+      throw new InvalidWaterEventInputError();
+    }
+    const requestedDate = input.foodLogDate === undefined
+      ? undefined
+      : parseIsoLocalDate(input.foodLogDate);
+    if (input.foodLogDate !== undefined && !requestedDate) {
+      throw new InvalidFoodLogDateError();
+    }
+    const preference = this.#database
+      .select({ timeZone: userPreferences.timeZone })
+      .from(userPreferences)
+      .where(eq(userPreferences.userId, userId))
+      .get();
+    if (!preference) throw new WaterEventSetupRequiredError();
+
+    const instant = this.#now();
+    const today = localDateAt(instant, preference.timeZone);
+    const foodLogDate = requestedDate ?? today;
+    if (foodLogDate > today) throw new FutureFoodLogDateError();
+    const presetCounts = storedPresetCounts(counts.data);
+
+    return this.#database.transaction((transaction) => {
+      const created = transaction
+        .insert(waterEvents)
+        .values({
+          ...this.#newEventValues(
+            transaction,
+            userId,
+            {
+              amountMicroliters: waterPresetTotalMicroliters(counts.data),
+              ...presetCounts,
+              foodLogDate,
+            },
+            today,
+            instant,
+            preference.timeZone,
+          ),
+          idempotencyKey,
+        })
+        // The partial (user, key) index is the table's only uniqueness rule; a
+        // conflict-target WHERE is not emitted in a form SQLite accepts.
+        .onConflictDoNothing()
+        .returning()
+        .get();
+      if (created) return { event: created, replayed: false };
+
+      const existing = transaction
+        .select()
+        .from(waterEvents)
+        .where(
+          and(
+            eq(waterEvents.userId, userId),
+            eq(waterEvents.idempotencyKey, idempotencyKey),
+          ),
+        )
+        .get();
+      if (!existing) throw new Error("Water Event insert conflicted without an idempotency match");
+      const sameCounts =
+        existing.preset8Count === presetCounts.preset8Count &&
+        existing.preset16Count === presetCounts.preset16Count &&
+        existing.preset24Count === presetCounts.preset24Count;
+      if (!sameCounts || (requestedDate && requestedDate !== existing.foodLogDate)) {
+        throw new WaterEventIdempotencyConflictError();
+      }
+      return { event: existing, replayed: true };
+    });
+  }
+
+  #newEventValues(
+    database: Parameters<typeof localEventTimeForNewFoodLogEvent>[0],
+    userId: number,
+    amount: Pick<
+      typeof waterEvents.$inferInsert,
+      "amountMicroliters" | "foodLogDate" | "preset8Count" | "preset16Count" | "preset24Count"
+    >,
+    today: string,
+    instant: Date,
+    timeZone: string,
+  ) {
+    const createdAt = instant.toISOString();
+    return {
+      ...amount,
+      createdAt,
+      localEventTime: localEventTimeForNewFoodLogEvent(
+        database,
+        userId,
+        amount.foodLogDate,
+        today,
+        instant,
+        timeZone,
+      ),
+      updatedAt: createdAt,
+      userId,
+    };
   }
 
   read(userId: number, eventId: number) {

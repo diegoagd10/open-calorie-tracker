@@ -19,6 +19,7 @@ import {
 } from "../app/database/schema.server";
 import {
   FoodLogService,
+  FutureFoodLogDateError,
   InvalidFoodLogDateError,
 } from "../app/food-log/food-log.server";
 import { FoodEntryService } from "../app/food-entry/food-entry.server";
@@ -26,7 +27,9 @@ import { localDateAt } from "../app/food-log/date";
 import {
   InvalidWaterEventInputError,
   StaleWaterEventError,
+  WaterEventIdempotencyConflictError,
   WaterEventService,
+  WaterEventSetupRequiredError,
   WaterEventUnavailableError,
 } from "../app/water-event/water-event.server";
 
@@ -880,5 +883,141 @@ test("delete validates input, ownership date, version, and atomic races", async 
   );
   expect(client.select().from(waterEvents).where(eq(waterEvents.id, event.id)).get())
     .toBeDefined();
+  database.close();
+});
+
+function waterRows(client: ApplicationDatabaseClient, userId: number) {
+  return client.select().from(waterEvents).where(eq(waterEvents.userId, userId)).all();
+}
+
+test("a keyed container call creates one Water Event, and a same-key retry replays it", async () => {
+  const database = await setupDatabase();
+  const client = database.getClient();
+  const userId = insertConfiguredUser(client, "water.keyed.replay");
+  const service = new WaterEventService(client, () => new Date("2026-08-29T18:45:30.000Z"));
+  const counts = { "8": 0, "16": 1, "24": 0 };
+
+  const created = service.createIdempotently(userId, { counts, foodLogDate: "2026-08-29" }, "api:retry-001");
+  expect(created).toMatchObject({
+    replayed: false,
+    event: { amountMicroliters: 473_176, foodLogDate: "2026-08-29", idempotencyKey: "api:retry-001", localEventTime: "14:45:30", preset16Count: 1 },
+  });
+  expect(service.createIdempotently(userId, { counts, foodLogDate: "2026-08-29" }, "api:retry-001"))
+    .toEqual({ event: created.event, replayed: true });
+  expect(service.createIdempotently(userId, { counts }, "api:retry-001"))
+    .toEqual({ event: created.event, replayed: true });
+  expect(waterRows(client, userId)).toHaveLength(1);
+  database.close();
+});
+
+test("a dateless retry after midnight replays the original on its original day", async () => {
+  const database = await setupDatabase();
+  const client = database.getClient();
+  const userId = insertConfiguredUser(client, "water.keyed.midnight");
+  let now = new Date("2026-08-30T03:55:00.000Z");
+  const service = new WaterEventService(client, () => now);
+  const counts = { "8": 1, "16": 0, "24": 0 };
+
+  const created = service.createIdempotently(userId, { counts }, "mcp:before-midnight");
+  expect(created.event).toMatchObject({ foodLogDate: "2026-08-29", localEventTime: "23:55:00" });
+  now = new Date("2026-08-30T04:05:00.000Z");
+  expect(service.createIdempotently(userId, { counts }, "mcp:before-midnight"))
+    .toEqual({ event: created.event, replayed: true });
+  expect(() => service.createIdempotently(userId, { counts, foodLogDate: "2026-08-30" }, "mcp:before-midnight"))
+    .toThrow(WaterEventIdempotencyConflictError);
+  expect(waterRows(client, userId)).toHaveLength(1);
+  database.close();
+});
+
+test("a reused key with changed counts or a different explicit date is an idempotency conflict", async () => {
+  const database = await setupDatabase();
+  const client = database.getClient();
+  const userId = insertConfiguredUser(client, "water.keyed.conflict");
+  const service = new WaterEventService(client, () => new Date("2026-08-29T18:45:30.000Z"));
+  service.createIdempotently(userId, { counts: { "8": 2, "16": 0, "24": 0 }, foodLogDate: "2026-08-28" }, "api:conflict-1");
+
+  for (const input of [
+    { counts: { "8": 1, "16": 0, "24": 0 }, foodLogDate: "2026-08-28" },
+    { counts: { "8": 0, "16": 1, "24": 0 }, foodLogDate: "2026-08-28" },
+    { counts: { "8": 2, "16": 0, "24": 0 }, foodLogDate: "2026-08-27" },
+    { counts: { "8": 2, "16": 0, "24": 0 }, foodLogDate: "2026-08-29" },
+  ]) {
+    expect(() => service.createIdempotently(userId, input, "api:conflict-1")).toThrow(WaterEventIdempotencyConflictError);
+  }
+  expect(waterRows(client, userId)).toHaveLength(1);
+  expect(new WaterEventIdempotencyConflictError()).toMatchObject({ name: "WaterEventIdempotencyConflictError" });
+  database.close();
+});
+
+test("same-key calls racing on separate connections leave exactly one row", async () => {
+  const database = await setupDatabase();
+  const client = database.getClient();
+  const userId = insertConfiguredUser(client, "water.keyed.race");
+  const databasePath = client.get<{ file: string }>(sql`SELECT file FROM pragma_database_list WHERE name = 'main'`).file;
+  const other = openApplicationDatabase({ databasePath, migrationsFolder: path.resolve("drizzle") });
+  const now = () => new Date("2026-08-29T18:45:30.000Z");
+  const first = new WaterEventService(client, now);
+  const second = new WaterEventService(other.getClient(), now);
+  const counts = { "8": 0, "16": 0, "24": 1 };
+
+  const winner = first.createIdempotently(userId, { counts, foodLogDate: "2026-08-29" }, "api:race-key");
+  expect(second.createIdempotently(userId, { counts, foodLogDate: "2026-08-29" }, "api:race-key"))
+    .toEqual({ event: winner.event, replayed: true });
+  expect(() => second.createIdempotently(userId, { counts: { "8": 1, "16": 0, "24": 0 }, foodLogDate: "2026-08-29" }, "api:race-key"))
+    .toThrow(WaterEventIdempotencyConflictError);
+  expect(waterRows(client, userId)).toHaveLength(1);
+  other.close();
+  database.close();
+});
+
+test("keys belong to one account and one channel", async () => {
+  const database = await setupDatabase();
+  const client = database.getClient();
+  const first = insertConfiguredUser(client, "water.keyed.first");
+  const second = insertConfiguredUser(client, "water.keyed.second");
+  const service = new WaterEventService(client, () => new Date("2026-08-29T18:45:30.000Z"));
+  const input = { counts: { "8": 1, "16": 0, "24": 0 }, foodLogDate: "2026-08-29" };
+
+  expect(service.createIdempotently(first, input, "api:shared-key").replayed).toBe(false);
+  expect(service.createIdempotently(second, input, "api:shared-key").replayed).toBe(false);
+  expect(service.createIdempotently(first, input, "mcp:shared-key").replayed).toBe(false);
+  expect(waterRows(client, first)).toHaveLength(2);
+  expect(waterRows(client, second)).toHaveLength(1);
+  database.close();
+});
+
+test("keyless web creation is unchanged and stores no key", async () => {
+  const database = await setupDatabase();
+  const client = database.getClient();
+  const userId = insertConfiguredUser(client, "water.keyless");
+  const service = new WaterEventService(client, () => new Date("2026-08-29T18:45:30.000Z"));
+  const input = { counts: { "8": 1, "16": 0, "24": 0 }, foodLogDate: "2026-08-29", selection: "presets" } as const;
+
+  const first = service.create(userId, input);
+  const second = service.create(userId, input);
+  expect(first).toMatchObject({ idempotencyKey: null, preset8Count: 1 });
+  expect(second.id).not.toBe(first.id);
+  expect(waterRows(client, userId).map((row) => row.idempotencyKey)).toEqual([null, null]);
+  database.close();
+});
+
+test("keyed creation validates counts, dates, keys, and setup before writing", async () => {
+  const database = await setupDatabase();
+  const client = database.getClient();
+  const userId = insertConfiguredUser(client, "water.keyed.invalid");
+  const unconfigured = client.insert(users).values({ createdAt: "2026-01-01T00:00:00.000Z", usernameNormalized: "water.keyed.unconfigured" })
+    .returning({ id: users.id }).get().id;
+  const service = new WaterEventService(client, () => new Date("2026-08-29T18:45:30.000Z"));
+  const glass = { "8": 1, "16": 0, "24": 0 };
+
+  for (const counts of [{ "8": 0, "16": 0, "24": 0 }, { "8": 0, "16": 0, "24": 21 }, { "8": 1.5, "16": 0, "24": 0 }, { "8": -1, "16": 1, "24": 0 }]) {
+    expect(() => service.createIdempotently(userId, { counts }, "api:invalid-counts")).toThrow(InvalidWaterEventInputError);
+  }
+  expect(() => service.createIdempotently(userId, { counts: glass }, "")).toThrow(InvalidWaterEventInputError);
+  expect(() => service.createIdempotently(userId, { counts: glass }, `api:${"k".repeat(125)}`)).toThrow(InvalidWaterEventInputError);
+  expect(() => service.createIdempotently(userId, { counts: glass, foodLogDate: "2026-02-30" }, "api:bad-date")).toThrow(InvalidFoodLogDateError);
+  expect(() => service.createIdempotently(userId, { counts: glass, foodLogDate: "2026-08-30" }, "api:future-date")).toThrow(FutureFoodLogDateError);
+  expect(() => service.createIdempotently(unconfigured, { counts: glass }, "api:no-setup")).toThrow(WaterEventSetupRequiredError);
+  expect(waterRows(client, userId)).toHaveLength(0);
   database.close();
 });

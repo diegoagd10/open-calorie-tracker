@@ -146,17 +146,7 @@ function KeyFields({ errors, name, scopes, expiration, expirations }: {
       </div>
       <fieldset className={`${styles.field} ${styles.permissions}`}>
         <legend>Permissions</legend>
-        {API_KEY_SCOPES.length === 1 ? (
-          <>
-            {/* The only permission is always granted, so it is shown checked and submitted as a hidden value. */}
-            <label className={styles.checkboxRow}>
-              <input type="checkbox" checked disabled readOnly />
-              <input type="hidden" name="scope" value={API_KEY_SCOPES[0].scope} />
-              {API_KEY_SCOPES[0].label}
-            </label>
-            <small>More permissions coming soon</small>
-          </>
-        ) : API_KEY_SCOPES.map((entry) => (
+        {API_KEY_SCOPES.map((entry) => (
           <label className={styles.checkboxRow} key={entry.scope}>
             <input type="checkbox" name="scope" value={entry.scope} defaultChecked={scopes.includes(entry.scope)} />
             {entry.label}
