@@ -3,7 +3,7 @@ import { PersistentRateLimiter } from "../auth/rate-limiter.server";
 import type { ApplicationDatabaseClient } from "../database/database.server";
 import { findApiKeyByHash, recordApiKeyUse } from "../database/api-keys.server";
 import { hashApiKey } from "./api-keys.server";
-import type { ApiKeyScope } from "./presets";
+import { holdsAnyScope, type ApiKeyScope } from "./presets";
 
 type RateLimit = { scope: string; attempts: number; windowMs: number };
 
@@ -32,8 +32,11 @@ export class ApiKeyAuthenticator {
     this.#now = now;
   }
 
-  /** With `requiredScope` null, any valid key passes and the caller checks its `scopes`. */
-  authenticate(authorization: string | null, clientIp: string, requiredScope: ApiKeyScope | null): ApiKeyAuthentication {
+  /**
+   * Passes a key holding any one of `acceptedScopes`. With `acceptedScopes` null, any
+   * valid key passes and the caller checks its `scopes`.
+   */
+  authenticate(authorization: string | null, clientIp: string, acceptedScopes: readonly ApiKeyScope[] | null): ApiKeyAuthentication {
     const failureLimited = this.#consume(FAILURE_LIMIT, clientIp);
     if (failureLimited) return failureLimited;
     const now = this.#now();
@@ -44,7 +47,7 @@ export class ApiKeyAuthenticator {
     if (requestLimited) return requestLimited;
     recordApiKeyUse(stored.id, minuteOf(now));
     const scopes = JSON.parse(stored.scopes) as string[];
-    if (requiredScope && !scopes.includes(requiredScope)) return { ok: false, error: "insufficient_scope" };
+    if (acceptedScopes && !holdsAnyScope(scopes, acceptedScopes)) return { ok: false, error: "insufficient_scope" };
     return { ok: true, userId: stored.ownerId, keyId: stored.id, scopes };
   }
 
