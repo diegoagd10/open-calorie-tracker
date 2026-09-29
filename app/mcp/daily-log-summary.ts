@@ -23,7 +23,7 @@ const NUTRIENTS = {
 } as const satisfies Record<string, {
   unit: string; total: keyof Totals; goal: keyof Goal; goalType: "target" | "maximum"; scale: number; decimals: number;
 }>;
-type NutrientName = keyof typeof NUTRIENTS;
+export type NutrientName = keyof typeof NUTRIENTS;
 const NUTRIENT_NAMES = Object.keys(NUTRIENTS) as NutrientName[];
 
 const nutrientSchema = z.object({
@@ -57,7 +57,7 @@ export const dailyLogSummarySchema = {
     sodiumMg: z.number().nullable(),
   })).describe("Foods logged on the date, most recent first; null means the value is unknown"),
 };
-type DailyLogSummary = z.infer<z.ZodObject<typeof dailyLogSummarySchema>>;
+export type DailyLogSummary = z.infer<z.ZodObject<typeof dailyLogSummarySchema>>;
 
 function round(value: number, decimals: number): number {
   const factor = 10 ** decimals;
@@ -119,13 +119,16 @@ function amountLine(label: string, amount: { unit: string; consumed: number; goa
   return `${label}: ${amount.consumed} of ${goal}, ${rest}`;
 }
 
+/** One nutrient's consumed amount against its goal, for example "Energy: 350 of 2050 kcal, 1700 kcal remaining". */
+export function nutrientLine(summary: DailyLogSummary, name: NutrientName): string {
+  const nutrient = summary.nutrients[name];
+  const label = name[0].toUpperCase() + name.slice(1);
+  return amountLine(label, nutrient, nutrient.goalType) + (nutrient.isIncomplete ? " (incomplete: some foods have no value)" : "");
+}
+
 function summaryText(summary: DailyLogSummary): string {
   const lines = [`Food Log for ${summary.date}${summary.date === summary.today ? " (today)" : ""}, time zone ${summary.timeZone}.`];
-  for (const name of NUTRIENT_NAMES) {
-    const nutrient = summary.nutrients[name];
-    const label = name[0].toUpperCase() + name.slice(1);
-    lines.push(amountLine(label, nutrient, nutrient.goalType) + (nutrient.isIncomplete ? " (incomplete: some foods have no value)" : ""));
-  }
+  for (const name of NUTRIENT_NAMES) lines.push(nutrientLine(summary, name));
   lines.push(amountLine("Water", summary.water));
   lines.push(summary.foods.length ? "Foods:" : "No foods logged.");
   for (const food of summary.foods) {

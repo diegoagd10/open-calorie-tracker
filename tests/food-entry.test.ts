@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 
 import { eq, sql } from "drizzle-orm";
+import { getTableConfig } from "drizzle-orm/sqlite-core";
 import { afterEach, expect, test } from "vitest";
 
 import type {
@@ -2078,5 +2079,58 @@ test("a Saved Food without a source Food Entry is listed in My foods and logs fr
     expect(service.isManualEntrySaved(userId, webManual.id)).toBe(true);
     expect(service.listSavedFoods(userId).map((food) => food.name)).toEqual(["Huevo (1 grande)", "Tortilla"]);
     expect(new FoodLogService(client, now).read(userId, "2026-08-28")?.entries.map((entry) => entry.id)).toEqual([logged.id]);
+  } finally { database.close(); }
+});
+
+test("logging a Saved Food without a date replays after midnight with its stored date and refuses a different explicit date", async () => {
+  const database = await setupDatabase();
+  const client = database.getClient();
+  const userId = insertConfiguredUser(client, "servings.midnight");
+  let instant = new Date("2026-08-30T03:30:00.000Z");
+  const service = new FoodEntryService(client, new FakeCatalogProvider(), () => instant);
+  try {
+    const { savedFood } = service.createSavedFood(userId, createdSavedFoodInput("mcp:midnight-egg"));
+    const request = { savedFoodId: savedFood.id, quantity: 1.5, idempotencyKey: "mcp:midnight-log" };
+    const original = service.logSavedFoodServings(userId, request);
+    expect(original).toMatchObject({
+      replayed: false,
+      entry: { foodLogDate: "2026-08-29", localEventTime: "23:30:00", quantityMicrounits: 1_500_000, energyMilliKcal: 117_000 },
+    });
+
+    instant = new Date("2026-08-30T04:30:00.000Z");
+    expect(service.logSavedFoodServings(userId, request)).toEqual({ replayed: true, entry: original.entry });
+    expect(service.logSavedFoodServings(userId, { ...request, foodLogDate: "2026-08-29" })).toEqual({ replayed: true, entry: original.entry });
+    expect(() => service.logSavedFoodServings(userId, { ...request, foodLogDate: "2026-08-30" })).toThrow(IdempotencyConflictError);
+    expect(client.select({ id: foodEntries.id, savedFoodId: foodEntries.sourceSavedFoodId }).from(foodEntries).all())
+      .toEqual([{ id: original.entry.id, savedFoodId: savedFood.id }]);
+  } finally { database.close(); }
+});
+
+test("a Saved Food log that loses a same-key race resolves as a replay or a conflict and creates one row", async () => {
+  const database = await setupDatabase();
+  const client = database.getClient();
+  const userId = insertConfiguredUser(client, "servings.race");
+  const service = new FoodEntryService(client, new FakeCatalogProvider(), () => new Date("2026-08-29T18:00:00.000Z"));
+  const columns = getTableConfig(foodEntries).columns.map((column) => column.name).filter((name) => name !== "id");
+  // A competing request commits its entry with the same key just before this request's insert.
+  const competeFor = (key: string, quantity: string) => client.run(sql.raw(`CREATE TRIGGER "compete ${key}"
+    BEFORE INSERT ON food_entries
+    WHEN NEW.idempotency_key = '${key}'
+    BEGIN
+      INSERT INTO food_entries (${columns.join(", ")})
+      VALUES (${columns.map((name) => name === "quantity_microunits" ? quantity : `NEW.${name}`).join(", ")});
+    END`));
+  try {
+    const { savedFood } = service.createSavedFood(userId, createdSavedFoodInput("mcp:race-egg"));
+    competeFor("mcp:race-same", "NEW.quantity_microunits");
+    expect(service.logSavedFoodServings(userId, { savedFoodId: savedFood.id, quantity: 2, idempotencyKey: "mcp:race-same" }))
+      .toMatchObject({ replayed: true, entry: { quantityMicrounits: 2_000_000 } });
+    competeFor("mcp:race-different", "3000000");
+    expect(() => service.logSavedFoodServings(userId, { savedFoodId: savedFood.id, quantity: 2, idempotencyKey: "mcp:race-different" }))
+      .toThrow(IdempotencyConflictError);
+    expect(client.select({ key: foodEntries.idempotencyKey, quantity: foodEntries.quantityMicrounits }).from(foodEntries).all()).toEqual([
+      { key: "mcp:race-same", quantity: 2_000_000 },
+      { key: "mcp:race-different", quantity: 3_000_000 },
+    ]);
   } finally { database.close(); }
 });

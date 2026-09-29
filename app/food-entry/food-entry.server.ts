@@ -163,6 +163,15 @@ function createSavedFoodInputSchema() {
   });
 }
 
+function logSavedFoodServingsInputSchema() {
+  return z.object({
+    foodLogDate: z.string().optional(),
+    idempotencyKey: externalIdempotencyKeySchema,
+    quantity: z.number().default(1),
+    savedFoodId: z.number(),
+  });
+}
+
 export type LogFoodInput = z.input<ReturnType<typeof logFoodInputSchema>>;
 export type CopyFoodEntryInput = z.input<
   ReturnType<typeof copyFoodEntryInputSchema>
@@ -181,6 +190,14 @@ export type UpdateFoodInput = z.input<ReturnType<typeof updateFoodInputSchema>>;
  */
 export type CreateSavedFoodInput = z.input<
   ReturnType<typeof createSavedFoodInputSchema>
+>;
+/**
+ * A Saved Food eaten by an external caller: servings with up to 3 decimals
+ * (default 1), an optional date (default today), and the caller's key already
+ * stored with its channel prefix.
+ */
+export type LogSavedFoodServingsInput = z.input<
+  ReturnType<typeof logSavedFoodServingsInputSchema>
 >;
 type ParsedLogManualFoodInput = z.output<
   ReturnType<typeof logManualFoodInputSchema>
@@ -239,6 +256,14 @@ export class IdempotencyConflictError extends Error {
   constructor() {
     super("The idempotency key was already used for different data");
     this.name = "IdempotencyConflictError";
+  }
+}
+
+/** The account has not finished setup, so it has no time zone or Food Log yet. */
+export class AccountSetupRequiredError extends Error {
+  constructor() {
+    super("The account has not finished setup");
+    this.name = "AccountSetupRequiredError";
   }
 }
 
@@ -413,28 +438,120 @@ function savedFoodSnapshot(row: SavedFoodRow) {
   };
 }
 
-/** A Saved Food's id, name, and the nutrition of one serving, from its authoritative nutrition. */
-function savedFoodPerServing(row: SavedFoodRow) {
-  const saved = savedFoodSnapshot(row);
+/**
+ * The nutrition of `quantity` servings of a Saved Food, where one serving is
+ * its selected measurement, scaled from its authoritative nutrition.
+ */
+function savedFoodNutrition(
+  saved: ReturnType<typeof savedFoodSnapshot>,
+  quantity: number,
+) {
   const nutrition = parseCatalogNutrition(saved.authoritativeNutrition);
-  const serving = (value: Parameters<typeof scaleCatalogNutrient>[0]) =>
+  const scale = (value: Parameters<typeof scaleCatalogNutrient>[0]) =>
     scaleCatalogNutrient(
       value,
       saved.selectedMeasurementBaseQuantityMicrounits,
-      1_000_000,
+      quantity,
       saved.authoritativeBaseQuantityMicrounits,
     );
   return {
+    energyMilliKcal: scale(nutrition.energyMilliKcal),
+    proteinMilligrams: scale(nutrition.proteinMilligrams),
+    carbohydrateMilligrams: scale(nutrition.carbohydrateMilligrams),
+    fatMilligrams: scale(nutrition.fatMilligrams),
+    fiberMilligrams: scale(nutrition.fiberMilligrams),
+    sugarMilligrams: scale(nutrition.sugarMilligrams),
+    sodiumMilligrams: scale(nutrition.sodiumMilligrams),
+  };
+}
+
+/** A Saved Food's id, name, and the nutrition of one serving, from its authoritative nutrition. */
+function savedFoodPerServing(row: SavedFoodRow) {
+  const saved = savedFoodSnapshot(row);
+  return {
     id: saved.id,
     name: saved.name,
-    energyMilliKcal: serving(nutrition.energyMilliKcal),
-    proteinMilligrams: serving(nutrition.proteinMilligrams),
-    carbohydrateMilligrams: serving(nutrition.carbohydrateMilligrams),
-    fatMilligrams: serving(nutrition.fatMilligrams),
-    fiberMilligrams: serving(nutrition.fiberMilligrams),
-    sugarMilligrams: serving(nutrition.sugarMilligrams),
-    sodiumMilligrams: serving(nutrition.sodiumMilligrams),
+    ...savedFoodNutrition(saved, 1_000_000),
   };
+}
+
+/** What an external caller asked a Food Entry to be made from, by source. */
+type ExternalFoodEntrySource = {
+  kind: "saved-food";
+  quantityMicrounits: number;
+  savedFoodId: number;
+};
+
+/** Whether a stored Food Entry was made from the same source an external caller asks for now. */
+const madeFromSameSource: {
+  [Kind in ExternalFoodEntrySource["kind"]]: (
+    row: FoodEntryRow,
+    source: Extract<ExternalFoodEntrySource, { kind: Kind }>,
+  ) => boolean;
+} = {
+  "saved-food": (row, source) =>
+    row.sourceSavedFoodId === source.savedFoodId &&
+    row.quantityMicrounits === source.quantityMicrounits,
+};
+
+/**
+ * The Food Entry an external key already created, as a replay when the
+ * request asks for the same source and either no date or its stored date;
+ * any other difference is an `IdempotencyConflictError`.
+ */
+function replayExternalFoodEntry(
+  row: FoodEntryRow,
+  source: ExternalFoodEntrySource,
+  foodLogDate: string | undefined,
+) {
+  if (
+    (foodLogDate !== undefined && foodLogDate !== row.foodLogDate) ||
+    !madeFromSameSource[source.kind](row, source)
+  ) {
+    throw new IdempotencyConflictError();
+  }
+  return { entry: foodEntrySnapshot(row), replayed: true };
+}
+
+function parseLogSavedFoodServingsInput(input: LogSavedFoodServingsInput) {
+  const parsed = logSavedFoodServingsInputSchema().safeParse(input);
+  if (!parsed.success) throw new InvalidFoodEntryInputError();
+  const { foodLogDate, idempotencyKey, quantity, savedFoodId } = parsed.data;
+  if (foodLogDate !== undefined && !parseIsoLocalDate(foodLogDate)) {
+    throw new InvalidFoodLogDateError();
+  }
+  const source: ExternalFoodEntrySource = {
+    kind: "saved-food",
+    quantityMicrounits: externalServingsMicrounits(quantity),
+    savedFoodId,
+  };
+  return { foodLogDate, idempotencyKey, source };
+}
+
+function readFoodEntryByIdempotencyKey(
+  database: Pick<ApplicationDatabaseClient, "select">,
+  userId: number,
+  idempotencyKey: string,
+) {
+  return database
+    .select()
+    .from(foodEntries)
+    .where(
+      and(
+        eq(foodEntries.userId, userId),
+        eq(foodEntries.idempotencyKey, idempotencyKey),
+      ),
+    )
+    .get();
+}
+
+/** Servings with at most 3 decimals and the web's bounds, in microunits. */
+function externalServingsMicrounits(quantity: number): number {
+  const microunits = quantityMicrounitsFromDecimal(String(quantity));
+  if (microunits === undefined || microunits % 1_000 !== 0) {
+    throw new InvalidFoodEntryInputError();
+  }
+  return microunits;
 }
 
 function insertManualFoodSnapshot(
@@ -862,6 +979,61 @@ export class FoodEntryService {
     );
   }
 
+  /**
+   * Logs `quantity` servings of a Saved Food for an external caller, scaled
+   * from its per-serving authoritative nutrition, on `foodLogDate` or today.
+   * A retry with the same key, Saved Food, and quantity, and no date or the
+   * stored date, returns the original as a replay; any other difference is an
+   * `IdempotencyConflictError`.
+   */
+  logSavedFoodServings(userId: number, input: LogSavedFoodServingsInput) {
+    const { foodLogDate, idempotencyKey, source } =
+      parseLogSavedFoodServingsInput(input);
+    const existing = readFoodEntryByIdempotencyKey(this.#database, userId, idempotencyKey);
+    if (existing) return replayExternalFoodEntry(existing, source, foodLogDate);
+
+    const instant = this.#now();
+    const day = this.#writableDay(userId, foodLogDate, instant);
+    const saved = this.readSavedFood(userId, source.savedFoodId);
+    const { id: _id, name: _name, sourceEntryId: _sourceEntryId, ...snapshot } = saved;
+    const createdAt = instant.toISOString();
+
+    const created = this.#database.transaction((transaction) =>
+      transaction
+        .insert(foodEntries)
+        .values({
+          ...snapshot,
+          ...savedFoodNutrition(saved, source.quantityMicrounits),
+          createdAt,
+          foodLogDate: day.date,
+          idempotencyKey,
+          localEventTime: localEventTimeForNewFoodLogEvent(transaction, userId, day.date, day.today, instant, day.timeZone),
+          quantityMicrounits: source.quantityMicrounits,
+          sourceSavedFoodId: saved.id,
+          updatedAt: createdAt,
+          userId,
+        })
+        .onConflictDoNothing()
+        .returning()
+        .get(),
+    );
+    if (created) return { entry: foodEntrySnapshot(created), replayed: false };
+    // The key is taken by a concurrent request that won the insert.
+    const winner = readFoodEntryByIdempotencyKey(this.#database, userId, idempotencyKey);
+    if (!winner) throw new IdempotencyConflictError();
+    return replayExternalFoodEntry(winner, source, foodLogDate);
+  }
+
+  /** The requested day, or today when none is given, refusing future days. */
+  #writableDay(userId: number, requested: string | undefined, instant: Date) {
+    const timeZone = readUserTimeZone(this.#database, userId);
+    if (!timeZone) throw new AccountSetupRequiredError();
+    const today = localDateAt(instant, timeZone);
+    const date = requested ?? today;
+    if (date > today) throw new FutureFoodLogDateError();
+    return { date, timeZone, today };
+  }
+
   copyToToday(
     userId: number,
     entryId: number,
@@ -1140,16 +1312,7 @@ export class FoodEntryService {
   }
 
   #findIdempotentEntry(userId: number, idempotencyKey: string) {
-    const row = this.#database
-      .select()
-      .from(foodEntries)
-      .where(
-        and(
-          eq(foodEntries.userId, userId),
-          eq(foodEntries.idempotencyKey, idempotencyKey),
-        ),
-      )
-      .get();
+    const row = readFoodEntryByIdempotencyKey(this.#database, userId, idempotencyKey);
     return row ? foodEntrySnapshot(row) : undefined;
   }
 

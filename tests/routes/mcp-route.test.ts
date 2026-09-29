@@ -291,7 +291,7 @@ test("search_saved_foods is listed and callable with either the Food Log read sc
   const { key: writer } = await createKey(reader, "Writer only", ["food-log:write"]);
   const listed = await rpc(writer, "tools/list");
   const tools = listed.result?.tools as { name: string; annotations?: Record<string, unknown>; outputSchema?: unknown }[];
-  expect(tools.map((tool) => tool.name)).toEqual(["search_saved_foods", "create_saved_food"]);
+  expect(tools.map((tool) => tool.name)).toEqual(["search_saved_foods", "create_saved_food", "log_saved_food"]);
   expect(tools[0].annotations).toMatchObject({ readOnlyHint: true, openWorldHint: false });
   expect(tools[0].outputSchema).toBeDefined();
 
@@ -448,4 +448,140 @@ test("create_saved_food explains malformed names, nutrients, and idempotency key
   }
   expect(await createSavedFood(key, { ...egg, idempotencyKey: "k".repeat(124) })).toMatchObject({ structuredContent: { replayed: false } });
   expect((await searchSavedFoods(key)).structuredContent?.savedFoods).toHaveLength(1);
+});
+
+type LogResult = {
+  isError?: boolean;
+  structuredContent?: { foodEntry: Record<string, unknown> & { id: number }; replayed: boolean; dailyLog: Record<string, unknown> & { foods: Record<string, unknown>[] } };
+  content: { type: string; text: string }[];
+};
+async function logSavedFood(key: string, toolArguments: Record<string, unknown>) {
+  const { result } = await rpc(key, "tools/call", { name: "log_saved_food", arguments: toolArguments });
+  return result as LogResult;
+}
+async function eater(username: string) {
+  const owner = await account(username);
+  completeSetup(owner.id, "metric", "2000");
+  const { key } = await createKey(owner, "Eater", ["daily-log:read", "food-log:write"]);
+  const created = await createSavedFood(key, { ...egg, idempotencyKey: `${username}-egg` });
+  return { owner, key, eggId: created.structuredContent?.id as number };
+}
+
+test("log_saved_food logs one serving today by default and returns the Food Entry with the updated day summary", async () => {
+  const { key, eggId } = await eater("mcp.eater");
+  const listed = (await rpc(key, "tools/list")).result?.tools as { name: string; annotations?: Record<string, unknown>; inputSchema: { required?: string[] } }[];
+  const tool = listed.find((candidate) => candidate.name === "log_saved_food");
+  expect(tool?.annotations).toEqual({ readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false });
+  expect(tool?.inputSchema.required?.sort()).toEqual(["idempotencyKey", "savedFoodId"]);
+
+  const logged = await logSavedFood(key, { savedFoodId: eggId, idempotencyKey: "log-egg-0001" });
+  expect(logged.isError).toBeFalsy();
+  expect(logged.structuredContent?.foodEntry).toEqual({
+    id: expect.any(Number) as number, date: today, name: "Huevo (1 grande)", servings: 1,
+    energyKcal: 78, proteinG: 6.3, carbohydrateG: 0.6, fatG: 5.3, fiberG: null, sugarG: null, sodiumMg: 62,
+  });
+  expect(logged.structuredContent?.replayed).toBe(false);
+  const dailyLog = (await callDailyLog(key)).structuredContent;
+  expect(logged.structuredContent?.dailyLog).toEqual(dailyLog);
+  expect(dailyLog).toMatchObject({
+    date: today,
+    nutrients: { energy: { consumed: 78, goal: 2050, remaining: 1972 } },
+    foods: [{ name: "Huevo (1 grande)", serving: "1 serving × 1", energyKcal: 78 }],
+  });
+  const [text] = logged.content;
+  expect(text.text).not.toContain("\n");
+  expect(text.text).toContain("Huevo (1 grande)");
+  expect(text.text).toContain("1972 kcal remaining");
+});
+
+test("log_saved_food scales nutrition by fractional servings and logs past days", async () => {
+  const { key, eggId } = await eater("mcp.past.eater");
+  const yesterday = "2026-08-30";
+  const logged = await logSavedFood(key, { savedFoodId: eggId, quantity: 1.5, date: yesterday, idempotencyKey: "log-past-0001" });
+  expect(logged.structuredContent?.foodEntry).toMatchObject({
+    date: yesterday, servings: 1.5, energyKcal: 117, proteinG: 9.45, carbohydrateG: 0.9, fatG: 7.95, sodiumMg: 93,
+  });
+  expect(logged.structuredContent?.dailyLog).toEqual((await callDailyLog(key, { date: yesterday })).structuredContent);
+  expect(logged.structuredContent?.dailyLog).toMatchObject({ date: yesterday, foods: [{ time: "12:00", serving: "1 serving × 1.5" }] });
+
+  const third = await logSavedFood(key, { savedFoodId: eggId, quantity: 0.333, date: yesterday, idempotencyKey: "log-past-0002" });
+  expect(third.structuredContent?.foodEntry).toMatchObject({ servings: 0.333, energyKcal: 25.974 });
+  expect(third.structuredContent?.dailyLog.foods).toHaveLength(2);
+  expect((await callDailyLog(key)).structuredContent?.foods).toEqual([]);
+});
+
+test("log_saved_food logs one serving of a Saved Food created in the web from a Food Entry", async () => {
+  const { owner, key } = await eater("mcp.web.eater");
+  getFoodEntryService(new Date("2026-08-31T16:00:00.000Z")).logManual(owner.id, {
+    energyKcal: "500", foodLogDate: "2026-08-30", idempotencyKey: "web-pasta-two", name: "Pasta", proteinGrams: "30", quantity: "2",
+  });
+  const pastaId = (await searchSavedFoods(key, { query: "pasta" })).structuredContent?.savedFoods[0].id;
+  const logged = await logSavedFood(key, { savedFoodId: pastaId, idempotencyKey: "log-pasta-0001" });
+  expect(logged.structuredContent?.foodEntry).toMatchObject({ date: today, name: "Pasta", servings: 1, energyKcal: 250, proteinG: 15 });
+});
+
+test("log_saved_food replays a retry with the same data and refuses a reused key with a different Saved Food, quantity, or date", async () => {
+  const { key, eggId } = await eater("mcp.retry.eater");
+  const other = await createSavedFood(key, { name: "Toast", energyKcal: 90, idempotencyKey: "retry-toast-01" });
+  const request = { savedFoodId: eggId, quantity: 2, idempotencyKey: "log-retry-0001" };
+  const original = await logSavedFood(key, request);
+  for (const retry of [request, { ...request, date: today }]) {
+    const replay = await logSavedFood(key, retry);
+    expect(replay.isError).toBeFalsy();
+    expect(replay.structuredContent).toEqual({ ...original.structuredContent, replayed: true });
+    expect(replay.content[0].text).toMatch(/already logged/u);
+  }
+  for (const changed of [{ savedFoodId: other.structuredContent?.id }, { quantity: 3 }, { date: "2026-08-30" }]) {
+    const conflict = await logSavedFood(key, { ...request, ...changed });
+    expect(conflict.isError, JSON.stringify(changed)).toBe(true);
+    expect(conflict.content[0].text).toMatch(/already used/u);
+    expect(conflict.content[0].text).toMatch(/new idempotencyKey/u);
+  }
+  expect((await callDailyLog(key)).structuredContent?.foods).toHaveLength(1);
+  expect((await callDailyLog(key, { date: "2026-08-30" })).structuredContent?.foods).toEqual([]);
+});
+
+test("log_saved_food explains unknown Saved Foods, bad dates, quantities, and keys, and logs nothing", async () => {
+  const { key, eggId } = await eater("mcp.clumsy.eater");
+  const stranger = await eater("mcp.stranger.eater");
+  const invalid: [Record<string, unknown>, RegExp][] = [
+    [{ savedFoodId: 999_999 }, /search_saved_foods/u],
+    [{ savedFoodId: stranger.eggId }, /search_saved_foods/u],
+    [{ date: "2026-02-30" }, /date/u],
+    [{ date: "yesterday" }, /date/u],
+    [{ date: "2026-09-01" }, /future/u],
+    [{ quantity: 0 }, /quantity/u],
+    [{ quantity: -1 }, /quantity/u],
+    [{ quantity: 100 }, /quantity/u],
+    [{ quantity: 1.0001 }, /quantity/u],
+    [{ quantity: "two" }, /quantity/u],
+    [{ idempotencyKey: "short" }, /idempotencyKey/u],
+    [{ idempotencyKey: undefined }, /idempotencyKey/u],
+  ];
+  for (const [change, message] of invalid) {
+    const result = await logSavedFood(key, { savedFoodId: eggId, idempotencyKey: "log-invalid-0001", ...change });
+    expect(result.isError, JSON.stringify(change)).toBe(true);
+    expect(result.content[0].text).toMatch(message);
+  }
+  expect((await callDailyLog(key)).structuredContent?.foods).toEqual([]);
+  expect(await logSavedFood(key, { savedFoodId: eggId, quantity: 99, idempotencyKey: "log-invalid-0001" }))
+    .toMatchObject({ structuredContent: { foodEntry: { servings: 99 } } });
+});
+
+test("log_saved_food gives the get_daily_log message to an account without finished setup", async () => {
+  const unset = await account("mcp.unset.eater");
+  const { key } = await createKey(unset, "Unset eater", ["daily-log:read", "food-log:write"]);
+  const created = await createSavedFood(key, { ...egg, idempotencyKey: "unset-egg-0001" });
+  const result = await logSavedFood(key, { savedFoodId: created.structuredContent?.id, idempotencyKey: "unset-log-0001" });
+  expect(result.isError).toBe(true);
+  expect(result.content).toEqual((await callDailyLog(key)).content);
+});
+
+test("log_saved_food is hidden from and refused for keys without the Log foods scope", async () => {
+  const oatmealId = (await searchSavedFoods(readerKey, { query: "oat" })).structuredContent?.savedFoods[0].id;
+  const listed = (await rpc(readerKey, "tools/list")).result?.tools as { name: string }[];
+  expect(listed.map((tool) => tool.name)).not.toContain("log_saved_food");
+  const refused = await rpc(readerKey, "tools/call", { name: "log_saved_food", arguments: { savedFoodId: oatmealId, idempotencyKey: "refused-log-0001" } });
+  expect(JSON.stringify(refused)).toMatch(/disabled/u);
+  expect((await callDailyLog(readerKey)).structuredContent?.foods).toHaveLength(1);
 });
