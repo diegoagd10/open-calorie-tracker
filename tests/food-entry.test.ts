@@ -34,6 +34,7 @@ import {
 import {
   FoodEntryService,
   FoodEntryUnavailableError,
+  IdempotencyConflictError,
   InvalidFoodEntryInputError,
   StaleFoodEntryError,
 } from "../app/food-entry/food-entry.server";
@@ -1927,5 +1928,155 @@ test("web keys for Food Entries cannot look like MCP or REST keys", async () => 
     }
     expect(new FoodLogService(client, now).read(userId, "2026-08-29")?.entries.map((entry) => entry.id))
       .toEqual([saved.id]);
+  } finally { database.close(); }
+});
+
+function createdSavedFoodInput(idempotencyKey: string) {
+  return {
+    carbohydrateGrams: 0.6,
+    energyKcal: 78,
+    fatGrams: 5.3,
+    idempotencyKey,
+    name: "  Huevo (1 grande)  ",
+    proteinGrams: 6.3,
+    sodiumMilligrams: 62,
+  };
+}
+
+test("a Saved Food created from one serving's nutrition logs nothing and has a manual one-serving snapshot", async () => {
+  const database = await setupDatabase();
+  const client = database.getClient();
+  const userId = insertConfiguredUser(client, "created.saved.food");
+  const now = () => new Date("2026-08-29T18:00:00.000Z");
+  const service = new FoodEntryService(client, new FakeCatalogProvider(), now);
+  try {
+    const created = service.createSavedFood(userId, createdSavedFoodInput("mcp:create-egg-1"));
+    expect(created).toEqual({
+      replayed: false,
+      savedFood: {
+        id: expect.any(Number) as number, name: "Huevo (1 grande)",
+        energyMilliKcal: 78_000, proteinMilligrams: 6_300, carbohydrateMilligrams: 600, fatMilligrams: 5_300,
+        fiberMilligrams: null, sugarMilligrams: null, sodiumMilligrams: 62,
+      },
+    });
+    expect(client.select().from(foodEntries).all()).toEqual([]);
+    expect(service.readSavedFood(userId, created.savedFood.id)).toMatchObject({
+      name: "Huevo (1 grande)", sourceEntryId: null, originalName: "Huevo (1 grande)", editedName: null,
+      provider: "manual", sourceDataType: "User entered", quantityMicrounits: 1_000_000,
+      authoritativeBaseUnit: "serving", authoritativeBaseQuantityMicrounits: 1_000_000,
+      selectedMeasurementId: "serving", selectedMeasurementLabel: "1 serving", selectedMeasurementUnit: "serving",
+      selectedMeasurementBaseQuantityMicrounits: 1_000_000, energyMilliKcal: 78_000, sodiumMilligrams: 62,
+    });
+
+    const sameName = service.createSavedFood(userId, { ...createdSavedFoodInput("mcp:create-egg-2"), energyKcal: 72 });
+    expect(sameName.savedFood.id).not.toBe(created.savedFood.id);
+    expect(service.searchSavedFoods(userId, "huevo").savedFoods.map((food) => food.energyMilliKcal)).toEqual([78_000, 72_000]);
+  } finally { database.close(); }
+});
+
+test("creating a Saved Food replays the same data, refuses changed data, and keeps MCP and REST keys apart", async () => {
+  const database = await setupDatabase();
+  const client = database.getClient();
+  const userId = insertConfiguredUser(client, "created.saved.replay");
+  const otherUserId = insertConfiguredUser(client, "created.saved.replay.other");
+  const service = new FoodEntryService(client, new FakeCatalogProvider(), () => new Date("2026-08-29T18:00:00.000Z"));
+  try {
+    const original = service.createSavedFood(userId, createdSavedFoodInput("mcp:replay-key"));
+    const replay = service.createSavedFood(userId, { ...createdSavedFoodInput("mcp:replay-key"), name: "Huevo (1 grande)", fiberGrams: null });
+    expect(replay).toEqual({ replayed: true, savedFood: original.savedFood });
+    for (const changed of [{ name: "Huevo" }, { energyKcal: 78.001 }, { fiberGrams: 0 }, { sodiumMilligrams: undefined }]) {
+      expect(() => service.createSavedFood(userId, { ...createdSavedFoodInput("mcp:replay-key"), ...changed }))
+        .toThrow(IdempotencyConflictError);
+    }
+    const rest = service.createSavedFood(userId, createdSavedFoodInput("api:replay-key"));
+    expect(rest.replayed).toBe(false);
+    expect(rest.savedFood.id).not.toBe(original.savedFood.id);
+    expect(service.createSavedFood(otherUserId, createdSavedFoodInput("mcp:replay-key")).replayed).toBe(false);
+    expect(client.select().from(savedFoods).all()).toHaveLength(3);
+  } finally { database.close(); }
+});
+
+test("a Saved Food creation that loses a same-key race resolves as a replay or a conflict", async () => {
+  const database = await setupDatabase();
+  const client = database.getClient();
+  const userId = insertConfiguredUser(client, "created.saved.race");
+  const service = new FoodEntryService(client, new FakeCatalogProvider(), () => new Date("2026-08-29T18:00:00.000Z"));
+  // A competing request commits its row with the same key just before this request's insert.
+  const competeFor = (key: string, name: string) => client.run(sql.raw(`CREATE TRIGGER "compete ${key}"
+    BEFORE INSERT ON saved_foods
+    WHEN NEW.idempotency_key = '${key}'
+    BEGIN
+      INSERT INTO saved_foods (user_id, name, snapshot, idempotency_key, created_at)
+      VALUES (NEW.user_id, ${name}, NEW.snapshot, NEW.idempotency_key, NEW.created_at);
+    END`));
+  try {
+    competeFor("mcp:race-same", "NEW.name");
+    expect(service.createSavedFood(userId, createdSavedFoodInput("mcp:race-same")))
+      .toMatchObject({ replayed: true, savedFood: { name: "Huevo (1 grande)", energyMilliKcal: 78_000 } });
+    competeFor("mcp:race-different", "'Competing food'");
+    expect(() => service.createSavedFood(userId, createdSavedFoodInput("mcp:race-different")))
+      .toThrow(IdempotencyConflictError);
+    expect(client.select({ key: savedFoods.idempotencyKey, name: savedFoods.name }).from(savedFoods).all()).toEqual([
+      { key: "mcp:race-same", name: "Huevo (1 grande)" },
+      { key: "mcp:race-different", name: "Competing food" },
+    ]);
+  } finally { database.close(); }
+});
+
+test("creating a Saved Food rejects web keys and malformed or out-of-bounds data", async () => {
+  const database = await setupDatabase();
+  const client = database.getClient();
+  const userId = insertConfiguredUser(client, "created.saved.invalid");
+  const service = new FoodEntryService(client, new FakeCatalogProvider(), () => new Date("2026-08-29T18:00:00.000Z"));
+  try {
+    const invalid = [
+      { idempotencyKey: "web-style-key" },
+      { idempotencyKey: "copy:1:nonce-key" },
+      { name: "   " },
+      { name: "a".repeat(201) },
+      { energyKcal: -1 },
+      { energyKcal: 1_000_000 },
+      { energyKcal: 1.0001 },
+      { energyKcal: Number.NaN },
+      { energyKcal: undefined },
+      { proteinGrams: 0.0005 },
+      { sodiumMilligrams: 1.5 },
+      { sodiumMilligrams: 10_000_000 },
+    ];
+    for (const change of invalid) {
+      expect(() => service.createSavedFood(userId, { ...createdSavedFoodInput("mcp:invalid-key"), ...change } as Parameters<typeof service.createSavedFood>[1]))
+        .toThrow(InvalidFoodEntryInputError);
+    }
+    expect(service.createSavedFood(userId, {
+      ...createdSavedFoodInput("mcp:bounds-key"), name: "a".repeat(200), energyKcal: 999_999.999, proteinGrams: 0, sodiumMilligrams: 9_999_999,
+    }).savedFood).toMatchObject({ energyMilliKcal: 999_999_999, proteinMilligrams: 0, sodiumMilligrams: 9_999_999 });
+    expect(client.select().from(savedFoods).all()).toHaveLength(1);
+  } finally { database.close(); }
+});
+
+test("a Saved Food without a source Food Entry is listed in My foods and logs from the web like any other", async () => {
+  const database = await setupDatabase();
+  const client = database.getClient();
+  const userId = insertConfiguredUser(client, "created.saved.web");
+  const now = () => new Date("2026-08-29T18:00:00.000Z");
+  const service = new FoodEntryService(client, new FakeCatalogProvider(), now);
+  try {
+    const { savedFood } = service.createSavedFood(userId, createdSavedFoodInput("api:web-flow-key"));
+    expect(service.listSavedFoods(userId, "HUEVO")).toEqual([
+      expect.objectContaining({ id: savedFood.id, name: "Huevo (1 grande)", sourceEntryId: null }),
+    ]);
+    const logged = service.logSavedFood(userId, savedFood.id, "2026-08-28", "web-log-created-food");
+    expect(logged).toMatchObject({
+      foodLogDate: "2026-08-28", name: "Huevo (1 grande)", provider: "manual", quantityMicrounits: 1_000_000,
+      energyMilliKcal: 78_000, proteinMilligrams: 6_300, sodiumMilligrams: 62,
+    });
+    expect(service.isManualEntrySaved(userId, logged.id)).toBe(true);
+    expect(service.saveManualEntry(userId, logged.id).id).toBe(savedFood.id);
+    expect(service.listSavedFoods(userId)).toHaveLength(1);
+
+    const webManual = service.logManual(userId, { energyKcal: "50", foodLogDate: "2026-08-29", idempotencyKey: "web-manual-next", name: "Tortilla", quantity: "1" });
+    expect(service.isManualEntrySaved(userId, webManual.id)).toBe(true);
+    expect(service.listSavedFoods(userId).map((food) => food.name)).toEqual(["Huevo (1 grande)", "Tortilla"]);
+    expect(new FoodLogService(client, now).read(userId, "2026-08-28")?.entries.map((entry) => entry.id)).toEqual([logged.id]);
   } finally { database.close(); }
 });

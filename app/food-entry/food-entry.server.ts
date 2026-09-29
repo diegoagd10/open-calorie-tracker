@@ -15,8 +15,10 @@ import {
 import { isSupportedCommercialBarcode } from "../catalog/barcode";
 import type { ApplicationDatabaseClient } from "../database/database.server";
 import {
+  insertSavedFoodWithoutSource,
   insertSavedFood,
   listSavedFoodRows,
+  readSavedFoodByIdempotencyKey,
   readSavedFoodForEntry,
   readSavedFoodRow,
   saveManualEntryRow,
@@ -144,6 +146,23 @@ function logManualFoodInputSchema() {
   });
 }
 
+const externalIdempotencyKeySchema = idempotencyKeySchema.refine(hasExternalChannelPrefix);
+const perServingNutrientSchema = z.number().nullable().optional();
+
+function createSavedFoodInputSchema() {
+  return z.object({
+    carbohydrateGrams: perServingNutrientSchema,
+    energyKcal: z.number(),
+    fatGrams: perServingNutrientSchema,
+    fiberGrams: perServingNutrientSchema,
+    idempotencyKey: externalIdempotencyKeySchema,
+    name: z.string().trim().min(1).max(200),
+    proteinGrams: perServingNutrientSchema,
+    sodiumMilligrams: perServingNutrientSchema,
+    sugarGrams: perServingNutrientSchema,
+  });
+}
+
 export type LogFoodInput = z.input<ReturnType<typeof logFoodInputSchema>>;
 export type CopyFoodEntryInput = z.input<
   ReturnType<typeof copyFoodEntryInputSchema>
@@ -155,8 +174,28 @@ export type LogManualFoodInput = z.input<
   ReturnType<typeof logManualFoodInputSchema>
 >;
 export type UpdateFoodInput = z.input<ReturnType<typeof updateFoodInputSchema>>;
+/**
+ * One serving of a new Saved Food from an external caller: nutrients in kcal,
+ * grams, and milligrams, with null or missing for unknown, and the caller's key
+ * already stored with its channel prefix.
+ */
+export type CreateSavedFoodInput = z.input<
+  ReturnType<typeof createSavedFoodInputSchema>
+>;
 type ParsedLogManualFoodInput = z.output<
   ReturnType<typeof logManualFoodInputSchema>
+>;
+type ManualFoodInput = Pick<
+  ParsedLogManualFoodInput,
+  | "carbohydrateGrams"
+  | "energyKcal"
+  | "fatGrams"
+  | "fiberGrams"
+  | "idempotencyKey"
+  | "name"
+  | "proteinGrams"
+  | "sodiumMilligrams"
+  | "sugarGrams"
 >;
 type ParsedUpdateFoodInput = z.output<ReturnType<typeof updateFoodInputSchema>>;
 type FoodEntryInsertSource = Omit<
@@ -166,6 +205,17 @@ type FoodEntryInsertSource = Omit<
   | "id"
   | "idempotencyKey"
   | "localEventTime"
+  | "updatedAt"
+  | "userId"
+>;
+type SavedNutritionSource = Omit<
+  FoodEntryRow,
+  | "createdAt"
+  | "foodLogDate"
+  | "id"
+  | "idempotencyKey"
+  | "localEventTime"
+  | "sourceSavedFoodId"
   | "updatedAt"
   | "userId"
 >;
@@ -181,6 +231,14 @@ export class FoodEntryUnavailableError extends Error {
   constructor() {
     super("Food Entry is unavailable");
     this.name = "FoodEntryUnavailableError";
+  }
+}
+
+/** An external caller reused an idempotency key for different data. */
+export class IdempotencyConflictError extends Error {
+  constructor() {
+    super("The idempotency key was already used for different data");
+    this.name = "IdempotencyConflictError";
   }
 }
 
@@ -311,7 +369,7 @@ function nullableNutrient(
   return Number(result);
 }
 
-function savedNutritionSnapshotValues(source: FoodEntryRow) {
+function savedNutritionSnapshotValues(source: SavedNutritionSource) {
   return {
     authoritativeBaseQuantityMicrounits:
       source.authoritativeBaseQuantityMicrounits,
@@ -445,9 +503,9 @@ const manualMeasurement: CatalogMeasurement = {
 };
 
 function manualFoodEntrySource(
-  input: ParsedLogManualFoodInput,
+  input: ManualFoodInput,
   quantity: number,
-): FoodEntryInsertSource {
+): Omit<SavedNutritionSource, "editedName"> {
   const energyMilliKcal = nullableNutrient(input.energyKcal, false);
   if (energyMilliKcal === null || energyMilliKcal === undefined) {
     throw new InvalidFoodEntryInputError();
@@ -499,6 +557,29 @@ function manualFoodEntrySource(
     supportedMeasurements: serializeCatalogMeasurements([manualMeasurement]),
   };
 }
+
+/** A manual Food Entry source for one serving of an externally created Saved Food. */
+function createdSavedFoodSource(
+  input: z.output<ReturnType<typeof createSavedFoodInputSchema>>,
+) {
+  const decimal = (value: number | null | undefined) =>
+    value === null || value === undefined ? "" : String(value);
+  return manualFoodEntrySource(
+    {
+      carbohydrateGrams: decimal(input.carbohydrateGrams),
+      energyKcal: String(input.energyKcal),
+      fatGrams: decimal(input.fatGrams),
+      fiberGrams: decimal(input.fiberGrams),
+      idempotencyKey: input.idempotencyKey,
+      name: input.name,
+      proteinGrams: decimal(input.proteinGrams),
+      sodiumMilligrams: decimal(input.sodiumMilligrams),
+      sugarGrams: decimal(input.sugarGrams),
+    },
+    manualMeasurement.baseQuantityMicrounits,
+  );
+}
+
 
 function manualNutritionAfterUpdate(
   input: ParsedUpdateFoodInput,
@@ -697,6 +778,41 @@ export class FoodEntryService {
       savedFoods: rows.slice(0, SAVED_FOOD_SEARCH_LIMIT).map(savedFoodPerServing),
       truncated: rows.length > SAVED_FOOD_SEARCH_LIMIT,
     };
+  }
+
+  /**
+   * Creates a manual Saved Food for one serving without logging anything. The
+   * same key with the same name and nutrition returns the original as a
+   * replay; the same key with different data is an `IdempotencyConflictError`.
+   */
+  createSavedFood(userId: number, input: CreateSavedFoodInput) {
+    const parsed = createSavedFoodInputSchema().safeParse(input);
+    if (!parsed.success) throw new InvalidFoodEntryInputError();
+    const source = createdSavedFoodSource(parsed.data);
+    const name = source.originalName;
+    const snapshot = JSON.stringify(
+      savedNutritionSnapshotValues({ ...source, editedName: null }),
+    );
+    const created = insertSavedFoodWithoutSource(this.#database, userId, {
+      createdAt: this.#now().toISOString(),
+      idempotencyKey: parsed.data.idempotencyKey,
+      name,
+      snapshot,
+    });
+    if (created) {
+      return { replayed: false, savedFood: savedFoodPerServing(created) };
+    }
+    // The key is taken, possibly by a concurrent request that won the insert.
+    const existing = readSavedFoodByIdempotencyKey(
+      this.#database,
+      userId,
+      parsed.data.idempotencyKey,
+    );
+    // Same data builds the same snapshot, so comparing it covers every field.
+    if (existing?.name !== name || existing.snapshot !== snapshot) {
+      throw new IdempotencyConflictError();
+    }
+    return { replayed: true, savedFood: savedFoodPerServing(existing) };
   }
 
   readSavedFood(userId: number, savedFoodId: number) {

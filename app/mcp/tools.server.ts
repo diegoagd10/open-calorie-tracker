@@ -2,9 +2,14 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import type { ApiKeyScope } from "../api-keys/presets";
-import type { FoodEntryService } from "../food-entry/food-entry.server";
+import {
+  IdempotencyConflictError,
+  InvalidFoodEntryInputError,
+  type FoodEntryService,
+} from "../food-entry/food-entry.server";
 import { getFoodEntryService } from "../food-entry/runtime.server";
 import { parseIsoLocalDate } from "../food-log/date";
+import { storedExternalIdempotencyKey } from "../food-log/idempotency-key";
 import { getFoodLogService } from "../food-log/runtime.server";
 import { dailyLogSummarySchema, summarizeDailyLog } from "./daily-log-summary";
 
@@ -99,4 +104,52 @@ const searchSavedFoods: McpTool = {
   }),
 };
 
-export const MCP_TOOLS: readonly McpTool[] = [getDailyLog, searchSavedFoods];
+const MAX_DECIMAL_NUTRIENT = 999_999.999;
+const MAX_SODIUM_MILLIGRAMS = 9_999_999;
+
+function perServingGrams(nutrient: string) {
+  return z.number().min(0).max(MAX_DECIMAL_NUTRIENT).nullable().optional()
+    .describe(`${nutrient} in grams per one serving, up to 3 decimals. Omit or null when unknown.`);
+}
+
+const createSavedFood: McpTool = {
+  scopes: ["food-log:write"],
+  register: (server, userId) => server.registerTool("create_saved_food", {
+    title: "Create Saved Food",
+    description: "Creates a Saved Food (My foods) describing one serving, so it can be logged later with its id. It does not log anything to the Food Log. Call search_saved_foods first and reuse a match instead of creating a duplicate; same-name Saved Foods are allowed for real variants. Put the serving in the name, for example \"Huevo (1 grande)\" or \"Protein shake (1 scoop)\", because every nutrient is per that one serving.",
+    inputSchema: {
+      name: z.string().trim().min(1).max(200).describe("Name including the serving it describes, for example \"Huevo (1 grande)\""),
+      energyKcal: z.number().min(0).max(MAX_DECIMAL_NUTRIENT).describe("Energy in kcal per one serving, up to 3 decimals"),
+      proteinGrams: perServingGrams("Protein"),
+      carbohydrateGrams: perServingGrams("Carbohydrate"),
+      fatGrams: perServingGrams("Fat"),
+      fiberGrams: perServingGrams("Fiber"),
+      sugarGrams: perServingGrams("Sugar"),
+      sodiumMilligrams: z.number().int().min(0).max(MAX_SODIUM_MILLIGRAMS).nullable().optional()
+        .describe("Sodium in whole milligrams per one serving. Omit or null when unknown."),
+      idempotencyKey: z.string().describe("A new unique key for this Saved Food, 8-124 characters from letters, digits, '.', '_', ':', and '-'. Retrying with the same key and data returns the original instead of creating a duplicate."),
+    },
+    outputSchema: {
+      ...savedFoodSchema.shape,
+      replayed: z.boolean().describe("True when this key already created the Saved Food and nothing new was created"),
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  }, ({ idempotencyKey, ...food }) => {
+    const storedKey = storedExternalIdempotencyKey("mcp", idempotencyKey);
+    if (!storedKey) return toolError("Invalid idempotencyKey. Use 8-124 characters from letters, digits, '.', '_', ':', and '-', and a new key for each new Saved Food.");
+    try {
+      const { savedFood, replayed } = getFoodEntryService().createSavedFood(userId, { ...food, idempotencyKey: storedKey });
+      const described = `"${savedFood.name}" (id ${savedFood.id}, ${perThousand(savedFood.energyMilliKcal)} kcal per serving)`;
+      return {
+        structuredContent: { ...presentSavedFood(savedFood), replayed },
+        content: [{ type: "text", text: replayed ? `Saved Food ${described} was already created with this idempotencyKey; nothing new was created.` : `Created Saved Food ${described}. Nothing was logged.` }],
+      };
+    } catch (error) {
+      if (error instanceof InvalidFoodEntryInputError) return toolError("Invalid nutrients. Energy and grams must be at most 999999.999 with up to 3 decimal places, and sodiumMilligrams a whole number.");
+      if (error instanceof IdempotencyConflictError) return toolError(`The idempotencyKey "${idempotencyKey}" was already used for a different Saved Food. Use a new idempotencyKey for each new Saved Food.`);
+      throw error;
+    }
+  }),
+};
+
+export const MCP_TOOLS: readonly McpTool[] = [getDailyLog, searchSavedFoods, createSavedFood];

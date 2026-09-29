@@ -295,9 +295,10 @@ export const savedFoods = sqliteTable(
   {
     id: integer().primaryKey({ autoIncrement: true }),
     userId: requiredUserId(),
-    sourceEntryId: integer("source_entry_id").notNull(),
+    sourceEntryId: integer("source_entry_id"),
     name: text().notNull(),
     snapshot: text().notNull(),
+    idempotencyKey: text("idempotency_key"),
     createdAt: text("created_at").notNull(),
   },
   (table) => [
@@ -305,6 +306,9 @@ export const savedFoods = sqliteTable(
       table.userId,
       table.sourceEntryId,
     ),
+    uniqueIndex("saved_foods_user_idempotency_unique")
+      .on(table.userId, table.idempotencyKey)
+      .where(sql`${table.idempotencyKey} IS NOT NULL`),
     index("saved_foods_user_name_index").on(table.userId, table.name),
   ],
 );

@@ -75,6 +75,38 @@ export function readSavedFoodForEntry(
   ) ?? readSavedFoodBySource(database, userId, entryId);
 }
 
+export function readSavedFoodByIdempotencyKey(
+  database: SavedFoodDatabase,
+  userId: number,
+  idempotencyKey: string,
+) {
+  return database
+    .select()
+    .from(savedFoods)
+    .where(
+      and(
+        eq(savedFoods.userId, userId),
+        eq(savedFoods.idempotencyKey, idempotencyKey),
+      ),
+    )
+    .get();
+}
+
+/** Inserts a Saved Food without a source Food Entry; undefined when its key is already taken. */
+export function insertSavedFoodWithoutSource(
+  database: SavedFoodDatabase,
+  userId: number,
+  values: { createdAt: string; idempotencyKey: string; name: string; snapshot: string },
+) {
+  return database
+    .insert(savedFoods)
+    .values({ ...values, sourceEntryId: null, userId })
+    // Only the idempotency index can conflict: a null source entry never does.
+    .onConflictDoNothing()
+    .returning()
+    .get();
+}
+
 export function insertSavedFood(
   database: SavedFoodDatabase,
   userId: number,

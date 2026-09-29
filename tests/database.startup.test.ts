@@ -56,8 +56,8 @@ test("startup applies the initial migration and configures writable SQLite stora
   });
 
   expect(database.getStatus()).toEqual({
-    appliedMigrations: 29,
-    availableMigrations: 29,
+    appliedMigrations: 30,
+    availableMigrations: 30,
     busyTimeoutMs: 5_000,
     foreignKeysEnabled: true,
     journalMode: "wal",
@@ -78,12 +78,12 @@ test("starting twice preserves the applied migration state", async () => {
   };
 
   const firstStartup = openApplicationDatabase(options);
-  expect(firstStartup.getStatus().appliedMigrations).toBe(29);
+  expect(firstStartup.getStatus().appliedMigrations).toBe(30);
   firstStartup.close();
 
   const replacementStartup = openApplicationDatabase(options);
   expect(replacementStartup.getStatus()).toMatchObject({
-    appliedMigrations: 29,
+    appliedMigrations: 30,
     schemaVersion: "20",
     writable: true,
   });
@@ -119,7 +119,7 @@ test("OAuth removal migrates a database holding OAuth clients, grants, and token
   expect(upgraded.getClient().all(sql`SELECT name FROM sqlite_master WHERE name LIKE 'oauth%'`)).toEqual([]);
   expect(upgraded.getClient().get(sql`SELECT username_normalized AS username FROM users WHERE id = ${owner.id}`))
     .toEqual({ username: "oauth.removal.owner" });
-  expect(upgraded.getStatus()).toMatchObject({ appliedMigrations: 29, foreignKeysEnabled: true });
+  expect(upgraded.getStatus()).toMatchObject({ appliedMigrations: 30, foreignKeysEnabled: true });
   upgraded.close();
 });
 
@@ -198,6 +198,38 @@ test.each([
       .orderBy(schema.users.id)
       .all(),
   ).toEqual(expected);
+  upgraded.close();
+});
+
+test("the Saved Food idempotency migration keeps existing Saved Foods and allows ones without a source Food Entry", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "saved-food-idempotency-upgrade-"));
+  temporaryDirectories.push(directory);
+  const databasePath = path.join(directory, "application.sqlite");
+  const previousMigrations = await createMigrationFolder(path.join(directory, "previous-migrations"), {
+    throughTag: "0028_remove_oauth",
+  });
+  const previous = openApplicationDatabase({ databasePath, migrationsFolder: previousMigrations });
+  const owner = previous.getClient().get<{ id: number }>(sql`
+    INSERT INTO users (username_normalized, created_at)
+    VALUES ('saved.food.owner', '2026-09-29T12:00:00.000Z') RETURNING id
+  `);
+  previous.getClient().run(sql`INSERT INTO saved_foods (user_id, source_entry_id, name, snapshot, created_at)
+    VALUES (${owner.id}, 7, 'Existing food', '{}', '2026-09-29T12:00:00.000Z')`);
+  previous.close();
+
+  const upgraded = openApplicationDatabase({ databasePath, migrationsFolder: path.resolve("drizzle") });
+  const client = upgraded.getClient();
+  expect(client.select().from(schema.savedFoods).all()).toEqual([{
+    createdAt: "2026-09-29T12:00:00.000Z", id: 1, idempotencyKey: null, name: "Existing food", snapshot: "{}", sourceEntryId: 7, userId: owner.id,
+  }]);
+  const insert = (idempotencyKey: string | null) => client.insert(schema.savedFoods).values({
+    createdAt: "2026-09-29T13:00:00.000Z", idempotencyKey, name: "Created externally", snapshot: "{}", sourceEntryId: null, userId: owner.id,
+  }).run();
+  insert(null);
+  insert(null);
+  insert("mcp:saved-food-key");
+  expect(() => insert("mcp:saved-food-key")).toThrow();
+  expect(upgraded.getStatus()).toMatchObject({ appliedMigrations: 30, foreignKeysEnabled: true });
   upgraded.close();
 });
 
@@ -287,8 +319,8 @@ test("the production migration preserves every representative field from the pri
   });
 
   expect(upgraded.getStatus()).toMatchObject({
-    appliedMigrations: 29,
-    availableMigrations: 29,
+    appliedMigrations: 30,
+    availableMigrations: 30,
     migrationsCurrent: true,
     schemaVersion: "20",
     writable: true,
@@ -401,7 +433,7 @@ THIS IS NOT VALID SQL;\n`,
   ).toEqual([]);
   expect(recovered.getClient().select().from(schema.users).all()).toEqual([]);
   expect(recovered.getStatus()).toMatchObject({
-    appliedMigrations: 29,
+    appliedMigrations: 30,
     migrationsCurrent: true,
   });
   recovered.close();
@@ -427,8 +459,8 @@ test("read-only application storage prevents startup", async () => {
 
 test("readiness requires every database invariant", () => {
   const readyStatus: DatabaseStatus = {
-    appliedMigrations: 29,
-    availableMigrations: 29,
+    appliedMigrations: 30,
+    availableMigrations: 30,
     busyTimeoutMs: 5_000,
     foreignKeysEnabled: true,
     journalMode: "wal",
@@ -483,8 +515,8 @@ test("status detects tampered migration history, metadata, and pragmas", async (
   client.run(sql`DELETE FROM __drizzle_migrations
     WHERE created_at = (SELECT MAX(created_at) FROM __drizzle_migrations)`);
   expect(database.getStatus()).toMatchObject({
-    appliedMigrations: 28,
-    availableMigrations: 29,
+    appliedMigrations: 29,
+    availableMigrations: 30,
     migrationsCurrent: false,
   });
   client.delete(schema.applicationMetadata)

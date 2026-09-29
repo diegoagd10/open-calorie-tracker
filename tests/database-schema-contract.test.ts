@@ -85,6 +85,7 @@ test("Drizzle schema metadata matches the migrated SQLite contract", async () =>
     schema.userPreferences,
     schema.goalVersions,
     schema.foodEntries,
+    schema.savedFoods,
     schema.waterEvents,
   ];
   const directory = await mkdtemp(path.join(tmpdir(), "calory-schema-contract-"));
@@ -205,6 +206,16 @@ test("Drizzle schema metadata matches the migrated SQLite contract", async () =>
         expect(
           index.config.columns.map(configuredIndexColumnName),
         ).toEqual(actualColumns);
+
+        const indexSql = canonicalSql(
+          client.get<SqlRow>(
+            sql`SELECT sql FROM sqlite_master WHERE type = 'index' AND name = ${index.config.name}`,
+          ).sql,
+        );
+        const configuredWhere = index.config.where
+          ? canonicalSql(dialect.sqlToQuery(index.config.where).sql).replaceAll(`${config.name}.`, "")
+          : null;
+        expect(configuredWhere).toBe(/ where (.+)$/.exec(indexSql)?.[1].replaceAll(`${config.name}.`, "") ?? null);
 
         for (const column of index.config.columns.filter(
           (candidate): candidate is SQL =>

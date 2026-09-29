@@ -291,7 +291,7 @@ test("search_saved_foods is listed and callable with either the Food Log read sc
   const { key: writer } = await createKey(reader, "Writer only", ["food-log:write"]);
   const listed = await rpc(writer, "tools/list");
   const tools = listed.result?.tools as { name: string; annotations?: Record<string, unknown>; outputSchema?: unknown }[];
-  expect(tools.map((tool) => tool.name)).toEqual(["search_saved_foods"]);
+  expect(tools.map((tool) => tool.name)).toEqual(["search_saved_foods", "create_saved_food"]);
   expect(tools[0].annotations).toMatchObject({ readOnlyHint: true, openWorldHint: false });
   expect(tools[0].outputSchema).toBeDefined();
 
@@ -361,4 +361,91 @@ test("search_saved_foods returns at most 25 Saved Foods and says when more exist
   expect(savedFoodNames(narrowed)).toEqual(["Food 20", "Food 21", "Food 22", "Food 23", "Food 24", "Food 25", "Food 26", "Food 27"]);
 
   expect((await callDailyLog(key)).structuredContent).toEqual(before);
+});
+
+type CreateResult = { isError?: boolean; structuredContent?: Record<string, unknown>; content: { type: string; text: string }[] };
+async function createSavedFood(key: string, toolArguments: Record<string, unknown>) {
+  const { result } = await rpc(key, "tools/call", { name: "create_saved_food", arguments: toolArguments });
+  return result as CreateResult;
+}
+const egg = { name: " Huevo (1 grande) ", energyKcal: 78, proteinGrams: 6.3, carbohydrateGrams: 0.6, fatGrams: 5.3, sodiumMilligrams: 62 };
+
+test("create_saved_food returns the new Saved Food's id and one serving's nutrition without logging food", async () => {
+  const cook = await account("mcp.cook");
+  completeSetup(cook.id, "metric", "2000");
+  const { key } = await createKey(cook, "Cook", ["daily-log:read", "food-log:write"]);
+  const before = (await callDailyLog(key)).structuredContent;
+
+  const listed = (await rpc(key, "tools/list")).result?.tools as { name: string; description: string; annotations?: Record<string, unknown>; inputSchema: { required?: string[] } }[];
+  const tool = listed.find((candidate) => candidate.name === "create_saved_food");
+  expect(tool?.annotations).toEqual({ readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false });
+  expect(tool?.inputSchema.required?.sort()).toEqual(["energyKcal", "idempotencyKey", "name"]);
+  expect(tool?.description).toMatch(/search_saved_foods/u);
+  expect(tool?.description).toMatch(/serving/u);
+
+  const created = await createSavedFood(key, { ...egg, idempotencyKey: "create-egg-0001" });
+  expect(created.isError).toBeFalsy();
+  expect(created.structuredContent).toEqual({
+    id: expect.any(Number) as number, name: "Huevo (1 grande)",
+    energyKcal: 78, proteinG: 6.3, carbohydrateG: 0.6, fatG: 5.3, fiberG: null, sugarG: null, sodiumMg: 62,
+    replayed: false,
+  });
+  expect(created.content[0].text).toContain("Huevo (1 grande)");
+  expect(created.content[0].text).not.toContain("\n");
+
+  expect((await callDailyLog(key)).structuredContent).toEqual(before);
+  const found = await searchSavedFoods(key, { query: "huevo" });
+  expect(found.structuredContent?.savedFoods).toEqual([
+    { id: created.structuredContent?.id, name: "Huevo (1 grande)", energyKcal: 78, proteinG: 6.3, carbohydrateG: 0.6, fatG: 5.3, fiberG: null, sugarG: null, sodiumMg: 62 },
+  ]);
+
+  const sameName = await createSavedFood(key, { name: "Huevo (1 grande)", energyKcal: 72, idempotencyKey: "create-egg-0002" });
+  expect(sameName.structuredContent).toMatchObject({ name: "Huevo (1 grande)", energyKcal: 72, proteinG: null, replayed: false });
+  expect(sameName.structuredContent?.id).not.toBe(created.structuredContent?.id);
+  expect(savedFoodNames(await searchSavedFoods(key, { query: "huevo" }))).toEqual(["Huevo (1 grande)", "Huevo (1 grande)"]);
+});
+
+test("create_saved_food replays a retry with the same key and data, and refuses a reused key with different data", async () => {
+  const retrier = await account("mcp.retrier");
+  const { key } = await createKey(retrier, "Retrier", ["food-log:write"]);
+  const original = await createSavedFood(key, { ...egg, idempotencyKey: "retry-egg-0001" });
+  const replay = await createSavedFood(key, { ...egg, name: "Huevo (1 grande)", fiberGrams: null, idempotencyKey: "retry-egg-0001" });
+  expect(replay.isError).toBeFalsy();
+  expect(replay.structuredContent).toEqual({ ...original.structuredContent, replayed: true });
+
+  const conflict = await createSavedFood(key, { ...egg, energyKcal: 80, idempotencyKey: "retry-egg-0001" });
+  expect(conflict.isError).toBe(true);
+  expect(conflict.content[0].text).toMatch(/already used/u);
+  expect(conflict.content[0].text).toMatch(/new idempotencyKey/u);
+  expect((await searchSavedFoods(key)).structuredContent?.savedFoods).toHaveLength(1);
+});
+
+test("create_saved_food is hidden from and refused for keys without the Log foods scope", async () => {
+  const listed = (await rpc(readerKey, "tools/list")).result?.tools as { name: string }[];
+  expect(listed.map((tool) => tool.name)).not.toContain("create_saved_food");
+  const refused = await rpc(readerKey, "tools/call", { name: "create_saved_food", arguments: { ...egg, idempotencyKey: "refused-egg-0001" } });
+  expect(JSON.stringify(refused)).toMatch(/disabled/u);
+  expect(savedFoodNames(await searchSavedFoods(readerKey, { query: "huevo" }))).toEqual([]);
+});
+
+test("create_saved_food explains malformed names, nutrients, and idempotency keys", async () => {
+  const careless = await account("mcp.careless");
+  const { key } = await createKey(careless, "Careless", ["food-log:write"]);
+  const invalid: [Record<string, unknown>, RegExp][] = [
+    [{ ...egg, idempotencyKey: "short" }, /idempotencyKey/u],
+    [{ ...egg, idempotencyKey: "has spaces in it" }, /idempotencyKey/u],
+    [{ ...egg, idempotencyKey: "k".repeat(125) }, /idempotencyKey/u],
+    [{ ...egg, name: "   ", idempotencyKey: "invalid-name-0001" }, /name/u],
+    [{ ...egg, energyKcal: -5, idempotencyKey: "invalid-kcal-0001" }, /energyKcal/u],
+    [{ ...egg, energyKcal: 1.0001, idempotencyKey: "invalid-kcal-0002" }, /decimal/u],
+    [{ ...egg, sodiumMilligrams: 1.5, idempotencyKey: "invalid-sodium-01" }, /sodiumMilligrams/u],
+    [{ name: "Tea", idempotencyKey: "missing-kcal-0001" }, /energyKcal/u],
+  ];
+  for (const [toolArguments, message] of invalid) {
+    const result = await createSavedFood(key, toolArguments);
+    expect(result.isError, JSON.stringify(toolArguments)).toBe(true);
+    expect(result.content[0].text).toMatch(message);
+  }
+  expect(await createSavedFood(key, { ...egg, idempotencyKey: "k".repeat(124) })).toMatchObject({ structuredContent: { replayed: false } });
+  expect((await searchSavedFoods(key)).structuredContent?.savedFoods).toHaveLength(1);
 });

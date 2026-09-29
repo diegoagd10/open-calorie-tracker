@@ -9,6 +9,7 @@ import { getAuthenticationService } from "../../app/auth/runtime.server";
 import { shutdownCredentialStorage } from "../../app/credentials/runtime.server";
 import { getApplicationDatabase, initializeApplicationDatabase, shutdownApplicationDatabase } from "../../app/database/runtime.server";
 import { getFoodEntryService } from "../../app/food-entry/runtime.server";
+import { getFoodLogService } from "../../app/food-log/runtime.server";
 import { action as writeSavedFoods, loader as searchSavedFoods } from "../../app/routes/api.v1.saved-foods";
 import { action as keysAction, loader as keysLoader } from "../../app/routes/settings.api-keys";
 import { action as copyAction } from "../../app/routes/settings.api-keys.copy";
@@ -173,15 +174,108 @@ test("missing or unknown keys get 401, repeated failures get 429, and other acco
   expect(await apiGet(`Bearer ${key}`, "?query=huevo").json()).toEqual({ version: "1", savedFoods: [], truncated: false });
 });
 
-test("a repeated or overlong query is invalid, and methods other than GET are not allowed", async () => {
+test("a repeated or overlong query is invalid", async () => {
   for (const query of ["?query=huevo&query=pan", `?query=${"a".repeat(201)}`]) {
     const invalid = apiGet(`Bearer ${pantryKey}`, query);
     expect(invalid.status).toBe(400);
     expect(await invalid.json()).toEqual({ error: "invalid_request" });
   }
   expect(apiGet(`Bearer ${pantryKey}`, `?query=${"a".repeat(200)}`).status).toBe(200);
-  const write = writeSavedFoods();
-  expect(write.status).toBe(405);
-  expect(await write.json()).toEqual({ error: "method_not_allowed" });
-  expect(write.headers.get("Cache-Control")).toContain("no-store");
+});
+
+type CreatedBody = { version: string; savedFood: Record<string, unknown>; replayed: boolean };
+const egg = { name: " Huevo (1 grande) ", energyKcal: 78, proteinGrams: 6.3, carbohydrateGrams: 0.6, fatGrams: 5.3, sodiumMilligrams: 62 };
+let writer: Account;
+let writerKey: string;
+async function apiPost(authorization: string | null, idempotencyKey: string | null, body: unknown, method = "POST") {
+  const headers = new Headers({ "X-Open-Calory-Client-IP": freshIp(), "Content-Type": "application/json" });
+  if (authorization !== null) headers.set("Authorization", authorization);
+  if (idempotencyKey !== null) headers.set("Idempotency-Key", idempotencyKey);
+  const request = new Request(`${origin}/api/v1/saved-foods`, { method, headers, body: typeof body === "string" ? body : JSON.stringify(body) });
+  return await writeSavedFoods(args(request));
+}
+
+test("a Log foods key creates a Saved Food for one serving without logging food, and search finds it", async () => {
+  writer = await account("saved.writer");
+  completeSetup(writer.id);
+  writerKey = (await createKey(writer, "Writer", ["daily-log:read", "food-log:write"])).key;
+  const logBefore = getFoodLogService().read(writer.id, date);
+
+  const created = await apiPost(`Bearer ${writerKey}`, "rest-egg-0001", egg);
+  expect(created.status).toBe(201);
+  expect(created.headers.get("Cache-Control")).toContain("no-store");
+  const body = await created.json() as CreatedBody;
+  expect(body).toEqual({
+    version: "1",
+    savedFood: {
+      id: expect.any(Number) as number, name: "Huevo (1 grande)",
+      energyMilliKcal: 78_000, proteinMilligrams: 6_300, carbohydrateMilligrams: 600, fatMilligrams: 5_300,
+      fiberMilligrams: null, sugarMilligrams: null, sodiumMilligrams: 62,
+    },
+    replayed: false,
+  });
+  expect(getFoodLogService().read(writer.id, date)).toEqual(logBefore);
+  const found = await apiGet(`Bearer ${writerKey}`, "?query=huevo").json() as SavedFoodsBody;
+  expect(found.savedFoods).toEqual([body.savedFood]);
+
+  const sameName = await apiPost(`Bearer ${writerKey}`, "rest-egg-0002", { name: "Huevo (1 grande)", energyKcal: 72 });
+  expect(sameName.status).toBe(201);
+  expect(await names(apiGet(`Bearer ${writerKey}`, "?query=huevo"))).toEqual(["Huevo (1 grande)", "Huevo (1 grande)"]);
+});
+
+test("a retry with the same Idempotency-Key and data is 200 with the original, and different data is 409", async () => {
+  const original = await (await apiPost(`Bearer ${writerKey}`, "rest-retry-0001", egg)).json() as CreatedBody;
+  const replay = await apiPost(`Bearer ${writerKey}`, "rest-retry-0001", { ...egg, fiberGrams: null });
+  expect(replay.status).toBe(200);
+  expect(await replay.json()).toEqual({ ...original, replayed: true });
+
+  const conflict = await apiPost(`Bearer ${writerKey}`, "rest-retry-0001", { ...egg, name: "Huevo" });
+  expect(conflict.status).toBe(409);
+  expect(await conflict.json()).toEqual({ error: "idempotency_conflict" });
+  expect(conflict.headers.get("Cache-Control")).toContain("no-store");
+});
+
+test("REST keys never replay a Saved Food an MCP call created with the same key", async () => {
+  const viaMcp = getFoodEntryService().createSavedFood(writer.id, { ...egg, idempotencyKey: "mcp:shared-key-0001" });
+  const viaRest = await apiPost(`Bearer ${writerKey}`, "shared-key-0001", egg);
+  expect(viaRest.status).toBe(201);
+  expect(((await viaRest.json()) as CreatedBody).savedFood.id).not.toBe(viaMcp.savedFood.id);
+});
+
+test("malformed bodies are 400 invalid_request and malformed keys are 400 invalid_idempotency_key", async () => {
+  const before = await names(apiGet(`Bearer ${writerKey}`));
+  for (const key of [null, "", "short", "has spaces in it", "k".repeat(125)]) {
+    const response = await apiPost(`Bearer ${writerKey}`, key, egg);
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "invalid_idempotency_key" });
+  }
+  const invalidBodies: unknown[] = [
+    "not json", "[]", "null", {}, { energyKcal: 78 }, { name: "Tea" }, { ...egg, name: "   " }, { ...egg, name: "a".repeat(201) },
+    { ...egg, energyKcal: "78" }, { ...egg, energyKcal: -1 }, { ...egg, energyKcal: 1.0001 }, { ...egg, energyKcal: 1_000_000 },
+    { ...egg, proteinGrams: "6" }, { ...egg, sodiumMilligrams: 1.5 }, { ...egg, sodiumMilligrams: 10_000_000 }, { ...egg, protein: 6 },
+  ];
+  for (const [index, body] of invalidBodies.entries()) {
+    const response = await apiPost(`Bearer ${writerKey}`, `rest-invalid-${String(index).padStart(4, "0")}`, body);
+    expect(response.status, JSON.stringify(body)).toBe(400);
+    expect(await response.json()).toEqual({ error: "invalid_request" });
+  }
+  expect(await names(apiGet(`Bearer ${writerKey}`))).toEqual(before);
+});
+
+test("creating needs the Log foods permission, and only GET and POST are allowed", async () => {
+  const refused = await apiPost(`Bearer ${pantryKey}`, "rest-refused-0001", egg);
+  expect(refused.status).toBe(403);
+  expect(await refused.json()).toEqual({ error: "insufficient_scope" });
+  expect(refused.headers.get("WWW-Authenticate")).toBe('Bearer realm="saved-foods", error="insufficient_scope", scope="food-log:write"');
+  expect(await names(apiGet(`Bearer ${pantryKey}`, "?query=huevo"))).toEqual(["Huevo (1 grande)", "Huevo (1 grande)", "huevo revuelto"]);
+
+  const unauthenticated = await apiPost(null, "rest-no-token-01", egg);
+  expect(unauthenticated.status).toBe(401);
+  expect(unauthenticated.headers.get("WWW-Authenticate")).toBe('Bearer realm="saved-foods", error="invalid_token"');
+
+  for (const method of ["PUT", "PATCH", "DELETE"]) {
+    const response = await apiPost(`Bearer ${writerKey}`, "rest-method-0001", egg, method);
+    expect(response.status).toBe(405);
+    expect(await response.json()).toEqual({ error: "method_not_allowed" });
+  }
 });
