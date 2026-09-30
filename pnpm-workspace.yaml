@@ -4,6 +4,7 @@ allowBuilds:
 minimumReleaseAgeExclude:
   - zod@4.5.2
   - '@simplewebauthn/server@14.0.2'
-# Keep every direct and transitive consumer on the patched qs release.
+# Keep transitive consumers on patched releases.
 overrides:
+  brace-expansion: 5.0.12
   qs: 6.16.0
