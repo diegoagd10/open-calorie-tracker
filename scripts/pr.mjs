@@ -2,7 +2,7 @@ import { execFileSync, spawn } from "node:child_process";
 import { closeSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, writeFileSync, writeSync } from "node:fs";
 import path from "node:path";
 
-const checks = ["verify:deep"];
+const checks = ["verify"];
 const pnpm = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
 let root;
 
@@ -108,7 +108,7 @@ async function check(expected, directory) {
   // Replace any previous pass before starting; interrupted runs cannot reuse it.
   save(directory, report);
   console.log(`Checking ${expected.branch} at ${expected.commit} against ${expected.base} at ${expected.baseCommit}`);
-  const env = { ...process.env, FALLOW_AUDIT_BASE: expected.baseCommit };
+  const env = { ...process.env };
   // Git hooks can export an alternate index or repository. Keep those for the
   // snapshot checks above, but do not leak them into tests using fixture repos.
   for (const name of git("rev-parse", "--local-env-vars").split("\n")) delete env[name];

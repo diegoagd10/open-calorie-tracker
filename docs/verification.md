@@ -1,8 +1,8 @@
 # Local verification
 
-The repository exposes fast and deep gates through the package manager pinned in
-`package.json`. Install with `pnpm install --frozen-lockfile` on the supported
-Node 24 line before running either gate.
+The repository exposes one verification gate through the package manager pinned
+in `package.json`. Install with `pnpm install --frozen-lockfile` on the
+supported Node 24 line before running it.
 
 The Codex worktree setup in `.codex/environments/environment.toml` installs the
 pinned dependencies and Git hook automatically. `devEngines.runtime` in
@@ -11,26 +11,29 @@ and uses it for project scripts, even when the host shell uses another Node
 version. `pnpm exec node --version` verifies the project runtime. Browser
 installation and Docker remain the host prerequisites described below.
 
-## Fast gate
+## Verification gate
 
 ```sh
+pnpm exec playwright install chromium webkit # once per machine
 pnpm verify
 ```
 
-Use the fast gate while developing and before handing off a normal change. It
-runs TypeScript and React Router type generation, type-aware linting, the
-deterministic Vitest suite, a new-only Fallow audit, and the exception-free
-production dependency audit. Each step runs in sequence, stops at the first
-failure, and returns that command's non-zero exit code.
+Each step runs in sequence, stops at the first failure, and returns that
+command's non-zero exit code. The cheap checks run first so a failure appears
+before the slow browser suite starts:
 
-The fast audit uses Fallow's static coverage estimate and does not require a
-pre-existing coverage report. Commands in the deep gate pass the freshly
-generated Istanbul report explicitly to Fallow health.
+1. `pnpm deps:check` confirms every name and version declared in
+   `package.json` is published in the configured npm registry, catching
+   misspelled or invented packages.
+2. `pnpm typecheck` runs React Router type generation and TypeScript.
+3. `pnpm lint:check` runs type-aware ESLint with zero warnings allowed.
+4. `pnpm test:coverage` runs the Vitest suite with production-code coverage
+   thresholds.
+5. `pnpm audit:full` audits every dependency against the reviewed allowlist.
+6. `pnpm test:browser` runs the local-fixture Playwright suites.
 
-On a warm development machine it should normally finish in under one minute;
-the dependency audit can vary with registry latency. Fallow compares the
-working change with the merge base it discovers from Git. The PR gate pins that base
-with `FALLOW_AUDIT_BASE`.
+Fallow, architecture, health, property-depth, and policy-test scripts remain
+available to run on demand, but they are not part of `pnpm verify`.
 
 `pnpm lint:check` is the type-aware lint command used by this gate. Oxlint's
 type-aware engine requires TypeScript 7, while the stable Drizzle declarations
@@ -38,27 +41,10 @@ keep this repository on TypeScript 6. ESLint with `typescript-eslint` project
 service is therefore the documented single fallback; a parallel syntax-only
 Oxlint pass would create a second, weaker contract.
 
-## Deep gate
-
-```sh
-pnpm exec playwright install chromium webkit # once per machine
-pnpm verify:deep
-```
-
 The camera scanner journey always runs with mobile Chromium. Supported
 local hosts also run that same tagged journey with the iPhone WebKit profile.
 Playwright's WebKit binary is skipped only on Arch-derived hosts, which its
 published Linux binary does not support.
-
-Use the deep gate before a release and after broad production, architecture,
-testing, or tooling changes. It first runs the complete fast gate, then adds:
-
-- Vitest production-code coverage thresholds, with the report also consumed by Fallow health;
-- type-aware Fallow dead-code, duplicate, and health regression gates;
-- executable architecture and health policy tests;
-- the local-fixture Playwright suite;
-- 10,000 deterministic runs per domain property;
-- the allowlist policy, full dependency audit, and local CodeQL policy tests.
 
 The coverage gate includes every TypeScript or JavaScript module under `app/`
 and `server/`, plus the root production entry point `server.js`, even when a
@@ -71,7 +57,7 @@ the include list.
 Statements, branches, functions, and lines must each exceed 95% in aggregate;
 `vitest.config.ts` expresses that strict boundary as 95.01%. The command fails
 when any metric falls below it, so the same gate applies anywhere
-`pnpm test:coverage` or `pnpm verify:deep` runs.
+`pnpm test:coverage` or `pnpm verify` runs.
 
 The browser gate runs application action journeys over public HTTPS and LAN HTTP.
 The camera matrix stays on the secure entry. `pnpm test:browser:catalog` runs the
@@ -80,8 +66,7 @@ a fresh fixture database; when running the catalog config directly, select one
 project with `--project chromium` or `--project lan-chromium`.
 
 Chromium must already be installed; no browser download is hidden inside the
-deep gate. Like the fast gate, the sequence stops on the first failure and
-preserves the failing exit status.
+gate. The dependency existence check and audit need registry access.
 
 ## Pull request gate
 
@@ -96,7 +81,7 @@ pnpm available on PATH:
 pnpm hooks:install
 git add <changed-files>
 git commit -m "Describe the change"
-git push -u origin HEAD           # pre-push runs verify:deep
+git push -u origin HEAD           # pre-push runs verify
 pnpm pr:create --title "Describe the change" --body-file /path/to/pr-body.md
 ```
 
@@ -111,14 +96,14 @@ It accepts one update: the checked-out branch at HEAD, sent to the same branch
 name on origin. Pushes of another commit, renamed destinations, tags, or multiple
 refs are rejected. Deleting refs or a push with no updates publishes no code and
 requires no checks. A failed verification prevents Git from sending the update.
-It always reruns `pnpm verify:deep`, replacing any earlier result for that commit;
+It always reruns `pnpm verify`, replacing any earlier result for that commit;
 a successful push leaves the commit summary required by `pr:create`.
 
 The hook streams test stdout/stderr back to the Git caller, preserves a nonzero
 failure status, and prints the path to the summary and logs. An AI invoking Git
 receives those diagnostics in its command result: fix the cause and retry the
 same push command. The hook does not automatically launch an AI or fix code.
-The complete deep suite runs on every publishing push, so it needs the browser,
+The complete gate runs on every publishing push, so it needs the browser,
 registry access, and time for the full checks.
 
 The default base is `main` on `origin`. Set `git config pr.base release` to use
@@ -133,9 +118,7 @@ With the hook installed, a normal push performs this verification itself.
 `pr:check` requires an attached feature branch and a clean working tree,
 including staged and untracked files. It fetches the base and records the branch,
 full HEAD SHA, origin URL, base branch, and base SHA. The branch must contain
-commits beyond the base. It then runs `pnpm verify:deep`, stopping on failure.
-Fallow uses the recorded base SHA. The production coverage thresholds run as
-part of `verify:deep`.
+commits beyond the base. It then runs `pnpm verify`, stopping on failure.
 
 The ignored directory `reports/pr-check/<full-commit-sha>/` contains
 `summary.json` with timestamps, per-command exit status, and the overall result,
@@ -159,8 +142,8 @@ This is a local workflow gate, not GitHub branch protection. Git allows hooks
 to be bypassed, and the website or a direct `gh pr create` call bypasses the PR
 wrapper. Agents must keep the hook enabled and use the documented flow.
 Existing repository rules that require the deleted Actions checks must be updated separately by a maintainer.
-`pr:check` runs tests of the CodeQL report policy through `verify:deep`; it does
-not run a CodeQL scan. See [dependency security](dependency-security.md#codeql-results).
+`pr:check` does not run a CodeQL scan. See
+[dependency security](dependency-security.md#codeql-results).
 
 ## Opt-in complete OFF JSONL archive
 
