@@ -9,7 +9,8 @@ CREATE TABLE `__new_water_events` (
 	CONSTRAINT "water_events_positive_ounces_check" CHECK(CAST("__new_water_events"."ounces" AS REAL) > 0)
 );
 --> statement-breakpoint
--- Historical offsets cannot be reconstructed, so migrated rows keep their local date and time without an offset.
+-- SQLite has no time zones: migrated rows keep their local date and time without an offset here, and
+-- convertLegacyWaterEventLogDates (app/database) converts them to UTC with the account's time zone at startup.
 INSERT INTO `__new_water_events` (`id`, `user_id`, `log_date`, `ounces`, `created_at`, `updated_at`)
 SELECT
 	`id`,

@@ -1,7 +1,6 @@
 import { describe, expect, test } from "vitest";
 
 import {
-  hasUtcOffset,
   localDayRange,
   parseIsoDateTime,
   utcToZonedDateTime,
@@ -29,11 +28,6 @@ describe("parseIsoDateTime", () => {
     expect(parseIsoDateTime(value)).toBeNull();
   });
 
-  test("recognizes an explicit offset", () => {
-    expect(hasUtcOffset("2026-09-30T18:45:00.000Z")).toBe(true);
-    expect(hasUtcOffset("2026-09-30T14:45:00-04:00")).toBe(true);
-    expect(hasUtcOffset("2026-09-30T14:45:00")).toBe(false);
-  });
 });
 
 describe("zoned wall-clock conversion", () => {

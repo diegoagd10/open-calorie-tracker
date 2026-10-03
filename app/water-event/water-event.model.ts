@@ -12,7 +12,7 @@ export type CreateWaterEvent =
 export type WaterEvent = {
   id: number;
   userId: number;
-  /** UTC ISO date-time of consumption; legacy rows keep a local date-time without an offset. */
+  /** UTC ISO date-time of consumption. */
   logDate: string;
   ounces: string;
   /** UTC instant the record was saved. */

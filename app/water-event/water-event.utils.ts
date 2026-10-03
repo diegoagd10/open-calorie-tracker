@@ -1,4 +1,4 @@
-import { hasUtcOffset, utcToZonedDateTime, zonedDateTimeToUtc } from "../shared/date-time";
+import { utcToZonedDateTime } from "../shared/date-time";
 import type { WaterEvent, WaterEventList } from "./water-event.model";
 
 export type WaterDisplayUnits = "us" | "metric";
@@ -28,7 +28,7 @@ export function formatWaterAmount(ounces: string, units: WaterDisplayUnits): str
     : `${new Intl.NumberFormat("en-US", { maximumFractionDigits: 3 }).format(value)} fl oz`;
 }
 
-/** The consumption time in the account's time zone; legacy rows without an offset keep their local time. */
+/** The consumption time on the account's wall clock, such as `2:45 PM`. */
 export function formatWaterTime(logDate: string, timeZone: string): string {
   const [hour, minute] = waterEventLocalDateTime(logDate, timeZone).slice(11, 16).split(":").map(Number);
   return `${hour % 12 || 12}:${String(minute).padStart(2, "0")} ${hour >= 12 ? "PM" : "AM"}`;
@@ -36,12 +36,7 @@ export function formatWaterTime(logDate: string, timeZone: string): string {
 
 /** The consumption date and time `YYYY-MM-DDTHH:MM:SS` on the account's wall clock. */
 export function waterEventLocalDateTime(logDate: string, timeZone: string): string {
-  return hasUtcOffset(logDate) ? utcToZonedDateTime(logDate, timeZone) : logDate.slice(0, 19);
-}
-
-/** The UTC instant of consumption, reading a legacy local date-time in the account's time zone. */
-export function waterEventInstant(logDate: string, timeZone: string): string {
-  return hasUtcOffset(logDate) ? logDate : zonedDateTimeToUtc(logDate, timeZone) ?? logDate;
+  return utcToZonedDateTime(logDate, timeZone);
 }
 
 /** Thousandths of a fluid ounce in a decimal amount such as `"12.5"`, or null when it is not one. */

@@ -10,6 +10,7 @@ import {
   type ApplicationDatabaseClient,
 } from "../app/database/database.server";
 import { goalVersions, userPreferences, users } from "../app/database/schema.server";
+import { convertLegacyWaterEventLogDates } from "../app/database/water-event-log-dates.server";
 import { FoodLogService } from "../app/food-log/food-log.server";
 import { WaterEventRepository } from "../app/water-event/water-event.repository.server";
 import { waterEvents } from "../app/water-event/water-event.schema.server";
@@ -23,7 +24,6 @@ import {
   presentWaterEventDeletion,
   presentWaterEventList,
   sumOunces,
-  waterEventInstant,
 } from "../app/water-event/water-event.utils";
 import {
   WaterEventNotFoundError,
@@ -207,21 +207,40 @@ describe("list", () => {
     expect(validationCode(() => service.list(owner, range))).toBe("invalid_range");
   });
 
-  test("places legacy offsetless rows using the account's time zone", async () => {
-    const { client, service, owner } = await setup();
-    const legacy = (logDate: string) => client.insert(waterEvents).values({
-      userId: owner, logDate, ounces: "8", createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z",
+  test("migrated rows converted at startup list as the instants they were consumed", async () => {
+    const { client, service, owner, other } = await setup();
+    const legacy = (userId: number, logDate: string) => client.insert(waterEvents).values({
+      userId, logDate, ounces: "8", createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z",
     }).returning().get();
-    const lateEvening = legacy("2026-09-30T23:30:00");
-    const earlyMorning = legacy("2026-09-30T00:10:00");
-    legacy("2026-10-01T00:00:00");
+    const lateEvening = legacy(owner, "2026-09-30T23:30:00");
+    const earlyMorning = legacy(owner, "2026-09-30T00:10:00");
+    legacy(owner, "2026-10-01T00:00:00");
+    const unconfigured = legacy(insertUser(client, "water.legacy.unconfigured", null), "2026-09-30T12:00:00");
     const modern = service.save(owner, { logDate: "2026-09-30T16:00:00Z", quantity: { ounces: "4" } });
+    client.update(userPreferences).set({ timeZone: "Europe/Madrid" }).where(eq(userPreferences.userId, other)).run();
+    const madrid = legacy(other, "2026-09-30T23:30:00");
+
+    expect(convertLegacyWaterEventLogDates(client)).toBe(5);
+    expect(convertLegacyWaterEventLogDates(client)).toBe(0);
+    expect(service.read(owner, lateEvening.id).logDate).toBe("2026-10-01T03:30:00.000Z");
+    expect(service.read(other, madrid.id).logDate).toBe("2026-09-30T21:30:00.000Z");
+    expect(client.select().from(waterEvents).where(eq(waterEvents.id, unconfigured.id)).get()?.logDate)
+      .toBe("2026-09-30T12:00:00.000Z");
 
     const list = service.list(owner, { from: "2026-09-30T00:00:00-04:00", to: "2026-10-01T00:00:00-04:00" });
     expect(list.events.map((event) => event.id)).toEqual([lateEvening.id, modern.id, earlyMorning.id]);
     expect(list.totalOunces).toBe("20");
   });
+
+  test("an unreadable migrated log date stops the conversion", async () => {
+    const { client, owner } = await setup();
+    client.insert(waterEvents).values({
+      userId: owner, logDate: "2026-02-30T10:00:00", ounces: "8", createdAt: NOW, updatedAt: NOW,
+    }).run();
+    expect(() => convertLegacyWaterEventLogDates(client)).toThrow("has an unreadable log date");
+  });
 });
+
 
 describe("delete", () => {
   test("removes owned, deduplicated IDs and ignores missing and foreign IDs", async () => {
@@ -318,7 +337,7 @@ describe("utilities", () => {
     expect(formatWaterAmount("8.125", "us")).toBe("8.125 fl oz");
     expect(formatWaterAmount("8", "metric")).toBe("237 ml");
     expect(formatWaterTime(event.logDate, "America/New_York")).toBe("2:45 PM");
-    expect(formatWaterTime("2026-09-30T00:05:00", "America/New_York")).toBe("12:05 AM");
+    expect(formatWaterTime("2026-09-30T04:05:00.000Z", "America/New_York")).toBe("12:05 AM");
   });
 
   test("do exact decimal arithmetic on amounts", () => {
@@ -331,9 +350,4 @@ describe("utilities", () => {
     expect(sumOunces(["not stored by the service", "1"])).toBe("1");
   });
 
-  test("read legacy local times in the account's time zone", () => {
-    expect(waterEventInstant("2026-09-30T14:45:00", "America/New_York")).toBe("2026-09-30T18:45:00.000Z");
-    expect(waterEventInstant(event.logDate, "America/New_York")).toBe(event.logDate);
-    expect(waterEventInstant("2026-02-30T10:00:00", "America/New_York")).toBe("2026-02-30T10:00:00");
-  });
 });

@@ -121,7 +121,7 @@ test("OAuth removal migrates a database holding OAuth clients, grants, and token
   upgraded.close();
 });
 
-test("the Water Event log-date migration keeps each event's local time and converts its amount to ounces", async () => {
+test("the Water Event log-date migration converts each local time to UTC in the account's time zone and each amount to ounces", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "water-log-date-upgrade-"));
   temporaryDirectories.push(directory);
   const databasePath = path.join(directory, "application.sqlite");
@@ -133,6 +133,8 @@ test("the Water Event log-date migration keeps each event's local time and conve
     INSERT INTO users (username_normalized, created_at)
     VALUES ('water.upgrade.owner', '2026-09-26T12:00:00.000Z') RETURNING id
   `);
+  previous.getClient().run(sql`INSERT INTO user_preferences (user_id, display_units, time_zone, created_at, updated_at)
+    VALUES (${owner.id}, 'us', 'America/New_York', '2026-09-26T12:00:00.000Z', '2026-09-26T12:00:00.000Z')`);
   for (const [microliters, time] of [[236588, "09:00:00"], [709765, "10:30:00"], [1000, "11:00:00"], [5, "12:00:00"], [2000000, "23:59:00"]] as const) {
     previous.getClient().run(sql`INSERT INTO water_events
       (user_id, food_log_date, amount_microliters, preset_8_count, local_event_time, created_at, updated_at)
@@ -143,11 +145,11 @@ test("the Water Event log-date migration keeps each event's local time and conve
   const upgraded = openApplicationDatabase({ databasePath, migrationsFolder: path.resolve("drizzle") });
   const client = upgraded.getClient();
   expect(client.select().from(waterEvents).all()).toEqual([
-    ["2026-09-26T09:00:00", "8"],
-    ["2026-09-26T10:30:00", "24"],
-    ["2026-09-26T11:00:00", "0.034"],
-    ["2026-09-26T12:00:00", "0.001"],
-    ["2026-09-26T23:59:00", "67.628"],
+    ["2026-09-26T13:00:00.000Z", "8"],
+    ["2026-09-26T14:30:00.000Z", "24"],
+    ["2026-09-26T15:00:00.000Z", "0.034"],
+    ["2026-09-26T16:00:00.000Z", "0.001"],
+    ["2026-09-27T03:59:00.000Z", "67.628"],
   ].map(([logDate, ounces], index) => ({
     id: index + 1,
     userId: owner.id,
@@ -339,7 +341,7 @@ test("the production migration preserves every representative field from the pri
     representativeData,
   );
   expect(upgraded.getClient().select().from(waterEvents).get()).toMatchObject({
-    logDate: "2026-08-30T10:05:00",
+    logDate: "2026-08-30T14:05:00.000Z",
     ounces: "8",
   });
   expect(

@@ -8,7 +8,7 @@ export const waterEvents = sqliteTable(
   {
     id: integer().primaryKey({ autoIncrement: true }),
     userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-    /** Consumption date-time: UTC ISO for new rows, local `YYYY-MM-DDTHH:MM:SS` for migrated rows. */
+    /** Consumption instant as a UTC ISO date-time, such as `2026-09-30T18:45:00.000Z`. */
     logDate: text("log_date").notNull(),
     /** Decimal fluid ounces, such as `12.5`. */
     ounces: text().notNull(),

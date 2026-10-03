@@ -1,16 +1,9 @@
-import { and, desc, eq, gte, inArray, like, lt, not, or } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, lt } from "drizzle-orm";
 
 import type { ApplicationDatabaseClient } from "../database/database.server";
 import { userPreferences } from "../database/schema.server";
 import type { CreateWaterEvent, WaterEvent, WaterEventRange } from "./water-event.model";
 import { waterEvents } from "./water-event.schema.server";
-import { waterEventInstant } from "./water-event.utils";
-
-const DAY_MS = 86_400_000;
-
-function shiftedDate(instant: string, days: number): string {
-  return new Date(new Date(instant).getTime() + days * DAY_MS).toISOString().slice(0, 10);
-}
 
 /** Owner-scoped reads and writes of Water Events; every query is limited to `userId`. */
 export class WaterEventRepository {
@@ -60,33 +53,18 @@ export class WaterEventRepository {
       .all().length;
   }
 
-  /**
-   * Owned events consumed in the UTC range, newest first with `id` breaking ties. Legacy
-   * rows without an offset are placed using the account's current time zone.
-   */
+  /** Owned events consumed in the UTC range `[from, to)`, newest first with `id` breaking ties. */
   list(userId: number, range: WaterEventRange): WaterEvent[] {
-    const timeZone = this.timeZone(userId) ?? "UTC";
-    const rows = this.#database
+    return this.#database
       .select()
       .from(waterEvents)
       .where(and(
         eq(waterEvents.userId, userId),
-        or(
-          and(like(waterEvents.logDate, "%Z"), gte(waterEvents.logDate, range.from), lt(waterEvents.logDate, range.to)),
-          and(
-            not(like(waterEvents.logDate, "%Z")),
-            gte(waterEvents.logDate, shiftedDate(range.from, -1)),
-            lt(waterEvents.logDate, shiftedDate(range.to, 2)),
-          ),
-        ),
+        gte(waterEvents.logDate, range.from),
+        lt(waterEvents.logDate, range.to),
       ))
       .orderBy(desc(waterEvents.logDate), desc(waterEvents.id))
       .all();
-    return rows
-      .map((row) => ({ row, instant: waterEventInstant(row.logDate, timeZone) }))
-      .filter(({ instant }) => instant >= range.from && instant < range.to)
-      .sort((left, right) => right.instant.localeCompare(left.instant) || right.row.id - left.row.id)
-      .map(({ row }) => row);
   }
 
   /** The account's time zone, or null before setup. */

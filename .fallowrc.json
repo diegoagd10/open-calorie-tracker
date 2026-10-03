@@ -157,7 +157,7 @@
       { "from": "browser-api-keys", "allow": [] },
       { "from": "api-keys", "allow": ["auth", "credentials", "database", "server"] },
       { "from": "catalog", "allow": ["server", "database", "catalog-management"] },
-      { "from": "database", "allow": [], "allowTypeOnly": ["catalog", "catalog-management", "credentials"] },
+      { "from": "database", "allow": ["shared"], "allowTypeOnly": ["catalog", "catalog-management", "credentials"] },
       { "from": "credentials", "allow": ["database"] },
       { "from": "mcp", "allow": ["food-log", "water-event"], "allowTypeOnly": ["api-keys"] },
       { "from": "catalog-management", "allow": ["database", "catalog"] },
