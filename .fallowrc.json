@@ -124,6 +124,7 @@
           "scripts/check-codeql-results.mjs",
           "scripts/pr.mjs",
           "scripts/install-git-hooks.mjs",
+          "scripts/check-dependencies-exist.mjs",
           "scripts/catalog-browser-runtime.ts"
         ]
       }
