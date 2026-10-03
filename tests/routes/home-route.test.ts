@@ -37,6 +37,7 @@ import { getFoodLogService } from "../../app/food-log/runtime.server";
 import { getGoalSetupService } from "../../app/setup/runtime.server";
 import { validateSetupFields } from "../../app/setup/validation";
 import { getWaterEventService } from "../../app/water-event/runtime.server";
+import { action as waterAction } from "../../app/water-event/routes/web";
 import { seedAuthenticatedAccount } from "../support/authentication";
 
 const origin = "http://localhost:3000";
@@ -46,6 +47,7 @@ let temporaryDirectory: string;
 let cookie: string;
 let csrfToken: string;
 let incompleteCookie: string;
+let incompleteCsrfToken: string;
 let otherUserId: number;
 let userId: number;
 
@@ -153,6 +155,7 @@ beforeAll(async () => {
     "203.0.113.231",
   );
   incompleteCookie = serializeSessionCookie(incomplete).split(";", 1)[0];
+  incompleteCsrfToken = incomplete.csrfToken;
   otherUserId = incomplete.user.id;
 });
 
@@ -686,196 +689,154 @@ test("home actions enforce security, request shape, and writable dates", async (
   );
 });
 
-test("home water actions create, edit, detect conflicts, and delete", async () => {
-  const invalid = await homeAction(
-    routeArgs(
-      post({ intent: "create-water", waterAmount: "0", waterSelection: "exact" }),
-    ),
-  );
-  expect(invalid).toMatchObject({
-    data: { tone: "error" },
-    init: { status: 400 },
-  });
+function postWater(
+  fields: Record<string, string>,
+  options: { cookie?: string; testInstant?: boolean } = {},
+) {
+  const headers = new Headers({ Cookie: options.cookie ?? cookie, Origin: origin });
+  if (options.testInstant !== false) headers.set("X-Test-Food-Log-Now", instant);
+  return waterAction(routeArgs(new Request(`${origin}/water-events`, {
+    body: new URLSearchParams({ csrfToken, returnDate: today, ...fields }),
+    headers,
+    method: "POST",
+  })));
+}
 
-  const created = await homeAction(
-    routeArgs(
-      post({ intent: "create-water", waterAmount: "12.5", waterSelection: "exact" }),
-    ),
-  );
-  expectRedirect(created, "/?date=2026-08-31");
-  const preset = await homeAction(
-    routeArgs(post({ intent: "create-water", waterSelection: "16" })),
-  );
-  expectRedirect(preset, "/?date=2026-08-31");
-  for (const waterSelection of ["8", "24"]) {
-    expectRedirect(
-      await homeAction(routeArgs(post({ intent: "create-water", waterSelection }))),
-      "/?date=2026-08-31",
-    );
-  }
-  const previous = await homeAction(
-    routeArgs(
-      post({
-        date: "2026-08-30",
-        intent: "create-water",
-        waterAmount: "9",
-        waterSelection: "exact",
-      }),
-    ),
-  );
-  expectRedirect(previous, "/?date=2026-08-30");
-  const previousEvent = (await load("/?date=2026-08-30")).data.foodLog.events
-    .find((candidate) => candidate.kind === "water")!;
-  const wrongDateDialog = await homeLoader(
-    routeArgs(get(`/?water=${previousEvent.id}`)) as never,
-  ).catch((error: unknown) => error);
-  expect(wrongDateDialog).toBeInstanceOf(Response);
-  expect((wrongDateDialog as Response).status).toBe(404);
+async function rejectedWith(result: Promise<unknown>): Promise<Response> {
+  const outcome = await result.catch((error: unknown) => error);
+  expect(outcome).toBeInstanceOf(Response);
+  return outcome as Response;
+}
 
+test("the web water route creates, edits, and deletes Water Events from the Food Log dialog", async () => {
+  expectRedirect(
+    await postWater({ intent: "save", localLogDate: "2026-08-31T09:15", ounces: "12.5" }),
+    "/?date=2026-08-31",
+  );
+  expectRedirect(
+    await postWater({ intent: "save", localLogDate: "2026-08-30T21:00", ounces: "9" }),
+    "/?date=2026-08-30",
+  );
   const loaded = await load();
-  const waterEvents = loaded.data.foodLog.events.filter(
-    (event) => event.kind === "water",
-  );
-  expect(waterEvents).toHaveLength(4);
-  const event = waterEvents[0];
+  expect(loaded.data.foodLog.waterTotalOunces).toBe("12.5");
+  const event = loaded.data.foodLog.waterEvents[0];
+  expect(event).toMatchObject({ logDate: "2026-08-31T13:15:00.000Z", ounces: "12.5" });
+  expect(loaded.data.foodLog.events.find((candidate) => candidate.kind === "water"))
+    .toMatchObject({ id: event.id, localEventTime: "09:15:00" });
 
-  const newDialog = await load("/?water=new");
-  expect(newDialog.data.waterDialog).toEqual({ mode: "create" });
-  const editDialog = await load(`/?water=${event.id}`);
-  expect(editDialog.data.waterDialog).toMatchObject({
-    event: { id: event.id },
-    mode: "edit",
-  });
-  const leadingZeroWater = await homeLoader(
-    routeArgs(get(`/?water=0${event.id}`)),
-  ).catch((error: unknown) => error);
-  expect(leadingZeroWater).toBeInstanceOf(Response);
-  expect((leadingZeroWater as Response).status).toBe(404);
-  await expect((leadingZeroWater as Response).text()).resolves.toBe(
-    "Water Event is unavailable.",
+  expectRedirect(
+    await postWater({ intent: "save", localLogDate: "2026-08-31T13:00", ounces: "0" }),
+    "/?date=2026-08-31&water=new&waterError=invalid_amount",
   );
-  const invalidDialog = await homeLoader(
-    routeArgs(get("/?water=invalid")) as never,
-  ).catch((error: unknown) => error);
-  expect(invalidDialog).toBeInstanceOf(Response);
-  expect((invalidDialog as Response).status).toBe(404);
-  for (const invalidId of ["0", "01", "1x", "-1", "9007199254740992"]) {
-    const result = await homeLoader(routeArgs(get(`/?water=${invalidId}`)))
-      .catch((error: unknown) => error);
-    expect(result).toBeInstanceOf(Response);
-    expect((result as Response).status).toBe(404);
+  expectRedirect(
+    await postWater({ intent: "save", localLogDate: "2026-08-31T12:01", ounces: "8" }),
+    "/?date=2026-08-31&water=new&waterError=invalid_log_date",
+  );
+  expectRedirect(
+    await postWater({ intent: "save", localLogDate: "not a time", ounces: "8" }),
+    "/?date=2026-08-31&water=new&waterError=invalid_log_date",
+  );
+
+  expectRedirect(
+    await postWater({ id: String(event.id), intent: "save", ounces: "10" }),
+    "/?date=2026-08-31&notice=water-updated",
+  );
+  expect(getWaterEventService().read(userId, event.id)).toMatchObject({ logDate: event.logDate, ounces: "10" });
+  expectRedirect(
+    await postWater({ id: String(event.id), intent: "save", ounces: "501" }),
+    `/?date=2026-08-31&water=${event.id}&waterError=invalid_amount`,
+  );
+  expect((await rejectedWith(postWater({ id: "999999", intent: "save", ounces: "1" }))).status).toBe(404);
+
+  for (const fields of <Record<string, string>[]>[
+    { intent: "rename" },
+    { intent: "save", returnDate: "2026-02-30" },
+    { id: "01", intent: "save", ounces: "1" },
+    { intent: "delete" },
+  ]) {
+    expect((await rejectedWith(postWater(fields))).status).toBe(400);
   }
+  const unconfigured = await rejectedWith(postWater(
+    { csrfToken: incompleteCsrfToken, intent: "save", localLogDate: "2026-08-31T09:00", ounces: "8" },
+    { cookie: incompleteCookie },
+  ));
+  expect(unconfigured.status).toBe(409);
+  expect((await rejectedWith(postWater({ csrfToken: "wrong", intent: "save" }))).status).toBe(403);
+  const invalidInstant = await rejectedWith(waterAction(routeArgs(new Request(`${origin}/water-events`, {
+    body: new URLSearchParams({ csrfToken, intent: "save", localLogDate: "2026-08-31T09:00", ounces: "8", returnDate: today }),
+    headers: { Cookie: cookie, Origin: origin, "X-Test-Food-Log-Now": "not an instant" },
+    method: "POST",
+  }))));
+  expect(invalidInstant.status).toBe(400);
+  const unauthenticated = await waterAction(routeArgs(new Request(`${origin}/water-events`, {
+    body: new URLSearchParams({ csrfToken, intent: "save", returnDate: today }),
+    headers: { Origin: origin },
+    method: "POST",
+  })));
+  expect(unauthenticated.status).toBe(302);
 
-  const loaderWaterService = getWaterEventService();
-  const originalWaterRead = loaderWaterService.read.bind(loaderWaterService);
-  const unexpectedWaterRead = new Error("unexpected water read failure");
-  loaderWaterService.read = () => {
-    throw unexpectedWaterRead;
+  expectRedirect(
+    await postWater({ eventIds: String(event.id), intent: "delete" }),
+    "/?date=2026-08-31&notice=water-deleted",
+  );
+  expectRedirect(
+    await postWater({ eventIds: String(event.id), intent: "delete" }),
+    "/?date=2026-08-31&notice=water-deleted",
+  );
+  expect((await load()).data.foodLog.waterTotalOunces).toBe("0");
+
+  const waterService = getWaterEventService();
+  const originalSave = waterService.save.bind(waterService);
+  const unexpected = new Error("unexpected water failure");
+  waterService.save = () => {
+    throw unexpected;
   };
   try {
-    const request = new Request(`${origin}/?water=${event.id}`, {
-      headers: { Cookie: cookie },
-    });
-    const unexpected = await homeLoader(routeArgs(request))
-      .catch((error: unknown) => error);
-    expect(unexpected).toBe(unexpectedWaterRead);
+    await expect(postWater(
+      { intent: "save", localLogDate: "2026-08-31T09:15", ounces: "1" },
+      { testInstant: false },
+    )).rejects.toBe(unexpected);
   } finally {
-    loaderWaterService.read = originalWaterRead;
+    waterService.save = originalSave;
   }
+});
 
-  const unavailable = await homeAction(
-    routeArgs(
-      post({
-        eventId: "999999",
-        expectedUpdatedAt: event.updatedAt,
-        intent: "delete-water",
-      }),
-    ),
-  );
-  expect(unavailable).toMatchObject({
-    data: { tone: "error" },
-    init: { status: 404 },
+test("the home loader opens the water dialog for a new event or an event on the selected day", async () => {
+  const today8am = getWaterEventService().save(userId, { logDate: "2026-08-31T12:00:00Z", quantity: { ounces: "8" } });
+  const yesterday = getWaterEventService().save(userId, { logDate: "2026-08-30T12:00:00Z", quantity: { ounces: "8" } });
+
+  expect((await load("/?water=new")).data.waterDialog).toEqual({
+    error: undefined,
+    initialLocalLogDate: "2026-08-31T12:00",
   });
-  for (const waterSelection of ["8", "16", "24"]) {
-    const acceptedPreset = await homeAction(
-      routeArgs(post({
-        eventId: "999999",
-        expectedUpdatedAt: event.updatedAt,
-        intent: "update-water",
-        waterEventTime: "13:15",
-        waterSelection,
-      })),
-    );
-    expect(acceptedPreset).toMatchObject({ init: { status: 404 } });
+  expect((await load("/?date=2026-08-30&water=new&waterError=invalid_amount")).data.waterDialog).toEqual({
+    error: "Enter an amount from 0.001 to 500 fl oz, with at most three decimals.",
+    initialLocalLogDate: "2026-08-30T12:00",
+  });
+  expect((await load(`/?water=${today8am.id}&waterError=other`)).data.waterDialog).toMatchObject({
+    error: "The water amount could not be saved.",
+    event: { id: today8am.id, ounces: "8" },
+  });
+  expect((await load("/?date=2026-09-01&water=new")).data.waterDialog).toBeUndefined();
+
+  for (const requested of [String(yesterday.id), "0", "01", "1x", "-1", "9007199254740992", "invalid"]) {
+    const response = await rejectedWith(homeLoader(routeArgs(get(`/?water=${requested}`))));
+    expect(response.status).toBe(404);
   }
 
   const waterService = getWaterEventService();
-  const originalWaterUpdate = waterService.update.bind(waterService);
-  const unexpectedWater = new Error("unexpected water failure");
-  waterService.update = () => {
-    throw unexpectedWater;
+  const originalRead = waterService.read.bind(waterService);
+  const unexpected = new Error("unexpected water read failure");
+  waterService.read = () => {
+    throw unexpected;
   };
   try {
-    const unexpected = await homeAction(
-      routeArgs(post({
-        eventId: String(event.id),
-        expectedUpdatedAt: event.updatedAt,
-        intent: "update-water",
-        waterAmount: "10",
-        waterEventTime: "13:15",
-        waterSelection: "exact",
-      }, { testInstant: false })),
-    ).catch((error: unknown) => error);
-    expect(unexpected).toBe(unexpectedWater);
+    const request = new Request(`${origin}/?water=${today8am.id}`, { headers: { Cookie: cookie } });
+    await expect(homeLoader(routeArgs(request))).rejects.toBe(unexpected);
   } finally {
-    waterService.update = originalWaterUpdate;
+    waterService.read = originalRead;
   }
-
-  const stale = await homeAction(
-    routeArgs(
-      post({
-        eventId: String(event.id),
-        expectedUpdatedAt: "2000-01-01T00:00:00.000Z",
-        intent: "update-water",
-        waterAmount: "10",
-        waterEventTime: "13:15",
-        waterSelection: "exact",
-      }),
-    ),
-  );
-  expect(stale).toMatchObject({
-    data: { tone: "error", waterEventEditor: { id: event.id } },
-    init: { status: 409 },
-  });
-
-  const updated = await homeAction(
-    routeArgs(
-      post({
-        eventId: String(event.id),
-        expectedUpdatedAt: event.updatedAt,
-        intent: "update-water",
-        waterAmount: "10",
-        waterEventTime: "13:15",
-        waterSelection: "exact",
-      }),
-    ),
-  );
-  expectRedirect(updated, "/?date=2026-08-31&notice=water-updated");
-  const updatedDialog = (await load(`/?water=${event.id}`)).data.waterDialog;
-  if (updatedDialog?.mode !== "edit") throw new Error("Expected water editor");
-  const updatedEvent = updatedDialog.event;
-  expect(updatedEvent).toMatchObject({ amountMicroliters: 295_735, localEventTime: "13:15:00" });
-
-  const deleted = await homeAction(
-    routeArgs(
-      post({
-        eventId: String(event.id),
-        expectedUpdatedAt: updatedEvent.updatedAt,
-        intent: "delete-water",
-      }),
-    ),
-  );
-  expectRedirect(deleted, "/?date=2026-08-31&notice=water-deleted");
+  waterService.delete(userId, [today8am.id, yesterday.id]);
 });
 
 test("home food actions log, edit, detect conflicts, delete, and map catalog failures", async () => {
@@ -1649,7 +1610,7 @@ test("copy loader restricts source actions and validates every calendar selectio
     foodLogDate: "2026-08-23", idempotencyKey: "copy-loader-boundary-source",
     provider: "usda-fdc", providerFoodId: "1001", quantity: "1", selectedMeasurementId: "base:g:100000000",
   });
-  await homeAction(routeArgs(post({ date: source.foodLogDate, intent: "create-water", waterSelection: "8" })));
+  getWaterEventService().save(userId, { logDate: "2026-08-23T16:00:00Z", quantity: { ounces: "8" } });
   const historical = await load(`/?date=${source.foodLogDate}`);
   expect(Object.keys(historical.data.copyIdempotencyKeys)).toEqual([String(source.id)]);
   expect(historical.data.copyIdempotencyKeys[source.id]).toMatch(new RegExp(`^copy:${source.id}:`));

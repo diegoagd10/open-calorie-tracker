@@ -94,7 +94,7 @@ afterAll(async () => {
   await rm(directory, { recursive: true, force: true });
 });
 
-test("a valid key reads its owner's Food Log in the unchanged v1 shape", async () => {
+test("a valid key reads its owner's Food Log in the v1 shape", async () => {
   const { key } = await createKey(reader, "Muse");
   const response = apiGet(`Bearer ${key}`, freshIp());
   expect(response.status).toBe(200);
@@ -102,7 +102,7 @@ test("a valid key reads its owner's Food Log in the unchanged v1 shape", async (
   const body = await response.json() as Record<string, unknown>;
   expect(Object.keys(body).sort()).toEqual([
     "displayUnits", "events", "foodEntries", "goal", "isFuture", "nutritionTotals",
-    "selectedDate", "timeZone", "today", "version", "waterEvents", "waterTotalMicroliters",
+    "selectedDate", "timeZone", "today", "version", "waterEvents", "waterTotalOunces",
   ].sort());
   expect(body).toMatchObject({ version: "1", selectedDate: date, timeZone: "America/New_York", goal: { calorieTargetMilliKcal: 2_050_000 } });
   expect(apiGet(`bearer ${key}`, freshIp()).status).toBe(200);
@@ -246,7 +246,7 @@ test("the versioned resource covers historical, empty, and future days", async (
   const { key } = await createKey(reader, "History");
   const read = (day: string) => apiGet(`Bearer ${key}`, freshIp(), `date=${day}`);
   const empty: unknown = await read("2026-08-29").json();
-  expect(empty).toMatchObject({ selectedDate: "2026-08-29", isFuture: false, foodEntries: [], waterEvents: [], events: [], waterTotalMicroliters: 0 });
+  expect(empty).toMatchObject({ selectedDate: "2026-08-29", isFuture: false, foodEntries: [], waterEvents: [], events: [], waterTotalOunces: "0" });
   const future: unknown = await read("2026-09-01").json();
   expect(future).toMatchObject({ selectedDate: "2026-09-01", isFuture: true, foodEntries: [], goal: { calorieTargetMilliKcal: 2_050_000 } });
 });

@@ -14,6 +14,7 @@ import {
   type ApplicationDatabaseClient,
   type DatabaseStatus,
 } from "../app/database/database.server";
+import { waterEvents } from "../app/water-event/water-event.schema.server";
 import { createMigrationFolder } from "./support/migrations";
 
 const temporaryDirectories: string[] = [];
@@ -32,9 +33,6 @@ function readRepresentativeData(client: ApplicationDatabaseClient) {
       usernameNormalized: string;
     }>(sql`SELECT id, username_normalized AS usernameNormalized,
       created_at AS createdAt FROM users ORDER BY id`),
-    waterEvents: client.all(sql`SELECT id, user_id, food_log_date,
-      amount_microliters, local_event_time, created_at, updated_at
-      FROM water_events ORDER BY id`),
   };
 }
 
@@ -123,8 +121,8 @@ test("OAuth removal migrates a database holding OAuth clients, grants, and token
   upgraded.close();
 });
 
-test("the Water Event idempotency migration keeps existing Water Events without a key", async () => {
-  const directory = await mkdtemp(path.join(tmpdir(), "water-idempotency-upgrade-"));
+test("the Water Event log-date migration keeps each event's local time and converts its amount to ounces", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "water-log-date-upgrade-"));
   temporaryDirectories.push(directory);
   const databasePath = path.join(directory, "application.sqlite");
   const previousMigrations = await createMigrationFolder(path.join(directory, "previous-migrations"), {
@@ -135,24 +133,34 @@ test("the Water Event idempotency migration keeps existing Water Events without 
     INSERT INTO users (username_normalized, created_at)
     VALUES ('water.upgrade.owner', '2026-09-26T12:00:00.000Z') RETURNING id
   `);
-  for (const time of ["09:00:00", "10:00:00"]) {
+  for (const [microliters, time] of [[236588, "09:00:00"], [709765, "10:30:00"], [1000, "11:00:00"], [5, "12:00:00"], [2000000, "23:59:00"]] as const) {
     previous.getClient().run(sql`INSERT INTO water_events
       (user_id, food_log_date, amount_microliters, preset_8_count, local_event_time, created_at, updated_at)
-      VALUES (${owner.id}, '2026-09-26', 236588, 1, ${time}, '2026-09-26T12:00:00.000Z', '2026-09-26T12:00:00.000Z')`);
+      VALUES (${owner.id}, '2026-09-26', ${microliters}, 0, ${time}, '2026-09-26T12:00:00.000Z', '2026-09-26T13:00:00.000Z')`);
   }
   previous.close();
 
   const upgraded = openApplicationDatabase({ databasePath, migrationsFolder: path.resolve("drizzle") });
   const client = upgraded.getClient();
-  expect(client.all(sql`SELECT idempotency_key AS idempotencyKey FROM water_events ORDER BY id`))
-    .toEqual([{ idempotencyKey: null }, { idempotencyKey: null }]);
-  const insertKeyed = () => client.run(sql`INSERT INTO water_events
-    (user_id, food_log_date, amount_microliters, local_event_time, created_at, updated_at, idempotency_key)
-    VALUES (${owner.id}, '2026-09-26', 236588, '11:00:00', '2026-09-26T12:00:00.000Z', '2026-09-26T12:00:00.000Z', 'api:upgrade-key')`);
-  insertKeyed();
-  expect(insertKeyed).toThrow(expect.objectContaining({
-    cause: expect.objectContaining({ code: "SQLITE_CONSTRAINT_UNIQUE" }) as unknown,
-  }) as Error);
+  expect(client.select().from(waterEvents).all()).toEqual([
+    ["2026-09-26T09:00:00", "8"],
+    ["2026-09-26T10:30:00", "24"],
+    ["2026-09-26T11:00:00", "0.034"],
+    ["2026-09-26T12:00:00", "0.001"],
+    ["2026-09-26T23:59:00", "67.628"],
+  ].map(([logDate, ounces], index) => ({
+    id: index + 1,
+    userId: owner.id,
+    logDate,
+    ounces,
+    createdAt: "2026-09-26T12:00:00.000Z",
+    updatedAt: "2026-09-26T13:00:00.000Z",
+  })));
+  expect(() => client.run(sql`INSERT INTO water_events (user_id, log_date, ounces, created_at, updated_at)
+    VALUES (${owner.id}, '2026-09-26T12:00:00.000Z', '0', '2026-09-26T12:00:00.000Z', '2026-09-26T12:00:00.000Z')`))
+    .toThrow(expect.objectContaining({
+      cause: expect.objectContaining({ code: "SQLITE_CONSTRAINT_CHECK" }) as unknown,
+    }) as Error);
   upgraded.close();
 });
 
@@ -330,10 +338,9 @@ test("the production migration preserves every representative field from the pri
   expect(readRepresentativeData(upgraded.getClient())).toEqual(
     representativeData,
   );
-  expect(upgraded.getClient().select().from(schema.waterEvents).get()).toMatchObject({
-    preset8Count: 0,
-    preset16Count: 0,
-    preset24Count: 0,
+  expect(upgraded.getClient().select().from(waterEvents).get()).toMatchObject({
+    logDate: "2026-08-30T10:05:00",
+    ounces: "8",
   });
   expect(
     upgraded

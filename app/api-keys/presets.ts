@@ -3,17 +3,13 @@ export const MAX_API_KEYS_PER_ACCOUNT = 25;
 
 export const API_KEY_SCOPES = [
   { scope: "daily-log:read", label: "Read Food Log" },
-  { scope: "water-log:write", label: "Log water" },
+  { scope: "water-events:read", label: "Read water" },
+  { scope: "water-events:write", label: "Log water" },
 ] as const;
 export type ApiKeyScope = (typeof API_KEY_SCOPES)[number]["scope"];
 
 export function isApiKeyScope(value: string): value is ApiKeyScope {
   return API_KEY_SCOPES.some((entry) => entry.scope === value);
-}
-
-/** Whether a key holding `held` has any one of `accepted`, which is enough for a tool or endpoint. */
-export function holdsAnyScope(held: readonly string[], accepted: readonly ApiKeyScope[]): boolean {
-  return accepted.some((scope) => held.includes(scope));
 }
 
 export const EXPIRATION_PRESETS = [

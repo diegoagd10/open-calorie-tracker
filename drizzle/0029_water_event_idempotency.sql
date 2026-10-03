@@ -1,2 +1,0 @@
-ALTER TABLE `water_events` ADD `idempotency_key` text;--> statement-breakpoint
-CREATE UNIQUE INDEX `water_events_user_idempotency_unique` ON `water_events` (`user_id`,`idempotency_key`) WHERE "water_events"."idempotency_key" IS NOT NULL;

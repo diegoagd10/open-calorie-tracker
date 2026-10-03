@@ -34,6 +34,7 @@ test("an account holder creates, copies, edits, and deletes a key without it eve
   await page.getByRole("link", { name: "Create key" }).click();
   await expect(page.getByRole("heading", { name: "Create API key" })).toBeVisible();
   await expect(page.getByRole("checkbox", { name: "Read Food Log" })).not.toBeChecked();
+  await expect(page.getByRole("checkbox", { name: "Read water" })).not.toBeChecked();
   await expect(page.getByRole("checkbox", { name: "Log water" })).not.toBeChecked();
   await expect(page.getByText("coming soon")).toHaveCount(0);
   await expect(page.getByLabel("Expiration")).toHaveValue("90d");

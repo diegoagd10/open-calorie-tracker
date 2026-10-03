@@ -25,10 +25,7 @@ import {
 } from "../app/food-entry/food-entry.server";
 import { GoalVersionService } from "../app/goals/goal-version.server";
 import { GoalSetupService } from "../app/setup/goal-setup.server";
-import {
-  WaterEventService,
-  WaterEventUnavailableError,
-} from "../app/water-event/water-event.server";
+import { createWaterEventService, WaterEventNotFoundError } from "../app/water-event/index.server";
 import {
   seedAccount,
   seedAuthenticatedAccount,
@@ -724,7 +721,7 @@ test("administrator deletion removes a disabled member's owned nutrition history
     ]),
     now,
   );
-  const waterEvents = new WaterEventService(fixture.database, now);
+  const waterEvents = createWaterEventService(fixture.database, now);
   expect(
     setup.completeInitial(member.user.id, {
       calorieTargetMilliKcal: 2_000_000,
@@ -747,9 +744,9 @@ test("administrator deletion removes a disabled member's owned nutrition history
     quantity: "1",
     selectedMeasurementId: "serving:g:170000000",
   });
-  const waterEvent = waterEvents.create(member.user.id, {
-    foodLogDate: "2026-08-29",
-    selection: "8",
+  const waterEvent = waterEvents.save(member.user.id, {
+    logDate: "2026-08-29T08:00:00Z",
+    quantity: { ounces: "8" },
   });
   expect(goals.read(member.user.id)?.goal).toBeDefined();
   const deletionTarget = memberTarget(fixture.service, "history.member");
@@ -775,7 +772,7 @@ test("administrator deletion removes a disabled member's owned nutrition history
     FoodEntryUnavailableError,
   );
   expect(() => waterEvents.read(member.user.id, waterEvent.id)).toThrow(
-    WaterEventUnavailableError,
+    WaterEventNotFoundError,
   );
 
   const replacement = await fixture.service.provisionMember(
@@ -796,7 +793,7 @@ test("administrator deletion removes a disabled member's owned nutrition history
   ).toThrow(FoodEntryUnavailableError);
   expect(() =>
     waterEvents.read(replacementLogin.session.user.id, waterEvent.id)
-  ).toThrow(WaterEventUnavailableError);
+  ).toThrow(WaterEventNotFoundError);
 
   fixture.applicationDatabase.close();
 });

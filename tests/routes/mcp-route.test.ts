@@ -103,7 +103,7 @@ beforeAll(async () => {
     carbohydrateGrams: "60", energyKcal: "350.4", fatGrams: "6.25", fiberGrams: "8", foodLogDate: today,
     idempotencyKey: "mcp-oatmeal", name: "Oatmeal", proteinGrams: "12", quantity: "1", sodiumMilligrams: "", sugarGrams: "10",
   });
-  getWaterEventService(now).create(reader.id, { foodLogDate: today, selection: "16" });
+  getWaterEventService(now).save(reader.id, { logDate: "2026-08-31T15:00:00Z", quantity: { ounces: "16" } });
   readerKey = (await createKey(reader, "Muse")).key;
 });
 afterAll(async () => {
@@ -158,7 +158,7 @@ test("get_daily_log summarizes today's Food Log in the account's units by defaul
 test("get_daily_log reports water in ml for metric accounts", async () => {
   const metric = await account("mcp.metric");
   completeSetup(metric.id, "metric", "2000");
-  getWaterEventService(new Date("2026-08-31T16:00:00.000Z")).create(metric.id, { foodLogDate: today, selection: "8" });
+  getWaterEventService(new Date("2026-08-31T16:00:00.000Z")).save(metric.id, { logDate: "2026-08-31T15:00:00Z", quantity: { ounces: "8" } });
   const { key } = await createKey(metric, "Metric");
 
   const result = await callDailyLog(key, { date: today });
@@ -258,7 +258,7 @@ test("tools are listed and callable only with their scope, and a key with no too
   const response = await mcpRequest(`Bearer ${key}`, { jsonrpc: "2.0", id: 1, method: "tools/list" });
   expect(response.status).toBe(403);
   expect(await response.json()).toEqual({ error: "insufficient_scope" });
-  expect(response.headers.get("WWW-Authenticate")).toContain('error="insufficient_scope", scope="daily-log:read water-log:write"');
+  expect(response.headers.get("WWW-Authenticate")).toContain('error="insufficient_scope", scope="daily-log:read water-events:write water-events:read"');
 });
 
 test("only POST carries MCP messages; there are no sessions or streams", async () => {

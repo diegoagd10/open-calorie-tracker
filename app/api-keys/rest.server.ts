@@ -11,18 +11,18 @@ export function apiError(error: string, status: number, headers: Record<string, 
 }
 
 /**
- * The account behind the request's API key when the key holds any of `acceptedScopes`, or
- * the refusal to send: `401`, `403`, or `429` with the realm's `WWW-Authenticate` challenge.
+ * The account behind the request's API key when the key holds `requiredScope`, or the
+ * refusal to send: `401`, `403`, or `429` with the realm's `WWW-Authenticate` challenge.
  */
 export function authenticateApiRequest(
   request: Request,
   realm: string,
-  acceptedScopes: readonly ApiKeyScope[],
+  requiredScope: ApiKeyScope,
 ): { userId: number } | Response {
-  const caller = getApiKeyAuthenticator().authenticate(request.headers.get("Authorization"), getClientIp(request), acceptedScopes);
+  const caller = getApiKeyAuthenticator().authenticate(request.headers.get("Authorization"), getClientIp(request), requiredScope);
   if (caller.ok) return { userId: caller.userId };
   if (caller.error === "rate_limited") return apiError("rate_limited", 429, { "Retry-After": String(caller.retryAfterSeconds) });
   return caller.error === "insufficient_scope"
-    ? apiError("insufficient_scope", 403, { "WWW-Authenticate": `Bearer realm="${realm}", error="insufficient_scope", scope="${acceptedScopes.join(" ")}"` })
+    ? apiError("insufficient_scope", 403, { "WWW-Authenticate": `Bearer realm="${realm}", error="insufficient_scope", scope="${requiredScope}"` })
     : apiError("invalid_token", 401, { "WWW-Authenticate": `Bearer realm="${realm}", error="invalid_token"` });
 }

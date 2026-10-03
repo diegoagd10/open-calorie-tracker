@@ -3,12 +3,11 @@ import type { FoodLogService } from "../food-log/food-log.server";
 import { parseIsoLocalDate } from "../food-log/date";
 import { getFoodLogService } from "../food-log/runtime.server";
 import { apiError, authenticateApiRequest, privateHeaders } from "../api-keys/rest.server";
-import { presentWaterEvent } from "../water-event/presentation";
+import { presentWaterEvent } from "../water-event/index.server";
 
 type FoodLog = NonNullable<ReturnType<FoodLogService["read"]>>;
 type Food = FoodLog["entries"][number];
 
-const acceptedScopes = ["daily-log:read"] as const;
 
 function presentFood(entry: Food) {
   return {
@@ -83,7 +82,7 @@ function presentDailyFoodLog(foodLog: FoodLog) {
       sugarMilligrams: presentNutritionTotal(totals.sugarMilligrams),
       sodiumMilligrams: presentNutritionTotal(totals.sodiumMilligrams),
     },
-    waterTotalMicroliters: foodLog.waterTotalMicroliters,
+    waterTotalOunces: foodLog.waterTotalOunces,
   };
 }
 
@@ -92,7 +91,7 @@ export function headers() {
 }
 
 export function loader({ request }: Route.LoaderArgs) {
-  const caller = authenticateApiRequest(request, "daily-log", acceptedScopes);
+  const caller = authenticateApiRequest(request, "daily-log", "daily-log:read");
   if (caller instanceof Response) return caller;
   const dates = new URL(request.url).searchParams.getAll("date");
   if (dates.length !== 1 || !parseIsoLocalDate(dates[0])) return apiError("invalid_date", 400);

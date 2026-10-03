@@ -42,6 +42,14 @@ async function csrfTokenFor(page: Page, buttonName: "Add Food" | "Add Water") {
     .inputValue();
 }
 
+/** Fills a dialog field and waits until the value holds, so a late re-render cannot drop it. */
+async function fillSteadily(field: Locator, value: string) {
+  await expect(async () => {
+    await field.fill(value);
+    await expect(field).toHaveValue(value, { timeout: 1_000 });
+  }).toPass();
+}
+
 async function tabTo(page: Page, target: Locator) {
   await expect(target).toBeVisible({ timeout: 5_000 });
   for (let attempt = 0; attempt < 80; attempt += 1) {
@@ -244,23 +252,21 @@ test("one mobile Chromium journey verifies the complete private MVP", async ({
   await page.getByRole("button", { name: "Save changes" }).click();
   await expect(page.getByText("Release yogurt", { exact: true })).toBeVisible();
 
-  await page.getByRole("button", { name: "Add Water" }).click();
+  await page.getByRole("button", { name: "Add Water", exact: true }).click();
   const waterDialog = page.getByRole("dialog", { name: "Add Water" });
   await expectNoSeriousAxeViolations(page);
-  await waterDialog.getByRole("button", { name: /16 fl oz.*Bottle/ }).click();
-  await waterDialog.getByRole("button", { name: "Add 16 fl oz" }).click();
+  await waterDialog.getByLabel("Consumed at").fill("2026-08-29T09:15");
+  await fillSteadily(waterDialog.getByLabel("Amount (fl oz)"), "16");
+  await waterDialog.getByRole("button", { name: "Add water", exact: true }).click();
+  await expect(waterDialog).not.toBeVisible();
   await expect(
     page.getByRole("progressbar", { name: "Water progress" }),
-  ).toHaveAttribute("aria-valuetext", /16 of 80 fl oz target/);
-  await page.getByRole("link", { name: /Water.*16 fl oz/ }).click();
+  ).toHaveAttribute("aria-valuetext", "16 fl oz of 80 fl oz target");
+  await page.getByRole("link", { name: /9:15 AM.*Water.*16 fl oz/ }).click();
   const waterEditor = page.getByRole("dialog", { name: "Edit Water Event" });
   await expectNoSeriousAxeViolations(page);
-  await waterEditor
-    .getByRole("button", { name: /Exact amount.*Custom/ })
-    .click();
-  await waterEditor.getByLabel("Amount fl oz").fill("20");
-  await waterEditor.getByLabel("Event time").fill("09:15");
-  await waterEditor.getByRole("button", { name: "Save changes" }).click();
+  await waterEditor.getByLabel("Amount (fl oz)").fill("20");
+  await waterEditor.getByRole("button", { name: "Save amount" }).click();
   await expect(
     page.getByRole("link", { name: /9:15 AM.*Water.*20 fl oz/ }),
   ).toBeVisible();
@@ -283,9 +289,9 @@ test("one mobile Chromium journey verifies the complete private MVP", async ({
   await page.getByRole("link", { name: /Release yogurt/ }).click();
   await page.getByRole("button", { name: "Delete entry" }).click();
   await page.getByRole("button", { name: "Delete", exact: true }).click();
-  await page.getByRole("link", { name: /Water.*20 fl oz/ }).click();
-  await page.getByRole("button", { name: "Delete Water Event" }).click();
+  await page.getByRole("link", { name: /9:15 AM.*Water.*20 fl oz/ }).click();
   await page.getByRole("button", { name: "Delete", exact: true }).click();
+  await page.getByRole("button", { name: "Confirm delete" }).click();
   await expect(page.getByText("No entries for this day")).toBeVisible();
 
   await page.getByRole("link", { name: "Settings" }).click();
@@ -346,15 +352,11 @@ test("a second user cannot list, read, edit, or delete another user's records", 
     .getByRole("link", { name: "Cancel" })
     .click();
 
-  await page.getByRole("button", { name: "Add Water" }).click();
-  await page
-    .getByRole("dialog", { name: "Add Water" })
-    .getByRole("button", { name: /^Add one 8 fl oz Glass/ })
-    .click();
-  await page
-    .getByRole("dialog", { name: "Add Water" })
-    .getByRole("button", { name: "Add 8 fl oz" })
-    .click();
+  await page.getByRole("button", { name: "Add Water", exact: true }).click();
+  const isolationWaterDialog = page.getByRole("dialog", { name: "Add Water" });
+  await fillSteadily(isolationWaterDialog.getByLabel("Amount (fl oz)"), "8");
+  await isolationWaterDialog.getByRole("button", { name: "Add water", exact: true }).click();
+  await expect(isolationWaterDialog).not.toBeVisible();
   await page
     .getByRole("link", { name: /\d+:\d+ [AP]M.*Water.*8 fl oz/ })
     .click();
@@ -401,7 +403,7 @@ test("a second user cannot list, read, edit, or delete another user's records", 
   );
   expect(foodRead?.status()).toBe(404);
   const waterRead = await otherPage.goto(
-    `/?date=2026-08-29&water=${String(waterFields.eventId)}`,
+    `/?date=2026-08-29&water=${String(waterFields.id)}`,
   );
   expect(waterRead?.status()).toBe(404);
 
@@ -425,19 +427,31 @@ test("a second user cannot list, read, edit, or delete another user's records", 
         });
         statuses.push(response.status);
       }
-      for (const intent of ["update-water", "delete-water"]) {
-        const response = await submit({
-          ...(waterFields as Record<string, string>),
-          csrfToken: waterCsrfToken,
-          intent,
+      const water = (fields: Record<string, string>) =>
+        fetch("/water-events", {
+          body: new URLSearchParams({ ...fields, csrfToken: waterCsrfToken }),
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          method: "POST",
+          redirect: "manual",
         });
-        statuses.push(response.status);
-      }
+      statuses.push((await water(waterFields as Record<string, string>)).status);
+      const deletion = await water({
+        eventIds: String((waterFields as Record<string, string>).id),
+        intent: "delete",
+        returnDate: "2026-08-29",
+      });
+      statuses.push(deletion.type === "opaqueredirect" ? 302 : deletion.status);
       return statuses;
     },
     { foodCsrfToken, foodFields, waterCsrfToken, waterFields },
   );
-  expect(mutationStatuses).toEqual([404, 404, 404, 404]);
+  expect(mutationStatuses).toEqual([404, 404, 404, 302]);
+  const waterCheck = openBrowserTestDatabase();
+  expect(
+    waterCheck.prepare("SELECT ounces FROM water_events WHERE id = ? AND user_id = ?")
+      .get(Number(waterFields.id), owner.userId),
+  ).toEqual({ ounces: "8" });
+  waterCheck.close();
 
   await otherPage.goto(
     `/settings/goals?userId=${owner.userId}&goalId=${owner.goalId}`,
@@ -517,7 +531,7 @@ test("a second user cannot list, read, edit, or delete another user's records", 
   await expect(otherPage).toHaveURL("/");
   await expect(otherPage.getByText("release.isolation.owner")).toHaveCount(0);
 
-  await page.getByRole("link", { name: "Close water sheet" }).click();
+  await page.getByRole("link", { name: "Close water dialog" }).click();
   await page.goto("/settings/goals");
   await expect(page.getByLabel("Calories target")).toHaveValue("2050");
   await expect(page.getByLabel("US")).toBeChecked();
@@ -614,18 +628,18 @@ test("the critical mobile experience is operable with only a keyboard", async ({
   await page.keyboard.press("Enter");
   await expect(secondNutritionPage).toHaveAttribute("aria-pressed", "true");
 
-  const addWater = page.getByRole("button", { name: "Add Water" });
+  const addWater = page.getByRole("button", { name: "Add Water", exact: true });
   await tabTo(page, addWater);
   await page.keyboard.press("Enter");
-  const bottle = page
-    .getByRole("dialog", { name: "Add Water" })
-    .getByRole("button", { name: /16 fl oz.*Bottle/ });
-  await tabTo(page, bottle);
-  await page.keyboard.press("Space");
-  const saveWater = page.getByRole("button", { name: "Add 16 fl oz" });
+  const addWaterDialog = page.getByRole("dialog", { name: "Add Water" });
+  await expect(addWaterDialog.getByLabel("Consumed at")).toBeFocused();
+  const newAmount = addWaterDialog.getByLabel("Amount (fl oz)");
+  await tabTo(page, newAmount);
+  await newAmount.pressSequentially("16");
+  const saveWater = addWaterDialog.getByRole("button", { name: "Add water", exact: true });
   await tabTo(page, saveWater);
   await page.keyboard.press("Enter");
-  await expect(page.getByRole("dialog", { name: "Add Water" })).not.toBeVisible();
+  await expect(addWaterDialog).not.toBeVisible();
 
   const waterEvent = page.getByRole("link", {
     name: /\d+:\d+ [AP]M.*Water.*16 fl oz/,
@@ -633,19 +647,11 @@ test("the critical mobile experience is operable with only a keyboard", async ({
   await tabTo(page, waterEvent);
   await page.keyboard.press("Enter");
   const waterEditor = page.getByRole("dialog", { name: "Edit Water Event" });
-  await expect(
-    waterEditor.getByRole("button", { name: /8 fl oz.*Glass/ }),
-  ).toBeFocused();
-  const exactWater = waterEditor.getByRole("button", {
-    name: /Exact amount.*Custom/,
-  });
-  await tabTo(page, exactWater);
-  await page.keyboard.press("Space");
-  const waterAmount = waterEditor.getByLabel("Amount fl oz");
-  await tabTo(page, waterAmount);
+  const waterAmount = waterEditor.getByLabel("Amount (fl oz)");
+  await expect(waterAmount).toBeFocused();
   await page.keyboard.press("ControlOrMeta+A");
   await waterAmount.pressSequentially("20");
-  const updateWater = waterEditor.getByRole("button", { name: "Save changes" });
+  const updateWater = waterEditor.getByRole("button", { name: "Save amount" });
   await tabTo(page, updateWater);
   await page.keyboard.press("Enter");
   const updatedWaterEvent = page.getByRole("link", {
@@ -653,14 +659,14 @@ test("the critical mobile experience is operable with only a keyboard", async ({
   });
   await tabTo(page, updatedWaterEvent);
   await page.keyboard.press("Enter");
-  const deleteWater = page.getByRole("button", {
-    name: "Delete Water Event",
+  const deleteWater = waterEditor.getByRole("button", {
+    name: "Delete",
+    exact: true,
   });
   await tabTo(page, deleteWater);
   await page.keyboard.press("Enter");
   const confirmWaterDeletion = waterEditor.getByRole("button", {
-    name: "Delete",
-    exact: true,
+    name: "Confirm delete",
   });
   await tabTo(page, confirmWaterDeletion);
   await page.keyboard.press("Enter");

@@ -11,7 +11,7 @@ const key = {
   id: 7,
   name: "Muse",
   maskedKey: "oct_ab12••••9f3k",
-  scopes: ["water-log:write"],
+  scopes: ["water-events:write"],
   createdAt: "2026-09-28T11:30:00.000Z",
   expiresAt: null,
   lastUsedAt: null,
@@ -53,7 +53,7 @@ test("creating a key offers every permission, including Log water, as an uncheck
   const renderer = await render({ ...loaderData, view: "new" }, "/settings/api-keys?view=new");
   const inputs = scopeInputs(renderer);
   expect(inputs).toContainEqual({ type: "checkbox", value: "daily-log:read", checked: false, disabled: false });
-  expect(inputs).toContainEqual({ type: "checkbox", value: "water-log:write", checked: false, disabled: false });
+  expect(inputs).toContainEqual({ type: "checkbox", value: "water-events:write", checked: false, disabled: false });
   expect(inputs.every((input) => input.type === "checkbox" && !input.checked && !input.disabled)).toBe(true);
   expect(scopeLabels(renderer)).toEqual(expect.arrayContaining(["Read Food Log", "Log water"]));
   expect(JSON.stringify(renderer.toJSON())).not.toContain("coming soon");
@@ -65,8 +65,8 @@ test("editing a key checks only the scopes it already has, so Log water can be g
   const renderer = await render({ ...loaderData, view: "edit", editing }, "/settings/api-keys?view=edit&key=7");
   const inputs = scopeInputs(renderer);
   expect(inputs).toContainEqual({ type: "checkbox", value: "daily-log:read", checked: false, disabled: false });
-  expect(inputs).toContainEqual({ type: "checkbox", value: "water-log:write", checked: true, disabled: false });
-  expect(inputs.filter((input) => input.checked).map((input) => input.value)).toEqual(["water-log:write"]);
+  expect(inputs).toContainEqual({ type: "checkbox", value: "water-events:write", checked: true, disabled: false });
+  expect(inputs.filter((input) => input.checked).map((input) => input.value)).toEqual(["water-events:write"]);
   await act(() => renderer.unmount());
 });
 
@@ -78,8 +78,8 @@ test("a submission keeps exactly the scopes that were checked and requires at le
     for (const scope of scopes) data.append("scope", scope);
     return parseApiKeyFields(data);
   };
-  expect(form(["water-log:write"])).toEqual({ success: true, data: { name: "Muse", scopes: ["water-log:write"], expiration: "never" } });
-  expect(form(["daily-log:read", "water-log:write"])).toEqual({ success: true, data: { name: "Muse", scopes: ["daily-log:read", "water-log:write"], expiration: "never" } });
+  expect(form(["water-events:write"])).toEqual({ success: true, data: { name: "Muse", scopes: ["water-events:write"], expiration: "never" } });
+  expect(form(["daily-log:read", "water-events:write"])).toEqual({ success: true, data: { name: "Muse", scopes: ["daily-log:read", "water-events:write"], expiration: "never" } });
   expect(form([])).toEqual({ success: false, errors: { scopes: "Choose at least one permission." } });
 });
 
@@ -95,7 +95,7 @@ test("the at-least-one-permission error clears as soon as a permission is checke
   const alerts = () => renderer.root.findAll((node) => node.type === "p" && node.props.role === "alert").map((node) => node.children.join(""));
   expect(alerts()).toContain("Choose at least one permission.");
 
-  const logWater = renderer.root.find((node) => node.type === "input" && node.props.value === "water-log:write");
+  const logWater = renderer.root.find((node) => node.type === "input" && node.props.value === "water-events:write");
   const check = logWater.props.onChange as (event: { currentTarget: { checked: boolean } }) => void;
   await act(async () => check({ currentTarget: { checked: true } }));
   expect(alerts()).not.toContain("Choose at least one permission.");

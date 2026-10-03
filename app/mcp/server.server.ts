@@ -1,6 +1,5 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
-import { holdsAnyScope } from "../api-keys/presets";
 import { MCP_TOOLS, type McpTool } from "./tools.server";
 
 /** The account and scopes of an authenticated API key. */
@@ -10,12 +9,12 @@ const MAX_REQUEST_BODY_BYTES = 64 * 1024;
 
 /** Whether `scopes` allow at least one tool, so the caller has anything to use. */
 export function allowsAnyTool(scopes: readonly string[], tools: readonly McpTool[] = MCP_TOOLS): boolean {
-  return tools.some((tool) => holdsAnyScope(scopes, tool.scopes));
+  return tools.some((tool) => scopes.includes(tool.scope));
 }
 
 /** The scopes that grant tools, space-separated as a Bearer challenge's `scope`. */
 export function toolScopes(tools: readonly McpTool[] = MCP_TOOLS): string {
-  return [...new Set(tools.flatMap((tool) => tool.scopes))].join(" ");
+  return [...new Set(tools.map((tool) => tool.scope))].join(" ");
 }
 
 /**
@@ -26,7 +25,7 @@ export function createMcpServer(caller: McpCaller, tools: readonly McpTool[] = M
   const server = new McpServer({ name: "open-calory-tracker", version: "1.0.0" });
   for (const tool of tools) {
     const registered = tool.register(server, caller.userId);
-    if (!holdsAnyScope(caller.scopes, tool.scopes)) registered.disable();
+    if (!caller.scopes.includes(tool.scope)) registered.disable();
   }
   return server;
 }

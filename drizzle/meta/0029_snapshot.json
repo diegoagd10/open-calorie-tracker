@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "4594195c-9b5c-48fc-8225-a0763bba7950",
+  "id": "d7a1b18f-aadb-47f4-aaf8-4785fa0d7720",
   "prevId": "3afee83f-e193-425c-ad78-7f688b9c10fb",
   "tables": {
     "api_keys": {
@@ -1351,136 +1351,6 @@
         }
       }
     },
-    "water_events": {
-      "name": "water_events",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "integer",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": true
-        },
-        "user_id": {
-          "name": "user_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "food_log_date": {
-          "name": "food_log_date",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "amount_microliters": {
-          "name": "amount_microliters",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "preset_8_count": {
-          "name": "preset_8_count",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": 0
-        },
-        "preset_16_count": {
-          "name": "preset_16_count",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": 0
-        },
-        "preset_24_count": {
-          "name": "preset_24_count",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": 0
-        },
-        "local_event_time": {
-          "name": "local_event_time",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "idempotency_key": {
-          "name": "idempotency_key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        }
-      },
-      "indexes": {
-        "water_events_user_idempotency_unique": {
-          "name": "water_events_user_idempotency_unique",
-          "columns": [
-            "user_id",
-            "idempotency_key"
-          ],
-          "isUnique": true,
-          "where": "\"water_events\".\"idempotency_key\" IS NOT NULL"
-        },
-        "water_events_user_date_order_index": {
-          "name": "water_events_user_date_order_index",
-          "columns": [
-            "user_id",
-            "food_log_date",
-            "local_event_time",
-            "created_at",
-            "id"
-          ],
-          "isUnique": false
-        }
-      },
-      "foreignKeys": {
-        "water_events_user_id_users_id_fk": {
-          "name": "water_events_user_id_users_id_fk",
-          "tableFrom": "water_events",
-          "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {
-        "water_events_positive_amount_check": {
-          "name": "water_events_positive_amount_check",
-          "value": "\"water_events\".\"amount_microliters\" > 0"
-        }
-      }
-    },
     "webauthn_ceremonies": {
       "name": "webauthn_ceremonies",
       "columns": {
@@ -1713,6 +1583,87 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "checkConstraints": {}
+    },
+    "water_events": {
+      "name": "water_events",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "log_date": {
+          "name": "log_date",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "ounces": {
+          "name": "ounces",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "water_events_user_log_date_index": {
+          "name": "water_events_user_log_date_index",
+          "columns": [
+            "user_id",
+            "log_date",
+            "id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "water_events_user_id_users_id_fk": {
+          "name": "water_events_user_id_users_id_fk",
+          "tableFrom": "water_events",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "water_events_positive_ounces_check": {
+          "name": "water_events_positive_ounces_check",
+          "value": "CAST(\"water_events\".\"ounces\" AS REAL) > 0"
+        }
+      }
     }
   },
   "views": {},

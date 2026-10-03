@@ -292,8 +292,7 @@
   font-size: 0.8rem;
 }
 
-.linearProgress,
-.waterProgress {
+.linearProgress {
   overflow: hidden;
   height: 0.625rem;
   margin: 0.9rem 0 0.55rem;
@@ -301,8 +300,7 @@
   background: var(--well);
 }
 
-.linearProgress span,
-.waterProgress span {
+.linearProgress span {
   display: block;
   width: var(--progress, 0%);
   height: 100%;
@@ -466,60 +464,6 @@
   background: var(--ink-2);
 }
 
-.waterOverview {
-  margin-top: 0.875rem;
-  padding: 0.9rem 1rem 0.95rem;
-  border: 1px solid var(--rule);
-  border-radius: var(--radius-panel);
-  background: var(--surface);
-}
-
-.waterOverviewRow {
-  display: grid;
-  grid-template-columns: 1fr auto auto;
-  align-items: center;
-  gap: 0.5rem;
-  color: var(--ink);
-  text-decoration: none;
-}
-
-.waterOverviewRow > span > strong,
-.waterOverviewRow > span > small {
-  display: block;
-}
-
-.waterOverviewRow > span > strong {
-  font-size: 0.95rem;
-  font-weight: 600;
-}
-
-.waterOverviewRow > span > small {
-  margin-top: 0.15rem;
-  color: var(--muted);
-  font-size: 0.75rem;
-}
-
-.waterOverviewRow > strong {
-  font-size: 0.95rem;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-}
-
-.waterOverviewRow > strong small {
-  color: var(--muted);
-  font-size: 0.8rem;
-  font-weight: 400;
-}
-
-.waterProgress {
-  height: 0.375rem;
-  margin: 0.7rem 0 0;
-}
-
-.waterProgress span {
-  background: var(--blue);
-}
-
 .timelineSection {
   margin-top: 1.5rem;
 }
@@ -642,8 +586,7 @@
   margin: 0;
 }
 
-.foodEntryMarker svg,
-.waterEntryMarker svg {
+.foodEntryMarker svg {
   width: 1.15rem;
   height: 1.15rem;
 }
@@ -697,18 +640,6 @@
   background: var(--green-soft);
 }
 
-.waterEntryMarker {
-  display: grid;
-  grid-column: 1;
-  grid-row: 1 / 3;
-  width: 2.5rem;
-  height: 2.5rem;
-  place-items: center;
-  border-radius: 0.8rem;
-  color: var(--blue);
-  background: var(--blue-soft);
-}
-
 .foodEntryContent,
 .foodEntryContent strong,
 .foodEntryContent small {
@@ -730,10 +661,6 @@
   font-weight: 500;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.foodEntryContent .waterEntryBreakdown {
-  white-space: normal;
 }
 
 .foodEntryContent small {
@@ -781,11 +708,6 @@
 .foodEntryCard:focus-visible {
   border-color: var(--rule-strong);
   background: var(--surface-soft);
-}
-
-.waterEventCard:hover,
-.waterEventCard:focus-visible {
-  border-color: var(--blue-border);
 }
 
 .editorCopyMenuPopover button,
@@ -1603,188 +1525,6 @@
 .editFoodForm :is(button, input, select):disabled {
   cursor: wait;
   opacity: 0.65;
-}
-
-.waterDialog {
-  width: min(100%, 40rem);
-}
-
-.waterForm {
-  margin-top: 1rem;
-}
-
-.waterForm fieldset {
-  display: grid;
-  gap: 1rem;
-  min-width: 0;
-  margin: 0;
-  padding: 0;
-  border: 0;
-}
-
-.waterPresets {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 0.45rem;
-}
-
-.waterPresetOption {
-  position: relative;
-  min-width: 0;
-}
-
-.waterPresetOption > .waterPresetButton {
-  width: 100%;
-}
-
-.waterPresetButton {
-  display: grid;
-  min-height: 5.9rem;
-  place-items: center;
-  align-content: center;
-  gap: 0.12rem;
-  padding: 0.55rem 0.25rem;
-  border: 1px solid var(--rule);
-  border-radius: 1.1rem;
-  color: var(--ink-2);
-  background: var(--surface);
-  font: inherit;
-  cursor: pointer;
-}
-
-.waterPresetButton[aria-pressed="true"],
-.waterPresetButton[data-counted="true"] {
-  border: 2px solid var(--blue);
-  color: var(--blue-strong);
-  background: var(--blue-soft);
-}
-
-.waterPresetButton:disabled {
-  cursor: not-allowed;
-  opacity: 0.5;
-}
-
-.waterPresetCount {
-  position: absolute;
-  top: 0.35rem;
-  right: 0.4rem;
-  font-size: 0.8rem;
-}
-
-.waterPresetRemove {
-  position: absolute;
-  right: 0.35rem;
-  bottom: 0.35rem;
-  display: grid;
-  width: 1.4rem;
-  height: 1.4rem;
-  place-items: center;
-  border: 1px solid var(--blue-border);
-  border-radius: 50%;
-  color: var(--blue-strong);
-  background: var(--surface);
-  font: inherit;
-  cursor: pointer;
-}
-
-.waterSelectionSummary {
-  margin: -0.35rem 0 0;
-  color: var(--muted);
-  font-size: 0.8rem;
-}
-
-.waterPresetButton strong {
-  font-size: 1.15rem;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-}
-
-.waterPresetButton > svg {
-  width: 1.1rem;
-  height: 1.1rem;
-  margin-bottom: 0.15rem;
-  color: var(--blue);
-}
-
-.waterPresetButton span,
-.waterPresetButton small {
-  font-size: 0.75rem;
-}
-
-.waterAmountField,
-.waterTimeField {
-  display: grid;
-  gap: 0.45rem;
-  padding: 0.75rem;
-  border-radius: 0.75rem;
-  background: var(--surface-soft);
-  font-size: 0.875rem;
-  font-weight: 600;
-}
-
-.waterAmountField > span:last-child {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.waterAmountField input,
-.waterTimeField input {
-  width: 100%;
-  min-height: 3rem;
-  padding: 0.65rem 0.75rem;
-  border: 1px solid var(--rule-strong);
-  border-radius: 0.7rem;
-  background: var(--ground);
-  font: inherit;
-}
-
-.waterAmountField em {
-  color: var(--muted);
-  font-size: 0.75rem;
-  font-style: normal;
-  font-weight: 500;
-}
-
-.waterActions,
-.waterActions > div {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-}
-
-.waterActions {
-  justify-content: space-between;
-}
-
-.waterSubmitButton {
-  min-height: 2.75rem;
-  padding: 0.7rem 1rem;
-  border: 1px solid var(--blue);
-  border-radius: 999px;
-  color: var(--on-blue);
-  background: var(--blue-action);
-  font: inherit;
-  font-size: 0.9rem;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-@media (max-width: 520px) {
-  .waterActions {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .waterActions > div,
-  .waterActions > button {
-    width: 100%;
-  }
-
-  .waterActions > div > * {
-    flex: 1;
-  }
 }
 
 .catalogError {

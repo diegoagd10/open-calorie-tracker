@@ -83,20 +83,17 @@ function summarizeNutrient(name: NutrientName, totals: Totals, goal: FoodLog["go
   };
 }
 
-/** A water amount in the account's display units: whole ml, or fl oz to one decimal. */
-export function waterInDisplayUnits(microliters: number, displayUnits: keyof typeof WATER_UNIT) {
-  const decimals = displayUnits === "metric" ? 0 : 1;
-  return { unit: WATER_UNIT[displayUnits], amount: round(microliters / MICROLITERS_PER_UNIT[displayUnits], decimals) };
-}
-
 function summarizeWater(foodLog: FoodLog) {
-  const inUnits = (microliters: number) => waterInDisplayUnits(microliters, foodLog.displayUnits).amount;
+  const perUnit = MICROLITERS_PER_UNIT[foodLog.displayUnits];
+  const decimals = foodLog.displayUnits === "metric" ? 0 : 1;
+  const inUnits = (microliters: number) => round(microliters / perUnit, decimals);
+  const consumedMicroliters = Number(foodLog.waterTotalOunces) * MICROLITERS_PER_UNIT.us;
   const goal = foodLog.goal?.waterTargetMicroliters;
   return {
     unit: WATER_UNIT[foodLog.displayUnits],
-    consumed: inUnits(foodLog.waterTotalMicroliters),
+    consumed: inUnits(consumedMicroliters),
     goal: goal === undefined ? null : inUnits(goal),
-    remaining: goal === undefined ? null : inUnits(goal - foodLog.waterTotalMicroliters),
+    remaining: goal === undefined ? null : inUnits(goal - consumedMicroliters),
   };
 }
 
@@ -116,8 +113,7 @@ function summarizeFood(entry: FoodLog["entries"][number]) {
   };
 }
 
-/** One amount against its goal, such as "Water: 32 of 80 fl oz, 48 fl oz remaining". */
-export function amountLine(label: string, amount: { unit: string; consumed: number; goal: number | null; remaining: number | null }, goalType: "target" | "maximum" = "target") {
+function amountLine(label: string, amount: { unit: string; consumed: number; goal: number | null; remaining: number | null }, goalType: "target" | "maximum" = "target") {
   if (amount.goal === null || amount.remaining === null) return `${label}: ${amount.consumed} ${amount.unit} (no goal set)`;
   const goal = goalType === "maximum" ? `${amount.goal} ${amount.unit} maximum` : `${amount.goal} ${amount.unit}`;
   const rest = amount.remaining < 0 ? `${round(-amount.remaining, 1)} ${amount.unit} over` : `${amount.remaining} ${amount.unit} remaining`;

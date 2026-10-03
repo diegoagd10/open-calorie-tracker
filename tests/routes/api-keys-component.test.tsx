@@ -200,7 +200,7 @@ test("the edit form keeps the key's name and preset, and shows each remaining pr
   expect(renderer.root.findByProps({ name: "intent" }).props.value).toBe("update");
   expect(renderer.root.findByProps({ name: "keyId" }).props.value).toBe(7);
   expect(renderer.root.findByProps({ type: "checkbox", value: "daily-log:read" }).props).toMatchObject({ defaultChecked: true });
-  expect(renderer.root.findByProps({ type: "checkbox", value: "water-log:write" }).props).toMatchObject({ defaultChecked: false });
+  expect(renderer.root.findByProps({ type: "checkbox", value: "water-events:write" }).props).toMatchObject({ defaultChecked: false });
   const select = renderer.root.findByProps({ name: "expiration" });
   expect(select.props.defaultValue).toBe("90d");
   expect(select.findAllByType("option").map((option) => option.children.join(""))).toEqual([

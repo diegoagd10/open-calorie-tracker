@@ -74,6 +74,7 @@ test("Drizzle schema metadata matches the migrated SQLite contract", async () =>
   // This second module identity is deliberately loaded during the test so
   // @ts-expect-error Vite supports query-suffixed module identities.
   const schema = (await import("../app/database/schema.server?schema-contract")) as unknown as typeof import("../app/database/schema.server");
+  const { waterEvents } = await import("../app/water-event/water-event.schema.server");
   const tables: SQLiteTable[] = [
     schema.applicationMetadata,
     schema.users,
@@ -85,7 +86,7 @@ test("Drizzle schema metadata matches the migrated SQLite contract", async () =>
     schema.userPreferences,
     schema.goalVersions,
     schema.foodEntries,
-    schema.waterEvents,
+    waterEvents,
   ];
   const directory = await mkdtemp(path.join(tmpdir(), "calory-schema-contract-"));
   const database = openApplicationDatabase({
