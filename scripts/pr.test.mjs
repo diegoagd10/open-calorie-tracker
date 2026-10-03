@@ -42,9 +42,9 @@ const { appendFileSync, writeFileSync } = require('node:fs');
 const { execFileSync } = require('node:child_process');
 const tool = require('node:path').basename(process.argv[1]);
 const args = process.argv.slice(2);
-appendFileSync(process.env.PR_TEST_CALLS, JSON.stringify({tool, args, base:process.env.FALLOW_AUDIT_BASE, index:process.env.GIT_INDEX_FILE, gitDir:process.env.GIT_DIR})+'\\n');
+appendFileSync(process.env.PR_TEST_CALLS, JSON.stringify({tool, args, index:process.env.GIT_INDEX_FILE, gitDir:process.env.GIT_DIR})+'\\n');
 console.log(tool + ' stdout'); console.error(tool + ' stderr');
-if (tool === 'pnpm' && args[1] === 'verify:deep') {
+if (tool === 'pnpm' && args[1] === 'verify') {
   const git = (...args) => execFileSync('git', args);
   if (process.env.PR_TEST_CHANGE === 'dirty') writeFileSync('source.txt', 'changed during checks');
   if (process.env.PR_TEST_CHANGE === 'commit') git('commit', '--allow-empty', '-m', 'changed during checks');
@@ -90,11 +90,8 @@ test("checks the exact commit, stores logs, and creates only the published verif
   assert.equal(report.commit, f.commit);
   assert.equal(report.branch, "feature/test");
   assert.equal(report.baseCommit, f.git("rev-parse", "main"));
-  assert.deepEqual(report.checks.map((check) => check.command), ["verify:deep"]);
-  for (const call of f.invocations()) {
-    assert.equal(call.base, report.baseCommit);
-  }
-  const log = readFileSync(path.join(path.dirname(f.summaryPath), "verify-deep.log"), "utf8");
+  assert.deepEqual(report.checks.map((check) => check.command), ["verify"]);
+  const log = readFileSync(path.join(path.dirname(f.summaryPath), "verify.log"), "utf8");
   assert.match(log, /pnpm stdout/);
   assert.match(log, /pnpm stderr/);
   blocked(f.run("create"));
@@ -106,11 +103,11 @@ test("checks the exact commit, stores logs, and creates only the published verif
   assert.deepEqual(invocation.args, ["pr", "create", "--repo", report.remote.replace(/\.git$/, ""), "--base", "main", "--head", report.branch, "--draft", "--title", "A reviewed change", "--body", "Checks passed."]);
 });
 
-test("a failed verify:deep replaces an old pass and blocks creation", (t) => {
+test("a failed verify replaces an old pass and blocks creation", (t) => {
   const f = fixture(t);
   passed(f.run());
   f.git("push", "origin", "HEAD");
-  const result = f.run("check", [], { PR_TEST_FAIL: "verify:deep" });
+  const result = f.run("check", [], { PR_TEST_FAIL: "verify" });
   assert.equal(result.status, 7);
   const report = f.summary();
   assert.equal(report.status, "failed");
@@ -205,11 +202,11 @@ test("commits run no verification and pre-push verifies the final SHA", (t) => {
   passed(f.run("create", ["--fill"]));
 });
 
-test("pre-push reruns verify:deep after an old pass and blocks the remote on failure", (t) => {
+test("pre-push reruns verify after an old pass and blocks the remote on failure", (t) => {
   const f = fixture(t);
   passed(f.run());
   passed(f.install());
-  const result = f.gitRun(["push", "origin", "HEAD"], { PR_TEST_FAIL: "verify:deep" });
+  const result = f.gitRun(["push", "origin", "HEAD"], { PR_TEST_FAIL: "verify" });
   blocked(result, /PR blocked/);
   assert.match(result.stdout + result.stderr, /pnpm stderr/);
   assert.equal(f.git("ls-remote", "origin", "refs/heads/feature/test"), "");
