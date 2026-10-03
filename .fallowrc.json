@@ -97,6 +97,7 @@
         "name": "water-event",
         "patterns": ["app/water-event/**"]
       },
+      { "name": "shared", "patterns": ["app/shared/**"] },
       {
         "name": "server",
         "patterns": ["server.js", "server/**", "app/runtime.server.ts"]
@@ -147,7 +148,8 @@
           "appearance",
           "api-keys",
           "browser-api-keys",
-          "mcp"
+          "mcp",
+          "shared"
         ]
       },
       { "from": "auth", "allow": ["database", "server"] },
@@ -156,9 +158,9 @@
       { "from": "browser-api-keys", "allow": [] },
       { "from": "api-keys", "allow": ["auth", "credentials", "database", "server"] },
       { "from": "catalog", "allow": ["server", "database", "catalog-management"] },
-      { "from": "database", "allow": [], "allowTypeOnly": ["catalog", "catalog-management", "credentials"] },
+      { "from": "database", "allow": ["shared"], "allowTypeOnly": ["catalog", "catalog-management", "credentials"] },
       { "from": "credentials", "allow": ["database"] },
-      { "from": "mcp", "allow": ["food-log"], "allowTypeOnly": ["api-keys"] },
+      { "from": "mcp", "allow": ["food-log", "water-event"], "allowTypeOnly": ["api-keys"] },
       { "from": "catalog-management", "allow": ["database", "catalog"] },
       {
         "from": "food-entry",
@@ -166,15 +168,16 @@
       },
       {
         "from": "food-log",
-        "allow": ["database", "food-entry"],
+        "allow": ["database", "food-entry", "shared", "water-event"],
         "allowTypeOnly": ["goals"]
       },
       { "from": "goals", "allow": ["database", "food-log", "setup"] },
       { "from": "setup", "allow": ["database", "food-log", "goals"] },
       {
         "from": "water-event",
-        "allow": ["database", "food-log", "setup"]
+        "allow": ["api-keys", "auth", "database", "food-log", "mcp", "server", "shared"]
       },
+      { "from": "shared", "allow": [] },
       { "from": "server", "allow": ["auth", "database", "photo-analysis", "catalog-management", "appearance"] },
       { "from": "photo-analysis", "allow": ["catalog", "credentials", "database", "food-entry", "food-log"] },
       {
@@ -196,7 +199,8 @@
           "web",
           "appearance",
           "api-keys",
-          "mcp"
+          "mcp",
+          "shared"
         ]
       },
       { "from": "tooling", "allow": ["auth"] }

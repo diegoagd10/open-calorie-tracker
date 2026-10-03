@@ -10,6 +10,8 @@ export default [
   route("settings/api-keys", "./routes/settings.api-keys.tsx"),
   route("settings/api-keys/copy", "./routes/settings.api-keys.copy.ts"),
   route("api/v1/daily-log", "./routes/api.v1.daily-log.ts"),
+  route("water-events", "./water-event/routes/web.ts"),
+  route("api/v1/water-events", "./water-event/routes/api.v1.water-events.ts"),
   route("mcp", "./routes/mcp.ts"),
   route("login", "./routes/login.tsx"),
   route("logout", "./routes/logout.tsx"),

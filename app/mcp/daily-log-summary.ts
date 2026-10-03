@@ -87,12 +87,13 @@ function summarizeWater(foodLog: FoodLog) {
   const perUnit = MICROLITERS_PER_UNIT[foodLog.displayUnits];
   const decimals = foodLog.displayUnits === "metric" ? 0 : 1;
   const inUnits = (microliters: number) => round(microliters / perUnit, decimals);
+  const consumedMicroliters = Number(foodLog.waterTotalOunces) * MICROLITERS_PER_UNIT.us;
   const goal = foodLog.goal?.waterTargetMicroliters;
   return {
     unit: WATER_UNIT[foodLog.displayUnits],
-    consumed: inUnits(foodLog.waterTotalMicroliters),
+    consumed: inUnits(consumedMicroliters),
     goal: goal === undefined ? null : inUnits(goal),
-    remaining: goal === undefined ? null : inUnits(goal - foodLog.waterTotalMicroliters),
+    remaining: goal === undefined ? null : inUnits(goal - consumedMicroliters),
   };
 }
 

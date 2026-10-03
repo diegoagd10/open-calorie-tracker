@@ -82,21 +82,16 @@ import {
   scaleCatalogNutrient,
 } from "../food-entry/nutrition";
 import {
-  StaleWaterEventError,
-  InvalidWaterEventInputError,
-  WaterEventUnavailableError,
-} from "../water-event/water-event.server";
-import { getWaterEventService } from "../water-event/runtime.server";
+  getWaterEventService,
+  WaterEventNotFoundError,
+} from "../water-event/index.server";
 import {
-  WATER_PRESET_MICROLITERS,
-  waterPresetTotalMicroliters,
-  waterPresetTotalOunces,
-  type WaterPreset,
-} from "../water-event/presets";
-import {
-  waterTargetThousandthsFromMicroliters,
-  type DisplayUnits,
-} from "../goals/water-conversion";
+  WaterDialog,
+  waterEventLocalDateTime,
+  WaterOverview,
+  WaterTimelineItem,
+} from "../water-event";
+import { waterTargetThousandthsFromMicroliters } from "../goals/water-conversion";
 import styles from "../food-log.module.css";
 
 function catalogQuery(value: string): string | undefined {
@@ -113,31 +108,6 @@ function foodLogIntentSchema() {
   return z.discriminatedUnion("intent", [
     z.object({ date: z.string(), intent: z.literal("add-food") }),
     z.object({ date: z.string(), intent: z.literal("add-water") }),
-    z.object({
-      date: z.string(),
-      eventId: z.string(),
-      intent: z.literal("create-water"),
-      waterAmount: z.string(),
-      waterSelection: z.enum(["8", "16", "24", "presets", "exact"]),
-      waterPreset8Count: z.string(),
-      waterPreset16Count: z.string(),
-      waterPreset24Count: z.string(),
-    }),
-    z.object({
-      date: z.string(),
-      eventId: z.string(),
-      expectedUpdatedAt: z.string(),
-      intent: z.literal("update-water"),
-      waterAmount: z.string(),
-      waterEventTime: z.string(),
-      waterSelection: z.enum(["8", "16", "24", "exact"]),
-    }),
-    z.object({
-      date: z.string(),
-      eventId: z.string(),
-      expectedUpdatedAt: z.string(),
-      intent: z.literal("delete-water"),
-    }),
     z.object({
       date: z.string(),
       idempotencyKey: z.string(),
@@ -229,9 +199,6 @@ type HomeActionData = {
   manualFoodDraft?: ManualFoodDraft;
   message: string;
   tone?: "error" | "status";
-  waterEventEditor?: ReturnType<
-    ReturnType<typeof getWaterEventService>["read"]
-  >;
 };
 
 function testRequestInstant(request: Request): Date | undefined {
@@ -540,31 +507,35 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const requestedWater = url.searchParams.get("water");
   let waterDialog:
-    | { mode: "create" }
     | {
-        event: ReturnType<ReturnType<typeof getWaterEventService>["read"]>;
-        mode: "edit";
+        event?: ReturnType<ReturnType<typeof getWaterEventService>["read"]>;
+        initialLocalLogDate: string;
+        maxLocalLogDate: string;
       }
     | undefined;
   if (requestedWater !== null && !foodLog.isFuture) {
+    const maxLocalLogDate = foodLog.localNow;
+    const initialLocalLogDate = foodLog.selectedDate === foodLog.today
+      ? foodLog.localNow
+      : `${foodLog.selectedDate}T12:00`;
     if (requestedWater === "new") {
-      waterDialog = { mode: "create" };
+      waterDialog = { initialLocalLogDate, maxLocalLogDate };
     } else {
       const eventId = positiveIntegerId(requestedWater);
-      if (eventId === undefined) {
-        throw new Response("Water Event is unavailable.", { status: 404 });
-      }
       try {
         const event = getWaterEventService(testRequestInstant(request)).read(
           session.user.id,
-          eventId,
+          eventId ?? 0,
         );
-        if (event.foodLogDate !== foodLog.selectedDate) {
-          throw new WaterEventUnavailableError();
+        if (
+          waterEventLocalDateTime(event.logDate, foodLog.timeZone).slice(0, 10) !==
+          foodLog.selectedDate
+        ) {
+          throw new WaterEventNotFoundError();
         }
-        waterDialog = { event, mode: "edit" };
+        waterDialog = { event, initialLocalLogDate, maxLocalLogDate };
       } catch (error) {
-        if (error instanceof WaterEventUnavailableError) {
+        if (error instanceof WaterEventNotFoundError) {
           throw new Response(error.message, { status: 404 });
         }
         throw error;
@@ -888,7 +859,7 @@ export async function action({ request }: Route.ActionArgs) {
   const formData = await readApplicationMutationForm(request, session);
 
   const formFields = Object.fromEntries([
-    "carbohydrateGrams", "date", "destinationDate", "energyKcal", "entryId", "eventId", "expectedUpdatedAt", "fatGrams", "fiberGrams", "idempotencyKey", "intent", "name", "proteinGrams", "providerFoodId", "provider", "quantity", "savedFoodId", "selectedMeasurementId", "sodiumMilligrams", "sugarGrams", "waterAmount", "waterEventTime", "waterSelection", "waterPreset8Count", "waterPreset16Count", "waterPreset24Count"
+    "carbohydrateGrams", "date", "destinationDate", "energyKcal", "entryId", "expectedUpdatedAt", "fatGrams", "fiberGrams", "idempotencyKey", "intent", "name", "proteinGrams", "providerFoodId", "provider", "quantity", "savedFoodId", "selectedMeasurementId", "sodiumMilligrams", "sugarGrams"
   ].map(name => [name, formString(formData, name)]));
   const parsed = foodLogIntentSchema().safeParse({
     ...formFields,
@@ -1014,85 +985,6 @@ export async function action({ request }: Route.ActionArgs) {
         return data<HomeActionData>(
           { message: error.message, tone: "error" },
           { status: 404 },
-        );
-      }
-      throw error;
-    }
-  }
-
-  if (
-    parsed.data.intent === "create-water" ||
-    parsed.data.intent === "update-water" ||
-    parsed.data.intent === "delete-water"
-  ) {
-    const waterEventService = getWaterEventService(testRequestInstant(request));
-    const eventId = Number(parsed.data.eventId);
-    try {
-      if (parsed.data.intent === "create-water") {
-        waterEventService.create(
-          session.user.id,
-          parsed.data.waterSelection === "exact"
-            ? {
-                amount: parsed.data.waterAmount,
-                foodLogDate: parsed.data.date,
-                selection: "exact",
-              }
-            : parsed.data.waterSelection === "presets"
-              ? {
-                  counts: {
-                    "8": Number(parsed.data.waterPreset8Count),
-                    "16": Number(parsed.data.waterPreset16Count),
-                    "24": Number(parsed.data.waterPreset24Count),
-                  },
-                  foodLogDate: parsed.data.date,
-                  selection: "presets",
-                }
-            : {
-                foodLogDate: parsed.data.date,
-                selection: parsed.data.waterSelection,
-              },
-        );
-        return redirect(foodLogHref(parsed.data.date));
-      }
-      if (parsed.data.intent === "delete-water") {
-        waterEventService.delete(session.user.id, eventId, {
-          expectedUpdatedAt: parsed.data.expectedUpdatedAt,
-          foodLogDate: parsed.data.date,
-        });
-        return redirect(`${foodLogHref(parsed.data.date)}&notice=water-deleted`);
-      }
-      waterEventService.update(session.user.id, eventId, {
-        amount: parsed.data.waterAmount,
-        expectedUpdatedAt: parsed.data.expectedUpdatedAt,
-        foodLogDate: parsed.data.date,
-        localEventTime: parsed.data.waterEventTime,
-        selection: parsed.data.waterSelection,
-      });
-      return redirect(`${foodLogHref(parsed.data.date)}&notice=water-updated`);
-    } catch (error) {
-      if (error instanceof WaterEventUnavailableError) {
-        return data<HomeActionData>(
-          { message: error.message, tone: "error" },
-          { status: 404 },
-        );
-      }
-      if (error instanceof StaleWaterEventError) {
-        return data<HomeActionData>(
-          {
-            message: error.message,
-            tone: "error",
-            waterEventEditor: waterEventService.read(
-              session.user.id,
-              eventId,
-            ),
-          },
-          { status: 409 },
-        );
-      }
-      if (error instanceof InvalidWaterEventInputError) {
-        return data<HomeActionData>(
-          { message: error.message, tone: "error" },
-          { status: 400 },
         );
       }
       throw error;
@@ -1292,52 +1184,11 @@ function fullDate(date: string): string {
   });
 }
 
-function waterGoalValues(
-  waterTargetMicroliters: number,
-  displayUnits: DisplayUnits,
-) {
-  return {
-    water: formatWaterReading(waterTargetMicroliters, displayUnits),
-    waterUnit: displayUnits === "metric" ? "ml" : "fl oz",
-  };
-}
-
-function waterInputValue(
-  microliters: number,
-  displayUnits: DisplayUnits,
-): string {
-  const thousandths = waterTargetThousandthsFromMicroliters(
-    microliters,
-    displayUnits,
-  );
-  const whole = thousandths / 1_000n;
-  const fraction = String(thousandths % 1_000n)
-    .padStart(3, "0")
-    .replace(/0+$/, "");
-  return fraction ? `${whole}.${fraction}` : String(whole);
-}
-
-function formatWaterAmount(
-  microliters: number,
-  displayUnits: DisplayUnits,
-  maximumFractionDigits = 3,
-): string {
-  return new Intl.NumberFormat("en-US", { maximumFractionDigits }).format(
-    Number(waterTargetThousandthsFromMicroliters(microliters, displayUnits)) /
-      1_000,
-  );
-}
-
-/**
- * A water amount as people read it: whole ml or tenths of a fl oz, matching the
- * preset labels, so unit conversion never shows noise like 473.176 ml. Amounts
- * under one unit keep their exact thousandths.
- */
-function formatWaterReading(microliters: number, displayUnits: DisplayUnits): string {
-  const oneUnitMicroliters = displayUnits === "metric" ? 1_000 : 29_573.529_562_5;
-  const digits =
-    microliters < oneUnitMicroliters ? 3 : displayUnits === "metric" ? 0 : 1;
-  return formatWaterAmount(microliters, displayUnits, digits);
+/** A goal's water target as decimal fluid ounces, the unit Water Events are stored in. */
+function waterGoalOunces(waterTargetMicroliters: number): string {
+  const thousandths = waterTargetThousandthsFromMicroliters(waterTargetMicroliters, "us");
+  const fraction = String(thousandths % 1_000n).padStart(3, "0").replace(/0+$/, "");
+  return fraction ? `${thousandths / 1_000n}.${fraction}` : String(thousandths / 1_000n);
 }
 
 /** How a day's calories compare with that day's goal, for the week strip and calendar. */
@@ -1732,20 +1583,11 @@ function DailySummary({
   }
 
   const goal = foodLog.goal;
-  const goals = goal
-    ? waterGoalValues(goal.waterTargetMicroliters, foodLog.displayUnits)
-    : undefined;
   const totals = foodLog.nutritionTotals;
   const calorieTotal = totals.energyMilliKcal;
   const calorieGoal = goal?.calorieTargetMilliKcal;
   const calorieKnown = formatEnergy(calorieTotal.known);
   const calorieGoalDisplay = calorieGoal ? formatEnergy(calorieGoal) : undefined;
-  const waterTotal = foodLog.waterTotalMicroliters;
-  const waterTotalDisplay = formatWaterReading(waterTotal, foodLog.displayUnits);
-  const waterUnit = foodLog.displayUnits === "metric" ? "ml" : "fl oz";
-  const equivalentGlasses = new Intl.NumberFormat("en-US", {
-    maximumFractionDigits: 1,
-  }).format(waterTotal / 236_588.236_5);
   const calorieDescription = calorieGoal
     ? `${calorieKnown}${calorieTotal.isIncomplete ? " known" : ""} of ${calorieGoalDisplay} kcal target${calorieTotal.isIncomplete ? "; incomplete" : ""}`
     : undefined;
@@ -1917,55 +1759,12 @@ function DailySummary({
         </section>
       </section>
 
-      <section
-        aria-labelledby="water-heading"
-        className={styles.waterOverview}
-      >
-        <Link
-          className={styles.waterOverviewRow}
-          data-water-dialog-trigger
-          to={`${foodLogHref(foodLog.selectedDate)}&water=new`}
-        >
-          <span>
-            <strong id="water-heading">Water</strong>
-            <small>
-              {equivalentGlasses} equivalent {equivalentGlasses === "1" ? "glass" : "glasses"} · 8 fl oz / 237 ml
-            </small>
-          </span>
-          <strong>
-            {waterTotalDisplay}{" "}
-            <small>
-              {goal ? `/ ${goals!.water} ${goals!.waterUnit}` : "/ No active goal"}
-            </small>
-          </strong>
-          <span aria-hidden="true">›</span>
-        </Link>
-        {goal ? (
-          <div
-            aria-label="Water progress"
-            aria-valuemax={
-              foodLog.displayUnits === "metric"
-                ? goal.waterTargetMicroliters / 1_000
-                : goal.waterTargetMicroliters / 29_573.529_562_5
-            }
-            aria-valuemin={0}
-            aria-valuenow={Math.min(
-              foodLog.displayUnits === "metric"
-                ? waterTotal / 1_000
-                : waterTotal / 29_573.529_562_5,
-              foodLog.displayUnits === "metric"
-                ? goal.waterTargetMicroliters / 1_000
-                : goal.waterTargetMicroliters / 29_573.529_562_5,
-            )}
-            aria-valuetext={`${waterTotalDisplay} of ${goals!.water} ${waterUnit} target`}
-            className={styles.waterProgress}
-            role="progressbar"
-            style={progressStyle(waterTotal, goal.waterTargetMicroliters)}
-          >
-            <span />
-          </div>
-        ) : null}
-      </section>
+      <WaterOverview
+        addHref={`${foodLogHref(foodLog.selectedDate)}&water=new`}
+        displayUnits={foodLog.displayUnits}
+        goalOunces={goal ? waterGoalOunces(goal.waterTargetMicroliters) : null}
+        totalOunces={foodLog.waterTotalOunces}
+      />
     </>
   );
 }
@@ -2624,316 +2423,35 @@ function FoodEntryEditorDialog({
   );
 }
 
-type WaterDialogState = NonNullable<
-  Route.ComponentProps["loaderData"]["waterDialog"]
->;
-
-function formatWaterPresetBreakdown(
-  event: { preset8Count: number; preset16Count: number; preset24Count: number },
-  displayUnits: DisplayUnits,
-): string | undefined {
-  const unit = displayUnits === "metric" ? "ml" : "fl oz";
-  const parts = ([
-    ["24", "Large", event.preset24Count],
-    ["16", "Bottle", event.preset16Count],
-    ["8", "Glass", event.preset8Count],
-  ] as const).filter(([, , count]) => count > 0).map(([size, label, count]) =>
-    `${formatWaterAmount(WATER_PRESET_MICROLITERS[size], displayUnits, displayUnits === "metric" ? 0 : 1)} ${unit} ${label} × ${count}`
-  );
-  return parts.length > 0 ? parts.join(" · ") : undefined;
-}
-
-function WaterEventDialog({
-  actionData,
+function WaterDialogModal({
   csrfToken,
   date,
   dialog,
-  displayUnits,
 }: {
-  actionData: HomeActionData | undefined;
   csrfToken: string;
   date: string;
-  dialog: WaterDialogState;
-  displayUnits: DisplayUnits;
+  dialog: NonNullable<Route.ComponentProps["loaderData"]["waterDialog"]>;
 }) {
-  const event = dialog.mode === "edit" ? dialog.event : undefined;
-  const matchingPreset = event
-    ? event.preset8Count + event.preset16Count + event.preset24Count > 0
-      ? undefined
-      : (Object.entries(WATER_PRESET_MICROLITERS).find(
-        ([, microliters]) => microliters === event.amountMicroliters,
-      )?.[0] as "8" | "16" | "24" | undefined)
-    : undefined;
-  const [selection, setSelection] = useState<"8" | "16" | "24" | "presets" | "exact">(
-    event ? matchingPreset ?? "exact" : "presets",
-  );
-  const [presetCounts, setPresetCounts] = useState({ "8": 0, "16": 0, "24": 0 });
-  const [amount, setAmount] = useState(
-    event
-      ? waterInputValue(event.amountMicroliters, displayUnits)
-      : displayUnits === "metric"
-        ? "355"
-        : "12",
-  );
-  const [confirmingDelete, setConfirmingDelete] = useState(false);
-  const navigation = useNavigation();
   const closeHref = foodLogHref(date);
   const { closeDialog, dialogRef, handleDialogKeyDown } = useModalDialog({
     closeHref,
-    initialFocusSelector: "button:not([disabled])",
+    initialFocusSelector: 'input:not([type="hidden"])',
     restoreFocusSelector:
       "[data-water-editor-trigger], [data-water-dialog-trigger]",
   });
-  const unit = displayUnits === "metric" ? "ml" : "fl oz";
-  const pending = event
-    ? navigation.formData?.get("eventId") === String(event.id)
-    : navigation.formData?.get("intent") === "create-water";
-  const pendingIntent = pending ? navigation.formData!.get("intent") : undefined;
-  const presetTotalMicroliters = waterPresetTotalMicroliters(presetCounts);
-  const presetTotalOunces = waterPresetTotalOunces(presetCounts);
-  const servingCount = presetCounts["8"] + presetCounts["16"] + presetCounts["24"];
-
-  const presets = [
-    { label: "Glass", selection: "8" as const },
-    { label: "Bottle", selection: "16" as const },
-    { label: "Large", selection: "24" as const },
-  ];
-
-  function selectPreset(preset: WaterPreset) {
-    if (event) {
-      setSelection(preset);
-    } else if (selection === "exact") {
-      setPresetCounts({ "8": 0, "16": 0, "24": 0 });
-      setSelection("presets");
-    } else {
-      setPresetCounts((counts) => ({ ...counts, [preset]: counts[preset] + 1 }));
-    }
-  }
-
-  function selectExact() {
-    if (!event && selection === "presets" && servingCount > 0) {
-      setAmount(waterInputValue(presetTotalMicroliters, displayUnits));
-    }
-    setSelection("exact");
-  }
-
   return (
     <DialogBackdrop onClose={closeDialog}>
-      <section
-        aria-labelledby="water-event-title"
-        aria-modal="true"
-        className={`${styles.foodDialog} ${styles.waterDialog}`}
+      <WaterDialog
+        actionHref="/water-events"
+        closeHref={closeHref}
+        csrfToken={csrfToken}
+        dialogRef={dialogRef}
+        event={dialog.event}
+        initialLocalLogDate={dialog.initialLocalLogDate}
+        maxLocalLogDate={dialog.maxLocalLogDate}
         onKeyDown={handleDialogKeyDown}
-        ref={dialogRef}
-        role="dialog"
-      >
-        <div className={styles.dialogHead}>
-          <div>
-            <h2 id="water-event-title">
-              {event ? "Edit Water Event" : "Add Water"}
-            </h2>
-            <p>{event ? "Edit the amount or time" : "Add one or more plain-water servings"}</p>
-          </div>
-          <Link
-            aria-label="Close water sheet"
-            className={styles.dialogClose}
-            to={closeHref}
-          >
-            ×
-          </Link>
-        </div>
-        <Form className={styles.waterForm} method="post" noValidate>
-          <input name="csrfToken" type="hidden" value={csrfToken} />
-          <input name="date" type="hidden" value={date} />
-          <input name="waterSelection" type="hidden" value={selection} />
-          {!event ? (
-            <>
-              <input name="waterPreset8Count" type="hidden" value={presetCounts["8"]} />
-              <input name="waterPreset16Count" type="hidden" value={presetCounts["16"]} />
-              <input name="waterPreset24Count" type="hidden" value={presetCounts["24"]} />
-            </>
-          ) : null}
-          {selection === "exact" ? null : (
-            <input name="waterAmount" type="hidden" value="" />
-          )}
-          {event ? (
-            <>
-              <input name="eventId" type="hidden" value={event.id} />
-              <input
-                name="expectedUpdatedAt"
-                type="hidden"
-                value={event.updatedAt}
-              />
-            </>
-          ) : null}
-          <fieldset disabled={pending}>
-            <div aria-label="Water presets" className={styles.waterPresets}>
-              {presets.map((preset) => {
-                const presetAmount = formatWaterAmount(
-                  WATER_PRESET_MICROLITERS[preset.selection],
-                  displayUnits,
-                  displayUnits === "metric" ? 0 : 1,
-                );
-                const count = presetCounts[preset.selection];
-                return (
-                  <div className={styles.waterPresetOption} key={preset.selection}>
-                    <button
-                      aria-label={!event
-                        ? selection === "exact"
-                          ? `Return to preset sizes using ${presetAmount} ${unit} ${preset.label}; counts reset to zero`
-                          : `Add one ${presetAmount} ${unit} ${preset.label}; ${count} selected`
-                        : undefined}
-                      aria-pressed={event ? selection === preset.selection : undefined}
-                      className={styles.waterPresetButton}
-                      data-counted={!event && count > 0 ? "true" : undefined}
-                      disabled={!event && selection === "presets" && presetTotalOunces + Number(preset.selection) > 500}
-                      onClick={() => selectPreset(preset.selection)}
-                      type="button"
-                    >
-                      <UiIcon name="water" />
-                      <strong>{presetAmount}</strong>
-                      <span>{unit}</span>
-                      <small>{preset.label}</small>
-                      {!event && count > 0 ? <b className={styles.waterPresetCount}>× {count}</b> : null}
-                    </button>
-                    {!event && selection === "presets" && count > 0 ? (
-                      <button
-                        aria-label={`Remove one ${presetAmount} ${unit} ${preset.label}`}
-                        className={styles.waterPresetRemove}
-                        onClick={() => setPresetCounts((counts) => ({ ...counts, [preset.selection]: counts[preset.selection] - 1 }))}
-                        type="button"
-                      >
-                        −
-                      </button>
-                    ) : null}
-                  </div>
-                );
-              })}
-              <button
-                aria-pressed={selection === "exact"}
-                className={styles.waterPresetButton}
-                onClick={selectExact}
-                type="button"
-              >
-                <UiIcon name="pencil" />
-                <strong>Exact</strong>
-                <span>amount</span>
-                <small>Custom</small>
-              </button>
-            </div>
-            {!event && selection === "presets" ? (
-              <p aria-live="polite" className={styles.waterSelectionSummary}>
-                {servingCount === 0
-                  ? "Tap a size to add a serving."
-                  : `${servingCount} ${servingCount === 1 ? "serving" : "servings"} · ${formatWaterReading(presetTotalMicroliters, displayUnits)} ${unit}`}
-                {presetTotalOunces + 8 > 500 ? " · Maximum amount reached" : null}
-              </p>
-            ) : null}
-            {selection === "exact" ? (
-              <label className={styles.waterAmountField}>
-                <span>Amount</span>
-                <span>
-                  <input
-                    aria-label={`Amount ${unit}`}
-                    inputMode="decimal"
-                    max={displayUnits === "metric" ? "15000" : "500"}
-                    min="0.001"
-                    name="waterAmount"
-                    onChange={(changeEvent) => setAmount(changeEvent.target.value)}
-                    required
-                    step="0.001"
-                    type="number"
-                    value={amount}
-                  />
-                  <em>{unit}</em>
-                </span>
-              </label>
-            ) : null}
-            {!event && selection === "exact" ? (
-              <p className={styles.waterSelectionSummary}>
-                Tap a size to return to presets, then tap again to add a serving.
-              </p>
-            ) : null}
-            {event ? (
-              <label className={styles.waterTimeField}>
-                <span>Event time</span>
-                <input
-                  defaultValue={event.localEventTime.slice(0, 5)}
-                  name="waterEventTime"
-                  required
-                  type="time"
-                />
-              </label>
-            ) : null}
-            {actionData?.message ? (
-              <p className={styles.catalogError} role="alert">
-                {actionData.message}
-              </p>
-            ) : null}
-            <div className={styles.waterActions}>
-              {event ? (
-                <button
-                  className={styles.dangerButton}
-                  onClick={() => setConfirmingDelete(true)}
-                  type="button"
-                >
-                  Delete Water Event
-                </button>
-              ) : (
-                <span />
-              )}
-              <div>
-                <Link className={styles.secondaryButton} to={closeHref}>
-                  Cancel
-                </Link>
-                <button
-                  className={styles.waterSubmitButton}
-                  disabled={!event && selection === "presets" && servingCount === 0}
-                  name="intent"
-                  type="submit"
-                  value={event ? "update-water" : "create-water"}
-                >
-                  {pendingIntent === "create-water"
-                    ? "Adding…"
-                    : pendingIntent === "update-water"
-                      ? "Saving…"
-                      : event
-                        ? "Save changes"
-                        : selection === "exact"
-                          ? "Add exact amount"
-                          : servingCount === 0
-                            ? "Select water amount"
-                            : `Add ${formatWaterAmount(presetTotalMicroliters, displayUnits, displayUnits === "metric" ? 0 : 1)} ${unit}`}
-                </button>
-              </div>
-            </div>
-            {event && confirmingDelete ? (
-              <div className={styles.deleteConfirm} role="alert">
-                <div>
-                  <strong>Delete this Water Event?</strong>
-                  <p>The daily water total will decrease by this amount.</p>
-                </div>
-                <button
-                  className={styles.secondaryButton}
-                  onClick={() => setConfirmingDelete(false)}
-                  type="button"
-                >
-                  Keep it
-                </button>
-                <button
-                  className={styles.dangerSubmitButton}
-                  formNoValidate
-                  name="intent"
-                  type="submit"
-                  value="delete-water"
-                >
-                  {pendingIntent === "delete-water" ? "Deleting…" : "Delete"}
-                </button>
-              </div>
-            ) : null}
-          </fieldset>
-        </Form>
-      </section>
+        returnDate={date}
+      />
     </DialogBackdrop>
   );
 }
@@ -4158,9 +3676,6 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
   const activeFoodEntryEditor =
     actionData?.foodEntryEditor ?? foodEntryEditor;
   const selectedLabel = fullDate(foodLog.selectedDate);
-  const activeWaterDialog = actionData?.waterEventEditor
-    ? { event: actionData.waterEventEditor, mode: "edit" as const }
-    : waterDialog;
   const navigation = useNavigation();
   const showQuickLog = !calendar && !foodLog.isFuture;
   const foodLogPending = navigation.formData?.get("intent") === "log-food";
@@ -4177,7 +3692,7 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
       <div
         className={`${styles.shell} ${styles.foodLogShell}`}
         inert={
-          visibleCatalog || activeFoodEntryEditor || activeWaterDialog || copyDialog
+          visibleCatalog || activeFoodEntryEditor || waterDialog || copyDialog
             ? true
             : undefined
         }
@@ -4287,42 +3802,14 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
                       return entry.kind === "food" ? (
                         <FoodTimelineEntry key={`food-${entry.id}`} entry={entry} photoMeal={photoMeals.find((meal) => meal.entryId === entry.id)} csrfToken={csrfToken} />
                       ) : (
-                        <article key={`water-${entry.id}`}>
-                          <Link
-                            className={`${styles.foodEntryCard} ${styles.waterEventCard}`}
-                            data-water-editor-trigger
-                            to={`${foodLogHref(entry.foodLogDate)}&water=${entry.id}`}
-                          >
-                            <time
-                              dateTime={`${entry.foodLogDate}T${entry.localEventTime}`}
-                            >
-                              {formatEventTime(entry.localEventTime)}
-                            </time>
-                            <span
-                              className={styles.waterEntryMarker}
-                              aria-hidden="true"
-                            >
-                              <UiIcon name="water" />
-                            </span>
-                            <span className={styles.foodEntryContent}>
-                              <strong>Water</strong>
-                              <small className={styles.waterEntryBreakdown}>
-                                {formatWaterPresetBreakdown(entry, foodLog.displayUnits) ?? "Plain water"}
-                              </small>
-                            </span>
-                            <span className={styles.foodEntryEnergy}>
-                              {formatWaterReading(
-                                entry.amountMicroliters,
-                                foodLog.displayUnits,
-                              )}{" "}
-                              <small>
-                                {foodLog.displayUnits === "metric"
-                                  ? "ml"
-                                  : "fl oz"}
-                              </small>
-                            </span>
-                          </Link>
-                        </article>
+                        <WaterTimelineItem
+                          displayUnits={foodLog.displayUnits}
+                          editHref={`${foodLogHref(foodLog.selectedDate)}&water=${entry.id}`}
+                          event={entry}
+                          icon={<UiIcon name="water" />}
+                          key={`water-${entry.id}`}
+                          timeZone={foodLog.timeZone}
+                        />
                       );
                     })}
                     {actionData?.message ? (
@@ -4383,18 +3870,12 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
           key={activeFoodEntryEditor.updatedAt}
         />
       ) : null}
-      {activeWaterDialog ? (
-        <WaterEventDialog
-          actionData={actionData}
+      {waterDialog ? (
+        <WaterDialogModal
           csrfToken={csrfToken}
           date={foodLog.selectedDate}
-          dialog={activeWaterDialog}
-          displayUnits={foodLog.displayUnits}
-          key={
-            activeWaterDialog.mode === "edit"
-              ? activeWaterDialog.event.updatedAt
-              : "create"
-          }
+          dialog={waterDialog}
+          key={waterDialog.event?.updatedAt ?? "create"}
         />
       ) : null}
       {copyDialog ? (

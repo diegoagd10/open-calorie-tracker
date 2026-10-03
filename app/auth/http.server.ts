@@ -197,7 +197,14 @@ export async function getApplicationMutationSession(request: Request): Promise<A
   return session ?? redirect("/login", { headers: { "Set-Cookie": serializeClearedSessionCookie() } });
 }
 export async function readApplicationMutationForm(request: Request, session: AuthenticatedSession): Promise<FormData> {
-  const form = await request.formData();
+  let form: FormData;
+  try {
+    form = await request.formData();
+  } catch (error) {
+    // A wrong content type or malformed multipart body is not a form any page sends.
+    if (error instanceof TypeError) throw new Response("The form could not be read.", { status: 400 });
+    throw error;
+  }
   if (!getAuthenticationService().verifyCsrfToken(session.token, String(form.get("csrfToken") ?? ""))) {
     throw new Response("CSRF token rejected.", { status: 403 });
   }

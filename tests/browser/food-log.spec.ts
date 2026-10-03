@@ -90,6 +90,14 @@ async function copyActionIdempotencyKey(
     .inputValue();
 }
 
+/** Fills a dialog field and waits until the value holds, so a late re-render cannot drop it. */
+async function fillSteadily(field: Locator, value: string) {
+  await expect(async () => {
+    await field.fill(value);
+    await expect(field).toHaveValue(value, { timeout: 1_000 });
+  }).toPass();
+}
+
 
 test("today, historical navigation, calendar access, travel, and future rejection", async ({
   browser,
@@ -1632,8 +1640,9 @@ test("an authenticated user can copy a historical Food Entry to today", async ({
 
   await page.getByRole("button", { name: "Add Water" }).click();
   const waterDialog = page.getByRole("dialog", { name: "Add Water" });
-  await waterDialog.getByRole("button", { name: /8 fl oz.*Glass/ }).click();
-  await waterDialog.getByRole("button", { name: "Add 8 fl oz" }).click();
+  await fillSteadily(waterDialog.getByLabel("Amount (fl oz)"), "8");
+  await waterDialog.getByRole("button", { name: "Add water", exact: true }).click();
+  await expect(waterDialog).not.toBeVisible();
 
   const sourceCard = page.getByRole("link", {
     name: /Plain nonfat Greek yogurt.*100\.3 kcal/,
@@ -1797,8 +1806,9 @@ test("an authenticated user can review and copy a Food Entry to another eligible
   await page.goto("/?date=2026-08-27");
   await page.getByRole("button", { name: "Add Water" }).click();
   const waterDialog = page.getByRole("dialog", { name: "Add Water" });
-  await waterDialog.getByRole("button", { name: /8 fl oz.*Glass/ }).click();
-  await waterDialog.getByRole("button", { name: "Add 8 fl oz" }).click();
+  await fillSteadily(waterDialog.getByLabel("Amount (fl oz)"), "8");
+  await waterDialog.getByRole("button", { name: "Add water", exact: true }).click();
+  await expect(waterDialog).not.toBeVisible();
 
   await expect(
     page.locator("[data-water-editor-trigger]").filter({ hasText: "8 fl oz" }),

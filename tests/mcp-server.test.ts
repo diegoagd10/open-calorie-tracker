@@ -44,5 +44,8 @@ test("a key needs at least one tool's scope to use the MCP at all", () => {
   expect(allowsAnyTool(["daily-log:read"])).toBe(true);
   expect(allowsAnyTool(["other:read"])).toBe(false);
   expect(allowsAnyTool([])).toBe(false);
-  expect(toolScopes(tools)).toBe("daily-log:read future:write");
+  // A set of scopes: order is incidental, duplicates are not allowed.
+  const scopes = toolScopes(tools).split(" ");
+  expect(new Set(scopes).size).toBe(scopes.length);
+  expect(new Set(scopes)).toEqual(new Set(["daily-log:read", "future:write"]));
 });

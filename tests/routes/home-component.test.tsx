@@ -109,7 +109,7 @@ const baseFoodLog = {
   selectedDate: "2026-08-31",
   timeZone: "America/New_York",
   today: "2026-08-31",
-  waterTotalMicroliters: 0,
+  waterTotalOunces: "0",
 };
 
 const baseLoaderData = {
@@ -311,7 +311,7 @@ test("home renders today's empty log and all goal progress contracts", async () 
     .toMatchObject({
       "aria-valuemin": 0,
       "aria-valuenow": 0,
-      "aria-valuetext": "0 of 80 fl oz target",
+      "aria-valuetext": "0 fl oz of 80 fl oz target",
       role: "progressbar",
       style: { "--progress": "0%" },
     });
@@ -518,7 +518,7 @@ test("home distinguishes past, future, no-goal, and incomplete summaries", async
       proteinMilligrams: { isIncomplete: true, known: 12_345 },
     },
     selectedDate: "2026-08-30",
-    waterTotalMicroliters: 236_588,
+    waterTotalOunces: "8",
   };
   const past = await renderHome({
     foodLog: pastFoodLog,
@@ -531,7 +531,7 @@ test("home distinguishes past, future, no-goal, and incomplete summaries", async
   expect(past.root.findByType("h1").children.join("")).toBe("Food Log");
   expect(allText(past)).toContain("1,234.6 known / No active goal");
   expect(allText(past)).toContain("Protein12.345 known / No active goalIncomplete");
-  expect(allText(past)).toContain("1 equivalent glass");
+  expect(allText(past)).toContain("237 ml");
   expect(allText(past)).toContain("/ No active goal");
   expect(allText(past)).toContain("Food Entry updated. Daily totals refreshed.");
   expect(allText(past)).toContain("Visible route message");
@@ -684,14 +684,15 @@ test("home renders food and water timeline entries with factual units", async ()
     selectedMeasurementLabel: "100 g",
   };
   const waterEvent = {
-    amountMicroliters: 473_176,
+    createdAt: "2026-08-31T17:07:00.000Z",
     foodLogDate: "2026-08-31",
     id: 12,
     kind: "water" as const,
     localEventTime: "13:07:00",
-    preset8Count: 0,
-    preset16Count: 1,
-    preset24Count: 0,
+    logDate: "2026-08-31T17:07:00.000Z",
+    ounces: "16",
+    updatedAt: "2026-08-31T17:07:00.000Z",
+    userId: 1,
   };
   const unknownEnergyEvent = {
     ...foodEvent,
@@ -713,7 +714,7 @@ test("home renders food and water timeline entries with factual units", async ()
         sodiumMilligrams: { isIncomplete: false, known: 3_000 },
         sugarMilligrams: { isIncomplete: false, known: 60_000 },
       },
-      waterTotalMicroliters: 3_000_000,
+      waterTotalOunces: "101.442",
     },
   }, { message: "Timeline action completed" });
   expect(semanticDom(renderer)).toMatchSnapshot();
@@ -753,8 +754,8 @@ test("home renders food and water timeline entries with factual units", async ()
     });
   expect(renderer.root.findByProps({ "aria-label": "Water progress" }).props)
     .toMatchObject({
-      "aria-valuemax": 79.99998765788172,
-      "aria-valuenow": 79.99998765788172,
+      "aria-valuemax": 80,
+      "aria-valuenow": 80,
       style: { "--progress": "100%" },
     });
   expect(renderer.root.findAllByType("button").filter(
@@ -773,7 +774,7 @@ test("home renders food and water timeline entries with factual units", async ()
         proteinMilligrams: { isIncomplete: false, known: 60_000 },
         sodiumMilligrams: { isIncomplete: false, known: 1_150 },
       },
-      waterTotalMicroliters: 1_182_941,
+      waterTotalOunces: "40",
     },
   });
   expect(allText(singular)).toContain("1 Food Entry");
@@ -790,7 +791,7 @@ test("home renders food and water timeline entries with factual units", async ()
     .toMatchObject({ "aria-valuenow": 1150, style: { "--progress": "50%" } });
   expect(singular.root.findByProps({ "aria-label": "Water progress" }).props)
     .toMatchObject({
-      "aria-valuenow": 39.99999382894086,
+      "aria-valuenow": 40,
       style: { "--progress": "50%" },
     });
   await act(async () => singular.unmount());
@@ -811,11 +812,12 @@ test("historical Food Entries expose copy in the editor, not the daily log", asy
     selectedMeasurementLabel: "100 g",
   };
   const waterEvent = {
-    amountMicroliters: 236_588,
     foodLogDate: "2026-08-29",
     id: 92,
     kind: "water" as const,
     localEventTime: "08:10:00",
+    logDate: "2026-08-29T12:10:00.000Z",
+    ounces: "8",
   };
   const historical = await renderHome({
     copyIdempotencyKeys: { [historicalFood.id]: "copy:historical-key" },
@@ -1995,43 +1997,38 @@ test("an older manual entry offers a top action to save its independent food", a
   await act(async () => saved.unmount());
 });
 
-test("home water dialogs cover create, presets, exact values, edit, and deletion", async () => {
+test("home water dialog creates with a consumption time and edits only the amount", async () => {
   queriedSelectors.length = 0;
   documentSelectors.length = 0;
   const waterPreviousFocus = new TestElement();
   (globalThis.document as unknown as { activeElement: TestElement }).activeElement =
     waterPreviousFocus;
-  const createDialog = await renderHome({ waterDialog: { mode: "create" } });
+  const createDialog = await renderHome({
+    waterDialog: { initialLocalLogDate: "2026-08-31T12:00", maxLocalLogDate: "2026-08-31T12:00" },
+  });
   expect(semanticDom(createDialog)).toMatchSnapshot();
   expect(allText(createDialog)).toContain("Add Water");
-  expect(queriedSelectors).toContain("button:not([disabled])");
-  expect(input(createDialog, "waterSelection").props.value).toBe("presets");
-  expect(allText(createDialog)).toContain("Select water amount");
-  const large = createDialog.root.findAllByType("button").find(
-    (button) => nodeText(button).includes("Large"),
-  )!;
-  await act(async () => large.props.onClick());
-  expect(input(createDialog, "waterSelection").props.value).toBe("presets");
-  expect(input(createDialog, "waterPreset24Count").props.value).toBe(1);
-  expect(allText(createDialog)).toContain("Add 24 fl oz");
-  const exact = createDialog.root.findAllByType("button").find(
-    (button) => nodeText(button).includes("ExactamountCustom"),
-  )!;
-  await act(async () => exact.props.onClick());
-  expect(input(createDialog, "waterSelection").props.value).toBe("exact");
-  expect(input(createDialog, "waterAmount").props).toMatchObject({
-    "aria-label": "Amount fl oz",
+  expect(queriedSelectors).toContain('input:not([type="hidden"])');
+  expect(createDialog.root.findAll((node) => node.type === "form" && node.props.action === "/water-events")).toHaveLength(1);
+  expect(input(createDialog, "intent").props.value).toBe("save");
+  expect(input(createDialog, "returnDate").props.value).toBe("2026-08-31");
+  expect(input(createDialog, "csrfToken").props.value).toBe("home-component-csrf");
+  expect(input(createDialog, "localLogDate").props).toMatchObject({
+    defaultValue: "2026-08-31T12:00",
+    max: "2026-08-31T12:00",
+    required: true,
+    type: "datetime-local",
+  });
+  expect(input(createDialog, "ounces").props).toMatchObject({
+    defaultValue: "",
     max: "500",
     min: "0.001",
     step: "0.001",
-    value: "24",
+    type: "number",
   });
-  await act(async () =>
-    input(createDialog, "waterAmount").props.onChange({ target: { value: "13.5" } }),
-  );
-  expect(semanticDom(createDialog)).toMatchSnapshot();
-  expect(input(createDialog, "waterAmount").props.value).toBe("13.5");
-  expect(allText(createDialog)).toContain("Add exact amount");
+  expect(input(createDialog, "id")).toBeUndefined();
+  expect(allText(createDialog)).toContain("Add water");
+  expect(allText(createDialog)).not.toContain("Delete");
   waterPreviousFocus.isConnected = false;
   documentRestoreTarget = new TestElement();
   await act(async () => createDialog.unmount());
@@ -2040,160 +2037,49 @@ test("home water dialogs cover create, presets, exact values, edit, and deletion
   );
 
   const event = {
-    amountMicroliters: 473_176,
-    foodLogDate: "2026-08-31",
+    createdAt: "2026-08-31T17:15:00.000Z",
     id: 51,
-    localEventTime: "13:15:00",
-    preset8Count: 0,
-    preset16Count: 1,
-    preset24Count: 0,
-    updatedAt: "2026-08-31T13:15:00.000Z",
+    logDate: "2026-08-31T17:15:00.000Z",
+    ounces: "16",
+    updatedAt: "2026-08-31T17:15:00.000Z",
+    userId: 1,
   };
   const edit = await renderHome({
-    foodLog: {
-      ...baseFoodLog,
-      displayUnits: "metric",
-      waterTotalMicroliters: 3_000_000,
+    foodLog: { ...baseFoodLog, waterEvents: [event], waterTotalOunces: "16" },
+    waterDialog: {
+      event,
+      initialLocalLogDate: "2026-08-31T12:00",
+      maxLocalLogDate: "2026-08-31T12:00",
     },
-    waterDialog: { event, mode: "edit" },
-  }, { message: "Water validation message" });
-  expect(semanticDom(edit)).toMatchSnapshot();
+  });
   expect(allText(edit)).toContain("Edit Water Event");
-  expect(input(edit, "waterSelection").props.value).toBe("exact");
-  expect(input(edit, "eventId").props.value).toBe(51);
-  expect(input(edit, "waterEventTime").props.defaultValue).toBe("13:15");
-  expect(allText(edit)).toContain("Water validation message");
-  expect(edit.root.findByProps({ "aria-label": "Water progress" }).props)
-    .toMatchObject({
-      "aria-valuemax": 2365.882,
-      "aria-valuenow": 2365.882,
-      "aria-valuetext": "3,000 of 2,366 ml target",
-      style: { "--progress": "100%" },
-    });
-  const deleteButton = edit.root.findAllByType("button").find(
-    (button) => nodeText(button) === "Delete Water Event",
+  expect(input(edit, "id").props.value).toBe(51);
+  expect(input(edit, "ounces").props.defaultValue).toBe("16");
+  expect(input(edit, "localLogDate")).toBeUndefined();
+  expect(allText(edit)).toContain("Save amount");
+  expect(edit.root.findAllByProps({ role: "alert" })).toHaveLength(0);
+  expect(allText(edit)).not.toContain("Delete this Water Event?");
+  const revealDelete = edit.root.findAllByType("button").find(
+    (button) => nodeText(button) === "Delete",
   )!;
-  await act(async () => deleteButton.props.onClick());
-  expect(semanticDom(edit)).toMatchSnapshot();
+  await act(async () => revealDelete.props.onClick());
   expect(allText(edit)).toContain("Delete this Water Event?");
   expect(allText(edit)).toContain("The daily water total will decrease by this amount.");
-  const keepButton = edit.root.findAllByType("button").find(
+  expect(input(edit, "eventIds").props.value).toBe(51);
+  expect(edit.root.findAllByProps({ name: "intent", value: "delete" })).toHaveLength(1);
+  const keep = edit.root.findAllByType("button").find(
     (button) => nodeText(button) === "Keep it",
   )!;
-  await act(async () => keepButton.props.onClick());
+  await act(async () => keep.props.onClick());
   expect(allText(edit)).not.toContain("Delete this Water Event?");
   await act(async () => edit.unmount());
 
-  const customEvent = {
-    ...event,
-    amountMicroliters: 400_010,
-    id: 52,
-    preset16Count: 0,
-    updatedAt: "2026-08-31T13:16:00.000Z",
-  };
-  const custom = await renderHome({
-    foodLog: {
-      ...baseFoodLog,
-      displayUnits: "metric",
-      waterTotalMicroliters: 3_000_000,
-    },
-    waterDialog: { event: customEvent, mode: "edit" },
+  const metric = await renderHome({
+    foodLog: { ...baseFoodLog, displayUnits: "metric", waterTotalOunces: "8" },
   });
-  expect(semanticDom(custom)).toMatchSnapshot();
-  expect(input(custom, "waterSelection").props.value).toBe("exact");
-  expect(input(custom, "waterAmount").props.value).toBe("400.01");
-  await act(async () => custom.unmount());
-
-  const trailingZeros = await renderHome({
-    foodLog: { ...baseFoodLog, displayUnits: "metric" },
-    waterDialog: {
-      event: { ...customEvent, amountMicroliters: 400_100, id: 53 },
-      mode: "edit",
-    },
-  });
-  expect(input(trailingZeros, "waterAmount").props.value).toBe("400.1");
-  await act(async () => trailingZeros.unmount());
-
-  const metricCreate = await renderHome({
-    foodLog: {
-      ...baseFoodLog,
-      displayUnits: "metric",
-      events: [{ ...event, kind: "water" }],
-      waterTotalMicroliters: 1_000_000,
-    },
-    waterDialog: { mode: "create" },
-  });
-  expect(allText(metricCreate)).toContain("Select water amount");
-  expect(allText(metricCreate)).toContain("473 ml");
-  expect(allText(metricCreate)).not.toContain("473.176");
-  expect(metricCreate.root.findByProps({ "aria-label": "Water progress" }).props)
-    .toMatchObject({ "aria-valuenow": 1000 });
-  const metricExact = metricCreate.root.findAllByType("button").find(
-    (button) => nodeText(button).includes("ExactamountCustom"),
-  )!;
-  await act(async () => metricExact.props.onClick());
-  expect(input(metricCreate, "waterAmount").props.value).toBe("355");
-  expect(allText(metricCreate)).toContain("237mlGlass");
-  expect(allText(metricCreate)).toContain("473mlBottle");
-  expect(allText(metricCreate)).toContain("710mlLarge");
-  await act(async () => metricCreate.unmount());
-
-  const actionEditor = await renderHome({}, {
-    message: "Reloaded conflicting Water Event",
-    waterEventEditor: event,
-  });
-  expect(allText(actionEditor)).toContain("Edit Water Event");
-  expect(allText(actionEditor)).toContain("Reloaded conflicting Water Event");
-  expect(input(actionEditor, "eventId").props.value).toBe(51);
-  await act(async () => actionEditor.unmount());
-});
-
-test("water preset counts reset after Exact and grouped edits open with the total", async () => {
-  const createDialog = await renderHome({
-    foodLog: { ...baseFoodLog, displayUnits: "metric" },
-    waterDialog: { mode: "create" },
-  });
-  const bottle = createDialog.root.findAllByType("button").find(
-    (button) => nodeText(button).includes("Bottle"),
-  )!;
-  await act(async () => bottle.props.onClick());
-  await act(async () => bottle.props.onClick());
-  expect(input(createDialog, "waterPreset16Count").props.value).toBe(2);
-  expect(allText(createDialog)).toContain("2 servings");
-  expect(allText(createDialog)).toContain("Add 946 ml");
-  const exact = createDialog.root.findAllByType("button").find(
-    (button) => nodeText(button).includes("ExactamountCustom"),
-  )!;
-  await act(async () => exact.props.onClick());
-  expect(input(createDialog, "waterAmount").props.value).toBe("946.352");
-  await act(async () => bottle.props.onClick());
-  expect(input(createDialog, "waterPreset16Count").props.value).toBe(0);
-  expect(allText(createDialog)).toContain("Tap a size to add a serving.");
-  await act(async () => createDialog.unmount());
-
-  const editDialog = await renderHome({
-    waterDialog: {
-      mode: "edit",
-      event: {
-        amountMicroliters: 946_352,
-        foodLogDate: "2026-08-31",
-        id: 54,
-        localEventTime: "13:15:00",
-        preset8Count: 0,
-        preset16Count: 2,
-        preset24Count: 0,
-        updatedAt: "2026-08-31T13:15:00.000Z",
-      },
-    },
-  });
-  expect(input(editDialog, "waterSelection").props.value).toBe("exact");
-  expect(input(editDialog, "waterAmount").props.value).toBe("32");
-  const glass = editDialog.root.findAllByType("button").find(
-    (button) => nodeText(button).includes("Glass"),
-  )!;
-  await act(async () => glass.props.onClick());
-  expect(input(editDialog, "waterSelection").props.value).toBe("8");
-  await act(async () => editDialog.unmount());
+  expect(allText(metric)).toContain("237 ml");
+  expect(allText(metric)).toContain("/ 2366 ml");
+  await act(async () => metric.unmount());
 });
 
 test("home renders submission and navigation pending states", async () => {
@@ -2291,74 +2177,6 @@ test("home renders submission and navigation pending states", async () => {
   expect(idleEditor.root.findByProps({ "aria-label": "Save changes" }).props.disabled).toBe(false);
   await act(async () => idleEditor.unmount());
 
-  const createWater = new FormData();
-  createWater.set("intent", "create-water");
-  const pendingWater = await renderPendingHome(
-    { waterDialog: { mode: "create" } },
-    { formData: createWater, to: "/" },
-  );
-  expect(semanticDom(pendingWater)).toMatchSnapshot();
-  expect(pendingWater.root.findByType("fieldset").props.disabled).toBe(true);
-  expect(allText(pendingWater)).toContain("Adding…");
-  await act(async () => pendingWater.unmount());
-
-  const updateWater = new FormData();
-  updateWater.set("eventId", "51");
-  updateWater.set("intent", "update-water");
-  const pendingWaterEdit = await renderPendingHome(
-    {
-      waterDialog: {
-        event: {
-          amountMicroliters: 473_176,
-          foodLogDate: "2026-08-31",
-          id: 51,
-          localEventTime: "13:15:00",
-          updatedAt: "2026-08-31T13:15:00.000Z",
-        },
-        mode: "edit",
-      },
-    },
-    { formData: updateWater, to: "/" },
-  );
-  expect(pendingWaterEdit.root.findByType("fieldset").props.disabled).toBe(true);
-  expect(allText(pendingWaterEdit)).toContain("Saving…");
-  await act(async () => pendingWaterEdit.unmount());
-
-  const deleteWater = new FormData();
-  deleteWater.set("eventId", "51");
-  deleteWater.set("intent", "delete-water");
-  const deletingWater = await renderPendingHome(
-    {
-      waterDialog: {
-        event: {
-          amountMicroliters: 473_176,
-          foodLogDate: "2026-08-31",
-          id: 51,
-          localEventTime: "13:15:00",
-          updatedAt: "2026-08-31T13:15:00.000Z",
-        },
-        mode: "edit",
-      },
-    },
-    { formData: deleteWater, to: "/" },
-  );
-  const revealWaterDelete = deletingWater.root.findAllByType("button").find(
-    (button) => nodeText(button) === "Delete Water Event",
-  )!;
-  await act(async () => revealWaterDelete.props.onClick());
-  expect(allText(deletingWater)).toContain("Deleting…");
-  await act(async () => deletingWater.unmount());
-
-  const wrongWater = new FormData();
-  wrongWater.set("eventId", "999");
-  wrongWater.set("intent", "update-water");
-  const idleWater = await renderPendingHome(
-    { waterDialog: { mode: "create" } },
-    { formData: wrongWater, to: "/" },
-  );
-  expect(idleWater.root.findByType("fieldset").props.disabled).toBe(false);
-  expect(allText(idleWater)).toContain("Select water amount");
-  await act(async () => idleWater.unmount());
 
   const search = await renderPendingHome(
     { catalog: { mode: "search", query: "", results: [] } },
@@ -2597,7 +2415,7 @@ test("photo meals share the food and water timeline in event order and expose co
   };
   const food = { ...editableEntry, name: "Photo dinner", kind: "food", provider: "ai-photo", selectedMeasurementLabel: "Analyzed plate" };
   const copiedFood = { ...food, id: 77, name: "Copied photo" };
-  const water = { id: editableEntry.id, kind: "water", amountMicroliters: 237000, foodLogDate: "2026-08-31", localEventTime: "12:05:00" };
+  const water = { id: editableEntry.id, kind: "water", foodLogDate: "2026-08-31", localEventTime: "12:05:00", logDate: "2026-08-31T16:05:00.000Z", ounces: "8" };
   const renderer = await renderHome({ photoMeals: [photoMeal], foodLog: { ...baseFoodLog, entries: [food, copiedFood], events: [copiedFood, food, water] }, foodEntryEditor: editableEntry });
   expect(renderer.root.findAllByType("a").filter(node => node.props.href === "/?date=2026-08-31&entry=41")).toHaveLength(1);
   const timeline = renderer.root.findByProps({ className: styles.entryList });
@@ -2614,7 +2432,7 @@ test("photo meals share the food and water timeline in event order and expose co
   expect(timeline.findAllByType("time").map(node => [node.props.dateTime, nodeText(node)])).toEqual([
     ["2026-08-31T12:00:00", "12:00 PM"],
     ["2026-08-31T12:00:00", "12:00 PM"],
-    ["2026-08-31T12:05:00", "12:05 PM"],
+    ["2026-08-31T16:05:00.000Z", "12:05 PM"],
   ]);
   expect(allText(renderer)).toContain("Copied photo");
   expect(allText(renderer)).toContain("AI photo estimate");

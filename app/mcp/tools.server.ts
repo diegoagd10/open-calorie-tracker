@@ -1,20 +1,11 @@
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
-import type { ApiKeyScope } from "../api-keys/presets";
 import { parseIsoLocalDate } from "../food-log/date";
 import { getFoodLogService } from "../food-log/runtime.server";
+import { deleteWaterTool, listWaterTool, logWaterTool } from "../water-event/mcp-tool.server";
 import { dailyLogSummarySchema, summarizeDailyLog } from "./daily-log-summary";
+import { MISSING_SETUP_MESSAGE, toolError, type McpTool } from "./mcp-tool";
 
-/** An MCP tool and the API key scope a caller needs to see and call it. */
-export type McpTool = {
-  scope: ApiKeyScope;
-  register(server: McpServer, userId: number): ReturnType<McpServer["registerTool"]>;
-};
-
-function toolError(text: string): CallToolResult {
-  return { isError: true, content: [{ type: "text", text }] };
-}
+export type { McpTool } from "./mcp-tool";
 
 const getDailyLog: McpTool = {
   scope: "daily-log:read",
@@ -29,10 +20,10 @@ const getDailyLog: McpTool = {
   }, ({ date }) => {
     if (date !== undefined && !parseIsoLocalDate(date)) return toolError(`Invalid date "${date}". Use a calendar date as YYYY-MM-DD.`);
     const foodLog = getFoodLogService().read(userId, date);
-    if (!foodLog) return toolError("This account has not finished setup, so it has no Food Log yet. Finish setup in Open Calorie Tracker first.");
+    if (!foodLog) return toolError(MISSING_SETUP_MESSAGE);
     const { structured, text } = summarizeDailyLog(foodLog);
     return { structuredContent: structured, content: [{ type: "text", text }] };
   }),
 };
 
-export const MCP_TOOLS: readonly McpTool[] = [getDailyLog];
+export const MCP_TOOLS: readonly McpTool[] = [getDailyLog, logWaterTool, listWaterTool, deleteWaterTool];

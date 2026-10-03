@@ -1,311 +1,111 @@
-import { and, eq } from "drizzle-orm";
-import { z } from "zod";
-
-import type { ApplicationDatabaseClient } from "../database/database.server";
-import { userPreferences, waterEvents } from "../database/schema.server";
-import { localDateAt, parseIsoLocalDate } from "../food-log/date";
+import { localDayRange, parseIsoDateTime } from "../shared/date-time";
+import type { CreateWaterEvent, WaterEvent, WaterEventList, WaterEventRange } from "./water-event.model";
+import type { WaterEventRepository } from "./water-event.repository.server";
+import { WaterEventNotFoundError, WaterEventValidationError } from "./water-events.exceptions";
 import {
-  localEventTimeForNewFoodLogEvent,
-  nextUpdatedAt,
-} from "../food-log/event-time.server";
-import {
-  FutureFoodLogDateError,
-  InvalidFoodLogDateError,
-} from "../food-log/food-log.server";
-import {
-  waterTargetMicrolitersFromDisplay,
-  waterTargetThousandthsFromMicroliters,
-} from "../setup/validation";
-import {
-  waterPresetTotalMicroliters,
-  waterPresetTotalOunces,
-  type WaterPresetCounts,
-} from "./presets";
+  formatOunceThousandths,
+  ounceThousandths,
+  sumOunces,
+  waterEventLocalDateTime,
+} from "./water-event.utils";
 
-const presetCountsSchema = z.object({
-  "8": z.number().int().nonnegative(),
-  "16": z.number().int().nonnegative(),
-  "24": z.number().int().nonnegative(),
-}).refine((counts) => {
-  const ounces = waterPresetTotalOunces(counts);
-  return ounces > 0 && ounces <= 500;
-});
+const MINIMUM_OUNCE_THOUSANDTHS = 1n;
+const MAXIMUM_OUNCE_THOUSANDTHS = 500_000n;
+const MAXIMUM_DELETED_IDS = 100;
+/** How far ahead of the server clock a consumption time may be, for callers whose clocks run fast. */
+const FUTURE_TOLERANCE_MS = 5 * 60_000;
 
-function storedPresetCounts(counts: WaterPresetCounts) {
-  return {
-    preset8Count: counts["8"],
-    preset16Count: counts["16"],
-    preset24Count: counts["24"],
-  };
+function isEventId(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
 }
 
-function singlePresetCounts(selection: "8" | "16" | "24") {
-  return storedPresetCounts({
-    "8": Number(selection === "8"),
-    "16": Number(selection === "16"),
-    "24": Number(selection === "24"),
-  });
-}
-
-const noPresetCounts = storedPresetCounts({ "8": 0, "16": 0, "24": 0 });
-
-function createWaterEventSchema() {
-  return z.discriminatedUnion("selection", [
-    z.object({
-      amount: z.string().max(32),
-      foodLogDate: z.string(),
-      selection: z.literal("exact"),
-    }),
-    z.object({
-      foodLogDate: z.string(),
-      selection: z.enum(["8", "16", "24"]),
-    }),
-    z.object({
-      counts: presetCountsSchema,
-      foodLogDate: z.string(),
-      selection: z.literal("presets"),
-    }),
-  ]);
-}
-
-export type CreateWaterEventInput = z.input<
-  ReturnType<typeof createWaterEventSchema>
->;
-
-function updateWaterEventSchema() {
-  return z.object({
-    amount: z.string().max(32),
-    expectedUpdatedAt: z.iso.datetime({ offset: true }),
-    foodLogDate: z.string(),
-    localEventTime: z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/),
-    selection: z.enum(["8", "16", "24", "exact"]).default("exact"),
-  });
-}
-
-export type UpdateWaterEventInput = z.input<
-  ReturnType<typeof updateWaterEventSchema>
->;
-
-export class InvalidWaterEventInputError extends Error {
-  constructor() {
-    super("Enter a valid bounded water amount.");
-    this.name = "InvalidWaterEventInputError";
-  }
-}
-
-export class WaterEventUnavailableError extends Error {
-  constructor() {
-    super("Water Event is unavailable");
-    this.name = "WaterEventUnavailableError";
-  }
-}
-
-export class StaleWaterEventError extends Error {
-  constructor() {
-    super(
-      "This Water Event changed after you opened it. Review it and try again.",
+/** The canonical spelling of an amount from 0.001 through 500 fl oz with at most three decimals. */
+function validOunces(quantity: unknown): string {
+  const ounces = typeof quantity === "object" && quantity !== null ? (quantity as { ounces?: unknown }).ounces : undefined;
+  const thousandths = typeof ounces === "string" ? ounceThousandths(ounces) : null;
+  if (thousandths === null || thousandths < MINIMUM_OUNCE_THOUSANDTHS || thousandths > MAXIMUM_OUNCE_THOUSANDTHS) {
+    throw new WaterEventValidationError(
+      "invalid_amount",
+      "Enter an amount from 0.001 to 500 fl oz, with at most three decimals.",
     );
-    this.name = "StaleWaterEventError";
   }
+  return formatOunceThousandths(thousandths);
 }
 
-function canonicalWaterAmount(
-  input: { amount?: string; selection: "8" | "16" | "24" | "exact" },
-  displayUnits: "metric" | "us",
-): number {
-  const exact = input.selection === "exact";
-  const amountMicroliters = waterTargetMicrolitersFromDisplay(
-    exact ? (input.amount ?? "") : input.selection,
-    exact ? displayUnits : "us",
-  );
-  if (amountMicroliters === undefined) {
-    throw new InvalidWaterEventInputError();
-  }
-  return amountMicroliters;
-}
-
-function updatedWaterValues(
-  existing: typeof waterEvents.$inferSelect,
-  input: z.output<ReturnType<typeof updateWaterEventSchema>>,
-  displayUnits: "metric" | "us",
-) {
-  const submittedAmount = canonicalWaterAmount(input, displayUnits);
-  if (input.selection !== "exact") {
-    return {
-      amountMicroliters: submittedAmount,
-      ...singlePresetCounts(input.selection),
-    };
-  }
-
-  const amountUnchanged =
-    waterTargetThousandthsFromMicroliters(submittedAmount, displayUnits) ===
-    waterTargetThousandthsFromMicroliters(existing.amountMicroliters, displayUnits);
-  return {
-    amountMicroliters: amountUnchanged ? existing.amountMicroliters : submittedAmount,
-    ...(amountUnchanged
-      ? {
-          preset8Count: existing.preset8Count,
-          preset16Count: existing.preset16Count,
-          preset24Count: existing.preset24Count,
-        }
-      : noPresetCounts),
-  };
-}
-
+/** Water Event rules shared by the web app, the REST API, and MCP tools. */
 export class WaterEventService {
-  readonly #database: ApplicationDatabaseClient;
+  readonly #repository: WaterEventRepository;
   readonly #now: () => Date;
 
-  constructor(
-    database: ApplicationDatabaseClient,
-    now: () => Date = () => new Date(),
-  ) {
-    this.#database = database;
+  constructor(repository: WaterEventRepository, now: () => Date) {
+    this.#repository = repository;
     this.#now = now;
   }
 
-  create(userId: number, input: CreateWaterEventInput) {
-    const parsed = createWaterEventSchema().safeParse(input);
-    if (!parsed.success) throw new InvalidWaterEventInputError();
-    const foodLogDate = parseIsoLocalDate(parsed.data.foodLogDate);
-    if (!foodLogDate) throw new InvalidFoodLogDateError();
-
-    const preference = this.#database
-      .select({
-        displayUnits: userPreferences.displayUnits,
-        timeZone: userPreferences.timeZone,
-      })
-      .from(userPreferences)
-      .where(eq(userPreferences.userId, userId))
-      .get();
-    if (!preference || !["metric", "us"].includes(preference.displayUnits)) {
-      throw new InvalidFoodLogDateError();
+  /**
+   * Creates an event without `id`; with `id`, changes only that owned event's amount, and a
+   * `logDate` sent with it is ignored because the consumption time cannot change.
+   */
+  save(userId: number, input: CreateWaterEvent): WaterEvent {
+    const ounces = validOunces(input.quantity);
+    if (input.id !== undefined) {
+      if (!isEventId(input.id)) {
+        throw new WaterEventValidationError("invalid_input", "To edit a Water Event, send its positive integer id.");
+      }
+      const updated = this.#repository.save(userId, { id: input.id, quantity: { ounces } });
+      if (!updated) throw new WaterEventNotFoundError();
+      return updated;
     }
-
-    const instant = this.#now();
-    const today = localDateAt(instant, preference.timeZone);
-    if (foodLogDate > today) throw new FutureFoodLogDateError();
-    const amountMicroliters = parsed.data.selection === "presets"
-      ? waterPresetTotalMicroliters(parsed.data.counts)
-      : canonicalWaterAmount(
-          parsed.data,
-          preference.displayUnits as "metric" | "us",
-        );
-    const presetCounts = parsed.data.selection === "presets"
-      ? storedPresetCounts(parsed.data.counts)
-      : parsed.data.selection === "exact"
-        ? noPresetCounts
-        : singlePresetCounts(parsed.data.selection);
-
-    const createdAt = instant.toISOString();
-    return this.#database
-      .insert(waterEvents)
-      .values({
-        amountMicroliters,
-        ...presetCounts,
-        createdAt,
-        foodLogDate,
-        localEventTime: localEventTimeForNewFoodLogEvent(
-          this.#database,
-          userId,
-          foodLogDate,
-          today,
-          instant,
-          preference.timeZone,
-        ),
-        updatedAt: createdAt,
-        userId,
-      })
-      .returning()
-      .get();
+    const logDate = typeof input.logDate === "string" ? parseIsoDateTime(input.logDate) : null;
+    const latest = new Date(this.#now().getTime() + FUTURE_TOLERANCE_MS).toISOString();
+    if (!logDate || logDate > latest) {
+      throw new WaterEventValidationError(
+        "invalid_log_date",
+        "Enter when the water was consumed as an ISO date-time with an offset, not in the future.",
+      );
+    }
+    return this.#repository.save(userId, { logDate, quantity: { ounces } })!;
   }
 
-  read(userId: number, eventId: number) {
-    const event = this.#database
-      .select()
-      .from(waterEvents)
-      .where(
-        and(eq(waterEvents.userId, userId), eq(waterEvents.id, eventId)),
-      )
-      .get();
-    if (!event) throw new WaterEventUnavailableError();
+  read(userId: number, eventId: number): WaterEvent {
+    const event = isEventId(eventId) ? this.#repository.findById(userId, eventId) : null;
+    if (!event) throw new WaterEventNotFoundError();
     return event;
   }
 
-  update(userId: number, eventId: number, input: UpdateWaterEventInput) {
-    const parsed = updateWaterEventSchema().safeParse(input);
-    if (!parsed.success || !Number.isSafeInteger(eventId) || eventId <= 0) {
-      throw new InvalidWaterEventInputError();
+  /** Owned events consumed from `range.from` (inclusive) to `range.to` (exclusive), newest first. */
+  list(userId: number, range: WaterEventRange): WaterEventList {
+    const from = typeof range.from === "string" ? parseIsoDateTime(range.from) : null;
+    const to = typeof range.to === "string" ? parseIsoDateTime(range.to) : null;
+    if (!from || !to || from >= to) {
+      throw new WaterEventValidationError(
+        "invalid_range",
+        "Send from and to as ISO date-times with offsets, with from before to.",
+      );
     }
-    const existing = this.read(userId, eventId);
-    if (existing.foodLogDate !== parsed.data.foodLogDate) {
-      throw new WaterEventUnavailableError();
-    }
-    const preference = this.#database
-      .select({ displayUnits: userPreferences.displayUnits })
-      .from(userPreferences)
-      .where(eq(userPreferences.userId, userId))
-      .get();
-    if (!preference || !["metric", "us"].includes(preference.displayUnits)) {
-      throw new WaterEventUnavailableError();
-    }
-    const values = updatedWaterValues(
-      existing,
-      parsed.data,
-      preference.displayUnits as "metric" | "us",
-    );
-    const updated = this.#database
-      .update(waterEvents)
-      .set({
-        ...values,
-        localEventTime: `${parsed.data.localEventTime}:00`,
-        updatedAt: nextUpdatedAt(this.#now(), existing.updatedAt),
-      })
-      .where(
-        and(
-          eq(waterEvents.userId, userId),
-          eq(waterEvents.id, eventId),
-          eq(waterEvents.updatedAt, parsed.data.expectedUpdatedAt),
-        ),
-      )
-      .returning()
-      .get();
-    if (!updated) throw new StaleWaterEventError();
-    return updated;
+    const events = this.#repository.list(userId, { from, to });
+    return { events, totalOunces: sumOunces(events.map((event) => event.ounces)) };
   }
 
-  delete(
-    userId: number,
-    eventId: number,
-    input: { expectedUpdatedAt: string; foodLogDate: string },
-  ) {
-    const expectedUpdatedAt = z.iso.datetime({ offset: true }).safeParse(
-      input.expectedUpdatedAt,
-    );
-    if (
-      !expectedUpdatedAt.success ||
-      !parseIsoLocalDate(input.foodLogDate) ||
-      !Number.isSafeInteger(eventId) ||
-      eventId <= 0
-    ) {
-      throw new InvalidWaterEventInputError();
+  /** Removes the owned events among `eventIds`; missing and other accounts' IDs are ignored. */
+  delete(userId: number, eventIds: readonly number[]): number {
+    if (!Array.isArray(eventIds) || eventIds.length > MAXIMUM_DELETED_IDS || !eventIds.every(isEventId)) {
+      throw new WaterEventValidationError(
+        "invalid_event_ids",
+        `Send eventIds as an array of at most ${MAXIMUM_DELETED_IDS} positive integer IDs.`,
+      );
     }
-    const existing = this.read(userId, eventId);
-    if (existing.foodLogDate !== input.foodLogDate) {
-      throw new WaterEventUnavailableError();
-    }
-    const deleted = this.#database
-      .delete(waterEvents)
-      .where(
-        and(
-          eq(waterEvents.userId, userId),
-          eq(waterEvents.id, eventId),
-          eq(waterEvents.updatedAt, expectedUpdatedAt.data),
-        ),
-      )
-      .returning({ foodLogDate: waterEvents.foodLogDate })
-      .get();
-    if (!deleted) throw new StaleWaterEventError();
-    return deleted;
+    return this.#repository.delete(userId, [...new Set(eventIds)]);
+  }
+
+  /** The local day in `timeZone` containing `logDate` and that day's total ounces. */
+  daySummary(userId: number, logDate: string, timeZone: string): { date: string; totalOunces: string } {
+    const date = waterEventLocalDateTime(logDate, timeZone).slice(0, 10);
+    return { date, totalOunces: this.list(userId, localDayRange(date, timeZone)).totalOunces };
+  }
+
+  /** The account's time zone, or null before setup. */
+  timeZone(userId: number): string | null {
+    return this.#repository.timeZone(userId);
   }
 }

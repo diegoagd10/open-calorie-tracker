@@ -7,7 +7,6 @@ import {
 
 export {
   WATER_UNIT_OPTIONS,
-  waterTargetThousandthsFromMicroliters,
   type DisplayUnits,
 } from "../goals/water-conversion";
 

@@ -4,6 +4,7 @@ import path from "node:path";
 import { getTableName } from "drizzle-orm";
 import { getTableConfig, SQLiteSyncDialect } from "drizzle-orm/sqlite-core";
 import { eq, sql } from "drizzle-orm";
+import { readMigrationFiles } from "drizzle-orm/migrator";
 import { afterEach, expect, test } from "vitest";
 
 import * as schema from "../app/database/schema.server";
@@ -14,9 +15,12 @@ import {
   type ApplicationDatabaseClient,
   type DatabaseStatus,
 } from "../app/database/database.server";
+import { waterEvents } from "../app/water-event/water-event.schema.server";
 import { createMigrationFolder } from "./support/migrations";
 
 const temporaryDirectories: string[] = [];
+/** Every reviewed migration, so these tests follow the journal instead of a fixed count. */
+const migrationCount = readMigrationFiles({ migrationsFolder: path.resolve("drizzle") }).length;
 
 function readRepresentativeData(client: ApplicationDatabaseClient) {
   return {
@@ -32,9 +36,6 @@ function readRepresentativeData(client: ApplicationDatabaseClient) {
       usernameNormalized: string;
     }>(sql`SELECT id, username_normalized AS usernameNormalized,
       created_at AS createdAt FROM users ORDER BY id`),
-    waterEvents: client.all(sql`SELECT id, user_id, food_log_date,
-      amount_microliters, local_event_time, created_at, updated_at
-      FROM water_events ORDER BY id`),
   };
 }
 
@@ -56,8 +57,8 @@ test("startup applies the initial migration and configures writable SQLite stora
   });
 
   expect(database.getStatus()).toEqual({
-    appliedMigrations: 29,
-    availableMigrations: 29,
+    appliedMigrations: migrationCount,
+    availableMigrations: migrationCount,
     busyTimeoutMs: 5_000,
     foreignKeysEnabled: true,
     journalMode: "wal",
@@ -78,12 +79,12 @@ test("starting twice preserves the applied migration state", async () => {
   };
 
   const firstStartup = openApplicationDatabase(options);
-  expect(firstStartup.getStatus().appliedMigrations).toBe(29);
+  expect(firstStartup.getStatus().appliedMigrations).toBe(migrationCount);
   firstStartup.close();
 
   const replacementStartup = openApplicationDatabase(options);
   expect(replacementStartup.getStatus()).toMatchObject({
-    appliedMigrations: 29,
+    appliedMigrations: migrationCount,
     schemaVersion: "20",
     writable: true,
   });
@@ -119,7 +120,52 @@ test("OAuth removal migrates a database holding OAuth clients, grants, and token
   expect(upgraded.getClient().all(sql`SELECT name FROM sqlite_master WHERE name LIKE 'oauth%'`)).toEqual([]);
   expect(upgraded.getClient().get(sql`SELECT username_normalized AS username FROM users WHERE id = ${owner.id}`))
     .toEqual({ username: "oauth.removal.owner" });
-  expect(upgraded.getStatus()).toMatchObject({ appliedMigrations: 29, foreignKeysEnabled: true });
+  expect(upgraded.getStatus()).toMatchObject({ appliedMigrations: migrationCount, foreignKeysEnabled: true });
+  upgraded.close();
+});
+
+test("the Water Event log-date migration converts each local time to UTC in the account's time zone and each amount to ounces", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "water-log-date-upgrade-"));
+  temporaryDirectories.push(directory);
+  const databasePath = path.join(directory, "application.sqlite");
+  const previousMigrations = await createMigrationFolder(path.join(directory, "previous-migrations"), {
+    throughTag: "0028_remove_oauth",
+  });
+  const previous = openApplicationDatabase({ databasePath, migrationsFolder: previousMigrations });
+  const owner = previous.getClient().get<{ id: number }>(sql`
+    INSERT INTO users (username_normalized, created_at)
+    VALUES ('water.upgrade.owner', '2026-09-26T12:00:00.000Z') RETURNING id
+  `);
+  previous.getClient().run(sql`INSERT INTO user_preferences (user_id, display_units, time_zone, created_at, updated_at)
+    VALUES (${owner.id}, 'us', 'America/New_York', '2026-09-26T12:00:00.000Z', '2026-09-26T12:00:00.000Z')`);
+  for (const [microliters, time] of [[236588, "09:00:00"], [709765, "10:30:00"], [1000, "11:00:00"], [5, "12:00:00"], [2000000, "23:59:00"]] as const) {
+    previous.getClient().run(sql`INSERT INTO water_events
+      (user_id, food_log_date, amount_microliters, preset_8_count, local_event_time, created_at, updated_at)
+      VALUES (${owner.id}, '2026-09-26', ${microliters}, 0, ${time}, '2026-09-26T12:00:00.000Z', '2026-09-26T13:00:00.000Z')`);
+  }
+  previous.close();
+
+  const upgraded = openApplicationDatabase({ databasePath, migrationsFolder: path.resolve("drizzle") });
+  const client = upgraded.getClient();
+  expect(client.select().from(waterEvents).all()).toEqual([
+    ["2026-09-26T13:00:00.000Z", "8"],
+    ["2026-09-26T14:30:00.000Z", "24"],
+    ["2026-09-26T15:00:00.000Z", "0.034"],
+    ["2026-09-26T16:00:00.000Z", "0.001"],
+    ["2026-09-27T03:59:00.000Z", "67.628"],
+  ].map(([logDate, ounces], index) => ({
+    id: index + 1,
+    userId: owner.id,
+    logDate,
+    ounces,
+    createdAt: "2026-09-26T12:00:00.000Z",
+    updatedAt: "2026-09-26T13:00:00.000Z",
+  })));
+  expect(() => client.run(sql`INSERT INTO water_events (user_id, log_date, ounces, created_at, updated_at)
+    VALUES (${owner.id}, '2026-09-26T12:00:00.000Z', '0', '2026-09-26T12:00:00.000Z', '2026-09-26T12:00:00.000Z')`))
+    .toThrow(expect.objectContaining({
+      cause: expect.objectContaining({ code: "SQLITE_CONSTRAINT_CHECK" }) as unknown,
+    }) as Error);
   upgraded.close();
 });
 
@@ -287,8 +333,8 @@ test("the production migration preserves every representative field from the pri
   });
 
   expect(upgraded.getStatus()).toMatchObject({
-    appliedMigrations: 29,
-    availableMigrations: 29,
+    appliedMigrations: migrationCount,
+    availableMigrations: migrationCount,
     migrationsCurrent: true,
     schemaVersion: "20",
     writable: true,
@@ -297,10 +343,9 @@ test("the production migration preserves every representative field from the pri
   expect(readRepresentativeData(upgraded.getClient())).toEqual(
     representativeData,
   );
-  expect(upgraded.getClient().select().from(schema.waterEvents).get()).toMatchObject({
-    preset8Count: 0,
-    preset16Count: 0,
-    preset24Count: 0,
+  expect(upgraded.getClient().select().from(waterEvents).get()).toMatchObject({
+    logDate: "2026-08-30T14:05:00.000Z",
+    ounces: "8",
   });
   expect(
     upgraded
@@ -401,7 +446,7 @@ THIS IS NOT VALID SQL;\n`,
   ).toEqual([]);
   expect(recovered.getClient().select().from(schema.users).all()).toEqual([]);
   expect(recovered.getStatus()).toMatchObject({
-    appliedMigrations: 29,
+    appliedMigrations: migrationCount,
     migrationsCurrent: true,
   });
   recovered.close();
@@ -427,8 +472,8 @@ test("read-only application storage prevents startup", async () => {
 
 test("readiness requires every database invariant", () => {
   const readyStatus: DatabaseStatus = {
-    appliedMigrations: 29,
-    availableMigrations: 29,
+    appliedMigrations: migrationCount,
+    availableMigrations: migrationCount,
     busyTimeoutMs: 5_000,
     foreignKeysEnabled: true,
     journalMode: "wal",
@@ -483,8 +528,8 @@ test("status detects tampered migration history, metadata, and pragmas", async (
   client.run(sql`DELETE FROM __drizzle_migrations
     WHERE created_at = (SELECT MAX(created_at) FROM __drizzle_migrations)`);
   expect(database.getStatus()).toMatchObject({
-    appliedMigrations: 28,
-    availableMigrations: 29,
+    appliedMigrations: migrationCount - 1,
+    availableMigrations: migrationCount,
     migrationsCurrent: false,
   });
   client.delete(schema.applicationMetadata)

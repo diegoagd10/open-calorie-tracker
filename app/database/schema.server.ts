@@ -309,35 +309,6 @@ export const savedFoods = sqliteTable(
   ],
 );
 
-export const waterEvents = sqliteTable(
-  "water_events",
-  {
-    id: integer().primaryKey({ autoIncrement: true }),
-    userId: requiredUserId(),
-    foodLogDate: text("food_log_date").notNull(),
-    amountMicroliters: integer("amount_microliters").notNull(),
-    preset8Count: integer("preset_8_count").notNull().default(0),
-    preset16Count: integer("preset_16_count").notNull().default(0),
-    preset24Count: integer("preset_24_count").notNull().default(0),
-    localEventTime: text("local_event_time").notNull(),
-    createdAt: text("created_at").notNull(),
-    updatedAt: text("updated_at").notNull(),
-  },
-  (table) => [
-    index("water_events_user_date_order_index").on(
-      table.userId,
-      table.foodLogDate,
-      table.localEventTime,
-      table.createdAt,
-      table.id,
-    ),
-    check(
-      "water_events_positive_amount_check",
-      sql`${table.amountMicroliters} > 0`,
-    ),
-  ],
-);
-
 export const photoMeals = sqliteTable("photo_meals", {
   id: text().primaryKey(),
   userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),

@@ -29,8 +29,8 @@ import {
   goalVersions,
   userPreferences,
   users,
-  waterEvents,
 } from "../app/database/schema.server";
+import { waterEvents } from "../app/water-event/water-event.schema.server";
 import {
   FoodEntryService,
   FoodEntryUnavailableError,
@@ -468,10 +468,9 @@ test("copying to a past date uses food-only placement and preserves an independe
   client
     .insert(waterEvents)
     .values({
-      amountMicroliters: 250_000,
       createdAt: "2026-08-30T20:00:00.000Z",
-      foodLogDate: "2026-08-30",
-      localEventTime: "20:00:00",
+      logDate: "2026-08-31T00:00:00.000Z",
+      ounces: "8.5",
       updatedAt: "2026-08-30T20:00:00.000Z",
       userId,
     })

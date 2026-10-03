@@ -33,12 +33,15 @@ test("an account holder creates, copies, edits, and deletes a key without it eve
 
   await page.getByRole("link", { name: "Create key" }).click();
   await expect(page.getByRole("heading", { name: "Create API key" })).toBeVisible();
-  await expect(page.getByRole("checkbox", { name: "Read Food Log" })).toBeChecked();
-  await expect(page.getByRole("checkbox", { name: "Read Food Log" })).toBeDisabled();
+  await expect(page.getByRole("checkbox", { name: "Read Food Log" })).not.toBeChecked();
+  await expect(page.getByRole("checkbox", { name: "Read water" })).not.toBeChecked();
+  await expect(page.getByRole("checkbox", { name: "Log water" })).not.toBeChecked();
+  await expect(page.getByText("coming soon")).toHaveCount(0);
   await expect(page.getByLabel("Expiration")).toHaveValue("90d");
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
   await page.screenshot({ path: testInfo.outputPath("api-key-form-dark.png"), fullPage: true });
   await page.getByLabel("Name").fill("Muse");
+  await page.getByRole("checkbox", { name: "Read Food Log" }).check();
   await page.getByRole("button", { name: "Create key" }).click();
 
   await expect(page).toHaveURL("/settings/api-keys?created=1");
@@ -73,6 +76,8 @@ test("an account holder creates, copies, edits, and deletes a key without it eve
   await expect(page.getByRole("heading", { name: "Edit Muse" })).toBeVisible();
   await expect(page.getByLabel("Name")).toHaveValue("Muse");
   await expect(page.getByLabel("Expiration")).toHaveValue("90d");
+  await expect(page.getByRole("checkbox", { name: "Read Food Log" })).toBeChecked();
+  await expect(page.getByRole("checkbox", { name: "Log water" })).not.toBeChecked();
   await expect(page.getByLabel("Expiration").locator("option")).toHaveText([
     /^1 day · \w{3} \d{1,2}, \d{4}$/u, /^7 days · /u, /^30 days · /u, /^90 days · /u, /^1 year · /u, "No expiration",
   ]);
@@ -80,9 +85,11 @@ test("an account holder creates, copies, edits, and deletes a key without it eve
   await page.screenshot({ path: testInfo.outputPath("api-key-edit-light.png"), fullPage: true });
   await page.getByLabel("Name").fill("Muse phone");
   await page.getByLabel("Expiration").selectOption("never");
+  await page.getByRole("checkbox", { name: "Log water" }).check();
   await page.getByRole("button", { name: "Save changes" }).click();
   await expect(page).toHaveURL("/settings/api-keys?updated=1");
   await expect(page.getByRole("status")).toContainText("API key updated");
+  await expect(page.getByText("Permissions: Read Food Log, Log water")).toBeVisible();
   await expect(page.getByText("No expiration")).toBeVisible();
   await page.getByRole("button", { name: "Copy Muse phone" }).click();
   await expect(page.getByRole("status").filter({ hasText: "Copied" })).toBeVisible();

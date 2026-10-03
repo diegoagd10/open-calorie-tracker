@@ -137,6 +137,10 @@ function KeyFields({ errors, name, scopes, expiration, expirations }: {
   expiration: string;
   expirations: ReadonlyArray<{ value: string; label: string }>;
 }) {
+  // The scopes error describes the last submission; once the selection changes, it shows only while nothing is checked.
+  const [checkedScopes, setCheckedScopes] = useState<ReadonlySet<string>>(() => new Set(scopes));
+  const [changedAfter, setChangedAfter] = useState<ApiKeyErrors>();
+  const scopesError = changedAfter === errors && checkedScopes.size > 0 ? undefined : errors?.scopes;
   return (
     <>
       <div className={styles.field}>
@@ -146,23 +150,24 @@ function KeyFields({ errors, name, scopes, expiration, expirations }: {
       </div>
       <fieldset className={`${styles.field} ${styles.permissions}`}>
         <legend>Permissions</legend>
-        {API_KEY_SCOPES.length === 1 ? (
-          <>
-            {/* The only permission is always granted, so it is shown checked and submitted as a hidden value. */}
-            <label className={styles.checkboxRow}>
-              <input type="checkbox" checked disabled readOnly />
-              <input type="hidden" name="scope" value={API_KEY_SCOPES[0].scope} />
-              {API_KEY_SCOPES[0].label}
-            </label>
-            <small>More permissions coming soon</small>
-          </>
-        ) : API_KEY_SCOPES.map((entry) => (
+        {API_KEY_SCOPES.map((entry) => (
           <label className={styles.checkboxRow} key={entry.scope}>
-            <input type="checkbox" name="scope" value={entry.scope} defaultChecked={scopes.includes(entry.scope)} />
+            <input type="checkbox" name="scope" value={entry.scope} defaultChecked={scopes.includes(entry.scope)}
+              onChange={(event) => {
+                const checked = event.currentTarget.checked;
+                setCheckedScopes((current) => {
+                  const next = new Set(current);
+                  if (checked) next.add(entry.scope);
+                  else next.delete(entry.scope);
+                  return next;
+                });
+                setChangedAfter(errors);
+              }}
+            />
             {entry.label}
           </label>
         ))}
-        {errors?.scopes ? <p role="alert">{errors.scopes}</p> : null}
+        {scopesError ? <p role="alert">{scopesError}</p> : null}
       </fieldset>
       <div className={styles.field}>
         <label htmlFor="api-key-expiration">Expiration</label>

@@ -8,6 +8,7 @@ import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import { readMigrationFiles } from "drizzle-orm/migrator";
 
 import * as schema from "./schema.server";
+import { convertLegacyWaterEventLogDates } from "./water-event-log-dates.server";
 
 function createApplicationClient(sqlite: BetterSqlite3.Database) {
   return drizzle(sqlite);
@@ -111,6 +112,7 @@ export function openApplicationDatabase({
     try { migrate(client, { migrationsFolder }); }
     finally { sqlite.pragma("foreign_keys = ON"); }
     if ((sqlite.pragma("foreign_key_check") as unknown[]).length) throw new Error("SQLite foreign key validation failed after migration");
+    convertLegacyWaterEventLogDates(client);
 
     const applicationDatabase: ApplicationDatabase = {
       close() {

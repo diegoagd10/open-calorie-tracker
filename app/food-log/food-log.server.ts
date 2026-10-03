@@ -9,10 +9,14 @@ import {
   foodEntries,
   goalVersions,
   userPreferences,
-  waterEvents,
 } from "../database/schema.server";
 import { foodEntrySnapshot } from "../food-entry/snapshot.server";
 import type { DisplayUnits } from "../goals/water-conversion";
+import { localDayRange, utcToZonedDateTime } from "../shared/date-time";
+import {
+  createWaterEventService,
+  waterEventLocalDateTime,
+} from "../water-event/index.server";
 import {
   compareFoodLogEventsDescending,
   localDateAt,
@@ -96,7 +100,8 @@ export class FoodLogService {
       .get();
     if (!preference) return undefined;
 
-    const today = localDateAt(this.#now(), preference.timeZone);
+    const instant = this.#now();
+    const today = localDateAt(instant, preference.timeZone);
     const selectedDate = requestedDate
       ? parseIsoLocalDate(requestedDate)
       : today;
@@ -141,24 +146,18 @@ export class FoodLogService {
       )
       .all()
       .map(foodEntrySnapshot);
-    const water = this.#database
-      .select()
-      .from(waterEvents)
-      .where(
-        and(
-          eq(waterEvents.userId, userId),
-          eq(waterEvents.foodLogDate, selectedDate),
-        ),
-      )
-      .orderBy(
-        desc(waterEvents.localEventTime),
-        desc(waterEvents.createdAt),
-        desc(waterEvents.id),
-      )
-      .all();
+    const water = createWaterEventService(this.#database, this.#now).list(
+      userId,
+      localDayRange(selectedDate, preference.timeZone),
+    );
     const events = [
       ...entries.map((entry) => ({ ...entry, kind: "food" as const })),
-      ...water.map((event) => ({ ...event, kind: "water" as const })),
+      ...water.events.map((event) => ({
+        ...event,
+        foodLogDate: selectedDate,
+        kind: "water" as const,
+        localEventTime: waterEventLocalDateTime(event.logDate, preference.timeZone).slice(11),
+      })),
     ].sort(compareFoodLogEventsDescending);
 
     return {
@@ -171,11 +170,10 @@ export class FoodLogService {
       selectedDate,
       timeZone: preference.timeZone,
       today,
-      waterEvents: water,
-      waterTotalMicroliters: water.reduce(
-        (total, event) => total + event.amountMicroliters,
-        0,
-      ),
+      /** The account's current wall-clock date and time, `YYYY-MM-DDTHH:MM`. */
+      localNow: utcToZonedDateTime(instant.toISOString(), preference.timeZone).slice(0, 16),
+      waterEvents: water.events,
+      waterTotalOunces: water.totalOunces,
     };
   }
 
