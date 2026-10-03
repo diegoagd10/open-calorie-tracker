@@ -5,6 +5,7 @@ import { apiError, authenticateApiRequest, privateHeaders } from "../../api-keys
 import { getWaterEventService } from "../runtime.server";
 import type { CreateWaterEvent } from "../water-event.model";
 import {
+  ouncesFromJson,
   presentWaterEvent,
   presentWaterEventDeletion,
   presentWaterEventList,
@@ -14,12 +15,13 @@ import { WaterEventNotFoundError, WaterEventValidationError } from "../water-eve
 const REALM = "water-events";
 const ALLOWED_METHODS = "GET, POST, DELETE";
 
-const saveBodySchema = z.strictObject({
+/** Unknown fields are ignored, so clients may send extra metadata. */
+const saveBodySchema = z.object({
   id: z.unknown().optional(),
   logDate: z.unknown().optional(),
   ounces: z.unknown(),
 });
-const deleteBodySchema = z.strictObject({ eventIds: z.array(z.unknown()) });
+const deleteBodySchema = z.object({ eventIds: z.array(z.unknown()) });
 
 async function readJson(request: Request): Promise<unknown> {
   try {
@@ -44,9 +46,16 @@ export function headers() {
   return privateHeaders;
 }
 
+/** The authenticated caller with a finished setup, or the refusal to send. */
+function authenticateConfigured(request: Request, scope: "water-events:read" | "water-events:write") {
+  const caller = authenticateApiRequest(request, REALM, scope);
+  if (caller instanceof Response) return caller;
+  return getWaterEventService().timeZone(caller.userId) ? caller : apiError("missing_setup", 409);
+}
+
 /** Lists the caller's Water Events consumed from `from` (inclusive) to `to` (exclusive). */
 export function loader({ request }: Route.LoaderArgs) {
-  const caller = authenticateApiRequest(request, REALM, "water-events:read");
+  const caller = authenticateConfigured(request, "water-events:read");
   if (caller instanceof Response) return caller;
   const query = new URL(request.url).searchParams;
   const from = query.getAll("from");
@@ -62,12 +71,12 @@ export function loader({ request }: Route.LoaderArgs) {
 async function save(request: Request, userId: number): Promise<Response> {
   const body = saveBodySchema.safeParse(await readJson(request));
   if (!body.success) return apiError("invalid_input", 400);
-  const { id, logDate, ounces } = body.data;
-  if (id !== undefined && logDate !== undefined) return apiError("invalid_input", 400);
+  const { id, logDate } = body.data;
   if (id !== undefined && typeof id !== "number") return apiError("invalid_input", 400);
+  // With `id` only the amount changes, so a `logDate` sent alongside is ignored.
   const input = {
     ...(id === undefined ? { logDate } : { id }),
-    quantity: { ounces },
+    quantity: { ounces: ouncesFromJson(body.data.ounces) },
   } as CreateWaterEvent;
   try {
     const event = getWaterEventService().save(userId, input);
@@ -93,7 +102,7 @@ export async function action({ request }: Route.ActionArgs) {
   if (request.method !== "POST" && request.method !== "DELETE") {
     return apiError("method_not_allowed", 405, { Allow: ALLOWED_METHODS });
   }
-  const caller = authenticateApiRequest(request, REALM, "water-events:write");
+  const caller = authenticateConfigured(request, "water-events:write");
   if (caller instanceof Response) return caller;
   return request.method === "POST" ? save(request, caller.userId) : remove(request, caller.userId);
 }

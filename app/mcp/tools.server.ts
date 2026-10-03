@@ -3,7 +3,7 @@ import { parseIsoLocalDate } from "../food-log/date";
 import { getFoodLogService } from "../food-log/runtime.server";
 import { deleteWaterTool, listWaterTool, logWaterTool } from "../water-event/mcp-tool.server";
 import { dailyLogSummarySchema, summarizeDailyLog } from "./daily-log-summary";
-import { toolError, type McpTool } from "./mcp-tool";
+import { MISSING_SETUP_MESSAGE, toolError, type McpTool } from "./mcp-tool";
 
 export type { McpTool } from "./mcp-tool";
 
@@ -20,7 +20,7 @@ const getDailyLog: McpTool = {
   }, ({ date }) => {
     if (date !== undefined && !parseIsoLocalDate(date)) return toolError(`Invalid date "${date}". Use a calendar date as YYYY-MM-DD.`);
     const foodLog = getFoodLogService().read(userId, date);
-    if (!foodLog) return toolError("This account has not finished setup, so it has no Food Log yet. Finish setup in Open Calorie Tracker first.");
+    if (!foodLog) return toolError(MISSING_SETUP_MESSAGE);
     const { structured, text } = summarizeDailyLog(foodLog);
     return { structuredContent: structured, content: [{ type: "text", text }] };
   }),

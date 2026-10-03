@@ -38,7 +38,7 @@ test("the shared service uses the pinned test clock and is reused", async () => 
   const { getWaterEventService } = await runtime();
   const service = getWaterEventService();
   expect(getWaterEventService()).toBe(service);
-  expect(() => service.save(1, { logDate: "2026-08-31T16:00:01Z", quantity: { ounces: "8" } }))
+  expect(() => service.save(1, { logDate: "2026-08-31T16:05:01Z", quantity: { ounces: "8" } }))
     .toThrow("not in the future");
 });
 

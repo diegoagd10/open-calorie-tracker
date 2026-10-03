@@ -127,23 +127,23 @@ afterAll(async () => {
 });
 
 test("POST creates and edits a Water Event, returning it without its owner", async () => {
-  const created = await post(writerKey, { logDate: "2026-08-31T10:45:00-04:00", ounces: "12.50" });
+  const created = await post(writerKey, { logDate: "2026-08-31T10:45:00-04:00", ounces: 12.5, source: "smart bottle" });
   expect(created.status).toBe(201);
   expect(created.headers.get("Cache-Control")).toBe("private, no-store");
   const event = await created.json() as Record<string, unknown>;
   expect(event).toEqual({
     id: expect.any(Number) as unknown,
     logDate: "2026-08-31T14:45:00.000Z",
-    ounces: "12.5",
+    ounces: 12.5,
     createdAt: now,
     updatedAt: now,
   });
 
-  const edited = await post(writerKey, { id: event.id, ounces: "16" });
+  const edited = await post(writerKey, { id: event.id, logDate: "2026-08-30T08:00:00Z", ounces: 16 });
   expect(edited.status).toBe(200);
-  expect(await edited.json()).toEqual({ ...event, ounces: "16", updatedAt: "2026-08-31T16:00:00.001Z" });
+  expect(await edited.json()).toEqual({ ...event, ounces: 16, updatedAt: "2026-08-31T16:00:00.001Z" });
 
-  const notOwned = await post(otherKey, { id: event.id, ounces: "1" });
+  const notOwned = await post(otherKey, { id: event.id, ounces: 1 });
   expect(notOwned.status).toBe(404);
   expect(await notOwned.json()).toEqual({ error: "not_found" });
   expect(waterHeaders()).toEqual({ "Cache-Control": "private, no-store", "Referrer-Policy": "no-referrer" });
@@ -152,35 +152,41 @@ test("POST creates and edits a Water Event, returning it without its owner", asy
 test.each([
   ["{not json", "invalid_input"],
   [[], "invalid_input"],
-  [{ ounces: "8", logDate: "2026-08-31T10:00:00Z", extra: true }, "invalid_input"],
-  [{ id: 1, logDate: "2026-08-31T10:00:00Z", ounces: "8" }, "invalid_input"],
-  [{ id: "1", ounces: "8" }, "invalid_input"],
-  [{ logDate: "2026-08-31T10:00:00Z", ounces: 8 }, "invalid_amount"],
-  [{ logDate: "2026-08-31T10:00:00Z", ounces: "500.5" }, "invalid_amount"],
-  [{ logDate: "2026-08-31T10:00:00", ounces: "8" }, "invalid_log_date"],
-  [{ logDate: "2026-08-31T16:00:01Z", ounces: "8" }, "invalid_log_date"],
-  [{ ounces: "8" }, "invalid_log_date"],
+  [{ id: "1", ounces: 8 }, "invalid_input"],
+  [{ id: 0, ounces: 8 }, "invalid_input"],
+  [{ logDate: "2026-08-31T10:00:00Z", ounces: "8" }, "invalid_amount"],
+  [{ logDate: "2026-08-31T10:00:00Z", ounces: 500.5 }, "invalid_amount"],
+  [{ logDate: "2026-08-31T10:00:00Z", ounces: 12.3456 }, "invalid_amount"],
+  [{ logDate: "2026-08-31T10:00:00", ounces: 8 }, "invalid_log_date"],
+  [{ logDate: "2026-08-31T16:05:01Z", ounces: 8 }, "invalid_log_date"],
+  [{ ounces: 8 }, "invalid_log_date"],
 ])("POST %j is rejected as %s", async (body, error) => {
   const response = await post(writerKey, body);
   expect(response.status).toBe(400);
   expect(await response.json()).toEqual({ error });
 });
 
+test("POST accepts a consumption time up to five minutes ahead of the server clock", async () => {
+  const response = await post(writerKey, { logDate: "2026-08-31T16:05:00Z", ounces: 0.001 });
+  expect(response.status).toBe(201);
+  expect(await response.json()).toMatchObject({ logDate: "2026-08-31T16:05:00.000Z", ounces: 0.001 });
+});
+
 test("GET lists the caller's events in a range with the total; DELETE removes owned IDs only", async () => {
-  const save = async (key: string, logDate: string, ounces: string) => (await post(key, { logDate, ounces })).json() as Promise<{ id: number }>;
-  const early = await save(writerKey, "2026-08-30T08:00:00Z", "8");
-  const late = await save(writerKey, "2026-08-30T20:00:00Z", "0.5");
-  await save(writerKey, "2026-08-29T23:59:59Z", "100");
-  const foreign = await save(otherKey, "2026-08-30T12:00:00Z", "24");
+  const save = async (key: string, logDate: string, ounces: number) => (await post(key, { logDate, ounces })).json() as Promise<{ id: number }>;
+  const early = await save(writerKey, "2026-08-30T08:00:00Z", 8);
+  const late = await save(writerKey, "2026-08-30T20:00:00Z", 0.5);
+  await save(writerKey, "2026-08-29T23:59:59Z", 100);
+  const foreign = await save(otherKey, "2026-08-30T12:00:00Z", 24);
 
   const range = "from=2026-08-30T00%3A00%3A00Z&to=2026-08-31T00%3A00%3A00%2B00%3A00";
   const listed = await list(readerKey, range);
   expect(listed.status).toBe(200);
   expect(await listed.json()).toMatchObject({
-    events: [{ id: late.id, ounces: "0.5" }, { id: early.id, ounces: "8" }],
-    totalOunces: "8.5",
+    events: [{ id: late.id, ounces: 0.5 }, { id: early.id, ounces: 8 }],
+    totalOunces: 8.5,
   });
-  expect(await (await list(readerKey, "from=2026-08-30T00:00:00Z&to=2026-08-30T00:00:01Z")).json()).toEqual({ events: [], totalOunces: "0" });
+  expect(await (await list(readerKey, "from=2026-08-30T00:00:00Z&to=2026-08-30T00:00:01Z")).json()).toEqual({ events: [], totalOunces: 0 });
 
   for (const query of ["from=2026-08-30T00:00:00Z", `${range}&from=2026-08-29T00:00:00Z`, "from=2026-08-31T00:00:00Z&to=2026-08-30T00:00:00Z", "from=yesterday&to=today"]) {
     const response = await list(readerKey, query);
@@ -201,16 +207,16 @@ test("GET lists the caller's events in a range with the total; DELETE removes ow
 });
 
 test("the daily Food Log presents its Water Events in the same shape", async () => {
-  const created = await (await post(writerKey, { logDate: "2026-08-28T13:00:00Z", ounces: "8.25" })).json() as Record<string, unknown>;
+  const created = await (await post(writerKey, { logDate: "2026-08-28T13:00:00Z", ounces: 8.25 })).json() as Record<string, unknown>;
   const request = new Request(`${origin}/api/v1/daily-log?date=2026-08-28`, {
     headers: { Authorization: `Bearer ${writerKey}`, "X-Open-Calory-Client-IP": freshIp() },
   });
   const body = await readDailyLog(args(request, "/api/v1/daily-log")).json() as Record<string, unknown>;
-  expect(body).toMatchObject({ waterEvents: [created], events: [{ kind: "water", ...created }], waterTotalOunces: "8.25" });
+  expect(body).toMatchObject({ waterEvents: [created], events: [{ kind: "water", ...created }], waterTotalOunces: 8.25 });
 });
 
 test("REST requires the matching water permission and supports only GET, POST, and DELETE", async () => {
-  const readOnly = await post(readerKey, { logDate: "2026-08-31T10:00:00Z", ounces: "8" });
+  const readOnly = await post(readerKey, { logDate: "2026-08-31T10:00:00Z", ounces: 8 });
   expect(readOnly.status).toBe(403);
   expect(readOnly.headers.get("WWW-Authenticate")).toBe('Bearer realm="water-events", error="insufficient_scope", scope="water-events:write"');
   const dailyOnly = await createKey(owner, "Daily only", ["daily-log:read"]);
@@ -227,21 +233,24 @@ test("MCP lists water tools by scope and logs, lists, and deletes water", async 
   expect((await listTools(writerKey)).find((tool) => tool.name === "delete_water")?.annotations)
     .toMatchObject({ destructiveHint: true, idempotentHint: true, readOnlyHint: false });
 
-  const created = await callTool(writerKey, "log_water", { logDate: "2026-08-27T09:30:00-04:00", ounces: "12.5" });
+  const created = await callTool(writerKey, "log_water", { logDate: "2026-08-27T09:30:00-04:00", ounces: 12.5 });
   expect(created.isError).toBeFalsy();
   const event = (created.structuredContent as { event: { id: number } }).event;
   expect(created.structuredContent).toEqual({
-    event: { id: event.id, logDate: "2026-08-27T13:30:00.000Z", ounces: "12.5", createdAt: now, updatedAt: now },
-    day: { date: "2026-08-27", totalOunces: "12.5" },
+    event: { id: event.id, logDate: "2026-08-27T13:30:00.000Z", ounces: 12.5, createdAt: now, updatedAt: now },
+    day: { date: "2026-08-27", totalOunces: 12.5 },
   });
   expect(created.content[0].text).toBe("Logged 12.5 fl oz of water consumed at 2026-08-27T13:30:00.000Z. Water on 2026-08-27: 12.5 fl oz.");
 
-  const edited = await callTool(writerKey, "log_water", { id: event.id, ounces: "20" });
-  expect(edited.structuredContent).toMatchObject({ event: { id: event.id, ounces: "20" }, day: { date: "2026-08-27", totalOunces: "20" } });
+  const edited = await callTool(writerKey, "log_water", { id: event.id, logDate: "2026-08-20T09:30:00Z", ounces: 20 });
+  expect(edited.structuredContent).toMatchObject({
+    event: { id: event.id, logDate: "2026-08-27T13:30:00.000Z", ounces: 20 },
+    day: { date: "2026-08-27", totalOunces: 20 },
+  });
   expect(edited.content[0].text).toBe(`Changed Water Event ${event.id} to 20 fl oz. Water on 2026-08-27: 20 fl oz.`);
 
   const listed = await callTool(readerKey, "list_water", { from: "2026-08-27T00:00:00-04:00", to: "2026-08-28T00:00:00-04:00" });
-  expect(listed.structuredContent).toMatchObject({ events: [{ id: event.id, ounces: "20" }], totalOunces: "20" });
+  expect(listed.structuredContent).toMatchObject({ events: [{ id: event.id, ounces: 20 }], totalOunces: 20 });
   expect(listed.content[0].text).toBe("1 water event, 20 fl oz in total.");
 
   const deleted = await callTool(writerKey, "delete_water", { eventIds: [event.id, event.id] });
@@ -283,11 +292,37 @@ test("MCP water refusals are tool errors the agent can act on", async () => {
     expect(result.isError).toBe(true);
     return result.content[0].text;
   };
-  expect(await refusal(writerKey, "log_water", { ounces: "8" })).toContain("ISO date-time with an offset");
-  expect(await refusal(writerKey, "log_water", { logDate: "2026-08-27T09:30:00Z", ounces: "0" })).toContain("0.001 to 500 fl oz");
-  expect(await refusal(writerKey, "log_water", { id: 1, logDate: "2026-08-27T09:30:00Z", ounces: "1" })).toContain("consumption time cannot change");
-  expect(await refusal(writerKey, "log_water", { id: 999_999, ounces: "1" })).toBe("Water event not found.");
+  expect(await refusal(writerKey, "log_water", { ounces: 8 })).toContain("ISO date-time with an offset");
+  expect(await refusal(writerKey, "log_water", { logDate: "2026-08-27T09:30:00Z", ounces: 0 })).toContain("0.001 to 500 fl oz");
+  expect(await refusal(writerKey, "log_water", { logDate: "2026-08-27T09:30:00Z", ounces: 1.2345 })).toContain("at most three decimals");
+  expect(await refusal(writerKey, "log_water", { logDate: "2026-08-27T09:30:00Z", ounces: "8" })).toContain("expected number");
+  expect(await refusal(writerKey, "log_water", { id: 999_999, ounces: 1 })).toBe("Water event not found.");
   expect(await refusal(writerKey, "list_water", { from: "2026-08-28T00:00:00Z", to: "2026-08-27T00:00:00Z" })).toContain("from before to");
   expect(await refusal(writerKey, "delete_water", { eventIds: Array.from({ length: 101 }, (_, index) => index + 1) })).toContain("at most 100");
-  expect(await refusal(readerKey, "log_water", { logDate: "2026-08-27T09:30:00Z", ounces: "1" })).toContain("disabled");
+  expect(await refusal(readerKey, "log_water", { logDate: "2026-08-27T09:30:00Z", ounces: 1 })).toContain("disabled");
+});
+
+test("water stays unavailable until the account finishes setup, as the daily Food Log does", async () => {
+  const session = await seedAuthenticatedAccount(getAuthenticationService(), getApplicationDatabase().getClient(), "water.api.unconfigured", "correct horse battery staple", "203.0.113.11");
+  const holder = { id: session.user.id, cookie: serializeSessionCookie(session).split(";", 1)[0], csrf: session.csrfToken };
+  const key = await createKey(holder, "Before setup", ["daily-log:read", "water-events:read", "water-events:write"]);
+
+  for (const response of [
+    await post(key, { logDate: "2026-08-31T10:00:00Z", ounces: 8 }),
+    await list(key, "from=2026-08-30T00:00:00Z&to=2026-08-31T00:00:00Z"),
+    await remove(key, { eventIds: [1] }),
+  ]) {
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({ error: "missing_setup" });
+  }
+  const dailyLog = await callTool(key, "get_daily_log", {});
+  for (const [name, toolArguments] of [
+    ["log_water", { logDate: "2026-08-31T10:00:00Z", ounces: 8 }],
+    ["list_water", { from: "2026-08-30T00:00:00Z", to: "2026-08-31T00:00:00Z" }],
+    ["delete_water", { eventIds: [1] }],
+  ] as const) {
+    const result = await callTool(key, name, toolArguments);
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toBe(dailyLog.content[0].text);
+  }
 });

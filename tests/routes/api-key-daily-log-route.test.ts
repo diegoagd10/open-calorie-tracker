@@ -246,7 +246,7 @@ test("the versioned resource covers historical, empty, and future days", async (
   const { key } = await createKey(reader, "History");
   const read = (day: string) => apiGet(`Bearer ${key}`, freshIp(), `date=${day}`);
   const empty: unknown = await read("2026-08-29").json();
-  expect(empty).toMatchObject({ selectedDate: "2026-08-29", isFuture: false, foodEntries: [], waterEvents: [], events: [], waterTotalOunces: "0" });
+  expect(empty).toMatchObject({ selectedDate: "2026-08-29", isFuture: false, foodEntries: [], waterEvents: [], events: [], waterTotalOunces: 0 });
   const future: unknown = await read("2026-09-01").json();
   expect(future).toMatchObject({ selectedDate: "2026-09-01", isFuture: true, foodEntries: [], goal: { calorieTargetMilliKcal: 2_050_000 } });
 });

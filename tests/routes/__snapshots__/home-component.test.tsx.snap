@@ -46,14 +46,12 @@ exports[`home renders submission and navigation pending states 1`] = `"03ea44925
 
 exports[`home renders submission and navigation pending states 2`] = `"99e8228c999bdc0572fe16e48fdcedc4961ccfebf5893c4d9a62e8f44eef87cf"`;
 
-exports[`home renders submission and navigation pending states 3`] = `"ae6b13659a3568e94726ef9c70fcebfd945a3960dad520141dbf690359b6c490"`;
+exports[`home renders submission and navigation pending states 3`] = `"629088b550789a0289b7c2c1835b6bddc36cbb77261c82c9a20ab08e4afeaba1"`;
 
-exports[`home renders submission and navigation pending states 4`] = `"629088b550789a0289b7c2c1835b6bddc36cbb77261c82c9a20ab08e4afeaba1"`;
-
-exports[`home renders submission and navigation pending states 5`] = `"3178ee7e6079cb1ab8ca450c82146b771e54f981f585941feabe855768c59e74"`;
+exports[`home renders submission and navigation pending states 4`] = `"3178ee7e6079cb1ab8ca450c82146b771e54f981f585941feabe855768c59e74"`;
 
 exports[`home renders today's empty log and all goal progress contracts 1`] = `"74bb3350b183fea4dae3bfbb606b12549c8f21a9a7e969820d01e328d78dcafe"`;
 
 exports[`home renders today's empty log and all goal progress contracts 2`] = `"208a85868d73a6b05e5d9b05e84b56206ba75c3ef3ee4171159a9e2fe11ee522"`;
 
-exports[`home water dialog creates with a consumption time and edits only the amount 1`] = `"8c8d63593f81fcc11a8d6e79c3feed14cd66df16e9b1c560fe2efe5be1d060e1"`;
+exports[`home water dialog creates with a consumption time and edits only the amount 1`] = `"62649085e0aa2c8d66ef35b2cc856d3e4d77d0eb914b84c9de417fc030843227"`;

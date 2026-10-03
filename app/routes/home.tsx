@@ -87,7 +87,6 @@ import {
 } from "../water-event/index.server";
 import {
   WaterDialog,
-  waterDialogError,
   waterEventLocalDateTime,
   WaterOverview,
   WaterTimelineItem,
@@ -509,18 +508,18 @@ export async function loader({ request }: Route.LoaderArgs) {
   const requestedWater = url.searchParams.get("water");
   let waterDialog:
     | {
-        error?: string;
         event?: ReturnType<ReturnType<typeof getWaterEventService>["read"]>;
         initialLocalLogDate: string;
+        maxLocalLogDate: string;
       }
     | undefined;
   if (requestedWater !== null && !foodLog.isFuture) {
-    const error = waterDialogError(url.searchParams.get("waterError"));
+    const maxLocalLogDate = foodLog.localNow;
     const initialLocalLogDate = foodLog.selectedDate === foodLog.today
       ? foodLog.localNow
       : `${foodLog.selectedDate}T12:00`;
     if (requestedWater === "new") {
-      waterDialog = { error, initialLocalLogDate };
+      waterDialog = { initialLocalLogDate, maxLocalLogDate };
     } else {
       const eventId = positiveIntegerId(requestedWater);
       try {
@@ -534,7 +533,7 @@ export async function loader({ request }: Route.LoaderArgs) {
         ) {
           throw new WaterEventNotFoundError();
         }
-        waterDialog = { error, event, initialLocalLogDate };
+        waterDialog = { event, initialLocalLogDate, maxLocalLogDate };
       } catch (error) {
         if (error instanceof WaterEventNotFoundError) {
           throw new Response(error.message, { status: 404 });
@@ -2447,9 +2446,9 @@ function WaterDialogModal({
         closeHref={closeHref}
         csrfToken={csrfToken}
         dialogRef={dialogRef}
-        error={dialog.error}
         event={dialog.event}
         initialLocalLogDate={dialog.initialLocalLogDate}
+        maxLocalLogDate={dialog.maxLocalLogDate}
         onKeyDown={handleDialogKeyDown}
         returnDate={date}
       />

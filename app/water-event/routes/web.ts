@@ -1,4 +1,4 @@
-import { redirect } from "react-router";
+import { data, redirect } from "react-router";
 import { z } from "zod";
 
 import type { Route } from "./+types/web";
@@ -50,7 +50,7 @@ function runCommand(service: WaterEventService, userId: number, timeZone: string
     return redirect(foodLogHref(command.returnDate, { notice: "water-updated" }));
   }
   const logDate = zonedDateTimeToUtc(command.localLogDate, timeZone);
-  if (!logDate) throw new WaterEventValidationError("invalid_log_date", "Enter when the water was consumed.");
+  if (!logDate) throw new WaterEventValidationError("invalid_log_date", "The consumption time is not a valid local time.");
   service.save(userId, { logDate, quantity });
   return redirect(foodLogHref(command.localLogDate.slice(0, 10)));
 }
@@ -66,7 +66,8 @@ function testRequestInstant(request: Request): Date | undefined {
 
 /**
  * Saves or deletes the signed-in account holder's Water Event from the Food Log dialog, then
- * returns to the event's Food Log day. A rejected amount or time reopens the dialog with its error.
+ * returns to the event's Food Log day. A rejected amount or time answers `400` with its code,
+ * so the dialog stays open with what was typed.
  */
 export async function action({ request }: Route.ActionArgs) {
   const session = await getApplicationMutationSession(request);
@@ -78,10 +79,7 @@ export async function action({ request }: Route.ActionArgs) {
   try {
     return runCommand(service, session.user.id, timeZone, command);
   } catch (error) {
-    if (error instanceof WaterEventValidationError) {
-      const water = command.intent === "save" && command.id !== undefined ? String(command.id) : "new";
-      return redirect(foodLogHref(command.returnDate, { water, waterError: error.code }));
-    }
+    if (error instanceof WaterEventValidationError) return data({ error: error.code }, { status: 400 });
     if (error instanceof WaterEventNotFoundError) throw new Response(error.message, { status: 404 });
     throw error;
   }

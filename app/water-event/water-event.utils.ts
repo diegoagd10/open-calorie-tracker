@@ -6,14 +6,22 @@ export type WaterDisplayUnits = "us" | "metric";
 const MILLILITERS_PER_FLUID_OUNCE = 29.5735295625;
 const DECIMAL_OUNCES = /^(\d{1,6})(?:\.(\d{1,3}))?$/;
 
-/** A Water Event as REST and MCP callers see it, without its owner. */
+/**
+ * A Water Event as REST and MCP callers see it, without its owner. Amounts are JSON numbers;
+ * with at most three decimals and 500 fl oz, a number represents each one exactly.
+ */
 export function presentWaterEvent(event: WaterEvent) {
   const { id, logDate, ounces, createdAt, updatedAt } = event;
-  return { id, logDate, ounces, createdAt, updatedAt };
+  return { id, logDate, ounces: Number(ounces), createdAt, updatedAt };
 }
 
 export function presentWaterEventList(list: WaterEventList) {
-  return { events: list.events.map(presentWaterEvent), totalOunces: list.totalOunces };
+  return { events: list.events.map(presentWaterEvent), totalOunces: Number(list.totalOunces) };
+}
+
+/** A JSON amount as the decimal text Water Events store; anything but a finite number fails validation. */
+export function ouncesFromJson(value: unknown): string {
+  return typeof value === "number" && Number.isFinite(value) ? String(value) : "";
 }
 
 export function presentWaterEventDeletion(deletedCount: number) {

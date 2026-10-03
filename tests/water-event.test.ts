@@ -20,6 +20,7 @@ import {
   formatWaterAmount,
   formatWaterTime,
   ounceThousandths,
+  ouncesFromJson,
   presentWaterEvent,
   presentWaterEventDeletion,
   presentWaterEventList,
@@ -148,7 +149,7 @@ describe("save", () => {
     expect(service.save(owner, { logDate: "2026-09-30T14:45:00Z", quantity: { ounces: "500.000" } }).ounces).toBe("500");
   });
 
-  test.each(["2026-09-30T14:45:00", "2026-10-01T12:00:00.001Z", "yesterday", ""])(
+  test.each(["2026-09-30T14:45:00", "2026-10-01T12:05:00.001Z", "yesterday", ""])(
     "rejects the consumption time %j",
     async (logDate) => {
       const { service, owner } = await setup();
@@ -156,12 +157,24 @@ describe("save", () => {
     },
   );
 
+  test("accepts consumption times up to five minutes ahead of the server clock", async () => {
+    const { service, owner } = await setup();
+    expect(service.save(owner, { logDate: "2026-10-01T12:05:00Z", quantity: { ounces: "8" } }).logDate)
+      .toBe("2026-10-01T12:05:00.000Z");
+  });
+
+  test("an edit ignores a consumption time sent with it", async () => {
+    const { service, owner } = await setup();
+    const created = service.save(owner, { logDate: "2026-09-30T14:45:00Z", quantity: { ounces: "8" } });
+    const edited = service.save(owner, { id: created.id, logDate: "2026-09-29T08:00:00Z", quantity: { ounces: "9" } } as never);
+    expect(edited).toMatchObject({ logDate: created.logDate, ounces: "9" });
+  });
+
   test("rejects malformed edit shapes", async () => {
     const { service, owner } = await setup();
     const created = service.save(owner, { logDate: "2026-09-30T14:45:00Z", quantity: { ounces: "8" } });
     expect(validationCode(() => service.save(owner, { id: 0, quantity: { ounces: "8" } }))).toBe("invalid_input");
     expect(validationCode(() => service.save(owner, { id: 1.5, quantity: { ounces: "8" } }))).toBe("invalid_input");
-    expect(validationCode(() => service.save(owner, { id: created.id, logDate: NOW, quantity: { ounces: "8" } } as never))).toBe("invalid_input");
     expect(validationCode(() => service.save(owner, { id: created.id, quantity: null } as never))).toBe("invalid_amount");
   });
 });
@@ -271,15 +284,14 @@ describe("day summary", () => {
     service.save(owner, { logDate: "2026-09-30T05:00:00Z", quantity: { ounces: "8" } });
     service.save(owner, { logDate: "2026-10-01T03:00:00Z", quantity: { ounces: "12.5" } });
     service.save(owner, { logDate: "2026-10-01T04:00:00Z", quantity: { ounces: "100" } });
-    expect(service.daySummary(owner, "2026-10-01T03:00:00.000Z")).toEqual({ date: "2026-09-30", totalOunces: "20.5" });
+    expect(service.daySummary(owner, "2026-10-01T03:00:00.000Z", "America/New_York")).toEqual({ date: "2026-09-30", totalOunces: "20.5" });
+    expect(service.daySummary(owner, "2026-10-01T03:00:00.000Z", "UTC")).toEqual({ date: "2026-10-01", totalOunces: "112.5" });
   });
 
-  test("uses UTC before setup", async () => {
-    const { client, service } = await setup();
-    const userId = insertUser(client, "water.unconfigured", null);
-    service.save(userId, { logDate: "2026-09-30T23:00:00Z", quantity: { ounces: "8" } });
-    expect(service.timeZone(userId)).toBeNull();
-    expect(service.daySummary(userId, "2026-09-30T23:00:00.000Z")).toEqual({ date: "2026-09-30", totalOunces: "8" });
+  test("the account's time zone is unknown before setup", async () => {
+    const { client, service, owner } = await setup();
+    expect(service.timeZone(owner)).toBe("America/New_York");
+    expect(service.timeZone(insertUser(client, "water.unconfigured", null))).toBeNull();
   });
 });
 
@@ -323,12 +335,12 @@ describe("utilities", () => {
     const presented = {
       id: 42,
       logDate: "2026-09-30T18:45:00.000Z",
-      ounces: "12.5",
+      ounces: 12.5,
       createdAt: "2026-10-01T12:00:00.000Z",
       updatedAt: "2026-10-01T12:00:00.000Z",
     };
     expect(presentWaterEvent(event)).toEqual(presented);
-    expect(presentWaterEventList({ events: [event], totalOunces: "12.5" })).toEqual({ events: [presented], totalOunces: "12.5" });
+    expect(presentWaterEventList({ events: [event], totalOunces: "12.5" })).toEqual({ events: [presented], totalOunces: 12.5 });
     expect(presentWaterEventDeletion(2)).toEqual({ deletedCount: 2 });
   });
 
@@ -347,6 +359,8 @@ describe("utilities", () => {
     expect(formatOunceThousandths(0n)).toBe("0");
     expect(sumOunces(["0.1", "0.2", "8"])).toBe("8.3");
     expect(sumOunces([])).toBe("0");
+    expect([12.5, 0.001, 500, 0.1].map(ouncesFromJson)).toEqual(["12.5", "0.001", "500", "0.1"]);
+    expect(["12.5", Number.NaN, Number.POSITIVE_INFINITY, null].map(ouncesFromJson)).toEqual(["", "", "", ""]);
     expect(sumOunces(["not stored by the service", "1"])).toBe("1");
   });
 

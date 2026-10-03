@@ -82,7 +82,7 @@ function presentDailyFoodLog(foodLog: FoodLog) {
       sugarMilligrams: presentNutritionTotal(totals.sugarMilligrams),
       sodiumMilligrams: presentNutritionTotal(totals.sodiumMilligrams),
     },
-    waterTotalOunces: foodLog.waterTotalOunces,
+    waterTotalOunces: Number(foodLog.waterTotalOunces),
   };
 }
 

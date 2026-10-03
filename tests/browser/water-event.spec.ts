@@ -139,7 +139,7 @@ test("metric accounts see water in ml while entering fluid ounces", async ({
   );
 });
 
-test("a rejected consumption time reopens the dialog with its error", async ({
+test("a future consumption time is stopped in the browser and, if forced, by the server", async ({
   context,
   page,
 }) => {
@@ -147,12 +147,22 @@ test("a rejected consumption time reopens the dialog with its error", async ({
   await completeSetupForTestUser(page, "water.future.time");
 
   const dialog = await addWater(page, "8", "2026-08-29T23:00");
-  await expect(page).toHaveURL(/water=new&waterError=invalid_log_date/);
+  const consumedAt = dialog.getByLabel("Consumed at");
+  await expect(consumedAt).toHaveAttribute("max", "2026-08-29T14:00");
+  expect(await consumedAt.evaluate((input) => (input as HTMLInputElement).validity.rangeOverflow)).toBe(true);
+  await expect(dialog).toBeVisible();
+  await expect(page).toHaveURL(/water=new$/);
+
+  await consumedAt.evaluate((input) => input.removeAttribute("max"));
+  await dialog.getByRole("button", { name: "Add water", exact: true }).click();
   await expect(dialog.getByRole("alert")).toHaveText(
     "Enter when the water was consumed; it cannot be in the future.",
   );
+  await expect(consumedAt).toHaveValue("2026-08-29T23:00");
+  await expect(dialog.getByLabel("Amount (fl oz)")).toHaveValue("8");
 
-  await addWater(page, "8", "2026-08-28T23:30");
+  await consumedAt.fill("2026-08-28T23:30");
+  await dialog.getByRole("button", { name: "Add water", exact: true }).click();
   await expect(page).toHaveURL(/date=2026-08-28$/);
   await expect(page.getByRole("link", { name: /11:30 PM.*Water.*8 fl oz/ })).toBeVisible();
 });

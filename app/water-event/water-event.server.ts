@@ -12,6 +12,8 @@ import {
 const MINIMUM_OUNCE_THOUSANDTHS = 1n;
 const MAXIMUM_OUNCE_THOUSANDTHS = 500_000n;
 const MAXIMUM_DELETED_IDS = 100;
+/** How far ahead of the server clock a consumption time may be, for callers whose clocks run fast. */
+const FUTURE_TOLERANCE_MS = 5 * 60_000;
 
 function isEventId(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
@@ -40,22 +42,23 @@ export class WaterEventService {
     this.#now = now;
   }
 
-  /** Creates an event without `id`; with `id`, changes only that owned event's amount. */
+  /**
+   * Creates an event without `id`; with `id`, changes only that owned event's amount, and a
+   * `logDate` sent with it is ignored because the consumption time cannot change.
+   */
   save(userId: number, input: CreateWaterEvent): WaterEvent {
     const ounces = validOunces(input.quantity);
     if (input.id !== undefined) {
-      if (!isEventId(input.id) || "logDate" in input) {
-        throw new WaterEventValidationError(
-          "invalid_input",
-          "To edit a Water Event, send its positive integer id and the new amount only; the consumption time cannot change.",
-        );
+      if (!isEventId(input.id)) {
+        throw new WaterEventValidationError("invalid_input", "To edit a Water Event, send its positive integer id.");
       }
       const updated = this.#repository.save(userId, { id: input.id, quantity: { ounces } });
       if (!updated) throw new WaterEventNotFoundError();
       return updated;
     }
     const logDate = typeof input.logDate === "string" ? parseIsoDateTime(input.logDate) : null;
-    if (!logDate || logDate > this.#now().toISOString()) {
+    const latest = new Date(this.#now().getTime() + FUTURE_TOLERANCE_MS).toISOString();
+    if (!logDate || logDate > latest) {
       throw new WaterEventValidationError(
         "invalid_log_date",
         "Enter when the water was consumed as an ISO date-time with an offset, not in the future.",
@@ -95,9 +98,8 @@ export class WaterEventService {
     return this.#repository.delete(userId, [...new Set(eventIds)]);
   }
 
-  /** The account's local day containing `logDate` and that day's total ounces. */
-  daySummary(userId: number, logDate: string): { date: string; totalOunces: string } {
-    const timeZone = this.#repository.timeZone(userId) ?? "UTC";
+  /** The local day in `timeZone` containing `logDate` and that day's total ounces. */
+  daySummary(userId: number, logDate: string, timeZone: string): { date: string; totalOunces: string } {
     const date = waterEventLocalDateTime(logDate, timeZone).slice(0, 10);
     return { date, totalOunces: this.list(userId, localDayRange(date, timeZone)).totalOunces };
   }

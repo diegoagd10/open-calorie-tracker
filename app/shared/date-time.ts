@@ -43,9 +43,9 @@ function offsetMinutesAt(instant: number, timeZone: string): number {
 
 /**
  * The UTC instant of a wall-clock `YYYY-MM-DDTHH:MM[:SS]` in `timeZone`, or null when the
- * value is not a valid local date-time. An ambiguous time (the repeated hour when clocks go
- * back) resolves to the earlier instant; a skipped time (when clocks go forward) moves
- * forward by the gap, as wall clocks do.
+ * value is not a valid local date-time. Daylight-saving transitions follow RFC 5545 §3.3.5,
+ * as calendars do: a repeated time (clocks go back) is its first occurrence, and a skipped
+ * time (clocks go forward) uses the offset before the gap, which moves it forward.
  */
 export function zonedDateTimeToUtc(localDateTime: string, timeZone: string): string | null {
   const match = LOCAL_DATE_TIME.exec(localDateTime);

@@ -195,7 +195,6 @@ async function renderPendingHome(
         loader: () => never,
         path: "/",
       },
-      { action: () => never, path: "/water-events" },
     ],
     {
       hydrationData: { loaderData: { home: loaderData } },
@@ -2005,7 +2004,7 @@ test("home water dialog creates with a consumption time and edits only the amoun
   (globalThis.document as unknown as { activeElement: TestElement }).activeElement =
     waterPreviousFocus;
   const createDialog = await renderHome({
-    waterDialog: { initialLocalLogDate: "2026-08-31T12:00" },
+    waterDialog: { initialLocalLogDate: "2026-08-31T12:00", maxLocalLogDate: "2026-08-31T12:00" },
   });
   expect(semanticDom(createDialog)).toMatchSnapshot();
   expect(allText(createDialog)).toContain("Add Water");
@@ -2016,6 +2015,7 @@ test("home water dialog creates with a consumption time and edits only the amoun
   expect(input(createDialog, "csrfToken").props.value).toBe("home-component-csrf");
   expect(input(createDialog, "localLogDate").props).toMatchObject({
     defaultValue: "2026-08-31T12:00",
+    max: "2026-08-31T12:00",
     required: true,
     type: "datetime-local",
   });
@@ -2047,9 +2047,9 @@ test("home water dialog creates with a consumption time and edits only the amoun
   const edit = await renderHome({
     foodLog: { ...baseFoodLog, waterEvents: [event], waterTotalOunces: "16" },
     waterDialog: {
-      error: "Enter an amount from 0.001 to 500 fl oz, with at most three decimals.",
       event,
       initialLocalLogDate: "2026-08-31T12:00",
+      maxLocalLogDate: "2026-08-31T12:00",
     },
   });
   expect(allText(edit)).toContain("Edit Water Event");
@@ -2057,8 +2057,7 @@ test("home water dialog creates with a consumption time and edits only the amoun
   expect(input(edit, "ounces").props.defaultValue).toBe("16");
   expect(input(edit, "localLogDate")).toBeUndefined();
   expect(allText(edit)).toContain("Save amount");
-  expect(edit.root.findByProps({ role: "alert" }).children.join(""))
-    .toBe("Enter an amount from 0.001 to 500 fl oz, with at most three decimals.");
+  expect(edit.root.findAllByProps({ role: "alert" })).toHaveLength(0);
   expect(allText(edit)).not.toContain("Delete this Water Event?");
   const revealDelete = edit.root.findAllByType("button").find(
     (button) => nodeText(button) === "Delete",
@@ -2178,44 +2177,6 @@ test("home renders submission and navigation pending states", async () => {
   expect(idleEditor.root.findByProps({ "aria-label": "Save changes" }).props.disabled).toBe(false);
   await act(async () => idleEditor.unmount());
 
-  const saveWater = new FormData();
-  saveWater.set("intent", "save");
-  const pendingWater = await renderPendingHome(
-    { waterDialog: { initialLocalLogDate: "2026-08-31T12:00" } },
-    { formData: saveWater, to: "/water-events" },
-  );
-  expect(semanticDom(pendingWater)).toMatchSnapshot();
-  expect(pendingWater.root.findByType("fieldset").props.disabled).toBe(true);
-  expect(allText(pendingWater)).toContain("Saving…");
-  await act(async () => pendingWater.unmount());
-
-  const deleteWater = new FormData();
-  deleteWater.set("intent", "delete");
-  const deletingWater = await renderPendingHome(
-    {
-      waterDialog: {
-        event: { id: 51, logDate: "2026-08-31T17:15:00.000Z", ounces: "16", updatedAt: "2026-08-31T17:15:00.000Z" },
-        initialLocalLogDate: "2026-08-31T12:00",
-      },
-    },
-    { formData: deleteWater, to: "/water-events" },
-  );
-  const revealWaterDelete = deletingWater.root.findAllByType("button").find(
-    (button) => nodeText(button) === "Delete",
-  )!;
-  await act(async () => revealWaterDelete.props.onClick());
-  expect(allText(deletingWater)).toContain("Deleting…");
-  await act(async () => deletingWater.unmount());
-
-  const elsewhere = new FormData();
-  elsewhere.set("intent", "save");
-  const idleWater = await renderPendingHome(
-    { waterDialog: { initialLocalLogDate: "2026-08-31T12:00" } },
-    { formData: elsewhere, to: "/" },
-  );
-  expect(idleWater.root.findByType("fieldset").props.disabled).toBe(false);
-  expect(allText(idleWater)).toContain("Add water");
-  await act(async () => idleWater.unmount());
 
   const search = await renderPendingHome(
     { catalog: { mode: "search", query: "", results: [] } },

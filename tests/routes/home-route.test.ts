@@ -724,28 +724,21 @@ test("the web water route creates, edits, and deletes Water Events from the Food
   expect(loaded.data.foodLog.events.find((candidate) => candidate.kind === "water"))
     .toMatchObject({ id: event.id, localEventTime: "09:15:00" });
 
-  expectRedirect(
-    await postWater({ intent: "save", localLogDate: "2026-08-31T13:00", ounces: "0" }),
-    "/?date=2026-08-31&water=new&waterError=invalid_amount",
-  );
-  expectRedirect(
-    await postWater({ intent: "save", localLogDate: "2026-08-31T12:01", ounces: "8" }),
-    "/?date=2026-08-31&water=new&waterError=invalid_log_date",
-  );
-  expectRedirect(
-    await postWater({ intent: "save", localLogDate: "not a time", ounces: "8" }),
-    "/?date=2026-08-31&water=new&waterError=invalid_log_date",
-  );
+  const rejected = (code: string) => ({ data: { error: code }, init: { status: 400 } });
+  expect(await postWater({ intent: "save", localLogDate: "2026-08-31T11:00", ounces: "0" }))
+    .toMatchObject(rejected("invalid_amount"));
+  expect(await postWater({ intent: "save", localLogDate: "2026-08-31T12:06", ounces: "8" }))
+    .toMatchObject(rejected("invalid_log_date"));
+  expect(await postWater({ intent: "save", localLogDate: "not a time", ounces: "8" }))
+    .toMatchObject(rejected("invalid_log_date"));
 
   expectRedirect(
     await postWater({ id: String(event.id), intent: "save", ounces: "10" }),
     "/?date=2026-08-31&notice=water-updated",
   );
   expect(getWaterEventService().read(userId, event.id)).toMatchObject({ logDate: event.logDate, ounces: "10" });
-  expectRedirect(
-    await postWater({ id: String(event.id), intent: "save", ounces: "501" }),
-    `/?date=2026-08-31&water=${event.id}&waterError=invalid_amount`,
-  );
+  expect(await postWater({ id: String(event.id), intent: "save", ounces: "501" }))
+    .toMatchObject(rejected("invalid_amount"));
   expect((await rejectedWith(postWater({ id: "999999", intent: "save", ounces: "1" }))).status).toBe(404);
 
   for (const fields of <Record<string, string>[]>[
@@ -773,7 +766,7 @@ test("the web water route creates, edits, and deletes Water Events from the Food
     headers: { Origin: origin },
     method: "POST",
   })));
-  expect(unauthenticated.status).toBe(302);
+  expect((unauthenticated as Response).status).toBe(302);
 
   expectRedirect(
     await postWater({ eventIds: String(event.id), intent: "delete" }),
@@ -806,15 +799,14 @@ test("the home loader opens the water dialog for a new event or an event on the 
   const yesterday = getWaterEventService().save(userId, { logDate: "2026-08-30T12:00:00Z", quantity: { ounces: "8" } });
 
   expect((await load("/?water=new")).data.waterDialog).toEqual({
-    error: undefined,
     initialLocalLogDate: "2026-08-31T12:00",
+    maxLocalLogDate: "2026-08-31T12:00",
   });
-  expect((await load("/?date=2026-08-30&water=new&waterError=invalid_amount")).data.waterDialog).toEqual({
-    error: "Enter an amount from 0.001 to 500 fl oz, with at most three decimals.",
+  expect((await load("/?date=2026-08-30&water=new")).data.waterDialog).toEqual({
     initialLocalLogDate: "2026-08-30T12:00",
+    maxLocalLogDate: "2026-08-31T12:00",
   });
-  expect((await load(`/?water=${today8am.id}&waterError=other`)).data.waterDialog).toMatchObject({
-    error: "The water amount could not be saved.",
+  expect((await load(`/?water=${today8am.id}`)).data.waterDialog).toMatchObject({
     event: { id: today8am.id, ounces: "8" },
   });
   expect((await load("/?date=2026-09-01&water=new")).data.waterDialog).toBeUndefined();
