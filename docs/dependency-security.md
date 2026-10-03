@@ -49,8 +49,8 @@ fixed dependency cannot leave a stale exception unnoticed.
 ## CodeQL results
 
 The GitHub Actions CodeQL scan has been removed along with the other workflows.
-`pnpm verify:deep` still runs `pnpm codeql:policy`, which tests the local SARIF
-validator; these policy tests do not scan the application for vulnerabilities.
+`pnpm codeql:policy` tests the local SARIF validator on demand; it is not part
+of `pnpm verify` and does not scan the application for vulnerabilities.
 
 For a separately generated CodeQL SARIF report, run
 `node scripts/check-codeql-results.mjs <sarif-directory>`. The validator

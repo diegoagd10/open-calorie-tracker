@@ -20,7 +20,7 @@ try {
   // When worktreeConfig is enabled, installation is scoped to this worktree.
   // In a regular clone Git treats --worktree as --local.
   git("config", "--worktree", "core.hooksPath", ".githooks");
-  console.log("Installed the pre-push hook. It runs verify:deep; failures block Git and print diagnostics.");
+  console.log("Installed the pre-push hook. It runs verify; failures block Git and print diagnostics.");
 } catch (error) {
   console.error(`Hook installation failed: ${error.message}`);
   process.exitCode = 1;
