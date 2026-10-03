@@ -7,6 +7,7 @@ import { isTestEnvironment } from "../../runtime.server";
 import { zonedDateTimeToUtc } from "../../shared/date-time";
 import { getWaterEventService } from "../runtime.server";
 import type { WaterEventService } from "../water-event.server";
+import { waterEventLocalDateTime } from "../water-event.utils";
 import { WaterEventNotFoundError, WaterEventValidationError } from "../water-events.exceptions";
 
 const eventId = z.string().regex(/^[1-9]\d{0,15}$/).transform(Number);
@@ -31,9 +32,9 @@ function foodLogHref(date: string, parameters: Record<string, string> = {}): str
 
 /** The submitted command, or a `400` response for a form the dialog never sends. */
 function readCommand(form: FormData): WaterCommand {
-  const fields = [...form.entries()].filter(([name]) => name !== "csrfToken");
-  const unique = new Set(fields.map(([name]) => name)).size === fields.length;
-  const command = commandSchema.safeParse(Object.fromEntries(fields));
+  const entries = [...form.entries()];
+  const unique = new Set(entries.map(([name]) => name)).size === entries.length;
+  const command = commandSchema.safeParse(Object.fromEntries(entries.filter(([name]) => name !== "csrfToken")));
   if (!unique || !command.success) throw new Response("The Water Event request was invalid.", { status: 400 });
   return command.data;
 }
@@ -46,13 +47,18 @@ function runCommand(service: WaterEventService, userId: number, timeZone: string
   }
   const quantity = { ounces: command.ounces };
   if (command.id !== undefined) {
-    service.save(userId, { id: command.id, quantity });
-    return redirect(foodLogHref(command.returnDate, { notice: "water-updated" }));
+    const event = service.save(userId, { id: command.id, quantity });
+    return redirect(foodLogHref(localDay(event.logDate, timeZone), { notice: "water-updated" }));
   }
   const logDate = zonedDateTimeToUtc(command.localLogDate, timeZone);
   if (!logDate) throw new WaterEventValidationError("invalid_log_date", "The consumption time is not a valid local time.");
-  service.save(userId, { logDate, quantity });
-  return redirect(foodLogHref(command.localLogDate.slice(0, 10)));
+  const event = service.save(userId, { logDate, quantity });
+  return redirect(foodLogHref(localDay(event.logDate, timeZone)));
+}
+
+/** The account's Food Log day for a saved event; a skipped wall-clock time can move it past the submitted date. */
+function localDay(logDate: string, timeZone: string): string {
+  return waterEventLocalDateTime(logDate, timeZone).slice(0, 10);
 }
 
 /** The instant a browser test pins with `X-Test-Food-Log-Now`, as the Food Log does. */

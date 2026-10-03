@@ -794,6 +794,44 @@ test("the web water route creates, edits, and deletes Water Events from the Food
   }
 });
 
+test("saving a Water Event returns to the event's own Food Log day, not the dialog's returnDate", async () => {
+  const lastNight = getWaterEventService().save(userId, { logDate: "2026-08-31T01:00:00Z", quantity: { ounces: "9" } });
+  try {
+    expectRedirect(
+      await postWater({ id: String(lastNight.id), intent: "save", ounces: "10", returnDate: "2026-08-31" }),
+      "/?date=2026-08-30&notice=water-updated",
+    );
+    expect(getWaterEventService().read(userId, lastNight.id).ounces).toBe("10");
+  } finally {
+    getWaterEventService().delete(userId, [lastNight.id]);
+  }
+});
+
+test("the web water route answers 400 to a body that is not a form or repeats a field, writing nothing", async () => {
+  const notAForm = await rejectedWith(waterAction(routeArgs(new Request(`${origin}/water-events`, {
+    body: `csrfToken=${csrfToken}&intent=save`,
+    headers: { Cookie: cookie, Origin: origin, "Content-Type": "text/plain", "X-Test-Food-Log-Now": instant },
+    method: "POST",
+  }))));
+  expect(notAForm.status).toBe(400);
+  const brokenMultipart = await rejectedWith(waterAction(routeArgs(new Request(`${origin}/water-events`, {
+    body: "--boundary\r\nnot a part",
+    headers: { Cookie: cookie, Origin: origin, "Content-Type": "multipart/form-data; boundary=boundary", "X-Test-Food-Log-Now": instant },
+    method: "POST",
+  }))));
+  expect(brokenMultipart.status).toBe(400);
+
+  const repeatedToken = new URLSearchParams({ csrfToken, intent: "save", localLogDate: "2026-08-31T09:00", ounces: "8", returnDate: today });
+  repeatedToken.append("csrfToken", csrfToken);
+  const repeated = await rejectedWith(waterAction(routeArgs(new Request(`${origin}/water-events`, {
+    body: repeatedToken,
+    headers: { Cookie: cookie, Origin: origin, "X-Test-Food-Log-Now": instant },
+    method: "POST",
+  }))));
+  expect(repeated.status).toBe(400);
+  expect((await load()).data.foodLog.waterEvents).toEqual([]);
+});
+
 test("the home loader opens the water dialog for a new event or an event on the selected day", async () => {
   const today8am = getWaterEventService().save(userId, { logDate: "2026-08-31T12:00:00Z", quantity: { ounces: "8" } });
   const yesterday = getWaterEventService().save(userId, { logDate: "2026-08-30T12:00:00Z", quantity: { ounces: "8" } });

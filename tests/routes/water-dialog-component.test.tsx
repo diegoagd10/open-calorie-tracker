@@ -85,6 +85,10 @@ test("a pending save or delete disables the form and names what is happening", a
   });
   expect(text(deleting)).toContain("Deleting…");
   expect(text(deleting)).toContain("Save amount");
+  // The confirmation text is the alert; a form cannot carry role="alert".
+  const confirmation = deleting.root.findByProps({ role: "alert" });
+  expect(confirmation.type).toBe("div");
+  expect(collect(confirmation.children as never)).toContain("Delete this Water Event?");
 
   Object.assign(fetcher, { formData: undefined, state: "idle" });
   const idle = await render();

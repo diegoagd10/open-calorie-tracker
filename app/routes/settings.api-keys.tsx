@@ -137,9 +137,10 @@ function KeyFields({ errors, name, scopes, expiration, expirations }: {
   expiration: string;
   expirations: ReadonlyArray<{ value: string; label: string }>;
 }) {
-  // Checking a permission satisfies "at least one", so that submission's scopes error no longer applies.
-  const [scopesSatisfiedFor, setScopesSatisfiedFor] = useState<ApiKeyErrors>();
-  const scopesError = scopesSatisfiedFor === errors ? undefined : errors?.scopes;
+  // The scopes error describes the last submission; once the selection changes, it shows only while nothing is checked.
+  const [checkedScopes, setCheckedScopes] = useState<ReadonlySet<string>>(() => new Set(scopes));
+  const [changedAfter, setChangedAfter] = useState<ApiKeyErrors>();
+  const scopesError = changedAfter === errors && checkedScopes.size > 0 ? undefined : errors?.scopes;
   return (
     <>
       <div className={styles.field}>
@@ -153,7 +154,14 @@ function KeyFields({ errors, name, scopes, expiration, expirations }: {
           <label className={styles.checkboxRow} key={entry.scope}>
             <input type="checkbox" name="scope" value={entry.scope} defaultChecked={scopes.includes(entry.scope)}
               onChange={(event) => {
-                if (event.currentTarget.checked) setScopesSatisfiedFor(errors);
+                const checked = event.currentTarget.checked;
+                setCheckedScopes((current) => {
+                  const next = new Set(current);
+                  if (checked) next.add(entry.scope);
+                  else next.delete(entry.scope);
+                  return next;
+                });
+                setChangedAfter(errors);
               }}
             />
             {entry.label}

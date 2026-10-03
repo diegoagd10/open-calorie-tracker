@@ -90,12 +90,12 @@ export function WaterDialog(props: {
         </fieldset>
       </fetcher.Form>
       {event && confirmDelete ? (
-        <fetcher.Form action={actionHref} className={`${foodLogStyles.deleteConfirm} ${styles.deleteConfirm}`} method="post" role="alert">
+        <fetcher.Form action={actionHref} className={`${foodLogStyles.deleteConfirm} ${styles.deleteConfirm}`} method="post">
           <input name="csrfToken" type="hidden" value={csrfToken} />
           <input name="returnDate" type="hidden" value={returnDate} />
           <input name="intent" type="hidden" value="delete" />
           <input name="eventIds" type="hidden" value={event.id} />
-          <div>
+          <div role="alert">
             <strong>Delete this Water Event?</strong>
             <p>The daily water total will decrease by this amount.</p>
           </div>

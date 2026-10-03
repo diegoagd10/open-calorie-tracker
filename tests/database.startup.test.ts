@@ -4,6 +4,7 @@ import path from "node:path";
 import { getTableName } from "drizzle-orm";
 import { getTableConfig, SQLiteSyncDialect } from "drizzle-orm/sqlite-core";
 import { eq, sql } from "drizzle-orm";
+import { readMigrationFiles } from "drizzle-orm/migrator";
 import { afterEach, expect, test } from "vitest";
 
 import * as schema from "../app/database/schema.server";
@@ -18,6 +19,8 @@ import { waterEvents } from "../app/water-event/water-event.schema.server";
 import { createMigrationFolder } from "./support/migrations";
 
 const temporaryDirectories: string[] = [];
+/** Every reviewed migration, so these tests follow the journal instead of a fixed count. */
+const migrationCount = readMigrationFiles({ migrationsFolder: path.resolve("drizzle") }).length;
 
 function readRepresentativeData(client: ApplicationDatabaseClient) {
   return {
@@ -54,8 +57,8 @@ test("startup applies the initial migration and configures writable SQLite stora
   });
 
   expect(database.getStatus()).toEqual({
-    appliedMigrations: 30,
-    availableMigrations: 30,
+    appliedMigrations: migrationCount,
+    availableMigrations: migrationCount,
     busyTimeoutMs: 5_000,
     foreignKeysEnabled: true,
     journalMode: "wal",
@@ -76,12 +79,12 @@ test("starting twice preserves the applied migration state", async () => {
   };
 
   const firstStartup = openApplicationDatabase(options);
-  expect(firstStartup.getStatus().appliedMigrations).toBe(30);
+  expect(firstStartup.getStatus().appliedMigrations).toBe(migrationCount);
   firstStartup.close();
 
   const replacementStartup = openApplicationDatabase(options);
   expect(replacementStartup.getStatus()).toMatchObject({
-    appliedMigrations: 30,
+    appliedMigrations: migrationCount,
     schemaVersion: "20",
     writable: true,
   });
@@ -117,7 +120,7 @@ test("OAuth removal migrates a database holding OAuth clients, grants, and token
   expect(upgraded.getClient().all(sql`SELECT name FROM sqlite_master WHERE name LIKE 'oauth%'`)).toEqual([]);
   expect(upgraded.getClient().get(sql`SELECT username_normalized AS username FROM users WHERE id = ${owner.id}`))
     .toEqual({ username: "oauth.removal.owner" });
-  expect(upgraded.getStatus()).toMatchObject({ appliedMigrations: 30, foreignKeysEnabled: true });
+  expect(upgraded.getStatus()).toMatchObject({ appliedMigrations: migrationCount, foreignKeysEnabled: true });
   upgraded.close();
 });
 
@@ -330,8 +333,8 @@ test("the production migration preserves every representative field from the pri
   });
 
   expect(upgraded.getStatus()).toMatchObject({
-    appliedMigrations: 30,
-    availableMigrations: 30,
+    appliedMigrations: migrationCount,
+    availableMigrations: migrationCount,
     migrationsCurrent: true,
     schemaVersion: "20",
     writable: true,
@@ -443,7 +446,7 @@ THIS IS NOT VALID SQL;\n`,
   ).toEqual([]);
   expect(recovered.getClient().select().from(schema.users).all()).toEqual([]);
   expect(recovered.getStatus()).toMatchObject({
-    appliedMigrations: 30,
+    appliedMigrations: migrationCount,
     migrationsCurrent: true,
   });
   recovered.close();
@@ -469,8 +472,8 @@ test("read-only application storage prevents startup", async () => {
 
 test("readiness requires every database invariant", () => {
   const readyStatus: DatabaseStatus = {
-    appliedMigrations: 30,
-    availableMigrations: 30,
+    appliedMigrations: migrationCount,
+    availableMigrations: migrationCount,
     busyTimeoutMs: 5_000,
     foreignKeysEnabled: true,
     journalMode: "wal",
@@ -525,8 +528,8 @@ test("status detects tampered migration history, metadata, and pragmas", async (
   client.run(sql`DELETE FROM __drizzle_migrations
     WHERE created_at = (SELECT MAX(created_at) FROM __drizzle_migrations)`);
   expect(database.getStatus()).toMatchObject({
-    appliedMigrations: 29,
-    availableMigrations: 30,
+    appliedMigrations: migrationCount - 1,
+    availableMigrations: migrationCount,
     migrationsCurrent: false,
   });
   client.delete(schema.applicationMetadata)

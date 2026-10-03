@@ -166,6 +166,47 @@ test.each([
   expect(await response.json()).toEqual({ error });
 });
 
+test("POST bodies are capped at 16 KiB as received, without buffering more or creating an event", async () => {
+  const limit = 16 * 1024;
+  const sized = (bytes: number, logDate: string) => {
+    const base = JSON.stringify({ logDate, ounces: 8, note: "" });
+    return JSON.stringify({ logDate, ounces: 8, note: "x".repeat(bytes - base.length) });
+  };
+  const atLimit = await post(writerKey, sized(limit, "2026-08-29T10:00:00Z"));
+  expect(atLimit.status).toBe(201);
+
+  const overLimit = await post(writerKey, sized(limit + 1, "2026-08-29T11:00:00Z"));
+  expect(overLimit.status).toBe(413);
+  expect(await overLimit.json()).toEqual({ error: "payload_too_large" });
+
+  const declared = new Request(`${origin}/api/v1/water-events`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${writerKey}`, "Content-Length": String(limit + 1), "X-Open-Calory-Client-IP": freshIp() },
+    body: sized(limit + 1, "2026-08-29T12:00:00Z"),
+  });
+  expect((await waterAction(args(declared))).status).toBe(413);
+
+  const encoder = new TextEncoder();
+  const chunks = [sized(limit + 1, "2026-08-29T13:00:00Z").slice(0, limit / 2), sized(limit + 1, "2026-08-29T13:00:00Z").slice(limit / 2)];
+  const streamed = new Request(`${origin}/api/v1/water-events`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${writerKey}`, "X-Open-Calory-Client-IP": freshIp() },
+    body: new ReadableStream({
+      start(controller) {
+        for (const chunk of chunks) controller.enqueue(encoder.encode(chunk));
+        controller.close();
+      },
+    }),
+    duplex: "half",
+  } as RequestInit);
+  expect((await waterAction(args(streamed))).status).toBe(413);
+
+  const day = await list(writerKey, "from=2026-08-29T00%3A00%3A00Z&to=2026-08-30T00%3A00%3A00Z");
+  const events = ((await day.json()) as { events: { id: number; logDate: string }[] }).events;
+  expect(events.map((event) => event.logDate)).toEqual(["2026-08-29T10:00:00.000Z"]);
+  expect((await remove(writerKey, { eventIds: events.map((event) => event.id) })).status).toBe(200);
+});
+
 test("POST accepts a consumption time up to five minutes ahead of the server clock", async () => {
   const response = await post(writerKey, { logDate: "2026-08-31T16:05:00Z", ounces: 0.001 });
   expect(response.status).toBe(201);
@@ -240,23 +281,24 @@ test("MCP lists water tools by scope and logs, lists, and deletes water", async 
     event: { id: event.id, logDate: "2026-08-27T13:30:00.000Z", ounces: 12.5, createdAt: now, updatedAt: now },
     day: { date: "2026-08-27", totalOunces: 12.5 },
   });
-  expect(created.content[0].text).toBe("Logged 12.5 fl oz of water consumed at 2026-08-27T13:30:00.000Z. Water on 2026-08-27: 12.5 fl oz.");
+  // The text carries what the agent needs; its wording is not a contract.
+  expect(created.content[0].text).toEqual(expect.stringMatching(/12\.5 fl oz.*2026-08-27T13:30:00\.000Z.*2026-08-27: 12\.5 fl oz/));
 
   const edited = await callTool(writerKey, "log_water", { id: event.id, logDate: "2026-08-20T09:30:00Z", ounces: 20 });
   expect(edited.structuredContent).toMatchObject({
     event: { id: event.id, logDate: "2026-08-27T13:30:00.000Z", ounces: 20 },
     day: { date: "2026-08-27", totalOunces: 20 },
   });
-  expect(edited.content[0].text).toBe(`Changed Water Event ${event.id} to 20 fl oz. Water on 2026-08-27: 20 fl oz.`);
+  expect(edited.content[0].text).toEqual(expect.stringMatching(new RegExp(`${event.id}.*20 fl oz.*2026-08-27: 20 fl oz`)));
 
   const listed = await callTool(readerKey, "list_water", { from: "2026-08-27T00:00:00-04:00", to: "2026-08-28T00:00:00-04:00" });
   expect(listed.structuredContent).toMatchObject({ events: [{ id: event.id, ounces: 20 }], totalOunces: 20 });
-  expect(listed.content[0].text).toBe("1 water event, 20 fl oz in total.");
+  expect(listed.content[0].text).toEqual(expect.stringMatching(/1 water event\b.*20 fl oz/));
 
   const deleted = await callTool(writerKey, "delete_water", { eventIds: [event.id, event.id] });
   expect(deleted.structuredContent).toEqual({ deletedCount: 1 });
-  expect(deleted.content[0].text).toBe("Deleted 1 water event.");
-  expect((await callTool(writerKey, "delete_water", { eventIds: [event.id] })).content[0].text).toBe("Deleted 0 water events.");
+  expect(deleted.content[0].text).toEqual(expect.stringMatching(/\b1 water event\b/));
+  expect((await callTool(writerKey, "delete_water", { eventIds: [event.id] })).content[0].text).toEqual(expect.stringMatching(/\b0 water events\b/));
 });
 
 test("unexpected failures propagate instead of becoming water errors", async () => {

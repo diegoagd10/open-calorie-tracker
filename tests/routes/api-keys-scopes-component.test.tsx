@@ -99,5 +99,8 @@ test("the at-least-one-permission error clears as soon as a permission is checke
   const check = logWater.props.onChange as (event: { currentTarget: { checked: boolean } }) => void;
   await act(async () => check({ currentTarget: { checked: true } }));
   expect(alerts()).not.toContain("Choose at least one permission.");
+
+  await act(async () => check({ currentTarget: { checked: false } }));
+  expect(alerts()).toContain("Choose at least one permission.");
   await act(() => renderer.unmount());
 });
