@@ -11,10 +11,9 @@ import {
   keyProviderError,
   cancelKeyPrompt,
 } from "../auth/key-ceremony.client";
-import { getGoalSetupService } from "../setup/runtime.server";
 import { applicationOrigin, effectiveRequestPolicy } from "../runtime.server";
 import { SettingsDestinations, SettingsShell } from "../settings-destinations";
-import { navigationToday } from "../goals/runtime.server";
+import { getSetupService, navigationToday } from "../setup/runtime.server";
 import styles from "../account.module.css";
 import shellStyles from "../food-log.module.css";
 
@@ -26,7 +25,7 @@ export function headers() {
 }
 export async function loader({ request }: Route.LoaderArgs) {
   const session = await requireApplicationSession(request);
-  if (!getGoalSetupService().isComplete(session.user.id))
+  if (!getSetupService().isComplete(session.user.id))
     return redirect("/setup");
   if (effectiveRequestPolicy().entry === "lan")
     return redirect(`${applicationOrigin()}/settings/security`);

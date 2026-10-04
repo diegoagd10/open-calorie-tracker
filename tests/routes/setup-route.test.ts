@@ -13,6 +13,7 @@ import {
   initializeApplicationDatabase,
   shutdownApplicationDatabase,
 } from "../../app/database/runtime.server";
+import { getDailyGoalService } from "../../app/daily-goal/index.server";
 import Setup, {
   action as setupAction,
   loader as setupLoader,
@@ -51,19 +52,27 @@ function routeArgs(request: Request) {
   };
 }
 
-function setupFields(csrfToken: string, water = "80") {
+function setupFields(csrfToken: string, overrides: Record<string, string> = {}) {
   return new URLSearchParams({
-    calories: "2050",
-    carbohydrate: "230",
+    calorieTarget: "2050",
+    carbohydrateTarget: "230",
     csrfToken,
-    displayUnits: "us",
-    fat: "70",
-    fiber: "25",
-    protein: "120",
-    sodium: "2300",
-    sugar: "50",
+    fatTarget: "70",
+    fiberTarget: "25",
+    proteinTarget: "120",
+    sodiumMaximum: "2300",
+    sugarMaximum: "50",
     timeZone: "Pacific/Honolulu",
-    water,
+    waterTarget: "80",
+    ...overrides,
+  });
+}
+
+function post(body: URLSearchParams, cookie: string) {
+  return new Request("http://localhost:3000/setup", {
+    body,
+    headers: { Cookie: cookie, Origin: "http://localhost:3000" },
+    method: "POST",
   });
 }
 
@@ -163,23 +172,28 @@ test("a new account completes setup through the route interface", async () => {
   expect(markup).toMatch(/name="timeZone"[^>]*value="UTC"/);
   expect(markup).toContain("Only what the log needs");
   expect(markup).not.toContain('name="email"');
+  expect(markup).not.toContain('name="displayUnits"');
+  expect(markup).not.toContain("Display units");
+  expect(markup).toContain('type="number" name="waterTarget" value="80"/><em>fl oz</em>');
 
   const invalidResult = await setupAction(
-    routeArgs(
-      new Request("http://localhost:3000/setup", {
-        body: setupFields(registration.session.csrfToken, "500.001"),
-        headers: {
-          Cookie: cookie,
-          Origin: "http://localhost:3000",
-        },
-        method: "POST",
-      }),
-    ),
+    routeArgs(post(setupFields(registration.session.csrfToken, { waterTarget: "500.001" }), cookie)),
   );
   expect(invalidResult).toMatchObject({
     data: {
       error: "Water must be from 0.001 to 500 fl oz.",
-      field: "water",
+      field: "waterTarget",
+    },
+    init: { status: 400 },
+  });
+
+  const invalidTimeZone = await setupAction(
+    routeArgs(post(setupFields(registration.session.csrfToken, { timeZone: "Mars/Olympus" }), cookie)),
+  );
+  expect(invalidTimeZone).toMatchObject({
+    data: {
+      error: "Enter a valid IANA time zone, such as America/New_York.",
+      field: "timeZone",
     },
     init: { status: 400 },
   });
@@ -211,6 +225,11 @@ test("a new account completes setup through the route interface", async () => {
   }
   expect(completed.status).toBe(302);
   expect(completed.headers.get("Location")).toBe("/");
+  expect(getDailyGoalService().read(registration.session.user.id)).toMatchObject({
+    calorieTarget: 2_050_000,
+    waterTarget: "80",
+    sodiumMaximum: 2_300,
+  });
 
   const afterCompletion = await setupLoader(
     routeArgs(

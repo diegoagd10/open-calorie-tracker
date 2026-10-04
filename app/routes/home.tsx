@@ -91,7 +91,6 @@ import {
   WaterOverview,
   WaterTimelineItem,
 } from "../water-event";
-import { waterTargetThousandthsFromMicroliters } from "../goals/water-conversion";
 import styles from "../food-log.module.css";
 
 function catalogQuery(value: string): string | undefined {
@@ -1184,14 +1183,7 @@ function fullDate(date: string): string {
   });
 }
 
-/** A goal's water target as decimal fluid ounces, the unit Water Events are stored in. */
-function waterGoalOunces(waterTargetMicroliters: number): string {
-  const thousandths = waterTargetThousandthsFromMicroliters(waterTargetMicroliters, "us");
-  const fraction = String(thousandths % 1_000n).padStart(3, "0").replace(/0+$/, "");
-  return fraction ? `${thousandths / 1_000n}.${fraction}` : String(thousandths / 1_000n);
-}
-
-/** How a day's calories compare with that day's goal, for the week strip and calendar. */
+/** How a day's calories compare with the Daily Goal, for the week strip and calendar. */
 function calorieDaySummary(summary: DailyCalories | undefined) {
   if (!summary || summary.entryCount === 0) return undefined;
   const kcal = Math.round(summary.knownMilliKcal / 1_000).toLocaleString("en-US");
@@ -1226,8 +1218,8 @@ function CalendarView({
         <div>
           <h2 id="history-heading">History</h2>
           <p>
-            Choose any past day. Goal Versions remain tied to their effective
-            date.
+            Choose any past day. Every day is measured against your current
+            Daily Goal.
           </p>
         </div>
         <Link className={styles.backLink} to={foodLogHref(selectedDate)}>
@@ -1585,7 +1577,7 @@ function DailySummary({
   const goal = foodLog.goal;
   const totals = foodLog.nutritionTotals;
   const calorieTotal = totals.energyMilliKcal;
-  const calorieGoal = goal?.calorieTargetMilliKcal;
+  const calorieGoal = goal?.calorieTarget;
   const calorieKnown = formatEnergy(calorieTotal.known);
   const calorieGoalDisplay = calorieGoal ? formatEnergy(calorieGoal) : undefined;
   const calorieDescription = calorieGoal
@@ -1594,7 +1586,7 @@ function DailySummary({
   const metricPages: NutritionMetric[][] = [
     [
       {
-        goal: goal?.proteinTargetMilligrams ?? null,
+        goal: goal?.proteinTarget ?? null,
         goalKind: "target",
         isIncomplete: totals.proteinMilligrams.isIncomplete,
         key: "protein",
@@ -1603,7 +1595,7 @@ function DailySummary({
         unit: "g",
       },
       {
-        goal: goal?.carbohydrateTargetMilligrams ?? null,
+        goal: goal?.carbohydrateTarget ?? null,
         goalKind: "target",
         isIncomplete: totals.carbohydrateMilligrams.isIncomplete,
         key: "carbohydrate",
@@ -1612,7 +1604,7 @@ function DailySummary({
         unit: "g",
       },
       {
-        goal: goal?.fatTargetMilligrams ?? null,
+        goal: goal?.fatTarget ?? null,
         goalKind: "target",
         isIncomplete: totals.fatMilligrams.isIncomplete,
         key: "fat",
@@ -1623,7 +1615,7 @@ function DailySummary({
     ],
     [
       {
-        goal: goal?.fiberTargetMilligrams ?? null,
+        goal: goal?.fiberTarget ?? null,
         goalKind: "target",
         isIncomplete: totals.fiberMilligrams.isIncomplete,
         key: "fiber",
@@ -1632,7 +1624,7 @@ function DailySummary({
         unit: "g",
       },
       {
-        goal: goal?.sugarMaximumMilligrams ?? null,
+        goal: goal?.sugarMaximum ?? null,
         goalKind: "maximum",
         isIncomplete: totals.sugarMilligrams.isIncomplete,
         key: "sugar",
@@ -1641,7 +1633,7 @@ function DailySummary({
         unit: "g",
       },
       {
-        goal: goal?.sodiumMaximumMilligrams ?? null,
+        goal: goal?.sodiumMaximum ?? null,
         goalKind: "maximum",
         isIncomplete: totals.sodiumMilligrams.isIncomplete,
         key: "sodium",
@@ -1761,8 +1753,7 @@ function DailySummary({
 
       <WaterOverview
         addHref={`${foodLogHref(foodLog.selectedDate)}&water=new`}
-        displayUnits={foodLog.displayUnits}
-        goalOunces={goal ? waterGoalOunces(goal.waterTargetMicroliters) : null}
+        goalOunces={goal?.waterTarget ?? null}
         totalOunces={foodLog.waterTotalOunces}
       />
     </>
@@ -3803,7 +3794,6 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
                         <FoodTimelineEntry key={`food-${entry.id}`} entry={entry} photoMeal={photoMeals.find((meal) => meal.entryId === entry.id)} csrfToken={csrfToken} />
                       ) : (
                         <WaterTimelineItem
-                          displayUnits={foodLog.displayUnits}
                           editHref={`${foodLogHref(foodLog.selectedDate)}&water=${entry.id}`}
                           event={entry}
                           icon={<UiIcon name="water" />}

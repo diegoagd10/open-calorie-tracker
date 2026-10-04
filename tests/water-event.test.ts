@@ -9,7 +9,8 @@ import {
   openApplicationDatabase,
   type ApplicationDatabaseClient,
 } from "../app/database/database.server";
-import { goalVersions, userPreferences, users } from "../app/database/schema.server";
+import { userPreferences, users } from "../app/database/schema.server";
+import { completeTestSetup } from "./support/setup";
 import { convertLegacyWaterEventLogDates } from "../app/database/water-event-log-dates.server";
 import { FoodLogService } from "../app/food-log/food-log.server";
 import { WaterEventRepository } from "../app/water-event/water-event.repository.server";
@@ -53,20 +54,7 @@ function insertUser(client: ApplicationDatabaseClient, username: string, timeZon
   const createdAt = "2026-01-01T00:00:00.000Z";
   const userId = client.insert(users).values({ createdAt, usernameNormalized: username }).returning({ id: users.id }).get().id;
   if (timeZone) {
-    client.insert(userPreferences).values({ createdAt, displayUnits: "us", timeZone, updatedAt: createdAt, userId }).run();
-    client.insert(goalVersions).values({
-      calorieTargetMilliKcal: 2_050_000,
-      carbohydrateTargetMilligrams: 230_000,
-      createdAt,
-      effectiveDate: "2026-01-01",
-      fatTargetMilligrams: 70_000,
-      fiberTargetMilligrams: 25_000,
-      proteinTargetMilligrams: 120_000,
-      sodiumMaximumMilligrams: 2_300,
-      sugarMaximumMilligrams: 50_000,
-      userId,
-      waterTargetMicroliters: 2_365_882,
-    }).run();
+    completeTestSetup(userId, { database: client, timeZone });
   }
   return userId;
 }
@@ -345,9 +333,9 @@ describe("utilities", () => {
   });
 
   test("format amounts and consumption times for display", () => {
-    expect(formatWaterAmount("12.5", "us")).toBe("12.5 fl oz");
-    expect(formatWaterAmount("8.125", "us")).toBe("8.125 fl oz");
-    expect(formatWaterAmount("8", "metric")).toBe("237 ml");
+    expect(formatWaterAmount("12.5")).toBe("12.5 fl oz");
+    expect(formatWaterAmount("8.125")).toBe("8.125 fl oz");
+    expect(formatWaterAmount("67.628")).toBe("67.628 fl oz");
     expect(formatWaterTime(event.logDate, "America/New_York")).toBe("2:45 PM");
     expect(formatWaterTime("2026-09-30T04:05:00.000Z", "America/New_York")).toBe("12:05 AM");
   });

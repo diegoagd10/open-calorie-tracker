@@ -13,8 +13,7 @@ import { loader as readDailyLog } from "../../app/routes/api.v1.daily-log";
 import { action as mcpAction, loader as mcpLoader } from "../../app/routes/mcp";
 import { action as keysAction, loader as keysLoader } from "../../app/routes/settings.api-keys";
 import { action as copyAction } from "../../app/routes/settings.api-keys.copy";
-import { getGoalSetupService } from "../../app/setup/runtime.server";
-import { validateSetupFields } from "../../app/setup/validation";
+import { completeTestSetup } from "../support/setup";
 import { getWaterEventService } from "../../app/water-event/runtime.server";
 import { seedAuthenticatedAccount } from "../support/authentication";
 
@@ -65,13 +64,8 @@ async function account(username: string): Promise<Account> {
   const session = await seedAuthenticatedAccount(getAuthenticationService(), getApplicationDatabase().getClient(), username, "correct horse battery staple", "203.0.113.10");
   return { id: session.user.id, cookie: serializeSessionCookie(session).split(";", 1)[0], csrf: session.csrfToken };
 }
-function completeSetup(userId: number, displayUnits: "us" | "metric", water: string) {
-  const setup = validateSetupFields({
-    calories: "2050", carbohydrate: "230", displayUnits, fat: "70", fiber: "25",
-    protein: "120", sodium: "2300", sugar: "50", timeZone: "America/New_York", water,
-  });
-  if (!setup.success) throw new Error("Invalid test setup");
-  getGoalSetupService().completeInitial(userId, setup.data);
+function completeSetup(userId: number, waterTarget = "80") {
+  completeTestSetup(userId, { goal: { waterTarget } });
 }
 async function createKey(owner: Account, name: string): Promise<{ id: number; key: string }> {
   const request = (url: string, fields: Record<string, string>) => new Request(`${origin}${url}`, {
@@ -97,7 +91,7 @@ beforeAll(async () => {
   const owner = await getAuthenticationService().register("mcp.admin", "correct horse battery staple", "203.0.113.9");
   if (!owner.ok) throw new Error("Could not register owner");
   reader = await account("mcp.reader");
-  completeSetup(reader.id, "us", "80");
+  completeSetup(reader.id);
   const now = new Date("2026-08-31T16:00:00.000Z");
   getFoodEntryService(now).logManual(reader.id, {
     carbohydrateGrams: "60", energyKcal: "350.4", fatGrams: "6.25", fiberGrams: "8", foodLogDate: today,
@@ -126,7 +120,7 @@ test("a client initializes statelessly and lists the Food Log tool", async () =>
   expect(tools[0].annotations).toMatchObject({ readOnlyHint: true });
 });
 
-test("get_daily_log summarizes today's Food Log in the account's units by default", async () => {
+test("get_daily_log summarizes today's Food Log by default", async () => {
   const result = await callDailyLog(readerKey);
   expect(result.isError).toBeFalsy();
   expect(result.structuredContent).toMatchObject({
@@ -155,33 +149,56 @@ test("get_daily_log summarizes today's Food Log in the account's units by defaul
   expect(text).toContain("Oatmeal");
 });
 
-test("get_daily_log reports water in ml for metric accounts", async () => {
-  const metric = await account("mcp.metric");
-  completeSetup(metric.id, "metric", "2000");
-  getWaterEventService(new Date("2026-08-31T16:00:00.000Z")).save(metric.id, { logDate: "2026-08-31T15:00:00Z", quantity: { ounces: "8" } });
-  const { key } = await createKey(metric, "Metric");
+test("get_daily_log reports water in fluid ounces, exact to three decimals", async () => {
+  const holder = await account("mcp.precise");
+  completeSetup(holder.id, "67.628");
+  const waterEvents = getWaterEventService(new Date("2026-08-31T16:00:00.000Z"));
+  waterEvents.save(holder.id, { logDate: "2026-08-31T15:00:00Z", quantity: { ounces: "8.125" } });
+  const { key } = await createKey(holder, "Precise");
 
-  const result = await callDailyLog(key, { date: today });
-  expect(result.structuredContent).toMatchObject({
+  const under = await callDailyLog(key, { date: today });
+  expect(under.structuredContent).toMatchObject({
     date: today,
-    water: { unit: "ml", consumed: 237, goal: 2000, remaining: 1763 },
+    water: { unit: "fl oz", consumed: 8.125, goal: 67.628, remaining: 59.503 },
     nutrients: { energy: { consumed: 0, goal: 2050, remaining: 2050 } },
     incompleteNutrients: [],
     foods: [],
   });
+  expect(under.content[0].text).toContain("Water: 8.125 of 67.628 fl oz, 59.503 fl oz remaining");
+
+  waterEvents.save(holder.id, { logDate: "2026-08-31T15:30:00Z", quantity: { ounces: "60" } });
+  const over = await callDailyLog(key, { date: today });
+  expect(over.structuredContent).toMatchObject({
+    water: { unit: "fl oz", consumed: 68.125, goal: 67.628, remaining: -0.497 },
+  });
+  expect(over.content[0].text).toContain("Water: 68.125 of 67.628 fl oz, 0.497 fl oz over");
 });
 
-test("get_daily_log reads an earlier date, before any goal took effect", async () => {
+test("get_daily_log measures an earlier date against the current Daily Goal", async () => {
   const result = await callDailyLog(readerKey, { date: "2026-08-30" });
   expect(result.isError).toBeFalsy();
   expect(result.structuredContent).toMatchObject({
     date: "2026-08-30",
     today,
-    nutrients: { energy: { consumed: 0, goal: null, remaining: null }, sodium: { goal: null, isIncomplete: false } },
-    water: { unit: "fl oz", consumed: 0, goal: null, remaining: null },
+    nutrients: { energy: { consumed: 0, goal: 2050, remaining: 2050 }, sodium: { goal: 2300, isIncomplete: false } },
+    water: { unit: "fl oz", consumed: 0, goal: 80, remaining: 80 },
     foods: [],
   });
-  expect(result.content[0].text).toContain("no goal set");
+  expect(result.content[0].text).not.toContain("no goal set");
+});
+
+test("get_daily_log reports no goal for an account with a time zone but no Daily Goal", async () => {
+  const holder = await account("mcp.zone.only");
+  getApplicationDatabase().getClient().run(sql`INSERT INTO user_preferences (user_id, time_zone, created_at, updated_at)
+    VALUES (${holder.id}, 'America/New_York', '2026-08-31T16:00:00.000Z', '2026-08-31T16:00:00.000Z')`);
+  const { key } = await createKey(holder, "Zone only");
+
+  const result = await callDailyLog(key, { date: today });
+  expect(result.structuredContent).toMatchObject({
+    nutrients: { energy: { consumed: 0, goal: null, remaining: null } },
+    water: { unit: "fl oz", consumed: 0, goal: null, remaining: null },
+  });
+  expect(result.content[0].text).toContain("Water: 0 fl oz (no goal set)");
 });
 
 test("an invalid date and a missing account setup are tool errors, not HTTP errors", async () => {

@@ -3,16 +3,16 @@
 ## Architecture
 
 Keep feature behavior in its owning `app/` domain and keep React Router modules
-at the HTTP/UI edge. Follow the zones, dependency directions, and side-effect
-owners declared in `.fallowrc.json`; change that contract only when the design
-itself changes.
+at the HTTP/UI edge. Each module owns its behavior and its repository; other
+modules use its service rather than its tables. Modules may import each other
+directly, without circular dependencies.
 
-Read environment values through the nearest typed `runtime.server.ts` boundary.
-The `browser-auth` zone owns only the same-origin browser ceremony transport
-in `app/auth/*.client.ts`. It may use browser fetch and WebAuthn APIs; it cannot
-import server/domain zones or access storage/process APIs.
-Keep SQLite and Drizzle access in `app/database/`, and process-level Express
-concerns in `server/`.
+`app/database/` owns the SQLite connection and the shared schema. Read
+environment values through the nearest typed `runtime.server.ts` boundary.
+Browser `*.client.ts` modules, such as the same-origin ceremony transport in
+`app/auth/*.client.ts`, may use browser fetch and WebAuthn APIs; they never
+import server code or access storage or process APIs. Keep process-level
+Express concerns in `server/`.
 
 ## UI consistency
 

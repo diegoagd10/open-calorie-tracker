@@ -459,14 +459,12 @@ test("daily calorie and nutrient progress is factual, responsive, and accessible
   expect(updatedEntries.changes).toBe(1);
   database
     .prepare(
-      `INSERT INTO goal_versions (
-         user_id, effective_date, calorie_target_milli_kcal,
-         water_target_microliters, protein_target_milligrams,
-         carbohydrate_target_milligrams, fat_target_milligrams,
-         fiber_target_milligrams, sugar_maximum_milligrams,
-         sodium_maximum_milligrams, created_at
-       ) VALUES (?, '2026-08-29', 1000000, 2000000, 100000, 200000,
-                 60000, 20000, 40000, 2000, '2026-08-29T12:00:00.000Z')`,
+      `UPDATE daily_goals
+       SET calorie_target_milli_kcal = 1000000, water_target_ounces = '67.628',
+           protein_target_milligrams = 100000, carbohydrate_target_milligrams = 200000,
+           fat_target_milligrams = 60000, fiber_target_milligrams = 20000,
+           sugar_maximum_milligrams = 40000, sodium_maximum_milligrams = 2000
+       WHERE user_id = ?`,
     )
     .run(user.id);
   database.close();
@@ -627,26 +625,27 @@ test("daily calorie and nutrient progress is factual, responsive, and accessible
   await page.goto("/?date=2026-08-28");
   await expect(
     page.getByRole("progressbar", { name: "Calorie progress" }),
-  ).toHaveAttribute("aria-valuetext", "0 of 2,050 kcal target");
+  ).toHaveAttribute("aria-valuetext", "0 of 1,000 kcal target");
 
-  const noGoalDatabase = openBrowserTestDatabase();
-  noGoalDatabase
+  // A day before Setup is measured against the current Daily Goal too.
+  const beforeSetupDatabase = openBrowserTestDatabase();
+  beforeSetupDatabase
     .prepare(
       `UPDATE food_entries
        SET food_log_date = '2025-12-31'
        WHERE user_id = ?`,
     )
     .run(user.id);
-  noGoalDatabase.close();
+  beforeSetupDatabase.close();
   await page.goto("/?date=2025-12-31");
   await expect(
     page.getByRole("article", {
-      name: "Protein: 120.5; no active target",
+      name: "Protein: 120.5 of 100 g target",
     }),
   ).toBeVisible();
   await expect(
     page.getByRole("article", {
-      name: "Fiber: 0 known; no active target; incomplete",
+      name: "Fiber: 0 known of 20 g target; incomplete",
     }),
   ).toBeVisible();
 

@@ -13,7 +13,7 @@ import { afterEach, expect, test, vi } from "vitest";
 import { AuthenticationService } from "../app/auth/authentication.server";
 import { openApplicationDatabase } from "../app/database/database.server";
 import { WebAuthnStorage } from "../app/database/webauthn.server";
-import { GoalSetupService } from "../app/setup/goal-setup.server";
+import { completeTestSetup } from "./support/setup";
 import { authenticator } from "./support/webauthn";
 import { seedAuthenticatedAccount } from "./support/authentication";
 
@@ -259,19 +259,7 @@ async function fixture() {
     "192.0.2.1",
     "admin",
   );
-  const setup = new GoalSetupService(database.getClient());
-  setup.completeInitial(session.user.id, {
-    displayUnits: "us",
-    timeZone: "UTC",
-    calorieTargetMilliKcal: 2_000_000,
-    carbohydrateTargetMilligrams: 200_000,
-    fatTargetMilligrams: 60_000,
-    fiberTargetMilligrams: 30_000,
-    proteinTargetMilligrams: 100_000,
-    sodiumMaximumMilligrams: 2_000,
-    sugarMaximumMilligrams: 40_000,
-    waterTargetMicroliters: 2_000_000,
-  });
+  completeTestSetup(session.user.id, { database: database.getClient(), timeZone: "UTC" });
   return {
     database,
     service,
@@ -373,18 +361,7 @@ test("password reset preserves key mode but invalidates an outstanding login pro
     password,
     "192.0.2.5",
   );
-  new GoalSetupService(database.getClient()).completeInitial(member.user.id, {
-    displayUnits: "us",
-    timeZone: "UTC",
-    calorieTargetMilliKcal: 2_000_000,
-    carbohydrateTargetMilligrams: 200_000,
-    fatTargetMilligrams: 60_000,
-    fiberTargetMilligrams: 30_000,
-    proteinTargetMilligrams: 100_000,
-    sodiumMaximumMilligrams: 2_000,
-    sugarMaximumMilligrams: 40_000,
-    waterTargetMicroliters: 2_000_000,
-  });
+  completeTestSetup(member.user.id, { database: database.getClient(), timeZone: "UTC" });
   const { key } = await enroll(service, member.token);
   const pending = await service.keys.beginLogin(
     "member",
@@ -796,18 +773,7 @@ test("member disable during cryptographic verification prevents stale issuance a
     password,
     "192.0.2.5",
   );
-  new GoalSetupService(database.getClient()).completeInitial(member.user.id, {
-    displayUnits: "us",
-    timeZone: "UTC",
-    calorieTargetMilliKcal: 2_000_000,
-    carbohydrateTargetMilligrams: 200_000,
-    fatTargetMilligrams: 60_000,
-    fiberTargetMilligrams: 30_000,
-    proteinTargetMilligrams: 100_000,
-    sodiumMaximumMilligrams: 2_000,
-    sugarMaximumMilligrams: 40_000,
-    waterTargetMicroliters: 2_000_000,
-  });
+  completeTestSetup(member.user.id, { database: database.getClient(), timeZone: "UTC" });
   const { key, session: enabled } = await enroll(service, member.token);
   const other = openApplicationDatabase({
     databasePath: database.getClient().$client.name,
@@ -1596,12 +1562,7 @@ test("member recovery falls back to administrator password when no administrator
 
 async function recoveryMember(f: Awaited<ReturnType<typeof fixture>>, username = "recovery.member") {
   const session = await seedAuthenticatedAccount(f.service, f.database.getClient(), username, password, "192.0.2.10");
-  const setup = new GoalSetupService(f.database.getClient());
-  setup.completeInitial(session.user.id, {
-    displayUnits: "us", timeZone: "UTC", calorieTargetMilliKcal: 2_000_000,
-    carbohydrateTargetMilligrams: 200_000, fatTargetMilligrams: 60_000, fiberTargetMilligrams: 30_000,
-    proteinTargetMilligrams: 100_000, sodiumMaximumMilligrams: 2_000, sugarMaximumMilligrams: 40_000, waterTargetMicroliters: 2_000_000,
-  });
+  completeTestSetup(session.user.id, { database: f.database.getClient(), timeZone: "UTC" });
   return enroll(f.service, session.token);
 }
 

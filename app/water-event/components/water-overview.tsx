@@ -3,19 +3,18 @@ import { Link } from "react-router";
 
 import foodLogStyles from "../../food-log.module.css";
 import styles from "../water-event.module.css";
-import { formatWaterAmount, type WaterDisplayUnits } from "../water-event.utils";
+import { formatWaterAmount } from "../water-event.utils";
 
 /** The day's water total against its goal, opening the add-water dialog. */
-export function WaterOverview({ addHref, displayUnits, goalOunces, totalOunces }: {
+export function WaterOverview({ addHref, goalOunces, totalOunces }: {
   addHref: string;
-  displayUnits: WaterDisplayUnits;
   goalOunces: string | null;
   totalOunces: string;
 }) {
   const goal = Number(goalOunces ?? 0);
   const total = Number(totalOunces);
-  const totalDisplay = formatWaterAmount(totalOunces, displayUnits);
-  const goalDisplay = goalOunces ? formatWaterAmount(goalOunces, displayUnits) : undefined;
+  const totalDisplay = formatWaterAmount(totalOunces);
+  const goalDisplay = goalOunces ? formatWaterAmount(goalOunces) : undefined;
   return (
     <section aria-labelledby="water-heading" className={`${foodLogStyles.waterOverview} ${styles.overview}`}>
       <Link className={styles.overviewRow} data-water-dialog-trigger to={addHref}>

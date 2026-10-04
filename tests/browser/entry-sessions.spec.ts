@@ -20,7 +20,7 @@ test("desktop and phone sessions share data across entries and logout stays loca
   await expect(page).toHaveURL("/");
   await page.goto("/settings/goals");
   await page.getByLabel("Calories target").fill("1900");
-  await page.getByRole("button", { name: "Save goal version" }).click();
+  await page.getByRole("button", { name: "Save Daily Goal" }).click();
   await expect(page.getByRole("status")).toContainText("saved");
 
   const otherOrigin = baseURL === lanOrigin ? publicOrigin : lanOrigin;

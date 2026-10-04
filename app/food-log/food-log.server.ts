@@ -1,17 +1,10 @@
-import { and, desc, eq, lte } from "drizzle-orm";
+import { and, desc, eq, gte, lte } from "drizzle-orm";
 
+import { createDailyGoalService } from "../daily-goal/index.server";
 import type { ApplicationDatabaseClient } from "../database/database.server";
-import {
-  readFoodEntryCalories,
-  readGoalVersionsInOrder,
-} from "../database/goal-history.server";
-import {
-  foodEntries,
-  goalVersions,
-  userPreferences,
-} from "../database/schema.server";
+import { foodEntries } from "../database/schema.server";
+import { readUserTimeZone } from "../database/user-preferences.server";
 import { foodEntrySnapshot } from "../food-entry/snapshot.server";
-import type { DisplayUnits } from "../goals/water-conversion";
 import { localDayRange, utcToZonedDateTime } from "../shared/date-time";
 import {
   createWaterEventService,
@@ -89,46 +82,23 @@ export class FoodLogService {
     this.#now = now;
   }
 
+  #dailyGoals() {
+    return createDailyGoalService(this.#database, this.#now);
+  }
+
+  /** The selected local day's Food Log, measured against the account's current Daily Goal. */
   read(userId: number, requestedDate?: string) {
-    const preference = this.#database
-      .select({
-        displayUnits: userPreferences.displayUnits,
-        timeZone: userPreferences.timeZone,
-      })
-      .from(userPreferences)
-      .where(eq(userPreferences.userId, userId))
-      .get();
-    if (!preference) return undefined;
+    const timeZone = readUserTimeZone(this.#database, userId);
+    if (!timeZone) return undefined;
 
     const instant = this.#now();
-    const today = localDateAt(instant, preference.timeZone);
+    const today = localDateAt(instant, timeZone);
     const selectedDate = requestedDate
       ? parseIsoLocalDate(requestedDate)
       : today;
     if (!selectedDate) throw new InvalidFoodLogDateError();
 
-    const goal = this.#database
-      .select({
-        calorieTargetMilliKcal: goalVersions.calorieTargetMilliKcal,
-        carbohydrateTargetMilligrams: goalVersions.carbohydrateTargetMilligrams,
-        effectiveDate: goalVersions.effectiveDate,
-        fatTargetMilligrams: goalVersions.fatTargetMilligrams,
-        fiberTargetMilligrams: goalVersions.fiberTargetMilligrams,
-        proteinTargetMilligrams: goalVersions.proteinTargetMilligrams,
-        sodiumMaximumMilligrams: goalVersions.sodiumMaximumMilligrams,
-        sugarMaximumMilligrams: goalVersions.sugarMaximumMilligrams,
-        waterTargetMicroliters: goalVersions.waterTargetMicroliters,
-      })
-      .from(goalVersions)
-      .where(
-        and(
-          eq(goalVersions.userId, userId),
-          lte(goalVersions.effectiveDate, selectedDate),
-        ),
-      )
-      .orderBy(desc(goalVersions.effectiveDate), desc(goalVersions.id))
-      .limit(1)
-      .get();
+    const goal = this.#dailyGoals().read(userId);
 
     const entries = this.#database
       .select()
@@ -148,7 +118,7 @@ export class FoodLogService {
       .map(foodEntrySnapshot);
     const water = createWaterEventService(this.#database, this.#now).list(
       userId,
-      localDayRange(selectedDate, preference.timeZone),
+      localDayRange(selectedDate, timeZone),
     );
     const events = [
       ...entries.map((entry) => ({ ...entry, kind: "food" as const })),
@@ -156,48 +126,49 @@ export class FoodLogService {
         ...event,
         foodLogDate: selectedDate,
         kind: "water" as const,
-        localEventTime: waterEventLocalDateTime(event.logDate, preference.timeZone).slice(11),
+        localEventTime: waterEventLocalDateTime(event.logDate, timeZone).slice(11),
       })),
     ].sort(compareFoodLogEventsDescending);
 
     return {
-      displayUnits: preference.displayUnits as DisplayUnits,
       entries,
       events,
       goal,
       isFuture: selectedDate > today,
       nutritionTotals: nutritionTotals(entries),
       selectedDate,
-      timeZone: preference.timeZone,
+      timeZone,
       today,
       /** The account's current wall-clock date and time, `YYYY-MM-DDTHH:MM`. */
-      localNow: utcToZonedDateTime(instant.toISOString(), preference.timeZone).slice(0, 16),
+      localNow: utcToZonedDateTime(instant.toISOString(), timeZone).slice(0, 16),
       waterEvents: water.events,
       waterTotalOunces: water.totalOunces,
     };
   }
 
-  /**
-   * Calorie totals for several local dates at once, each with the calorie goal
-   * of the Goal Version effective on that date.
-   */
+  /** Calorie totals for several local dates at once, each against the account's current Daily Goal. */
   dailyCalories(userId: number, dates: readonly string[]): Record<string, DailyCalories> {
     if (!dates.length) return {};
     const ordered = [...dates].sort();
-    const first = ordered[0];
-    const last = ordered[ordered.length - 1];
-    const entries = readFoodEntryCalories(this.#database, userId, first, last);
-    const goals = readGoalVersionsInOrder(this.#database, userId, last);
+    const entries = this.#database
+      .select({ energyMilliKcal: foodEntries.energyMilliKcal, foodLogDate: foodEntries.foodLogDate })
+      .from(foodEntries)
+      .where(and(
+        eq(foodEntries.userId, userId),
+        gte(foodEntries.foodLogDate, ordered[0]),
+        lte(foodEntries.foodLogDate, ordered[ordered.length - 1]),
+      ))
+      .all();
+    const goalMilliKcal = this.#dailyGoals().read(userId)?.calorieTarget ?? null;
 
     return Object.fromEntries(
       ordered.map((date) => {
         const dayEntries = entries.filter((entry) => entry.foodLogDate === date);
-        const goal = goals.filter((version) => version.effectiveDate <= date).pop();
         return [
           date,
           {
             entryCount: dayEntries.length,
-            goalMilliKcal: goal?.calorieTargetMilliKcal ?? null,
+            goalMilliKcal,
             isIncomplete: dayEntries.some((entry) => entry.energyMilliKcal === null),
             knownMilliKcal: dayEntries.reduce(
               (total, entry) => total + (entry.energyMilliKcal ?? 0),

@@ -10,7 +10,7 @@ import {
 } from "./schema.server";
 import { findActiveSessionByTokenHash } from "./credential-sessions.server";
 import { revokeAccountAuthentication } from "./authentication-policy.server";
-import { isAccountSetupComplete } from "./account-setup.server";
+import { createSetupService } from "../setup/runtime.server";
 
 export class KeyAuthenticationError extends Error {}
 export type PendingKeyCeremony = typeof webauthnCeremonies.$inferSelect;
@@ -73,7 +73,7 @@ export class WebAuthnStorage {
     const session = this.session(sessionHash);
     if (
       session.passwordChangeRequired ||
-      !isAccountSetupComplete(this.database, session.userId)
+      !createSetupService(this.database, this.now).isComplete(session.userId)
     )
       throw new KeyAuthenticationError(
         "Complete account setup before enrolling a key.",
@@ -182,7 +182,7 @@ export class WebAuthnStorage {
         session.userId !== userId ||
         (pending.purpose !== "password-change" &&
           (session.passwordChangeRequired ||
-            !isAccountSetupComplete(this.database, userId)))
+            !createSetupService(this.database, this.now).isComplete(userId)))
       )
         throw new KeyAuthenticationError(
           "Complete account setup before enrolling a key.",

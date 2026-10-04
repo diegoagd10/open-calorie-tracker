@@ -5,6 +5,7 @@ export default defineConfig({
   schema: [
     "./app/database/schema.server.ts",
     "./app/water-event/water-event.schema.server.ts",
+    "./app/daily-goal/daily-goal.schema.server.ts",
   ],
   out: "./drizzle",
 });

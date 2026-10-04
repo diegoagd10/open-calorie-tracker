@@ -93,7 +93,6 @@ beforeAll(async () => {
     .values({
       userId: account.user.id,
       timeZone: "America/New_York",
-      displayUnits: "metric",
       createdAt: "2026-01-01T00:00:00.000Z",
       updatedAt: "2026-01-01T00:00:00.000Z",
     })
@@ -102,7 +101,6 @@ beforeAll(async () => {
     .values({
       userId: admin.user.id,
       timeZone: "America/New_York",
-      displayUnits: "metric",
       createdAt: "2026-01-01T00:00:00.000Z",
       updatedAt: "2026-01-01T00:00:00.000Z",
     })

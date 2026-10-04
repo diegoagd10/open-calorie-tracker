@@ -106,7 +106,6 @@ async function setup(
     .values({
       userId,
       timeZone: "America/New_York",
-      displayUnits: "metric",
       createdAt,
       updatedAt: createdAt,
     })

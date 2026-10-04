@@ -1,9 +1,6 @@
 import { utcToZonedDateTime } from "../shared/date-time";
 import type { WaterEvent, WaterEventList } from "./water-event.model";
 
-export type WaterDisplayUnits = "us" | "metric";
-
-const MILLILITERS_PER_FLUID_OUNCE = 29.5735295625;
 const DECIMAL_OUNCES = /^(\d{1,6})(?:\.(\d{1,3}))?$/;
 
 /**
@@ -28,12 +25,9 @@ export function presentWaterEventDeletion(deletedCount: number) {
   return { deletedCount };
 }
 
-/** Whole ml for metric accounts, or fl oz with up to three decimals. */
-export function formatWaterAmount(ounces: string, units: WaterDisplayUnits): string {
-  const value = Number(ounces);
-  return units === "metric"
-    ? `${Math.round(value * MILLILITERS_PER_FLUID_OUNCE)} ml`
-    : `${new Intl.NumberFormat("en-US", { maximumFractionDigits: 3 }).format(value)} fl oz`;
+/** Fluid ounces with up to three decimals, such as `67.628 fl oz`. */
+export function formatWaterAmount(ounces: string): string {
+  return `${new Intl.NumberFormat("en-US", { maximumFractionDigits: 3 }).format(Number(ounces))} fl oz`;
 }
 
 /** The consumption time on the account's wall clock, such as `2:45 PM`. */

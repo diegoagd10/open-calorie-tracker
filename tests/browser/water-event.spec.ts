@@ -10,9 +10,6 @@ const validPassword = "correct horse 🔐 battery";
 
 async function completeSetupForTestUser(page: Page, username: string) {
   await bootstrapOrSignInBrowserTestUser(page, username, validPassword);
-  if (username.endsWith(".metric")) {
-    await page.getByLabel("Metric", { exact: true }).check();
-  }
   await page.getByLabel("Time zone").fill("America/New_York");
   await page.getByRole("button", { name: "Finish setup" }).click();
   await expect(page).toHaveURL("/");
@@ -124,18 +121,18 @@ test("a user can add, inspect, edit, and delete one Water Event", async ({
   expect(accessibilityScan.violations).toEqual([]);
 });
 
-test("metric accounts see water in ml while entering fluid ounces", async ({
+test("water is shown in fluid ounces against the Daily Goal's water target", async ({
   context,
   page,
 }) => {
   await context.setExtraHTTPHeaders({ "X-Test-Client-IP": "203.0.113.91" });
-  await completeSetupForTestUser(page, "water.full.stack.metric");
+  await completeSetupForTestUser(page, "water.full.stack.ounces");
 
-  await addWater(page, "8");
-  await expect(page.locator("[data-water-editor-trigger]")).toContainText("237 ml");
+  await addWater(page, "8.125");
+  await expect(page.locator("[data-water-editor-trigger]")).toContainText("8.125 fl oz");
   await expect(page.getByRole("progressbar", { name: "Water progress" })).toHaveAttribute(
     "aria-valuetext",
-    "237 ml of 2366 ml target",
+    "8.125 fl oz of 80 fl oz target",
   );
 });
 

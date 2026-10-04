@@ -34,8 +34,7 @@ import { PhotoAnalysisService } from "../../app/photo-analysis/photo-analysis.se
 import { shutdownPhotoAnalysis } from "../../app/photo-analysis/runtime.server";
 import { getFoodEntryService } from "../../app/food-entry/runtime.server";
 import { getFoodLogService } from "../../app/food-log/runtime.server";
-import { getGoalSetupService } from "../../app/setup/runtime.server";
-import { validateSetupFields } from "../../app/setup/validation";
+import { completeTestSetup } from "../support/setup";
 import { getWaterEventService } from "../../app/water-event/runtime.server";
 import { action as waterAction } from "../../app/water-event/routes/web";
 import { seedAuthenticatedAccount } from "../support/authentication";
@@ -132,20 +131,7 @@ beforeAll(async () => {
   cookie = serializeSessionCookie(account.session).split(";", 1)[0];
   csrfToken = account.session.csrfToken;
   userId = account.session.user.id;
-  const setup = validateSetupFields({
-    calories: "2050",
-    carbohydrate: "230",
-    displayUnits: "us",
-    fat: "70",
-    fiber: "25",
-    protein: "120",
-    sodium: "2300",
-    sugar: "50",
-    timeZone: "America/New_York",
-    water: "80",
-  });
-  if (!setup.success) throw new Error("home setup fixture was invalid");
-  getGoalSetupService().completeInitial(account.session.user.id, setup.data);
+  completeTestSetup(account.session.user.id);
 
   const incomplete = await seedAuthenticatedAccount(
     getAuthenticationService(),

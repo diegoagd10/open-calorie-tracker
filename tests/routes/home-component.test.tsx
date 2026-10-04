@@ -78,15 +78,17 @@ const documentSelectors: string[] = [];
 (globalThis as typeof globalThis & { cancelAnimationFrame: typeof cancelAnimationFrame })
   .cancelAnimationFrame = () => undefined;
 const completeGoal = {
-  calorieTargetMilliKcal: 2_050_000,
-  carbohydrateTargetMilligrams: 230_000,
-  effectiveDate: "2026-08-31",
-  fatTargetMilligrams: 70_000,
-  fiberTargetMilligrams: 25_000,
-  proteinTargetMilligrams: 120_000,
-  sodiumMaximumMilligrams: 2_300,
-  sugarMaximumMilligrams: 50_000,
-  waterTargetMicroliters: 2_365_882,
+  userId: 1,
+  calorieTarget: 2_050_000,
+  waterTarget: "80",
+  proteinTarget: 120_000,
+  carbohydrateTarget: 230_000,
+  fatTarget: 70_000,
+  fiberTarget: 25_000,
+  sugarMaximum: 50_000,
+  sodiumMaximum: 2_300,
+  createdAt: "2026-08-01T00:00:00.000Z",
+  updatedAt: "2026-08-01T00:00:00.000Z",
 };
 
 const emptyTotals = {
@@ -100,7 +102,6 @@ const emptyTotals = {
 };
 
 const baseFoodLog = {
-  displayUnits: "us" as const,
   entries: [],
   events: [],
   goal: completeGoal,
@@ -510,8 +511,7 @@ test("daily nutrients support guarded touch swipes, cancellation, and both direc
 test("home distinguishes past, future, no-goal, and incomplete summaries", async () => {
   const pastFoodLog = {
     ...baseFoodLog,
-    displayUnits: "metric" as const,
-    goal: undefined,
+    goal: null,
     nutritionTotals: {
       ...emptyTotals,
       energyMilliKcal: { isIncomplete: true, known: 1_234_567 },
@@ -531,7 +531,8 @@ test("home distinguishes past, future, no-goal, and incomplete summaries", async
   expect(past.root.findByType("h1").children.join("")).toBe("Food Log");
   expect(allText(past)).toContain("1,234.6 known / No active goal");
   expect(allText(past)).toContain("Protein12.345 known / No active goalIncomplete");
-  expect(allText(past)).toContain("237 ml");
+  expect(allText(past)).toContain("8 fl oz");
+  expect(allText(past)).not.toContain(" ml");
   expect(allText(past)).toContain("/ No active goal");
   expect(allText(past)).toContain("Food Entry updated. Daily totals refreshed.");
   expect(allText(past)).toContain("Visible route message");
@@ -565,7 +566,7 @@ test("home distinguishes past, future, no-goal, and incomplete summaries", async
   await act(async () => future.unmount());
 });
 
-test("week strip and calendar compare each logged day with that day's calorie goal", async () => {
+test("week strip and calendar compare each logged day with the Daily Goal's calories", async () => {
   const dailyCalories = {
     "2026-08-29": { entryCount: 2, goalMilliKcal: 2_000_000, isIncomplete: false, knownMilliKcal: 2_345_600 },
     "2026-08-30": { entryCount: 1, goalMilliKcal: 2_000_000, isIncomplete: true, knownMilliKcal: 640_000 },
@@ -2074,12 +2075,13 @@ test("home water dialog creates with a consumption time and edits only the amoun
   expect(allText(edit)).not.toContain("Delete this Water Event?");
   await act(async () => edit.unmount());
 
-  const metric = await renderHome({
-    foodLog: { ...baseFoodLog, displayUnits: "metric", waterTotalOunces: "8" },
+  const precise = await renderHome({
+    foodLog: { ...baseFoodLog, goal: { ...completeGoal, waterTarget: "67.628" }, waterTotalOunces: "8.125" },
   });
-  expect(allText(metric)).toContain("237 ml");
-  expect(allText(metric)).toContain("/ 2366 ml");
-  await act(async () => metric.unmount());
+  expect(allText(precise)).toContain("8.125 fl oz");
+  expect(allText(precise)).toContain("/ 67.628 fl oz");
+  expect(allText(precise)).not.toContain(" ml");
+  await act(async () => precise.unmount());
 });
 
 test("home renders submission and navigation pending states", async () => {

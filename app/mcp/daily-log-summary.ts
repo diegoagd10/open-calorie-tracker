@@ -1,25 +1,23 @@
 import { z } from "zod";
 import type { FoodLogService } from "../food-log/food-log.server";
+import { formatOunceThousandths, ounceThousandths } from "../water-event/water-event.utils";
 
 type FoodLog = NonNullable<ReturnType<FoodLogService["read"]>>;
 type Totals = FoodLog["nutritionTotals"];
 type Goal = NonNullable<FoodLog["goal"]>;
-
-const MICROLITERS_PER_UNIT = { metric: 1_000, us: 29_573.529_562_5 } as const;
-const WATER_UNIT = { metric: "ml", us: "fl oz" } as const;
 
 /**
  * Each summarized nutrient: its unit, the canonical total and goal fields it
  * reads, how many canonical units make one display unit, and its display precision.
  */
 const NUTRIENTS = {
-  energy: { unit: "kcal", total: "energyMilliKcal", goal: "calorieTargetMilliKcal", goalType: "target", scale: 1_000, decimals: 0 },
-  protein: { unit: "g", total: "proteinMilligrams", goal: "proteinTargetMilligrams", goalType: "target", scale: 1_000, decimals: 1 },
-  carbohydrate: { unit: "g", total: "carbohydrateMilligrams", goal: "carbohydrateTargetMilligrams", goalType: "target", scale: 1_000, decimals: 1 },
-  fat: { unit: "g", total: "fatMilligrams", goal: "fatTargetMilligrams", goalType: "target", scale: 1_000, decimals: 1 },
-  fiber: { unit: "g", total: "fiberMilligrams", goal: "fiberTargetMilligrams", goalType: "target", scale: 1_000, decimals: 1 },
-  sugar: { unit: "g", total: "sugarMilligrams", goal: "sugarMaximumMilligrams", goalType: "maximum", scale: 1_000, decimals: 1 },
-  sodium: { unit: "mg", total: "sodiumMilligrams", goal: "sodiumMaximumMilligrams", goalType: "maximum", scale: 1, decimals: 0 },
+  energy: { unit: "kcal", total: "energyMilliKcal", goal: "calorieTarget", goalType: "target", scale: 1_000, decimals: 0 },
+  protein: { unit: "g", total: "proteinMilligrams", goal: "proteinTarget", goalType: "target", scale: 1_000, decimals: 1 },
+  carbohydrate: { unit: "g", total: "carbohydrateMilligrams", goal: "carbohydrateTarget", goalType: "target", scale: 1_000, decimals: 1 },
+  fat: { unit: "g", total: "fatMilligrams", goal: "fatTarget", goalType: "target", scale: 1_000, decimals: 1 },
+  fiber: { unit: "g", total: "fiberMilligrams", goal: "fiberTarget", goalType: "target", scale: 1_000, decimals: 1 },
+  sugar: { unit: "g", total: "sugarMilligrams", goal: "sugarMaximum", goalType: "maximum", scale: 1_000, decimals: 1 },
+  sodium: { unit: "mg", total: "sodiumMilligrams", goal: "sodiumMaximum", goalType: "maximum", scale: 1, decimals: 0 },
 } as const satisfies Record<string, {
   unit: string; total: keyof Totals; goal: keyof Goal; goalType: "target" | "maximum"; scale: number; decimals: number;
 }>;
@@ -41,7 +39,12 @@ export const dailyLogSummarySchema = {
   timeZone: z.string(),
   isFuture: z.boolean(),
   nutrients: z.object(Object.fromEntries(NUTRIENT_NAMES.map((name) => [name, nutrientSchema])) as Record<NutrientName, typeof nutrientSchema>),
-  water: z.object({ unit: z.enum(["ml", "fl oz"]), consumed: z.number(), goal: z.number().nullable(), remaining: z.number().nullable() }),
+  water: z.object({
+    unit: z.literal("fl oz"),
+    consumed: z.number(),
+    goal: z.number().nullable().describe("Daily water target, or null when no goal is set"),
+    remaining: z.number().nullable().describe("goal minus consumed; negative means over the goal"),
+  }).describe("Water in fluid ounces, exact to three decimals"),
   incompleteNutrients: z.array(z.enum(NUTRIENT_NAMES as [NutrientName, ...NutrientName[]])),
   foods: z.array(z.object({
     time: z.string().describe("Local time (HH:MM)"),
@@ -83,17 +86,20 @@ function summarizeNutrient(name: NutrientName, totals: Totals, goal: FoodLog["go
   };
 }
 
+/** Fluid ounces as a JSON number; three decimals and at most a few thousand ounces are exact. */
+function ounces(thousandths: bigint): number {
+  return thousandths < 0n ? -Number(formatOunceThousandths(-thousandths)) : Number(formatOunceThousandths(thousandths));
+}
+
+/** Water consumed, goal, and remaining, computed in thousandths of a fluid ounce like stored amounts. */
 function summarizeWater(foodLog: FoodLog) {
-  const perUnit = MICROLITERS_PER_UNIT[foodLog.displayUnits];
-  const decimals = foodLog.displayUnits === "metric" ? 0 : 1;
-  const inUnits = (microliters: number) => round(microliters / perUnit, decimals);
-  const consumedMicroliters = Number(foodLog.waterTotalOunces) * MICROLITERS_PER_UNIT.us;
-  const goal = foodLog.goal?.waterTargetMicroliters;
+  const consumed = ounceThousandths(foodLog.waterTotalOunces)!;
+  const goal = foodLog.goal ? ounceThousandths(foodLog.goal.waterTarget) : null;
   return {
-    unit: WATER_UNIT[foodLog.displayUnits],
-    consumed: inUnits(consumedMicroliters),
-    goal: goal === undefined ? null : inUnits(goal),
-    remaining: goal === undefined ? null : inUnits(goal - consumedMicroliters),
+    unit: "fl oz" as const,
+    consumed: ounces(consumed),
+    goal: goal === null ? null : ounces(goal),
+    remaining: goal === null ? null : ounces(goal - consumed),
   };
 }
 
@@ -116,7 +122,7 @@ function summarizeFood(entry: FoodLog["entries"][number]) {
 function amountLine(label: string, amount: { unit: string; consumed: number; goal: number | null; remaining: number | null }, goalType: "target" | "maximum" = "target") {
   if (amount.goal === null || amount.remaining === null) return `${label}: ${amount.consumed} ${amount.unit} (no goal set)`;
   const goal = goalType === "maximum" ? `${amount.goal} ${amount.unit} maximum` : `${amount.goal} ${amount.unit}`;
-  const rest = amount.remaining < 0 ? `${round(-amount.remaining, 1)} ${amount.unit} over` : `${amount.remaining} ${amount.unit} remaining`;
+  const rest = amount.remaining < 0 ? `${-amount.remaining} ${amount.unit} over` : `${amount.remaining} ${amount.unit} remaining`;
   return `${label}: ${amount.consumed} of ${goal}, ${rest}`;
 }
 

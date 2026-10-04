@@ -7,19 +7,16 @@ import {
   getApplicationMutationSession,
   readApplicationMutationForm,
 } from "../auth/http.server";
+import { DAILY_GOAL_DEFAULTS, DailyGoalInputs, dailyGoalTargetsFromForm } from "../daily-goal";
+import { DailyGoalValidationError } from "../daily-goal/index.server";
+import type { DailyGoalTargets } from "../daily-goal";
 import styles from "../setup.module.css";
-import { getGoalSetupService } from "../setup/runtime.server";
-import {
-  SETUP_LIMITS,
-  SETUP_NUTRIENT_FIELDS,
-  validateSetupFields,
-  WATER_UNIT_OPTIONS,
-  type SetupFields,
-} from "../setup/validation";
+import { getSetupService } from "../setup/runtime.server";
+import { SetupCompleteError, SetupValidationError } from "../setup/setup.exceptions";
 
 type SetupActionData = {
   error: string;
-  field: keyof SetupFields;
+  field: "timeZone" | keyof DailyGoalTargets;
 };
 
 export function meta() {
@@ -27,7 +24,7 @@ export function meta() {
     { title: "Set up your Food Log · Open Calorie Tracker" },
     {
       name: "description",
-      content: "Choose display units and set your initial Food Log goals",
+      content: "Choose your time zone and set your Daily Goal",
     },
   ];
 }
@@ -39,98 +36,44 @@ export function headers() {
 export async function loader({ request }: Route.LoaderArgs) {
   const session = await getSessionForApplicationAccess(request);
   if (!session) return redirect("/login");
-  if (getGoalSetupService().isComplete(session.user.id)) return redirect("/");
+  if (getSetupService().isComplete(session.user.id)) return redirect("/");
 
   return { csrfToken: session.csrfToken };
 }
 
+/** Saves the time zone and first Daily Goal; a rejected field answers `400` naming it. */
 export async function action({ request }: Route.ActionArgs) {
   const session = await getApplicationMutationSession(request);
   if (session instanceof Response) return session;
-  if (getGoalSetupService().isComplete(session.user.id)) return redirect("/");
+  if (getSetupService().isComplete(session.user.id)) return redirect("/");
 
   const formData = await readApplicationMutationForm(request, session);
-
-  const fields = Object.fromEntries(
-    [
-      "calories",
-      "carbohydrate",
-      "displayUnits",
-      "fat",
-      "fiber",
-      "protein",
-      "sodium",
-      "sugar",
-      "timeZone",
-      "water",
-    ].map((name) => [name, String(formData.get(name) ?? "")]),
-  ) as SetupFields;
-  const parsed = validateSetupFields(fields);
-  if (!parsed.success) {
-    return data<SetupActionData>(
-      { error: parsed.error, field: parsed.field },
-      { status: 400 },
-    );
+  try {
+    getSetupService().complete(session.user.id, {
+      goal: dailyGoalTargetsFromForm(formData),
+      timeZone: String(formData.get("timeZone") ?? ""),
+    });
+  } catch (error) {
+    if (error instanceof SetupCompleteError) return redirect("/");
+    if (error instanceof SetupValidationError || error instanceof DailyGoalValidationError) {
+      return data<SetupActionData>({ error: error.message, field: error.field }, { status: 400 });
+    }
+    throw error;
   }
-
-  getGoalSetupService().completeInitial(session.user.id, parsed.data);
   return redirect("/");
 }
 
-const goalFields = [
-  {
-    label: "Calories target",
-    max: SETUP_LIMITS.calories.displayMaximum,
-    name: "calories",
-    unit: "kcal",
-    value: "2050",
-  },
-  {
-    label: "Water target",
-    name: "water",
-    unit: WATER_UNIT_OPTIONS.us.unit,
-    value: WATER_UNIT_OPTIONS.us.defaultValue,
-  },
-  ...SETUP_NUTRIENT_FIELDS.map((field) => ({
-    label: field.formLabel,
-    max: SETUP_LIMITS.nutrient.displayMaximum,
-    name: field.name,
-    unit: "g",
-    value: field.defaultValue,
-  })),
-  {
-    label: "Sodium maximum",
-    max: SETUP_LIMITS.sodium.displayMaximum,
-    name: "sodium",
-    unit: "mg",
-    value: "2300",
-  },
-] as const;
-
 export default function Setup({ actionData, loaderData }: Route.ComponentProps) {
-  const [displayUnits, setDisplayUnits] = useState<"metric" | "us">("us");
   const [timeZone, setTimeZone] = useState("UTC");
-  const [water, setWater] = useState<string>(
-    WATER_UNIT_OPTIONS.us.defaultValue,
-  );
 
   useEffect(() => {
     setTimeZone(Intl.DateTimeFormat().resolvedOptions().timeZone);
   }, []);
 
-  function changeDisplayUnits(nextUnits: "metric" | "us") {
-    setDisplayUnits(nextUnits);
-    setWater((current) => {
-      if (
-        !Object.values(WATER_UNIT_OPTIONS).some(
-          (option) => option.defaultValue === current,
-        )
-      ) {
-        return current;
-      }
-      return WATER_UNIT_OPTIONS[nextUnits].defaultValue;
-    });
-  }
+  const timeZoneError = actionData?.field === "timeZone" ? actionData.error : undefined;
+  const goalError = actionData && actionData.field !== "timeZone"
+    ? { field: actionData.field, message: actionData.error }
+    : undefined;
 
   return (
     <main className={styles.shell}>
@@ -147,47 +90,13 @@ export default function Setup({ actionData, loaderData }: Route.ComponentProps) 
 
         <Form className={styles.form} method="post" noValidate>
           <input name="csrfToken" type="hidden" value={loaderData.csrfToken} />
-          <fieldset className={styles.segmented}>
-            <legend>Display units</legend>
-            <label>
-              <input
-                aria-describedby={
-                  actionData?.field === "displayUnits" ? "setup-error" : undefined
-                }
-                aria-invalid={actionData?.field === "displayUnits" || undefined}
-                checked={displayUnits === "us"}
-                name="displayUnits"
-                onChange={() => changeDisplayUnits("us")}
-                type="radio"
-                value="us"
-              />
-              <span>US</span>
-            </label>
-            <label>
-              <input
-                aria-describedby={
-                  actionData?.field === "displayUnits" ? "setup-error" : undefined
-                }
-                aria-invalid={actionData?.field === "displayUnits" || undefined}
-                checked={displayUnits === "metric"}
-                name="displayUnits"
-                onChange={() => changeDisplayUnits("metric")}
-                type="radio"
-                value="metric"
-              />
-              <span>Metric</span>
-            </label>
-          </fieldset>
-
           <label className={styles.timeZoneField}>
             <span>Time zone</span>
             <input
               aria-describedby={
-                actionData?.field === "timeZone"
-                  ? "setup-error time-zone-help"
-                  : "time-zone-help"
+                timeZoneError ? "setup-error time-zone-help" : "time-zone-help"
               }
-              aria-invalid={actionData?.field === "timeZone" || undefined}
+              aria-invalid={timeZoneError ? true : undefined}
               name="timeZone"
               onChange={(event) => setTimeZone(event.target.value)}
               required
@@ -197,48 +106,13 @@ export default function Setup({ actionData, loaderData }: Route.ComponentProps) 
               Use an IANA time zone such as America/New_York.
             </small>
           </label>
-
-          <div className={styles.goalGrid}>
-            {goalFields.map((field) => (
-              <label key={field.name}>
-                <span>{field.label}</span>
-                <span className={styles.numberInput}>
-                  <input
-                    aria-describedby={
-                      actionData?.field === field.name ? "setup-error" : undefined
-                    }
-                    aria-invalid={actionData?.field === field.name || undefined}
-                    {...(field.name === "water"
-                      ? {
-                          max:
-                            WATER_UNIT_OPTIONS[displayUnits].displayMaximum,
-                          onChange: (event: React.ChangeEvent<HTMLInputElement>) =>
-                            setWater(event.target.value),
-                          value: water,
-                        }
-                      : { defaultValue: field.value, max: field.max })}
-                    inputMode="decimal"
-                    min={field.name === "sodium" ? "1" : "0.001"}
-                    name={field.name}
-                    required
-                    step={field.name === "sodium" ? "1" : "0.001"}
-                    type="number"
-                  />
-                  <em>
-                    {field.name === "water"
-                      ? WATER_UNIT_OPTIONS[displayUnits].unit
-                      : field.unit}
-                  </em>
-                </span>
-              </label>
-            ))}
-          </div>
-
-          {actionData?.error ? (
+          {timeZoneError ? (
             <p className={styles.error} id="setup-error" role="alert">
-              {actionData.error}
+              {timeZoneError}
             </p>
           ) : null}
+
+          <DailyGoalInputs error={goalError} values={DAILY_GOAL_DEFAULTS} />
 
           <button className={styles.submit} type="submit">
             Finish setup

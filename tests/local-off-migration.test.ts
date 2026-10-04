@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { expect, test } from "vitest";
 import { openApplicationDatabase } from "../app/database/database.server";
-import { userPreferences, photoMeals } from "../app/database/schema.server";
+import { photoMeals } from "../app/database/schema.server";
 import { FoodCatalog } from "../app/catalog/food-catalog.server";
 import { TestFoodCatalogProvider, TestOpenFoodFactsProvider } from "../app/catalog/test-fixture.server";
 import { FoodEntryService } from "../app/food-entry/food-entry.server";
@@ -19,7 +19,7 @@ test.each(["0014_breezy_eternals", "0015_outstanding_stature", "0016_first_key"]
     database.getClient().$client.exec("ALTER TABLE food_entries ADD COLUMN source_saved_food_id integer");
     const createdAt = "2026-01-01T00:00:00.000Z";
     const user = database.getClient().$client.prepare("INSERT INTO users (username_normalized, created_at) VALUES (?, ?) RETURNING id").get("old.off.member", createdAt) as { id: number };
-    database.getClient().insert(userPreferences).values({ userId: user.id, timeZone: "UTC", displayUnits: "metric", createdAt, updatedAt: createdAt }).run();
+    database.getClient().$client.prepare("INSERT INTO user_preferences (user_id, display_units, time_zone, created_at, updated_at) VALUES (?, ?, ?, ?, ?)").run(user.id, "metric", "UTC", createdAt, createdAt);
     const catalog = new FoodCatalog([{ provider: "usda-fdc", capability: "search", service: new TestFoodCatalogProvider() }, { provider: "open-food-facts", capability: "barcode", service: new TestOpenFoodFactsProvider() }]);
     const oldEntries = new FoodEntryService(database.getClient(), catalog);
     const history = await Promise.all([

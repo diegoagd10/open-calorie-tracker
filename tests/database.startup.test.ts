@@ -15,6 +15,7 @@ import {
   type ApplicationDatabaseClient,
   type DatabaseStatus,
 } from "../app/database/database.server";
+import { dailyGoals } from "../app/daily-goal/daily-goal.schema.server";
 import { waterEvents } from "../app/water-event/water-event.schema.server";
 import { createMigrationFolder } from "./support/migrations";
 
@@ -26,10 +27,9 @@ function readRepresentativeData(client: ApplicationDatabaseClient) {
   return {
     foodEntries: client.all<Record<string, unknown>>(sql`SELECT * FROM food_entries ORDER BY id`)
       .map(({ source_saved_food_id: _sourceSavedFoodId, ...entry }) => entry),
-    goalVersions: client.select().from(schema.goalVersions).all(),
     passwordCredentials: client.select().from(schema.passwordCredentials).all(),
     sessions: client.select().from(schema.sessions).all(),
-    userPreferences: client.select().from(schema.userPreferences).all(),
+    userPreferences: client.all(sql`SELECT user_id, time_zone, created_at, updated_at FROM user_preferences`),
     users: client.all<{
       createdAt: string;
       id: number;
@@ -169,6 +169,66 @@ test("the Water Event log-date migration converts each local time to UTC in the 
   upgraded.close();
 });
 
+test("the Daily Goal migration keeps each account's goal active today in fluid ounces and drops display units", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "daily-goal-upgrade-"));
+  temporaryDirectories.push(directory);
+  const databasePath = path.join(directory, "application.sqlite");
+  const previousMigrations = await createMigrationFolder(path.join(directory, "previous-migrations"), {
+    throughTag: "0029_water_event_log_date",
+  });
+  const previous = openApplicationDatabase({ databasePath, migrationsFolder: previousMigrations });
+  const client = previous.getClient();
+  const createdAt = "2026-09-26T12:00:00.000Z";
+  const insertAccount = (username: string, displayUnits: "us" | "metric") => {
+    const { id } = client.get<{ id: number }>(sql`INSERT INTO users (username_normalized, created_at)
+      VALUES (${username}, ${createdAt}) RETURNING id`);
+    client.run(sql`INSERT INTO user_preferences (user_id, display_units, time_zone, created_at, updated_at)
+      VALUES (${id}, ${displayUnits}, 'America/New_York', ${createdAt}, ${createdAt})`);
+    return id;
+  };
+  const insertVersion = (userId: number, effectiveDate: string, calories: number, microliters: number) => {
+    client.run(sql`INSERT INTO goal_versions (
+      user_id, effective_date, calorie_target_milli_kcal, water_target_microliters, protein_target_milligrams,
+      carbohydrate_target_milligrams, fat_target_milligrams, fiber_target_milligrams, sugar_maximum_milligrams,
+      sodium_maximum_milligrams, created_at
+    ) VALUES (${userId}, ${effectiveDate}, ${calories}, ${microliters}, 120000, 230000, 70000, 25000, 50000, 2300,
+      ${`${effectiveDate}T00:00:00.000Z`})`);
+  };
+  const scheduled = insertAccount("scheduled.us", "us");
+  insertVersion(scheduled, "2000-01-01", 2_500_000, 1_000_000);
+  insertVersion(scheduled, "2001-01-01", 1_900_000, 2_365_882);
+  insertVersion(scheduled, "2999-01-01", 1_500_000, 3_000_000);
+  const futureOnly = insertAccount("future.metric", "metric");
+  insertVersion(futureOnly, "2999-01-01", 1_700_000, 1_000_000);
+  insertVersion(futureOnly, "2998-01-01", 1_800_000, 2_000_000);
+  const largeWater = insertAccount("large.metric", "metric");
+  insertVersion(largeWater, "2001-01-01", 2_000_000, 15_000_000);
+  const tinyWater = insertAccount("tiny.metric", "metric");
+  insertVersion(tinyWater, "2001-01-01", 2_000_000, 5);
+  const notSetUp = client.get<{ id: number }>(sql`INSERT INTO users (username_normalized, created_at)
+    VALUES ('not.set.up', ${createdAt}) RETURNING id`).id;
+  previous.close();
+
+  const upgraded = openApplicationDatabase({ databasePath, migrationsFolder: path.resolve("drizzle") });
+  const goals = upgraded.getClient().all<Record<string, unknown>>(sql`SELECT user_id AS userId,
+    calorie_target_milli_kcal AS calories, water_target_ounces AS water, created_at AS createdAt,
+    updated_at AS updatedAt FROM daily_goals ORDER BY user_id`);
+  expect(goals).toEqual([
+    { userId: scheduled, calories: 1_900_000, water: "80", createdAt: "2001-01-01T00:00:00.000Z", updatedAt: "2001-01-01T00:00:00.000Z" },
+    { userId: futureOnly, calories: 1_800_000, water: "67.628", createdAt: "2998-01-01T00:00:00.000Z", updatedAt: "2998-01-01T00:00:00.000Z" },
+    { userId: largeWater, calories: 2_000_000, water: "500", createdAt: "2001-01-01T00:00:00.000Z", updatedAt: "2001-01-01T00:00:00.000Z" },
+    { userId: tinyWater, calories: 2_000_000, water: "0.001", createdAt: "2001-01-01T00:00:00.000Z", updatedAt: "2001-01-01T00:00:00.000Z" },
+  ]);
+  expect(goals.map((goal) => goal.userId)).not.toContain(notSetUp);
+  expect(upgraded.getClient().all(sql`SELECT name FROM sqlite_master WHERE name = 'goal_versions'`)).toEqual([]);
+  expect(upgraded.getClient().all<{ name: string }>(sql`PRAGMA table_info(user_preferences)`).map((column) => column.name))
+    .toEqual(["user_id", "time_zone", "created_at", "updated_at"]);
+  expect(upgraded.getClient().all(sql`SELECT user_id AS userId, time_zone AS timeZone FROM user_preferences ORDER BY user_id`))
+    .toEqual([scheduled, futureOnly, largeWater, tinyWater].map((userId) => ({ userId, timeZone: "America/New_York" })));
+  expect(upgraded.getStatus()).toMatchObject({ appliedMigrations: migrationCount, foreignKeysEnabled: true });
+  upgraded.close();
+});
+
 test.each([
   { expected: [], users: [] },
   {
@@ -280,26 +340,13 @@ test("the production migration preserves every representative field from the pri
     tokenHash: "representative-session-hash",
     userId: user.id,
   }).run();
-  client.insert(schema.userPreferences).values({
-    createdAt: timestamp,
-    displayUnits: "us",
-    timeZone: "America/New_York",
-    updatedAt: timestamp,
-    userId: user.id,
-  }).run();
-  client.insert(schema.goalVersions).values({
-    calorieTargetMilliKcal: 2_000_000,
-    carbohydrateTargetMilligrams: 250_000,
-    createdAt: timestamp,
-    effectiveDate: "2026-08-30",
-    fatTargetMilligrams: 70_000,
-    fiberTargetMilligrams: 30_000,
-    proteinTargetMilligrams: 120_000,
-    sodiumMaximumMilligrams: 2_300,
-    sugarMaximumMilligrams: 50_000,
-    userId: user.id,
-    waterTargetMicroliters: 2_000_000,
-  }).run();
+  client.run(sql`INSERT INTO user_preferences (user_id, display_units, time_zone, created_at, updated_at)
+    VALUES (${user.id}, 'us', 'America/New_York', ${timestamp}, ${timestamp})`);
+  client.run(sql`INSERT INTO goal_versions (
+    user_id, effective_date, calorie_target_milli_kcal, water_target_microliters, protein_target_milligrams,
+    carbohydrate_target_milligrams, fat_target_milligrams, fiber_target_milligrams, sugar_maximum_milligrams,
+    sodium_maximum_milligrams, created_at
+  ) VALUES (${user.id}, '2026-08-30', 2000000, 2000000, 120000, 250000, 70000, 30000, 50000, 2300, ${timestamp})`);
   client.run(sql`
     INSERT INTO food_entries (
       user_id, food_log_date, local_event_time, provider, provider_food_id,
@@ -343,6 +390,19 @@ test("the production migration preserves every representative field from the pri
   expect(readRepresentativeData(upgraded.getClient())).toEqual(
     representativeData,
   );
+  expect(upgraded.getClient().select().from(dailyGoals).all()).toEqual([{
+    userId: user.id,
+    calorieTarget: 2_000_000,
+    waterTarget: "67.628",
+    proteinTarget: 120_000,
+    carbohydrateTarget: 250_000,
+    fatTarget: 70_000,
+    fiberTarget: 30_000,
+    sugarMaximum: 50_000,
+    sodiumMaximum: 2_300,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  }]);
   expect(upgraded.getClient().select().from(waterEvents).get()).toMatchObject({
     logDate: "2026-08-30T14:05:00.000Z",
     ounces: "8",

@@ -26,10 +26,10 @@ import {
 import {
   foodEntries,
   savedFoods,
-  goalVersions,
   userPreferences,
   users,
 } from "../app/database/schema.server";
+import { completeTestSetup } from "./support/setup";
 import { waterEvents } from "../app/water-event/water-event.schema.server";
 import {
   FoodEntryService,
@@ -70,32 +70,7 @@ function insertConfiguredUser(
     .values({ createdAt, usernameNormalized: username })
     .returning({ id: users.id })
     .get().id;
-  client
-    .insert(userPreferences)
-    .values({
-      createdAt,
-      displayUnits: "us",
-      timeZone: "America/New_York",
-      updatedAt: createdAt,
-      userId,
-    })
-    .run();
-  client
-    .insert(goalVersions)
-    .values({
-      calorieTargetMilliKcal: 2_000_000,
-      carbohydrateTargetMilligrams: 250_000,
-      createdAt,
-      effectiveDate: "2026-01-01",
-      fatTargetMilligrams: 70_000,
-      fiberTargetMilligrams: 25_000,
-      proteinTargetMilligrams: 120_000,
-      sodiumMaximumMilligrams: 2_300,
-      sugarMaximumMilligrams: 50_000,
-      userId,
-      waterTargetMicroliters: 2_000_000,
-    })
-    .run();
+  completeTestSetup(userId, { database: client, goal: { calorieTarget: 2_000_000, carbohydrateTarget: 250_000 } });
   return userId;
 }
 

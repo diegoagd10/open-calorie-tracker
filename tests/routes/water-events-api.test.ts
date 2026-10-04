@@ -11,8 +11,7 @@ import { loader as readDailyLog } from "../../app/routes/api.v1.daily-log";
 import { action as mcpAction } from "../../app/routes/mcp";
 import { action as keysAction, loader as keysLoader } from "../../app/routes/settings.api-keys";
 import { action as copyAction } from "../../app/routes/settings.api-keys.copy";
-import { getGoalSetupService } from "../../app/setup/runtime.server";
-import { validateSetupFields } from "../../app/setup/validation";
+import { completeTestSetup } from "../support/setup";
 import { action as waterAction, headers as waterHeaders, loader as waterLoader } from "../../app/water-event/routes/api.v1.water-events";
 import { getWaterEventService } from "../../app/water-event/runtime.server";
 import { seedAuthenticatedAccount } from "../support/authentication";
@@ -78,12 +77,7 @@ async function listTools(key: string): Promise<{ name: string; annotations?: Rec
 
 async function account(username: string): Promise<Account> {
   const session = await seedAuthenticatedAccount(getAuthenticationService(), getApplicationDatabase().getClient(), username, "correct horse battery staple", "203.0.113.10");
-  const setup = validateSetupFields({
-    calories: "2050", carbohydrate: "230", displayUnits: "us", fat: "70", fiber: "25",
-    protein: "120", sodium: "2300", sugar: "50", timeZone: "America/New_York", water: "80",
-  });
-  if (!setup.success) throw new Error("Invalid test setup");
-  getGoalSetupService().completeInitial(session.user.id, setup.data);
+  completeTestSetup(session.user.id);
   return { id: session.user.id, cookie: serializeSessionCookie(session).split(";", 1)[0], csrf: session.csrfToken };
 }
 async function createKey(holder: Account, name: string, scopes: string[]): Promise<string> {
