@@ -64,28 +64,28 @@ test("generic secret paths default outside application data and allow an explici
 
 test("first use creates a private 32-byte master key and round-trips an opaque bundle", async () => {
   const store = await bundles();
-  const secret = Buffer.from('{"gemini":"gemini-private","typeSafe":"jev-private"}');
+  const secret = Buffer.from('{"primary":"primary-private","secondary":"secondary-private"}');
 
   expect((await stat(path.dirname(masterKeyPath))).mode & 0o777).toBe(0o700);
   expect((await stat(masterKeyPath)).mode & 0o777).toBe(0o600);
   expect(await readFile(masterKeyPath)).toHaveLength(32);
-  expect(await store.status("photo-analysis")).toEqual({ state: "unconfigured" });
+  expect(await store.status("sample-integration")).toEqual({ state: "unconfigured" });
 
-  const configured = await store.replace("photo-analysis", secret);
+  const configured = await store.replace("sample-integration", secret);
   expect(configured).toEqual({
     state: "configured",
     configuredAt: expect.any(String) as unknown,
     updatedAt: expect.any(String) as unknown,
   });
-  expect(await store.read("photo-analysis")).toEqual(secret);
-  expect(await store.status("photo-analysis")).toEqual(configured);
+  expect(await store.read("sample-integration")).toEqual(secret);
+  expect(await store.status("sample-integration")).toEqual(configured);
   expect(JSON.stringify(configured)).not.toContain("private");
 
   const row = database.getClient().get<{ envelope: string }>(sql`
-    SELECT envelope FROM encrypted_credential_bundles WHERE name = 'photo-analysis'
+    SELECT envelope FROM encrypted_credential_bundles WHERE name = 'sample-integration'
   `);
-  expect(row.envelope).not.toContain("gemini-private");
-  expect(row.envelope).not.toContain("jev-private");
+  expect(row.envelope).not.toContain("primary-private");
+  expect(row.envelope).not.toContain("secondary-private");
 });
 
 test("existing master keys cannot grant access to group or other users", async () => {
@@ -127,62 +127,62 @@ test.each([
   ["wrong tag length", (envelope: Record<string, string | number>) => { envelope.tag = Buffer.alloc(15).toString("base64url"); }],
 ] as const)("rejects %s in an otherwise structured envelope", async (_name, mutate) => {
   const store = await bundles();
-  await store.replace("photo-analysis", Buffer.from("credential-pair"));
+  await store.replace("sample-integration", Buffer.from("credential-pair"));
   const row = database.getClient().get<{ envelope: string }>(sql`
-    SELECT envelope FROM encrypted_credential_bundles WHERE name = 'photo-analysis'
+    SELECT envelope FROM encrypted_credential_bundles WHERE name = 'sample-integration'
   `);
   const envelope = JSON.parse(row.envelope) as Record<string, string | number>;
   mutate(envelope);
   database.getClient().run(sql`
     UPDATE encrypted_credential_bundles SET envelope = ${JSON.stringify(envelope)}
-    WHERE name = 'photo-analysis'
+    WHERE name = 'sample-integration'
   `);
-  await expect(store.read("photo-analysis")).rejects.toThrow("Credential bundle is unreadable.");
-  expect(await store.status("photo-analysis")).toMatchObject({ state: "unreadable" });
+  await expect(store.read("sample-integration")).rejects.toThrow("Credential bundle is unreadable.");
+  expect(await store.status("sample-integration")).toMatchObject({ state: "unreadable" });
 });
 
 test("replacement uses a fresh nonce, removal changes future reads, and captured plaintext remains usable", async () => {
   const store = await bundles();
-  await store.replace("photo-analysis", Buffer.from("first-private-pair"));
-  const captured = await store.read("photo-analysis");
+  await store.replace("sample-integration", Buffer.from("first-private-pair"));
+  const captured = await store.read("sample-integration");
   const first = database.getClient().get<{ envelope: string }>(sql`
-    SELECT envelope FROM encrypted_credential_bundles WHERE name = 'photo-analysis'
+    SELECT envelope FROM encrypted_credential_bundles WHERE name = 'sample-integration'
   `).envelope;
 
-  await store.replace("photo-analysis", Buffer.from("second-private-pair"));
+  await store.replace("sample-integration", Buffer.from("second-private-pair"));
   const second = database.getClient().get<{ envelope: string }>(sql`
-    SELECT envelope FROM encrypted_credential_bundles WHERE name = 'photo-analysis'
+    SELECT envelope FROM encrypted_credential_bundles WHERE name = 'sample-integration'
   `).envelope;
   expect(second).not.toBe(first);
   expect((JSON.parse(second) as { nonce: string }).nonce).not.toBe(
     (JSON.parse(first) as { nonce: string }).nonce,
   );
-  expect(await store.read("photo-analysis")).toEqual(Buffer.from("second-private-pair"));
+  expect(await store.read("sample-integration")).toEqual(Buffer.from("second-private-pair"));
 
-  expect(await store.remove("photo-analysis")).toBe(true);
-  expect(await store.read("photo-analysis")).toBeUndefined();
-  expect(await store.status("photo-analysis")).toEqual({ state: "unconfigured" });
+  expect(await store.remove("sample-integration")).toBe(true);
+  expect(await store.read("sample-integration")).toBeUndefined();
+  expect(await store.status("sample-integration")).toEqual({ state: "unconfigured" });
   expect(captured).toEqual(Buffer.from("first-private-pair"));
-  expect(await store.remove("photo-analysis")).toBe(false);
+  expect(await store.remove("sample-integration")).toBe(false);
 });
 
 test("tampering, the wrong key, and purpose substitution are reported without exposing plaintext", async () => {
   const store = await bundles();
-  await store.replace("photo-analysis", Buffer.from("never reveal this credential"));
+  await store.replace("sample-integration", Buffer.from("never reveal this credential"));
   const original = database.getClient().get<{ envelope: string }>(sql`
-    SELECT envelope FROM encrypted_credential_bundles WHERE name = 'photo-analysis'
+    SELECT envelope FROM encrypted_credential_bundles WHERE name = 'sample-integration'
   `).envelope;
   const tampered = JSON.parse(original) as { ciphertext: string };
   tampered.ciphertext = `${tampered.ciphertext.startsWith("A") ? "B" : "A"}${tampered.ciphertext.slice(1)}`;
 
   database.getClient().run(sql`
     UPDATE encrypted_credential_bundles SET envelope = ${JSON.stringify(tampered)}
-    WHERE name = 'photo-analysis'
+    WHERE name = 'sample-integration'
   `);
-  await expect(store.read("photo-analysis")).rejects.toEqual(
+  await expect(store.read("sample-integration")).rejects.toEqual(
     new CredentialBundleUnreadableError(),
   );
-  expect(await store.status("photo-analysis")).toEqual({
+  expect(await store.status("sample-integration")).toEqual({
     state: "unreadable",
     configuredAt: expect.any(String) as unknown,
     updatedAt: expect.any(String) as unknown,
@@ -190,18 +190,18 @@ test("tampering, the wrong key, and purpose substitution are reported without ex
 
   database.getClient().run(sql`
     UPDATE encrypted_credential_bundles SET envelope = ${original}
-    WHERE name = 'photo-analysis'
+    WHERE name = 'sample-integration'
   `);
   const otherKey = path.join(directory, "other-secrets", "application-master.key");
   const wrongKeyStore = await bundles(otherKey);
-  await expect(wrongKeyStore.read("photo-analysis")).rejects.toThrow(
+  await expect(wrongKeyStore.read("sample-integration")).rejects.toThrow(
     "Credential bundle is unreadable.",
   );
 
   database.getClient().run(sql`
     INSERT INTO encrypted_credential_bundles (name, envelope, configured_at, updated_at)
     SELECT 'another-purpose', envelope, configured_at, updated_at
-    FROM encrypted_credential_bundles WHERE name = 'photo-analysis'
+    FROM encrypted_credential_bundles WHERE name = 'sample-integration'
   `);
   await expect(store.read("another-purpose")).rejects.toThrow(
     "Credential bundle is unreadable.",
@@ -210,24 +210,24 @@ test("tampering, the wrong key, and purpose substitution are reported without ex
 
 test("a lost master key makes old ciphertext unreadable but permits a validated replacement", async () => {
   const originalStore = await bundles();
-  await originalStore.replace("photo-analysis", Buffer.from("old-pair"));
-  const captured = await originalStore.read("photo-analysis");
+  await originalStore.replace("sample-integration", Buffer.from("old-pair"));
+  const captured = await originalStore.read("sample-integration");
   await unlink(masterKeyPath);
 
   const recoveredStore = await bundles();
-  expect(await recoveredStore.status("photo-analysis")).toMatchObject({ state: "unreadable" });
-  await expect(recoveredStore.read("photo-analysis")).rejects.toThrow(
+  expect(await recoveredStore.status("sample-integration")).toMatchObject({ state: "unreadable" });
+  await expect(recoveredStore.read("sample-integration")).rejects.toThrow(
     "Credential bundle is unreadable.",
   );
-  await recoveredStore.replace("photo-analysis", Buffer.from("new-pair"));
+  await recoveredStore.replace("sample-integration", Buffer.from("new-pair"));
 
-  expect(await recoveredStore.read("photo-analysis")).toEqual(Buffer.from("new-pair"));
+  expect(await recoveredStore.read("sample-integration")).toEqual(Buffer.from("new-pair"));
   expect(captured).toEqual(Buffer.from("old-pair"));
 });
 
 test("a persistence failure preserves the previous encrypted bundle", async () => {
   const store = await bundles();
-  await store.replace("photo-analysis", Buffer.from("working-pair"));
+  await store.replace("sample-integration", Buffer.from("working-pair"));
   database.getClient().run(sql.raw(`
     CREATE TRIGGER reject_credential_update
     BEFORE UPDATE ON encrypted_credential_bundles
@@ -235,8 +235,8 @@ test("a persistence failure preserves the previous encrypted bundle", async () =
   `));
 
   await expect(
-    store.replace("photo-analysis", Buffer.from("replacement-pair")),
+    store.replace("sample-integration", Buffer.from("replacement-pair")),
   ).rejects.toThrow("simulated persistence failure");
   database.getClient().run(sql`DROP TRIGGER reject_credential_update`);
-  expect(await store.read("photo-analysis")).toEqual(Buffer.from("working-pair"));
+  expect(await store.read("sample-integration")).toEqual(Buffer.from("working-pair"));
 });

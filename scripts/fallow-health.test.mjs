@@ -17,7 +17,6 @@ const coveragePath = path.join(
 );
 const coverageExclusions = new Set([
   "app/catalog/test-fixture.server.ts",
-  "app/photo-analysis/test-fixture.server.ts",
   "server/playwright-https.js",
 ]);
 

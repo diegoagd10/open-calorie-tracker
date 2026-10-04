@@ -9,7 +9,6 @@ import {
   TestOpenFoodFactsProvider,
 } from "./test-fixture.server";
 import { LocalUsdaAdapter } from "./local-usda.server";
-import type { UsdaPhotoAnalysisCatalog } from "./usda-evidence";
 import { catalogDirectory, getCatalogManagement } from "../catalog-management/runtime.server";
 import { LocalOpenFoodFactsAdapter } from "./local-off.server";
 
@@ -22,14 +21,6 @@ function environmentSchema() {
 let foodCatalogProvider: SearchFoodCatalogProvider | undefined;
 let foodCatalog: FoodCatalog | undefined;
 
-export function getUsdaAnalysisReader(): LocalUsdaAdapter {
-  return new LocalUsdaAdapter(getCatalogManagement(), catalogDirectory());
-}
-
-export function getUsdaPhotoAnalysisCatalog(): UsdaPhotoAnalysisCatalog {
-  return getUsdaAnalysisReader();
-}
-
 export function getFoodCatalogProvider(): SearchFoodCatalogProvider {
   if (foodCatalogProvider) return foodCatalogProvider;
   const environment = environmentSchema().parse(process.env);
@@ -37,7 +28,7 @@ export function getFoodCatalogProvider(): SearchFoodCatalogProvider {
     process.env.NODE_ENV === "test" &&
     environment.FOOD_CATALOG_TEST_FIXTURE === "1"
       ? new TestFoodCatalogProvider()
-      : getUsdaAnalysisReader();
+      : new LocalUsdaAdapter(getCatalogManagement(), catalogDirectory());
   return foodCatalogProvider;
 }
 

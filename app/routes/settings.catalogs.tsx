@@ -4,11 +4,9 @@ import { requireAdministratorSession, requireValidOrigin } from "../auth/http.se
 import { getAuthenticationService } from "../auth/runtime.server";
 import type { CatalogState, FoundationReleaseMetadata } from "../catalog-management/catalog-management.server";
 import { getCatalogManagement } from "../catalog-management/runtime.server";
-import { getUsdaPhotoAnalysisCatalog } from "../catalog/runtime.server";
-import type { UsdaPhotoAnalysisReadiness } from "../catalog/usda-evidence";
 import { SettingsDestinations, SettingsShell } from "../settings-destinations";
 import shellStyles from "../food-log.module.css";
-import styles from "../photo-analysis/connection.module.css";
+import styles from "./settings.catalogs.module.css";
 import { navigationToday } from "../setup/runtime.server";
 
 export function meta() { return [{ title: "Food Catalogs · Open Calorie Tracker" }]; }
@@ -17,12 +15,8 @@ export async function loader({ request }: Route.LoaderArgs) {
   const session = await requireAdministratorSession(request);
   const catalog = getCatalogManagement();
   const offCatalog = getCatalogManagement("open-food-facts");
-  const [, , photoAnalysisReadiness] = await Promise.all([
-    catalog.checkForUpdate(),
-    offCatalog.checkForUpdate(),
-    getUsdaPhotoAnalysisCatalog().photoAnalysisReadiness(),
-  ]);
-  return { csrfToken: session.csrfToken, today: navigationToday(session.user.id), catalog: catalogInformation(catalog.read(), photoAnalysisReadiness), offCatalog: catalogInformation(offCatalog.read()) };
+  await Promise.all([catalog.checkForUpdate(), offCatalog.checkForUpdate()]);
+  return { csrfToken: session.csrfToken, today: navigationToday(session.user.id), catalog: catalogInformation(catalog.read()), offCatalog: catalogInformation(offCatalog.read()) };
 }
 export async function action({ request }: Route.ActionArgs) {
   requireValidOrigin(request);
@@ -40,9 +34,9 @@ export async function action({ request }: Route.ActionArgs) {
   return Response.json({ error: "Catalog installation is available through terminal commands only." }, { status: 400, headers: headers() });
 }
 
-type CatalogInformation = Pick<CatalogState, "installed" | "updateCheck"> & { photoAnalysisReadiness?: UsdaPhotoAnalysisReadiness };
-function catalogInformation({ installed, updateCheck }: CatalogState, photoAnalysisReadiness?: UsdaPhotoAnalysisReadiness): CatalogInformation {
-  return { installed, updateCheck, ...(photoAnalysisReadiness ? { photoAnalysisReadiness } : {}) };
+type CatalogInformation = Pick<CatalogState, "installed" | "updateCheck">;
+function catalogInformation({ installed, updateCheck }: CatalogState): CatalogInformation {
+  return { installed, updateCheck };
 }
 
 function releaseLabel(release: Pick<FoundationReleaseMetadata, "identifier" | "releasedOn" | "releasePeriod"> | undefined): string {
@@ -74,13 +68,6 @@ function CatalogCard({ catalog, csrfToken, provider }: { catalog: CatalogInforma
   const checkIntent = off ? "check-off-update" : "check-usda-update";
   const checkLabel = off ? "OFF" : "USDA";
   const checking = navigation.formData?.get("intent") === checkIntent;
-  const photoAnalysisLabel = catalog.photoAnalysisReadiness?.state === "ready"
-    ? "Ready"
-    : catalog.photoAnalysisReadiness?.state === "reimport-required"
-      ? "Reimport required"
-      : catalog.photoAnalysisReadiness?.state === "unavailable"
-        ? "Unavailable"
-        : "Not installed";
   return <section className={styles.card} aria-labelledby={`${provider}-heading`}>
         <div className={styles.heading}><h2 id={`${provider}-heading`}>{name}</h2><span className={catalog.installed ? styles.connected : styles.disconnected}>{catalog.installed ? "Installed" : "Not installed"}</span></div>
         <p>{off ? "Download the official product JSONL GZIP (recommended for serving nutrition), then install it with the terminal command. Existing tab-separated CSV GZIP imports remain supported." : `Download the ${archiveLabel}, then install it with the terminal command.`}</p>
@@ -88,7 +75,6 @@ function CatalogCard({ catalog, csrfToken, provider }: { catalog: CatalogInforma
         {off ? <p>Open Food Facts data is available under the Open Database License (ODbL). Products without an explicit nutrition basis can be reviewed but cannot be used for calculated logging.</p> : null}
         {catalog.installed ? <div>
           <p><strong>{catalog.installed.foodCount.toLocaleString()} foods installed</strong></p>
-          {!off ? <p>Photo Analysis: <strong>{photoAnalysisLabel}</strong></p> : null}
           <p>Archive: {catalog.installed.filename}</p>
           {off ? <><p>Product modification dates: {catalog.installed.sourceDateRange?.earliest ?? "Unknown"} – {catalog.installed.sourceDateRange?.latest ?? "Unknown"}</p><p>These dates describe products, not an official dump release.</p></> : <p>Food publication dates: {catalog.installed.publicationDateRange.earliest} – {catalog.installed.publicationDateRange.latest}</p>}
           <details><summary>Source snapshot fingerprint</summary><p style={{ overflowWrap: "anywhere" }}>SHA-256: {catalog.installed.sha256}</p></details>

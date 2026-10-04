@@ -3,7 +3,6 @@ import { z } from "zod";
 import type { ImportOptions, ImportMessage } from "./import-contract.ts";
 import { buildLocalUsdaGeneration } from "../catalog/local-usda.server.ts";
 import type { CatalogFood, CatalogMeasurement, CatalogNutrition, CatalogNutrientValue } from "../catalog/food-catalog.server.ts";
-import type { UsdaGenerationCategory, UsdaGenerationFood } from "../database/usda-generation.server.ts";
 import type { CatalogImportJob } from "./catalog-management.server.ts";
 import { ArchiveError, foundationRows, unpackFoundation } from "./foundation-archive.server.ts";
 
@@ -34,7 +33,6 @@ export async function importFoundation(options: ImportOptions, publish: (message
   }
   const idSchema = z.string().regex(/^[1-9]\d*$/).refine(value => Number.isSafeInteger(Number(value)));
   const foodSchema = z.object({ fdc_id: idSchema, description: z.string().trim().min(1).max(500), publication_date: z.iso.date() });
-  const categorySchema = z.object({ id: idSchema, description: z.string().trim().min(1).max(500) });
   function validId(value: string) { return idSchema.safeParse(value).success; }
   function emptyNutrition(): CatalogNutrition {
     return { carbohydrateMilligrams: null, energyMilliKcal: null, fatMilligrams: null, fiberMilligrams: null, proteinMilligrams: null, sodiumMilligrams: null, sugarMilligrams: null };
@@ -45,26 +43,23 @@ export async function importFoundation(options: ImportOptions, publish: (message
     if (dataType !== "foundation_food") throw new ArchiveError("Wrong USDA dataset. Only a Foundation CSV archive is supported.");
     return true;
   }
-  function foodRecord(row: Record<string, string>, categories: Map<string, UsdaGenerationCategory>): UsdaGenerationFood | null {
+  function foodRecord(row: Record<string, string>): CatalogFood | null {
     const parsed = foodSchema.safeParse(row);
     if (!parsed.success) { rejectFood("invalid_food_record"); return null; }
     const food = parsed.data;
-    if (!validId(row.food_category_id) || !categories.has(row.food_category_id)) {
-      throw new ArchiveError("Foundation food has an invalid or missing category.");
-    }
-    return { categoryId: row.food_category_id, food: {
+    return {
       barcode: null, brand: null, dataType: "Foundation", isSelectable: false, measurementSummary: "100 g", name: food.description.normalize("NFC"),
       provider: "usda-fdc", providerFoodId: food.fdc_id, providerPublishedDate: food.publication_date,
       authoritativeBaseQuantityMicrounits: 100_000_000, authoritativeBaseUnit: "g", marketCountry: null,
       measurements: [{ id: "g", label: "1 g", unit: "g", baseQuantityMicrounits: 1_000_000 }, { id: "100g", label: "100 g", unit: "g", baseQuantityMicrounits: 100_000_000 }],
       nutritionPerAuthoritativeBase: emptyNutrition(), originalName: food.description.normalize("NFC"), providerModifiedDate: null, catalogGeneration: options.generation,
-    } };
+    };
   }
-  function addFood(foods: Map<string, UsdaGenerationFood>, record: UsdaGenerationFood | null) {
-    if (!record) return;
-    if (foods.has(record.food.providerFoodId)) throw new ArchiveError("Duplicate FDC ID in food.csv.");
+  function addFood(foods: Map<string, CatalogFood>, food: CatalogFood | null) {
+    if (!food) return;
+    if (foods.has(food.providerFoodId)) throw new ArchiveError("Duplicate FDC ID in food.csv.");
     if (foods.size >= 100_000) throw new ArchiveError("Foundation record limit exceeded.");
-    foods.set(record.food.providerFoodId, record);
+    foods.set(food.providerFoodId, food);
     importedRecords++;
   }
   function processedRecord() {
@@ -76,22 +71,11 @@ export async function importFoundation(options: ImportOptions, publish: (message
       if (!validId(row.fdc_id)) exclude("invalid_subtype_record");
     }
   }
-  async function readCategories() {
-    const categories = new Map<string, UsdaGenerationCategory>();
-    for await (const row of foundationRows(staging, "food_category.csv")) {
-      const parsed = categorySchema.safeParse(row);
-      if (!parsed.success) throw new ArchiveError("Invalid category in food_category.csv.");
-      if (categories.has(parsed.data.id)) throw new ArchiveError("Duplicate category in food_category.csv.");
-      categories.set(parsed.data.id, { id: parsed.data.id, name: parsed.data.description.normalize("NFC") });
-    }
-    if (categories.size === 0) throw new ArchiveError("Foundation archive contains no food categories.");
-    return categories;
-  }
-  async function readFoods(categories: Map<string, UsdaGenerationCategory>) {
-    const foods = new Map<string, UsdaGenerationFood>();
+  async function readFoods() {
+    const foods = new Map<string, CatalogFood>();
     for await (const row of foundationRows(staging, "food.csv")) {
       processedRecord();
-      if (selectableRecordType(row.data_type)) addFood(foods, foodRecord(row, categories));
+      if (selectableRecordType(row.data_type)) addFood(foods, foodRecord(row));
     }
     // Validate the subtype's schema without using its IDs as an inclusion whitelist.
     await validateSubtypeRecords();
@@ -132,14 +116,14 @@ export async function importFoundation(options: ImportOptions, publish: (message
     food.isSelectable = energy != null;
     if (!food.isSelectable) { food.measurementSummary = "Calories unavailable"; exclude("food_without_calories"); }
   }
-  async function readNutrition(foods: Map<string, UsdaGenerationFood>) {
+  async function readNutrition(foods: Map<string, CatalogFood>) {
     const units = await readDefinitions("nutrient.csv", "unit_name");
     const values = new Map([...foods.keys()].map(id => [id, new Map<string, CatalogNutrientValue | null>()]));
     for await (const row of foundationRows(staging, "food_nutrient.csv")) {
       processedRecord();
       addFoodNutrient(values, row, units);
     }
-    for (const [id, record] of foods) applyNutrition(record.food, values.get(id)!);
+    for (const [id, food] of foods) applyNutrition(food, values.get(id)!);
   }
   const portionSchema = z.object({
     id: idSchema, amount: numericSchema.pipe(z.number().positive()),
@@ -161,24 +145,23 @@ export async function importFoundation(options: ImportOptions, publish: (message
     if (food.measurements.some(candidate => candidate.id === measurement.id)) { exclude("invalid_portion"); return; }
     food.measurements.push(measurement);
   }
-  async function readPortions(foods: Map<string, UsdaGenerationFood>) {
+  async function readPortions(foods: Map<string, CatalogFood>) {
     const units = await readDefinitions("measure_unit.csv", "name");
     for await (const row of foundationRows(staging, "food_portion.csv")) {
-      const record = foods.get(row.fdc_id);
-      if (record) addPortion(record.food, sourcePortion(row, units.get(row.measure_unit_id)));
+      const food = foods.get(row.fdc_id);
+      if (food) addPortion(food, sourcePortion(row, units.get(row.measure_unit_id)));
     }
   }
   async function run() {
     progress("validating");
     await unpackFoundation(options.archivePath, staging, options.maxExpandedBytes);
     progress("importing");
-    const categories = await readCategories();
-    const foods = await readFoods(categories);
+    const foods = await readFoods();
     await readNutrition(foods);
     await readPortions(foods);
-    if (![...foods.values()].some(record => record.food.isSelectable)) throw new ArchiveError("Foundation archive contains no foods with usable calories. Nothing was installed.");
-    buildLocalUsdaGeneration(options.directory, options.generation, { foods: foods.values(), categories: categories.values() }, () => progress("indexing"));
-    const dates = [...foods.values()].map(record => record.food.providerPublishedDate!).sort();
+    if (![...foods.values()].some(food => food.isSelectable)) throw new ArchiveError("Foundation archive contains no foods with usable calories. Nothing was installed.");
+    buildLocalUsdaGeneration(options.directory, options.generation, { foods: foods.values() }, () => progress("indexing"));
+    const dates = [...foods.values()].map(food => food.providerPublishedDate!).sort();
     progress("indexing");
     publish({ result: { foodCount: foods.size, publicationDateRange: { earliest: dates[0], latest: dates[dates.length - 1] } } });
   }

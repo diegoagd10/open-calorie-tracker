@@ -41,6 +41,6 @@ test("credential runtime can recover after master-key initialization fails", asy
   const recoveredPath = path.join(directory, "recovered", "application-master.key");
   vi.stubEnv("APPLICATION_MASTER_KEY_PATH", recoveredPath);
   const recovered = await initializeCredentialStorage();
-  expect(await recovered.status("photo-analysis")).toEqual({ state: "unconfigured" });
+  expect(await recovered.status("sample-integration")).toEqual({ state: "unconfigured" });
   expect(await readFile(recoveredPath)).toHaveLength(32);
 });

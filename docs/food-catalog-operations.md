@@ -2,15 +2,14 @@
 
 Open Calory Tracker uses local reference catalogs for every food lookup. It
 does not need USDA or Open Food Facts API credentials and never falls back to a
-food lookup API. The separate AI connection remains required only for photo
-analysis. Entering **Settings → Food Catalogs** may perform small official
+food lookup API. Entering **Settings → Food Catalogs** may perform small official
 metadata checks; those checks do not download food records or install data.
 
 ## Storage model
 
 A persistent installation contains three independent SQLite databases:
 
-1. The application database stores accounts, Food Entries, photo records,
+1. The application database stores accounts, Food Entries,
    catalog job state, active-generation references, update checks, and
    persisted catalog outcomes.
 2. The active USDA generation stores imported Foundation foods and its search

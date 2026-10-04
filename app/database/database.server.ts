@@ -106,8 +106,8 @@ export function openApplicationDatabase({
 
     const client = createApplicationClient(sqlite);
     // SQLite ignores foreign_keys changes inside Drizzle's migration transaction.
-    // Disable before rebuilding tables so dependent photo records do not cascade
-    // away; restore enforcement and check relationships before serving requests.
+    // Disable before rebuilding tables so dependent records do not cascade away;
+    // restore enforcement and check relationships before serving requests.
     sqlite.pragma("foreign_keys = OFF");
     try { migrate(client, { migrationsFolder }); }
     finally { sqlite.pragma("foreign_keys = ON"); }

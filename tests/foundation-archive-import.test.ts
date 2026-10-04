@@ -62,7 +62,7 @@ test("200 members and the exact expanded limit are accepted, with directories an
   const bytes = entries.reduce((sum, entry) => sum + Buffer.byteLength(entry.body), 0);
   const imported = await install(entries, bytes);
   expect(imported.final.result?.foodCount).toBe(4);
-  expect((await fs.readdir(path.join(imported.options.directory, `${imported.options.generation}.staging`))).sort()).toEqual(["food.csv", "food_category.csv", "food_nutrient.csv", "food_portion.csv", "foundation_food.csv", "measure_unit.csv", "nutrient.csv"]);
+  expect((await fs.readdir(path.join(imported.options.directory, `${imported.options.generation}.staging`))).sort()).toEqual(["food.csv", "food_nutrient.csv", "food_portion.csv", "foundation_food.csv", "measure_unit.csv", "nutrient.csv"]);
   expect((await install([...entries, { name: "extra/201.txt", body: "" }])).final.error).toBe("ZIP contains too many files for a Foundation archive.");
 });
 

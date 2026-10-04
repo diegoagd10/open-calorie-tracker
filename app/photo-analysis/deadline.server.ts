@@ -1,1 +1,0 @@
-export const PHOTO_ANALYSIS_DEADLINE_MS = 10_000;

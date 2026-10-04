@@ -42,18 +42,6 @@ export function SettingsDestinations({
             <span aria-hidden="true">›</span>
           </Link>
         ) : null}
-        {isAdministrator && active !== "ai" ? (
-          <Link className={styles.accountAccessRow} to="/settings/ai">
-            <span className={styles.accountAccessIcon}>
-              <UiIcon name="sparkle" />
-            </span>
-            <span>
-              <strong>AI photo estimates</strong>
-              <small>Connect your account to estimate calories from photos.</small>
-            </span>
-            <span aria-hidden="true">›</span>
-          </Link>
-        ) : null}
         {isAdministrator && active !== "users" ? (
           <Link className={styles.accountAccessRow} to="/settings/users">
             <span className={styles.accountAccessIcon}>
@@ -103,7 +91,7 @@ export function SettingsDestinations({
   );
 }
 
-export type SettingsSection = "goals" | "security" | "api-keys" | "users" | "ai" | "catalogs";
+export type SettingsSection = "goals" | "security" | "api-keys" | "users" | "catalogs";
 
 const personalSections = [
   { icon: "goals", key: "goals", label: "Daily Goal", to: "/settings/goals" },
@@ -113,7 +101,6 @@ const personalSections = [
 
 const administratorSections = [
   { icon: "users", key: "users", label: "Users", to: "/settings/users" },
-  { icon: "sparkle", key: "ai", label: "AI photo estimates", to: "/settings/ai" },
   { icon: "database", key: "catalogs", label: "Food Catalogs", to: "/settings/catalogs" },
 ] as const;
 

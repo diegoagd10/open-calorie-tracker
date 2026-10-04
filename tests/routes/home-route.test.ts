@@ -30,8 +30,7 @@ import {
   loader as homeLoader,
   meta,
 } from "../../app/routes/home";
-import { PhotoAnalysisService } from "../../app/photo-analysis/photo-analysis.server";
-import { shutdownPhotoAnalysis } from "../../app/photo-analysis/runtime.server";
+import { shutdownCredentialStorage } from "../../app/credentials/runtime.server";
 import { getFoodEntryService } from "../../app/food-entry/runtime.server";
 import { getFoodLogService } from "../../app/food-log/runtime.server";
 import { completeTestSetup } from "../support/setup";
@@ -117,7 +116,6 @@ beforeAll(async () => {
   process.env.APPLICATION_URL = origin;
   process.env.DATABASE_PATH = path.join(temporaryDirectory, "application.sqlite");
   process.env.FOOD_CATALOG_TEST_FIXTURE = "1";
-  process.env.PHOTO_ANALYSIS_TEST_FIXTURE = "1";
   process.env.FOOD_LOG_TEST_NOW = instant;
   process.env.SETUP_TEST_NOW = instant;
   initializeApplicationDatabase();
@@ -146,7 +144,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  shutdownPhotoAnalysis();
+  shutdownCredentialStorage();
   shutdownApplicationDatabase();
   await rm(temporaryDirectory, { force: true, recursive: true });
   for (const name of [
@@ -154,7 +152,6 @@ afterAll(async () => {
     "DATABASE_PATH",
     "FOOD_CATALOG_TEST_FIXTURE",
     "FOOD_LOG_TEST_NOW",
-    "PHOTO_ANALYSIS_TEST_FIXTURE",
     "SETUP_TEST_NOW",
   ]) delete process.env[name];
 });
@@ -1658,18 +1655,19 @@ test("copy loader restricts source actions and validates every calendar selectio
   expect(previous.data.copyDialog?.calendar.days.filter((day) => day.isSelected).map((day) => day.date)).toEqual(["2026-07-15"]);
 });
 
-test("home lists accepted photo work and redirects attempts to open a processing entry", async () => {
-  let finish!: (value: unknown) => void;
-  const photoService = new PhotoAnalysisService(getApplicationDatabase().getClient(), { analyze: () => new Promise(resolve => { finish = resolve; }) }, { now: () => new Date(instant) });
-  const photo = await photoService.start(userId, { photo: { mimeType: "image/png", bytes: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAAFElEQVR4nGP4TyJgGNUwqmH4agAAr639H708R/EAAAAASUVORK5CYII=", "base64") }, foodLogDate: today, idempotencyKey: "home-photo-lifecycle" });
-  expect((await load()).data.photoMeals).toMatchObject([{ id: photo.id, entryId: null, status: "active" }]);
-  finish({ name: "Home rice", consumedFraction: 1, assumptions: [], components: [{ id: "rice", name: "Rice", quantity: 200, unit: "g", includes: [], source: { kind: "ai", reason: "No reference" }, nutrition: { energyKcal: 250, proteinGrams: 5, carbohydrateGrams: 50, fatGrams: 2 } }] });
-  await expect.poll(() => photoService.status(userId, photo.id).status).toBe("succeeded");
-  const entryId = photoService.status(userId, photo.id).entryId!;
-  expect((await load(`/?date=${today}&entry=${entryId}`)).data.foodEntryEditor?.id).toBe(entryId);
-  await photoService.correct(userId, entryId, { correction: "Butter", idempotencyKey: "home-photo-correction" });
-  expectRedirect(await homeLoader(routeArgs(get(`/?date=${today}&entry=${entryId}`))), `/?date=${today}`);
-  photoService.shutdown();
+test("adding food on a past date places each entry after the latest one logged that day", async () => {
+  const pastDate = "2026-08-20";
+  for (const [index, name] of ["Past lunch", "Past snack"].entries()) {
+    expectRedirect(await homeAction(routeArgs(post({
+      date: pastDate, energyKcal: "200", idempotencyKey: `past-date-manual-${index}`, intent: "log-manual-food", name, quantity: "1",
+    }))), `/?date=${pastDate}`);
+  }
+  const { data } = await load(`/?date=${pastDate}`);
+  expect(data.foodLog.entries.map(entry => [entry.name, entry.localEventTime])).toEqual([
+    ["Past snack", "12:01:00"],
+    ["Past lunch", "12:00:00"],
+  ]);
+  expect(Object.keys(data)).not.toEqual(expect.arrayContaining([expect.stringMatching(/photo/i)]));
 });
 
 test.each([

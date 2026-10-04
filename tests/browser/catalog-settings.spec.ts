@@ -14,14 +14,6 @@ import { offArchive, offProduct, offWithBasis, offJsonlArchive } from "../suppor
 import { basicFoodsArchive } from "../support/basic-foods-archive";
 
 const password = "correct horse 🔐 battery";
-const localEvidencePhoto = {
-  name: "local-evidence.png",
-  mimeType: "image/png",
-  buffer: Buffer.concat([
-    Buffer.from("iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAAFElEQVR4nGP4TyJgGNUwqmH4agAAr639H708R/EAAAAASUVORK5CYII=", "base64"),
-    Buffer.from("local-usda"),
-  ]),
-};
 test.setTimeout(120_000);
 async function commandImport(provider: "usda-fdc" | "open-food-facts", filename: string, archive: Buffer, succeeds = true) {
   const directory = path.resolve("data/playwright-tests");
@@ -96,18 +88,6 @@ test("terminal imports notify connected clients while a member searches and logs
   await expect(page.getByText("Archive: foundation-browser-reimport.zip", { exact: true })).toBeVisible();
   const notifications = toast(page);
 
-  await page.goto("/");
-  await page.getByRole("button", { name: "Add Food", exact: true }).click();
-  await page.getByLabel("Take photo · AI calories").setInputFiles(localEvidencePhoto);
-  const photoEntry = page.getByRole("region", { name: "Daily log entries", exact: true }).getByRole("link", { name: /Photo broccoli plate.*32 kcal/ });
-  await expect(photoEntry).toBeVisible({ timeout: 15_000 });
-  await photoEntry.click();
-  const details = page.getByRole("region", { name: "Photo analysis details" });
-  await details.getByText("Components, sources and assumptions", { exact: true }).click();
-  await expect(details).toContainText("USDA Foundation · FDC 107");
-  await expect(details).toContainText("Installed Foundation fixture omits protein");
-  await expect(details).toContainText("Gemini estimate: No USDA category adequately matched the visible component.");
-  await page.goto("/settings/catalogs");
 
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
@@ -328,7 +308,7 @@ test("a real backend restart delivers independent interruption toasts only to ad
   await promisify(execFile)("openssl", ["req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1", "-subj", "/CN=localhost", "-keyout", key, "-out", cert]);
   const environment = {
     ...process.env, NODE_ENV: "test", CATALOG_BUILT_WORKER: "1", FOOD_CATALOG_TEST_FIXTURE: "0",
-    PHOTO_ANALYSIS_TEST_FIXTURE: "1", SETUP_TEST_NOW: "2026-01-01T09:30:00.000Z", FOOD_LOG_TEST_NOW: "2026-08-29T18:00:00.000Z",
+    SETUP_TEST_NOW: "2026-01-01T09:30:00.000Z", FOOD_LOG_TEST_NOW: "2026-08-29T18:00:00.000Z",
     DATABASE_PATH: path.join(directory, "application.sqlite"), CATALOG_DIRECTORY: path.join(directory, "catalogs"), APPLICATION_SECRETS_PATH: path.join(directory, "secrets"),
     APPLICATION_URL: `https://localhost:${publicPort}`, LAN_URL: origin, LAN_PORT: lanPort,
   };

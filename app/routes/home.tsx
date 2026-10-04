@@ -18,7 +18,6 @@ import {
   redirect,
   useNavigate,
   useNavigation,
-  useFetcher,
 } from "react-router";
 
 import {
@@ -26,9 +25,6 @@ import {
   getApplicationMutationSession,
   readApplicationMutationForm,
 } from "../auth/http.server";
-import { getPhotoAnalysisReadiness, getPhotoAnalysisService } from "../photo-analysis/runtime.server";
-import { presentPhotoAnalysisReadiness } from "./photo-analysis-readiness";
-import { PhotoMealCard, PhotoMealStatus, PhotoCorrection, PhotoFailureReason, usePhotoMealPolling, usePhotoUpload } from "./photo-meals";
 import { DateRail } from "../date-rail";
 import { AppNavigation } from "../app-navigation";
 import { isTestEnvironment } from "../runtime.server";
@@ -368,11 +364,6 @@ export async function loader({ request }: Route.LoaderArgs) {
     throw error;
   }
   if (!foodLog) return redirect("/setup");
-  const photoMeals = getPhotoAnalysisService().list(session.user.id, foodLog.selectedDate);
-  const photoAnalysisReadiness = presentPhotoAnalysisReadiness(
-    await getPhotoAnalysisReadiness(),
-    session.user.role,
-  );
 
   const copyIdempotencyKeys =
     foodLog.selectedDate < foodLog.today
@@ -430,7 +421,6 @@ export async function loader({ request }: Route.LoaderArgs) {
     if (entryId === undefined) {
       throw new Response("Food Entry is unavailable.", { status: 404 });
     }
-    if (photoMeals.some((meal) => meal.entryId === entryId && meal.status === "active")) return redirect(foodLogHref(foodLog.selectedDate));
     try {
       foodEntryEditor = getFoodEntryService(testRequestInstant(request)).read(
         session.user.id,
@@ -762,8 +752,6 @@ export async function loader({ request }: Route.LoaderArgs) {
       dailyCalories,
       foodEntryEditor,
       manualEntrySaved,
-      photoMeals,
-      photoAnalysisReadiness,
       foodLog,
       nearbyDates,
       notice: noticeMessage(noticeKind, copiedFood, foodLog.today),
@@ -2205,13 +2193,11 @@ function FoodEntryEditorDialog({
   csrfToken,
   entry,
   manualEntrySaved,
-  photoMeal,
 }: {
   actionData: HomeActionData | undefined;
   copyKey?: string;
   csrfToken: string;
   manualEntrySaved: boolean;
-  photoMeal?: Route.ComponentProps["loaderData"]["photoMeals"][number];
   entry: EditableFoodEntry;
 }) {
   const navigation = useNavigation();
@@ -2223,10 +2209,8 @@ function FoodEntryEditorDialog({
     initialFocusSelector: "input:not([disabled])",
     restoreFocusSelector: "[data-entry-editor-trigger]",
   });
-  const correction = useFetcher({ key: photoMeal ? `photo-correction:${photoMeal.id}` : undefined });
-  const navigationPending = navigation.formData?.get("entryId") === String(entry.id);
-  const pending = navigationPending || correction.state !== "idle" || photoMeal?.status === "active";
-  const pendingIntent = navigationPending
+  const pending = navigation.formData?.get("entryId") === String(entry.id);
+  const pendingIntent = pending
     ? navigation.formData!.get("intent")
     : undefined;
 
@@ -2347,7 +2331,6 @@ function FoodEntryEditorDialog({
             </button>
           </div>
         ) : null}
-        {photoMeal ? <PhotoCorrection meal={photoMeal} csrfToken={csrfToken} /> : null}
         <Form className={styles.editFoodForm} id="food-entry-edit-form" method="post" noValidate>
           <input name="csrfToken" type="hidden" value={csrfToken} />
           <input name="date" type="hidden" value={entry.foodLogDate} />
@@ -2448,17 +2431,15 @@ function WaterDialogModal({
   );
 }
 
-function CatalogChoiceStage({ date, photoCapture }: { date: string; photoCapture: ReactNode }) {
+function CatalogChoiceStage({ date }: { date: string }) {
   return (
-    <>
     <div className={methodStyles.methods} aria-label="Add Food methods">
-      <Link className={`${methodStyles.method} ${methodStyles.savedMethod}`} to={catalogHref(date, "my")}>
+      <Link className={methodStyles.method} to={catalogHref(date, "my")}>
         <span className={methodStyles.icon}>
           <UiIcon name="utensils" />
         </span>
         <span className={methodStyles.label}>My foods</span>
       </Link>
-      {photoCapture}
       <Link aria-label="Search for food" className={methodStyles.method} to={catalogHref(date, "search")}>
         <span className={methodStyles.icon}>
           <UiIcon name="search" />
@@ -2478,12 +2459,6 @@ function CatalogChoiceStage({ date, photoCapture }: { date: string; photoCapture
         <span className={methodStyles.label}>Manual</span>
       </Link>
     </div>
-    <details className={styles.providerAttribution}>
-      <summary>Photo privacy</summary>
-      <p>AI estimates calories and saves to your log. You can correct it. Your photo is shared with the AI provider for analysis.</p>
-      <p>Deleting a photo meal removes its photo and history from this app. It does not delete data retained by your AI provider.</p>
-    </details>
-    </>
   );
 }
 
@@ -2986,14 +2961,12 @@ function BarcodeCatalogStage({
 }
 
 function CatalogDialog({
-  photoCapture,
   actionData,
   catalog,
   csrfToken,
   date,
 }: {
   actionData: HomeActionData | undefined;
-  photoCapture: ReactNode;
   catalog: NonNullable<Route.ComponentProps["loaderData"]["catalog"]>;
   csrfToken: string;
   date: string;
@@ -3079,7 +3052,7 @@ function CatalogDialog({
             date={date}
           />
         ) : catalog.mode === "choose" ? (
-          <CatalogChoiceStage date={date} photoCapture={photoCapture} />
+          <CatalogChoiceStage date={date} />
         ) : catalog.mode === "my" ? (
           <MyFoodsStage catalog={catalog} date={date} />
         ) : catalog.mode === "saved" ? (
@@ -3256,107 +3229,41 @@ function CatalogDialog({
   );
 }
 
-function FoodTimelineEntry({ entry, photoMeal, csrfToken }: {
+function FoodTimelineEntry({ entry }: {
   entry: Extract<Route.ComponentProps["loaderData"]["foodLog"]["events"][number], { kind: "food" }>;
-  photoMeal?: Route.ComponentProps["loaderData"]["photoMeals"][number];
-  csrfToken: string;
-}) {
-  const correction = useFetcher<{ error?: string }>({
-    key: photoMeal ? `photo-correction:${photoMeal.id}` : undefined,
-  });
-  const startingCorrection = correction.state !== "idle";
-  const active = startingCorrection || photoMeal?.status === "active";
-  const unsuccessful = !active && photoMeal !== undefined && photoMeal.status !== "succeeded";
-  const ContentTag = unsuccessful ? "div" : "span";
-  const expandable = active || unsuccessful;
-  const className = styles.foodEntryCard;
-  const content = (
-    <>
-      <time
-        dateTime={`${entry.foodLogDate}T${entry.localEventTime}`}
-      >
-        {formatEventTime(entry.localEventTime)}
-      </time>
-      <span
-        className={styles.foodEntryMarker}
-        aria-hidden="true"
-      >
-        <UiIcon name="utensils" />
-      </span>
-      <ContentTag className={styles.foodEntryContent}>
-        <strong>{entry.name}</strong>
-        <small>
-          {entry.provider === "open-food-facts"
-            ? "Open Food Facts"
-            : entry.provider === "manual"
-              ? "Manual"
-            : entry.provider === "ai-photo" ? "AI photo estimate"
-            : `USDA FoodData Central · ${entry.dataType}`}
-        </small>
-        <small className={unsuccessful ? styles.photoFailedStatus : undefined} role={expandable ? "status" : undefined}>
-          {active ? (
-            <><span className={styles.photoActivityDot} aria-hidden="true" />{startingCorrection ? "Starting correction" : "Analyzing photo"}</>
-          ) : unsuccessful ? (
-            photoMeal.status === "failed" ? "Analysis failed" : photoMeal.status === "canceled" ? "Analysis canceled" : "Analysis interrupted"
-          ) : (
-            <>{entry.selectedMeasurementLabel} × {entry.quantityMicrounits / 1_000_000}</>
-          )}
-        </small>
-        {unsuccessful && photoMeal.error ? <PhotoFailureReason error={photoMeal.error} /> : null}
-        {unsuccessful ? (
-          <Link className={styles.photoRecoveryLink} data-entry-editor-trigger to={`${foodLogHref(entry.foodLogDate)}&entry=${entry.id}`}>
-            Open meal details
-          </Link>
-        ) : null}
-      </ContentTag>
-      <span className={styles.foodEntryEnergy}>
-        {formatEnergy(entry.energyMilliKcal)}{" "}
-        <small>kcal</small>
-      </span>
-    </>
-  );
-  return (
-    <article aria-busy={active || undefined}>
-      {unsuccessful && photoMeal ? (
-        <div className={`${styles.foodEntryCard} ${styles.photoRecoveryCard}`}>
-          {content}
-          <PhotoMealStatus meal={photoMeal} csrfToken={csrfToken} inline />
-        </div>
-      ) : expandable ? (
-        <details className={styles.photoCorrectionDetails}>
-          <summary className={className}>{content}</summary>
-          <div className={styles.photoEntryStatus}>
-            {photoMeal && !startingCorrection ? (
-              <PhotoMealStatus meal={photoMeal} csrfToken={csrfToken} />
-            ) : (
-              <p>Starting correction. Previous nutrition retained.</p>
-            )}
-          </div>
-        </details>
-      ) : (
-        <Link className={className} data-entry-editor-trigger to={`${foodLogHref(entry.foodLogDate)}&entry=${entry.id}`}>
-          {content}
-        </Link>
-      )}
-      {!active && correction.data?.error ? (
-        <p className={styles.catalogError} role="alert">
-          Correction could not start: {correction.data.error} Open this meal to try again.
-        </p>
-      ) : null}
-    </article>
-  );
-}
-
-function PhotoTimelineEntry({ children }: {
-  children: ReactNode;
 }) {
   return (
-    <article className={`${styles.foodEntryCard} ${styles.photoTimelineEntry}`}>
-      <span className={styles.pendingTime} />
-      <span className={styles.foodEntryMarker} aria-hidden="true">
-        <UiIcon name="utensils" />
-      </span>
-      <div className={styles.photoTimelineContent}>{children}</div>
+    <article>
+      <Link className={styles.foodEntryCard} data-entry-editor-trigger to={`${foodLogHref(entry.foodLogDate)}&entry=${entry.id}`}>
+        <time
+          dateTime={`${entry.foodLogDate}T${entry.localEventTime}`}
+        >
+          {formatEventTime(entry.localEventTime)}
+        </time>
+        <span
+          className={styles.foodEntryMarker}
+          aria-hidden="true"
+        >
+          <UiIcon name="utensils" />
+        </span>
+        <span className={styles.foodEntryContent}>
+          <strong>{entry.name}</strong>
+          <small>
+            {entry.provider === "open-food-facts"
+              ? "Open Food Facts"
+              : entry.provider === "manual"
+                ? "Manual"
+                : `USDA FoodData Central · ${entry.dataType}`}
+          </small>
+          <small>
+            {entry.selectedMeasurementLabel} × {entry.quantityMicrounits / 1_000_000}
+          </small>
+        </span>
+        <span className={styles.foodEntryEnergy}>
+          {formatEnergy(entry.energyMilliKcal)}{" "}
+          <small>kcal</small>
+        </span>
+      </Link>
     </article>
   );
 }
@@ -3653,18 +3560,10 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
     foodEntryEditor,
     manualEntrySaved,
     foodLog,
-    photoMeals = [],
-    photoAnalysisReadiness = { state: "ready" as const },
     nearbyDates,
     notice,
     waterDialog,
   } = loaderData;
-  const photoUpload = usePhotoUpload(
-    foodLog.selectedDate,
-    csrfToken,
-    photoAnalysisReadiness,
-  );
-  usePhotoMealPolling(photoMeals);
   const activeFoodEntryEditor =
     actionData?.foodEntryEditor ?? foodEntryEditor;
   const selectedLabel = fullDate(foodLog.selectedDate);
@@ -3777,22 +3676,14 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
                       recorded today or in the past.
                     </p>
                   </div>
-                ) : foodLog.events.length || foodLogPending || photoUpload.feedback || photoMeals.length ? (
+                ) : foodLog.events.length || foodLogPending ? (
                   <section className={styles.entryList} aria-label="Daily log entries">
                     {foodLogPending ? (
                       <PendingFoodEntry name={pendingFoodName} />
                     ) : null}
-                    {photoUpload.feedback ? (
-                      <PhotoTimelineEntry>
-                        {photoUpload.feedback}
-                      </PhotoTimelineEntry>
-                    ) : null}
-                    {photoMeals.filter((meal) => meal.entryId === null).map((meal) => (
-                      <PhotoMealCard key={meal.id} meal={meal} csrfToken={csrfToken} />
-                    ))}
                     {foodLog.events.map((entry) => {
                       return entry.kind === "food" ? (
-                        <FoodTimelineEntry key={`food-${entry.id}`} entry={entry} photoMeal={photoMeals.find((meal) => meal.entryId === entry.id)} csrfToken={csrfToken} />
+                        <FoodTimelineEntry key={`food-${entry.id}`} entry={entry} />
                       ) : (
                         <WaterTimelineItem
                           editHref={`${foodLogHref(foodLog.selectedDate)}&water=${entry.id}`}
@@ -3843,7 +3734,6 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
       </div>
       {visibleCatalog ? (
         <CatalogDialog
-          photoCapture={photoUpload.capture}
           actionData={actionData}
           catalog={visibleCatalog}
           csrfToken={csrfToken}
@@ -3857,7 +3747,6 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
           csrfToken={csrfToken}
           entry={activeFoodEntryEditor}
           manualEntrySaved={manualEntrySaved}
-          photoMeal={photoMeals.find((meal) => meal.entryId === activeFoodEntryEditor.id)}
           key={activeFoodEntryEditor.updatedAt}
         />
       ) : null}

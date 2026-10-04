@@ -218,6 +218,20 @@
       "when": 1791070696867,
       "tag": "0030_daily_goal",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "6",
+      "when": 1791150903393,
+      "tag": "0031_remove_ai_photo_data",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "6",
+      "when": 1791150913060,
+      "tag": "0032_remove_ai_photo_schema",
+      "breakpoints": true
     }
   ]
 }

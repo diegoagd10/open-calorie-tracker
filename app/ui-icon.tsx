@@ -1,25 +1,21 @@
 export type UiIconName =
   | "barcode"
   | "calendar"
-  | "camera"
   | "cancel"
   | "copy"
   | "database"
   | "delete"
   | "external"
   | "goals"
-  | "help"
   | "info"
   | "key"
   | "lock"
   | "log"
   | "plus"
   | "pencil"
-  | "retry"
   | "search"
   | "save"
   | "settings"
-  | "sparkle"
   | "users"
   | "utensils"
   | "water";
@@ -36,12 +32,7 @@ export function UiIcon({ name }: { name: UiIconName }) {
       strokeWidth="1.8"
       viewBox="0 0 24 24"
     >
-      {name === "camera" ? (
-        <>
-          <path d="M8 5l1.5-2h5L16 5h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Z" />
-          <circle cx="12" cy="13" r="4" />
-        </>
-      ) : name === "cancel" ? (
+      {name === "cancel" ? (
         <path d="M5 5l14 14M19 5 5 19" />
       ) : name === "copy" ? (
         <>
@@ -66,8 +57,6 @@ export function UiIcon({ name }: { name: UiIconName }) {
         <path d="M3 7V3h4M17 3h4v4M21 17v4h-4M7 21H3v-4M7 8v8M10 8v8M14 8v8M17 8v8" />
       ) : name === "pencil" ? (
         <path d="m16 3 5 5L9 20l-6 1 1-6ZM13 6l5 5" />
-      ) : name === "retry" ? (
-        <><path d="M21 12a9 9 0 1 1-3.36-7.03L21 8" /><path d="M21 3v5h-5" /></>
       ) : name === "lock" ? (
         <>
           <rect height="10" rx="2" width="14" x="5" y="10" />
@@ -107,8 +96,6 @@ export function UiIcon({ name }: { name: UiIconName }) {
           <circle cx="8" cy="15" r="4" />
           <path d="m11 12 8-8M16 7l2 2" />
         </>
-      ) : name === "sparkle" ? (
-        <path d="m12 3 1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8Z" />
       ) : name === "users" ? (
         <>
           <circle cx="9" cy="8.5" r="3.5" />
@@ -118,11 +105,6 @@ export function UiIcon({ name }: { name: UiIconName }) {
         <path d="M12 5v14M5 12h14" />
       ) : name === "external" ? (
         <path d="M14 4h6v6M20 4l-9 9M18 13v6a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h6" />
-      ) : name === "help" ? (
-        <>
-          <circle cx="12" cy="12" r="9" />
-          <path d="M9.8 9a2.4 2.4 0 1 1 3.25 2.25c-.7.3-1.05.75-1.05 1.75M12 17h.01" />
-        </>
       ) : (
         <>
           <circle cx="12" cy="12" r="9" />

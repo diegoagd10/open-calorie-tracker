@@ -39,15 +39,8 @@ export function localEventTimeForNewFoodLogEvent(
   if (foodLogDate === today) return localTimeAt(instant, timeZone);
   const latest = database.get<{ localEventTime: string | null }>(sql`
     SELECT MAX(local_event_time) AS localEventTime
-    FROM (
-      SELECT local_event_time
-      FROM food_entries
-      WHERE user_id = ${userId} AND food_log_date = ${foodLogDate}
-      UNION ALL
-      SELECT local_event_time
-      FROM photo_meals
-      WHERE user_id = ${userId} AND food_log_date = ${foodLogDate}
-    )
+    FROM food_entries
+    WHERE user_id = ${userId} AND food_log_date = ${foodLogDate}
   `);
   return nextRetroactiveTime(latest?.localEventTime ?? null);
 }

@@ -36,7 +36,6 @@ describe("static route contracts", () => {
       { file: "./routes/home.tsx", index: true },
       { children: undefined, file: "./routes/appearance.ts", path: "appearance" },
       { children: undefined, file: "./routes/catalog-notifications.ts", path: "catalog-notifications" },
-      { children: undefined, file: "./routes/photo-analysis.ts", path: "photo-analysis" },
       { children: undefined, file: "./routes/key-ceremony.ts", path: "key-ceremony" },
       { children: undefined, file: "./routes/settings.security.tsx", path: "settings/security" },
       { children: undefined, file: "./routes/settings.api-keys.tsx", path: "settings/api-keys" },
@@ -55,11 +54,6 @@ describe("static route contracts", () => {
         path: "settings/goals",
       },
       { children: undefined, file: "./routes/settings.catalogs.tsx", path: "settings/catalogs" },
-      {
-        children: undefined,
-        file: "./routes/settings.ai.tsx",
-        path: "settings/ai",
-      },
       {
         children: undefined,
         file: "./routes/settings.users.tsx",
