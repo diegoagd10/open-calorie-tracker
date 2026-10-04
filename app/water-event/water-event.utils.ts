@@ -1,7 +1,7 @@
 import { utcToZonedDateTime } from "../shared/date-time";
 import type { WaterEvent, WaterEventList } from "./water-event.model";
 
-const DECIMAL_OUNCES = /^(\d{1,6})(?:\.(\d{1,3}))?$/;
+const DECIMAL_OUNCES = /^(\d+)(?:\.(\d{1,3}))?$/;
 
 /**
  * A Water Event as REST and MCP callers see it, without its owner. Amounts are JSON numbers;
@@ -41,7 +41,10 @@ export function waterEventLocalDateTime(logDate: string, timeZone: string): stri
   return utcToZonedDateTime(logDate, timeZone);
 }
 
-/** Thousandths of a fluid ounce in a decimal amount such as `"12.5"`, or null when it is not one. */
+/**
+ * Thousandths of a fluid ounce in a decimal amount such as `"12.5"`, or null when it is not one.
+ * Any number of whole ounces parses, so daily totals do too; callers enforce their own ranges.
+ */
 export function ounceThousandths(ounces: string): bigint | null {
   const match = DECIMAL_OUNCES.exec(ounces);
   if (!match) return null;

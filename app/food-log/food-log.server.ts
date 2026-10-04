@@ -82,10 +82,6 @@ export class FoodLogService {
     this.#now = now;
   }
 
-  #dailyGoals() {
-    return createDailyGoalService(this.#database, this.#now);
-  }
-
   /** The selected local day's Food Log, measured against the account's current Daily Goal. */
   read(userId: number, requestedDate?: string) {
     const timeZone = readUserTimeZone(this.#database, userId);
@@ -98,7 +94,7 @@ export class FoodLogService {
       : today;
     if (!selectedDate) throw new InvalidFoodLogDateError();
 
-    const goal = this.#dailyGoals().read(userId);
+    const goal = createDailyGoalService(this.#database, this.#now).read(userId);
 
     const entries = this.#database
       .select()
@@ -146,8 +142,15 @@ export class FoodLogService {
     };
   }
 
-  /** Calorie totals for several local dates at once, each against the account's current Daily Goal. */
-  dailyCalories(userId: number, dates: readonly string[]): Record<string, DailyCalories> {
+  /**
+   * Calorie totals for several local dates at once, each against `goal`: the Daily Goal the
+   * same request's `read()` returned, so the selected day and every summarized date agree.
+   */
+  dailyCalories(
+    userId: number,
+    dates: readonly string[],
+    goal: { calorieTarget: number } | null,
+  ): Record<string, DailyCalories> {
     if (!dates.length) return {};
     const ordered = [...dates].sort();
     const entries = this.#database
@@ -159,7 +162,7 @@ export class FoodLogService {
         lte(foodEntries.foodLogDate, ordered[ordered.length - 1]),
       ))
       .all();
-    const goalMilliKcal = this.#dailyGoals().read(userId)?.calorieTarget ?? null;
+    const goalMilliKcal = goal?.calorieTarget ?? null;
 
     return Object.fromEntries(
       ordered.map((date) => {

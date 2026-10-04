@@ -419,6 +419,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   const dailyCalories = foodLogServiceForRequest(request).dailyCalories(
     session.user.id,
     [...new Set(summarizedDates)],
+    foodLog.goal,
   );
 
   const requestedEntry = url.searchParams.get("entry");

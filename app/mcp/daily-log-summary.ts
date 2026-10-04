@@ -86,7 +86,7 @@ function summarizeNutrient(name: NutrientName, totals: Totals, goal: FoodLog["go
   };
 }
 
-/** Fluid ounces as a JSON number; three decimals and at most a few thousand ounces are exact. */
+/** Fluid ounces as a JSON number; three decimals are exact up to billions of ounces. */
 function ounces(thousandths: bigint): number {
   return thousandths < 0n ? -Number(formatOunceThousandths(-thousandths)) : Number(formatOunceThousandths(thousandths));
 }

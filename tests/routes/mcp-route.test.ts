@@ -174,6 +174,24 @@ test("get_daily_log reports water in fluid ounces, exact to three decimals", asy
   expect(over.content[0].text).toContain("Water: 68.125 of 67.628 fl oz, 0.497 fl oz over");
 });
 
+test("get_daily_log totals water beyond a single event's digit limit", async () => {
+  const holder = await account("mcp.large.total");
+  completeSetup(holder.id, "500");
+  const waterEvents = getWaterEventService(new Date("2026-08-31T16:00:00.000Z"));
+  const start = Date.parse("2026-08-31T05:00:00Z");
+  for (let index = 0; index < 2_000; index++) {
+    waterEvents.save(holder.id, { logDate: new Date(start + index * 15_000).toISOString(), quantity: { ounces: "500" } });
+  }
+  const { key } = await createKey(holder, "Large total");
+
+  const result = await callDailyLog(key, { date: today });
+  expect(result.isError).toBeFalsy();
+  expect(result.structuredContent).toMatchObject({
+    water: { unit: "fl oz", consumed: 1_000_000, goal: 500, remaining: -999_500 },
+  });
+  expect(result.content[0].text).toContain("Water: 1000000 of 500 fl oz, 999500 fl oz over");
+});
+
 test("get_daily_log measures an earlier date against the current Daily Goal", async () => {
   const result = await callDailyLog(readerKey, { date: "2026-08-30" });
   expect(result.isError).toBeFalsy();
