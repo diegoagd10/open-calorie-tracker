@@ -139,14 +139,14 @@ test("get_daily_log summarizes today's Food Log by default", async () => {
     },
     water: { unit: "fl oz", consumed: 16, goal: 80, remaining: 64 },
     incompleteNutrients: ["sodium"],
-    foods: [{ name: "Oatmeal", energyKcal: 350, proteinG: 12, carbohydrateG: 60, fatG: 6.3, sodiumMg: null }],
+    foods: [{ name: "Oatmeal", provider: "manual", dataType: "User entered", energyKcal: 350, proteinG: 12, carbohydrateG: 60, fatG: 6.3, sodiumMg: null }],
   });
   const text = result.content.map((part) => part.text).join("\n");
   expect(text).toContain("2026-08-31");
   expect(text).toContain("350 of 2050 kcal");
   expect(text).toContain("16 of 80 fl oz");
   expect(text).toMatch(/sodium/iu);
-  expect(text).toContain("Oatmeal");
+  expect(text).toContain("Oatmeal, Manual, 1 serving × 1: 350 kcal");
 });
 
 test("get_daily_log reports water in fluid ounces, exact to three decimals", async () => {

@@ -49,6 +49,8 @@ export const dailyLogSummarySchema = {
   foods: z.array(z.object({
     time: z.string().describe("Local time (HH:MM)"),
     name: z.string(),
+    provider: z.string().describe("Food source: usda-fdc, open-food-facts, or manual"),
+    dataType: z.string().describe("Source data type, for example Foundation, Open Food Facts, or User entered"),
     brand: z.string().nullable(),
     serving: z.string(),
     energyKcal: z.number().nullable(),
@@ -107,6 +109,8 @@ function summarizeFood(entry: FoodLog["entries"][number]) {
   return {
     time: entry.localEventTime.slice(0, 5),
     name: entry.name,
+    provider: entry.provider,
+    dataType: entry.dataType,
     brand: entry.brand,
     serving: `${entry.selectedMeasurementLabel} × ${entry.quantityMicrounits / 1_000_000}`,
     energyKcal: display(entry.energyMilliKcal, "energy"),
@@ -126,6 +130,12 @@ function amountLine(label: string, amount: { unit: string; consumed: number; goa
   return `${label}: ${amount.consumed} of ${goal}, ${rest}`;
 }
 
+function sourceLabel(food: DailyLogSummary["foods"][number]): string {
+  if (food.provider === "manual") return "Manual";
+  if (food.provider === "open-food-facts") return "Open Food Facts";
+  return `USDA FoodData Central · ${food.dataType}`;
+}
+
 function summaryText(summary: DailyLogSummary): string {
   const lines = [`Food Log for ${summary.date}${summary.date === summary.today ? " (today)" : ""}, time zone ${summary.timeZone}.`];
   for (const name of NUTRIENT_NAMES) {
@@ -136,7 +146,7 @@ function summaryText(summary: DailyLogSummary): string {
   lines.push(amountLine("Water", summary.water));
   lines.push(summary.foods.length ? "Foods:" : "No foods logged.");
   for (const food of summary.foods) {
-    lines.push(`- ${food.time} ${food.name}${food.brand ? ` (${food.brand})` : ""}, ${food.serving}: ${food.energyKcal ?? "unknown"} kcal`);
+    lines.push(`- ${food.time} ${food.name}${food.brand ? ` (${food.brand})` : ""}, ${sourceLabel(food)}, ${food.serving}: ${food.energyKcal ?? "unknown"} kcal`);
   }
   return lines.join("\n");
 }

@@ -5,6 +5,8 @@ import { afterEach, expect, test } from "vitest";
 import { openApplicationDatabase, type ApplicationDatabase } from "../app/database/database.server";
 import { FoodCatalog } from "../app/catalog/food-catalog.server";
 import { FoodEntryService } from "../app/food-entry/food-entry.server";
+import { FoodLogService } from "../app/food-log/food-log.server";
+import { summarizeDailyLog } from "../app/mcp/daily-log-summary";
 import { createMigrationFolder } from "./support/migrations";
 
 const temporaryDirectories: string[] = [];
@@ -95,5 +97,16 @@ test("a former AI photo entry behaves like a manual entry", async () => {
 
     const copy = entries.copyToToday(seeded.userId, formerAi.id, { foodLogDate: formerAi.foodLogDate, idempotencyKey: `copy:${formerAi.id}:former-ai` });
     expect(copy).toMatchObject({ provider: "manual", name: "Edited bowl", energyMilliKcal: 1040000 });
+  } finally { database.close(); }
+});
+
+test("the MCP daily log reports a former AI photo entry as a manual entry", async () => {
+  const seeded = await seedPreRemovalDatabase();
+  const database = openApplicationDatabase({ databasePath: seeded.databasePath, migrationsFolder: path.resolve("drizzle") });
+  try {
+    const foodLog = new FoodLogService(database.getClient(), () => new Date("2026-09-08T12:00:00Z")).read(seeded.userId, "2026-09-06")!;
+    const { structured, text } = summarizeDailyLog(foodLog);
+    expect(structured.foods.find(food => food.name === "Chicken rice bowl")).toMatchObject({ provider: "manual", dataType: "User entered", serving: "Analyzed plate × 1", energyKcal: 520 });
+    expect(text).toContain("Chicken rice bowl, Manual, Analyzed plate × 1: 520 kcal");
   } finally { database.close(); }
 });
