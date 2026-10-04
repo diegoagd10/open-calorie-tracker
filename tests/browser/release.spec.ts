@@ -273,11 +273,10 @@ test("one mobile Chromium journey verifies the complete private MVP", async ({
   await expectNoSeriousAxeViolations(page);
 
   await page.getByRole("link", { name: "Settings" }).click();
-  await page.getByLabel("Effective date").fill("2026-08-30");
   await page.getByLabel("Calories target").fill("1900");
-  await page.getByRole("button", { name: "Save goal version" }).click();
+  await page.getByRole("button", { name: "Save Daily Goal" }).click();
   await expect(page.getByRole("status")).toHaveText(
-    "Goal Version saved for August 30, 2026.",
+    "Daily Goal saved. Every day now uses it.",
   );
   await expectNoSeriousAxeViolations(page);
   await page.goto("/?date=2026-08-30");
@@ -370,14 +369,12 @@ test("a second user cannot list, read, edit, or delete another user's records", 
   const database = openBrowserTestDatabase();
   const owner = database
     .prepare(
-      `SELECT u.id AS userId, g.id AS goalId
+      `SELECT u.id AS userId
        FROM users u
-       JOIN goal_versions g ON g.user_id = u.id
-       WHERE u.username_normalized = ?
-       ORDER BY g.effective_date
-       LIMIT 1`,
+       JOIN daily_goals g ON g.user_id = u.id
+       WHERE u.username_normalized = ?`,
     )
-    .get("release.isolation.owner") as { goalId: number; userId: number };
+    .get("release.isolation.owner") as { userId: number };
   database.close();
 
   const otherContext = await browser.newContext({
@@ -454,12 +451,12 @@ test("a second user cannot list, read, edit, or delete another user's records", 
   waterCheck.close();
 
   await otherPage.goto(
-    `/settings/goals?userId=${owner.userId}&goalId=${owner.goalId}`,
+    `/settings/goals?userId=${owner.userId}`,
   );
   await expect(otherPage.getByText("release.isolation.owner")).toHaveCount(0);
   await otherPage
     .locator("form")
-    .filter({ has: otherPage.getByRole("button", { name: "Save goal version" }) })
+    .filter({ has: otherPage.getByRole("button", { name: "Save Daily Goal" }) })
     .evaluate((form, ownerId) => {
       const attemptedOwner = document.createElement("input");
       attemptedOwner.name = "userId";
@@ -468,12 +465,12 @@ test("a second user cannot list, read, edit, or delete another user's records", 
       form.append(attemptedOwner);
     }, owner.userId);
   await otherPage.getByLabel("Calories target").fill("1750");
-  await otherPage.getByRole("button", { name: "Save goal version" }).click();
-  await expect(otherPage.getByRole("status")).toContainText("Goal Version saved");
+  await otherPage.getByRole("button", { name: "Save Daily Goal" }).click();
+  await expect(otherPage.getByRole("status")).toContainText("Daily Goal saved");
 
   const goalFields = await otherPage
     .locator("form")
-    .filter({ has: otherPage.getByRole("button", { name: "Save goal version" }) })
+    .filter({ has: otherPage.getByRole("button", { name: "Save Daily Goal" }) })
     .evaluate((form) =>
       Object.fromEntries(new FormData(form as HTMLFormElement).entries()),
     );
@@ -486,28 +483,26 @@ test("a second user cannot list, read, edit, or delete another user's records", 
           method: "POST",
         });
       const goalDeletion = await submit(
-        `/settings/goals?userId=${owner.userId}&goalId=${owner.goalId}`,
+        `/settings/goals?userId=${owner.userId}`,
         {
           ...(goalFields as Record<string, string>),
-          goalId: String(owner.goalId),
-          intent: "delete-goal-version",
+          intent: "delete-daily-goal",
           userId: String(owner.userId),
         },
       );
       const setupFields = {
-        calories: "1000",
-        carbohydrate: "100",
+        calorieTarget: "1000",
+        carbohydrateTarget: "100",
         csrfToken: String(goalFields.csrfToken),
-        displayUnits: "metric",
-        fat: "50",
-        fiber: "20",
+        fatTarget: "50",
+        fiberTarget: "20",
         preferenceUserId: String(owner.userId),
-        protein: "80",
-        sodium: "1500",
-        sugar: "30",
+        proteinTarget: "80",
+        sodiumMaximum: "1500",
+        sugarMaximum: "30",
         timeZone: "UTC",
         userId: String(owner.userId),
-        water: "2000",
+        waterTarget: "64",
       };
       const preferenceEdit = await submit(
         `/setup?userId=${owner.userId}`,
@@ -534,8 +529,7 @@ test("a second user cannot list, read, edit, or delete another user's records", 
   await page.getByRole("link", { name: "Close water dialog" }).click();
   await page.goto("/settings/goals");
   await expect(page.getByLabel("Calories target")).toHaveValue("2050");
-  await expect(page.getByLabel("US")).toBeChecked();
-  await expect(page.getByText("America/New_York", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Water target")).toHaveValue("80");
   await expect(page.getByText("release.isolation.other")).toHaveCount(0);
   await expectNoSeriousAxeViolations(otherPage);
   await otherContext.close();
@@ -679,10 +673,10 @@ test("the critical mobile experience is operable with only a keyboard", async ({
   await tabTo(page, calories);
   await page.keyboard.press("ControlOrMeta+A");
   await page.keyboard.type("1950");
-  const saveGoal = page.getByRole("button", { name: "Save goal version" });
+  const saveGoal = page.getByRole("button", { name: "Save Daily Goal" });
   await tabTo(page, saveGoal);
   await page.keyboard.press("Enter");
-  await expect(page.getByRole("status")).toContainText("Goal Version saved");
+  await expect(page.getByRole("status")).toContainText("Daily Goal saved");
 
   await page.setViewportSize({ height: 844, width: 320 });
   await expectMobileReflowAndTargets(page);

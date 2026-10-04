@@ -122,67 +122,14 @@ export const rateLimitCounters = sqliteTable(
   (table) => [primaryKey({ columns: [table.scope, table.subjectHash] })],
 );
 
-export const userPreferences = sqliteTable(
-  "user_preferences",
-  {
-    userId: integer("user_id")
-      .primaryKey()
-      .references(() => users.id, { onDelete: "cascade" }),
-    displayUnits: text("display_units").notNull(),
-    timeZone: text("time_zone").notNull(),
-    createdAt: text("created_at").notNull(),
-    updatedAt: text("updated_at").notNull(),
-  },
-  (table) => [
-    check(
-      "user_preferences_display_units_check",
-      sql`${table.displayUnits} IN ('us', 'metric')`,
-    ),
-  ],
-);
-
-export const goalVersions = sqliteTable(
-  "goal_versions",
-  {
-    id: integer().primaryKey({ autoIncrement: true }),
-    userId: integer("user_id")
-      .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
-    effectiveDate: text("effective_date").notNull(),
-    calorieTargetMilliKcal: integer("calorie_target_milli_kcal").notNull(),
-    waterTargetMicroliters: integer("water_target_microliters").notNull(),
-    proteinTargetMilligrams: integer("protein_target_milligrams").notNull(),
-    carbohydrateTargetMilligrams: integer(
-      "carbohydrate_target_milligrams",
-    ).notNull(),
-    fatTargetMilligrams: integer("fat_target_milligrams").notNull(),
-    fiberTargetMilligrams: integer("fiber_target_milligrams").notNull(),
-    sugarMaximumMilligrams: integer("sugar_maximum_milligrams").notNull(),
-    sodiumMaximumMilligrams: integer("sodium_maximum_milligrams").notNull(),
-    createdAt: text("created_at").notNull(),
-  },
-  (table) => [
-    uniqueIndex("goal_versions_user_effective_date_unique").on(
-      table.userId,
-      table.effectiveDate,
-    ),
-    index("goal_versions_user_effective_date_index").on(
-      table.userId,
-      table.effectiveDate,
-    ),
-    check(
-      "goal_versions_positive_values_check",
-      sql`${table.calorieTargetMilliKcal} > 0
-        AND ${table.waterTargetMicroliters} > 0
-        AND ${table.proteinTargetMilligrams} > 0
-        AND ${table.carbohydrateTargetMilligrams} > 0
-        AND ${table.fatTargetMilligrams} > 0
-        AND ${table.fiberTargetMilligrams} > 0
-        AND ${table.sugarMaximumMilligrams} > 0
-        AND ${table.sodiumMaximumMilligrams} > 0`,
-    ),
-  ],
-);
+export const userPreferences = sqliteTable("user_preferences", {
+  userId: integer("user_id")
+    .primaryKey()
+    .references(() => users.id, { onDelete: "cascade" }),
+  timeZone: text("time_zone").notNull(),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});
 
 function requiredUserId() {
   return integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" });

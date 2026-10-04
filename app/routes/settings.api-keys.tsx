@@ -9,7 +9,7 @@ import { copyText, requestApiKey } from "../api-keys/copy.client";
 import { getApiKeys } from "../api-keys/runtime.server";
 import { applicationOrigin } from "../runtime.server";
 import { SettingsDestinations, SettingsShell } from "../settings-destinations";
-import { navigationToday } from "../goals/runtime.server";
+import { navigationToday } from "../setup/runtime.server";
 import styles from "../account.module.css";
 import shellStyles from "../food-log.module.css";
 

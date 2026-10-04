@@ -23,8 +23,9 @@ import {
   FoodEntryService,
   FoodEntryUnavailableError,
 } from "../app/food-entry/food-entry.server";
-import { GoalVersionService } from "../app/goals/goal-version.server";
-import { GoalSetupService } from "../app/setup/goal-setup.server";
+import { createDailyGoalService } from "../app/daily-goal/index.server";
+import { createSetupService } from "../app/setup/runtime.server";
+import { TEST_DAILY_GOAL } from "./support/setup";
 import { createWaterEventService, WaterEventNotFoundError } from "../app/water-event/index.server";
 import {
   seedAccount,
@@ -707,8 +708,8 @@ test("administrator deletion removes a disabled member's owned nutrition history
     "203.0.113.221",
   );
   const now = () => new Date("2026-08-29T18:00:00.000Z");
-  const setup = new GoalSetupService(fixture.database, now);
-  const goals = new GoalVersionService(fixture.database, now);
+  const setup = createSetupService(fixture.database, now);
+  const goals = createDailyGoalService(fixture.database, now);
   const foodProvider = new TestFoodCatalogProvider();
   const foodEntries = new FoodEntryService(
     fixture.database,
@@ -722,20 +723,7 @@ test("administrator deletion removes a disabled member's owned nutrition history
     now,
   );
   const waterEvents = createWaterEventService(fixture.database, now);
-  expect(
-    setup.completeInitial(member.user.id, {
-      calorieTargetMilliKcal: 2_000_000,
-      carbohydrateTargetMilligrams: 200_000,
-      displayUnits: "metric",
-      fatTargetMilligrams: 70_000,
-      fiberTargetMilligrams: 30_000,
-      proteinTargetMilligrams: 100_000,
-      sodiumMaximumMilligrams: 2_000,
-      sugarMaximumMilligrams: 50_000,
-      timeZone: "UTC",
-      waterTargetMicroliters: 2_500_000,
-    }),
-  ).toEqual({ effectiveDate: "2026-08-29", ok: true });
+  setup.complete(member.user.id, { goal: TEST_DAILY_GOAL, timeZone: "UTC" });
   const foodEntry = await foodEntries.log(member.user.id, {
     foodLogDate: "2026-08-29",
     idempotencyKey: "deleted-owned-food-entry",
@@ -748,7 +736,7 @@ test("administrator deletion removes a disabled member's owned nutrition history
     logDate: "2026-08-29T08:00:00Z",
     quantity: { ounces: "8" },
   });
-  expect(goals.read(member.user.id)?.goal).toBeDefined();
+  expect(goals.read(member.user.id)).not.toBeNull();
   const deletionTarget = memberTarget(fixture.service, "history.member");
 
   await expect(
@@ -767,7 +755,7 @@ test("administrator deletion removes a disabled member's owned nutrition history
   ).resolves.toEqual({ ok: true });
 
   expect(setup.isComplete(member.user.id)).toBe(false);
-  expect(goals.read(member.user.id)).toBeUndefined();
+  expect(goals.read(member.user.id)).toBeNull();
   expect(() => foodEntries.read(member.user.id, foodEntry.id)).toThrow(
     FoodEntryUnavailableError,
   );
@@ -787,7 +775,7 @@ test("administrator deletion removes a disabled member's owned nutrition history
   );
   if (!replacementLogin.ok) throw new Error("replacement login failed");
   expect(replacementLogin.session.user.id).not.toBe(member.user.id);
-  expect(goals.read(replacementLogin.session.user.id)).toBeUndefined();
+  expect(goals.read(replacementLogin.session.user.id)).toBeNull();
   expect(() =>
     foodEntries.read(replacementLogin.session.user.id, foodEntry.id)
   ).toThrow(FoodEntryUnavailableError);

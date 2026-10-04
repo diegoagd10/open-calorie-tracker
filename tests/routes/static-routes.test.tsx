@@ -51,7 +51,7 @@ describe("static route contracts", () => {
       { children: undefined, file: "./routes/setup.tsx", path: "setup" },
       {
         children: undefined,
-        file: "./routes/settings.goals.tsx",
+        file: "./daily-goal/routes/settings.goals.tsx",
         path: "settings/goals",
       },
       { children: undefined, file: "./routes/settings.catalogs.tsx", path: "settings/catalogs" },

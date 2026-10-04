@@ -27,8 +27,8 @@ export function SettingsDestinations({
               <UiIcon name="goals" />
             </span>
             <span>
-              <strong>Display and goals</strong>
-              <small>Manage units and effective-dated nutrition goals.</small>
+              <strong>Daily Goal</strong>
+              <small>Set the targets every Food Log day is measured against.</small>
             </span>
             <span aria-hidden="true">›</span>
           </Link>
@@ -106,7 +106,7 @@ export function SettingsDestinations({
 export type SettingsSection = "goals" | "security" | "api-keys" | "users" | "ai" | "catalogs";
 
 const personalSections = [
-  { icon: "goals", key: "goals", label: "Display and goals", to: "/settings/goals" },
+  { icon: "goals", key: "goals", label: "Daily Goal", to: "/settings/goals" },
   { icon: "key", key: "security", label: "Account security", to: "/settings/security" },
   { icon: "key", key: "api-keys", label: "API keys", to: "/settings/api-keys" },
 ] as const;

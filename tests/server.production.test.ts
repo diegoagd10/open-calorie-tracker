@@ -1,6 +1,6 @@
 import { AuthenticationService } from "../app/auth/authentication.server";
 import { openApplicationDatabase } from "../app/database/database.server";
-import { GoalSetupService } from "../app/setup/goal-setup.server";
+import { completeTestSetup } from "./support/setup";
 import { seedAuthenticatedAccount } from "./support/authentication";
 import { authenticator } from "./support/webauthn";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
@@ -379,7 +379,7 @@ test("key mode rejects password bypass on a real non-loopback HTTP LAN listener"
   try {
     const service = new AuthenticationService(database.getClient());
     const account = await seedAuthenticatedAccount(service, database.getClient(), "lan.key.owner", password, "192.0.2.1", "admin");
-    new GoalSetupService(database.getClient()).completeInitial(account.user.id, { displayUnits: "us", timeZone: "UTC", calorieTargetMilliKcal: 2_000_000, carbohydrateTargetMilligrams: 200_000, fatTargetMilligrams: 60_000, fiberTargetMilligrams: 30_000, proteinTargetMilligrams: 100_000, sodiumMaximumMilligrams: 2_000, sugarMaximumMilligrams: 40_000, waterTargetMicroliters: 2_000_000 });
+    completeTestSetup(account.user.id, { database: database.getClient(), timeZone: "UTC" });
     const key = authenticator();
     const options = await service.keys.beginEnrollment(account.token, "browser", "Wire test key");
     const proof = await service.keys.finishRegistration(account.token, "browser", key.registration(options, { origin: publicOrigin }));
@@ -421,7 +421,7 @@ test("a remote MCP client reads the Food Log through the running server with a b
   let session: { token: string; csrfToken: string };
   try {
     const account = await seedAuthenticatedAccount(new AuthenticationService(database.getClient()), database.getClient(), "mcp.remote.owner", "correct horse battery staple", "192.0.2.1", "admin");
-    new GoalSetupService(database.getClient()).completeInitial(account.user.id, { displayUnits: "metric", timeZone: "UTC", calorieTargetMilliKcal: 2_000_000, carbohydrateTargetMilligrams: 200_000, fatTargetMilligrams: 60_000, fiberTargetMilligrams: 30_000, proteinTargetMilligrams: 100_000, sodiumMaximumMilligrams: 2_000, sugarMaximumMilligrams: 40_000, waterTargetMicroliters: 2_000_000 });
+    completeTestSetup(account.user.id, { database: database.getClient(), timeZone: "UTC" });
     session = { token: account.token, csrfToken: account.csrfToken };
   } finally {
     database.close();
@@ -454,8 +454,8 @@ test("a remote MCP client reads the Food Log through the running server with a b
   expect(result.structuredContent).toMatchObject({
     timeZone: "UTC",
     foods: [],
-    nutrients: { energy: { unit: "kcal", consumed: 0, goal: 2000 } },
-    water: { unit: "ml", consumed: 0, goal: 2000 },
+    nutrients: { energy: { unit: "kcal", consumed: 0, goal: 2050 } },
+    water: { unit: "fl oz", consumed: 0, goal: 80 },
   });
   await client.close();
 

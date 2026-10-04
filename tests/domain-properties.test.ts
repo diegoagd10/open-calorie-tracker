@@ -8,15 +8,11 @@ import {
   type FoodLogEventOrderKey,
 } from "../app/food-log/date";
 import {
-  DISPLAY_UNITS,
-  WATER_UNIT_OPTIONS,
-  waterTargetThousandthsFromMicroliters,
-} from "../app/goals/water-conversion";
-import {
-  goalFieldsFromCanonical,
-  validateGoalVersionFields,
-} from "../app/goals/validation";
-import { SETUP_LIMITS } from "../app/setup/validation";
+  dailyGoalInputValues,
+  dailyGoalTargetsFromForm,
+} from "../app/daily-goal/components/daily-goal-inputs";
+import { DAILY_GOAL_MAXIMUMS } from "../app/daily-goal/daily-goal.utils";
+import { formatOunceThousandths } from "../app/water-event/water-event.utils";
 
 const MILLISECONDS_PER_DAY = 86_400_000;
 const PROPERTY_SEED = 53_053;
@@ -133,53 +129,18 @@ const tieBreakerBaseArbitrary = fc.record({
   secondOfDay: fc.integer({ max: 86_398, min: 0 }),
 });
 
-const maximumMetricWaterMicroliters = Number(
-  WATER_UNIT_OPTIONS.metric.maximumThousandths,
-);
-const canonicalWaterArbitrary = fc
-  .integer({ max: maximumMetricWaterMicroliters, min: 1 })
-  .filter((waterTargetMicroliters) => {
-    const usThousandths = waterTargetThousandthsFromMicroliters(
-      waterTargetMicroliters,
-      "us",
-    );
-    return (
-      usThousandths >= 1n &&
-      usThousandths <= WATER_UNIT_OPTIONS.us.maximumThousandths
-    );
-  });
+const canonicalTarget = (field: keyof typeof DAILY_GOAL_MAXIMUMS) =>
+  fc.integer({ max: DAILY_GOAL_MAXIMUMS[field], min: 1 });
 
 const canonicalGoalArbitrary = fc.record({
-  calorieTargetMilliKcal: fc.integer({
-    max: Number(SETUP_LIMITS.calories.maximumCanonical),
-    min: 1,
-  }),
-  carbohydrateTargetMilligrams: fc.integer({
-    max: Number(SETUP_LIMITS.nutrient.maximumCanonical),
-    min: 1,
-  }),
-  effectiveDate: canonicalLocalDateArbitrary,
-  fatTargetMilligrams: fc.integer({
-    max: Number(SETUP_LIMITS.nutrient.maximumCanonical),
-    min: 1,
-  }),
-  fiberTargetMilligrams: fc.integer({
-    max: Number(SETUP_LIMITS.nutrient.maximumCanonical),
-    min: 1,
-  }),
-  proteinTargetMilligrams: fc.integer({
-    max: Number(SETUP_LIMITS.nutrient.maximumCanonical),
-    min: 1,
-  }),
-  sodiumMaximumMilligrams: fc.integer({
-    max: Number(SETUP_LIMITS.sodium.maximumCanonical),
-    min: 1,
-  }),
-  sugarMaximumMilligrams: fc.integer({
-    max: Number(SETUP_LIMITS.nutrient.maximumCanonical),
-    min: 1,
-  }),
-  waterTargetMicroliters: canonicalWaterArbitrary,
+  calorieTarget: canonicalTarget("calorieTarget"),
+  waterTarget: canonicalTarget("waterTarget").map((thousandths) => formatOunceThousandths(BigInt(thousandths))),
+  proteinTarget: canonicalTarget("proteinTarget"),
+  carbohydrateTarget: canonicalTarget("carbohydrateTarget"),
+  fatTarget: canonicalTarget("fatTarget"),
+  fiberTarget: canonicalTarget("fiberTarget"),
+  sugarMaximum: canonicalTarget("sugarMaximum"),
+  sodiumMaximum: canonicalTarget("sodiumMaximum"),
 });
 
 test("adding and inversely subtracting civil days preserves supported dates", () => {
@@ -290,21 +251,13 @@ test("Food Log event comparison applies every descending tie-breaker", () => {
   );
 });
 
-test("canonical goals round-trip through every supported display unit", () => {
+test("canonical Daily Goals round-trip through the goal inputs", () => {
   fc.assert(
     fc.property(canonicalGoalArbitrary, (goal) => {
-      for (const displayUnits of DISPLAY_UNITS) {
-        const fields = goalFieldsFromCanonical(goal, displayUnits);
-        const result = validateGoalVersionFields(
-          { ...fields, displayUnits },
-          "UTC",
-          goal,
-        );
+      const form = new FormData();
+      for (const [name, value] of Object.entries(dailyGoalInputValues(goal))) form.set(name, value);
 
-        expect(result.success).toBe(true);
-        if (!result.success) throw new Error(result.error);
-        expect(result.data).toEqual({ ...goal, displayUnits });
-      }
+      expect(dailyGoalTargetsFromForm(form)).toEqual(goal);
     }),
     propertyParameters,
   );

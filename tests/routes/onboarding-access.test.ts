@@ -24,7 +24,7 @@ import { loader as registerLoader } from "../../app/routes/register";
 import {
   action as goalsAction,
   loader as goalsLoader,
-} from "../../app/routes/settings.goals";
+} from "../../app/daily-goal/routes/settings.goals";
 import {
   action as usersAction,
   loader as usersLoader,

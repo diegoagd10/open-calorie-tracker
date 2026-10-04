@@ -1,10 +1,7 @@
 import { utcToZonedDateTime } from "../shared/date-time";
 import type { WaterEvent, WaterEventList } from "./water-event.model";
 
-export type WaterDisplayUnits = "us" | "metric";
-
-const MILLILITERS_PER_FLUID_OUNCE = 29.5735295625;
-const DECIMAL_OUNCES = /^(\d{1,6})(?:\.(\d{1,3}))?$/;
+const DECIMAL_OUNCES = /^(\d+)(?:\.(\d{1,3}))?$/;
 
 /**
  * A Water Event as REST and MCP callers see it, without its owner. Amounts are JSON numbers;
@@ -28,12 +25,9 @@ export function presentWaterEventDeletion(deletedCount: number) {
   return { deletedCount };
 }
 
-/** Whole ml for metric accounts, or fl oz with up to three decimals. */
-export function formatWaterAmount(ounces: string, units: WaterDisplayUnits): string {
-  const value = Number(ounces);
-  return units === "metric"
-    ? `${Math.round(value * MILLILITERS_PER_FLUID_OUNCE)} ml`
-    : `${new Intl.NumberFormat("en-US", { maximumFractionDigits: 3 }).format(value)} fl oz`;
+/** Fluid ounces with up to three decimals, such as `67.628 fl oz`. */
+export function formatWaterAmount(ounces: string): string {
+  return `${new Intl.NumberFormat("en-US", { maximumFractionDigits: 3 }).format(Number(ounces))} fl oz`;
 }
 
 /** The consumption time on the account's wall clock, such as `2:45 PM`. */
@@ -47,7 +41,10 @@ export function waterEventLocalDateTime(logDate: string, timeZone: string): stri
   return utcToZonedDateTime(logDate, timeZone);
 }
 
-/** Thousandths of a fluid ounce in a decimal amount such as `"12.5"`, or null when it is not one. */
+/**
+ * Thousandths of a fluid ounce in a decimal amount such as `"12.5"`, or null when it is not one.
+ * Any number of whole ounces parses, so daily totals do too; callers enforce their own ranges.
+ */
 export function ounceThousandths(ounces: string): bigint | null {
   const match = DECIMAL_OUNCES.exec(ounces);
   if (!match) return null;

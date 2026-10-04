@@ -26,7 +26,7 @@ exports[`home catalog renders initial, empty, failure, and selectable result sta
 
 exports[`home catalog renders initial, empty, failure, and selectable result states 5`] = `"b752c83c6915aa716770a7790b672b1a275d5946f7314d094d140adcef050f04"`;
 
-exports[`home distinguishes past, future, no-goal, and incomplete summaries 1`] = `"8425ef1916d3b0ffdaf82fc7e7b02f79719541d62a35fd8b0b5003831ed12976"`;
+exports[`home distinguishes past, future, no-goal, and incomplete summaries 1`] = `"78d8c9c6f0bd57f89a9d272b5737048d0b105a82e18f8c503ab14b5963590c9f"`;
 
 exports[`home distinguishes past, future, no-goal, and incomplete summaries 2`] = `"1480319c497856184a51634aac00ee81dd71a853fea25ede42cb0e9563b10e42"`;
 
@@ -36,9 +36,9 @@ exports[`home food editor exposes saved fields, recalculation, and delete confir
 
 exports[`home food editor exposes saved fields, recalculation, and delete confirmation 3`] = `"496497f2ed96d70ce5042bafd8369501af2631bb47b6948f8e69995f3dc0eda7"`;
 
-exports[`home renders calendar navigation, selected dates, and future days 1`] = `"5e037fe934b7dea3b829901db3040d31c97be184246cc1c685e542105cc4da2d"`;
+exports[`home renders calendar navigation, selected dates, and future days 1`] = `"2f6a7df1973a37b845fa393ac3251648fdc2479ab2288507b5e19dd40a9d8146"`;
 
-exports[`home renders calendar navigation, selected dates, and future days 2`] = `"f4b3be22f28a9e816bbd3f69b5957117ef84d5d8e6e7ab08b68c4448d0520ff1"`;
+exports[`home renders calendar navigation, selected dates, and future days 2`] = `"fdcd432f311a0a5d34293cba148e46d5ba289faf6a77d84a6648ce7c581dd669"`;
 
 exports[`home renders food and water timeline entries with factual units 1`] = `"bc9d9b846bff63a76ec77f7e7b683aed49354abce9d50a32cdf85d199a2c2ccf"`;
 

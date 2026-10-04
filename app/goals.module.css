@@ -159,154 +159,11 @@
   font-size: 0.8rem;
 }
 
-.segmentedField {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 0.35rem;
-  margin: 1rem 0;
-  padding: 0;
-  border: 0;
-}
-
-.segmentedField legend {
-  grid-column: 1 / -1;
-  margin-bottom: 0.4rem;
-  font-size: 0.82rem;
-  font-weight: 600;
-}
-
-.segmentedField label {
-  position: relative;
-}
-
-.segmentedField input {
-  position: absolute;
-  opacity: 0;
-}
-
-.segmentedField span {
-  display: grid;
-  min-height: 2.75rem;
-  place-items: center;
-  border: 1px solid var(--rule);
-  border-radius: 0.6rem;
-  color: var(--ink-2);
-  font-size: 0.875rem;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.segmentedField input:checked + span {
-  border-color: var(--green);
-  color: var(--green-strong);
-  background: var(--green-soft);
-}
-
-.segmentedField input:focus-visible + span {
-  outline: 3px solid var(--focus);
-  outline-offset: 2px;
-}
-
-.fieldRow {
-  display: flex;
-  min-height: 4rem;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  padding-block: 0.7rem;
-}
-
-.fieldRow > span,
-.fieldRow small {
-  display: block;
-}
-
-.fieldRow > span {
-  font-size: 0.875rem;
-  font-weight: 600;
-}
-
-.fieldRow small {
-  margin-top: 0.15rem;
-  color: var(--muted);
-  font-size: 0.75rem;
-  font-weight: 500;
-}
-
-.fieldRow input {
-  width: 10rem;
-  min-inline-size: 0;
-  max-inline-size: 100%;
-}
-
-.fieldRow input,
-.goalGrid input {
-  min-height: 2.75rem;
-  padding: 0.65rem 0.7rem;
-  border: 1px solid var(--rule-strong);
-  border-radius: 0.6rem;
-  color: var(--ink);
-  background: var(--ground);
-  font: inherit;
-}
-
-.goalGrid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.65rem;
-  margin: 0.5rem 0 1rem;
-}
-
-.goalGrid label {
-  display: grid;
-  gap: 0.35rem;
-  min-width: 0;
-}
-
-.goalGrid label > span:first-child {
-  font-size: 0.8rem;
-  font-weight: 600;
-}
-
-.goalGrid label small {
-  color: var(--muted);
-  font-weight: 500;
-}
-
-.numberInput {
-  position: relative;
-}
-
-.numberInput input {
-  width: 100%;
-  padding-right: 3.3rem;
-  font-variant-numeric: tabular-nums;
-}
-
-.numberInput em {
-  position: absolute;
-  right: 0.7rem;
-  bottom: 0.85rem;
-  color: var(--muted);
-  font-size: 0.75rem;
-  font-style: normal;
-  pointer-events: none;
-}
-
-.error,
 .success {
   margin: 0 0 0.85rem;
   padding: 0.75rem;
   border-radius: 0.6rem;
   font-size: 0.875rem;
-}
-
-.error {
-  color: var(--danger);
-  background: var(--danger-soft);
-}
-
-.success {
   color: var(--green-strong);
   background: var(--green-soft);
 }
@@ -331,20 +188,6 @@
 @media (max-width: 420px) {
   .settingsGroup {
     padding: 0.9rem;
-  }
-
-  .fieldRow {
-    align-items: stretch;
-    flex-direction: column;
-    gap: 0.4rem;
-  }
-
-  .fieldRow input {
-    width: 100%;
-  }
-
-  .goalGrid {
-    gap: 0.55rem;
   }
 }
 
@@ -432,55 +275,4 @@
   .settingsSideNav a[aria-current="page"] svg {
     color: var(--green-strong);
   }
-}
-
-.goalHistory {
-  margin-top: 1rem;
-}
-
-.goalHistory ol {
-  display: grid;
-  margin: 0.75rem 0 0;
-  padding: 0;
-  list-style: none;
-}
-
-.goalHistory li {
-  display: grid;
-  gap: 0.25rem;
-  padding: 0.85rem 0;
-}
-
-.goalHistory li + li {
-  border-top: 1px solid var(--rule);
-}
-
-.goalHistoryState[data-state="scheduled"] {
-  color: var(--ink-2);
-  background: var(--surface-soft);
-}
-
-.goalHistoryDates {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  color: var(--ink);
-  font-size: 0.92rem;
-  font-weight: 600;
-}
-
-.goalHistoryState {
-  padding: 0.1rem 0.55rem;
-  border-radius: 999px;
-  color: var(--green-strong);
-  background: var(--green-soft);
-  font-size: 0.75rem;
-  font-style: normal;
-  font-weight: 500;
-}
-
-.goalHistoryValues {
-  color: var(--muted);
-  font-size: 0.85rem;
-  font-variant-numeric: tabular-nums;
 }

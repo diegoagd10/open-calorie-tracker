@@ -87,7 +87,7 @@ test.skipIf(!process.env.OFF_LOCAL_ARCHIVE)("full OFF export imports with bounde
     const client = database.getClient();
     const createdAt = "2026-09-13T12:00:00.000Z";
     const user = client.insert(users).values({ usernameNormalized: "scale.member", createdAt }).returning().get();
-    client.insert(userPreferences).values({ userId: user.id, timeZone: "UTC", displayUnits: "metric", createdAt, updatedAt: createdAt }).run();
+    client.insert(userPreferences).values({ userId: user.id, timeZone: "UTC", createdAt, updatedAt: createdAt }).run();
     const entries = new FoodEntryService(client, new FoodCatalog([{ provider: "open-food-facts", capability: "barcode", service: packaged }]));
     for (const quantity of ["1", "2"]) {
       const saved = await entries.log(user.id, { provider: target.provider, providerFoodId: target.providerFoodId, catalogGeneration: target.catalogGeneration, selectedMeasurementId: "serving", quantity, foodLogDate: "2026-09-13", idempotencyKey: `scale-serving-${quantity}` });

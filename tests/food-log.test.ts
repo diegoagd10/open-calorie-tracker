@@ -30,10 +30,11 @@ import {
 } from "../app/database/database.server";
 import {
   foodEntries,
-  goalVersions,
   userPreferences,
   users,
 } from "../app/database/schema.server";
+import { createDailyGoalService } from "../app/daily-goal/index.server";
+import type { DailyGoalTargets } from "../app/daily-goal/daily-goal.model";
 
 const temporaryDirectories: string[] = [];
 
@@ -54,6 +55,17 @@ async function setupDatabase() {
   });
 }
 
+const dailyGoal: DailyGoalTargets = {
+  calorieTarget: 2_050_000,
+  waterTarget: "80",
+  proteinTarget: 120_000,
+  carbohydrateTarget: 230_000,
+  fatTarget: 70_000,
+  fiberTarget: 25_000,
+  sugarMaximum: 50_000,
+  sodiumMaximum: 2_300,
+};
+
 function insertConfiguredUser(
   client: ApplicationDatabaseClient,
   options: { timeZone: string; username: string },
@@ -69,28 +81,12 @@ function insertConfiguredUser(
     .insert(userPreferences)
     .values({
       createdAt,
-      displayUnits: "us",
       timeZone: options.timeZone,
       updatedAt: createdAt,
       userId,
     })
     .run();
-  client
-    .insert(goalVersions)
-    .values({
-      calorieTargetMilliKcal: 2_050_000,
-      carbohydrateTargetMilligrams: 230_000,
-      createdAt,
-      effectiveDate: "2025-01-01",
-      fatTargetMilligrams: 70_000,
-      fiberTargetMilligrams: 25_000,
-      proteinTargetMilligrams: 120_000,
-      sodiumMaximumMilligrams: 2_300,
-      sugarMaximumMilligrams: 50_000,
-      userId,
-      waterTargetMicroliters: 2_365_882,
-    })
-    .run();
+  createDailyGoalService(client, () => new Date(createdAt)).save(userId, dailyGoal);
 
   return userId;
 }
@@ -618,7 +614,7 @@ test("daily nutrition totals are recomputed after edits and deletes and empty Lo
   database.close();
 });
 
-test("daily calories summarize each requested date against that date's Goal Version", async () => {
+test("daily calories summarize every requested date against the current Daily Goal", async () => {
   const database = await setupDatabase();
   const client = database.getClient();
   const userId = insertConfiguredUser(client, {
@@ -629,22 +625,8 @@ test("daily calories summarize each requested date against that date's Goal Vers
     timeZone: "America/New_York",
     username: "daily.calories.other",
   });
-  client
-    .insert(goalVersions)
-    .values({
-      calorieTargetMilliKcal: 1_800_000,
-      carbohydrateTargetMilligrams: 200_000,
-      createdAt: "2026-08-28T00:00:00.000Z",
-      effectiveDate: "2026-08-28",
-      fatTargetMilligrams: 60_000,
-      fiberTargetMilligrams: 25_000,
-      proteinTargetMilligrams: 120_000,
-      sodiumMaximumMilligrams: 2_300,
-      sugarMaximumMilligrams: 50_000,
-      userId,
-      waterTargetMicroliters: 2_365_882,
-    })
-    .run();
+  createDailyGoalService(client, () => new Date("2026-08-28T00:00:00.000Z"))
+    .save(userId, { ...dailyGoal, calorieTarget: 1_800_000 });
   const nutrients = (energyMilliKcal: number | null) => ({
     carbohydrateMilligrams: null,
     energyMilliKcal,
@@ -660,13 +642,80 @@ test("daily calories summarize each requested date against that date's Goal Vers
   insertFoodEntry(client, { date: "2026-08-28", id: "other-user", nutrients: nutrients(5_000_000), userId: otherUserId });
   const service = new FoodLogService(client, () => new Date("2026-08-29T16:00:00.000Z"));
 
-  expect(service.dailyCalories(userId, ["2026-08-29", "2026-08-27", "2026-08-28"])).toEqual({
-    "2026-08-27": { entryCount: 1, goalMilliKcal: 2_050_000, isIncomplete: false, knownMilliKcal: 2_100_000 },
+  const goal = service.read(userId)!.goal;
+  expect(service.dailyCalories(userId, ["2026-08-29", "2026-08-27", "2026-08-28", "2024-12-31"], goal)).toEqual({
+    "2024-12-31": { entryCount: 0, goalMilliKcal: 1_800_000, isIncomplete: false, knownMilliKcal: 0 },
+    "2026-08-27": { entryCount: 1, goalMilliKcal: 1_800_000, isIncomplete: false, knownMilliKcal: 2_100_000 },
     "2026-08-28": { entryCount: 2, goalMilliKcal: 1_800_000, isIncomplete: true, knownMilliKcal: 900_000 },
     "2026-08-29": { entryCount: 0, goalMilliKcal: 1_800_000, isIncomplete: false, knownMilliKcal: 0 },
   });
-  expect(service.dailyCalories(userId, [])).toEqual({});
-  expect(service.dailyCalories(userId, ["2024-12-31"])["2024-12-31"].goalMilliKcal).toBeNull();
+  expect(service.dailyCalories(otherUserId, ["2026-08-28"], service.read(otherUserId)!.goal)["2026-08-28"]).toEqual(
+    { entryCount: 1, goalMilliKcal: 2_050_000, isIncomplete: false, knownMilliKcal: 5_000_000 },
+  );
+  expect(service.dailyCalories(userId, [], goal)).toEqual({});
+  database.close();
+});
+
+test("daily calories use the Daily Goal the request already read, even after a later save", async () => {
+  const database = await setupDatabase();
+  const client = database.getClient();
+  const userId = insertConfiguredUser(client, {
+    timeZone: "America/New_York",
+    username: "daily.calories.snapshot",
+  });
+  const service = new FoodLogService(client, () => new Date("2026-08-29T16:00:00.000Z"));
+  const foodLog = service.read(userId)!;
+
+  createDailyGoalService(client, () => new Date("2026-08-29T15:30:00.000Z"))
+    .save(userId, { ...dailyGoal, calorieTarget: 1_800_000 });
+
+  expect(foodLog.goal?.calorieTarget).toBe(2_050_000);
+  expect(service.dailyCalories(userId, ["2026-08-28", "2026-08-29"], foodLog.goal)).toMatchObject({
+    "2026-08-28": { goalMilliKcal: 2_050_000 },
+    "2026-08-29": { goalMilliKcal: 2_050_000 },
+  });
+  database.close();
+});
+
+test("the selected day uses the current Daily Goal for past days, days before the goal existed, and after it changes", async () => {
+  const database = await setupDatabase();
+  const client = database.getClient();
+  const userId = insertConfiguredUser(client, {
+    timeZone: "America/New_York",
+    username: "selected.goal",
+  });
+  const service = new FoodLogService(client, () => new Date("2026-08-29T16:00:00.000Z"));
+  const expectedGoal = { ...dailyGoal, userId, createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z" };
+
+  for (const date of ["2026-08-29", "2026-08-01", "2025-06-01", "2026-09-15"]) {
+    expect(service.read(userId, date)?.goal).toEqual(expectedGoal);
+  }
+
+  createDailyGoalService(client, () => new Date("2026-08-29T15:00:00.000Z"))
+    .save(userId, { ...dailyGoal, calorieTarget: 1_500_000, waterTarget: "64.5" });
+  expect(service.read(userId, "2025-06-01")?.goal).toMatchObject({ calorieTarget: 1_500_000, waterTarget: "64.5" });
+  expect(service.read(userId, "2026-08-29")?.goal).toMatchObject({ calorieTarget: 1_500_000, waterTarget: "64.5" });
+  database.close();
+});
+
+test("an account with a time zone but no Daily Goal reads days without a goal", async () => {
+  const database = await setupDatabase();
+  const client = database.getClient();
+  const userId = client
+    .insert(users)
+    .values({ createdAt: "2026-01-01T00:00:00.000Z", usernameNormalized: "zone.only" })
+    .returning({ id: users.id })
+    .get().id;
+  client.insert(userPreferences).values({
+    createdAt: "2026-01-01T00:00:00.000Z",
+    timeZone: "UTC",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+    userId,
+  }).run();
+  const service = new FoodLogService(client, () => new Date("2026-08-29T16:00:00.000Z"));
+
+  expect(service.read(userId, "2026-08-29")?.goal).toBeNull();
+  expect(service.dailyCalories(userId, ["2026-08-29"], null)["2026-08-29"].goalMilliKcal).toBeNull();
   database.close();
 });
 

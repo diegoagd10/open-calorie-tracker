@@ -21,7 +21,7 @@ import { presentPhotoAnalysisReadiness } from "./photo-analysis-readiness";
 import { SettingsDestinations, SettingsShell } from "../settings-destinations";
 import shellStyles from "../food-log.module.css";
 import styles from "../photo-analysis/connection.module.css";
-import { navigationToday } from "../goals/runtime.server";
+import { navigationToday } from "../setup/runtime.server";
 
 export function meta() { return [{ title: "AI photo estimates · Open Calorie Tracker" }]; }
 export function headers() { return { "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" }; }

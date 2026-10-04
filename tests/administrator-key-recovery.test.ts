@@ -7,7 +7,8 @@ import { afterEach, expect, test, vi } from "vitest";
 import { AuthenticationService } from "../app/auth/authentication.server";
 import { openApplicationDatabase } from "../app/database/database.server";
 import { shutdownApplicationDatabase } from "../app/database/runtime.server";
-import { GoalSetupService } from "../app/setup/goal-setup.server";
+import { createSetupService } from "../app/setup/runtime.server";
+import { completeTestSetup } from "./support/setup";
 import { runAdministratorRecoveryCommand } from "../server/recover-administrator";
 import { runAdministratorKeyRecoveryCommand } from "../server/recover-administrator-keys";
 import { seedAccount, seedAuthenticatedAccount } from "./support/authentication";
@@ -39,13 +40,7 @@ async function fixture() {
   });
   const service = new AuthenticationService(database.getClient());
   const session = await seedAuthenticatedAccount(service, database.getClient(), "owner", password, "192.0.2.1", "admin");
-  new GoalSetupService(database.getClient()).completeInitial(session.user.id, {
-    displayUnits: "us", timeZone: "UTC", calorieTargetMilliKcal: 2_000_000,
-    carbohydrateTargetMilligrams: 200_000, fatTargetMilligrams: 60_000,
-    fiberTargetMilligrams: 30_000, proteinTargetMilligrams: 100_000,
-    sodiumMaximumMilligrams: 2_000, sugarMaximumMilligrams: 40_000,
-    waterTargetMicroliters: 2_000_000,
-  });
+  completeTestSetup(session.user.id, { database: database.getClient(), timeZone: "UTC" });
   const key = authenticator();
   const registration = await service.keys.beginEnrollment(session.token, "enroll", "Saved YubiKey");
   const verification = await service.keys.finishRegistration(session.token, "enroll", key.registration(registration));
@@ -72,7 +67,7 @@ test("configured terminal recovery restores the unchanged password, preserves sa
   const login = await f.service.login("owner", password, "192.0.2.4");
   if (!login.ok) throw new Error("unchanged password did not sign in");
   expect(login.session.user).toEqual(f.session.user);
-  expect(new GoalSetupService(f.database.getClient()).isComplete(login.session.user.id)).toBe(true);
+  expect(createSetupService(f.database.getClient(), () => new Date()).isComplete(login.session.user.id)).toBe(true);
   expect(await f.service.authenticate(member.token)).toBeDefined();
   expect(f.service.keys.status(login.session.token)).toMatchObject({ enabled: false, credentials: [{ id: f.key.id, name: "Saved YubiKey" }] });
   await expect(f.service.keys.beginLogin("owner", "disabled-login", "192.0.2.5")).rejects.toThrow();

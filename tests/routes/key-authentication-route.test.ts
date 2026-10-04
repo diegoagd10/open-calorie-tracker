@@ -15,7 +15,7 @@ import {
   initializeApplicationDatabase,
   shutdownApplicationDatabase,
 } from "../../app/database/runtime.server";
-import { getGoalSetupService } from "../../app/setup/runtime.server";
+import { completeTestSetup } from "../support/setup";
 import { requestPolicyContext } from "../../app/runtime.server";
 import SecuritySettings, {
   headers as securityHeaders,
@@ -139,18 +139,7 @@ async function account(username: string, role: "admin" | "member" = "member") {
     username,
     role,
   );
-  getGoalSetupService().completeInitial(session.user.id, {
-    displayUnits: "us",
-    timeZone: "UTC",
-    calorieTargetMilliKcal: 2_000_000,
-    carbohydrateTargetMilligrams: 200_000,
-    fatTargetMilligrams: 60_000,
-    fiberTargetMilligrams: 30_000,
-    proteinTargetMilligrams: 100_000,
-    sodiumMaximumMilligrams: 2_000,
-    sugarMaximumMilligrams: 40_000,
-    waterTargetMicroliters: 2_000_000,
-  });
+  completeTestSetup(session.user.id, { timeZone: "UTC" });
   return session;
 }
 beforeAll(async () => {

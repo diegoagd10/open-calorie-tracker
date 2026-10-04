@@ -18,7 +18,7 @@ import { formatLocalDate } from "../food-log/date";
 import shellStyles from "../food-log.module.css";
 import { SettingsDestinations, SettingsShell } from "../settings-destinations";
 import styles from "../users.module.css";
-import { navigationToday } from "../goals/runtime.server";
+import { navigationToday } from "../setup/runtime.server";
 
 type UsersActionData = {
   accessChanged?: {
@@ -783,7 +783,7 @@ export default function Users({ actionData, loaderData }: Route.ComponentProps) 
             </h2>
             <p>
               This permanently removes the account and nutrition data,
-              including preferences, Goal Versions, Food Entries, and Water
+              including preferences, the Daily Goal, Food Entries, and Water
               Events. It cannot be recovered in this application.
             </p>
             <p>

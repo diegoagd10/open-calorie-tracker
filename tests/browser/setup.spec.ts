@@ -24,9 +24,7 @@ test("a new account must complete the privacy-minimal Food Log setup", async ({
   await expect(
     page.getByRole("heading", { name: "Set up your Food Log" }),
   ).toBeVisible();
-  await expect(page.getByRole("group", { name: "Display units" })).toBeVisible();
-  await expect(page.getByLabel("US", { exact: true })).toBeChecked();
-  await expect(page.getByLabel("Metric", { exact: true })).not.toBeChecked();
+  await expect(page.getByRole("group", { name: "Display units" })).toHaveCount(0);
   await expect(page.getByLabel("Time zone")).toBeVisible();
   await expect(page.getByLabel("Sodium maximum")).toHaveAttribute("min", "1");
   expect(
@@ -61,6 +59,9 @@ test("US setup creates fixed-point records on the previous local date at a bound
 }) => {
   await context.setExtraHTTPHeaders({ "X-Test-Client-IP": "203.0.113.71" });
   await reachSetupAsTestUser(page, "setup.us");
+  await expect(page.getByLabel("Metric")).toHaveCount(0);
+  await expect(page.getByText("Display units")).toHaveCount(0);
+  await expect(page.getByRole("spinbutton", { name: "Water target fl oz" })).toHaveValue("80");
   await page.getByLabel("Time zone").fill("Pacific/Honolulu");
 
   await page.getByRole("button", { name: "Finish setup" }).click();
@@ -74,11 +75,9 @@ test("US setup creates fixed-point records on the previous local date at a bound
   const setup = database
     .prepare(
       `SELECT
-        p.display_units AS displayUnits,
         p.time_zone AS timeZone,
-        g.effective_date AS effectiveDate,
         g.calorie_target_milli_kcal AS calorieTargetMilliKcal,
-        g.water_target_microliters AS waterTargetMicroliters,
+        g.water_target_ounces AS waterTargetOunces,
         g.protein_target_milligrams AS proteinTargetMilligrams,
         g.carbohydrate_target_milligrams AS carbohydrateTargetMilligrams,
         g.fat_target_milligrams AS fatTargetMilligrams,
@@ -87,7 +86,7 @@ test("US setup creates fixed-point records on the previous local date at a bound
         g.sodium_maximum_milligrams AS sodiumMaximumMilligrams
       FROM users u
       JOIN user_preferences p ON p.user_id = u.id
-      JOIN goal_versions g ON g.user_id = u.id
+      JOIN daily_goals g ON g.user_id = u.id
       WHERE u.username_normalized = ?`,
     )
     .get("setup.us");
@@ -96,32 +95,26 @@ test("US setup creates fixed-point records on the previous local date at a bound
   expect(setup).toEqual({
     calorieTargetMilliKcal: 2_050_000,
     carbohydrateTargetMilligrams: 230_000,
-    displayUnits: "us",
-    effectiveDate: "2025-12-31",
     fatTargetMilligrams: 70_000,
     fiberTargetMilligrams: 25_000,
     proteinTargetMilligrams: 120_000,
     sodiumMaximumMilligrams: 2_300,
     sugarMaximumMilligrams: 50_000,
     timeZone: "Pacific/Honolulu",
-    waterTargetMicroliters: 2_365_882,
+    waterTargetOunces: "80",
   });
 });
 
-test("metric setup converts fractional values on the next side of a local-date boundary", async ({
+test("setup converts fractional values to canonical units", async ({
   context,
   page,
 }) => {
   await context.setExtraHTTPHeaders({ "X-Test-Client-IP": "203.0.113.72" });
   await reachSetupAsTestUser(page, "setup.metric");
 
-  await page.getByLabel("Metric", { exact: true }).check();
-  await expect(
-    page.getByRole("spinbutton", { name: "Water target ml" }),
-  ).toBeVisible();
   await page.getByLabel("Time zone").fill("Pacific/Kiritimati");
   await page.getByLabel("Calories target").fill("1800.125");
-  await page.getByLabel("Water target").fill("2500.5");
+  await page.getByLabel("Water target").fill("67.5");
   await page.getByLabel("Protein target").fill("90.25");
   await page.getByLabel("Carbohydrate target").fill("210.125");
   await page.getByLabel("Fat target").fill("60.5");
@@ -136,11 +129,9 @@ test("metric setup converts fractional values on the next side of a local-date b
   const setup = database
     .prepare(
       `SELECT
-        p.display_units AS displayUnits,
         p.time_zone AS timeZone,
-        g.effective_date AS effectiveDate,
         g.calorie_target_milli_kcal AS calorieTargetMilliKcal,
-        g.water_target_microliters AS waterTargetMicroliters,
+        g.water_target_ounces AS waterTargetOunces,
         g.protein_target_milligrams AS proteinTargetMilligrams,
         g.carbohydrate_target_milligrams AS carbohydrateTargetMilligrams,
         g.fat_target_milligrams AS fatTargetMilligrams,
@@ -149,7 +140,7 @@ test("metric setup converts fractional values on the next side of a local-date b
         g.sodium_maximum_milligrams AS sodiumMaximumMilligrams
       FROM users u
       JOIN user_preferences p ON p.user_id = u.id
-      JOIN goal_versions g ON g.user_id = u.id
+      JOIN daily_goals g ON g.user_id = u.id
       WHERE u.username_normalized = ?`,
     )
     .get("setup.metric");
@@ -158,15 +149,13 @@ test("metric setup converts fractional values on the next side of a local-date b
   expect(setup).toEqual({
     calorieTargetMilliKcal: 1_800_125,
     carbohydrateTargetMilligrams: 210_125,
-    displayUnits: "metric",
-    effectiveDate: "2026-01-01",
     fatTargetMilligrams: 60_500,
     fiberTargetMilligrams: 30_750,
     proteinTargetMilligrams: 90_250,
     sodiumMaximumMilligrams: 1_900,
     sugarMaximumMilligrams: 45_500,
     timeZone: "Pacific/Kiritimati",
-    waterTargetMicroliters: 2_500_500,
+    waterTargetOunces: "67.5",
   });
 });
 
@@ -180,17 +169,16 @@ test("bounded validation is accessible and an invalid submission persists nothin
   const manipulatedStatus = await page.evaluate(async () => {
     const response = await fetch("/setup", {
       body: new URLSearchParams({
-        calories: "2050",
-        carbohydrate: "230",
+        calorieTarget: "2050",
+        carbohydrateTarget: "230",
         csrfToken: "invalid",
-        displayUnits: "us",
-        fat: "70",
-        fiber: "25",
-        protein: "120",
-        sodium: "2300",
-        sugar: "50",
+        fatTarget: "70",
+        fiberTarget: "25",
+        proteinTarget: "120",
+        sodiumMaximum: "2300",
+        sugarMaximum: "50",
         timeZone: "America/Los_Angeles",
-        water: "80",
+        waterTarget: "80",
       }),
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       method: "POST",
@@ -219,7 +207,7 @@ test("bounded validation is accessible and an invalid submission persists nothin
     .prepare(
       `SELECT
         (SELECT COUNT(*) FROM user_preferences p WHERE p.user_id = u.id) AS preferences,
-        (SELECT COUNT(*) FROM goal_versions g WHERE g.user_id = u.id) AS goals
+        (SELECT COUNT(*) FROM daily_goals g WHERE g.user_id = u.id) AS goals
       FROM users u
       WHERE u.username_normalized = ?`,
     )
@@ -231,7 +219,7 @@ test("bounded validation is accessible and an invalid submission persists nothin
   expect(accessibilityScan.violations).toEqual([]);
 });
 
-test("a full-stack database failure rolls back the preference and Goal Version", async ({
+test("a full-stack database failure rolls back the preference and Daily Goal", async ({
   context,
   page,
 }) => {
@@ -243,11 +231,11 @@ test("a full-stack database failure rolls back the preference and Goal Version",
   const user = database
     .prepare("SELECT id FROM users WHERE username_normalized = ?")
     .get("setup.rollback") as { id: number };
-  database.exec(`CREATE TRIGGER fail_goal_version_for_atomic_user
-    BEFORE INSERT ON goal_versions
+  database.exec(`CREATE TRIGGER fail_daily_goal_for_atomic_user
+    BEFORE INSERT ON daily_goals
     WHEN NEW.user_id = ${user.id}
     BEGIN
-      SELECT RAISE(FAIL, 'forced Goal Version failure');
+      SELECT RAISE(FAIL, 'forced Daily Goal failure');
     END`);
   database.close();
 
@@ -264,12 +252,12 @@ test("a full-stack database failure rolls back the preference and Goal Version",
     .prepare(
       `SELECT
         (SELECT COUNT(*) FROM user_preferences p WHERE p.user_id = u.id) AS preferences,
-        (SELECT COUNT(*) FROM goal_versions g WHERE g.user_id = u.id) AS goals
+        (SELECT COUNT(*) FROM daily_goals g WHERE g.user_id = u.id) AS goals
       FROM users u
       WHERE u.username_normalized = ?`,
     )
     .get("setup.rollback");
-  persistedDatabase.exec("DROP TRIGGER fail_goal_version_for_atomic_user");
+  persistedDatabase.exec("DROP TRIGGER fail_daily_goal_for_atomic_user");
   persistedDatabase.close();
   expect(persisted).toEqual({ goals: 0, preferences: 0 });
 });
@@ -318,7 +306,7 @@ test("setup reads and writes remain scoped to the authenticated user", async ({
         u.username_normalized AS username,
         g.calorie_target_milli_kcal AS calories
       FROM users u
-      JOIN goal_versions g ON g.user_id = u.id
+      JOIN daily_goals g ON g.user_id = u.id
       WHERE u.username_normalized IN ('setup.owner', 'setup.other')
       ORDER BY u.username_normalized`,
     )

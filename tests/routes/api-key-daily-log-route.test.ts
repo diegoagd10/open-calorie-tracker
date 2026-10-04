@@ -12,8 +12,7 @@ import { getApplicationDatabase, initializeApplicationDatabase, shutdownApplicat
 import { action as mutateDailyLog, loader as readDailyLog } from "../../app/routes/api.v1.daily-log";
 import { action as keysAction, loader as keysLoader } from "../../app/routes/settings.api-keys";
 import { action as copyAction } from "../../app/routes/settings.api-keys.copy";
-import { getGoalSetupService } from "../../app/setup/runtime.server";
-import { validateSetupFields } from "../../app/setup/validation";
+import { completeTestSetup } from "../support/setup";
 import { seedAuthenticatedAccount } from "../support/authentication";
 
 const origin = "http://localhost:3000";
@@ -41,12 +40,7 @@ async function account(username: string): Promise<Account> {
   return { id: session.user.id, cookie: serializeSessionCookie(session).split(";", 1)[0], csrf: session.csrfToken };
 }
 function completeSetup(userId: number) {
-  const setup = validateSetupFields({
-    calories: "2050", carbohydrate: "230", displayUnits: "us", fat: "70", fiber: "25",
-    protein: "120", sodium: "2300", sugar: "50", timeZone: "America/New_York", water: "80",
-  });
-  if (!setup.success) throw new Error("Invalid test setup");
-  getGoalSetupService().completeInitial(userId, setup.data);
+  completeTestSetup(userId);
 }
 function listKeys(owner: Account) {
   return keysLoader(args(new Request(`${origin}/settings/api-keys`, { headers: { Cookie: owner.cookie } })));
@@ -101,10 +95,20 @@ test("a valid key reads its owner's Food Log in the v1 shape", async () => {
   expect(response.headers.get("Cache-Control")).toContain("no-store");
   const body = await response.json() as Record<string, unknown>;
   expect(Object.keys(body).sort()).toEqual([
-    "displayUnits", "events", "foodEntries", "goal", "isFuture", "nutritionTotals",
+    "events", "foodEntries", "goal", "isFuture", "nutritionTotals",
     "selectedDate", "timeZone", "today", "version", "waterEvents", "waterTotalOunces",
   ].sort());
-  expect(body).toMatchObject({ version: "1", selectedDate: date, timeZone: "America/New_York", goal: { calorieTargetMilliKcal: 2_050_000 } });
+  expect(body).toMatchObject({ version: "1", selectedDate: date, timeZone: "America/New_York" });
+  expect(body.goal).toEqual({
+    calorieTargetMilliKcal: 2_050_000,
+    waterTargetOunces: 80,
+    proteinTargetMilligrams: 120_000,
+    carbohydrateTargetMilligrams: 230_000,
+    fatTargetMilligrams: 70_000,
+    fiberTargetMilligrams: 25_000,
+    sugarMaximumMilligrams: 50_000,
+    sodiumMaximumMilligrams: 2_300,
+  });
   expect(apiGet(`bearer ${key}`, freshIp()).status).toBe(200);
 });
 
@@ -246,7 +250,7 @@ test("the versioned resource covers historical, empty, and future days", async (
   const { key } = await createKey(reader, "History");
   const read = (day: string) => apiGet(`Bearer ${key}`, freshIp(), `date=${day}`);
   const empty: unknown = await read("2026-08-29").json();
-  expect(empty).toMatchObject({ selectedDate: "2026-08-29", isFuture: false, foodEntries: [], waterEvents: [], events: [], waterTotalOunces: 0 });
+  expect(empty).toMatchObject({ selectedDate: "2026-08-29", isFuture: false, foodEntries: [], waterEvents: [], events: [], waterTotalOunces: 0, goal: { calorieTargetMilliKcal: 2_050_000, waterTargetOunces: 80 } });
   const future: unknown = await read("2026-09-01").json();
   expect(future).toMatchObject({ selectedDate: "2026-09-01", isFuture: true, foodEntries: [], goal: { calorieTargetMilliKcal: 2_050_000 } });
 });

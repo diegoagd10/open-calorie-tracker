@@ -25,7 +25,7 @@ async function setup(options = {}) {
   const catalog = new FoodCatalog([{ provider: "open-food-facts", capability: "barcode", service: new LocalOpenFoodFactsAdapter(management, directory) }]);
   const createdAt = "2026-01-01T00:00:00.000Z";
   const user = database.getClient().insert(users).values({ usernameNormalized: "off.member", createdAt }).returning().get();
-  database.getClient().insert(userPreferences).values({ userId: user.id, timeZone: "UTC", displayUnits: "metric", createdAt, updatedAt: createdAt }).run();
+  database.getClient().insert(userPreferences).values({ userId: user.id, timeZone: "UTC", createdAt, updatedAt: createdAt }).run();
   const entries = new FoodEntryService(database.getClient(), catalog, () => new Date("2026-09-07T12:00:00.000Z"));
   return { management, catalog, entries, userId: user.id, database, directory };
 }
