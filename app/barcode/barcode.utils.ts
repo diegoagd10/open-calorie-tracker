@@ -309,7 +309,7 @@ export function offNutrition(product: OffProduct): OffFood | null {
   const marketCountry = text(product.countries);
   if (name.length > 500 || (brand?.length ?? 0) > 500 || (marketCountry?.length ?? 0) > 2000) return null;
   const nutrition = labelNutrition(product);
-  const reason = /^(?:\d{7,8}|\d{12,14})$/.test(code) ? nutrition.calculationUnavailableReason : "unsupported_barcode";
+  const reason = isSupportedCommercialBarcode(code) ? nutrition.calculationUnavailableReason : "unsupported_barcode";
   if (reason !== undefined && reason !== "conflicting_nutrition_bases") return null;
   return {
     ...nutrition,

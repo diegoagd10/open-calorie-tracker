@@ -953,8 +953,8 @@ test("home food actions log, edit, detect conflicts, delete, and map catalog fai
   for (const [providerFoodId, status, message] of [
     ["0000000000001", 404, "Product not found"],
     ["0000000000002", 404, "Product not found"],
-    ["0000000000004", 503, "Try again or log it manually."],
-    ["0000000000005", 503, "Try again or log it manually."],
+    ["0000000000004", 503, "Open Food Facts isn't responding; try again or log it manually."],
+    ["0000000000005", 503, "Open Food Facts isn't responding; try again or log it manually."],
     ["0034000470693", 409, "The product changed on Open Food Facts. Review it again before saving."],
   ] as const) {
     const failedConfirmation = await homeAction(

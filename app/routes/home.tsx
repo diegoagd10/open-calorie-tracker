@@ -1175,7 +1175,11 @@ export async function action({ request }: Route.ActionArgs) {
         : catalogFailure(error);
     if (failure) {
       return data<HomeActionData>(
-        { message: failure.message, tone: "error" },
+        {
+          // A save has no title line, so an unavailable OFF keeps its whole sentence.
+          message: error instanceof BarcodeLookupUnavailableError ? error.message : failure.message,
+          tone: "error",
+        },
         { status: failure.status },
       );
     }

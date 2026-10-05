@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { Form, useNavigation } from "react-router";
 
-import catalogStyles from "../../routes/settings.catalogs.module.css";
 import styles from "../barcode.module.css";
 
 /** What the last contact action did, so the card can confirm it or keep the rejected value. */
@@ -27,10 +26,10 @@ export function BarcodeContactSection({
   const showForm = email === undefined || editing || invalid !== undefined;
 
   return (
-    <section aria-labelledby="open-food-facts-heading" className={catalogStyles.card}>
-      <div className={catalogStyles.heading}>
+    <section aria-labelledby="open-food-facts-heading" className={styles.card}>
+      <div className={styles.heading}>
         <h2 id="open-food-facts-heading">Open Food Facts</h2>
-        <span className={email ? catalogStyles.connected : catalogStyles.disconnected}>
+        <span className={email ? styles.connected : styles.disconnected}>
           {email ? "● Enabled" : "○ Not configured"}
         </span>
       </div>
@@ -105,7 +104,7 @@ export function BarcodeContactSection({
           )}
         </>
       )}
-      <p className={catalogStyles.note}>
+      <p className={styles.note}>
         Scanned and typed barcodes are sent to Open Food Facts. Data available
         under the{" "}
         <a href="https://opendatacommons.org/licenses/odbl/1-0/" rel="noreferrer" target="_blank">ODbL</a>.
