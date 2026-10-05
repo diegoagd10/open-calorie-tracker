@@ -53,8 +53,17 @@
   margin-top: 1rem;
 }
 
+/* Both choices stay side by side, even on the narrowest phones. */
 .setupDialog .actions {
+  flex-wrap: nowrap;
   justify-content: flex-end;
+}
+
+.setupDialog .actions button,
+.setupDialog .actions a {
+  padding-inline: 0.95rem;
+  font-size: 0.875rem;
+  white-space: nowrap;
 }
 
 .actions button,

@@ -962,14 +962,31 @@ test("an administrator enables barcode lookup with a contact email that identifi
   browser,
   context,
   page,
-}) => {
+}, testInfo) => {
   await context.setExtraHTTPHeaders({ "X-Test-Client-IP": "203.0.113.97" });
   await completeSetupForTestUser(page, "barcode.setup.admin");
 
   await page.getByRole("button", { name: "Add Food" }).click();
+  // The four Add Food methods sit in one row where the dialog is wide enough.
+  const methods = page.getByLabel("Add Food methods").locator(":scope > *");
+  await expect(methods).toHaveCount(4);
+  const methodTops = await methods.evaluateAll((elements) => elements.map((element) => Math.round(element.getBoundingClientRect().top)));
+  expect(new Set(methodTops).size).toBe(1);
+  await page.screenshot({ path: testInfo.outputPath("add-food-methods-desktop.png") });
   await page.getByRole("button", { name: "Scan barcode" }).click();
   const setup = page.getByRole("dialog", { name: "Barcode scanning is not enabled" });
   await expect(setup).toBeVisible();
+
+  // On a phone, the pop-up's two choices stay side by side, and the methods stack.
+  await page.setViewportSize({ width: 390, height: 844 });
+  const cancelBox = (await setup.getByRole("button", { name: "Cancel" }).boundingBox())!;
+  const continueBox = (await setup.getByRole("link", { name: "Go to Food Catalogs →" }).boundingBox())!;
+  expect(Math.abs(cancelBox.y - continueBox.y)).toBeLessThan(2);
+  expect(continueBox.x + continueBox.width).toBeLessThanOrEqual(390);
+  await page.screenshot({ path: testInfo.outputPath("admin-setup-popup-mobile.png") });
+  const stackedTops = await methods.evaluateAll((elements) => elements.map((element) => Math.round(element.getBoundingClientRect().top)));
+  expect(new Set(stackedTops).size).toBe(4);
+  await page.setViewportSize({ width: 1280, height: 720 });
   await expect(setup).toContainText("Add one in Food Catalogs to enable scanning for every member.");
   await expect(page.getByLabel("Enter barcode")).toHaveCount(0);
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);

@@ -166,6 +166,23 @@ test.each([
   await expect(service.lookup("1234567")).rejects.toBeInstanceOf(BarcodeProductNotFoundError);
 });
 
+test.each([
+  { per_quantity: null },
+  { per_quantity: "" },
+  { per_unit: 5 },
+  { per: null },
+  { nutrients: [] },
+  { nutrients: "per serving" },
+])("a malformed packaging table %j beside a valid one rejects the product instead of being ignored", async (malformed) => {
+  const { service } = await barcodeLookup({ "1234567": nativeProduct([nativeSet, { ...nativeSet, ...malformed }]) });
+  await expect(service.lookup("1234567")).rejects.toBeInstanceOf(BarcodeProductNotFoundError);
+});
+
+test("a malformed table that is not packaging, as sold stays excluded", async () => {
+  const { service } = await barcodeLookup({ "1234567": nativeProduct([nativeSet, { ...nativeSet, source: "estimate", per_quantity: null, nutrients: [] }, { ...nativeSet, source: 5 }]) });
+  await expect(service.lookup("1234567")).resolves.toMatchObject({ isSelectable: true, authoritativeBaseQuantityMicrounits: 41_000_000 });
+});
+
 test("a declared absence of nutrition blocks otherwise usable packaging", async () => {
   const { service } = await barcodeLookup({
     "1234567": nativeProduct([nativeSet], { no_nutrition_data: "on" }),

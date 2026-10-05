@@ -16,18 +16,21 @@ const offNutrientSchema = z.object({
 /**
  * One nutrition table of a product. Open strings for `source`, `preparation`, `per` and `per_unit`
  * are deliberate: unsupported values must reach the label rules and be excluded, not fail the reply.
+ * A field of the wrong type reads as missing, so a malformed packaging table still reaches the rules
+ * and makes the product invalid instead of being dropped; only an entry that is not an object is
+ * skipped, as the rules skip any table that is not packaging, as sold.
  */
 const offNutritionInputSetSchema = z.object({
   /** `"packaging"`, `"estimate"`, … */
-  source: z.string().optional(),
+  source: z.string().optional().catch(undefined),
   /** `"as_sold"` or `"prepared"`. */
-  preparation: z.string().optional(),
+  preparation: z.string().optional().catch(undefined),
   /** `"100g"`, `"100ml"` or `"serving"`. */
-  per: z.string().optional(),
-  per_quantity: offNumberSchema.optional(),
+  per: z.string().optional().catch(undefined),
+  per_quantity: offNumberSchema.optional().catch(undefined),
   /** `"g"` or `"ml"`. */
-  per_unit: z.string().optional(),
-  nutrients: z.record(z.string(), offNutrientSchema).nullable().optional(),
+  per_unit: z.string().optional().catch(undefined),
+  nutrients: z.record(z.string(), offNutrientSchema).optional().catch(undefined),
 }).nullable().catch(null);
 
 export const offProductSchema = z.object({

@@ -2494,41 +2494,43 @@ function CatalogChoiceStage({
     </>
   );
   return (
-    <div className={methodStyles.methods} aria-label="Add Food methods">
-      <Link className={methodStyles.method} to={catalogHref(date, "my")}>
-        <span className={methodStyles.icon}>
-          <UiIcon name="utensils" />
-        </span>
-        <span className={methodStyles.label}>My foods</span>
-      </Link>
-      <Link aria-label="Search for food" className={methodStyles.method} to={catalogHref(date, "search")}>
-        <span className={methodStyles.icon}>
-          <UiIcon name="search" />
-        </span>
-        <span className={methodStyles.label}>Search food</span>
-      </Link>
-      {barcodeLookup === "enabled" ? (
-        <Link className={methodStyles.method} to={catalogHref(date, "barcode")}>
-          {scanBarcode}
+    <>
+      <div className={methodStyles.methods} aria-label="Add Food methods">
+        <Link className={methodStyles.method} to={catalogHref(date, "my")}>
+          <span className={methodStyles.icon}>
+            <UiIcon name="utensils" />
+          </span>
+          <span className={methodStyles.label}>My foods</span>
         </Link>
-      ) : barcodeLookup === "admin-setup" ? (
-        <button
-          aria-haspopup="dialog"
-          className={methodStyles.method}
-          onClick={() => setSetupOpen(true)}
-          type="button"
-        >
-          {scanBarcode}
-        </button>
-      ) : null}
-      <Link className={methodStyles.method} to={catalogHref(date, "manual")}>
-        <span className={methodStyles.icon}>
-          <UiIcon name="pencil" />
-        </span>
-        <span className={methodStyles.label}>Manual</span>
-      </Link>
+        <Link aria-label="Search for food" className={methodStyles.method} to={catalogHref(date, "search")}>
+          <span className={methodStyles.icon}>
+            <UiIcon name="search" />
+          </span>
+          <span className={methodStyles.label}>Search food</span>
+        </Link>
+        {barcodeLookup === "enabled" ? (
+          <Link className={methodStyles.method} to={catalogHref(date, "barcode")}>
+            {scanBarcode}
+          </Link>
+        ) : barcodeLookup === "admin-setup" ? (
+          <button
+            aria-haspopup="dialog"
+            className={methodStyles.method}
+            onClick={() => setSetupOpen(true)}
+            type="button"
+          >
+            {scanBarcode}
+          </button>
+        ) : null}
+        <Link className={methodStyles.method} to={catalogHref(date, "manual")}>
+          <span className={methodStyles.icon}>
+            <UiIcon name="pencil" />
+          </span>
+          <span className={methodStyles.label}>Manual</span>
+        </Link>
+      </div>
       {setupOpen ? <BarcodeSetupPopup onClose={() => setSetupOpen(false)} /> : null}
-    </div>
+    </>
   );
 }
 

@@ -22,7 +22,9 @@ export function BarcodeContactSection({
   const pendingIntent = navigation.formData?.get("intent");
   const [editing, setEditing] = useState(false);
   const [confirmingRemoval, setConfirmingRemoval] = useState(false);
-  const invalid = result?.contact === "invalid" ? result : undefined;
+  // Cancel discards a rejected email; a later rejection is a new result and shows again.
+  const [discarded, setDiscarded] = useState<BarcodeContactResult>();
+  const invalid = result?.contact === "invalid" && result !== discarded ? result : undefined;
   const showForm = email === undefined || editing || invalid !== undefined;
 
   return (
@@ -75,7 +77,17 @@ export function BarcodeContactSection({
             <button className={styles.primary} disabled={pendingIntent === "save-off-contact"} name="intent" type="submit" value="save-off-contact">
               {email ? "Save contact email" : "Save and enable scanning"}
             </button>
-            {email ? <button onClick={() => setEditing(false)} type="button">Cancel</button> : null}
+            {email ? (
+              <button
+                onClick={() => {
+                  setEditing(false);
+                  setDiscarded(result);
+                }}
+                type="button"
+              >
+                Cancel
+              </button>
+            ) : null}
           </div>
         </Form>
       ) : (

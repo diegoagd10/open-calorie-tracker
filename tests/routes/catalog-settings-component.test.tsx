@@ -162,6 +162,18 @@ test("an invalid contact keeps the typed value with an error and no status chang
   expect(text(renderer.root)).toContain("● Enabled");
 });
 
+test("Cancel after a rejected email discards it and shows the saved contact again", async () => {
+  const renderer = await renderContact("family@example.com", { contact: "invalid", error: "Enter a valid email address.", value: "review@example.c" });
+  expect(renderer.root.findByProps({ role: "alert" })).toBeDefined();
+  await act(() => { (renderer.root.findByProps({ children: "Cancel" }).props as { onClick: () => void }).onClick(); });
+  expect(renderer.root.findAllByProps({ name: "email" })).toHaveLength(0);
+  expect(renderer.root.findAllByProps({ role: "alert" })).toHaveLength(0);
+  expect(text(renderer.root)).toContain("Contact emailfamily@example.com");
+  await act(() => { (renderer.root.findByProps({ children: "Change" }).props as { onClick: () => void }).onClick(); });
+  expect(renderer.root.findByProps({ name: "email" }).props.defaultValue).toBe("family@example.com");
+  expect(renderer.root.findAllByProps({ role: "alert" })).toHaveLength(0);
+});
+
 test("removing the contact returns to the not-configured card", async () => {
   const renderer = await renderContact(undefined, { contact: "removed" });
   expect(text(renderer.root)).toContain("○ Not configured");
