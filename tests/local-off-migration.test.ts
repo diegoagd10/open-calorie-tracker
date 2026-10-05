@@ -3,7 +3,6 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { expect, test } from "vitest";
 import { openApplicationDatabase } from "../app/database/database.server";
-import { photoMeals } from "../app/database/schema.server";
 import { FoodCatalog } from "../app/catalog/food-catalog.server";
 import { TestFoodCatalogProvider, TestOpenFoodFactsProvider } from "../app/catalog/test-fixture.server";
 import { FoodEntryService } from "../app/food-entry/food-entry.server";
@@ -26,13 +25,10 @@ test.each(["0014_breezy_eternals", "0015_outstanding_stature", "0016_first_key"]
       oldEntries.log(user.id, { provider: "usda-fdc", providerFoodId: "1001", foodLogDate: "2026-09-06", idempotencyKey: "historical-usda", selectedMeasurementId: "base:g:100000000", quantity: "1" }),
       oldEntries.log(user.id, { provider: "open-food-facts", providerFoodId: "0012345678905", foodLogDate: "2026-09-06", idempotencyKey: "historical-off", selectedMeasurementId: "serving", quantity: "1" }),
     ]);
-    database.getClient().insert(photoMeals).values({ id: "historical-photo", userId: user.id, entryId: history[0].id, foodLogDate: "2026-09-06", localEventTime: createdAt, photo: Buffer.alloc(12), mimeType: "image/png", createdAt }).run();
-    const photos = database.getClient().select().from(photoMeals).all();
     database.getClient().$client.exec("ALTER TABLE food_entries DROP COLUMN source_saved_food_id");
     database.close();
     database = openApplicationDatabase({ databasePath, migrationsFolder: path.resolve("drizzle") });
     const entries = new FoodEntryService(database.getClient(), new FoodCatalog([]), () => new Date("2026-09-08T12:00:00Z"));
-    expect(database.getClient().select().from(photoMeals).all()).toEqual(photos);
     expect(history.map(old => entries.read(user.id, old.id))).toEqual(history);
     const updated = history.map(old => entries.update(user.id, old.id, { expectedUpdatedAt: old.updatedAt, foodLogDate: old.foodLogDate, name: `Edited ${old.name}`, quantity: "2", selectedMeasurementId: old.selectedMeasurementId }));
     expect(updated.map(entry => entry.energyMilliKcal)).toEqual([118000, 360000]);

@@ -117,16 +117,14 @@ test.each([
   expect(imported.messages.some(message => message.result)).toBe(false);
 });
 
-test.each([
-  [{ "food_category.csv": null }, "Missing Foundation table: food_category.csv. Choose the Foundation CSV ZIP with supporting data."],
-  [{ "food_category.csv": "id,code,description\n1,0100,One\n1,0200,Duplicate\n" }, "Duplicate category in food_category.csv."],
-  [{ "food_category.csv": "id,code,description\n0,0100,Invalid\n" }, "Invalid category in food_category.csv."],
-  [{ "food_category.csv": "id,code,description\n1,0100, \n" }, "Invalid category in food_category.csv."],
-  [{ "food.csv": "fdc_id,data_type,description,food_category_id,publication_date\n1,foundation_food,Food,2,2024-01-01\n" }, "Foundation food has an invalid or missing category."],
-] as const)("Foundation rejects missing, duplicate, invalid or unmatched category data %#", async (overrides, error) => {
-  const imported = await install(overrides);
-  expect(imported.final.error).toBe(error);
-  expect(imported.final.result).toBeUndefined();
+test("Foundation installs without food_category.csv and ignores food category references", async () => {
+  const imported = await install({
+    "food.csv": "fdc_id,data_type,description,food_category_id,publication_date\n1,foundation_food,Food,2,2024-01-01\n",
+    "food_category.csv": null,
+  });
+  expect(imported.final.error).toBeUndefined();
+  expect(imported.final.result?.foodCount).toBe(1);
+  expect(imported.read("1")?.name).toBe("Food");
 });
 
 test("Foundation archive bounds, ignored members and checksum failures are enforced", async () => {

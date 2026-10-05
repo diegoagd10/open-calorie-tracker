@@ -49,12 +49,12 @@ test("desktop and phone sessions share data across entries and logout stays loca
     const otherCsrf = await otherPage.locator('[name="csrfToken"]').first().inputValue();
     const rejected = await page.evaluate(async csrfToken => {
       const statuses: number[] = [];
-      for (const route of ["/?index", "/logout", "/settings/goals", "/settings/catalogs", "/settings/ai", "/settings/users", "/account/password", "/catalog-notifications", "/photo-analysis"]) {
+      for (const route of ["/?index", "/logout", "/settings/goals", "/settings/catalogs", "/settings/users", "/account/password", "/catalog-notifications"]) {
         statuses.push((await fetch(route, { method: "POST", body: new URLSearchParams({ csrfToken }) })).status);
       }
       return statuses;
     }, otherCsrf);
-    expect(rejected).toEqual(Array<number>(9).fill(403));
+    expect(rejected).toEqual(Array<number>(7).fill(403));
     await otherPage.getByRole("button", { name: "Sign out" }).click();
     await expect(otherPage).toHaveURL(`${otherOrigin}/login`);
     await page.reload();

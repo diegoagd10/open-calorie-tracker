@@ -69,7 +69,6 @@
       "tests/**",
       "scripts/**",
       "app/catalog/test-fixture.server.ts",
-      "app/photo-analysis/test-fixture.server.ts",
       "app/routes/**",
       "app/**/*.tsx",
       "drizzle.config.ts",
