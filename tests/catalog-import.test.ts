@@ -1,37 +1,13 @@
-import { gunzipSync } from "node:zlib";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, expect, test } from "vitest";
-import { importOff } from "../app/catalog-management/off-import.server";
 import { importFoundation } from "../app/catalog-management/foundation-import.server";
-import { readOffGenerationFood } from "../app/database/off-generation.server";
 import { readUsdaGenerationFood, searchUsdaGeneration } from "../app/database/usda-generation.server";
 import { foundationArchive } from "./support/foundation-archive";
-import { offArchive, offProduct, offWithBasis } from "./support/off-archive";
 
 const directories: string[] = [];
 afterEach(async () => { await Promise.all(directories.splice(0).map(directory => rm(directory, { recursive: true, force: true }))); });
-
-test("the OFF importer publishes a retrievable source-backed product and complete report", async () => {
-  const directory = await mkdtemp(path.join(tmpdir(), "catalog-import-")); directories.push(directory);
-  const archivePath = path.join(directory, "products.gz");
-  await writeFile(archivePath, offArchive([offWithBasis("100ml")]));
-  const messages: unknown[] = [];
-  await importOff({ directory, archivePath, generation: "off", maxExpandedBytes: 10 * 1024 * 1024 }, message => messages.push(structuredClone(message)));
-  expect(messages).toEqual([
-    { progress: { phase: "validating", processedRecords: 0, importedRecords: 0, usableNutritionRecords: 0, rejectedRecords: 0, exclusions: {} } },
-    { progress: { phase: "importing", processedRecords: 0, importedRecords: 0, usableNutritionRecords: 0, rejectedRecords: 0, exclusions: {} } },
-    { progress: { processedRecords: 1, importedRecords: 1, usableNutritionRecords: 1, rejectedRecords: 0, exclusions: {} } },
-    { result: { archiveFormat: "csv", expandedBytes: gunzipSync(offArchive([offWithBasis("100ml")])).length, foodCount: 1, publicationDateRange: { earliest: "", latest: "" }, sourceDateRange: { earliest: "2025-01-01T00:00:00.000Z", latest: "2025-01-01T00:00:00.000Z" } } },
-  ]);
-  expect(readOffGenerationFood(directory, "off", offProduct.code)).toMatchObject({
-    name: 'Oats\twith "bran"', brand: "Example", marketCountry: "United States", barcode: "0012345678905",
-    provider: "open-food-facts", providerFoodId: "0012345678905", catalogGeneration: "off",
-    authoritativeBaseQuantityMicrounits: 100_000_000, authoritativeBaseUnit: "ml", isSelectable: true,
-    nutritionPerAuthoritativeBase: { energyMilliKcal: { amount: 400, fixedPointMultiplier: 1000 }, sodiumMilligrams: { amount: 10, fixedPointMultiplier: 1 }, sugarMilligrams: null },
-  });
-});
 
 test("the Foundation importer makes foods searchable with preserved source nutrition and portions", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "catalog-import-")); directories.push(directory);

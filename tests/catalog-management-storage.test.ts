@@ -29,11 +29,9 @@ test.each([
 });
 
 test.each([
-  ["usda-fdc", 249, "Not enough disk space for USDA import. Free space and retry."],
-  ["usda-fdc", 250, "Invalid or corrupt Foundation CSV ZIP, or insufficient disk space. Verify the download and retry."],
-  ["open-food-facts", 249, "Not enough disk space for Open Food Facts import. Free space and retry."],
-  ["open-food-facts", 250, "Corrupt OFF GZIP or malformed TSV/JSONL. Download the archive again."],
-] as const)("%s disk preflight reserves new staged data while available space already reflects the current generation at %i bytes", async (provider, available, error) => {
+  [249, "Not enough disk space for USDA import. Free space and retry."],
+  [250, "Invalid or corrupt Foundation CSV ZIP, or insufficient disk space. Verify the download and retry."],
+] as const)("disk preflight reserves new staged data while available space already reflects the current generation at %i bytes", async (available, error) => {
   disk.mockResolvedValue({ bavail: available, bsize: 1 });
   const directory = await mkdtemp(path.join(tmpdir(), "catalog-current-storage-"));
   const database = openApplicationDatabase({ databasePath: path.join(directory, "app.sqlite"), migrationsFolder: path.resolve("drizzle") });
@@ -42,11 +40,11 @@ test.each([
   saveCatalogState(database.getClient(), {
     installed: { generation, filename: "installed.zip", sha256: "sha", databaseBytes: 250, foodCount: 1, installedAt: "2026-01-01T00:00:00.000Z", publicationDateRange: { earliest: "2026-01-01", latest: "2026-01-01" } },
     job: null,
-  }, provider);
-  const management = new CatalogManagement(database.getClient(), { provider, directory, workerPath: path.resolve("app/catalog-management/import-worker.ts"), maxUploadBytes: 1000, maxExpandedBytes: 100 });
+  });
+  const management = new CatalogManagement(database.getClient(), { directory, workerPath: path.resolve("app/catalog-management/import-worker.ts"), maxUploadBytes: 1000, maxExpandedBytes: 100 });
   cleanups.push(async () => { await management.shutdown(); database.close(); await rm(directory, { recursive: true, force: true }); });
 
-  await management.submitArchive({ filename: provider === "usda-fdc" ? "archive.zip" : "archive.gz", size: 50, stream: Readable.from(Buffer.alloc(50)) });
+  await management.submitArchive({ filename: "archive.zip", size: 50, stream: Readable.from(Buffer.alloc(50)) });
   await vi.waitFor(() => expect(management.read().busy).toBe(false));
 
   expect(management.read().job?.error).toBe(error);

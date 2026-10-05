@@ -57,14 +57,11 @@ test("no catalog change stays quiet through polling, focus and refresh", async (
   expect(text(refreshed.root)).toBe("");
 });
 
-test.each([
-  ["usda-fdc", "USDA Foundation"],
-  ["open-food-facts", "Open Food Facts"],
-] as const)("a new %s catalog activation notifies a connected user", async (provider, name) => {
+test("a new catalog activation notifies a connected user", async () => {
   const { renderer, fetch, browser } = await render([]);
-  fetch.mockResolvedValueOnce(Response.json({ outcomes: [outcome({ provider, jobId: `${provider}-new`, operation: "update" })] }));
+  fetch.mockResolvedValueOnce(Response.json({ outcomes: [outcome({ jobId: "usda-new", operation: "update" })] }));
   await act(async () => { browser.dispatchEvent(new Event("focus")); });
-  expect(text(renderer.root)).toBe(`${name} catalog updated.`);
+  expect(text(renderer.root)).toBe("USDA Foundation catalog updated.");
 });
 
 test("a new event produces a brief accessible toast, expires and stays dismissed after polls and reload", async () => {
@@ -93,12 +90,12 @@ test("a new event produces a brief accessible toast, expires and stays dismissed
 test("multiple outcomes are queued with distinct messages and a changed outcome can notify again", async () => {
   const { renderer, fetch, browser } = await render([
     outcome({ jobId: "interrupted", phase: "interrupted", installed: null }),
-    outcome({ jobId: "failed", provider: "open-food-facts", phase: "failed", error: "Internal archive details" }),
+    outcome({ jobId: "failed", phase: "failed", error: "Internal archive details" }),
     outcome(),
   ]);
   expect(text(renderer.root)).toBe("USDA Foundation catalog updated.");
   await advance(6000);
-  expect(text(renderer.root)).toBe("Open Food Facts import failed. Inspect the terminal and retry the command.");
+  expect(text(renderer.root)).toBe("USDA Foundation import failed. Inspect the terminal and retry the command.");
   expect(renderer.root.findByProps({ "data-phase": "failed" })).toBeDefined();
   await act(() => { (renderer.root.findByType("button").props as { onClick: () => void }).onClick(); });
   expect(text(renderer.root)).toBe("USDA Foundation import interrupted. Inspect the terminal and retry the command.");
@@ -170,10 +167,9 @@ test("an unmounted toast ignores a late poll and removes its timers", async () =
 });
 
 
-test.each(["usda-fdc", "open-food-facts"] as const)("%s first activation announces installation with only public notification fields", async provider => {
-  const name = provider === "usda-fdc" ? "USDA Foundation" : "Open Food Facts";
-  const { renderer } = await render([outcome({ provider, operation: "install" })]);
-  expect(text(renderer.root)).toBe(`${name} catalog installed.`);
+test("first activation announces installation with only public notification fields", async () => {
+  const { renderer } = await render([outcome({ operation: "install" })]);
+  expect(text(renderer.root)).toBe("USDA Foundation catalog installed.");
 });
 
 test("shared acknowledgement cannot suppress success and displaying deduplicates even before dismissal on refresh", async () => {
@@ -209,9 +205,9 @@ test("a catalog update delivered ten days ago stays quiet through repeated refre
 test("refresh does not advance through a backlog of catalog success outcomes", async () => {
   const { renderer } = await render([
     outcome({ jobId: "usda-update", operation: "update" }),
-    outcome({ provider: "open-food-facts", jobId: "off-update", operation: "update" }),
+    outcome({ jobId: "usda-failure", phase: "failed", completedAt: "2026-09-09T13:00:00Z" }),
   ]);
-  expect(text(renderer.root)).toBe("Open Food Facts catalog updated.");
+  expect(text(renderer.root)).toBe("USDA Foundation import failed. Inspect the terminal and retry the command.");
   await act(() => renderer.unmount());
   const refreshed = await mount();
   expect(text(refreshed.root)).toBe("");

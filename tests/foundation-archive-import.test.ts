@@ -31,7 +31,7 @@ async function fixtureEntries() {
   const directory = path.resolve("tests/fixtures/usda-foundation");
   return Promise.all((await fs.readdir(directory)).filter(name => name.endsWith(".csv")).map(async name => ({ name: `source/${name}`, body: await fs.readFile(path.join(directory, name), "utf8") })));
 }
-const install = (entries: Entry[], maxExpandedBytes = 10 * 1024 * 1024) => runArchive("usda", zip(entries), cleanup => cleanups.push(cleanup), { maxExpandedBytes });
+const install = (entries: Entry[], maxExpandedBytes = 10 * 1024 * 1024) => runArchive(zip(entries), cleanup => cleanups.push(cleanup), { maxExpandedBytes });
 
 test.each([
   { name: "source/./food.csv", body: "" },

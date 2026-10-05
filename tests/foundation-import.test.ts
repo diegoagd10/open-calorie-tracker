@@ -4,7 +4,7 @@ import { foundationArchive } from "./support/foundation-archive";
 
 const cleanups: (() => Promise<void>)[] = [];
 afterEach(async () => { await Promise.all(cleanups.splice(0).map(cleanup => cleanup())); });
-const install = async (overrides: Record<string, string | null> = {}, maxExpandedBytes = 10 * 1024 * 1024) => runArchive("usda", await foundationArchive({
+const install = async (overrides: Record<string, string | null> = {}, maxExpandedBytes = 10 * 1024 * 1024) => runArchive(await foundationArchive({
   "food.csv": "fdc_id,data_type,description,food_category_id,publication_date\n1,foundation_food,Crème,1,2024-01-02\n",
   "food_category.csv": "id,code,description\n1,0100,Test category\n",
   "foundation_food.csv": "fdc_id,NDB_number\n99,1\n",
@@ -133,6 +133,6 @@ test("Foundation archive bounds, ignored members and checksum failures are enfor
   expect(extra.final.result?.foodCount).toBe(1);
   const archive = await foundationArchive();
   archive[archive.indexOf(Buffer.from("Broccoli, raw"))] = 88;
-  const corrupt = await runArchive("usda", archive, cleanup => cleanups.push(cleanup));
+  const corrupt = await runArchive(archive, cleanup => cleanups.push(cleanup));
   expect(corrupt.final.error).toBe("ZIP checksum failed. Download the archive again.");
 });

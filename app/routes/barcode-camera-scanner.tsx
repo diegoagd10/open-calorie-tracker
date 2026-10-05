@@ -1,10 +1,10 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
-import { hasValidGtinCheckDigit } from "../catalog/barcode";
-import type {
-  BarcodeDecoder,
-  BarcodeDecoderSession,
-} from "../catalog/barcode-decoder";
+import {
+  hasValidGtinCheckDigit,
+  type BarcodeDecoder,
+  type BarcodeDecoderSession,
+} from "../barcode";
 import styles from "../food-log.module.css";
 
 type ScannerPorts = {
@@ -452,7 +452,7 @@ export function createBarcodeCameraScanner(ports: ScannerPorts) {
 
 export const BarcodeCameraScanner = createBarcodeCameraScanner({
   async loadDecoder() {
-    const module = await import("../catalog/barcode-decoder.client");
+    const module = await import("../barcode/barcode-decoder.client");
     return module.localBarcodeDecoder;
   },
   requestCamera(constraints) {

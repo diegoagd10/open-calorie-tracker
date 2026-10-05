@@ -12,8 +12,8 @@ Camera scanning requires all of the following:
 The camera request prefers an environment-facing camera and never requests
 audio. Video frames remain in browser memory: the application does not encode,
 persist, log, or transmit a photo, frame, blob, or data URL. A stable decoded
-barcode is passed to the same Open Food Facts lookup used by manual input, and
-the camera closes before that request begins. The user must still review the
+barcode is sent to the same live Open Food Facts API lookup used by manual
+input, and the camera closes before that request begins. The user must still review the
 product, serving, quantity, attribution, and nutrition before confirming a Food
 Entry.
 

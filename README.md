@@ -26,14 +26,23 @@ Create an API key in **Settings › API keys**. The page shows how to send it as
 `Authorization: Bearer <key>` to the MCP endpoint (`/mcp`) and the read-only
 Daily Food Log API (`/api/v1/daily-log`).
 
+## Barcode lookup
+
+Scanned and typed barcodes are looked up live on the [Open Food Facts](https://world.openfoodfacts.org)
+API, so each barcode you look up or save is sent to Open Food Facts. Open Food
+Facts requires every client to identify itself: until an administrator sets a
+contact email in **Settings → Food Catalogs**, barcode lookup is disabled.
+Installations that imported the old local Open Food Facts catalog can reclaim
+its disk space with `node scripts/remove-local-off-catalog.mjs --yes` (run it
+without `--yes` first to see what it would delete; in Docker Compose, prefix it
+with `docker compose exec -T application`).
+
 ## Install food catalogs from the terminal
 
-Catalog installation is command-only. Food Catalogs in Settings shows installed
-sources, official downloads and metadata-only update checks.
+Catalog installation is command-only. Food Catalogs in Settings shows the
+installed USDA catalog, official downloads and metadata-only update checks.
 
-USDA Foundation powers **Search food**. Open Food Facts is installed only for
-camera scans and manually entered barcode lookup; it is not included in text
-search results.
+USDA Foundation powers **Search food**.
 
 1. Use Node 24 and the pinned pnpm. Run `pnpm install --frozen-lockfile` and
    `pnpm build` to build the server, import worker and command artifacts.
@@ -46,16 +55,12 @@ search results.
 3. Download the **Foundation Foods CSV ZIP** from [USDA's official
    downloads](https://fdc.nal.usda.gov/download-datasets/). Keep the ZIP compressed;
    JSON, Branded, FNDDS, SR Legacy and full-dataset archives are unsupported.
-   Download the **product JSONL GZIP** (recommended for source-backed serving
-   nutrition; tab-separated CSV GZIP remains supported) from [Open Food Facts's
-   official data page](https://world.openfoodfacts.org/data); keep the `.gz`
-   compressed. Place each archive in a non-empty, readable regular file (no
-   symlinks), visible at the same absolute path to both command and server.
-4. Run either command, independently:
+   Place the archive in a non-empty, readable regular file (no symlinks),
+   visible at the same absolute path to both command and server.
+4. Run the command:
 
 ```sh
 pnpm catalog:import:usda -- /absolute/path/to/Foundation.zip
-pnpm catalog:import:off -- /absolute/path/to/openfoodfacts-products.jsonl.gz
 ```
 
 For Docker Compose, download into an `imports/` subdirectory of the host
@@ -65,11 +70,10 @@ container paths, rather than the host's Downloads path:
 
 ```sh
 docker compose exec -T application pnpm catalog:import:usda -- /app/data/imports/Foundation.zip
-docker compose exec -T application pnpm catalog:import:off -- /app/data/imports/openfoodfacts-products.jsonl.gz
 ```
 
 For another container manager, use `docker exec <application-container>` with
-those same commands and container-visible paths. Installing from a terminal
+that same command and a container-visible path. Installing from a terminal
 outside the container does not make a host file visible inside it.
 
 Run the same command with a newer archive or the same archive for deliberate
@@ -82,16 +86,16 @@ retrying. On server restart, unfinished pre-activation work is interrupted and
 partial artifacts are removed; run the command again with the full archive.
 A published handoff is validated and recovered using the existing lifecycle.
 
-All connected signed-in clients receive source-specific installed/updated
+All connected signed-in clients receive installed/updated
 toasts on any application page. Failure/interruption toasts are administrator-only
 and direct the operator back to the terminal. Each browser profile remembers
 delivered outcomes for the signed-in account across navigation, refresh, and
 browser restarts. A fetched batch is recorded together so refresh cannot walk
 through an old outcome backlog, while another account or client still receives
-its own notification. Only the newest successful outcome for each catalog is
+its own notification. Only the newest successful outcome is
 queued; a later installation or replacement has a new outcome identity and can
 notify again.
-Prior valid catalogs remain available during replacement and after a failed
+The prior valid catalog remains available during replacement and after a failed
 replacement; saved Food Entries retain their original nutrition and measurements.
 
 See the [food catalog operations guide](docs/food-catalog-operations.md) for

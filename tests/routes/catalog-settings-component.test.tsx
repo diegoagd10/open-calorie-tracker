@@ -4,6 +4,7 @@ import { act, create, type ReactTestInstance, type ReactTestRenderer } from "rea
 import { afterEach, expect, test, vi } from "vitest";
 import CatalogSettings, { meta } from "../../app/routes/settings.catalogs";
 import type { CatalogState, ImportPhase } from "../../app/catalog-management/catalog-management.server";
+import { BarcodeContactSection, type BarcodeContactResult } from "../../app/barcode";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const renderers: ReactTestRenderer[] = [];
@@ -11,9 +12,9 @@ afterEach(async () => { for (const renderer of renderers.splice(0)) await act(()
 const empty: CatalogState = { installed: null, job: null, busy: false };
 function job(phase: ImportPhase): NonNullable<CatalogState["job"]> { return { id: "job", filename: "archive.gz", phase, receivedBytes: 1234, processedRecords: 5678, importedRecords: 4321, rejectedRecords: 123, exclusions: {}, error: null, startedAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z" }; }
 function text(node: ReactTestInstance): string { return node.children.map(child => typeof child === "string" ? child : text(child)).join(""); }
-async function render(catalog: CatalogState = empty, offCatalog: CatalogState = empty) {
-  const load = vi.fn(() => ({ catalog, offCatalog, today: "2026-09-08", csrfToken: "catalog-csrf" }));
-  const Routes = createRoutesStub([{ path: "/settings/catalogs", id: "catalogs", Component: CatalogSettings, loader: load }]);
+async function render(catalog: CatalogState = empty, offContact?: string, actionResult?: BarcodeContactResult) {
+  const load = vi.fn(() => ({ catalog, offContact, today: "2026-09-08", csrfToken: "catalog-csrf" }));
+  const Routes = createRoutesStub([{ path: "/settings/catalogs", id: "catalogs", Component: CatalogSettings, loader: load, action: () => actionResult ?? null }]);
   let renderer!: ReactTestRenderer;
   await act(() => { renderer = create(createElement(Routes, { initialEntries: ["/settings/catalogs"], hydrationData: { loaderData: { catalogs: load() } } })); });
   renderers.push(renderer);
@@ -34,25 +35,56 @@ test("administrator Settings destinations list no AI section", async () => {
   expect(text(renderer.root)).not.toContain("AI photo");
 });
 
-test("each catalog card shows availability, official downloads and metadata controls without installation controls", async () => {
+test("the USDA card shows availability, official downloads and metadata controls without installation controls, and OFF has no catalog card", async () => {
   expect(meta()).toEqual([{ title: "Food Catalogs · Open Calorie Tracker" }]);
   const { renderer, card } = await render();
-  const off = card("open-food-facts"); const usda = card("usda-fdc");
+  const usda = card("usda-fdc");
   expect(text(renderer.root)).toContain("Shared reference foods for local search and logging.");
-  expect(text(off)).toContain("Open Food FactsNot installedDownload the official product JSONL GZIP (recommended for serving nutrition), then install it with the terminal command. Existing tab-separated CSV GZIP imports remain supported.");
-  expect(text(off)).toContain("Open Database License (ODbL)");
-  expect(text(off)).toContain("Saved Food Entries keep their original nutrition and measurements.");
-  expect(off.findByType("a").props).toMatchObject({ href: "https://world.openfoodfacts.org/data", target: "_blank", rel: "noreferrer" });
+  expect(text(usda)).toContain("Saved Food Entries keep their original nutrition and measurements.");
   expect(usda.findByType("a").props.href).toBe("https://fdc.nal.usda.gov/download-datasets/");
   expect(renderer.root.findAllByProps({ type: "file" })).toHaveLength(0);
-  expect(text(off.findByType("button"))).toBe("Check OFF updates");
   expect(text(usda.findByType("button"))).toBe("Check USDA updates");
+  expect(text(renderer.root)).not.toMatch(/Check OFF updates|JSONL|OFF export|Official OFF downloads/);
+});
+
+test("without a contact email the Open Food Facts card explains scanning is off and asks for one", async () => {
+  const { card } = await render();
+  const off = card("open-food-facts");
+  expect(text(off)).toContain("Open Food Facts○ Not configured");
+  expect(text(off)).toContain("Barcode scanning is off until you add a contact email. Open Food Facts uses it to identify this app; it is not used to sign in.");
+  expect(off.findByProps({ name: "email" }).props).toMatchObject({ type: "email", required: true, defaultValue: "", maxLength: 200 });
+  expect(off.findByProps({ name: "csrfToken" }).props.value).toBe("catalog-csrf");
+  expect(off.findByProps({ value: "save-off-contact" }).props.name).toBe("intent");
+  expect(text(off.findByProps({ value: "save-off-contact" }))).toBe("Save and enable scanning");
+  expect(text(off)).toContain("Scanned and typed barcodes are sent to Open Food Facts. Data available under the ODbL.");
+  expect(off.findByProps({ children: "ODbL" }).props).toMatchObject({ href: "https://opendatacommons.org/licenses/odbl/1-0/", target: "_blank", rel: "noreferrer" });
+});
+
+test("a configured contact is read-only until Change, and Remove asks before disabling scanning", async () => {
+  const { card } = await render(empty, "family@example.com");
+  const off = () => card("open-food-facts");
+  expect(text(off())).toContain("Open Food Facts● Enabled");
+  expect(text(off())).toContain("Barcode scanning is on for every member.");
+  expect(text(off())).toContain("Contact emailfamily@example.com");
+  expect(off().findAllByProps({ name: "email" })).toHaveLength(0);
+
+  await act(() => { (off().findByProps({ children: "Change" }).props as { onClick: () => void }).onClick(); });
+  expect(off().findByProps({ name: "email" }).props.defaultValue).toBe("family@example.com");
+  expect(text(off().findByProps({ value: "save-off-contact" }))).toBe("Save contact email");
+  await act(() => { (off().findByProps({ children: "Cancel" }).props as { onClick: () => void }).onClick(); });
+  expect(off().findAllByProps({ name: "email" })).toHaveLength(0);
+
+  await act(() => { (off().findByProps({ children: "Remove" }).props as { onClick: () => void }).onClick(); });
+  expect(text(off())).toContain("Disable barcode scanning for everyone?");
+  expect(off().findByProps({ value: "remove-off-contact" }).props.name).toBe("intent");
+  await act(() => { (off().findByProps({ children: "Keep scanning" }).props as { onClick: () => void }).onClick(); });
+  expect(text(off())).not.toContain("Disable barcode scanning for everyone?");
 });
 
 test.each(["uploading", "queued", "validating", "importing", "indexing", "activating", "succeeded", "failed", "interrupted"] as const)("%s jobs expose no progress, diagnostic data, reports or polling on either card", async phase => {
   vi.useFakeTimers();
   const state = { ...empty, busy: true, job: { ...job(phase), error: "Private archive error", exclusions: { invalid_identity: 2345 } } };
-  const { renderer, load } = await render(state, state);
+  const { renderer, load } = await render(state);
   expect(renderer.root.findAllByProps({ type: "file" })).toHaveLength(0);
   expect(renderer.root.findAllByType("progress")).toHaveLength(0);
   expect(renderer.root.findAllByProps({ role: "alert" })).toHaveLength(0);
@@ -94,52 +126,57 @@ test("a not-installed USDA catalog and an unbound archive never claim to be curr
   expect(text(unbound.card("usda-fdc"))).not.toContain("No newer declared USDA Foundation release was found.");
 });
 
-test.each([undefined, { earliest: null, latest: null }, { earliest: "2024-01-01", latest: "2025-01-01" }])("installed sources show distinct dates and immutable snapshot metadata %#", async sourceDateRange => {
-  const installed = { generation: "generation", filename: "release.csv.gz", sha256: "abc123", installedAt: new Date(2026, 0, 2, 3, 4, 5).toISOString(), foodCount: 1234, publicationDateRange: { earliest: "2020-01-01", latest: "2023-01-01" }, sourceDateRange };
-  const { card } = await render({ ...empty, installed, job: job("succeeded") }, { ...empty, installed });
-  const off = card("open-food-facts"); const usda = card("usda-fdc");
-  expect(text(off)).toContain("Open Food FactsInstalled");
-  expect(text(off)).toContain("1,234 foods installedArchive: release.csv.gz");
-  expect(text(off)).toContain(`Product modification dates: ${sourceDateRange?.earliest ?? "Unknown"} – ${sourceDateRange?.latest ?? "Unknown"}`);
-  expect(text(off)).toContain("These dates describe products, not an official dump release.");
+test("an installed USDA catalog shows its dates and immutable snapshot metadata", async () => {
+  const installed = { generation: "generation", filename: "release.zip", sha256: "abc123", installedAt: new Date(2026, 0, 2, 3, 4, 5).toISOString(), foodCount: 1234, publicationDateRange: { earliest: "2020-01-01", latest: "2023-01-01" } };
+  const { card } = await render({ ...empty, installed, job: job("succeeded") });
+  const usda = card("usda-fdc");
+  expect(text(usda)).toContain("1,234 foods installedArchive: release.zip");
   expect(text(usda)).toContain("Food publication dates: 2020-01-01 – 2023-01-01");
   expect(text(usda)).not.toContain("USDA installation complete");
-  expect(text(off.findByType("details"))).toBe("Source snapshot fingerprintSHA-256: abc123");
-  expect(text(off)).toContain("Installed: 1/2/2026, 3:04:05 AM");
-  expect(text(off)).toContain("Import a newer OFF archive, or deliberately reimport this archive, while the installed catalog remains available.");
+  expect(text(usda.findByType("details"))).toBe("Source snapshot fingerprintSHA-256: abc123");
+  expect(text(usda)).toContain("Installed: 1/2/2026, 3:04:05 AM");
   expect(text(usda)).toContain("Import a newer Foundation archive, or deliberately reimport this archive, while the installed catalog remains available.");
 });
 
+async function renderContact(email: string | undefined, result: BarcodeContactResult) {
+  const Routes = createRoutesStub([{ path: "/", Component: () => createElement(BarcodeContactSection, { csrfToken: "catalog-csrf", email, result }) }]);
+  let renderer!: ReactTestRenderer;
+  await act(() => { renderer = create(createElement(Routes, { initialEntries: ["/"] })); });
+  renderers.push(renderer);
+  return renderer;
+}
+
 test.each([
-  ["newer", "A newer OFF export snapshot is available."],
-  ["unchanged", "No change detected in the OFF export."],
-  ["unavailable", "OFF snapshot metadata is temporarily unavailable."],
-  ["indeterminate", "OFF snapshot metadata cannot be compared safely."],
-] as const)("OFF %s state is visible independently of USDA and unknown uploads", async (status, message) => {
-  const { card } = await render(empty, { ...empty, updateCheck: { status, checkedAt: "2026-09-09T14:30:00.000Z", availableRelease: null, availableSnapshot: null, error: null } });
-  const off = card("open-food-facts");
-  expect(text(off)).toContain(message);
-  expect(text(off)).toContain("Installed official snapshot: Unknown");
-  expect(text(off)).toContain("Last checked: 9/9/2026, 10:30:00 AM");
-  expect(text(off)).toContain("Check OFF updates again");
-  expect(text(card("usda-fdc"))).not.toContain(message);
+  ["enabled", "family@example.com", "✓ Barcode scanning enabled."],
+  ["updated", "parents@example.com", "✓ Contact email updated."],
+] as const)("a %s contact confirms the change on the same card", async (contact, email, message) => {
+  const renderer = await renderContact(email, { contact });
+  expect(text(renderer.root.findByProps({ role: "status" }))).toBe(message);
+  expect(text(renderer.root)).toContain(`Contact email${email}`);
 });
 
-test("OFF displays matched snapshot dates separately from unknown dates and unchecked status", async () => {
-  const snapshot = { lastModified: "2026-09-07T12:00:00.000Z", etag: '"snapshot"', archiveByteLength: 252, crc64nvme: "JX7I3P/MX4I=" };
-  const installed = { generation: "generation", filename: "renamed.gz", sha256: "abc", installedAt: "2026-09-08T13:00:00.000Z", foodCount: 1, publicationDateRange: { earliest: "", latest: "" }, sourceSnapshot: snapshot };
-  const checked = await render(empty, { ...empty, installed, updateCheck: { status: "newer", checkedAt: "2026-09-09T14:30:00.000Z", availableRelease: null, availableSnapshot: { ...snapshot, lastModified: "2026-09-09T12:00:00.000Z" }, error: null } });
-  const off = checked.card("open-food-facts");
-  expect(text(off)).toContain("Installed official snapshot: 2026-09-07T12:00:00.000Z");
-  expect(text(off)).toContain("Available export last modified: 2026-09-09T12:00:00.000Z");
-  expect(text(off)).not.toContain("The installed archive has not been matched");
-  expect(off.findByProps({ name: "intent" }).props.value).toBe("check-off-update");
-  expect(checked.card("usda-fdc").findByProps({ name: "intent" }).props.value).toBe("check-usda-update");
+test("an invalid contact keeps the typed value with an error and no status change", async () => {
+  const renderer = await renderContact("family@example.com", { contact: "invalid", error: "Enter a valid email address.", value: "not an email" });
+  expect(renderer.root.findByProps({ name: "email" }).props).toMatchObject({ defaultValue: "not an email", "aria-invalid": true, "aria-describedby": "off-contact-error" });
+  expect(text(renderer.root.findByProps({ role: "alert" }))).toBe("Enter a valid email address.");
+  expect(text(renderer.root)).toContain("● Enabled");
+});
 
-  const withoutDate = await render(empty, { ...empty, installed: { ...installed, sourceSnapshot: { ...snapshot, lastModified: null } } });
-  const unknown = withoutDate.card("open-food-facts");
-  expect(text(unknown)).toContain("Installed official snapshot: Matched export; date unknown");
-  expect(text(unknown)).toContain("Available export last modified: Unknown");
-  expect(text(unknown)).toContain("OFF update status has not been checked.");
-  expect(text(unknown.findByProps({ name: "intent" }))).toBe("Check OFF updates");
+test("Cancel after a rejected email discards it and shows the saved contact again", async () => {
+  const renderer = await renderContact("family@example.com", { contact: "invalid", error: "Enter a valid email address.", value: "review@example.c" });
+  expect(renderer.root.findByProps({ role: "alert" })).toBeDefined();
+  await act(() => { (renderer.root.findByProps({ children: "Cancel" }).props as { onClick: () => void }).onClick(); });
+  expect(renderer.root.findAllByProps({ name: "email" })).toHaveLength(0);
+  expect(renderer.root.findAllByProps({ role: "alert" })).toHaveLength(0);
+  expect(text(renderer.root)).toContain("Contact emailfamily@example.com");
+  await act(() => { (renderer.root.findByProps({ children: "Change" }).props as { onClick: () => void }).onClick(); });
+  expect(renderer.root.findByProps({ name: "email" }).props.defaultValue).toBe("family@example.com");
+  expect(renderer.root.findAllByProps({ role: "alert" })).toHaveLength(0);
+});
+
+test("removing the contact returns to the not-configured card", async () => {
+  const renderer = await renderContact(undefined, { contact: "removed" });
+  expect(text(renderer.root)).toContain("○ Not configured");
+  expect(text(renderer.root.findByProps({ role: "status" }))).toBe("Barcode scanning disabled.");
+  expect(renderer.root.findByProps({ name: "email" }).props.defaultValue).toBe("");
 });

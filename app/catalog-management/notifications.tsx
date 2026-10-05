@@ -107,10 +107,9 @@ export function CatalogNotifications({ viewerId }: { viewerId: number }) {
     return () => { clearTimeout(fade); clearTimeout(timer); };
   }, [current, dismiss, hovered, focused]);
 
-  const name = current?.provider === "usda-fdc" ? "USDA Foundation" : "Open Food Facts";
-  const message = current?.phase === "succeeded" ? `${name} catalog ${current.operation === "install" ? "installed" : "updated"}.`
-    : current?.phase === "interrupted" ? `${name} import interrupted. Inspect the terminal and retry the command.`
-      : `${name} import failed. Inspect the terminal and retry the command.`;
+  const message = current?.phase === "succeeded" ? `USDA Foundation catalog ${current.operation === "install" ? "installed" : "updated"}.`
+    : current?.phase === "interrupted" ? "USDA Foundation import interrupted. Inspect the terminal and retry the command."
+      : "USDA Foundation import failed. Inspect the terminal and retry the command.";
 
   return <div className={styles.region} role={current ? "status" : undefined} aria-live="polite" aria-atomic="true">
     {current ? <div

@@ -3,10 +3,14 @@ import AxeBuilder from "@axe-core/playwright";
 import type { Locator, Page } from "@playwright/test";
 import {
   bootstrapOrSignInBrowserTestUser,
+  configureBarcodeContact,
   expect,
   openBrowserTestDatabase,
+  recordedOffApiRequests,
+  signInProvisionedMember,
   test,
 } from "./reset-database";
+import packageJson from "../../package.json" with { type: "json" };
 
 const validPassword = "correct horse 🔐 battery";
 
@@ -664,7 +668,8 @@ test("authenticated USDA search and idempotent logging preserve a local Nutritio
   await page.getByRole("button", { name: "Add Food" }).click();
   await expect(page).toHaveURL(/food=choose/);
   await expect(page.getByRole("link", { name: /Search for food/ })).toBeVisible();
-  await expect(page.getByRole("link", { name: /Scan barcode/ })).toBeVisible();
+  // An administrator sees Scan barcode before the Open Food Facts contact is set; it opens setup.
+  await expect(page.getByRole("button", { name: /Scan barcode/ })).toBeVisible();
   await page.getByRole("link", { name: /Search for food/ }).click();
   await expect(page).toHaveURL(/food=search/);
   await expect(page.getByRole("dialog", { name: "Add Food" })).toBeVisible();
@@ -869,6 +874,7 @@ test("authenticated manual barcode confirmation creates one attributed serving s
   page,
 }) => {
   await context.setExtraHTTPHeaders({ "X-Test-Client-IP": "203.0.113.93" });
+  configureBarcodeContact();
   await completeSetupForTestUser(page, "catalog.barcode");
 
   await page.getByRole("button", { name: "Add Food" }).click();
@@ -917,17 +923,16 @@ test("authenticated manual barcode confirmation creates one attributed serving s
   });
   await expect(savedEntry).toHaveCount(1);
   await expect(savedEntry).toContainText("Open Food Facts");
-  await expect(savedEntry).toContainText("1 serving × 0.5");
+  await expect(savedEntry).toContainText("1 serving (30 g) × 0.5");
   await expect(savedEntry).toContainText("90 kcal");
   await expect(page.getByText("Incomplete", { exact: true }).first()).toBeVisible();
   await expect(page.locator("img")).toHaveCount(0);
 
   for (const [barcode, status, title] of [
-    ["0000000000000", 503, "Open Food Facts is not installed"],
     ["0000000000001", 404, "Product not found"],
-    ["0000000000002", 422, "Nutrition unavailable"],
-    ["0000000000004", 503, "Open Food Facts is unavailable"],
-    ["0000000000005", 500, "Open Food Facts catalog data could not be used"],
+    ["0000000000002", 404, "Product not found"],
+    ["0000000000004", 503, "Open Food Facts isn't responding"],
+    ["0000000000005", 503, "Open Food Facts isn't responding"],
   ] as const) {
     const lookup = await page.goto(
       `/?date=2026-08-29&food=barcode&barcode=${barcode}`,
@@ -951,6 +956,115 @@ test("authenticated manual barcode confirmation creates one attributed serving s
 
   const accessibilityScan = await new AxeBuilder({ page }).analyze();
   expect(accessibilityScan.violations).toEqual([]);
+});
+
+test("an administrator enables barcode lookup with a contact email that identifies every Open Food Facts request", async ({
+  browser,
+  context,
+  page,
+}, testInfo) => {
+  await context.setExtraHTTPHeaders({ "X-Test-Client-IP": "203.0.113.97" });
+  await completeSetupForTestUser(page, "barcode.setup.admin");
+
+  await page.getByRole("button", { name: "Add Food" }).click();
+  // The four Add Food methods sit in one row where the dialog is wide enough.
+  const methods = page.getByLabel("Add Food methods").locator(":scope > *");
+  await expect(methods).toHaveCount(4);
+  const methodTops = await methods.evaluateAll((elements) => elements.map((element) => Math.round(element.getBoundingClientRect().top)));
+  expect(new Set(methodTops).size).toBe(1);
+  await page.screenshot({ path: testInfo.outputPath("add-food-methods-desktop.png") });
+  await page.getByRole("button", { name: "Scan barcode" }).click();
+  const setup = page.getByRole("dialog", { name: "Barcode scanning is not enabled" });
+  await expect(setup).toBeVisible();
+
+  // On phones down to 320 px, the pop-up's two choices stay side by side, whole and inside the
+  // dialog, and the methods stack.
+  for (const width of [390, 320]) {
+    await page.setViewportSize({ width, height: 844 });
+    const dialogBox = (await setup.boundingBox())!;
+    const choices = [setup.getByRole("button", { name: "Cancel" }), setup.getByRole("link", { name: "Go to Food Catalogs →" })];
+    const [cancelBox, continueBox] = await Promise.all(choices.map(async (choice) => (await choice.boundingBox())!));
+    expect(Math.abs(cancelBox.y - continueBox.y)).toBeLessThan(2);
+    expect(cancelBox.x + cancelBox.width).toBeLessThanOrEqual(continueBox.x);
+    for (const box of [cancelBox, continueBox]) {
+      expect(box.x).toBeGreaterThanOrEqual(dialogBox.x);
+      expect(box.x + box.width).toBeLessThanOrEqual(dialogBox.x + dialogBox.width);
+    }
+    for (const choice of choices) {
+      expect(await choice.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+    }
+    await page.screenshot({ path: testInfo.outputPath(`admin-setup-popup-${width}.png`) });
+  }
+  const stackedTops = await methods.evaluateAll((elements) => elements.map((element) => Math.round(element.getBoundingClientRect().top)));
+  expect(new Set(stackedTops).size).toBe(4);
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await expect(setup).toContainText("Add one in Food Catalogs to enable scanning for every member.");
+  await expect(page.getByLabel("Enter barcode")).toHaveCount(0);
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+  await page.keyboard.press("Escape");
+  await expect(setup).toHaveCount(0);
+  await expect(page.getByRole("dialog", { name: "Add Food" })).toBeVisible();
+  await page.getByRole("button", { name: "Scan barcode" }).click();
+  await setup.getByRole("link", { name: "Go to Food Catalogs →" }).click();
+  await expect(page).toHaveURL("/settings/catalogs");
+
+  const off = page.locator('section[aria-labelledby="open-food-facts-heading"]');
+  await expect(off).toContainText("○ Not configured");
+  await expect(off).toContainText("Data available under the ODbL.");
+  await off.getByLabel("Contact email").fill("family@example.com");
+  await off.getByRole("button", { name: "Save and enable scanning" }).click();
+  await expect(off.getByRole("status")).toHaveText("✓ Barcode scanning enabled.");
+  await expect(off).toContainText("● Enabled");
+  await expect(off).toContainText("family@example.com");
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+
+  const requestsBefore = recordedOffApiRequests().length;
+  await page.goto("/?date=2026-08-29&food=choose");
+  await page.getByRole("link", { name: /Scan barcode/ }).click();
+  await page.getByLabel("Enter barcode").fill("034000470693");
+  await page.getByRole("button", { name: "Look up" }).click();
+  await expect(page.getByRole("heading", { name: "Example cereal" })).toBeVisible();
+  await page.getByLabel("Measurement", { exact: true }).selectOption("g");
+  await page.getByLabel("Quantity").fill("45");
+  await expect(page.getByText("270 kcal")).toBeVisible();
+  await page.getByRole("button", { name: "Add to Food Log" }).click();
+  await expect(page).toHaveURL("/?date=2026-08-29");
+  await expect(page.getByRole("article").filter({ hasText: "Example cereal" })).toContainText("270 kcal");
+  const requests = recordedOffApiRequests().slice(requestsBefore);
+  expect(requests.map((request) => new URL(request.url).pathname)).toEqual([
+    "/api/v3.5/product/034000470693",
+    "/api/v3.5/product/0034000470693",
+  ]);
+  for (const request of requests) {
+    expect(request.userAgent).toBe(`OpenCalorieTracker/${packageJson.version} (family@example.com)`);
+  }
+
+  expect((await page.goto("/?date=2026-08-29&food=barcode&barcode=0000000000004"))?.status()).toBe(503);
+  await expect(page.getByRole("heading", { name: "Open Food Facts isn't responding" })).toBeVisible();
+  await expect(page.getByText("Try again or log it manually.")).toBeVisible();
+  await page.getByRole("link", { name: "Search for food" }).click();
+  await expect(page.getByRole("searchbox", { name: "Search local foods" })).toBeVisible();
+
+  await page.goto("/settings/catalogs");
+  await off.getByRole("button", { name: "Remove" }).click();
+  await expect(off).toContainText("Disable barcode scanning for everyone?");
+  await off.getByRole("button", { name: "Disable scanning" }).click();
+  await expect(off).toContainText("○ Not configured");
+
+  const memberContext = await browser.newContext({ baseURL: new URL(page.url()).origin, ignoreHTTPSErrors: true });
+  try {
+    const member = await memberContext.newPage();
+    await signInProvisionedMember(member, "barcode.setup.member", validPassword);
+    await member.getByRole("button", { name: "Finish setup" }).click();
+    await member.getByRole("button", { name: "Add Food" }).click();
+    const methods = member.getByLabel("Add Food methods");
+    await expect(methods.getByRole("link", { name: "Manual" })).toBeVisible();
+    await expect(methods.getByText("Scan barcode")).toHaveCount(0);
+    await member.goto("/?date=2026-08-29&food=barcode&barcode=034000470693");
+    await expect(member).toHaveURL("/?date=2026-08-29&food=choose");
+  } finally {
+    await memberContext.close();
+  }
 });
 
 test("an authenticated user can add, reset, and later rescale a manual Food Entry", async ({
@@ -1036,6 +1150,7 @@ test("@camera-matrix simulated scan stays local and follows review before one sn
 }, testInfo) => {
   await context.setExtraHTTPHeaders({ "X-Test-Client-IP": "203.0.113.94" });
   await installSimulatedBarcodeCamera(page);
+  configureBarcodeContact();
   await completeSetupForTestUser(page, `camera.${testInfo.project.name}`);
 
   const transmittedPayloads: string[] = [];
@@ -1125,7 +1240,7 @@ test("@camera-matrix simulated scan stays local and follows review before one sn
   const savedEntry = page.getByRole("article").filter({ hasText: "Example cereal" });
   await expect(savedEntry).toHaveCount(1);
   await expect(savedEntry).toContainText("Open Food Facts");
-  await expect(savedEntry).toContainText("1 serving × 0.5");
+  await expect(savedEntry).toContainText("1 serving (30 g) × 0.5");
   await expect(savedEntry).toContainText("90 kcal");
   expect(transmittedPayloads.join("\n")).not.toMatch(
     /(?:blob:|data:image|frame|photograph|photo=)/i,
@@ -1152,7 +1267,7 @@ test("@camera-matrix simulated scan stays local and follows review before one sn
     ).__scannerState.emit = true;
   });
   await expect(
-    page.getByRole("heading", { name: "Open Food Facts is unavailable" }),
+    page.getByRole("heading", { name: "Open Food Facts isn't responding" }),
   ).toBeVisible();
   await expect(page.getByRole("button", { name: "Retry" })).toBeVisible();
   await expect(page.getByLabel("Enter barcode")).toBeVisible();

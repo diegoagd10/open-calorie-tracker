@@ -8,8 +8,7 @@ const privateHeaders = { "Cache-Control": "no-store", "Referrer-Policy": "no-ref
 export async function loader({ request }: Route.LoaderArgs) {
   const session = await getSessionForApplicationAccess(request);
   if (!session) throw redirect("/login");
-  const outcomes = [getCatalogManagement(), getCatalogManagement("open-food-facts")]
-    .flatMap(catalog => catalog.outcomes())
+  const outcomes = getCatalogManagement().outcomes()
     .sort((a, b) => b.completedAt.localeCompare(a.completedAt) || a.jobId.localeCompare(b.jobId));
   const notifications = session.user.role === "admin"
     ? { csrfToken: session.csrfToken, outcomes }
@@ -21,8 +20,7 @@ export async function action({ request }: Route.ActionArgs) {
   const session = await requireAdministratorSession(request);
   const form = await request.formData();
   if (!getAuthenticationService().verifyCsrfToken(session.token, String(form.get("csrfToken") ?? ""))) throw new Response("CSRF token rejected.", { status: 403 });
-  const provider = form.get("provider");
-  if (provider !== "usda-fdc" && provider !== "open-food-facts") return Response.json({ error: "Unknown catalog." }, { status: 400, headers: privateHeaders });
-  const acknowledged = getCatalogManagement(provider).acknowledgeOutcome(String(form.get("jobId") ?? ""), String(form.get("completedAt") ?? ""));
+  if (form.get("provider") !== "usda-fdc") return Response.json({ error: "Unknown catalog." }, { status: 400, headers: privateHeaders });
+  const acknowledged = getCatalogManagement().acknowledgeOutcome(String(form.get("jobId") ?? ""), String(form.get("completedAt") ?? ""));
   return Response.json(acknowledged ? { acknowledged: true } : { error: "This outcome changed. Refresh notifications and try again." }, { status: acknowledged ? 200 : 409, headers: privateHeaders });
 }

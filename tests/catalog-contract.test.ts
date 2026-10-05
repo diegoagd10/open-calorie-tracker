@@ -1,4 +1,3 @@
-import { offArchive, offWithBasis } from "./support/off-archive";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -17,9 +16,7 @@ import {
   CatalogUnavailableError,
   CatalogUnsafeMeasurementError,
   CatalogUnknownProviderError,
-  CatalogUnsupportedCapabilityError,
   FoodCatalog,
-  type BarcodeFoodCatalogProvider,
   type SearchFoodCatalogProvider,
 } from "../app/catalog/food-catalog.server";
 import {
@@ -28,10 +25,7 @@ import {
   setFoodCatalogForTests,
   setFoodCatalogProviderForTests,
 } from "../app/catalog/runtime.server";
-import {
-  TestFoodCatalogProvider,
-  TestOpenFoodFactsProvider,
-} from "../app/catalog/test-fixture.server";
+import { TestFoodCatalogProvider } from "../app/catalog/test-fixture.server";
 import {
   applicationOrigin,
   isProductionEnvironment,
@@ -82,11 +76,6 @@ test("catalog errors expose stable safe names and messages", () => {
       "CatalogUnknownProviderError",
       "The food catalog provider is unavailable",
     ],
-    [
-      new CatalogUnsupportedCapabilityError(),
-      "CatalogUnsupportedCapabilityError",
-      "The food catalog provider does not support that operation",
-    ],
   ] as const;
 
   for (const [error, name, message] of expected) {
@@ -94,79 +83,39 @@ test("catalog errors expose stable safe names and messages", () => {
   }
 });
 
-test("catalog dispatches by registered provider and capability", async () => {
+test("catalog dispatches to the registered USDA provider only", async () => {
   const usda = new TestFoodCatalogProvider();
-  const barcodeFood = await usda.getFood("1001");
-  const openFoodFacts: BarcodeFoodCatalogProvider = {
-    async getFood() {
-      return { ...barcodeFood, provider: "open-food-facts" };
-    },
-    async lookupBarcode() {
-      return { ...barcodeFood, provider: "open-food-facts" };
-    },
-  };
   const catalog = new FoodCatalog([
     { capability: "search", provider: "usda-fdc", service: usda },
-    {
-      capability: "barcode",
-      provider: "open-food-facts",
-      service: openFoodFacts,
-    },
   ]);
 
   await expect(catalog.search("yogurt")).resolves.toHaveLength(1);
-  await expect(
-    catalog.lookupBarcode("open-food-facts", "034000470693"),
-  ).resolves.toMatchObject({ provider: "open-food-facts" });
-  await expect(catalog.getFood("open-food-facts", "0034000470693"))
-    .resolves.toMatchObject({ provider: "open-food-facts" });
-  await expect(catalog.lookupBarcode("usda-fdc", "034000470693")).rejects
-    .toBeInstanceOf(CatalogUnsupportedCapabilityError);
+  await expect(catalog.getFood("usda-fdc", "1001")).resolves.toMatchObject({ provider: "usda-fdc" });
+  await expect(catalog.getFood("open-food-facts", "0034000470693")).rejects
+    .toBeInstanceOf(CatalogUnknownProviderError);
   await expect(catalog.getFood("unknown", "1")).rejects
     .toBeInstanceOf(CatalogUnknownProviderError);
-});
-
-test("manual search calls only USDA and never the Open Food Facts barcode provider", async () => {
-  const usda = new TestFoodCatalogProvider();
-  const usdaSearch = vi.spyOn(usda, "search");
-  const barcodeFood = await usda.getFood("1001");
-  const openFoodFactsSearch = vi.fn();
-  const openFoodFacts = {
-    async getFood() {
-      return { ...barcodeFood, provider: "open-food-facts" as const };
-    },
-    async lookupBarcode() {
-      return { ...barcodeFood, provider: "open-food-facts" as const };
-    },
-    search: openFoodFactsSearch,
-  };
-  const catalog = new FoodCatalog([
-    { capability: "search", provider: "usda-fdc", service: usda },
-    {
-      capability: "barcode",
-      provider: "open-food-facts",
-      service: openFoodFacts,
-    },
-  ]);
-
-  await expect(catalog.search("egg")).resolves.toHaveLength(1);
-  expect(usdaSearch).toHaveBeenCalledExactlyOnceWith("egg", undefined);
-  expect(openFoodFactsSearch).not.toHaveBeenCalled();
+  await expect(new FoodCatalog([]).search("yogurt")).rejects
+    .toBeInstanceOf(CatalogUnknownProviderError);
 });
 
 test("catalog rejects conflicting registrations and provider identity mismatches", async () => {
   const usda = new TestFoodCatalogProvider();
-  const other: BarcodeFoodCatalogProvider = {
-    getFood: usda.getFood.bind(usda),
-    lookupBarcode: usda.getFood.bind(usda),
-  };
+  const service = { getFood: usda.getFood.bind(usda), search: usda.search.bind(usda) };
   expect(
     () =>
       new FoodCatalog([
         { capability: "search", provider: "usda-fdc", service: usda },
-        { capability: "barcode", provider: "usda-fdc", service: other },
+        { capability: "search", provider: "usda-fdc", service },
       ]),
   ).toThrow(CatalogRegistrationConflictError);
+  expect(
+    () =>
+      new FoodCatalog([
+        { capability: "search", provider: "usda-fdc", service },
+        { capability: "search", provider: "usda-fdc", service },
+      ]),
+  ).not.toThrow();
 
   const mismatchedSearch: SearchFoodCatalogProvider = {
     async getFood() {
@@ -181,55 +130,19 @@ test("catalog rejects conflicting registrations and provider identity mismatches
       ];
     },
   };
-  const mismatchedBarcode: BarcodeFoodCatalogProvider = {
-    async getFood() {
-      return usda.getFood("1001");
-    },
-    async lookupBarcode() {
-      return usda.getFood("1001");
-    },
-  };
   const catalog = new FoodCatalog([
     {
       capability: "search",
       provider: "usda-fdc",
       service: mismatchedSearch,
     },
-    {
-      capability: "barcode",
-      provider: "open-food-facts",
-      service: mismatchedBarcode,
-    },
   ]);
   await expect(catalog.search("yogurt")).rejects.toBeInstanceOf(
     CatalogInvalidDataError,
   );
   await expect(
-    catalog.lookupBarcode("open-food-facts", "034000470693"),
+    catalog.getFood("usda-fdc", "1001"),
   ).rejects.toBeInstanceOf(CatalogInvalidDataError);
-  await expect(
-    catalog.getFood("open-food-facts", "0034000470693"),
-  ).rejects.toBeInstanceOf(CatalogInvalidDataError);
-  await expect(
-    catalog.lookupBarcode("missing", "034000470693"),
-  ).rejects.toBeInstanceOf(CatalogUnknownProviderError);
-});
-
-test("catalog merges capabilities registered on the same service", async () => {
-  const usda = new TestFoodCatalogProvider();
-  const service = {
-    getFood: usda.getFood.bind(usda),
-    lookupBarcode: usda.getFood.bind(usda),
-    search: usda.search.bind(usda),
-  };
-  const catalog = new FoodCatalog([
-    { capability: "search", provider: "usda-fdc", service },
-    { capability: "barcode", provider: "usda-fdc", service },
-  ]);
-  await expect(catalog.search("yogurt")).resolves.toHaveLength(1);
-  await expect(catalog.lookupBarcode("usda-fdc", "1001")).resolves.toMatchObject({
-    provider: "usda-fdc",
-  });
 });
 
 test("the catalog registry can be installed only in tests", () => {
@@ -240,57 +153,6 @@ test("the catalog registry can be installed only in tests", () => {
   expect(() => setFoodCatalogForTests(undefined)).toThrow(
     "Catalog test doubles are available only in tests",
   );
-});
-
-test("deterministic barcode fixture exposes its detail capability directly", async () => {
-  await expect(new TestOpenFoodFactsProvider().getFood("034000470693")).resolves
-    .toEqual({
-      authoritativeBaseQuantityMicrounits: 1_000_000,
-      authoritativeBaseUnit: "serving",
-      barcode: "0034000470693",
-      brand: "Example Foods",
-      dataType: "Open Food Facts",
-      isSelectable: true,
-      marketCountry: "United States",
-      measurementSummary: "1 serving",
-      measurements: [
-        {
-          baseQuantityMicrounits: 1_000_000,
-          id: "serving",
-          label: "1 serving",
-          unit: "serving",
-        },
-      ],
-      name: "Example cereal",
-      nutritionPerAuthoritativeBase: {
-        carbohydrateMilligrams: { amount: 24, fixedPointMultiplier: 1_000 },
-        energyMilliKcal: { amount: 180, fixedPointMultiplier: 1_000 },
-        fatMilligrams: { amount: 0, fixedPointMultiplier: 1_000 },
-        fiberMilligrams: null,
-        proteinMilligrams: null,
-        sodiumMilligrams: null,
-        sugarMilligrams: null,
-      },
-      originalName: "Example cereal",
-      provider: "open-food-facts",
-      providerFoodId: "0034000470693",
-      providerModifiedDate: null,
-      providerPublishedDate: null,
-    });
-  await expect(new TestOpenFoodFactsProvider().lookupBarcode("0000000000006"))
-    .resolves.toMatchObject({
-      barcode: "0000000000006",
-      brand: null,
-      name: "Unnamed product",
-      originalName: "Unnamed product",
-    });
-  await expect(new TestOpenFoodFactsProvider().lookupBarcode("0034000470693"))
-    .resolves.toMatchObject({
-      barcode: "0034000470693",
-      providerFoodId: "0034000470693",
-    });
-  await expect(new TestOpenFoodFactsProvider().lookupBarcode("1234567"))
-    .resolves.toMatchObject({ barcode: "1234567", providerFoodId: "1234567" });
 });
 
 describe("deterministic catalog fixture", () => {
@@ -398,22 +260,6 @@ describe("catalog runtime selection", () => {
     shutdownApplicationDatabase();
     await rm(directory, { recursive: true, force: true });
   });
-  test("installed OFF uses no food lookup network", async () => {
-    vi.stubEnv("NODE_ENV", "test");
-    vi.stubEnv("FOOD_CATALOG_TEST_FIXTURE", "0");
-    vi.stubEnv("OFF_CATALOG_MAX_UPLOAD_BYTES", "1000000");
-    vi.stubEnv("OFF_CATALOG_MAX_EXPANDED_BYTES", "10000000"); vi.stubEnv("OFF_CATALOG_MAX_DATABASE_BYTES", "10000000");
-    const network = vi.fn(() => { throw new Error("Food API access is forbidden"); });
-    vi.stubGlobal("fetch", network);
-    const management = getCatalogManagement("open-food-facts");
-    await management.submitArchive({ filename: "products.gz", stream: Readable.from(offArchive([offWithBasis("100g")])) });
-    await vi.waitFor(() => expect(management.read().busy).toBe(false));
-    await expect(getFoodCatalog().lookupBarcode("open-food-facts", "0012345678905")).resolves.toMatchObject({ provider: "open-food-facts", authoritativeBaseUnit: "g", isSelectable: true });
-    await expect(getFoodCatalog().search("oats"))
-      .rejects.toBeInstanceOf(CatalogNotInstalledError);
-    expect(network).not.toHaveBeenCalled();
-  });
-
   test("absent catalogs report not installed without attempting a food lookup request", async () => {
       vi.stubEnv("NODE_ENV", "test");
       vi.stubEnv("FOOD_CATALOG_TEST_FIXTURE", "0");
@@ -422,9 +268,8 @@ describe("catalog runtime selection", () => {
 
       await expect(getFoodCatalog().search("bread"))
         .rejects.toBeInstanceOf(CatalogNotInstalledError);
-      await expect(
-        getFoodCatalog().lookupBarcode("open-food-facts", "034000470693"),
-      ).rejects.toBeInstanceOf(CatalogNotInstalledError);
+      await expect(getFoodCatalog().getFood("usda-fdc", "1001"))
+        .rejects.toBeInstanceOf(CatalogNotInstalledError);
       expect(network).not.toHaveBeenCalled();
   });
 

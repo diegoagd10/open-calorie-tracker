@@ -13,7 +13,6 @@ import { z } from "zod";
 import {
   CatalogManagementError,
   type CatalogManagement,
-  type CatalogManagementOptions,
 } from "../app/catalog-management/catalog-management.server";
 import { localCatalogImportTokenMatches } from "../app/catalog-management/local-import-control.server";
 import { getCatalogManagement } from "../app/catalog-management/runtime.server";
@@ -21,19 +20,17 @@ import { getCatalogManagement } from "../app/catalog-management/runtime.server";
 const requestSchema = z
   .object({
     archivePath: z.string().min(1).refine((value) => path.isAbsolute(value)),
-    provider: z.enum(["usda-fdc", "open-food-facts"]),
+    provider: z.literal("usda-fdc"),
   })
   .strict();
 const statusSchema = z.object({
   jobId: z.uuid(),
-  provider: z.enum(["usda-fdc", "open-food-facts"]),
+  provider: z.literal("usda-fdc"),
 });
 
 export type LocalCatalogImportOptions = {
   controlToken: string;
-  getManagement?: (
-    provider: NonNullable<CatalogManagementOptions["provider"]>,
-  ) => CatalogManagement;
+  getManagement?: () => CatalogManagement;
 };
 
 export function isLoopbackAddress(address: string | undefined): boolean {
@@ -106,7 +103,7 @@ export function mountLocalCatalogImport(
         const stream = archive.createReadStream({ autoClose: true });
         archive = undefined;
         try {
-          const jobId = await managementFor(parsed.data.provider).submitArchive({
+          const jobId = await managementFor().submitArchive({
             filename: path.basename(parsed.data.archivePath),
             size: archiveStat.size,
             stream,
@@ -145,7 +142,7 @@ export function mountLocalCatalogImport(
           .json({ error: "Invalid catalog import status request." });
         return;
       }
-      const management = managementFor(parsed.data.provider);
+      const management = managementFor();
       const outcome = management
         .outcomes()
         .find((candidate) => candidate.jobId === parsed.data.jobId);

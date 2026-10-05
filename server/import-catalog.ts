@@ -4,7 +4,6 @@ import { pathToFileURL } from "node:url";
 
 import {
   type CatalogImportJob,
-  type CatalogManagementOptions,
   type CatalogOutcome,
 } from "../app/catalog-management/catalog-management.server";
 import { readLocalCatalogImportToken } from "../app/catalog-management/local-import-control.server";
@@ -14,7 +13,6 @@ type CatalogStatus = {
   job: CatalogImportJob | null;
   outcome: CatalogOutcome | null;
 };
-type CatalogProviderId = NonNullable<CatalogManagementOptions["provider"]>;
 
 export type CatalogImportCommandOptions = {
   baseUrl?: string;
@@ -26,36 +24,26 @@ export type CatalogImportCommandOptions = {
   writeStandardOutput?: (value: string) => void;
 };
 
-const labels: Record<CatalogProviderId, string> = {
-  "open-food-facts": "Open Food Facts",
-  "usda-fdc": "USDA Foundation",
-};
+const provider = "usda-fdc";
+const label = "USDA Foundation";
 
 function usage(): string {
   return [
     "Usage:",
     "  pnpm catalog:import:usda -- /absolute/path/to/foundation.zip",
-    "  pnpm catalog:import:off -- /absolute/path/to/openfoodfacts-products.jsonl.gz",
   ].join("\n");
 }
 
-function parseArguments(arguments_: string[]): {
-  archivePath: string;
-  provider: CatalogProviderId;
-} {
+function parseArguments(arguments_: string[]): { archivePath: string } {
   const normalized =
     arguments_[1] === "--"
       ? [arguments_[0], ...arguments_.slice(2)]
       : arguments_;
-  const [provider, archivePath, ...extra] = normalized;
-  if (
-    (provider !== "usda-fdc" && provider !== "open-food-facts") ||
-    !archivePath ||
-    extra.length > 0
-  ) {
+  const [requestedProvider, archivePath, ...extra] = normalized;
+  if (requestedProvider !== provider || !archivePath || extra.length > 0) {
     throw new Error(usage());
   }
-  return { archivePath: path.resolve(archivePath), provider };
+  return { archivePath: path.resolve(archivePath) };
 }
 
 async function responseJson<T>(response: Response): Promise<T> {
@@ -131,13 +119,12 @@ export async function runCatalogImportCommand(
       new Promise<void>((resolve) => setTimeout(resolve, milliseconds)));
 
   try {
-    const { archivePath, provider } = parseArguments(arguments_);
+    const { archivePath } = parseArguments(arguments_);
     const archive = await lstat(archivePath);
     if (!archive.isFile() || archive.isSymbolicLink() || archive.size <= 0) {
       throw new Error("Archive path must identify a non-empty regular file.");
     }
 
-    const label = labels[provider];
     const request = options.fetch ?? fetch;
     const controlToken =
       options.controlToken ?? (await readLocalCatalogImportToken());

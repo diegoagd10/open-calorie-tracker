@@ -6,7 +6,7 @@ import { expect, test, vi } from "vitest";
 import {
   createBarcodeCameraScanner,
 } from "../../app/routes/barcode-camera-scanner";
-import type { BarcodeDecoder } from "../../app/catalog/barcode-decoder";
+import type { BarcodeDecoder } from "../../app/barcode";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean })
   .IS_REACT_ACT_ENVIRONMENT = true;

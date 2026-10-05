@@ -145,19 +145,6 @@ Existing repository rules that require the deleted Actions checks must be update
 `pr:check` does not run a CodeQL scan. See
 [dependency security](dependency-security.md#codeql-results).
 
-## Opt-in complete OFF JSONL archive
-
-After building, run the isolated persisted lifecycle/command benchmark described in [OFF verification](local-off-catalog.md#verification-and-scale):
-
-```sh
-pnpm build
-OFF_LOCAL_ARCHIVE=/home/dagd/Downloads/openfoodfacts-products.jsonl.gz \
-OFF_SCALE_DIRECTORY=/home/dagd/Downloads \
-pnpm exec vitest run tests/local-off-scale.test.ts
-```
-
-Ordinary deterministic/browser tests use compact JSONL GZIP fixtures, including the native multiple-input-set serving record. The full benchmark writes `reports/off-jsonl-scale.json`, measures process RSS including the native worker, before/during/after replacement lookups and actual activation counters, and verifies saving the supplied snapshot's serving authority. It never writes to the development installation. Timing/RSS assertions belong only to this opt-in test.
-
 ## Administrator recovery container check
 
 After changing recovery commands or their build entries, verify the production

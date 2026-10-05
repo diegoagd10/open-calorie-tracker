@@ -3,7 +3,6 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import BetterSqlite3 from "better-sqlite3";
 import { afterEach, expect, test } from "vitest";
-import type { CatalogProviderId } from "../app/catalog/food-catalog.server";
 import { catalogGenerationIsReadable } from "../app/database/catalog-generation-validation.server";
 
 const directories: string[] = [];
@@ -12,12 +11,12 @@ afterEach(async () => {
 });
 
 type TableState = "populated" | "empty" | "missing";
-async function generation(provider: CatalogProviderId, options: { records?: TableState; search?: TableState } = {}) {
+async function generation(options: { records?: TableState; search?: TableState } = {}) {
   const directory = await mkdtemp(path.join(tmpdir(), "catalog-generation-validation-"));
   directories.push(directory);
   const id = "00000000-0000-4000-8000-000000000040";
   const database = new BetterSqlite3(path.join(directory, `${id}.sqlite`));
-  const [records, search] = provider === "open-food-facts" ? ["products", "product_search"] : ["foods", "names"];
+  const [records, search] = ["foods", "names"];
   const recordsState = options.records ?? "populated";
   const searchState = options.search ?? "populated";
   if (recordsState !== "missing") {
@@ -32,37 +31,19 @@ async function generation(provider: CatalogProviderId, options: { records?: Tabl
   return { directory, id };
 }
 
-test.each(["usda-fdc", "open-food-facts"] as const)("a complete %s generation is readable", async provider => {
-  const created = await generation(provider);
-  expect(catalogGenerationIsReadable(created.directory, created.id, provider)).toBe(true);
-});
-
-test("a barcode-only OFF generation is readable without a search index", async () => {
-  const created = await generation("open-food-facts", { search: "missing" });
-  expect(catalogGenerationIsReadable(created.directory, created.id, "open-food-facts"))
-    .toBe(true);
-});
-
-test("an OFF generation without stored product records is rejected", async () => {
-  const directory = await mkdtemp(path.join(tmpdir(), "catalog-generation-validation-"));
-  directories.push(directory);
-  const id = "00000000-0000-4000-8000-000000000043";
-  const database = new BetterSqlite3(path.join(directory, `${id}.sqlite`));
-  database.exec("CREATE TABLE products (value TEXT); INSERT INTO products VALUES ('record')");
-  database.close();
-  expect(catalogGenerationIsReadable(directory, id, "open-food-facts")).toBe(false);
+test("a complete generation is readable", async () => {
+  const created = await generation();
+  expect(catalogGenerationIsReadable(created.directory, created.id)).toBe(true);
 });
 
 test.each([
-  ["usda-fdc", { records: "missing" }],
-  ["usda-fdc", { search: "missing" }],
-  ["usda-fdc", { records: "empty" }],
-  ["usda-fdc", { search: "empty" }],
-  ["open-food-facts", { records: "missing" }],
-  ["open-food-facts", { records: "empty" }],
-] as const)("an incomplete %s generation is rejected (%#)", async (provider, options) => {
-  const created = await generation(provider, options);
-  expect(catalogGenerationIsReadable(created.directory, created.id, provider)).toBe(false);
+  { records: "missing" },
+  { search: "missing" },
+  { records: "empty" },
+  { search: "empty" },
+] as const)("an incomplete generation is rejected (%#)", async (options) => {
+  const created = await generation(options);
+  expect(catalogGenerationIsReadable(created.directory, created.id)).toBe(false);
 });
 
 test("a non-SQLite generation is rejected", async () => {
@@ -70,13 +51,13 @@ test("a non-SQLite generation is rejected", async () => {
   directories.push(directory);
   const id = "00000000-0000-4000-8000-000000000041";
   await writeFile(path.join(directory, `${id}.sqlite`), "not a database");
-  expect(catalogGenerationIsReadable(directory, id, "usda-fdc")).toBe(false);
+  expect(catalogGenerationIsReadable(directory, id)).toBe(false);
 });
 
 test("checking a missing generation does not create a database", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "catalog-generation-validation-"));
   directories.push(directory);
   const id = "00000000-0000-4000-8000-000000000042";
-  expect(catalogGenerationIsReadable(directory, id, "usda-fdc")).toBe(false);
+  expect(catalogGenerationIsReadable(directory, id)).toBe(false);
   await expect(access(path.join(directory, `${id}.sqlite`))).rejects.toMatchObject({ code: "ENOENT" });
 });

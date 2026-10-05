@@ -1,3 +1,4 @@
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 
 import BetterSqlite3 from "better-sqlite3";
@@ -12,6 +13,8 @@ const browserTestDatabasePath = path.resolve(
   "playwright-tests",
   "application.sqlite",
 );
+
+const offApiRequestLog = path.resolve("data", "playwright-tests", "off-api-requests.jsonl");
 
 export function openBrowserTestDatabase(
   options: { readonly?: boolean } = {},
@@ -35,6 +38,7 @@ export const test = base.extend<{ databaseReset: void }>({
             .prepare("DELETE FROM pre_authentication_csrf_sessions")
             .run();
           database.prepare("DELETE FROM rate_limit_counters").run();
+          database.prepare("DELETE FROM application_metadata WHERE key = 'off:contact'").run();
         }).immediate();
         database.close();
         if (authenticationFile) authenticationDatabaseReset = true;
@@ -46,6 +50,26 @@ export const test = base.extend<{ databaseReset: void }>({
 });
 
 export { expect };
+
+/** Enables barcode lookup the way an administrator's Food Catalogs contact email does. */
+export function configureBarcodeContact(email = "family@example.com"): void {
+  const database = openBrowserTestDatabase();
+  database.pragma("busy_timeout = 5000");
+  database
+    .prepare(
+      `INSERT INTO application_metadata (key, value, updated_at) VALUES ('off:contact', ?, ?)
+       ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+    )
+    .run(email, "2026-08-29T12:00:00.000Z");
+  database.close();
+}
+
+/** The Open Food Facts requests the preloaded API fixture has answered, oldest first. */
+export function recordedOffApiRequests(): { url: string; userAgent: string | null }[] {
+  if (!existsSync(offApiRequestLog)) return [];
+  return readFileSync(offApiRequestLog, "utf8").trim().split("\n").filter(Boolean)
+    .map((line) => JSON.parse(line) as { url: string; userAgent: string | null });
+}
 
 export async function provisionBrowserTestMember(
   username: string,

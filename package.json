@@ -17,7 +17,6 @@
   "scripts": {
     "admin:recover": "node build/recovery/recover-administrator.js",
     "admin:recover:keys": "node build/recovery/recover-administrator-keys.js",
-    "catalog:import:off": "node build/catalog-command/import-catalog.js open-food-facts",
     "catalog:import:usda": "node build/catalog-command/import-catalog.js usda-fdc",
     "architecture": "pnpm architecture:check && pnpm architecture:test",
     "architecture:check": "fallow dead-code --baseline fallow-baselines/dead-code.json --fail-on-issues",

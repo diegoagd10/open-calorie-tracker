@@ -48,7 +48,13 @@ import {
   type CatalogProviderId,
   type CatalogSearchResult,
 } from "../catalog/food-catalog.server";
-import { isSupportedCommercialBarcode } from "../catalog/barcode";
+import { BarcodeSetupPopup, isSupportedCommercialBarcode } from "../barcode";
+import {
+  BarcodeLookupUnavailableError,
+  BarcodeNotConfiguredError,
+  BarcodeProductNotFoundError,
+  getBarcodeService,
+} from "../barcode/index.server";
 import {
   getFoodCatalog,
 } from "../catalog/runtime.server";
@@ -271,19 +277,26 @@ function catalogFailure(
 function barcodeCatalogFailure(
   error: unknown,
 ): { message: string; status: number; title: string } | undefined {
-  if (error instanceof CatalogNotInstalledError) {
+  if (error instanceof BarcodeNotConfiguredError) {
     return {
       message:
-        "An administrator can install Open Food Facts in Settings → Food Catalogs. USDA search and saved Food Entries remain available.",
+        "Barcode lookup isn't configured. Ask an administrator. USDA search and manual entry remain available.",
       status: 503,
-      title: "Open Food Facts is not installed",
+      title: "Barcode lookup isn't configured",
     };
   }
-  if (error instanceof CatalogFoodNotFoundError) {
+  if (error instanceof BarcodeProductNotFoundError) {
     return {
-      message: "Product not found. Check the barcode or enter another code.",
+      message: "Product not found. Check the barcode, enter another code, or log it manually.",
       status: 404,
       title: "Product not found",
+    };
+  }
+  if (error instanceof CatalogStaleReviewError) {
+    return {
+      message: "The product changed on Open Food Facts. Review it again before saving.",
+      status: 409,
+      title: "Review product again",
     };
   }
   if (error instanceof CatalogNutritionUnavailableError) {
@@ -304,19 +317,30 @@ function barcodeCatalogFailure(
   }
   if (error instanceof CatalogInvalidDataError) {
     return {
-      message: "The installed Open Food Facts catalog contains product data that could not be used safely.",
+      message: "Open Food Facts returned product data that could not be used safely.",
       status: 500,
-      title: "Open Food Facts catalog data could not be used",
+      title: "Open Food Facts data could not be used",
     };
   }
-  if (error instanceof CatalogUnavailableError) {
+  if (error instanceof BarcodeLookupUnavailableError) {
     return {
-      message: "Open Food Facts is unavailable right now. Retry in a moment.",
+      message: "Try again or log it manually.",
       status: 503,
-      title: "Open Food Facts is unavailable",
+      title: "Open Food Facts isn't responding",
     };
   }
   return undefined;
+}
+
+/**
+ * How Scan barcode appears in Add Food: usable once an administrator set the Open Food Facts
+ * contact; until then administrators are shown how to set it up and members do not see it.
+ */
+type BarcodeLookupAccess = "enabled" | "admin-setup" | "hidden";
+
+function barcodeLookupAccess(role: string): BarcodeLookupAccess {
+  if (getBarcodeService().isConfigured()) return "enabled";
+  return role === "admin" ? "admin-setup" : "hidden";
 }
 
 export function meta() {
@@ -537,6 +561,10 @@ export async function loader({ request }: Route.LoaderArgs) {
     url.searchParams.get("food"),
     url.searchParams.get("provider"),
   );
+  const barcodeLookup = barcodeLookupAccess(session.user.role);
+  if (foodStage?.mode === "barcode" && barcodeLookup !== "enabled" && !foodLog.isFuture) {
+    return redirect(catalogHref(foodLog.selectedDate, "choose"));
+  }
   const requestedQuery = url.searchParams.get("query") ?? "";
   let responseStatus = 200;
   let catalog:
@@ -631,11 +659,7 @@ export async function loader({ request }: Route.LoaderArgs) {
           try {
             catalog = {
               barcode: parsedBarcode,
-              food: await getFoodCatalog().lookupBarcode(
-                "open-food-facts",
-                parsedBarcode,
-                catalogContext,
-              ),
+              food: await getBarcodeService().lookup(parsedBarcode),
               idempotencyKey: randomUUID(),
               mode: "barcode",
               query: "",
@@ -698,6 +722,26 @@ export async function loader({ request }: Route.LoaderArgs) {
           };
         }
       }
+    } else if (foodStage.provider === "open-food-facts") {
+      try {
+        catalog = {
+          food: await getBarcodeService().lookup(foodStage.providerFoodId),
+          idempotencyKey: randomUUID(),
+          mode: "detail",
+          query: requestedQuery,
+        };
+      } catch (error) {
+        const failure = barcodeCatalogFailure(error);
+        if (!failure) throw error;
+        responseStatus = failure.status;
+        catalog = {
+          barcode: foodStage.providerFoodId,
+          message: failure.message,
+          mode: "barcode",
+          query: "",
+          title: failure.title,
+        };
+      }
     } else {
       const foodCatalog = getFoodCatalog();
       try {
@@ -708,9 +752,7 @@ export async function loader({ request }: Route.LoaderArgs) {
           query: requestedQuery,
         };
       } catch (error) {
-        const failure = foodStage.provider === "open-food-facts"
-          ? barcodeCatalogFailure(error)
-          : catalogFailure(error);
+        const failure = catalogFailure(error);
         if (!failure) throw error;
         responseStatus = failure.status;
         let results: CatalogSearchResult[] = [];
@@ -721,8 +763,7 @@ export async function loader({ request }: Route.LoaderArgs) {
         ) {
           try {
             results = (await foodCatalog.search(parsedQuery, catalogContext))
-              .filter(result =>
-                result.provider !== foodStage.provider || result.providerFoodId !== foodStage.providerFoodId);
+              .filter(result => result.providerFoodId !== foodStage.providerFoodId);
           } catch {
             // The original detail failure remains the useful response when
             // refreshing the surrounding search results also fails.
@@ -743,6 +784,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   return data(
     {
+      barcodeLookup,
       calendar,
       catalog,
       copyDialog,
@@ -1133,7 +1175,11 @@ export async function action({ request }: Route.ActionArgs) {
         : catalogFailure(error);
     if (failure) {
       return data<HomeActionData>(
-        { message: failure.message, tone: "error" },
+        {
+          // A save has no title line, so an unavailable OFF keeps its whole sentence.
+          message: error instanceof BarcodeLookupUnavailableError ? error.message : failure.message,
+          tone: "error",
+        },
         { status: failure.status },
       );
     }
@@ -2431,34 +2477,60 @@ function WaterDialogModal({
   );
 }
 
-function CatalogChoiceStage({ date }: { date: string }) {
+function CatalogChoiceStage({
+  barcodeLookup,
+  date,
+}: {
+  barcodeLookup: BarcodeLookupAccess;
+  date: string;
+}) {
+  const [setupOpen, setSetupOpen] = useState(false);
+  const scanBarcode = (
+    <>
+      <span className={methodStyles.icon}>
+        <UiIcon name="barcode" />
+      </span>
+      <span className={methodStyles.label}>Scan barcode</span>
+    </>
+  );
   return (
-    <div className={methodStyles.methods} aria-label="Add Food methods">
-      <Link className={methodStyles.method} to={catalogHref(date, "my")}>
-        <span className={methodStyles.icon}>
-          <UiIcon name="utensils" />
-        </span>
-        <span className={methodStyles.label}>My foods</span>
-      </Link>
-      <Link aria-label="Search for food" className={methodStyles.method} to={catalogHref(date, "search")}>
-        <span className={methodStyles.icon}>
-          <UiIcon name="search" />
-        </span>
-        <span className={methodStyles.label}>Search food</span>
-      </Link>
-      <Link className={methodStyles.method} to={catalogHref(date, "barcode")}>
-        <span className={methodStyles.icon}>
-          <UiIcon name="barcode" />
-        </span>
-        <span className={methodStyles.label}>Scan barcode</span>
-      </Link>
-      <Link className={methodStyles.method} to={catalogHref(date, "manual")}>
-        <span className={methodStyles.icon}>
-          <UiIcon name="pencil" />
-        </span>
-        <span className={methodStyles.label}>Manual</span>
-      </Link>
-    </div>
+    <>
+      <div className={methodStyles.methods} aria-label="Add Food methods">
+        <Link className={methodStyles.method} to={catalogHref(date, "my")}>
+          <span className={methodStyles.icon}>
+            <UiIcon name="utensils" />
+          </span>
+          <span className={methodStyles.label}>My foods</span>
+        </Link>
+        <Link aria-label="Search for food" className={methodStyles.method} to={catalogHref(date, "search")}>
+          <span className={methodStyles.icon}>
+            <UiIcon name="search" />
+          </span>
+          <span className={methodStyles.label}>Search food</span>
+        </Link>
+        {barcodeLookup === "enabled" ? (
+          <Link className={methodStyles.method} to={catalogHref(date, "barcode")}>
+            {scanBarcode}
+          </Link>
+        ) : barcodeLookup === "admin-setup" ? (
+          <button
+            aria-haspopup="dialog"
+            className={methodStyles.method}
+            onClick={() => setSetupOpen(true)}
+            type="button"
+          >
+            {scanBarcode}
+          </button>
+        ) : null}
+        <Link className={methodStyles.method} to={catalogHref(date, "manual")}>
+          <span className={methodStyles.icon}>
+            <UiIcon name="pencil" />
+          </span>
+          <span className={methodStyles.label}>Manual</span>
+        </Link>
+      </div>
+      {setupOpen ? <BarcodeSetupPopup onClose={() => setSetupOpen(false)} /> : null}
+    </>
   );
 }
 
@@ -2962,11 +3034,13 @@ function BarcodeCatalogStage({
 
 function CatalogDialog({
   actionData,
+  barcodeLookup,
   catalog,
   csrfToken,
   date,
 }: {
   actionData: HomeActionData | undefined;
+  barcodeLookup: BarcodeLookupAccess;
   catalog: NonNullable<Route.ComponentProps["loaderData"]["catalog"]>;
   csrfToken: string;
   date: string;
@@ -3052,7 +3126,7 @@ function CatalogDialog({
             date={date}
           />
         ) : catalog.mode === "choose" ? (
-          <CatalogChoiceStage date={date} />
+          <CatalogChoiceStage barcodeLookup={barcodeLookup} date={date} />
         ) : catalog.mode === "my" ? (
           <MyFoodsStage catalog={catalog} date={date} />
         ) : catalog.mode === "saved" ? (
@@ -3550,6 +3624,7 @@ function CopyFoodEntryDialog({
 
 export default function Home({ actionData, loaderData }: Route.ComponentProps) {
   const {
+    barcodeLookup = "hidden",
     calendar,
     catalog,
     copyDialog,
@@ -3735,6 +3810,7 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
       {visibleCatalog ? (
         <CatalogDialog
           actionData={actionData}
+          barcodeLookup={barcodeLookup}
           catalog={visibleCatalog}
           csrfToken={csrfToken}
           date={foodLog.selectedDate}
