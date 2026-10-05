@@ -3,9 +3,9 @@ import { describe, expect, test } from "vitest";
 import {
   quantityMicrounitsFromDecimal,
   scaleCatalogNutrient,
-} from "../app/food-entry/nutrition";
+} from "../app/food-event/nutrition";
 
-describe("Food Entry quantity parsing", () => {
+describe("Food Event quantity parsing", () => {
   test.each([
     ["0.000001", 1],
     ["1", 1_000_000],
@@ -105,6 +105,6 @@ describe("catalog nutrient fixed-point scaling", () => {
         1_000_000,
         1,
       ),
-    ).toThrow("Food Entry exceeds storage limits");
+    ).toThrow("Food Event exceeds storage limits");
   });
 });

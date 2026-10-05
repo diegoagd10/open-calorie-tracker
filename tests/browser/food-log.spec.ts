@@ -85,13 +85,15 @@ async function expectFoodEntryStatusResponsive(page: Page, message: string) {
   await page.setViewportSize({ height: 720, width: 1_280 });
 }
 
-async function copyActionIdempotencyKey(
-  submitButton: Locator,
-): Promise<string> {
+/** The fields a dialog form posts besides its submit button. */
+async function postedFields(submitButton: Locator): Promise<Record<string, string>> {
   return submitButton
     .locator("xpath=ancestor::form")
-    .locator('input[name="idempotencyKey"]')
-    .inputValue();
+    .evaluate((form) => Object.fromEntries(
+      [...new FormData(form as HTMLFormElement).entries()]
+        .filter(([name]) => name !== "csrfToken")
+        .map(([name, value]) => [name, String(value)]),
+    ));
 }
 
 /** Fills a dialog field and waits until the value holds, so a late re-render cannot drop it. */
@@ -449,7 +451,7 @@ test("daily calorie and nutrient progress is factual, responsive, and accessible
     .get("nutrition.progress") as { id: number };
   const updatedEntries = database
     .prepare(
-      `UPDATE food_entries
+      `UPDATE food_events
        SET authoritative_energy_milli_kcal = NULL,
            authoritative_protein_milligrams = 120500,
            authoritative_carbohydrate_milligrams = 230001,
@@ -518,7 +520,7 @@ test("daily calorie and nutrient progress is factual, responsive, and accessible
   const precisionDatabase = openBrowserTestDatabase();
   precisionDatabase
     .prepare(
-      `UPDATE food_entries
+      `UPDATE food_events
        SET authoritative_energy_milli_kcal = 1234
        WHERE user_id = ?`,
     )
@@ -635,8 +637,8 @@ test("daily calorie and nutrient progress is factual, responsive, and accessible
   const beforeSetupDatabase = openBrowserTestDatabase();
   beforeSetupDatabase
     .prepare(
-      `UPDATE food_entries
-       SET food_log_date = '2025-12-31'
+      `UPDATE food_events
+       SET log_date = '2025-12-31T17:00:00.000Z'
        WHERE user_id = ?`,
     )
     .run(user.id);
@@ -657,7 +659,7 @@ test("daily calorie and nutrient progress is factual, responsive, and accessible
   expect(accessibilityScan.violations).toEqual([]);
 });
 
-test("authenticated USDA search and idempotent logging preserve a local Nutrition Snapshot", async ({
+test("authenticated USDA search and logging preserve a local Nutrition Snapshot, and a resubmission records it again", async ({
   browser,
   context,
   page,
@@ -835,14 +837,16 @@ test("authenticated USDA search and idempotent logging preserve a local Nutritio
   const submission = await foodForm.evaluate((form) =>
     Object.fromEntries(new FormData(form as HTMLFormElement).entries()),
   );
+  expect(submission).toMatchObject({ intent: "log", method: "lookup", providerFoodId: "1001", quantity: "1.5" });
+  // Without idempotency keys a resubmitted form records the food again, as Water Events do.
   const statuses = await page.evaluate(async (fields) => {
     const body = new URLSearchParams(fields as Record<string, string>);
-    const first = await fetch("/?index", {
+    const first = await fetch("/food-events", {
       body,
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       method: "POST",
     });
-    const second = await fetch("/?index", {
+    const second = await fetch("/food-events", {
       body,
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       method: "POST",
@@ -854,9 +858,9 @@ test("authenticated USDA search and idempotent logging preserve a local Nutritio
   await page.goto("/?date=2026-08-29");
   await expect(
     page.getByText("Plain nonfat Greek yogurt", { exact: true }),
-  ).toHaveCount(1);
-  await expect(page.getByText("USDA FoodData Central · Branded")).toBeVisible();
-  await expect(page.getByRole("article").getByText("150.5 kcal")).toBeVisible();
+  ).toHaveCount(2);
+  await expect(page.getByText("USDA FoodData Central · Branded")).toHaveCount(2);
+  await expect(page.getByRole("article").getByText("150.5 kcal")).toHaveCount(2);
   await expect(page.locator("img")).toHaveCount(0);
 
   const anonymous = await browser.newContext({ ignoreHTTPSErrors: true });
@@ -1434,7 +1438,7 @@ test("food logging immediately reveals a pending Daily log row", async ({
     const request = route.request();
     if (
       request.method() === "POST" &&
-      request.postData()?.includes("intent=log-food")
+      request.postData()?.includes("method=lookup")
     ) {
       signalLogRequest();
       await logGate;
@@ -1566,11 +1570,11 @@ test("an authenticated user can correct and delete one Food Entry", async ({
   await page.getByLabel("Food name").fill(" ");
   await page.getByRole("button", { name: "Save changes" }).click();
   await expect(editor.getByRole("alert")).toContainText(
-    "Food Entry request is invalid",
+    "Enter a food name of 1 to 200 characters.",
   );
   await expectFoodEntryEditorResponsive(page);
   await expect(editor.getByRole("alert")).toContainText(
-    "Food Entry request is invalid",
+    "Enter a food name of 1 to 200 characters.",
   );
 
   await page.getByLabel("Food name").fill("Breakfast yogurt");
@@ -1586,13 +1590,13 @@ test("an authenticated user can correct and delete one Food Entry", async ({
     const fields = Object.fromEntries(
       new FormData(form as HTMLFormElement).entries(),
     );
-    fields.intent = "update-food";
+    fields.intent = "update";
     return fields;
   });
   const malformedStatus = await page.evaluate(async (fields) => {
     const body = new URLSearchParams(fields as Record<string, string>);
-    body.set("selectedMeasurementId", "invented-measurement");
-    const response = await fetch("/?index", {
+    body.set("measurementId", "invented-measurement");
+    const response = await fetch("/food-events", {
       body,
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       method: "POST",
@@ -1635,7 +1639,7 @@ test("an authenticated user can correct and delete one Food Entry", async ({
        authoritative_nutrition AS authoritativeNutrition,
         authoritative_carbohydrate_milligrams AS carbohydrateMilligrams,
         authoritative_fat_milligrams AS fatMilligrams
-       FROM food_entries f
+       FROM food_events f
        JOIN users u ON u.id = f.user_id
        WHERE f.original_name = ? AND u.username_normalized = ?`,
     )
@@ -1654,7 +1658,7 @@ test("an authenticated user can correct and delete one Food Entry", async ({
   });
 
   const staleStatus = await page.evaluate(async (fields) => {
-    const response = await fetch("/?index", {
+    const response = await fetch("/food-events", {
       body: new URLSearchParams(fields as Record<string, string>),
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       method: "POST",
@@ -1663,7 +1667,7 @@ test("an authenticated user can correct and delete one Food Entry", async ({
   }, editFields);
   expect(staleStatus).toBe(409);
 
-  const entryId = String(editFields.entryId);
+  const entryId = String(editFields.id);
   const otherContext = await page.context().browser()!.newContext();
   await otherContext.setExtraHTTPHeaders({
     "X-Test-Client-IP": "203.0.113.84",
@@ -1682,30 +1686,30 @@ test("an authenticated user can correct and delete one Food Entry", async ({
     .inputValue();
   const unavailableMutations = await otherPage.evaluate(
     async ({ csrfToken, entryId, expectedUpdatedAt }) => {
-      const submit = (intent: "delete-food" | "update-food") =>
-        fetch("/?index", {
+      const submit = (intent: "delete" | "update") =>
+        fetch("/food-events", {
           body: new URLSearchParams({
             carbohydrateGrams: "",
             csrfToken,
             date: "2026-08-29",
             energyKcal: "",
-            entryId,
             expectedUpdatedAt,
             fatGrams: "",
             fiberGrams: "",
+            id: entryId,
             intent,
+            measurementId: "base:g:100000000",
             name: "Unavailable",
             proteinGrams: "",
             quantity: "1",
-            selectedMeasurementId: "base:g:100000000",
             sodiumMilligrams: "",
             sugarGrams: "",
           }),
           headers: { "Content-Type": "application/x-www-form-urlencoded" },
           method: "POST",
         });
-      const update = await submit("update-food");
-      const deletion = await submit("delete-food");
+      const update = await submit("update");
+      const deletion = await submit("delete");
       return [update.status, deletion.status];
     },
     {
@@ -1801,7 +1805,7 @@ test("an authenticated user can copy a historical Food Entry to today", async ({
   await menuTrigger.click();
   const copyButton = editor.getByRole("button", { name: "Copy to today" });
   await expect(copyButton).toBeVisible();
-  const firstIdempotencyKey = await copyActionIdempotencyKey(copyButton);
+  expect(await postedFields(copyButton)).toEqual({ date: "2026-08-28", id: expect.stringMatching(/^[1-9]\d*$/) as unknown as string, intent: "copy" });
   const openMenuAccessibility = await new AxeBuilder({ page }).analyze();
   expect(openMenuAccessibility.violations).toEqual([]);
 
@@ -1816,7 +1820,8 @@ test("an authenticated user can copy a historical Food Entry to today", async ({
   await page.route("**/*", async (route) => {
     if (
       route.request().method() === "POST" &&
-      route.request().postData()?.includes("intent=copy-food-to-today")
+      route.request().postData()?.includes("intent=copy") &&
+      !route.request().postData()?.includes("destinationDate")
     ) {
       signalCopyStarted();
       await copyGate;
@@ -1844,14 +1849,6 @@ test("an authenticated user can copy a historical Food Entry to today", async ({
   await expect(
     page.getByRole("progressbar", { name: "Calorie progress" }),
   ).toHaveAttribute("aria-valuetext", /111\.1 of 2,050 kcal target/);
-
-  await correctedSourceCard.click();
-  const reopenedMenu = page.getByRole("dialog", { name: "Edit Food Entry" })
-    .getByRole("button", { name: "Copy entry" });
-  await reopenedMenu.click();
-  const laterCopyButton = page.getByRole("button", { name: "Copy to today" });
-  const laterIdempotencyKey = await copyActionIdempotencyKey(laterCopyButton);
-  expect(laterIdempotencyKey).not.toBe(firstIdempotencyKey);
 
   await page.goto("/");
   const copiedCard = page.getByRole("link", {
@@ -2021,7 +2018,8 @@ test("an authenticated user can review and copy a Food Entry to another eligible
   await page.route("**/*", async (route) => {
     if (
       route.request().method() === "POST" &&
-      route.request().postData()?.includes("intent=copy-food-to-date")
+      route.request().postData()?.includes("intent=copy") &&
+      route.request().postData()?.includes("destinationDate=2026-08-27")
     ) {
       signalCopyStarted();
       await copyGate;
@@ -2078,8 +2076,9 @@ test("an authenticated user can review and copy a Food Entry to another eligible
   copiedCards = page.getByRole("link", {
     name: /Plain nonfat Greek yogurt.*100\.3 kcal/,
   });
+  // Every copy to a past day lands at noon; the newer copy is listed first.
   await expect(copiedCards).toHaveCount(2);
-  await expect(copiedCards.nth(0).locator("time")).toHaveText("12:01 PM");
+  await expect(copiedCards.nth(0).locator("time")).toHaveText("12:00 PM");
   await expect(copiedCards.nth(1).locator("time")).toHaveText("12:00 PM");
   await expect(
     page.getByRole("progressbar", { name: "Calorie progress" }),
@@ -2214,9 +2213,9 @@ test("a stale Food Entry editor refreshes to the current occurrence and can retr
       const fields = Object.fromEntries(
         new FormData(form as HTMLFormElement).entries(),
       );
-      fields.intent = "update-food";
+      fields.intent = "update";
       fields.name = "Updated elsewhere";
-      const response = await fetch("/?index", {
+      const response = await fetch("/food-events", {
         body: new URLSearchParams(fields as Record<string, string>),
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         method: "POST",

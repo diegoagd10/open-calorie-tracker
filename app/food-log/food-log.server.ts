@@ -1,20 +1,11 @@
-import { and, desc, eq, gte, lte } from "drizzle-orm";
-
 import { createDailyGoalService } from "../daily-goal/index.server";
 import type { ApplicationDatabaseClient } from "../database/database.server";
-import { foodEntries } from "../database/schema.server";
 import { readUserTimeZone } from "../database/user-preferences.server";
-import { foodEntrySnapshot } from "../food-entry/snapshot.server";
+import { createFoodEventService } from "../food-event/index.server";
 import { localDayRange, utcToZonedDateTime } from "../shared/date-time";
-import {
-  createWaterEventService,
-  waterEventLocalDateTime,
-} from "../water-event/index.server";
-import {
-  compareFoodLogEventsDescending,
-  localDateAt,
-  parseIsoLocalDate,
-} from "./date";
+import { localDateAt, parseIsoLocalDate } from "../shared/local-date";
+import { createWaterEventService } from "../water-event/index.server";
+import { compareFoodLogEventsDescending } from "./date";
 
 export class InvalidFoodLogDateError extends Error {
   constructor() {
@@ -30,45 +21,12 @@ export class FutureFoodLogDateError extends Error {
   }
 }
 
-const nutritionFields = [
-  "carbohydrateMilligrams",
-  "energyMilliKcal",
-  "fatMilligrams",
-  "fiberMilligrams",
-  "proteinMilligrams",
-  "sodiumMilligrams",
-  "sugarMilligrams",
-] as const;
-
-type FoodEntrySnapshot = ReturnType<typeof foodEntrySnapshot>;
-
 export type DailyCalories = {
-  entryCount: number;
+  eventCount: number;
   goalMilliKcal: number | null;
   isIncomplete: boolean;
   knownMilliKcal: number;
 };
-
-function nutritionTotals(entries: FoodEntrySnapshot[]) {
-  return Object.fromEntries(
-    nutritionFields.map((field) => {
-      let isIncomplete = false;
-      let known = 0;
-      for (const entry of entries) {
-        const value = entry[field];
-        if (value === null) {
-          isIncomplete = true;
-        } else {
-          known += value;
-        }
-      }
-      return [field, { isIncomplete, known }];
-    }),
-  ) as Record<
-    (typeof nutritionFields)[number],
-    { isIncomplete: boolean; known: number }
-  >;
-}
 
 export class FoodLogService {
   readonly #database: ApplicationDatabaseClient;
@@ -95,43 +53,20 @@ export class FoodLogService {
     if (!selectedDate) throw new InvalidFoodLogDateError();
 
     const goal = createDailyGoalService(this.#database, this.#now).read(userId);
-
-    const entries = this.#database
-      .select()
-      .from(foodEntries)
-      .where(
-        and(
-          eq(foodEntries.userId, userId),
-          eq(foodEntries.foodLogDate, selectedDate),
-        ),
-      )
-      .orderBy(
-        desc(foodEntries.localEventTime),
-        desc(foodEntries.createdAt),
-        desc(foodEntries.id),
-      )
-      .all()
-      .map(foodEntrySnapshot);
-    const water = createWaterEventService(this.#database, this.#now).list(
-      userId,
-      localDayRange(selectedDate, timeZone),
-    );
+    const range = localDayRange(selectedDate, timeZone);
+    const food = createFoodEventService(this.#database, this.#now).list(userId, range);
+    const water = createWaterEventService(this.#database, this.#now).list(userId, range);
     const events = [
-      ...entries.map((entry) => ({ ...entry, kind: "food" as const })),
-      ...water.events.map((event) => ({
-        ...event,
-        foodLogDate: selectedDate,
-        kind: "water" as const,
-        localEventTime: waterEventLocalDateTime(event.logDate, timeZone).slice(11),
-      })),
+      ...food.events.map((event) => ({ ...event, kind: "food" as const })),
+      ...water.events.map((event) => ({ ...event, kind: "water" as const })),
     ].sort(compareFoodLogEventsDescending);
 
     return {
-      entries,
+      foodEvents: food.events,
       events,
       goal,
       isFuture: selectedDate > today,
-      nutritionTotals: nutritionTotals(entries),
+      nutritionTotals: food.totals,
       selectedDate,
       timeZone,
       today,
@@ -145,42 +80,31 @@ export class FoodLogService {
   /**
    * Calorie totals for several local dates at once, each against `goal`: the Daily Goal the
    * same request's `read()` returned, so the selected day and every summarized date agree.
+   * One range read covers every date; days are grouped in the account's time zone.
    */
   dailyCalories(
     userId: number,
     dates: readonly string[],
     goal: { calorieTarget: number } | null,
   ): Record<string, DailyCalories> {
-    if (!dates.length) return {};
+    const timeZone = readUserTimeZone(this.#database, userId);
+    if (!dates.length || !timeZone) return {};
     const ordered = [...dates].sort();
-    const entries = this.#database
-      .select({ energyMilliKcal: foodEntries.energyMilliKcal, foodLogDate: foodEntries.foodLogDate })
-      .from(foodEntries)
-      .where(and(
-        eq(foodEntries.userId, userId),
-        gte(foodEntries.foodLogDate, ordered[0]),
-        lte(foodEntries.foodLogDate, ordered[ordered.length - 1]),
-      ))
-      .all();
+    const { days } = createFoodEventService(this.#database, this.#now).list(userId, {
+      from: localDayRange(ordered[0], timeZone).from,
+      to: localDayRange(ordered[ordered.length - 1], timeZone).to,
+    });
     const goalMilliKcal = goal?.calorieTarget ?? null;
-
-    return Object.fromEntries(
-      ordered.map((date) => {
-        const dayEntries = entries.filter((entry) => entry.foodLogDate === date);
-        return [
-          date,
-          {
-            entryCount: dayEntries.length,
-            goalMilliKcal,
-            isIncomplete: dayEntries.some((entry) => entry.energyMilliKcal === null),
-            knownMilliKcal: dayEntries.reduce(
-              (total, entry) => total + (entry.energyMilliKcal ?? 0),
-              0,
-            ),
-          },
-        ];
-      }),
-    );
+    return Object.fromEntries(ordered.map((date) => {
+      const day = days[date];
+      const energy = day?.totals.energyMilliKcal;
+      return [date, {
+        eventCount: day?.eventCount ?? 0,
+        goalMilliKcal,
+        isIncomplete: energy?.isIncomplete ?? false,
+        knownMilliKcal: energy?.known ?? 0,
+      }];
+    }));
   }
 
   requireWritableDate(userId: number, requestedDate: string): string {

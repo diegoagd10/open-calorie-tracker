@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { FoodLogService } from "../food-log/food-log.server";
+import { utcToZonedDateTime } from "../shared/date-time";
 import { formatOunceThousandths, ounceThousandths } from "../water-event/water-event.utils";
 
 type FoodLog = NonNullable<ReturnType<FoodLogService["read"]>>;
@@ -47,7 +48,7 @@ export const dailyLogSummarySchema = {
   }).describe("Water in fluid ounces, exact to three decimals"),
   incompleteNutrients: z.array(z.enum(NUTRIENT_NAMES as [NutrientName, ...NutrientName[]])),
   foods: z.array(z.object({
-    time: z.string().describe("Local time (HH:MM)"),
+    logDate: z.string().describe("When the food was eaten, as a UTC ISO date-time"),
     name: z.string(),
     provider: z.string().describe("Food source: usda-fdc, open-food-facts, or manual"),
     dataType: z.string().describe("Source data type, for example Foundation, Open Food Facts, or User entered"),
@@ -105,21 +106,22 @@ function summarizeWater(foodLog: FoodLog) {
   };
 }
 
-function summarizeFood(entry: FoodLog["entries"][number]) {
+function summarizeFood(event: FoodLog["foodEvents"][number]) {
+  const { nutrients } = event;
   return {
-    time: entry.localEventTime.slice(0, 5),
-    name: entry.name,
-    provider: entry.provider,
-    dataType: entry.dataType,
-    brand: entry.brand,
-    serving: `${entry.selectedMeasurementLabel} × ${entry.quantityMicrounits / 1_000_000}`,
-    energyKcal: display(entry.energyMilliKcal, "energy"),
-    proteinG: display(entry.proteinMilligrams, "protein"),
-    carbohydrateG: display(entry.carbohydrateMilligrams, "carbohydrate"),
-    fatG: display(entry.fatMilligrams, "fat"),
-    fiberG: display(entry.fiberMilligrams, "fiber"),
-    sugarG: display(entry.sugarMilligrams, "sugar"),
-    sodiumMg: display(entry.sodiumMilligrams, "sodium"),
+    logDate: event.logDate,
+    name: event.name,
+    provider: event.source.provider,
+    dataType: event.source.dataType,
+    brand: event.source.brand,
+    serving: `${event.measurement.label} × ${event.quantityMicrounits / 1_000_000}`,
+    energyKcal: display(nutrients.energyMilliKcal, "energy"),
+    proteinG: display(nutrients.proteinMilligrams, "protein"),
+    carbohydrateG: display(nutrients.carbohydrateMilligrams, "carbohydrate"),
+    fatG: display(nutrients.fatMilligrams, "fat"),
+    fiberG: display(nutrients.fiberMilligrams, "fiber"),
+    sugarG: display(nutrients.sugarMilligrams, "sugar"),
+    sodiumMg: display(nutrients.sodiumMilligrams, "sodium"),
   };
 }
 
@@ -146,7 +148,7 @@ function summaryText(summary: DailyLogSummary): string {
   lines.push(amountLine("Water", summary.water));
   lines.push(summary.foods.length ? "Foods:" : "No foods logged.");
   for (const food of summary.foods) {
-    lines.push(`- ${food.time} ${food.name}${food.brand ? ` (${food.brand})` : ""}, ${sourceLabel(food)}, ${food.serving}: ${food.energyKcal ?? "unknown"} kcal`);
+    lines.push(`- ${utcToZonedDateTime(food.logDate, summary.timeZone).slice(11, 16)} ${food.name}${food.brand ? ` (${food.brand})` : ""}, ${sourceLabel(food)}, ${food.serving}: ${food.energyKcal ?? "unknown"} kcal`);
   }
   return lines.join("\n");
 }
@@ -164,7 +166,7 @@ export function summarizeDailyLog(foodLog: NonNullable<ReturnType<FoodLogService
     nutrients,
     water: summarizeWater(foodLog),
     incompleteNutrients: NUTRIENT_NAMES.filter((name) => nutrients[name].isIncomplete),
-    foods: foodLog.entries.map(summarizeFood),
+    foods: foodLog.foodEvents.map(summarizeFood),
   };
   return { structured, text: summaryText(structured) };
 }

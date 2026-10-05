@@ -2,7 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import { eq, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { RouterContextProvider } from "react-router";
 import { afterAll, beforeAll, expect, test, vi } from "vitest";
 
@@ -13,14 +13,16 @@ import {
   CatalogStaleReviewError,
   CatalogNutritionUnavailableError,
 } from "../../app/catalog/food-catalog.server";
-import { setFoodCatalogProviderForTests } from "../../app/catalog/runtime.server";
-import { getBarcodeService } from "../../app/barcode/index.server";
+import { getFoodCatalog, getOpenFoodFactsClient, setFoodCatalogProviderForTests } from "../../app/catalog/runtime.server";
+import { TEST_CATALOG_GENERATION } from "../../app/catalog/test-fixture.server";
 import {
   getApplicationDatabase,
   initializeApplicationDatabase,
   shutdownApplicationDatabase,
 } from "../../app/database/runtime.server";
-import { foodEntries, savedFoods } from "../../app/database/schema.server";
+import type { FoodEvent } from "../../app/food-event/food-event.model";
+import { favoriteFoods, foodEvents } from "../../app/food-event/food-event.schema.server";
+import { action as foodAction } from "../../app/food-event/routes/web";
 import {
   action as homeAction,
   headers,
@@ -28,13 +30,13 @@ import {
   meta,
 } from "../../app/routes/home";
 import { shutdownCredentialStorage } from "../../app/credentials/runtime.server";
-import { getFoodEntryService } from "../../app/food-entry/runtime.server";
+import { getFoodEventService } from "../../app/food-event/runtime.server";
 import { getFoodLogService } from "../../app/food-log/runtime.server";
 import { completeTestSetup } from "../support/setup";
 import { getWaterEventService } from "../../app/water-event/runtime.server";
 import { action as waterAction } from "../../app/water-event/routes/web";
 import { seedAuthenticatedAccount } from "../support/authentication";
-import { exampleCerealProduct, fakeOffApi, offApiFixtureReplies } from "../support/off-api";
+import { fakeOffApi, offApiFixtureReplies } from "../support/off-api";
 
 const origin = "http://localhost:3000";
 const instant = "2026-08-31T16:00:00.000Z";
@@ -74,14 +76,9 @@ function post(
   fields: Record<string, string>,
   options: { authenticated?: boolean; origin?: string; testInstant?: boolean } = {},
 ) {
-  const provider: Record<string, string> =
-    fields.intent === "log-food" && fields.provider === undefined
-      ? { provider: "usda-fdc" }
-      : {};
   const body = new URLSearchParams({
     csrfToken,
     date: today,
-    ...provider,
     ...fields,
   });
   const requestHeaders = new Headers({
@@ -154,7 +151,7 @@ beforeAll(async () => {
   completeTestSetup(member.user.id);
 
   vi.stubGlobal("fetch", offApi.fetch);
-  getBarcodeService().saveContact("family@example.com");
+  getOpenFoodFactsClient().saveContact("family@example.com");
 });
 
 afterAll(async () => {
@@ -217,11 +214,12 @@ test("home publishes metadata and enforces account/setup/date boundaries", async
 
   const base = await load();
   expect(base.init?.status).toBe(200);
+  expect(base.data.addFood).toBeUndefined();
+  expect(base.data.copy).toBeUndefined();
+  expect(base.data.editor).toBeUndefined();
   expect(base.data).toMatchObject({
     calendar: undefined,
-    catalog: undefined,
     csrfToken,
-    foodEntryEditor: undefined,
     foodLog: {
       isFuture: false,
       selectedDate: today,
@@ -262,22 +260,22 @@ test("home publishes metadata and enforces account/setup/date boundaries", async
 
 test("home loader maps every catalog search and detail state", async () => {
   const empty = await load("/?food=search");
-  expect(empty.data.catalog).toEqual({ mode: "search", query: "", results: [], savedResults: [] });
+  expect(empty.data.addFood).toEqual({ mode: "search", query: "", results: [], favorites: [] });
 
   const invalid = await load("/?food=search&query=a");
   expect(invalid.init?.status).toBe(400);
-  expect(invalid.data.catalog).toEqual({
+  expect(invalid.data.addFood).toEqual({
     message: "Enter a food search from 2 to 100 characters.",
     mode: "search",
     query: "a",
     results: [],
-    savedResults: [],
+    favorites: [],
     title: "Search not sent",
   });
 
   const results = await load("/?food=search&query=yogurt");
   expect(results.init?.status).toBe(200);
-  expect(results.data.catalog).toMatchObject({
+  expect(results.data.addFood).toMatchObject({
     mode: "search",
     query: "yogurt",
     results: [{ name: "Plain nonfat Greek yogurt", providerFoodId: "1001" }],
@@ -291,7 +289,7 @@ test("home loader maps every catalog search and detail state", async () => {
   ] as const) {
     const boundary = await load(`/?food=search&query=${query}`);
     expect(boundary.init?.status).toBe(expectedStatus);
-    expect(boundary.data.catalog).toMatchObject({ query: expectedQuery });
+    expect(boundary.data.addFood).toMatchObject({ query: expectedQuery });
   }
 
   for (const [query, status] of [
@@ -301,34 +299,32 @@ test("home loader maps every catalog search and detail state", async () => {
   ] as const) {
     const result = await load(`/?food=search&query=${query}`);
     expect(result.init?.status).toBe(status);
-    expect(result.data.catalog).toMatchObject({
+    expect(result.data.addFood).toMatchObject({
       mode: "search",
       query,
       results: [],
     });
   }
   const packaged = await load("/?food=search&query=yogurt&filter=packaged");
-  expect(packaged.data.catalog).toMatchObject({
+  expect(packaged.data.addFood).toMatchObject({
     results: [{ provider: "usda-fdc", providerFoodId: "1001" }],
   });
   const packagedDetail = await load("/?food=0034000470693&provider=open-food-facts&query=example%20foods&filter=packaged");
-  expect(packagedDetail.data.catalog).toMatchObject({
+  expect(packagedDetail.data.addFood).toMatchObject({
     food: { provider: "open-food-facts", providerFoodId: "0034000470693" },
     mode: "detail",
   });
 
   const detail = await load("/?food=1001&query=yogurt");
-  expect(detail.data.catalog).toMatchObject({
+  expect(detail.data.addFood).toMatchObject({
     food: { name: "Plain nonfat Greek yogurt", providerFoodId: "1001" },
     mode: "detail",
     query: "yogurt",
   });
-  if (detail.data.catalog?.mode !== "detail") throw new Error("Expected detail");
-  expect(detail.data.catalog.idempotencyKey).toMatch(/^[0-9a-f-]{36}$/);
 
   const vanished = await load("/?food=4040&query=vanished");
   expect(vanished.init?.status).toBe(409);
-  expect(vanished.data.catalog).toMatchObject({
+  expect(vanished.data.addFood).toMatchObject({
     message:
       "USDA listed this food in search, but its details are no longer available. Choose another result.",
     mode: "search",
@@ -339,19 +335,19 @@ test("home loader maps every catalog search and detail state", async () => {
 
   const vanishedWithoutRefresh = await load("/?food=4040&query=unavailable");
   expect(vanishedWithoutRefresh.init?.status).toBe(409);
-  if (vanishedWithoutRefresh.data.catalog?.mode !== "search") {
+  if (vanishedWithoutRefresh.data.addFood?.mode !== "search") {
     throw new Error("Expected search fallback");
   }
-  expect(vanishedWithoutRefresh.data.catalog.results).toEqual([]);
+  expect(vanishedWithoutRefresh.data.addFood.results).toEqual([]);
   const vanishedInvalidQuery = await load("/?food=4040&query=a");
-  if (vanishedInvalidQuery.data.catalog?.mode !== "search") {
+  if (vanishedInvalidQuery.data.addFood?.mode !== "search") {
     throw new Error("Expected search fallback");
   }
-  expect(vanishedInvalidQuery.data.catalog.results).toEqual([]);
+  expect(vanishedInvalidQuery.data.addFood.results).toEqual([]);
 
   const unsafe = await load("/?food=9999&query=unsafe");
   expect(unsafe.init?.status).toBe(422);
-  expect(unsafe.data.catalog).toMatchObject({
+  expect(unsafe.data.addFood).toMatchObject({
     message: "That food has no safe provider-backed measurement to log.",
     mode: "search",
     title: "Measurement unavailable",
@@ -359,7 +355,7 @@ test("home loader maps every catalog search and detail state", async () => {
 
   const unavailable = await load("/?food=8888&query=yogurt");
   expect(unavailable.init?.status).toBe(503);
-  expect(unavailable.data.catalog).toMatchObject({
+  expect(unavailable.data.addFood).toMatchObject({
     message: "USDA is unavailable right now. Your saved Food Entries are unaffected.",
     mode: "search",
     results: [],
@@ -367,13 +363,13 @@ test("home loader maps every catalog search and detail state", async () => {
   });
 
   const ignoredStage = await load("/?food=invalid&query=yogurt");
-  expect(ignoredStage.data.catalog).toBeUndefined();
+  expect(ignoredStage.data.addFood).toBeUndefined();
   for (const invalidFoodId of ["0", "01", "1x", "-1", "9007199254740992"]) {
-    expect((await load(`/?food=${invalidFoodId}&query=yogurt`)).data.catalog)
+    expect((await load(`/?food=${invalidFoodId}&query=yogurt`)).data.addFood)
       .toBeUndefined();
   }
   const futureStage = await load("/?date=2026-09-01&food=search&query=yogurt");
-  expect(futureStage.data.catalog).toBeUndefined();
+  expect(futureStage.data.addFood).toBeUndefined();
 });
 
 test("food search ignores unrelated and legacy URL parameters", async () => {
@@ -381,7 +377,7 @@ test("food search ignores unrelated and legacy URL parameters", async () => {
     `/?food=search&query=yogurt&provider=open-food-facts&filter=packaged&userId=${otherUserId}&barcode=0034000470693&unknown=ignored`,
   );
 
-  expect(result.data.catalog).toMatchObject({
+  expect(result.data.addFood).toMatchObject({
     mode: "search",
     query: "yogurt",
     results: [{
@@ -390,15 +386,15 @@ test("food search ignores unrelated and legacy URL parameters", async () => {
       providerFoodId: "1001",
     }],
   });
-  expect(result.data.catalog).not.toHaveProperty("filter");
-  expect(result.data.catalog).not.toHaveProperty("provider");
+  expect(result.data.addFood).not.toHaveProperty("filter");
+  expect(result.data.addFood).not.toHaveProperty("provider");
 });
 
 test("missing USDA search returns a friendly user-safe response", async () => {
   const result = await load("/?food=search&query=not-installed");
 
   expect(result.init?.status).toBe(503);
-  expect(result.data.catalog).toMatchObject({
+  expect(result.data.addFood).toMatchObject({
     message:
       "USDA Foundation is not installed. Ask your administrator to install it in Food Catalogs Settings. Your saved Food Entries remain available.",
     mode: "search",
@@ -408,24 +404,22 @@ test("missing USDA search returns a friendly user-safe response", async () => {
   });
 });
 
-test("home loader exposes barcode lookup without creating a Food Entry", async () => {
+test("home loader exposes barcode lookup without creating a Food Event", async () => {
   const chooser = await load("/?food=choose");
-  expect(chooser.data.catalog).toEqual({ mode: "choose", query: "" });
+  expect(chooser.data.addFood).toEqual({ mode: "choose" });
 
   const empty = await load("/?food=barcode");
-  expect(empty.data.catalog).toEqual({
+  expect(empty.data.addFood).toEqual({
     barcode: "",
     mode: "barcode",
-    query: "",
   });
 
   const invalid = await load("/?food=barcode&barcode=123");
   expect(invalid.init?.status).toBe(400);
-  expect(invalid.data.catalog).toEqual({
+  expect(invalid.data.addFood).toEqual({
     barcode: "123",
     message: "Enter a supported 7, 8, 12, 13, or 14 digit barcode.",
     mode: "barcode",
-    query: "",
     title: "Barcode not valid",
   });
 
@@ -434,13 +428,13 @@ test("home loader exposes barcode lookup without creating a Food Entry", async (
     expect(malformed.init?.status).toBe(400);
   }
   const trimmed = await load("/?food=barcode&barcode=%201234567%20");
-  expect(trimmed.data.catalog).toMatchObject({
+  expect(trimmed.data.addFood).toMatchObject({
     barcode: "1234567",
     mode: "barcode",
   });
 
   const found = await load("/?food=barcode&barcode=034000470693");
-  expect(found.data.catalog).toMatchObject({
+  expect(found.data.addFood).toMatchObject({
     barcode: "034000470693",
     food: {
       authoritativeBaseUnit: "g",
@@ -479,13 +473,8 @@ test("home loader exposes barcode lookup without creating a Food Entry", async (
       providerPublishedDate: null,
     },
     mode: "barcode",
-    query: "",
   });
-  if (found.data.catalog?.mode !== "barcode") {
-    throw new Error("Expected barcode detail");
-  }
-  expect(found.data.catalog.idempotencyKey).toMatch(/^[0-9a-f-]{36}$/);
-  expect(getFoodLogService().read(1, today)?.entries).toHaveLength(0);
+  expect(getFoodLogService().read(userId, today)?.foodEvents).toHaveLength(0);
 
   for (const [barcode, status, title, message] of [
     ["0000000000001", 404, "Product not found", "another code"],
@@ -495,29 +484,21 @@ test("home loader exposes barcode lookup without creating a Food Entry", async (
   ] as const) {
     const result = await load(`/?food=barcode&barcode=${barcode}`);
     expect(result.init?.status).toBe(status);
-    if (result.data.catalog?.mode !== "barcode") {
+    if (result.data.addFood?.mode !== "barcode") {
       throw new Error("Expected barcode state");
     }
-    expect(result.data.catalog.barcode).toBe(barcode);
-    expect(result.data.catalog.query).toBe("");
-    expect(result.data.catalog.title).toBe(title);
-    expect(result.data.catalog.message).toContain(message);
+    expect(result.data.addFood.barcode).toBe(barcode);
+    expect(result.data.addFood.title).toBe(title);
+    expect(result.data.addFood.message).toContain(message);
   }
 });
 
-test("home loader exposes a fresh manual Food Entry form without changing the log", async () => {
+test("home loader exposes a fresh manual food form without changing the log", async () => {
   const manual = await load("/?date=2026-08-30&food=manual");
 
-  expect(manual.data.catalog).toMatchObject({
-    mode: "manual",
-    query: "",
-  });
-  if (manual.data.catalog?.mode !== "manual") {
-    throw new Error("Expected manual Food Entry form");
-  }
-  expect(manual.data.catalog.idempotencyKey).toMatch(/^[0-9a-f-]{36}$/);
-  expect(getFoodLogService().read(1, "2026-08-30")?.entries).toHaveLength(0);
-  expect((await load("/?date=2026-09-01&food=manual")).data.catalog)
+  expect(manual.data.addFood).toEqual({ mode: "manual" });
+  expect(getFoodLogService().read(userId, "2026-08-30")?.foodEvents).toHaveLength(0);
+  expect((await load("/?date=2026-09-01&food=manual")).data.addFood)
     .toBeUndefined();
 });
 
@@ -537,8 +518,8 @@ test("home passes request correlation to the catalog and propagates unknown fail
   });
   try {
     const correlated = await load("/?food=search&query=none");
-    if (correlated.data.catalog?.mode !== "search") throw new Error("Expected search");
-    expect(correlated.data.catalog.results).toEqual([]);
+    if (correlated.data.addFood?.mode !== "search") throw new Error("Expected search");
+    expect(correlated.data.addFood.results).toEqual([]);
     expect(contexts).toEqual(["home-route-request"]);
 
     const noRequestId = new Request(`${origin}/?food=search&query=none`, {
@@ -558,16 +539,9 @@ test("home passes request correlation to the catalog and propagates unknown fail
     ).catch((error: unknown) => error);
     expect(detailFailure).toBe(unexpected);
 
-    const actionFailure = await homeAction(
-      routeArgs(post({
-        idempotencyKey: "unexpected-provider-failure",
-        intent: "log-food",
-        providerFoodId: "1001",
-        quantity: "1",
-        selectedMeasurementId: "base:g:100000000",
-      })),
-    ).catch((error: unknown) => error);
+    const actionFailure = await postFood(logLookup()).catch((error: unknown) => error);
     expect(actionFailure).toBe(unexpected);
+    expect(contexts.at(-1)).toBe("food-action-request");
   } finally {
     setFoodCatalogProviderForTests(undefined);
   }
@@ -595,7 +569,7 @@ test("Scan barcode is offered once a contact is set, set up by administrators an
   expect((await load("/?food=choose")).data.barcodeLookup).toBe("enabled");
   expect((await load("/?food=choose", memberCookie)).data.barcodeLookup).toBe("enabled");
 
-  getBarcodeService().removeContact();
+  getOpenFoodFactsClient().removeContact();
   try {
     expect((await load("/?food=choose")).data.barcodeLookup).toBe("admin-setup");
     expect((await load("/?food=choose", memberCookie)).data.barcodeLookup).toBe("hidden");
@@ -607,10 +581,10 @@ test("Scan barcode is offered once a contact is set, set up by administrators an
     }
     const detail = await load("/?food=0034000470693&provider=open-food-facts");
     expect(detail.init?.status).toBe(503);
-    expect(detail.data.catalog).toMatchObject({ mode: "barcode", title: "Barcode lookup isn't configured" });
+    expect(detail.data.addFood).toMatchObject({ mode: "barcode", title: "Barcode lookup isn't configured" });
     expect(offApi.requests).toHaveLength(requests);
   } finally {
-    getBarcodeService().saveContact("family@example.com");
+    getOpenFoodFactsClient().saveContact("family@example.com");
   }
 });
 
@@ -719,7 +693,7 @@ test("the web water route creates, edits, and deletes Water Events from the Food
   const event = loaded.data.foodLog.waterEvents[0];
   expect(event).toMatchObject({ logDate: "2026-08-31T13:15:00.000Z", ounces: "12.5" });
   expect(loaded.data.foodLog.events.find((candidate) => candidate.kind === "water"))
-    .toMatchObject({ id: event.id, localEventTime: "09:15:00" });
+    .toMatchObject({ id: event.id, logDate: "2026-08-31T13:15:00.000Z" });
 
   const rejected = (code: string) => ({ data: { error: code }, init: { status: 400 } });
   expect(await postWater({ intent: "save", localLogDate: "2026-08-31T11:00", ounces: "0" }))
@@ -866,872 +840,471 @@ test("the home loader opens the water dialog for a new event or an event on the 
   waterService.delete(userId, [today8am.id, yesterday.id]);
 });
 
-test("home food actions log, edit, detect conflicts, delete, and map catalog failures", async () => {
-  const missingProvider = await homeAction(
-    routeArgs(
-      post({
-        idempotencyKey: "food-missing-provider",
-        intent: "log-food",
-        provider: "",
-        providerFoodId: "1001",
-        quantity: "1",
-        selectedMeasurementId: "base:g:100000000",
-      }),
-    ),
-  );
-  expect(missingProvider).toMatchObject({
-    data: { message: "The Food Log request was invalid." },
-    init: { status: 400 },
+function postFood(
+  fields: Record<string, string>,
+  options: { cookie?: string; csrfToken?: string; testInstant?: boolean } = {},
+) {
+  const headers = new Headers({
+    Cookie: options.cookie ?? cookie,
+    Origin: origin,
+    "x-open-calory-request-id": "food-action-request",
   });
+  if (options.testInstant !== false) headers.set("X-Test-Food-Log-Now", instant);
+  return foodAction(routeArgs(new Request(`${origin}/food-events`, {
+    body: new URLSearchParams({ csrfToken: options.csrfToken ?? csrfToken, date: today, ...fields }),
+    headers,
+    method: "POST",
+  })));
+}
 
-  const unknownProvider = await homeAction(
-    routeArgs(
-      post({
-        idempotencyKey: "food-unknown-provider",
-        intent: "log-food",
-        provider: "not-registered",
-        providerFoodId: "1001",
-        quantity: "1",
-        selectedMeasurementId: "base:g:100000000",
-      }),
-    ),
-  );
-  expect(unknownProvider).toMatchObject({
-    data: {
-      message: "The selected Food Catalog provider is unavailable.",
-      tone: "error",
-    },
-    init: { status: 400 },
-  });
-
-  const reviewed = await getBarcodeService().lookup("034000470693");
-  const openFoodFacts = await homeAction(
-    routeArgs(
-      post({
-        catalogGeneration: reviewed.catalogGeneration!,
-        carbohydrateGrams: "999999",
-        energyKcal: "999999",
-        idempotencyKey: "off-route-success",
-        intent: "log-food",
-        name: "Browser-controlled name",
-        provider: "open-food-facts",
-        providerFoodId: "0034000470693",
-        quantity: "0.5",
-        selectedMeasurementId: "serving",
-      }),
-    ),
-  );
-  expectRedirect(openFoodFacts, "/?date=2026-08-31");
-  const repeatedOpenFoodFacts = await homeAction(
-    routeArgs(
-      post({
-        catalogGeneration: reviewed.catalogGeneration!,
-        idempotencyKey: "off-route-success",
-        intent: "log-food",
-        provider: "open-food-facts",
-        providerFoodId: "0034000470693",
-        quantity: "0.5",
-        selectedMeasurementId: "serving",
-      }),
-    ),
-  );
-  expectRedirect(repeatedOpenFoodFacts, "/?date=2026-08-31");
-  const savedOpenFoodFacts = (await load()).data.foodLog.entries.filter(
-    (entry) => entry.provider === "open-food-facts",
-  );
-  expect(savedOpenFoodFacts).toHaveLength(1);
-  expect(savedOpenFoodFacts[0]).toMatchObject({
-    carbohydrateMilligrams: 12_000,
-    energyMilliKcal: 90_000,
-    fatMilligrams: 0,
-    name: "Example cereal",
-    proteinMilligrams: null,
-    quantityMicrounits: 500_000,
-    selectedMeasurementLabel: "1 serving (30 g)",
-  });
-
-  for (const [providerFoodId, status, message] of [
-    ["0000000000001", 404, "Product not found"],
-    ["0000000000002", 404, "Product not found"],
-    ["0000000000004", 503, "Open Food Facts isn't responding; try again or log it manually."],
-    ["0000000000005", 503, "Open Food Facts isn't responding; try again or log it manually."],
-    ["0034000470693", 409, "The product changed on Open Food Facts. Review it again before saving."],
-  ] as const) {
-    const failedConfirmation = await homeAction(
-      routeArgs(
-        post({
-          catalogGeneration: "0".repeat(64),
-          idempotencyKey: `off-confirmation-${providerFoodId}`,
-          intent: "log-food",
-          provider: "open-food-facts",
-          providerFoodId,
-          quantity: "1",
-          selectedMeasurementId: "serving",
-        }),
-      ),
-    );
-    expect(failedConfirmation).toMatchObject({
-      data: { message: expect.stringContaining(message) as unknown, tone: "error" },
-      init: { status },
-    });
-  }
-
-  offReplies["0034000470693"] = { ...exampleCerealProduct, nutrition: { input_sets: [{ ...exampleCerealProduct.nutrition.input_sets[0], per_quantity: 40 }] } };
-  try {
-    const changed = await homeAction(
-      routeArgs(
-        post({
-          catalogGeneration: reviewed.catalogGeneration!,
-          idempotencyKey: "off-changed-after-review",
-          intent: "log-food",
-          provider: "open-food-facts",
-          providerFoodId: "0034000470693",
-          quantity: "1",
-          selectedMeasurementId: "serving",
-        }),
-      ),
-    );
-    expect(changed).toMatchObject({ data: { message: "The product changed on Open Food Facts. Review it again before saving." }, init: { status: 409 } });
-  } finally {
-    offReplies["0034000470693"] = exampleCerealProduct;
-  }
-
-  const conflicting = await getBarcodeService().lookup("0000000000007");
-  expect(conflicting).toMatchObject({ isSelectable: false, calculationUnavailableReason: "conflicting_nutrition_bases" });
-  for (const [fields, status, message] of [
-    [{ providerFoodId: "0000000000007", catalogGeneration: conflicting.catalogGeneration!, selectedMeasurementId: "serving" }, 422, "no usable nutrition"],
-    [{ providerFoodId: "0034000470693", catalogGeneration: reviewed.catalogGeneration!, selectedMeasurementId: "100ml" }, 422, "selected supported measurement"],
-    [{ providerFoodId: "034000470693", catalogGeneration: reviewed.catalogGeneration!, selectedMeasurementId: "serving" }, 500, "could not be used safely"],
-  ] as const) {
-    const refused = await homeAction(
-      routeArgs(
-        post({
-          ...fields,
-          idempotencyKey: `off-refused-${status}-${fields.providerFoodId}-${fields.selectedMeasurementId}`,
-          intent: "log-food",
-          provider: "open-food-facts",
-          quantity: "1",
-        }),
-      ),
-    );
-    expect(refused).toMatchObject({ data: { message: expect.stringContaining(message) as unknown, tone: "error" }, init: { status } });
-  }
-
-  const invalid = await homeAction(
-    routeArgs(
-      post({
-        idempotencyKey: "food-invalid",
-        intent: "log-food",
-        providerFoodId: "1001",
-        quantity: "0",
-        selectedMeasurementId: "base:g:100000000",
-      }),
-    ),
-  );
-  expect(invalid).toMatchObject({ data: { tone: "error" }, init: { status: 400 } });
-
-  for (const [providerFoodId, status] of [
-    ["4040", 409],
-    ["9999", 422],
-    ["8888", 503],
-  ] as const) {
-    const failure = await homeAction(
-      routeArgs(
-        post({
-          idempotencyKey: `food-failure-${providerFoodId}`,
-          intent: "log-food",
-          providerFoodId,
-          quantity: "1",
-          selectedMeasurementId: "base:g:100000000",
-        }),
-      ),
-    );
-    expect(failure).toMatchObject({
-      data: { tone: "error" },
-      init: { status },
-    });
-  }
-
-  const logged = await homeAction(
-    routeArgs(
-      post({
-        idempotencyKey: "food-route-success",
-        intent: "log-food",
-        providerFoodId: "1001",
-        quantity: "1",
-        selectedMeasurementId: "base:g:100000000",
-      }),
-    ),
-  );
-  expectRedirect(logged, "/?date=2026-08-31");
-  const previousLogged = await homeAction(
-    routeArgs(
-      post({
-        date: "2026-08-30",
-        idempotencyKey: "food-route-previous",
-        intent: "log-food",
-        providerFoodId: "1001",
-        quantity: "1",
-        selectedMeasurementId: "base:g:100000000",
-      }),
-    ),
-  );
-  expectRedirect(previousLogged, "/?date=2026-08-30");
-  const previousFood = (await load("/?date=2026-08-30")).data.foodLog.entries[0];
-  const wrongDateEditor = await homeLoader(
-    routeArgs(get(`/?entry=${previousFood.id}`)) as never,
-  ).catch((error: unknown) => error);
-  expect(wrongDateEditor).toBeInstanceOf(Response);
-  expect((wrongDateEditor as Response).status).toBe(404);
-  const base = await load();
-  const food = base.data.foodLog.entries.find(
-    (entry) => entry.providerFoodId === "1001",
-  )!;
-  expect(food).toBeDefined();
-
-  const editor = await load(`/?entry=${food.id}`);
-  expect(editor.data.foodEntryEditor).toMatchObject({ id: food.id });
-  const leadingZeroEntry = await homeLoader(
-    routeArgs(get(`/?entry=0${food.id}`)),
-  ).catch((error: unknown) => error);
-  expect(leadingZeroEntry).toBeInstanceOf(Response);
-  expect((leadingZeroEntry as Response).status).toBe(404);
-  await expect((leadingZeroEntry as Response).text()).resolves.toBe(
-    "Food Entry is unavailable.",
-  );
-  const invalidEditor = await homeLoader(
-    routeArgs(get("/?entry=invalid")) as never,
-  ).catch((error: unknown) => error);
-  expect(invalidEditor).toBeInstanceOf(Response);
-  expect((invalidEditor as Response).status).toBe(404);
-  for (const invalidId of ["0", "01", "1x", "-1", "9007199254740992"]) {
-    const result = await homeLoader(routeArgs(get(`/?entry=${invalidId}`)))
-      .catch((error: unknown) => error);
-    expect(result).toBeInstanceOf(Response);
-    expect((result as Response).status).toBe(404);
-  }
-
-
-  const loaderFoodService = getFoodEntryService();
-  const originalFoodRead = loaderFoodService.read.bind(loaderFoodService);
-  const unexpectedFoodRead = new Error("unexpected food read failure");
-  loaderFoodService.read = () => {
-    throw unexpectedFoodRead;
+function logLookup(change: Record<string, string> = {}): Record<string, string> {
+  return {
+    intent: "log",
+    measurementId: "base:g:100000000",
+    method: "lookup",
+    providerFoodId: "1001",
+    quantity: "1",
+    reviewVersion: TEST_CATALOG_GENERATION,
+    ...change,
   };
-  try {
-    const request = new Request(`${origin}/?entry=${food.id}`, {
-      headers: { Cookie: cookie },
-    });
-    const unexpected = await homeLoader(routeArgs(request))
-      .catch((error: unknown) => error);
-    expect(unexpected).toBe(unexpectedFoodRead);
-  } finally {
-    loaderFoodService.read = originalFoodRead;
+}
+
+function logManual(change: Record<string, string> = {}): Record<string, string> {
+  return { energyKcal: "180", intent: "log", method: "manual", name: "Tortillas", quantity: "3", ...change };
+}
+
+function refused(status: number, code: string, message?: string) {
+  return {
+    data: message === undefined ? { code } : { code, message: expect.stringContaining(message) as unknown },
+    init: { status },
+  };
+}
+
+async function foodEventsOn(date: string): Promise<FoodEvent[]> {
+  return (await load(`/?date=${date}`)).data.foodLog.foodEvents;
+}
+
+function saveLookup(logDate: string): Promise<FoodEvent> {
+  return getFoodEventService(new Date(instant)).save(userId, {
+    method: "lookup",
+    logDate,
+    providerFoodId: "1001",
+    reviewVersion: TEST_CATALOG_GENERATION,
+    measurementId: "base:g:100000000",
+    quantity: "1",
+  });
+}
+
+function saveManual(name: string, logDate: string, saveAsFavorite = false): Promise<FoodEvent> {
+  return getFoodEventService(new Date(instant)).save(userId, {
+    method: "manual",
+    logDate,
+    name,
+    quantity: "2",
+    nutrition: { energyKcal: "115" },
+    saveAsFavorite,
+  });
+}
+
+test("the web food route refuses forms the dialogs never send, and accounts without a session or setup", async () => {
+  expect((await rejectedWith(postFood(logLookup(), { csrfToken: "wrong" }))).status).toBe(403);
+  const unauthenticated = await foodAction(routeArgs(new Request(`${origin}/food-events`, {
+    body: new URLSearchParams({ csrfToken, ...logLookup() }),
+    headers: { Origin: origin },
+    method: "POST",
+  })));
+  expect((unauthenticated as Response).status).toBe(302);
+  const unconfigured = await rejectedWith(postFood(
+    { ...logManual(), csrfToken: incompleteCsrfToken },
+    { cookie: incompleteCookie, csrfToken: incompleteCsrfToken },
+  ));
+  expect(unconfigured.status).toBe(409);
+
+  for (const fields of <Record<string, string>[]>[
+    { intent: "rename" },
+    logLookup({ method: "photo" }),
+    { intent: "log", method: "favorite", favoriteId: "01" },
+    logManual({ date: "2026-02-30" }),
+    { intent: "update", id: "x", expectedUpdatedAt: instant },
+    { intent: "delete", expectedUpdatedAt: instant },
+    { intent: "copy", id: "1", destinationDate: "invalid" },
+  ]) {
+    expect((await rejectedWith(postFood(fields))).status).toBe(400);
   }
+  const repeated = new URLSearchParams({ csrfToken, date: today, ...logManual() });
+  repeated.append("name", "Second name");
+  const repeatedField = await rejectedWith(foodAction(routeArgs(new Request(`${origin}/food-events`, {
+    body: repeated,
+    headers: { Cookie: cookie, Origin: origin, "X-Test-Food-Log-Now": instant },
+    method: "POST",
+  }))));
+  expect(repeatedField.status).toBe(400);
+  const invalidInstant = await rejectedWith(foodAction(routeArgs(new Request(`${origin}/food-events`, {
+    body: new URLSearchParams({ csrfToken, date: today, ...logManual() }),
+    headers: { Cookie: cookie, Origin: origin, "X-Test-Food-Log-Now": "not an instant" },
+    method: "POST",
+  }))));
+  expect(invalidInstant.status).toBe(400);
+  expect(await foodEventsOn(today)).toEqual([]);
+});
+
+test("the web food route saves reviewed USDA foods now or at noon on a past day, for the signed-in account only", async () => {
+  expectRedirect(await postFood(logLookup({ userId: String(otherUserId) })), "/?date=2026-08-31");
+  expectRedirect(await postFood(logLookup({ date: "2026-08-30" })), "/?date=2026-08-30");
+  const [todayEvent] = await foodEventsOn(today);
+  const [pastEvent] = await foodEventsOn("2026-08-30");
+  expect(todayEvent).toMatchObject({ logDate: instant, name: "Plain nonfat Greek yogurt", nutrients: { energyMilliKcal: 59_000 } });
+  expect(pastEvent.logDate).toBe("2026-08-30T16:00:00.000Z");
+  expect(getApplicationDatabase().getClient().select({ userId: foodEvents.userId }).from(foodEvents).all())
+    .toEqual([{ userId }, { userId }]);
+
+  // A resubmitted form records the food again, as Water Events do.
+  expectRedirect(await postFood(logLookup()), "/?date=2026-08-31");
+  expect(await foodEventsOn(today)).toHaveLength(2);
+
+  expect(await postFood(logLookup({ date: "2026-09-01" }))).toMatchObject(refused(422, "future_date"));
+  expect(await postFood(logLookup({ quantity: "0" }))).toMatchObject(refused(400, "invalid_quantity"));
+  expect(await postFood(logLookup({ reviewVersion: "00000000-0000-4000-8000-000000000002" })))
+    .toMatchObject(refused(409, "catalog_changed", "Open the food again before saving"));
+  for (const [providerFoodId, status, code, message] of [
+    ["4040", 404, "food_not_found", "details are no longer available"],
+    ["9999", 400, "invalid_measurement", "no safe provider-backed measurement"],
+    ["8888", 503, "source_unavailable", "USDA is unavailable right now"],
+  ] as const) {
+    expect(await postFood(logLookup({ providerFoodId }))).toMatchObject(refused(status, code, message));
+  }
+
+  const foodService = getFoodEventService();
+  const originalSave = foodService.save.bind(foodService);
+  const unexpected = new Error("unexpected food failure");
+  foodService.save = () => Promise.reject(unexpected);
+  try {
+    await expect(postFood(logLookup(), { testInstant: false })).rejects.toBe(unexpected);
+  } finally {
+    foodService.save = originalSave;
+  }
+  const client = getApplicationDatabase().getClient();
+  client.delete(foodEvents).where(eq(foodEvents.userId, userId)).run();
+});
+
+test("the web food route saves a reviewed Open Food Facts product and explains every refusal", async () => {
+  const reviewed = await getFoodCatalog().lookupBarcode("034000470693");
+  const barcode = (change: Record<string, string> = {}) => ({
+    intent: "log",
+    measurementId: "serving",
+    method: "barcode",
+    providerFoodId: "0034000470693",
+    quantity: "0.5",
+    reviewVersion: reviewed.catalogGeneration!,
+    ...change,
+  });
+
+  expectRedirect(await postFood(barcode({ energyKcal: "999999", name: "Browser-controlled name" })), "/?date=2026-08-31");
+  expect((await foodEventsOn(today)).find((event) => event.source.provider === "open-food-facts")).toMatchObject({
+    name: "Example cereal",
+    measurement: { label: "1 serving (30 g)" },
+    quantityMicrounits: 500_000,
+    nutrients: { carbohydrateMilligrams: 12_000, energyMilliKcal: 90_000, fatMilligrams: 0, proteinMilligrams: null },
+  });
+
+  for (const [providerFoodId, status, code, message] of [
+    ["0000000000001", 404, "food_not_found", "Product not found"],
+    ["0000000000004", 503, "source_unavailable", "Open Food Facts isn't responding; try again or log it manually."],
+    ["0034000470693", 409, "catalog_changed", "The product changed on Open Food Facts. Review it again before saving."],
+  ] as const) {
+    expect(await postFood(barcode({ providerFoodId, reviewVersion: "0".repeat(64), quantity: "1" })))
+      .toMatchObject(refused(status, code, message));
+  }
+  const conflicting = await getFoodCatalog().lookupBarcode("0000000000007");
+  expect(await postFood(barcode({ providerFoodId: "0000000000007", reviewVersion: conflicting.catalogGeneration! })))
+    .toMatchObject(refused(422, "nutrition_unavailable", "no usable nutrition"));
+  expect(await postFood(barcode({ measurementId: "100ml" })))
+    .toMatchObject(refused(400, "invalid_measurement", "selected supported measurement"));
+  expect(await postFood(barcode({ providerFoodId: "034000470693" })))
+    .toMatchObject(refused(503, "source_unavailable", "could not be used safely"));
+
+  getOpenFoodFactsClient().removeContact();
+  try {
+    expect(await postFood(barcode())).toMatchObject(refused(503, "barcode_not_configured", "Ask an administrator"));
+  } finally {
+    getOpenFoodFactsClient().saveContact("family@example.com");
+  }
+  getApplicationDatabase().getClient().delete(foodEvents).where(eq(foodEvents.userId, userId)).run();
+});
+
+test("the editor edits and deletes the version it read, and a conflict returns the current event", async () => {
+  const food = await saveLookup(instant);
+  const editor = await load(`/?entry=${food.id}`);
+  expect(editor.data.editor).toEqual({ event: food, canCopy: false });
 
   const common = {
     carbohydrateGrams: "3.5",
     energyKcal: "60",
-    entryId: String(food.id),
     expectedUpdatedAt: food.updatedAt,
     fatGrams: "0",
-    fiberGrams: "1.25",
+    fiberGrams: "",
+    id: String(food.id),
+    intent: "update",
+    measurementId: "base:g:100000000",
     name: "Edited yogurt",
     proteinGrams: "10.5",
     quantity: "1",
-    selectedMeasurementId: "base:g:100000000",
     sodiumMilligrams: "36",
     sugarGrams: "3.5",
   };
-  const invalidUpdate = await homeAction(
-    routeArgs(post({ ...common, intent: "update-food", name: "" })),
-  );
-  expect(invalidUpdate).toMatchObject({ data: { tone: "error" }, init: { status: 400 } });
+  expect(await postFood({ ...common, name: "" })).toMatchObject(refused(400, "invalid_input"));
+  expect(await postFood({ ...common, energyKcal: "1.0009" })).toMatchObject(refused(400, "invalid_nutrition"));
+  expect(await postFood({ ...common, expectedUpdatedAt: "2000-01-01T00:00:00.000Z" }))
+    .toMatchObject({ data: { code: "edit_conflict", event: food }, init: { status: 409 } });
 
-  const stale = await homeAction(
-    routeArgs(
-      post({ ...common, expectedUpdatedAt: "2000-01-01T00:00:00.000Z", intent: "update-food" }),
-    ),
-  );
-  expect(stale).toMatchObject({
-    data: { foodEntryEditor: { id: food.id }, tone: "error" },
-    init: { status: 409 },
-  });
-
-  const updated = await homeAction(
-    routeArgs(post({ ...common, intent: "update-food" })),
-  );
-  expectRedirect(updated, "/?date=2026-08-31&notice=updated");
-  const updatedFood = (await load(`/?entry=${food.id}`)).data.foodEntryEditor!;
-  expect(updatedFood).toMatchObject({
-    carbohydrateMilligrams: 3_500,
-    energyMilliKcal: 60_000,
-    fatMilligrams: 0,
-    fiberMilligrams: 1_250,
+  expectRedirect(await postFood(common), "/?date=2026-08-31&notice=updated");
+  const updated = (await load(`/?entry=${food.id}`)).data.editor!.event;
+  expect(updated).toMatchObject({
+    logDate: food.logDate,
     name: "Edited yogurt",
-    proteinMilligrams: 10_500,
-    sodiumMilligrams: 36,
-    sugarMilligrams: 3_500,
+    nutrients: {
+      carbohydrateMilligrams: 3_500,
+      energyMilliKcal: 60_000,
+      fatMilligrams: 0,
+      fiberMilligrams: null,
+      proteinMilligrams: 10_500,
+      sodiumMilligrams: 36,
+      sugarMilligrams: 3_500,
+    },
   });
 
-  const unavailable = await homeAction(
-    routeArgs(
-      post({
-        entryId: "999999",
-        expectedUpdatedAt: updatedFood.updatedAt,
-        intent: "delete-food",
-      }),
-    ),
-  );
-  expect(unavailable).toMatchObject({ data: { tone: "error" }, init: { status: 404 } });
+  const remove = { expectedUpdatedAt: updated.updatedAt, id: String(food.id), intent: "delete" };
+  expect(await postFood({ ...remove, expectedUpdatedAt: food.updatedAt }))
+    .toMatchObject({ data: { code: "edit_conflict", event: updated }, init: { status: 409 } });
+  expect(await postFood({ ...remove, id: "999999" })).toMatchObject(refused(404, "not_found"));
+  expectRedirect(await postFood(remove), "/?date=2026-08-31&notice=deleted");
+  // An event deleted elsewhere closes the editor rather than offering a retry.
+  expect(await postFood({ ...common, expectedUpdatedAt: updated.updatedAt })).toMatchObject(refused(404, "not_found"));
+});
 
-  const foodService = getFoodEntryService();
-  const originalFoodUpdate = foodService.update.bind(foodService);
-  const unexpectedFood = new Error("unexpected food failure");
-  foodService.update = () => {
-    throw unexpectedFood;
+test("the editor opens only an owned event on the selected day", async () => {
+  const yesterday = await saveLookup("2026-08-30T16:00:00.000Z");
+  const todayEvent = await saveLookup(instant);
+  for (const requested of [`${yesterday.id}`, `0${todayEvent.id}`, "invalid", "0", "01", "1x", "-1", "9007199254740992"]) {
+    const response = await rejectedWith(homeLoader(routeArgs(get(`/?entry=${requested}`))));
+    expect(response.status).toBe(404);
+    await expect(response.text()).resolves.toBe("Food Entry is unavailable.");
+  }
+  expect((await load("/?date=2026-09-01&entry=1")).data.editor).toBeUndefined();
+
+  const service = getFoodEventService();
+  const originalRead = service.read.bind(service);
+  const unexpected = new Error("unexpected food read failure");
+  service.read = () => {
+    throw unexpected;
   };
   try {
-    const unexpected = await homeAction(
-      routeArgs(post({ ...common, intent: "update-food" }, { testInstant: false })),
-    ).catch((error: unknown) => error);
-    expect(unexpected).toBe(unexpectedFood);
+    const request = new Request(`${origin}/?entry=${todayEvent.id}`, { headers: { Cookie: cookie } });
+    await expect(homeLoader(routeArgs(request))).rejects.toBe(unexpected);
   } finally {
-    foodService.update = originalFoodUpdate;
+    service.read = originalRead;
   }
-
-  const deleted = await homeAction(
-    routeArgs(
-      post({
-        entryId: String(food.id),
-        expectedUpdatedAt: updatedFood.updatedAt,
-        intent: "delete-food",
-      }),
-    ),
-  );
-  expectRedirect(deleted, "/?date=2026-08-31&notice=deleted");
+  getFoodEventService().delete(userId, [yesterday, todayEvent].map((event) => ({ id: event.id, expectedUpdatedAt: event.updatedAt })));
 });
 
-test("log-food ignores a submitted userId and writes only to the authenticated user", async () => {
-  const idempotencyKey = "authenticated-owner-only";
-  const result = await homeAction(
-    routeArgs(
-      post({
-        date: "2026-08-27",
-        idempotencyKey,
-        intent: "log-food",
-        providerFoodId: "1001",
-        quantity: "1",
-        selectedMeasurementId: "base:g:100000000",
-        userId: String(otherUserId),
-      }),
-    ),
-  );
-  expectRedirect(result, "/?date=2026-08-27");
+test("copying an earlier day's food to today returns to the source day with a notice", async () => {
+  const source = await saveLookup("2026-08-29T16:00:00.000Z");
+  const copyFields = { date: "2026-08-29", id: String(source.id), intent: "copy" };
 
-  const saved = getApplicationDatabase()
-    .getClient()
-    .select({ userId: foodEntries.userId })
-    .from(foodEntries)
-    .where(eq(foodEntries.idempotencyKey, idempotencyKey))
-    .get();
-  expect(saved).toEqual({ userId });
-  expect(saved?.userId).not.toBe(otherUserId);
-});
-
-test("home copies a historical Food Entry to today and returns to the source log with a notice", async () => {
-  const source = await getFoodEntryService(new Date(instant)).log(
-    userId,
-    {
-      foodLogDate: "2026-08-29",
-      idempotencyKey: "route-copy-source",
-      provider: "usda-fdc",
-      providerFoodId: "1001",
-      quantity: "1",
-      selectedMeasurementId: "base:g:100000000",
-    },
-  );
-  const copyFields = {
-    date: source.foodLogDate,
-    entryId: String(source.id),
-    idempotencyKey: `copy:${source.id}:route-action`,
-    intent: "copy-food-to-today",
-  };
-
-  const copied = await homeAction(routeArgs(post(copyFields)));
-  expect(copied).toBeInstanceOf(Response);
+  const copied = await postFood(copyFields);
   const destination = (copied as Response).headers.get("Location")!;
   const destinationUrl = new URL(destination, origin);
-  expect(destinationUrl.searchParams.get("date")).toBe(source.foodLogDate);
+  expect(destinationUrl.searchParams.get("date")).toBe("2026-08-29");
   expect(destinationUrl.searchParams.get("notice")).toBe("copied");
-  expect(destinationUrl.searchParams.get("copied")).toMatch(/^[1-9]\d*$/);
   expectRedirect(copied, destination);
-  const repeated = await homeAction(routeArgs(post(copyFields)));
-  expectRedirect(repeated, destination);
 
   const sourcePage = await load(destination);
-  expect(sourcePage.data.notice).toBe(
-    `Copied ${source.name} to today's Food Log.`,
-  );
-  expect(sourcePage.data.foodLog.entries).toHaveLength(1);
-  const todayPage = await load();
-  expect(
-    todayPage.data.foodLog.entries.filter(
-      (entry) => entry.name === source.name && entry.foodLogDate === today,
-    ),
-  ).toHaveLength(1);
+  expect(sourcePage.data.notice).toBe(`Copied ${source.name} to today's Food Log.`);
+  expect(sourcePage.data.foodLog.foodEvents).toEqual([source]);
+  expect(await foodEventsOn(today)).toEqual([expect.objectContaining({
+    copiedFromId: source.id,
+    logDate: instant,
+    name: source.name,
+  })]);
 
-  for (const [entryId, status] of [
-    ["invalid", 400],
-    ["999999", 404],
+  const todayEvent = (await foodEventsOn(today))[0];
+  for (const [fields, expected] of [
+    [{ ...copyFields, id: "999999" }, refused(404, "not_found")],
+    [{ ...copyFields, date: "2026-08-28" }, refused(404, "not_found")],
+    [{ date: today, id: String(todayEvent.id), intent: "copy" }, refused(400, "invalid_input")],
+    [{ ...copyFields, destinationDate: "2026-08-29" }, refused(400, "invalid_log_date")],
+    [{ ...copyFields, destinationDate: "2026-09-01" }, refused(422, "future_date")],
   ] as const) {
-    const failure = await homeAction(
-      routeArgs(
-        post({
-          ...copyFields,
-          entryId,
-          idempotencyKey: `copy:${entryId}:failure`,
-        }),
-      ),
-    );
-    expect(failure).toMatchObject({
-      data: { tone: "error" },
-      init: { status },
-    });
-    expect((failure as { data: { message: string } }).data.message).not.toContain(
-      "Copied",
-    );
+    expect(await postFood(fields)).toMatchObject(expected);
   }
 
-  const fabricatedNotice = await load(
-    "/?date=2026-08-29&notice=copied&copied=999999",
-  );
-  expect(fabricatedNotice.data.notice).toBeUndefined();
-  const fabricatedOwnedNotice = await load(
-    `/?date=2026-08-29&notice=copied&copied=${source.id}`,
-  );
-  expect(fabricatedOwnedNotice.data.notice).toBeUndefined();
-
-  const client = getApplicationDatabase().getClient();
-  const failureKey = `copy:${source.id}:route-transaction-failure`;
-  client.run(sql.raw(`CREATE TRIGGER fail_route_food_entry_copy
-    BEFORE INSERT ON food_entries
-    WHEN NEW.idempotency_key = '${failureKey}'
-    BEGIN
-      SELECT RAISE(ABORT, 'simulated route copy failure');
-    END`));
-  try {
-    const transactionFailure = await homeAction(
-      routeArgs(
-        post({
-          ...copyFields,
-          idempotencyKey: failureKey,
-        }),
-      ),
-    );
-    expect(transactionFailure).toMatchObject({
-      data: {
-        message: "The Food Entry could not be copied. Try again.",
-        tone: "error",
-      },
-      init: { status: 500 },
-    });
-  } finally {
-    client.run(sql.raw("DROP TRIGGER fail_route_food_entry_copy"));
-  }
-  expect((await load("/?date=2026-08-29")).data.foodLog.entries).toHaveLength(1);
+  expect((await load("/?date=2026-08-29&notice=copied&copied=999999")).data.notice).toBeUndefined();
+  expect((await load(`/?date=2026-08-29&notice=copied&copied=${source.id}`)).data.notice).toBeUndefined();
+  getFoodEventService().delete(userId, [source, todayEvent].map((event) => ({ id: event.id, expectedUpdatedAt: event.updatedAt })));
 });
 
-test("home opens a copy-date calendar and confirms one copy while staying on the source log", async () => {
-  const source = await getFoodEntryService(new Date(instant)).log(userId, {
-    foodLogDate: "2026-08-26",
-    idempotencyKey: "route-copy-date-source",
-    provider: "usda-fdc",
-    providerFoodId: "1001",
-    quantity: "1",
-    selectedMeasurementId: "base:g:100000000",
-  });
+test("the copy dialog chooses an eligible date and copies once to noon on that day", async () => {
+  const source = await saveLookup("2026-08-26T16:00:00.000Z");
 
-  const opened = await load(`/?date=${source.foodLogDate}&copy=${source.id}`);
-  expect(opened.data.copyDialog).toMatchObject({
-    destinationDate: undefined,
-    entry: { id: source.id, name: source.name },
-  });
-  const unavailableDialog = await load(
-    `/?date=${source.foodLogDate}&copy=999999`,
-  );
-  expect(unavailableDialog.data).toMatchObject({
-    copyDialog: undefined,
-    copyError: "That Food Entry is unavailable. Choose another entry.",
-  });
+  const opened = await load(`/?date=2026-08-26&copy=${source.id}`);
+  expect(opened.data.copy).toMatchObject({ destinationDate: undefined, event: source, sourceDate: "2026-08-26" });
+  const unavailable = await load("/?date=2026-08-26&copy=999999");
+  expect(unavailable.data.copy).toBeUndefined();
+  expect(unavailable.data.copyError).toBe("That Food Entry is unavailable. Choose another entry.");
 
-  const selected = await load(
-    `/?date=${source.foodLogDate}&copy=${source.id}&copyDate=2026-08-27`,
-  );
-  expect(selected.data.copyDialog?.destinationDate).toBe("2026-08-27");
-  const copyFields = {
-    date: source.foodLogDate,
-    destinationDate: "2026-08-27",
-    entryId: String(source.id),
-    idempotencyKey: selected.data.copyDialog!.idempotencyKey,
-    intent: "copy-food-to-date",
-  };
-
-  const copied = await homeAction(routeArgs(post(copyFields)));
+  const selected = await load(`/?date=2026-08-26&copy=${source.id}&copyDate=2026-08-27`);
+  expect(selected.data.copy?.destinationDate).toBe("2026-08-27");
+  const copied = await postFood({ date: "2026-08-26", destinationDate: "2026-08-27", id: String(source.id), intent: "copy" });
   const destination = (copied as Response).headers.get("Location")!;
-  expectRedirect(copied, destination);
-  expect(new URL(destination, origin).searchParams.get("date")).toBe(
-    source.foodLogDate,
-  );
-  const sourcePage = await load(destination);
-  expect(sourcePage.data.notice).toBe(
-    `Copied ${source.name} to Thursday, August 27, 2026.`,
-  );
-  expect(sourcePage.data.foodLog.entries).toContainEqual(source);
-  const destinationPage = await load("/?date=2026-08-27");
-  expect(destinationPage.data.foodLog.entries).toContainEqual(
-    expect.objectContaining({
-      foodLogDate: "2026-08-27",
-      localEventTime: "12:00:00",
-      name: source.name,
-    }),
-  );
-
-  for (const destinationDate of [source.foodLogDate, "2026-09-01", "invalid"]) {
-    const failure = await homeAction(
-      routeArgs(post({
-        ...copyFields,
-        destinationDate,
-        idempotencyKey: `copy:${source.id}:route-date-failure-${destinationDate}`,
-      })),
-    );
-    expect(failure).toMatchObject({ data: { tone: "error" } });
-    expect((failure as { data: { message: string } }).data.message).not.toContain(
-      "Copied",
-    );
-  }
+  expect((await load(destination)).data.notice).toBe(`Copied ${source.name} to Thursday, August 27, 2026.`);
+  expect(await foodEventsOn("2026-08-27")).toEqual([expect.objectContaining({
+    copiedFromId: source.id,
+    logDate: "2026-08-27T16:00:00.000Z",
+    name: source.name,
+  })]);
 });
 
-test("home creates manual Food Entries on the selected date and preserves invalid drafts", async () => {
-  const fields = {
-    carbohydrateGrams: "36",
-    energyKcal: "180",
-    fatGrams: "3",
-    fiberGrams: "4",
-    idempotencyKey: "manual-route-success",
-    intent: "log-manual-food",
+test("a manual food is added to the selected day, and a refused one returns its code and message", async () => {
+  expectRedirect(await postFood(logManual({ date: "2026-08-30", carbohydrateGrams: "36", sodiumMilligrams: "30" })), "/?date=2026-08-30");
+  expect((await foodEventsOn("2026-08-30"))[0]).toMatchObject({
+    logDate: "2026-08-30T16:00:00.000Z",
     name: "Tortillas",
-    proteinGrams: "6",
-    quantity: "3",
-    sodiumMilligrams: "30",
-    sugarGrams: "1",
-  };
-  const created = await homeAction(
-    routeArgs(post({ ...fields, date: "2026-08-30" })),
-  );
-
-  expectRedirect(created, "/?date=2026-08-30");
-  expect((await load("/?date=2026-08-30")).data.foodLog.entries[0])
-    .toMatchObject({
-      energyMilliKcal: 180_000,
-      name: "Tortillas",
-      provider: "manual",
-      quantityMicrounits: 3_000_000,
-    });
-
-  const invalidFields = {
-    ...fields,
-    energyKcal: "",
-    idempotencyKey: "manual-route-invalid",
-    name: "Incomplete tortilla",
-  };
-  const invalid = await homeAction(routeArgs(post(invalidFields)));
-  expect(invalid).toMatchObject({
-    data: {
-      manualFoodDraft: invalidFields,
-      tone: "error",
-    },
-    init: { status: 400 },
+    favoriteId: null,
+    quantityMicrounits: 3_000_000,
+    nutrients: { energyMilliKcal: 180_000, carbohydrateMilligrams: 36_000, sodiumMilligrams: 30, fatMilligrams: null },
+    source: { provider: "manual" },
   });
-  if (invalid instanceof Response) throw new Error("Expected action data");
-  expect(invalid.data.message).toContain("calories");
-  expect((await load()).data.foodLog.entries.some(
-    (entry) => entry.providerFoodId === "manual-route-invalid",
-  )).toBe(false);
 
-  const future = await homeAction(
-    routeArgs(post({
-      ...fields,
-      date: "2026-09-01",
-      idempotencyKey: "manual-route-future",
-    })),
-  );
-  expect(future).toMatchObject({
-    data: {
-      manualFoodDraft: {
-        ...fields,
-        date: "2026-09-01",
-        idempotencyKey: "manual-route-future",
-      },
-      tone: "error",
-    },
-    init: { status: 422 },
-  });
+  expect(await postFood(logManual({ energyKcal: "", name: "Incomplete tortilla" })))
+    .toMatchObject(refused(400, "invalid_nutrition", "calories"));
+  expect(await postFood(logManual({ date: "2026-09-01" }))).toMatchObject(refused(422, "future_date"));
+  expect((await foodEventsOn(today)).some((event) => event.name === "Incomplete tortilla")).toBe(false);
 });
 
-test("Add Food searches My foods and reuses a manual snapshot on the viewed day", async () => {
-  const created = await homeAction(routeArgs(post({
-    date: "2026-08-27",
-    energyKcal: "100",
-    idempotencyKey: "route-my-food-tortilla",
-    intent: "log-manual-food",
-    name: "Mexican tortilla",
-    quantity: "2",
-  })));
-  expectRedirect(created, "/?date=2026-08-27");
+test("past-day adds land at noon, newest save first", async () => {
+  for (const name of ["Past lunch", "Past snack"]) {
+    expectRedirect(await postFood(logManual({ date: "2026-08-20", name })), "/?date=2026-08-20");
+  }
+  expect((await foodEventsOn("2026-08-20")).map((event) => [event.name, event.logDate])).toEqual([
+    ["Past snack", "2026-08-20T16:00:00.000Z"],
+    ["Past lunch", "2026-08-20T16:00:00.000Z"],
+  ]);
+});
+
+test("Save to My foods favorites a manual food only when checked, and My foods reuse it on the viewed day", async () => {
+  expectRedirect(await postFood(logManual({ date: "2026-08-27", name: "Unsaved tortilla" })), "/?date=2026-08-27");
+  expectRedirect(await postFood(logManual({ date: "2026-08-27", energyKcal: "100", name: "Mexican tortilla", quantity: "2", saveAsFavorite: "on" })), "/?date=2026-08-27");
 
   const myFoods = await load("/?date=2026-08-29&food=my");
-  expect(myFoods.data.catalog?.mode).toBe("my");
-  if (!myFoods.data.catalog || myFoods.data.catalog.mode !== "my") {
-    throw new Error("My foods did not open");
-  }
-  expect(myFoods.data.catalog.results).toEqual(expect.arrayContaining([
-    expect.objectContaining({
-      name: "Mexican tortilla",
-      energyMilliKcal: 100_000,
-      quantityMicrounits: 2_000_000,
-    }),
-  ]));
+  if (myFoods.data.addFood?.mode !== "my") throw new Error("My foods did not open");
+  expect(myFoods.data.addFood.favorites.map((favorite) => favorite.name)).toContain("Mexican tortilla");
+  expect(myFoods.data.addFood.favorites.map((favorite) => favorite.name)).not.toContain("Unsaved tortilla");
   const searched = await load("/?date=2026-08-29&food=search&query=tortilla");
-  expect(searched.data.catalog?.mode).toBe("search");
-  if (!searched.data.catalog || searched.data.catalog.mode !== "search") {
-    throw new Error("Search did not open");
-  }
-  expect(searched.data.catalog.savedResults.some((food) => food.name === "Mexican tortilla"))
-    .toBe(true);
-  const saved = myFoods.data.catalog;
-  const savedFoodId = saved.results.find((food) => food.name === "Mexican tortilla")?.id;
-  if (savedFoodId === undefined) throw new Error("Saved food is missing");
-  const detail = await load(`/?date=2026-08-29&food=saved:${savedFoodId}`);
-  expect(detail.data.catalog?.mode).toBe("saved");
-  if (!detail.data.catalog || detail.data.catalog.mode !== "saved") {
-    throw new Error("Saved food did not open");
-  }
-  expect(detail.data.catalog.food).toMatchObject({
+  if (searched.data.addFood?.mode !== "search") throw new Error("Search did not open");
+  expect(searched.data.addFood.favorites.map((favorite) => favorite.name)).toEqual(["Mexican tortilla"]);
+
+  const favoriteId = myFoods.data.addFood.favorites.find((favorite) => favorite.name === "Mexican tortilla")!.id;
+  const detail = await load(`/?date=2026-08-29&food=saved:${favoriteId}`);
+  expect(detail.data.addFood).toMatchObject({
+    mode: "saved",
+    favorite: { name: "Mexican tortilla", snapshot: { nutrients: { energyMilliKcal: 100_000 } } },
+  });
+
+  expectRedirect(await postFood({ date: "2026-08-29", favoriteId: String(favoriteId), intent: "log", method: "favorite" }), "/?date=2026-08-29");
+  expect(await foodEventsOn("2026-08-29")).toContainEqual(expect.objectContaining({
+    favoriteId,
     name: "Mexican tortilla",
-    energyMilliKcal: 100_000,
-  });
-
-  const reused = await homeAction(routeArgs(post({
-    date: "2026-08-29",
-    idempotencyKey: "route-my-food-reuse",
-    intent: "log-saved-food",
-    savedFoodId: String(savedFoodId),
-  })));
-  expectRedirect(reused, "/?date=2026-08-29");
-  expect((await load("/?date=2026-08-29")).data.foodLog.entries)
-    .toContainEqual(expect.objectContaining({
-      name: "Mexican tortilla",
-      energyMilliKcal: 100_000,
-      quantityMicrounits: 2_000_000,
-    }));
+    nutrients: expect.objectContaining({ energyMilliKcal: 100_000 }) as unknown,
+    quantityMicrounits: 2_000_000,
+  }));
 });
 
-test("reusing My foods does not offer to save the same food again", async () => {
-  const service = getFoodEntryService(new Date(instant));
-  const original = service.logManual(userId, {
-    energyKcal: "115",
-    foodLogDate: "2026-08-26",
-    idempotencyKey: "route-linked-food-original",
-    name: "Linked tortilla QA",
-    quantity: "2",
-  });
-  const saved = service.listSavedFoods(userId, "Linked tortilla QA");
-  expect(saved).toHaveLength(1);
+test("reused and copied favorites do not offer to save the same food again", async () => {
+  const original = await saveManual("Linked tortilla QA", "2026-08-26T16:00:00.000Z", true);
+  const service = getFoodEventService(new Date(instant));
+  const reused = await service.save(userId, { method: "favorite", logDate: "2026-08-28T16:00:00.000Z", favoriteId: original.favoriteId! });
+  expect((await load(`/?date=2026-08-28&entry=${reused.id}`)).data.editor?.event.favoriteId).toBe(original.favoriteId);
+  const copied = service.copy(userId, { eventId: reused.id, sourceDate: "2026-08-28", logDate: "2026-08-29T16:00:00.000Z" });
+  expect((await load(`/?date=2026-08-29&entry=${copied.id}`)).data.editor?.event.favoriteId).toBe(original.favoriteId);
 
-  const reused = service.logSavedFood(
-    userId,
-    saved[0].id,
-    "2026-08-28",
-    "route-linked-food-reuse",
+  expectRedirect(
+    await postFood({ date: "2026-08-28", id: String(reused.id), intent: "add-favorite" }),
+    `/?date=2026-08-28&entry=${reused.id}&notice=food-saved`,
   );
-  expect((await load(`/?date=2026-08-28&entry=${reused.id}`)).data.manualEntrySaved)
-    .toBe(true);
-  const copied = service.copyToDate(userId, reused.id, {
-    destinationFoodLogDate: "2026-08-29",
-    foodLogDate: reused.foodLogDate,
-    idempotencyKey: `copy:${reused.id}:linked-food`,
-  });
-  expect((await load(`/?date=2026-08-29&entry=${copied.id}`)).data.manualEntrySaved)
-    .toBe(true);
-
-  const repeatedSave = await homeAction(routeArgs(post({
-    date: "2026-08-28",
-    entryId: String(reused.id),
-    intent: "save-manual-food",
-  })));
-  expectRedirect(repeatedSave, `/?date=2026-08-28&entry=${reused.id}&notice=food-saved`);
-  expect(service.listSavedFoods(userId, "Linked tortilla QA")).toHaveLength(1);
-
-  const distinct = service.logManual(userId, {
-    energyKcal: "115",
-    foodLogDate: "2026-08-25",
-    idempotencyKey: "route-linked-food-distinct",
-    name: "Linked tortilla QA",
-    quantity: "2",
-  });
-  getApplicationDatabase().getClient()
-    .delete(savedFoods)
-    .where(eq(savedFoods.sourceEntryId, distinct.id))
-    .run();
-  expect((await load(`/?date=2026-08-25&entry=${distinct.id}`)).data.manualEntrySaved)
-    .toBe(false);
-  await homeAction(routeArgs(post({
-    date: "2026-08-25",
-    entryId: String(distinct.id),
-    intent: "save-manual-food",
-  })));
-  expect(service.listSavedFoods(userId, "Linked tortilla QA")).toHaveLength(2);
-  expect(original.id).not.toBe(distinct.id);
+  expect(service.findFavorites(userId, { query: "Linked tortilla QA" })).toHaveLength(1);
 });
 
-test("an older manual entry joins My foods only after the entry action", async () => {
-  const source = getFoodEntryService(new Date(instant)).logManual(userId, {
-    energyKcal: "90",
-    foodLogDate: "2026-08-24",
-    idempotencyKey: "route-historical-food",
-    name: "Old manual flatbread",
-    quantity: "1",
+test("an older manual food joins My foods only through the editor's action", async () => {
+  const source = await saveManual("Old manual flatbread", "2026-08-24T16:00:00.000Z");
+  expect((await load(`/?date=2026-08-24&entry=${source.id}`)).data.editor?.event.favoriteId).toBeNull();
+  expectRedirect(
+    await postFood({ date: "2026-08-24", id: String(source.id), intent: "add-favorite" }),
+    `/?date=2026-08-24&entry=${source.id}&notice=food-saved`,
+  );
+  expect((await load(`/?date=2026-08-24&entry=${source.id}&notice=food-saved`)).data).toMatchObject({
+    editor: { event: { favoriteId: expect.any(Number) as unknown } },
+    notice: "Added to My foods.",
   });
-  getApplicationDatabase().getClient()
-    .delete(savedFoods)
-    .where(eq(savedFoods.sourceEntryId, source.id))
-    .run();
-  const before = await load(`/?date=2026-08-24&entry=${source.id}`);
-  expect(before.data.manualEntrySaved).toBe(false);
-  const saved = await homeAction(routeArgs(post({
-    date: "2026-08-24",
-    entryId: String(source.id),
-    intent: "save-manual-food",
-  })));
-  expectRedirect(saved, `/?date=2026-08-24&entry=${source.id}&notice=food-saved`);
-  expect((await load(`/?date=2026-08-24&entry=${source.id}`)).data.manualEntrySaved)
-    .toBe(true);
-  expect((await load("/?date=2026-08-31&food=my&query=flatbread")).data.catalog)
-    .toMatchObject({
-      mode: "my",
-      results: [expect.objectContaining({ name: "Old manual flatbread" })],
-    });
+  expect((await load("/?date=2026-08-31&food=my&query=flatbread")).data.addFood).toMatchObject({
+    mode: "my",
+    favorites: [expect.objectContaining({ name: "Old manual flatbread" })],
+  });
+
+  const catalogEvent = await saveLookup("2026-08-24T17:00:00.000Z");
+  expect(await postFood({ date: "2026-08-24", id: String(catalogEvent.id), intent: "add-favorite" }))
+    .toMatchObject(refused(400, "invalid_input", "Only manual foods"));
+  expect(await postFood({ date: "2026-08-24", id: "999999", intent: "add-favorite" })).toMatchObject(refused(404, "not_found"));
+  expect(getApplicationDatabase().getClient().select().from(favoriteFoods).where(eq(favoriteFoods.sourceEventId, catalogEvent.id)).all())
+    .toEqual([]);
 });
 
-test("My foods rejects missing products and cannot save an entry from another day", async () => {
-  const source = getFoodEntryService(new Date(instant)).logManual(userId, {
-    energyKcal: "80",
-    foodLogDate: "2026-08-25",
-    idempotencyKey: "saved-boundary-source",
-    name: "Saved boundary tortilla",
-    quantity: "1",
-  });
+test("My foods refuses missing favorites and future days", async () => {
   await expect(homeLoader(routeArgs(get("/?date=2026-08-25&food=saved:999999"))))
     .rejects.toMatchObject({ status: 404 });
-  const wrongDay = await homeAction(routeArgs(post({
-    date: "2026-08-26",
-    entryId: String(source.id),
-    intent: "save-manual-food",
-  })));
-  expect(wrongDay).toMatchObject({ init: { status: 404 } });
-
-  const missingFood = await homeAction(routeArgs(post({
-    date: "2026-08-25",
-    idempotencyKey: "missing-saved-food",
-    intent: "log-saved-food",
-    savedFoodId: "999999",
-  })));
-  expect(missingFood).toMatchObject({ init: { status: 404 } });
-  const invalidId = await homeAction(routeArgs(post({
-    date: "2026-08-25",
-    idempotencyKey: "invalid-saved-id",
-    intent: "log-saved-food",
-    savedFoodId: "invalid",
-  })));
-  expect(invalidId).toMatchObject({ init: { status: 400 } });
-  const savedFoodId = getFoodEntryService(new Date(instant))
-    .listSavedFoods(userId, "Saved boundary tortilla")[0].id;
-  const reservedKey = await homeAction(routeArgs(post({
-    date: "2026-08-25",
-    idempotencyKey: `copy:${source.id}:reserved`,
-    intent: "log-saved-food",
-    savedFoodId: String(savedFoodId),
-  })));
-  expect(reservedKey).toMatchObject({ init: { status: 400 } });
-  const future = await homeAction(routeArgs(post({
-    date: "2026-09-01",
-    idempotencyKey: "future-saved-food",
-    intent: "log-saved-food",
-    savedFoodId: String(savedFoodId),
-  })));
-  expect(future).toMatchObject({ init: { status: 422 } });
-  const invalidUrl = await load("/?date=2026-08-25&food=saved:invalid");
-  expect(invalidUrl.data.catalog).toBeUndefined();
+  expect((await load("/?date=2026-08-25&food=saved:invalid")).data.addFood).toBeUndefined();
+  expect(await postFood({ date: "2026-08-25", favoriteId: "999999", intent: "log", method: "favorite" }))
+    .toMatchObject(refused(404, "not_found"));
+  const source = await saveManual("Saved boundary tortilla", "2026-08-25T16:00:00.000Z", true);
+  expect(await postFood({ date: "2026-09-01", favoriteId: String(source.favoriteId), intent: "log", method: "favorite" }))
+    .toMatchObject(refused(422, "future_date"));
 });
 
-test("copy loader restricts source actions and validates every calendar selection", async () => {
-  const service = getFoodEntryService(new Date(instant));
-  const source = await service.log(userId, {
-    foodLogDate: "2026-08-23", idempotencyKey: "copy-loader-boundary-source",
-    provider: "usda-fdc", providerFoodId: "1001", quantity: "1", selectedMeasurementId: "base:g:100000000",
-  });
+test("only an earlier day's editor offers copy, and the copy dialog validates every calendar selection", async () => {
+  const source = await saveLookup("2026-08-23T16:00:00.000Z");
   getWaterEventService().save(userId, { logDate: "2026-08-23T16:00:00Z", quantity: { ounces: "8" } });
-  const historical = await load(`/?date=${source.foodLogDate}`);
-  expect(Object.keys(historical.data.copyIdempotencyKeys)).toEqual([String(source.id)]);
-  expect(historical.data.copyIdempotencyKeys[source.id]).toMatch(new RegExp(`^copy:${source.id}:`));
-  expect(historical.data.copyDialog).toBeUndefined();
-  expect(historical.data.copyError).toBeUndefined();
+  expect((await load(`/?date=2026-08-23&entry=${source.id}`)).data.editor?.canCopy).toBe(true);
+  const todayEvent = await saveLookup(instant);
+  expect((await load(`/?entry=${todayEvent.id}`)).data.editor?.canCopy).toBe(false);
   for (const date of [today, "2026-09-01"]) {
     const current = await load(`/?date=${date}&copy=${source.id}`);
-    expect(current.data.copyIdempotencyKeys).toEqual({});
-    expect(current.data.copyDialog).toBeUndefined();
+    expect(current.data.copy).toBeUndefined();
     expect(current.data.copyError).toBeUndefined();
   }
   for (const query of ["copy=invalid", "copy=0", `copy=${source.id}&date=2026-08-22`]) {
-    const result = await load(`/?${query}${query.includes("date=") ? "" : `&date=${source.foodLogDate}`}`);
-    expect(result.data).toMatchObject({ copyDialog: undefined, copyError: "That Food Entry is unavailable. Choose another entry." });
+    const result = await load(`/?${query}${query.includes("date=") ? "" : "&date=2026-08-23"}`);
+    expect(result.data.copy).toBeUndefined();
+    expect(result.data.copyError).toBe("That Food Entry is unavailable. Choose another entry.");
   }
-  for (const copyDate of ["", "invalid", "2026-02-30", source.foodLogDate, "2026-09-01"]) {
-    const result = await load(`/?date=${source.foodLogDate}&copy=${source.id}&copyDate=${copyDate}`);
-    expect(result.data.copyDialog?.destinationDate).toBeUndefined();
-    expect(result.data.copyDialog?.calendar.month).toBe("2026-08");
-    expect(result.data.copyDialog?.calendar.days.some((day) => day.isSelected)).toBe(false);
+  for (const copyDate of ["", "invalid", "2026-02-30", "2026-08-23", "2026-09-01"]) {
+    const result = await load(`/?date=2026-08-23&copy=${source.id}&copyDate=${copyDate}`);
+    expect(result.data.copy?.destinationDate).toBeUndefined();
+    expect(result.data.copy?.calendar.month).toBe("2026-08");
+    expect(result.data.copy?.calendar.days.some((day) => day.isSelected)).toBe(false);
   }
-  const selected = await load(`/?date=${source.foodLogDate}&copy=${source.id}&copyDate=${today}`);
-  expect(selected.data.copyDialog?.destinationDate).toBe(today);
-  expect(selected.data.copyDialog?.calendar.days.filter((day) => day.isSource).map((day) => day.date)).toEqual([source.foodLogDate]);
-  expect(selected.data.copyDialog?.calendar.days.filter((day) => day.isSelected).map((day) => day.date)).toEqual([today]);
-  expect(selected.data.copyDialog?.calendar.days).toHaveLength(31);
-  const previous = await load(`/?date=${source.foodLogDate}&copy=${source.id}&copyMonth=2026-07&copyDate=2026-07-15`);
-  expect(previous.data.copyDialog?.calendar.month).toBe("2026-07");
-  expect(previous.data.copyDialog?.calendar.days.filter((day) => day.isSelected).map((day) => day.date)).toEqual(["2026-07-15"]);
-});
-
-test("adding food on a past date places each entry after the latest one logged that day", async () => {
-  const pastDate = "2026-08-20";
-  for (const [index, name] of ["Past lunch", "Past snack"].entries()) {
-    expectRedirect(await homeAction(routeArgs(post({
-      date: pastDate, energyKcal: "200", idempotencyKey: `past-date-manual-${index}`, intent: "log-manual-food", name, quantity: "1",
-    }))), `/?date=${pastDate}`);
-  }
-  const { data } = await load(`/?date=${pastDate}`);
-  expect(data.foodLog.entries.map(entry => [entry.name, entry.localEventTime])).toEqual([
-    ["Past snack", "12:01:00"],
-    ["Past lunch", "12:00:00"],
-  ]);
-  expect(Object.keys(data)).not.toEqual(expect.arrayContaining([expect.stringMatching(/photo/i)]));
+  const selected = await load(`/?date=2026-08-23&copy=${source.id}&copyDate=${today}`);
+  expect(selected.data.copy?.destinationDate).toBe(today);
+  expect(selected.data.copy?.calendar.days.filter((day) => day.isSource).map((day) => day.date)).toEqual(["2026-08-23"]);
+  expect(selected.data.copy?.calendar.days.filter((day) => day.isSelected).map((day) => day.date)).toEqual([today]);
+  expect(selected.data.copy?.calendar.days).toHaveLength(31);
+  const previous = await load(`/?date=2026-08-23&copy=${source.id}&copyMonth=2026-07&copyDate=2026-07-15`);
+  expect(previous.data.copy?.calendar.month).toBe("2026-07");
+  expect(previous.data.copy?.calendar.days.filter((day) => day.isSelected).map((day) => day.date)).toEqual(["2026-07-15"]);
 });
 
 test.each([
-  [new CatalogStaleReviewError(), 409, "Review food again"],
-  [new CatalogNutritionUnavailableError(), 422, "Nutrition unavailable"],
-] as const)("catalog review failures keep their HTTP status and review guidance %#", async (error, status, title) => {
+  [new CatalogStaleReviewError(), 409, "catalog_changed", "Review food again"],
+  [new CatalogNutritionUnavailableError(), 422, "nutrition_unavailable", "Nutrition unavailable"],
+] as const)("catalog review failures keep their HTTP status and review guidance %#", async (error, status, code, title) => {
   setFoodCatalogProviderForTests({
     async getFood() { throw error; },
     async search() { throw error; },
@@ -1739,8 +1312,41 @@ test.each([
   try {
     const message = error instanceof CatalogStaleReviewError ? error.message : "This food has no usable calories in the installed catalog.";
     const detail = await load("/?food=1001");
-    expect(detail.data.catalog).toMatchObject({ title, message });
-    const result = await homeAction(routeArgs(post({ intent: "log-food", idempotencyKey: "local-review-failure", providerFoodId: "1001", quantity: "1", selectedMeasurementId: "base:g:100000000" })));
-    expect(result).toMatchObject({ data: { message }, init: { status } });
+    expect(detail.init?.status).toBe(status);
+    expect(detail.data.addFood).toMatchObject({ title, message });
+    expect(await postFood(logLookup())).toMatchObject({ data: { code, message }, init: { status } });
   } finally { setFoodCatalogProviderForTests(undefined); }
+});
+
+test("the food read model ignores unknown providers and notices, and propagates unexpected read failures", async () => {
+  expect((await load("/?food=1001&provider=elsewhere")).data.addFood).toBeUndefined();
+  expect((await load("/?food=12&provider=open-food-facts")).data.addFood).toBeUndefined();
+  expect((await load("/?notice=copied&copied=abc")).data.notice).toBeUndefined();
+
+  // Without the test instant header, the loader uses the shared service, which this test replaces.
+  const source = await saveLookup("2026-08-21T16:00:00.000Z");
+  const service = getFoodEventService();
+  const read = service.read.bind(service);
+  const unexpected = new Error("unexpected food read failure");
+  service.read = () => {
+    throw unexpected;
+  };
+  try {
+    for (const query of [`copy=${source.id}`, `notice=copied&copied=${source.id}`]) {
+      const request = new Request(`${origin}/?date=2026-08-21&${query}`, { headers: { Cookie: cookie } });
+      await expect(homeLoader(routeArgs(request))).rejects.toBe(unexpected);
+    }
+  } finally {
+    service.read = read;
+  }
+
+  const catalog = getFoodCatalog();
+  const lookupBarcode = catalog.lookupBarcode.bind(catalog);
+  const lookupFailure = new Error("unexpected barcode failure");
+  catalog.lookupBarcode = () => Promise.reject(lookupFailure);
+  try {
+    await expect(homeLoader(routeArgs(get("/?food=barcode&barcode=034000470693")))).rejects.toBe(lookupFailure);
+  } finally {
+    catalog.lookupBarcode = lookupBarcode;
+  }
 });

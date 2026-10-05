@@ -8,20 +8,33 @@ import { pathToFileURL } from "node:url";
 import { afterEach, expect, test, vi } from "vitest";
 import { CatalogManagement, type CatalogImportJob, type CatalogManagementOptions } from "../app/catalog-management/catalog-management.server";
 import { LocalUsdaAdapter } from "../app/catalog/local-usda.server";
-import { TestFoodCatalogProvider } from "../app/catalog/test-fixture.server";
-import { createBarcodeService } from "../app/barcode/index.server";
+import { TEST_CATALOG_GENERATION, TestFoodCatalogProvider } from "../app/catalog/test-fixture.server";
+import { createOpenFoodFactsClient } from "../app/catalog/runtime.server";
 import { fakeOffApi } from "./support/off-api";
 import { CatalogUnavailableError, FoodCatalog } from "../app/catalog/food-catalog.server";
 import { catalogGenerationIsReadable } from "../app/database/catalog-generation-validation.server";
 import { openApplicationDatabase } from "../app/database/database.server";
 import { saveCatalogState } from "../app/database/catalog-state.server";
 import { users, userPreferences } from "../app/database/schema.server";
-import { FoodEntryService } from "../app/food-entry/food-entry.server";
+import type { FoodEvent } from "../app/food-event/food-event.model";
+import { createFoodEventService } from "../app/food-event/runtime.server";
 import { foundationArchive, storedZip } from "./support/foundation-archive";
 import { basicFoodsArchive } from "./support/basic-foods-archive";
 
 const cleanups: (() => Promise<void>)[] = [];
 afterEach(async () => { for (const cleanup of cleanups.splice(0)) await cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+/** A reviewed USDA food saved on 2026-09-06, as the Add Food dialog sends it. */
+function lookupInput(food: { providerFoodId: string; catalogGeneration?: string }, measurementId: string, quantity: string) {
+  return {
+    method: "lookup" as const,
+    logDate: "2026-09-06T12:00:00.000Z",
+    providerFoodId: food.providerFoodId,
+    reviewVersion: food.catalogGeneration ?? "",
+    measurementId,
+    quantity,
+  };
+}
+
 async function setup(options: Partial<CatalogManagementOptions> = {}) {
   const directory = await mkdtemp(path.join(tmpdir(), "local-usda-"));
   const database = openApplicationDatabase({ databasePath: path.join(directory, "app.sqlite"), migrationsFolder: path.resolve("drizzle") });
@@ -32,7 +45,7 @@ async function setup(options: Partial<CatalogManagementOptions> = {}) {
   const createdAt = "2026-01-01T00:00:00.000Z";
   const user = database.getClient().insert(users).values({ usernameNormalized: "local.member", createdAt }).returning().get();
   database.getClient().insert(userPreferences).values({ userId: user.id, timeZone: "UTC", createdAt, updatedAt: createdAt }).run();
-  const entries = new FoodEntryService(database.getClient(), catalog, () => new Date("2026-09-07T12:00:00.000Z"));
+  const entries = createFoodEventService(database.getClient(), () => new Date("2026-09-07T12:00:00.000Z"), catalog);
   return { management, local, catalog, entries, userId: user.id, database, directory };
 }
 
@@ -109,9 +122,9 @@ test("an installed real Foundation archive supports local search, source portion
   const food = await catalog.getFood("usda-fdc", "747447");
   expect(food.catalogGeneration).toBe(management.read().installed?.generation);
   expect(food.measurements).toContainEqual({ id: "portion:187633", label: "1 cup, chopped (76 g)", unit: "g", baseQuantityMicrounits: 76_000_000 });
-  const saved = await entries.log(userId, { provider: food.provider, providerFoodId: food.providerFoodId, catalogGeneration: food.catalogGeneration, foodLogDate: "2026-09-06", idempotencyKey: "imported-broccoli", selectedMeasurementId: "portion:187633", quantity: "2" });
+  const saved = await entries.save(userId, { method: "lookup", providerFoodId: food.providerFoodId, reviewVersion: food.catalogGeneration!, logDate: "2026-09-06T12:00:00.000Z", measurementId: "portion:187633", quantity: "2" });
   // USDA specific Atwater = 32 kcal/100g; two source cups = 152g.
-  expect(saved).toMatchObject({ energyMilliKcal: 48_640, proteinMilligrams: 3_906, fatMilligrams: 517, carbohydrateMilligrams: 9_530, sodiumMilligrams: 55 });
+  expect(saved.nutrients).toMatchObject({ energyMilliKcal: 48_640, proteinMilligrams: 3_906, fatMilligrams: 517, carbohydrateMilligrams: 9_530, sodiumMilligrams: 55 });
   expect(network).not.toHaveBeenCalled();
 });
 
@@ -133,16 +146,15 @@ test("a USDA replacement keeps the active generation usable until the complete r
   await vi.waitFor(() => expect(management.read().job?.phase).toBe("uploading"));
 
   expect((await catalog.getFood("usda-fdc", "748967")).name).toBe(original.name);
-  const saved = await entries.log(userId, {
-    provider: original.provider,
+  const saved = await entries.save(userId, {
+    method: "lookup",
     providerFoodId: original.providerFoodId,
-    catalogGeneration: original.catalogGeneration,
-    foodLogDate: "2026-09-06",
-    idempotencyKey: "logged-during-replacement",
-    selectedMeasurementId: "100g",
+    reviewVersion: original.catalogGeneration!,
+    logDate: "2026-09-06T12:00:00.000Z",
+    measurementId: "100g",
     quantity: "1",
   });
-  expect(saved).toMatchObject({ name: original.name, energyMilliKcal: 147_000 });
+  expect(saved).toMatchObject({ name: original.name, nutrients: { energyMilliKcal: 147_000 } });
 
   upload.end(replacement.subarray(20));
   await receiving;
@@ -157,19 +169,10 @@ test("a USDA replacement keeps the active generation usable until the complete r
     nutritionPerAuthoritativeBase: { energyMilliKcal: { amount: 200, fixedPointMultiplier: 1000 } },
   });
   expect(entries.read(userId, saved.id)).toEqual(saved);
-  const updated = entries.update(userId, saved.id, {
-    expectedUpdatedAt: saved.updatedAt,
-    foodLogDate: saved.foodLogDate,
-    name: saved.name,
-    quantity: "2",
-    selectedMeasurementId: saved.selectedMeasurementId,
-  });
-  const copied = entries.copyToToday(userId, saved.id, {
-    foodLogDate: saved.foodLogDate,
-    idempotencyKey: `copy:${saved.id}:after-replacement`,
-  });
-  expect(updated).toMatchObject({ name: original.name, energyMilliKcal: 294_000, providerFoodId: original.providerFoodId });
-  expect(copied).toMatchObject({ name: original.name, energyMilliKcal: 294_000, authoritativeNutrition: saved.authoritativeNutrition });
+  const updated = await entries.save(userId, { id: saved.id, expectedUpdatedAt: saved.updatedAt, changes: { quantity: "2" } });
+  const copied = entries.copy(userId, { eventId: saved.id, sourceDate: "2026-09-06", logDate: "2026-09-07T12:00:00.000Z" });
+  expect(updated).toMatchObject({ name: original.name, nutrients: { energyMilliKcal: 294_000 }, source: { providerFoodId: original.providerFoodId } });
+  expect(copied).toMatchObject({ name: original.name, nutrients: { energyMilliKcal: 294_000 }, authority: saved.authority });
 });
 
 test("restart restores the prior USDA catalog and personal entries before a successful retry", async () => {
@@ -179,15 +182,7 @@ test("restart restores the prior USDA catalog and personal entries before a succ
   await vi.waitFor(() => expect(management.read().busy).toBe(false));
   const previous = management.read().installed!;
   const food = await catalog.getFood("usda-fdc", "748967");
-  const saved = await entries.log(userId, {
-    provider: food.provider,
-    providerFoodId: food.providerFoodId,
-    catalogGeneration: food.catalogGeneration,
-    foodLogDate: "2026-09-06",
-    idempotencyKey: "saved-before-restart-fallback",
-    selectedMeasurementId: "100g",
-    quantity: "1",
-  });
+  const saved = await entries.save(userId, lookupInput(food, "100g", "1"));
   const replacementId = "00000000-0000-4000-8000-000000000030";
   const job: CatalogImportJob = {
     id: replacementId,
@@ -215,7 +210,7 @@ test("restart restores the prior USDA catalog and personal entries before a succ
   cleanups.unshift(() => restarted.shutdown());
   const restartedLocal = new LocalUsdaAdapter(restarted, directory);
   const restartedCatalog = new FoodCatalog([{ provider: "usda-fdc", capability: "search", service: restartedLocal }]);
-  const restartedEntries = new FoodEntryService(database.getClient(), restartedCatalog, () => new Date("2026-09-07T12:00:00.000Z"));
+  const restartedEntries = createFoodEventService(database.getClient(), () => new Date("2026-09-07T12:00:00.000Z"), restartedCatalog);
 
   expect(restarted.read()).toMatchObject({
     installed: previous,
@@ -225,14 +220,8 @@ test("restart restores the prior USDA catalog and personal entries before a succ
   await expect(restartedCatalog.search("egg")).resolves.toEqual(expect.arrayContaining([expect.objectContaining({ providerFoodId: food.providerFoodId })]));
   await expect(restartedCatalog.getFood("usda-fdc", food.providerFoodId)).resolves.toMatchObject({ name: food.name, catalogGeneration: previous.generation });
   expect(restartedEntries.read(userId, saved.id)).toEqual(saved);
-  const updated = restartedEntries.update(userId, saved.id, {
-    expectedUpdatedAt: saved.updatedAt,
-    foodLogDate: saved.foodLogDate,
-    name: saved.name,
-    quantity: "2",
-    selectedMeasurementId: saved.selectedMeasurementId,
-  });
-  expect(updated).toMatchObject({ name: food.name, energyMilliKcal: 294_000 });
+  const updated = await restartedEntries.save(userId, { id: saved.id, expectedUpdatedAt: saved.updatedAt, changes: { quantity: "2" } });
+  expect(updated).toMatchObject({ name: food.name, nutrients: { energyMilliKcal: 294_000 } });
 
   await restarted.submitArchive({ filename: "foundation-retry.zip", stream: Readable.from(archive) });
   await vi.waitFor(() => expect(restarted.read().busy).toBe(false));
@@ -266,25 +255,17 @@ await importFoundation(workerData, publish);
   cleanups.unshift(() => replacement.shutdown());
   await replacement.submitArchive({ filename: "foundation.zip", stream: Readable.from(archive) });
 
-  let loggedDuringImport: ReturnType<FoodEntryService["read"]> | undefined;
+  let loggedDuringImport: FoodEvent | undefined;
   for (const phase of ["validating", "importing", "indexing"] as const) {
     await vi.waitFor(() => expect(replacement.read().job?.phase).toBe(phase));
     expect((await catalog.search("egg"))[0]).toMatchObject({ providerFoodId: original.providerFoodId, catalogGeneration: original.catalogGeneration });
     expect(await catalog.getFood("usda-fdc", original.providerFoodId)).toMatchObject({ name: original.name, catalogGeneration: original.catalogGeneration });
     if (phase === "importing") {
-      loggedDuringImport = await entries.log(userId, {
-        provider: original.provider,
-        providerFoodId: original.providerFoodId,
-        catalogGeneration: original.catalogGeneration,
-        foodLogDate: "2026-09-06",
-        idempotencyKey: "old-generation-during-import",
-        selectedMeasurementId: "100g",
-        quantity: "1",
-      });
+      loggedDuringImport = await entries.save(userId, lookupInput(original, "100g", "1"));
     }
     await writeFile(path.join(directory, `${phase}.release`), "continue");
   }
-  expect(loggedDuringImport).toMatchObject({ name: original.name, energyMilliKcal: 147_000 });
+  expect(loggedDuringImport).toMatchObject({ name: original.name, nutrients: { energyMilliKcal: 147_000 } });
   await vi.waitFor(() => expect(replacement.read().busy).toBe(false));
   expect(replacement.read().installed?.generation).not.toBe(original.catalogGeneration);
 });
@@ -336,15 +317,7 @@ test("a validation failure leaves the previous USDA catalog searchable and logga
   await vi.waitFor(() => expect(management.read().busy).toBe(false));
   expect(management.read()).toMatchObject({ installed: working, job: { phase: "failed", error: "Wrong USDA dataset. Only a Foundation CSV archive is supported." } });
   await expect(catalog.search("egg")).resolves.toEqual(expect.arrayContaining([expect.objectContaining({ catalogGeneration: working.generation })]));
-  await expect(entries.log(userId, {
-    provider: food.provider,
-    providerFoodId: food.providerFoodId,
-    catalogGeneration: food.catalogGeneration,
-    foodLogDate: "2026-09-06",
-    idempotencyKey: "log-after-validation-failure",
-    selectedMeasurementId: "100g",
-    quantity: "1",
-  })).resolves.toMatchObject({ name: food.name, energyMilliKcal: 147_000 });
+  await expect(entries.save(userId, lookupInput(food, "100g", "1"))).resolves.toMatchObject({ name: food.name, nutrients: { energyMilliKcal: 147_000 } });
 });
 
 test("saving a review from a retired generation reports staleness even when the replacement removed that FDC ID", async () => {
@@ -361,15 +334,7 @@ test("saving a review from a retired generation reports staleness even when the 
   })) });
   await vi.waitFor(() => expect(management.read().busy).toBe(false));
 
-  await expect(entries.log(userId, {
-    provider: reviewed.provider,
-    providerFoodId: reviewed.providerFoodId,
-    catalogGeneration: reviewed.catalogGeneration,
-    foodLogDate: "2026-09-06",
-    idempotencyKey: "removed-stale-review",
-    selectedMeasurementId: "100g",
-    quantity: "1",
-  })).rejects.toThrow("catalog changed");
+  await expect(entries.save(userId, lookupInput(reviewed, "100g", "1"))).rejects.toThrow("catalog changed");
 });
 
 test("upload metadata rejects invalid names and sizes before claiming installation", async () => {
@@ -547,11 +512,11 @@ test("a missing catalog, conflicting replacement, deliberate reimport and stale 
   await management.submitArchive({ filename: "foundation.zip", stream: Readable.from(await foundationArchive()) });
   await vi.waitFor(() => expect(management.read().busy).toBe(false));
   expect(management.read().installed?.generation).not.toBe(firstGeneration);
-  const input = { provider: "usda-fdc", providerFoodId: "748967", foodLogDate: "2026-09-06", idempotencyKey: "stale-review-123", selectedMeasurementId: "100g", quantity: "1" };
-  await expect(entries.log(userId, input)).rejects.toThrow("catalog changed");
-  await expect(entries.log(userId, { ...input, catalogGeneration: "00000000-0000-4000-8000-000000000000" })).rejects.toThrow("catalog changed");
+  const input = lookupInput({ providerFoodId: "748967", catalogGeneration: firstGeneration }, "100g", "1");
+  await expect(entries.save(userId, input)).rejects.toThrow("catalog changed");
+  await expect(entries.save(userId, { ...input, reviewVersion: "00000000-0000-4000-8000-000000000000" })).rejects.toThrow("catalog changed");
   const egg = await catalog.getFood("usda-fdc", "748967");
-  expect((await entries.log(userId, { ...input, catalogGeneration: egg.catalogGeneration })).energyMilliKcal).toBe(147_000);
+  expect((await entries.save(userId, lookupInput(egg, "100g", "1"))).nutrients.energyMilliKcal).toBe(147_000);
 });
 
 test("local USDA search normalizes Unicode, bounds terms, and keeps punctuation out of FTS syntax", async () => {
@@ -867,10 +832,10 @@ test("preparations remain distinct and gram-only results retain unknown nutrient
   const cooked = eggs.find(food => food.providerFoodId === "102")!;
   const food = await catalog.getFood(cooked.provider, cooked.providerFoodId);
   expect(food.measurements.map(measurement => measurement.id)).toEqual(["g", "100g"]);
-  const input = { provider: food.provider, providerFoodId: food.providerFoodId, catalogGeneration: food.catalogGeneration, foodLogDate: "2026-09-06", idempotencyKey: "cooked-egg-alias", selectedMeasurementId: "100g", quantity: "1.5" };
-  const saved = await entries.log(userId, input);
-  expect(saved).toMatchObject({ name: "Eggs, whole, cooked, scrambled", providerFoodId: "102", energyMilliKcal: 270_000, proteinMilligrams: null, fatMilligrams: null, carbohydrateMilligrams: null });
-  await expect(entries.log(userId, { ...input, providerFoodId: "999", idempotencyKey: "missing-calories" })).rejects.toThrow("no usable nutrition");
+  const input = lookupInput(food, "100g", "1.5");
+  const saved = await entries.save(userId, input);
+  expect(saved).toMatchObject({ name: "Eggs, whole, cooked, scrambled", source: { providerFoodId: "102" }, nutrients: { energyMilliKcal: 270_000, proteinMilligrams: null, fatMilligrams: null, carbohydrateMilligrams: null } });
+  await expect(entries.save(userId, { ...input, providerFoodId: "999" })).rejects.toThrow("no usable");
 });
 
 test.each([
@@ -899,8 +864,8 @@ test("null, zero, invalid and unsupported nutrients survive a valid gram-only im
   await vi.waitFor(() => expect(management.read().busy).toBe(false));
   const food = await catalog.getFood("usda-fdc", "748967");
   expect(food.measurements.map(value => value.id)).toEqual(["g", "100g"]);
-  const saved = await entries.log(userId, { provider: food.provider, providerFoodId: food.providerFoodId, catalogGeneration: food.catalogGeneration, foodLogDate: "2026-09-06", idempotencyKey: "units-and-nulls", selectedMeasurementId: "100g", quantity: "2" });
-  expect(saved).toMatchObject({ energyMilliKcal: 286_000, proteinMilligrams: 24_800, fatMilligrams: null, carbohydrateMilligrams: null, fiberMilligrams: 0, sodiumMilligrams: 258, sugarMilligrams: null });
+  const saved = await entries.save(userId, lookupInput(food, "100g", "2"));
+  expect(saved.nutrients).toEqual({ energyMilliKcal: 286_000, proteinMilligrams: 24_800, fatMilligrams: null, carbohydrateMilligrams: null, fiberMilligrams: 0, sodiumMilligrams: 258, sugarMilligrams: null });
   expect(management.read().job?.exclusions).toMatchObject({ invalid_nutrient: 3, invalid_portion: 1 });
 });
 
@@ -923,30 +888,30 @@ test("a wrong calorie unit is rejected independently and a corrupt CRC never act
 
 test("USDA and OFF history created before installation remains readable, editable and copyable without source lookup", async () => {
   const { management, entries, database, userId } = await setup();
+  const formerApi = fakeOffApi({ "0012345678905": { code: "0012345678905", product_name: "Example cereal", nutrition: { input_sets: [{ source: "packaging", preparation: "as_sold", per: "serving", per_quantity: 30, per_unit: "g", nutrients: { "energy-kcal": { value: 180, unit: "kcal" } } }] } } });
+  const formerBarcode = createOpenFoodFactsClient(database.getClient(), formerApi.fetch);
+  formerBarcode.saveContact("family@example.com");
   const formerCatalog = new FoodCatalog([
     { provider: "usda-fdc", capability: "search", service: new TestFoodCatalogProvider() },
-  ]);
-  const formerApi = fakeOffApi({ "0012345678905": { code: "0012345678905", product_name: "Example cereal", nutrition: { input_sets: [{ source: "packaging", preparation: "as_sold", per: "serving", per_quantity: 30, per_unit: "g", nutrients: { "energy-kcal": { value: 180, unit: "kcal" } } }] } } });
-  const formerBarcode = createBarcodeService(database.getClient(), formerApi.fetch);
-  formerBarcode.saveContact("family@example.com");
-  const formerEntries = new FoodEntryService(database.getClient(), formerCatalog, () => new Date("2026-09-07T12:00:00.000Z"), formerBarcode);
-  const oldUsda = await formerEntries.log(userId, { provider: "usda-fdc", providerFoodId: "1001", foodLogDate: "2026-09-06", idempotencyKey: "old-usda-snapshot", selectedMeasurementId: "base:g:100000000", quantity: "1" });
+  ], formerBarcode);
+  const formerEntries = createFoodEventService(database.getClient(), () => new Date("2026-09-07T12:00:00.000Z"), formerCatalog);
+  const oldUsda = await formerEntries.save(userId, { method: "lookup", providerFoodId: "1001", reviewVersion: TEST_CATALOG_GENERATION, logDate: "2026-09-06T12:00:00.000Z", measurementId: "base:g:100000000", quantity: "1" });
   const reviewed = await formerBarcode.lookup("0012345678905");
-  const oldOff = await formerEntries.log(userId, { provider: "open-food-facts", providerFoodId: "0012345678905", catalogGeneration: reviewed.catalogGeneration, foodLogDate: "2026-09-06", idempotencyKey: "old-off-snapshot", selectedMeasurementId: "serving", quantity: "1" });
+  const oldOff = await formerEntries.save(userId, { method: "barcode", providerFoodId: "0012345678905", reviewVersion: reviewed.catalogGeneration!, logDate: "2026-09-06T12:00:00.000Z", measurementId: "serving", quantity: "1" });
   formerBarcode.removeContact();
   const requestsBeforeHistory = formerApi.requests.length;
-  expect(entries.read(userId, oldUsda.id).energyMilliKcal).toBe(59_000);
+  expect(entries.read(userId, oldUsda.id).nutrients.energyMilliKcal).toBe(59_000);
   await management.submitArchive({ filename: "foundation.zip", stream: Readable.from(await foundationArchive()) });
   await vi.waitFor(() => expect(management.read().busy).toBe(false));
   // The current catalog has neither former source record nor an OFF registration.
   for (const old of [oldUsda, oldOff]) {
     expect(entries.read(userId, old.id)).toEqual(old);
-    const updated = entries.update(userId, old.id, { expectedUpdatedAt: old.updatedAt, foodLogDate: old.foodLogDate, name: old.name, quantity: "2", selectedMeasurementId: old.selectedMeasurementId });
-    const copied = entries.copyToToday(userId, old.id, { foodLogDate: old.foodLogDate, idempotencyKey: `copy:${old.id}:after-install` });
-    expect(copied).toMatchObject({ energyMilliKcal: updated.energyMilliKcal, provider: old.provider, providerFoodId: old.providerFoodId, authoritativeNutrition: old.authoritativeNutrition });
+    const updated = await entries.save(userId, { id: old.id, expectedUpdatedAt: old.updatedAt, changes: { quantity: "2" } });
+    const copied = entries.copy(userId, { eventId: old.id, sourceDate: "2026-09-06", logDate: "2026-09-07T12:00:00.000Z" });
+    expect(copied).toMatchObject({ nutrients: updated.nutrients, source: old.source, authority: old.authority });
   }
-  expect(entries.read(userId, oldUsda.id).energyMilliKcal).toBe(118_000);
-  expect(entries.read(userId, oldOff.id).energyMilliKcal).toBe(360_000);
+  expect(entries.read(userId, oldUsda.id).nutrients.energyMilliKcal).toBe(118_000);
+  expect(entries.read(userId, oldOff.id).nutrients.energyMilliKcal).toBe(360_000);
   expect(formerApi.requests).toHaveLength(requestsBeforeHistory);
 });
 

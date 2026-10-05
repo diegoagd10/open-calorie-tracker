@@ -6,7 +6,7 @@ import { applicationMetadata } from "../database/schema.server";
 const CONTACT_KEY = "off:contact";
 
 /** The instance-wide Open Food Facts contact email, stored in application metadata. */
-export class BarcodeRepository {
+export class OffContactRepository {
   readonly #database: ApplicationDatabaseClient;
 
   constructor(database: ApplicationDatabaseClient) {

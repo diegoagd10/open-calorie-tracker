@@ -1,57 +1,16 @@
 import type { Route } from "./+types/api.v1.daily-log";
 import type { FoodLogService } from "../food-log/food-log.server";
-import { parseIsoLocalDate } from "../food-log/date";
+import { parseIsoLocalDate } from "../shared/local-date";
 import { getFoodLogService } from "../food-log/runtime.server";
 import { apiError, authenticateApiRequest, privateHeaders } from "../api-keys/rest.server";
+import { presentFoodEvent, presentNutritionTotals } from "../food-event/index.server";
 import { presentWaterEvent } from "../water-event/index.server";
 
 type FoodLog = NonNullable<ReturnType<FoodLogService["read"]>>;
-type Food = FoodLog["entries"][number];
-
-
-function presentFood(entry: Food) {
-  return {
-    id: entry.id,
-    foodLogDate: entry.foodLogDate,
-    localEventTime: entry.localEventTime,
-    createdAt: entry.createdAt,
-    updatedAt: entry.updatedAt,
-    name: entry.name,
-    originalName: entry.originalName,
-    provider: entry.provider,
-    providerFoodId: entry.providerFoodId,
-    dataType: entry.dataType,
-    providerPublishedDate: entry.providerPublishedDate,
-    providerModifiedDate: entry.providerModifiedDate,
-    brand: entry.brand,
-    barcode: entry.barcode,
-    marketCountry: entry.marketCountry,
-    authoritativeBaseUnit: entry.authoritativeBaseUnit,
-    authoritativeBaseQuantityMicrounits: entry.authoritativeBaseQuantityMicrounits,
-    authoritativeNutrition: entry.authoritativeNutrition,
-    selectedMeasurementId: entry.selectedMeasurementId,
-    selectedMeasurementLabel: entry.selectedMeasurementLabel,
-    selectedMeasurementUnit: entry.selectedMeasurementUnit,
-    supportedMeasurements: entry.supportedMeasurements,
-    quantityMicrounits: entry.quantityMicrounits,
-    energyMilliKcal: entry.energyMilliKcal,
-    proteinMilligrams: entry.proteinMilligrams,
-    carbohydrateMilligrams: entry.carbohydrateMilligrams,
-    fatMilligrams: entry.fatMilligrams,
-    fiberMilligrams: entry.fiberMilligrams,
-    sugarMilligrams: entry.sugarMilligrams,
-    sodiumMilligrams: entry.sodiumMilligrams,
-  };
-}
-
-function presentNutritionTotal(value: { known: number; isIncomplete: boolean }) {
-  return { known: value.known, isIncomplete: value.isIncomplete };
-}
 
 function presentDailyFoodLog(foodLog: FoodLog) {
-  const totals = foodLog.nutritionTotals;
   return {
-    version: "1" as const,
+    version: "2" as const,
     selectedDate: foodLog.selectedDate,
     today: foodLog.today,
     isFuture: foodLog.isFuture,
@@ -66,20 +25,12 @@ function presentDailyFoodLog(foodLog: FoodLog) {
       sugarMaximumMilligrams: foodLog.goal.sugarMaximum,
       sodiumMaximumMilligrams: foodLog.goal.sodiumMaximum,
     } : null,
-    foodEntries: foodLog.entries.map(presentFood),
+    foodEvents: foodLog.foodEvents.map(presentFoodEvent),
     waterEvents: foodLog.waterEvents.map(presentWaterEvent),
     events: foodLog.events.map((event) => event.kind === "food"
-      ? { kind: "food" as const, ...presentFood(event) }
+      ? { kind: "food" as const, ...presentFoodEvent(event) }
       : { kind: "water" as const, ...presentWaterEvent(event) }),
-    nutritionTotals: {
-      energyMilliKcal: presentNutritionTotal(totals.energyMilliKcal),
-      proteinMilligrams: presentNutritionTotal(totals.proteinMilligrams),
-      carbohydrateMilligrams: presentNutritionTotal(totals.carbohydrateMilligrams),
-      fatMilligrams: presentNutritionTotal(totals.fatMilligrams),
-      fiberMilligrams: presentNutritionTotal(totals.fiberMilligrams),
-      sugarMilligrams: presentNutritionTotal(totals.sugarMilligrams),
-      sodiumMilligrams: presentNutritionTotal(totals.sodiumMilligrams),
-    },
+    nutritionTotals: presentNutritionTotals(foodLog.nutritionTotals),
     waterTotalOunces: Number(foodLog.waterTotalOunces),
   };
 }

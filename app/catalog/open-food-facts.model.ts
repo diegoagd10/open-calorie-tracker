@@ -33,7 +33,7 @@ const offNutritionInputSetSchema = z.object({
   nutrients: z.record(z.string(), offNutrientSchema).optional().catch(undefined),
 }).nullable().catch(null);
 
-export const offProductSchema = z.object({
+const offProductSchema = z.object({
   code: z.string(),
   product_name: z.string().nullable().optional(),
   product_name_en: z.string().nullable().optional(),

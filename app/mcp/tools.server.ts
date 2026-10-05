@@ -1,6 +1,8 @@
 import { z } from "zod";
-import { parseIsoLocalDate } from "../food-log/date";
+import { parseIsoLocalDate } from "../shared/local-date";
 import { getFoodLogService } from "../food-log/runtime.server";
+import { getFoodTool, lookupBarcodeTool, searchFoodsTool } from "../catalog/mcp-tool.server";
+import { deleteFoodTool, listFoodTool, logFoodTool } from "../food-event/mcp-tool.server";
 import { deleteWaterTool, listWaterTool, logWaterTool } from "../water-event/mcp-tool.server";
 import { dailyLogSummarySchema, summarizeDailyLog } from "./daily-log-summary";
 import { MISSING_SETUP_MESSAGE, toolError, type McpTool } from "./mcp-tool";
@@ -26,4 +28,15 @@ const getDailyLog: McpTool = {
   }),
 };
 
-export const MCP_TOOLS: readonly McpTool[] = [getDailyLog, logWaterTool, listWaterTool, deleteWaterTool];
+export const MCP_TOOLS: readonly McpTool[] = [
+  getDailyLog,
+  logWaterTool,
+  listWaterTool,
+  deleteWaterTool,
+  logFoodTool,
+  listFoodTool,
+  deleteFoodTool,
+  searchFoodsTool,
+  getFoodTool,
+  lookupBarcodeTool,
+];

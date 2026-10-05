@@ -396,7 +396,7 @@ test("a second user cannot list, read, edit, or delete another user's records", 
   ).toHaveCount(0);
 
   const foodRead = await otherPage.goto(
-    `/?date=2026-08-29&entry=${String(foodFields.entryId)}`,
+    `/?date=2026-08-29&entry=${String(foodFields.id)}`,
   );
   expect(foodRead?.status()).toBe(404);
   const waterRead = await otherPage.goto(
@@ -410,13 +410,13 @@ test("a second user cannot list, read, edit, or delete another user's records", 
   const mutationStatuses = await otherPage.evaluate(
     async ({ foodCsrfToken, foodFields, waterCsrfToken, waterFields }) => {
       const submit = (fields: Record<string, string>) =>
-        fetch("/?index", {
+        fetch("/food-events", {
           body: new URLSearchParams(fields),
           headers: { "Content-Type": "application/x-www-form-urlencoded" },
           method: "POST",
         });
       const statuses = [];
-      for (const intent of ["update-food", "delete-food"]) {
+      for (const intent of ["update", "delete"]) {
         const response = await submit({
           ...(foodFields as Record<string, string>),
           csrfToken: foodCsrfToken,

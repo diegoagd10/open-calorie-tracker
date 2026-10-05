@@ -13,7 +13,7 @@ import { loader as notificationLoader, action as notificationAction } from "../.
 import { loader as rootLoader } from "../../app/root";
 import { action, loader, headers } from "../../app/routes/settings.catalogs";
 import { seedAuthenticatedAccount } from "../support/authentication";
-import { getBarcodeService } from "../../app/barcode/index.server";
+import { getOpenFoodFactsClient } from "../../app/catalog/runtime.server";
 import { foundationArchive } from "../support/foundation-archive";
 
 const origin = "http://localhost:3000";
@@ -109,7 +109,7 @@ test("administrators save, validate, replace and remove the Open Food Facts cont
   expect(enabled.headers.get("Cache-Control")).toBe("no-store");
   expect(await enabled.json()).toEqual({ contact: "enabled" });
   expect((await loader(get())).offContact).toBe("family@example.com");
-  expect(getBarcodeService().isConfigured()).toBe(true);
+  expect(getOpenFoodFactsClient().isConfigured()).toBe(true);
 
   const invalid = await action(contactForm({ intent: "save-off-contact", email: "family(at)example" }));
   expect(invalid.status).toBe(400);
@@ -123,7 +123,7 @@ test("administrators save, validate, replace and remove the Open Food Facts cont
   const removed = await action(contactForm({ intent: "remove-off-contact" }));
   expect(await removed.json()).toEqual({ contact: "removed" });
   expect((await loader(get())).offContact).toBeUndefined();
-  expect(getBarcodeService().isConfigured()).toBe(false);
+  expect(getOpenFoodFactsClient().isConfigured()).toBe(false);
 });
 
 test("members and forged requests cannot view or change the Open Food Facts contact email", async () => {
@@ -131,7 +131,7 @@ test("members and forged requests cannot view or change the Open Food Facts cont
   await expect(action(contactForm({ intent: "remove-off-contact" }, memberCookie))).rejects.toMatchObject({ status: 404 });
   await expect(action(contactForm({ intent: "save-off-contact", email: "forged@example.com" }, adminCookie, "invalid"))).rejects.toMatchObject({ status: 403 });
   await expect(action(contactForm({ intent: "save-off-contact", email: "forged@example.com" }, adminCookie, csrfToken, "https://attacker.example"))).rejects.toMatchObject({ status: 403 });
-  expect(getBarcodeService().contact()).toBeUndefined();
+  expect(getOpenFoodFactsClient().contact()).toBeUndefined();
 });
 
 async function importArchive(filename: string, archive: Uint8Array) {

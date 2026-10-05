@@ -24,7 +24,26 @@ For production configuration, deployment, updates, and backups, follow the
 
 Create an API key in **Settings › API keys**. The page shows how to send it as
 `Authorization: Bearer <key>` to the MCP endpoint (`/mcp`) and the read-only
-Daily Food Log API (`/api/v1/daily-log`).
+Daily Food Log API (`/api/v1/daily-log`). Each key grants only the scopes chosen
+for it:
+
+| Scope | REST | MCP tools |
+| --- | --- | --- |
+| `daily-log:read` | `GET /api/v1/daily-log?date=YYYY-MM-DD` (version 2) | `get_daily_log` |
+| `water-events:read` / `water-events:write` | `/api/v1/water-events` | `list_water` / `log_water`, `delete_water` |
+| `food-events:read` / `food-events:write` | `/api/v1/food-events` | `list_food` / `log_food`, `delete_food` |
+| `catalog:read` | `GET /api/v1/catalog?query=`, `?providerFoodId=`, or `?barcode=` | `search_foods`, `get_food`, `lookup_barcode` |
+
+Food Events and Water Events record when they were eaten as a UTC `logDate`
+with an offset. To log a catalog food, find it with the catalog, then send its
+`providerFoodId`, `reviewVersion`, a `measurementId`, and a `quantity` to
+`log_food` (or `POST /api/v1/food-events`) with `method` `lookup` (USDA) or
+`barcode` (Open Food Facts); a food that changed since it was reviewed is
+refused. Manual foods send their nutrition totals for the quantity eaten, and
+favorites send a `favoriteId`. Edits and deletes name the `updatedAt` they read
+as `expectedUpdatedAt`, and a changed event is refused with its current version.
+Version 2 of the daily log replaces version 1's `foodEntries`, `foodLogDate`, and
+`localEventTime` with `foodEvents` and their `logDate`.
 
 ## Barcode lookup
 

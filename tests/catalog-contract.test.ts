@@ -25,7 +25,7 @@ import {
   setFoodCatalogForTests,
   setFoodCatalogProviderForTests,
 } from "../app/catalog/runtime.server";
-import { TestFoodCatalogProvider } from "../app/catalog/test-fixture.server";
+import { TEST_CATALOG_GENERATION, TestFoodCatalogProvider } from "../app/catalog/test-fixture.server";
 import {
   applicationOrigin,
   isProductionEnvironment,
@@ -91,12 +91,30 @@ test("catalog dispatches to the registered USDA provider only", async () => {
 
   await expect(catalog.search("yogurt")).resolves.toHaveLength(1);
   await expect(catalog.getFood("usda-fdc", "1001")).resolves.toMatchObject({ provider: "usda-fdc" });
+  // Open Food Facts is looked up live by barcode, which this catalog was not given.
   await expect(catalog.getFood("open-food-facts", "0034000470693")).rejects
     .toBeInstanceOf(CatalogUnknownProviderError);
-  await expect(catalog.getFood("unknown", "1")).rejects
+  await expect(catalog.lookupBarcode("0034000470693")).rejects
     .toBeInstanceOf(CatalogUnknownProviderError);
   await expect(new FoodCatalog([]).search("yogurt")).rejects
     .toBeInstanceOf(CatalogUnknownProviderError);
+});
+
+test("catalog looks Open Food Facts products up live by barcode through either read", async () => {
+  const usda = new TestFoodCatalogProvider();
+  const product = { ...(await usda.getFood("1001")), provider: "open-food-facts" as const, providerFoodId: "0034000470693" };
+  const lookups: string[] = [];
+  const catalog = new FoodCatalog([], {
+    async lookup(barcode) {
+      lookups.push(barcode);
+      return barcode === "0034000470693" ? product : { ...product, provider: "usda-fdc" };
+    },
+  });
+
+  await expect(catalog.lookupBarcode("0034000470693")).resolves.toEqual(product);
+  await expect(catalog.getFood("open-food-facts", "0034000470693")).resolves.toEqual(product);
+  await expect(catalog.lookupBarcode("12345670")).rejects.toBeInstanceOf(CatalogInvalidDataError);
+  expect(lookups).toEqual(["0034000470693", "0034000470693", "12345670"]);
 });
 
 test("catalog rejects conflicting registrations and provider identity mismatches", async () => {
@@ -177,6 +195,7 @@ describe("deterministic catalog fixture", () => {
       authoritativeBaseUnit: "g",
       barcode: "0012345678905",
       brand: "Example Dairy Co.",
+      catalogGeneration: TEST_CATALOG_GENERATION,
       dataType: "Branded",
       isSelectable: true,
       marketCountry: "United States",

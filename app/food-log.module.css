@@ -521,7 +521,6 @@
   font-size: 0.88rem;
 }
 
-.primaryButton,
 .secondaryButton {
   display: inline-flex;
   align-items: center;
@@ -537,12 +536,6 @@
   text-decoration: none;
 }
 
-.primaryButton {
-  color: var(--on-accent);
-  background: var(--green-dark);
-}
-
-.primaryButton:hover,
 .cameraButton:hover {
   background: var(--green-hover);
 }
@@ -586,11 +579,6 @@
   margin: 0;
 }
 
-.foodEntryMarker svg {
-  width: 1.15rem;
-  height: 1.15rem;
-}
-
 .entryList > article {
   position: relative;
   z-index: 1;
@@ -626,18 +614,6 @@
   font-size: 0.75rem;
   font-weight: 500;
   font-variant-numeric: tabular-nums;
-}
-
-.foodEntryMarker {
-  display: grid;
-  grid-column: 1;
-  grid-row: 1 / 3;
-  width: 2.5rem;
-  height: 2.5rem;
-  place-items: center;
-  border-radius: 0.8rem;
-  color: var(--green-strong);
-  background: var(--green-soft);
 }
 
 .foodEntryContent,
@@ -710,173 +686,6 @@
   background: var(--surface-soft);
 }
 
-.editorCopyMenuPopover button,
-.editorCopyMenuPopover a {
-  display: block;
-  width: 100%;
-  padding: 0.65rem 0.75rem;
-  border: 0;
-  border-radius: 0.45rem;
-  color: var(--green-strong);
-  background: transparent;
-  font: inherit;
-  font-size: 0.875rem;
-  font-weight: 600;
-  text-align: left;
-  text-decoration: none;
-  white-space: nowrap;
-  cursor: pointer;
-}
-
-.editorCopyMenuPopover button:hover,
-.editorCopyMenuPopover button:focus-visible,
-.editorCopyMenuPopover a:hover,
-.editorCopyMenuPopover a:focus-visible {
-  background: var(--surface-soft);
-}
-
-.editorCopyMenuPopover button:disabled {
-  color: var(--muted);
-  cursor: progress;
-}
-
-.copyFoodDialog {
-  width: min(100%, 34rem);
-}
-
-.copyCalendar {
-  margin-top: 1rem;
-  overflow: hidden;
-  border: 1px solid var(--rule);
-  border-radius: 1rem;
-}
-
-.copyDestination {
-  display: grid;
-  gap: 0.2rem;
-  margin-top: 1rem;
-  padding: 0.8rem;
-  border-radius: 0.75rem;
-  background: var(--surface-soft);
-}
-
-.copyDestination span {
-  color: var(--muted);
-  font-size: 0.75rem;
-  font-weight: 600;
-  text-transform: uppercase;
-}
-
-.copyDestination strong {
-  font-size: 0.9rem;
-}
-
-.copyActions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 0.6rem;
-  margin-top: 1rem;
-}
-
-.copyActions a {
-  text-decoration: none;
-}
-
-.pendingFoodEntryCard {
-  cursor: progress;
-}
-
-.pendingFoodEntryCard::after {
-  color: transparent;
-  content: "";
-}
-
-.pendingTime,
-.pendingEntryMarker,
-.pendingEntryLine,
-.pendingEntryLineShort,
-.pendingEntryEnergy,
-.skeletonBackLink,
-.skeletonChip,
-.skeletonTitle,
-.skeletonText,
-.skeletonNote,
-.skeletonField,
-.skeletonNutrition,
-.skeletonActions > span {
-  background: linear-gradient(
-    100deg,
-    var(--surface-muted) 20%,
-    var(--rule) 38%,
-    var(--surface-muted) 56%
-  );
-  background-size: 300% 100%;
-  animation: skeleton-shimmer 1.35s ease-in-out infinite;
-}
-
-.pendingTime {
-  grid-column: 2;
-  grid-row: 1;
-  width: 2.8rem;
-  height: 0.6rem;
-  border-radius: 999px;
-}
-
-.pendingEntryMarker {
-  grid-column: 1;
-  grid-row: 1 / 3;
-  width: 2.6rem;
-  height: 2.6rem;
-  border-radius: 50%;
-}
-
-.pendingEntryContent {
-  grid-column: 2;
-  grid-row: 2;
-  align-self: center;
-  display: grid;
-  min-width: 0;
-  align-content: center;
-}
-
-.pendingEntryContent strong {
-  overflow: hidden;
-  font-size: 0.92rem;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.pendingEntryLine,
-.pendingEntryLineShort {
-  display: block;
-  height: 0.45rem;
-  margin-top: 0.35rem;
-  border-radius: 999px;
-}
-
-.pendingEntryLine {
-  width: min(90%, 12rem);
-}
-
-.pendingEntryLineShort {
-  width: min(60%, 7rem);
-}
-
-.pendingEntryEnergy {
-  grid-column: 3;
-  grid-row: 1 / 3;
-  align-self: center;
-  width: 3.8rem;
-  height: 1rem;
-  border-radius: 999px;
-}
-
-@keyframes skeleton-shimmer {
-  to {
-    background-position-x: -150%;
-  }
-}
-
 .dialogBackdrop {
   position: fixed;
   z-index: 80;
@@ -925,100 +734,6 @@
   font-size: 0.875rem;
 }
 
-.editDialogHead {
-  position: sticky;
-  z-index: 5;
-  top: -1rem;
-  flex-wrap: wrap;
-  align-items: center;
-  padding-top: 1rem;
-  margin-top: -1rem;
-  background: var(--surface);
-}
-
-.editHeaderActions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.45rem;
-}
-
-.editIconButton {
-  display: grid;
-  width: 2.75rem;
-  height: 2.75rem;
-  place-items: center;
-  border: 1px solid var(--rule-strong);
-  border-radius: 0.7rem;
-  color: var(--ink);
-  background: var(--surface);
-  cursor: pointer;
-  text-decoration: none;
-}
-
-.editIconButton svg {
-  width: 1.25rem;
-  height: 1.25rem;
-}
-
-.editIconButton:hover,
-.editIconButton:focus-visible,
-.editIconButton[aria-expanded="true"] {
-  background: var(--surface-soft);
-}
-
-.editDeleteButton {
-  border-color: var(--danger-border);
-  color: var(--danger);
-}
-
-.editSaveButton {
-  border-color: var(--green);
-  color: var(--on-accent);
-  background: var(--green-dark);
-}
-
-.editSaveButton:hover,
-.editSaveButton:focus-visible {
-  background: var(--green-hover);
-}
-
-.editHeaderActions button:disabled {
-  cursor: wait;
-  opacity: 0.65;
-}
-
-.editorCopyMenu {
-  position: relative;
-}
-
-.editorCopyMenuPopover {
-  position: absolute;
-  z-index: 6;
-  top: calc(100% + 0.35rem);
-  left: 0;
-  min-width: 11rem;
-  padding: 0.35rem;
-  border: 1px solid var(--rule-strong);
-  border-radius: 0.65rem;
-  background: var(--surface);
-  box-shadow: 0 0.75rem 2rem rgb(0 0 0 / 16%);
-}
-
-.dialogChip,
-.catalogType {
-  display: inline-flex;
-  margin-left: 0.5rem;
-  padding: 0.15rem 0.55rem;
-  border: 1px solid var(--rule);
-  border-radius: 0.4rem;
-  color: var(--ink-2);
-  background: transparent;
-  font-size: 0.75rem;
-  font-weight: 500;
-  vertical-align: middle;
-}
-
 .dialogClose {
   display: grid;
   flex: 0 0 auto;
@@ -1032,57 +747,6 @@
   font-size: 1.5rem;
   line-height: 1;
   text-decoration: none;
-}
-
-.searchForm {
-  margin-top: 1rem;
-}
-
-.searchForm > label,
-.stackedField > span {
-  display: block;
-  margin-bottom: 0.4rem;
-  font-size: 0.875rem;
-  font-weight: 600;
-}
-
-.searchControl {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 0.45rem;
-}
-
-.searchControl input,
-.stackedField input,
-.stackedField select,
-.readOnlyMeasurement {
-  width: 100%;
-  min-height: 3rem;
-  padding: 0.65rem 0.75rem;
-  border: 1px solid var(--rule-strong);
-  border-radius: 0.7rem;
-  color: var(--ink);
-  background: var(--ground);
-  font: inherit;
-}
-
-.readOnlyMeasurement {
-  display: flex;
-  align-items: center;
-  font-weight: 500;
-}
-
-.catalogState {
-  margin-top: 1rem;
-  padding: 2rem 1rem;
-  border: 1px dashed var(--rule-strong);
-  border-radius: 1rem;
-  text-align: center;
-}
-
-.catalogState h3,
-.catalogState p {
-  margin: 0;
 }
 
 .barcodeScanner {
@@ -1169,7 +833,6 @@
   margin-top: 0.65rem;
 }
 
-.barcodeScannerCameraControls .primaryButton:hover,
 .cameraButton:hover {
   background: var(--green-hover);
 }
@@ -1187,293 +850,6 @@
   background: var(--green-dark);
   font: inherit;
   font-weight: 600;
-}
-
-.catalogState p {
-  margin-top: 0.35rem;
-  color: var(--muted);
-  font-size: 0.875rem;
-}
-
-.foodDetailSkeleton {
-  cursor: progress;
-}
-
-.pendingLabel {
-  display: block;
-  margin-top: 0.9rem;
-  color: var(--muted);
-  font-size: 0.8rem;
-  font-weight: 600;
-}
-
-.skeletonBackLink,
-.skeletonChip,
-.skeletonTitle,
-.skeletonText,
-.skeletonField,
-.skeletonNutrition,
-.skeletonActions > span {
-  display: block;
-  border-radius: 999px;
-}
-
-.skeletonBackLink {
-  width: 7rem;
-  height: 0.65rem;
-  margin-top: 0.9rem;
-}
-
-.skeletonIdentity {
-  display: grid;
-  justify-items: start;
-  gap: 0.55rem;
-  padding: 1rem 0;
-}
-
-.skeletonChip {
-  width: 4.25rem;
-  height: 1.1rem;
-}
-
-.skeletonTitle {
-  width: min(72%, 18rem);
-  height: 1.3rem;
-}
-
-.skeletonText {
-  width: min(48%, 12rem);
-  height: 0.65rem;
-}
-
-.skeletonNote {
-  height: 4.3rem;
-  border-radius: 0.75rem;
-}
-
-.skeletonFieldGrid,
-.skeletonNutritionGrid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.75rem;
-  margin-top: 1rem;
-}
-
-.skeletonField {
-  height: 4.3rem;
-  border-radius: 0.7rem;
-}
-
-.skeletonNutritionGrid {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-}
-
-.skeletonNutrition {
-  height: 3.5rem;
-  border-radius: 0.7rem;
-}
-
-.skeletonActions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 0.6rem;
-  margin-top: 1rem;
-}
-
-.skeletonActions > span {
-  width: 7.5rem;
-  height: 2.75rem;
-  border-radius: 0.7rem;
-}
-
-.catalogResults {
-  margin-top: 1rem;
-  overflow: hidden;
-  border: 1px solid var(--rule);
-  border-radius: 1rem;
-}
-
-.catalogResults > :is(a, div) {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  min-height: 5rem;
-  padding: 0.75rem;
-  border-bottom: 1px solid var(--rule);
-  color: var(--ink);
-  text-decoration: none;
-}
-
-.catalogResults > :is(a, div):last-child {
-  border-bottom: 0;
-}
-
-.catalogResults > a:hover {
-  background: var(--surface-soft);
-}
-
-.catalogResults > div[aria-disabled="true"] {
-  background: var(--surface-soft);
-  opacity: 0.72;
-}
-
-.catalogResults strong,
-.catalogResults small {
-  display: block;
-}
-
-.catalogResults small {
-  margin-top: 0.2rem;
-  color: var(--muted);
-  font-size: 0.75rem;
-}
-
-.providerAttribution {
-  margin: 0.9rem 0 0;
-  color: var(--muted);
-  font-size: 0.75rem;
-  text-align: center;
-}
-
-.providerAttribution a,
-.backToResults {
-  color: var(--green-strong);
-  font-weight: 600;
-}
-
-.backToResults {
-  display: inline-flex;
-  margin: 0.9rem 0 0;
-  font-size: 0.82rem;
-}
-
-.foodIdentity {
-  padding: 1rem 0;
-}
-
-.foodIdentity .catalogType {
-  margin: 0;
-}
-
-.foodIdentity h3 {
-  margin: 0.45rem 0 0.2rem;
-  font-size: 1.2rem;
-}
-
-.foodIdentity p {
-  margin: 0;
-  color: var(--muted);
-  font-size: 0.8rem;
-}
-
-.snapshotNote {
-  display: flex;
-  gap: 0.7rem;
-  padding: 0.75rem;
-  border-radius: 0.75rem;
-  color: var(--green-strong);
-  background: var(--green-soft);
-}
-
-.snapshotNote p,
-.snapshotNote strong {
-  display: block;
-  margin: 0;
-}
-
-.snapshotNote p {
-  color: var(--ink-2);
-  font-size: 0.8rem;
-}
-
-.snapshotNote strong {
-  margin-bottom: 0.15rem;
-  color: var(--ink);
-}
-
-.logFoodForm {
-  margin-top: 1rem;
-}
-
-.foodDetailGrid {
-  display: grid;
-  grid-template-columns: minmax(0, 1.5fr) minmax(7rem, 0.5fr);
-  gap: 0.75rem;
-}
-
-.stackedField small {
-  display: block;
-  margin-top: 0.3rem;
-  color: var(--muted);
-  font-size: 0.75rem;
-}
-
-.nutritionPreview {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  margin: 1rem 0 0;
-  overflow: hidden;
-  border: 1px solid var(--rule);
-  border-radius: 0.75rem;
-}
-
-.nutritionPreview div {
-  padding: 0.65rem;
-  border-right: 1px solid var(--rule);
-  border-bottom: 1px solid var(--rule);
-}
-
-.nutritionPreview div:nth-child(2n) {
-  border-right: 0;
-}
-
-.nutritionPreview div:nth-last-child(-n + 2) {
-  border-bottom: 0;
-}
-
-.nutritionPreview dt {
-  color: var(--muted);
-  font-size: 0.75rem;
-}
-
-.nutritionPreview dd {
-  margin: 0.2rem 0 0;
-  font-size: 0.82rem;
-  font-weight: 600;
-}
-
-.dialogActions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 0.6rem;
-  margin-top: 1rem;
-}
-
-.editFoodForm {
-  margin-top: 1rem;
-}
-
-.editFoodForm fieldset {
-  display: grid;
-  gap: 1rem;
-  min-width: 0;
-  margin: 0;
-  padding: 0;
-  border: 0;
-}
-
-.editNutritionGrid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.75rem;
-}
-
-.authoritativeNote {
-  margin: 0;
-  color: var(--muted);
-  font-size: 0.8rem;
-  line-height: 1.45;
 }
 
 .dangerButton,
@@ -1512,19 +888,10 @@
   margin: 0;
 }
 
-.editDeleteConfirm {
-  margin-top: 0.75rem;
-}
-
 .deleteConfirm p {
   margin-top: 0.15rem;
   color: var(--danger-muted);
   font-size: 0.75rem;
-}
-
-.editFoodForm :is(button, input, select):disabled {
-  cursor: wait;
-  opacity: 0.65;
 }
 
 .catalogError {
@@ -1862,12 +1229,12 @@
   font-size: 0.75rem;
 }
 
-
 @media (max-width: 1119px) {
   /*
    * Phones and tablets dock the actions in an opaque bar above the tab bar,
    * so a button never sits on top of a visible, tappable entry.
    */
+
   .floatingUtilities {
     right: 0;
     bottom: calc(4.5rem + env(safe-area-inset-bottom));
@@ -1906,7 +1273,6 @@
   .dateRail {
     grid-template-columns: repeat(7, minmax(0, 1fr));
   }
-
 }
 
 @media (max-width: 420px) {
@@ -1934,8 +1300,7 @@
     padding-inline: 0.6rem;
   }
 
-  .foodEntryCard time,
-  .pendingTime {
+  .foodEntryCard time {
     font-size: 0.72rem;
   }
 
@@ -1945,31 +1310,6 @@
 
   .foodEntryEnergy {
     font-size: 1.1rem;
-  }
-
-  .pendingEntryContent strong {
-    font-size: 0.9rem;
-  }
-
-  .pendingEntryEnergy {
-    width: 2.8rem;
-  }
-
-  .foodDetailGrid {
-    grid-template-columns: 1fr;
-  }
-
-  .skeletonFieldGrid,
-  .skeletonNutritionGrid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .skeletonActions > span {
-    flex: 1;
-  }
-
-  .editNutritionGrid {
-    grid-template-columns: 1fr;
   }
 
   .deleteConfirm {
@@ -1982,11 +1322,6 @@
 }
 
 @media (max-width: 560px) {
-  .editHeaderActions {
-    justify-content: flex-end;
-    width: 100%;
-  }
-
   .floatingUtilities {
     align-items: center;
   }
@@ -2000,22 +1335,6 @@
 
   .foodEntryCard {
     transition: none;
-  }
-
-  .pendingTime,
-  .pendingEntryMarker,
-  .pendingEntryLine,
-  .pendingEntryLineShort,
-  .pendingEntryEnergy,
-  .skeletonBackLink,
-  .skeletonChip,
-  .skeletonTitle,
-  .skeletonText,
-  .skeletonNote,
-  .skeletonField,
-  .skeletonNutrition,
-  .skeletonActions > span {
-    animation: none;
   }
 }
 
@@ -2262,6 +1581,7 @@
 }
 
 /* On the accent-filled selected day, settled totals use the contrast color and over stays amber. */
+
 .selectedDate .dateCalories {
   width: 0.4rem;
   height: 0.4rem;
@@ -2274,6 +1594,7 @@
 }
 
 /* Incomplete days use a hollow marker so they never read as a settled total. */
+
 .dateCalories[data-calorie-tone="incomplete"],
 [data-calorie-tone="incomplete"] .calendarCalories {
   background: transparent;
@@ -2442,6 +1763,7 @@
 }
 
 /* An empty day carries its own actions on phones, where floating buttons would cover it. */
+
 .emptyDayActions {
   justify-content: center;
   flex-wrap: wrap;
@@ -2477,6 +1799,7 @@
 }
 
 /* Tablets center the tab bar in the page column; the action bar matches it and keeps natural button sizes. */
+
 @media (min-width: 760px) and (max-width: 1119px) {
   .floatingUtilities {
     right: auto;

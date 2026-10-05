@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties, type PointerEvent } from "react";
 import { Link, useNavigate } from "react-router";
 
-import { addLocalDays, formatLocalDate, getNearbyLocalDates } from "./food-log/date";
+import { addLocalDays, formatLocalDate, getNearbyLocalDates } from "./shared/local-date";
 import styles from "./food-log.module.css";
 
 export type DateRailDay = {

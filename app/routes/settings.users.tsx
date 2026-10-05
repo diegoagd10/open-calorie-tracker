@@ -14,7 +14,7 @@ import {
   registrationSchema,
   usernameSchema,
 } from "../auth/validation";
-import { formatLocalDate } from "../food-log/date";
+import { formatLocalDate } from "../shared/local-date";
 import shellStyles from "../food-log.module.css";
 import { SettingsDestinations, SettingsShell } from "../settings-destinations";
 import styles from "../users.module.css";

@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import type { Route } from "./+types/api.v1.water-events";
-import { apiError, authenticateApiRequest, privateHeaders } from "../../api-keys/rest.server";
+import { apiError, authenticateApiRequest, BodyTooLargeError, privateHeaders, readJson } from "../../api-keys/rest.server";
 import { getWaterEventService } from "../runtime.server";
 import type { CreateWaterEvent } from "../water-event.model";
 import {
@@ -22,46 +22,6 @@ const saveBodySchema = z.object({
   ounces: z.unknown(),
 });
 const deleteBodySchema = z.object({ eventIds: z.array(z.unknown()) });
-
-/** A save or delete body is a few hundred bytes; 16 KiB leaves room for client metadata. */
-const MAX_BODY_BYTES = 16 * 1024;
-
-/** Thrown while reading a body past `MAX_BODY_BYTES`, so nothing larger is buffered. */
-class BodyTooLargeError extends Error {}
-
-/** The body as text, counting received bytes rather than trusting `Content-Length`. */
-async function readBoundedText(request: Request): Promise<string> {
-  if (Number(request.headers.get("Content-Length") ?? 0) > MAX_BODY_BYTES) {
-    await request.body?.cancel();
-    throw new BodyTooLargeError();
-  }
-  const reader = request.body?.getReader();
-  if (!reader) return "";
-  const decoder = new TextDecoder();
-  let text = "";
-  let bytes = 0;
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    bytes += value.byteLength;
-    if (bytes > MAX_BODY_BYTES) {
-      await reader.cancel();
-      throw new BodyTooLargeError();
-    }
-    text += decoder.decode(value, { stream: true });
-  }
-  return text + decoder.decode();
-}
-
-/** The parsed JSON body, or undefined when it is not JSON. */
-async function readJson(request: Request): Promise<unknown> {
-  const text = await readBoundedText(request);
-  try {
-    return JSON.parse(text) as unknown;
-  } catch {
-    return undefined;
-  }
-}
 
 /** The Water Event rules' refusals as REST errors; anything else is unexpected. */
 function waterEventError(error: unknown): Response {

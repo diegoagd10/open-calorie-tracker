@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 
 import {
+  laterInstant,
   localDayRange,
   parseIsoDateTime,
   utcToZonedDateTime,
@@ -62,5 +63,13 @@ describe("zoned wall-clock conversion", () => {
       to: "2027-01-01T00:00:00.000Z",
     });
     expect(() => localDayRange("2026-13-01", "UTC")).toThrow("Invalid local date");
+  });
+});
+
+describe("laterInstant", () => {
+  test("is now when the clock moved past the previous version, otherwise one millisecond later", () => {
+    expect(laterInstant("2026-08-29T18:45:31.000Z", "2026-08-29T18:45:30.000Z")).toBe("2026-08-29T18:45:31.000Z");
+    expect(laterInstant("2026-08-29T18:45:30.000Z", "2026-08-29T18:45:30.000Z")).toBe("2026-08-29T18:45:30.001Z");
+    expect(laterInstant("2026-08-29T18:45:29.000Z", "2026-08-29T18:45:30.000Z")).toBe("2026-08-29T18:45:30.001Z");
   });
 });

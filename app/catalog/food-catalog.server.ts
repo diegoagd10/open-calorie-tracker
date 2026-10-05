@@ -70,13 +70,10 @@ export interface SearchFoodCatalogProvider extends FoodCatalogProvider {
   ): Promise<CatalogSearchResult[]>;
 }
 
-export interface FoodCatalogReader {
-  getFood(
-    provider: string,
-    providerFoodId: string,
-    context?: CatalogOperationContext,
-  ): Promise<CatalogFood>;
-}
+/** A live barcode lookup, such as the Open Food Facts client. */
+export type BarcodeLookup = {
+  lookup(barcode: string): Promise<CatalogFood>;
+};
 
 export class CatalogStaleReviewError extends Error {
   constructor() {
@@ -147,10 +144,15 @@ export type FoodCatalogRegistration = {
   service: SearchFoodCatalogProvider;
 };
 
-export class FoodCatalog implements FoodCatalogReader {
+/**
+ * Food discovery across providers: USDA search and detail from the installed catalog, and Open
+ * Food Facts products looked up live by barcode.
+ */
+export class FoodCatalog {
   readonly #providers = new Map<CatalogProviderId, SearchFoodCatalogProvider>();
+  readonly #barcodes: BarcodeLookup | undefined;
 
-  constructor(registrations: FoodCatalogRegistration[]) {
+  constructor(registrations: FoodCatalogRegistration[], barcodes?: BarcodeLookup) {
     for (const registration of registrations) {
       const existing = this.#providers.get(registration.provider);
       if (existing && existing !== registration.service) {
@@ -158,6 +160,7 @@ export class FoodCatalog implements FoodCatalogReader {
       }
       this.#providers.set(registration.provider, registration.service);
     }
+    this.#barcodes = barcodes;
   }
 
   async search(
@@ -173,15 +176,25 @@ export class FoodCatalog implements FoodCatalogReader {
     return results;
   }
 
+  /** One food's reviewable detail; an Open Food Facts food is looked up live by its barcode. */
   async getFood(
-    provider: string,
+    provider: CatalogProviderId,
     providerFoodId: string,
     context?: CatalogOperationContext,
   ): Promise<CatalogFood> {
-    const service = this.#providers.get(provider as CatalogProviderId);
+    if (provider === "open-food-facts") return this.lookupBarcode(providerFoodId);
+    const service = this.#providers.get(provider);
     if (!service) throw new CatalogUnknownProviderError();
     const food = await service.getFood(providerFoodId, context);
     if (food.provider !== provider) throw new CatalogInvalidDataError();
+    return food;
+  }
+
+  /** The current Open Food Facts product; its `catalogGeneration` fingerprints the product. */
+  async lookupBarcode(barcode: string): Promise<CatalogFood> {
+    if (!this.#barcodes) throw new CatalogUnknownProviderError();
+    const food = await this.#barcodes.lookup(barcode);
+    if (food.provider !== "open-food-facts") throw new CatalogInvalidDataError();
     return food;
   }
 }

@@ -9,12 +9,16 @@ import {
   type SearchFoodCatalogProvider,
 } from "./food-catalog.server";
 
+/** The catalog generation the fixture's foods are reviewed and saved under. */
+export const TEST_CATALOG_GENERATION = "00000000-0000-4000-8000-000000001001";
+
 function yogurt(): CatalogFood {
   return {
     authoritativeBaseQuantityMicrounits: 100_000_000,
     authoritativeBaseUnit: "g",
     barcode: "0012345678905",
     brand: "Example Dairy Co.",
+    catalogGeneration: TEST_CATALOG_GENERATION,
     dataType: "Branded",
     isSelectable: true,
     marketCountry: "United States",

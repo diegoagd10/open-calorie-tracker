@@ -8,7 +8,7 @@ import { serializeSessionCookie } from "../../app/auth/http.server";
 import { getAuthenticationService } from "../../app/auth/runtime.server";
 import { shutdownCredentialStorage } from "../../app/credentials/runtime.server";
 import { getApplicationDatabase, initializeApplicationDatabase, shutdownApplicationDatabase } from "../../app/database/runtime.server";
-import { getFoodEntryService } from "../../app/food-entry/runtime.server";
+import { getFoodEventService } from "../../app/food-event/runtime.server";
 import { loader as readDailyLog } from "../../app/routes/api.v1.daily-log";
 import { action as mcpAction, loader as mcpLoader } from "../../app/routes/mcp";
 import { action as keysAction, loader as keysLoader } from "../../app/routes/settings.api-keys";
@@ -93,9 +93,9 @@ beforeAll(async () => {
   reader = await account("mcp.reader");
   completeSetup(reader.id);
   const now = new Date("2026-08-31T16:00:00.000Z");
-  getFoodEntryService(now).logManual(reader.id, {
-    carbohydrateGrams: "60", energyKcal: "350.4", fatGrams: "6.25", fiberGrams: "8", foodLogDate: today,
-    idempotencyKey: "mcp-oatmeal", name: "Oatmeal", proteinGrams: "12", quantity: "1", sodiumMilligrams: "", sugarGrams: "10",
+  await getFoodEventService(now).save(reader.id, {
+    method: "manual", logDate: "2026-08-31T14:30:00.000Z", name: "Oatmeal", quantity: "1", saveAsFavorite: false,
+    nutrition: { carbohydrateGrams: "60", energyKcal: "350.4", fatGrams: "6.25", fiberGrams: "8", proteinGrams: "12", sugarGrams: "10" },
   });
   getWaterEventService(now).save(reader.id, { logDate: "2026-08-31T15:00:00Z", quantity: { ounces: "16" } });
   readerKey = (await createKey(reader, "Muse")).key;
@@ -139,14 +139,14 @@ test("get_daily_log summarizes today's Food Log by default", async () => {
     },
     water: { unit: "fl oz", consumed: 16, goal: 80, remaining: 64 },
     incompleteNutrients: ["sodium"],
-    foods: [{ name: "Oatmeal", provider: "manual", dataType: "User entered", energyKcal: 350, proteinG: 12, carbohydrateG: 60, fatG: 6.3, sodiumMg: null }],
+    foods: [{ logDate: "2026-08-31T14:30:00.000Z", name: "Oatmeal", provider: "manual", dataType: "User entered", energyKcal: 350, proteinG: 12, carbohydrateG: 60, fatG: 6.3, sodiumMg: null }],
   });
   const text = result.content.map((part) => part.text).join("\n");
   expect(text).toContain("2026-08-31");
   expect(text).toContain("350 of 2050 kcal");
   expect(text).toContain("16 of 80 fl oz");
   expect(text).toMatch(/sodium/iu);
-  expect(text).toContain("Oatmeal, Manual, 1 serving × 1: 350 kcal");
+  expect(text).toContain("- 10:30 Oatmeal, Manual, 1 serving × 1: 350 kcal");
 });
 
 test("get_daily_log reports water in fluid ounces, exact to three decimals", async () => {
@@ -293,7 +293,7 @@ test("tools are listed and callable only with their scope, and a key with no too
   const response = await mcpRequest(`Bearer ${key}`, { jsonrpc: "2.0", id: 1, method: "tools/list" });
   expect(response.status).toBe(403);
   expect(await response.json()).toEqual({ error: "insufficient_scope" });
-  expect(response.headers.get("WWW-Authenticate")).toContain('error="insufficient_scope", scope="daily-log:read water-events:write water-events:read"');
+  expect(response.headers.get("WWW-Authenticate")).toContain('error="insufficient_scope", scope="daily-log:read water-events:write water-events:read food-events:write food-events:read catalog:read"');
 });
 
 test("only POST carries MCP messages; there are no sessions or streams", async () => {

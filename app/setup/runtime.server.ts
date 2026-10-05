@@ -2,7 +2,7 @@ import { createDailyGoalService } from "../daily-goal/index.server";
 import type { ApplicationDatabaseClient } from "../database/database.server";
 import { getApplicationDatabase } from "../database/runtime.server";
 import { readUserTimeZone } from "../database/user-preferences.server";
-import { localDateAt } from "../food-log/date";
+import { localDateAt } from "../shared/local-date";
 import { SetupService } from "./setup.server";
 
 let setupService: SetupService | undefined;

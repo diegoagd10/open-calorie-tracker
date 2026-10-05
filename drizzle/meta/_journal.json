@@ -232,6 +232,13 @@
       "when": 1791150913060,
       "tag": "0032_remove_ai_photo_schema",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "6",
+      "when": 1791241569505,
+      "tag": "0033_food_events",
+      "breakpoints": true
     }
   ]
 }
