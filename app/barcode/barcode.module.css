@@ -53,7 +53,10 @@
   margin-top: 1rem;
 }
 
-/* Both choices stay side by side, even on the narrowest phones. */
+/*
+ * Both choices stay side by side, even on the narrowest phones: Cancel keeps its size and the
+ * longer link wraps inside its pill when the row runs out of room.
+ */
 .setupDialog .actions {
   flex-wrap: nowrap;
   justify-content: flex-end;
@@ -63,7 +66,18 @@
 .setupDialog .actions a {
   padding-inline: 0.95rem;
   font-size: 0.875rem;
+  line-height: 1.25;
+}
+
+.setupDialog .actions button {
+  flex-shrink: 0;
   white-space: nowrap;
+}
+
+.setupDialog .actions a {
+  min-width: 0;
+  justify-content: center;
+  text-align: center;
 }
 
 .actions button,

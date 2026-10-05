@@ -977,13 +977,24 @@ test("an administrator enables barcode lookup with a contact email that identifi
   const setup = page.getByRole("dialog", { name: "Barcode scanning is not enabled" });
   await expect(setup).toBeVisible();
 
-  // On a phone, the pop-up's two choices stay side by side, and the methods stack.
-  await page.setViewportSize({ width: 390, height: 844 });
-  const cancelBox = (await setup.getByRole("button", { name: "Cancel" }).boundingBox())!;
-  const continueBox = (await setup.getByRole("link", { name: "Go to Food Catalogs →" }).boundingBox())!;
-  expect(Math.abs(cancelBox.y - continueBox.y)).toBeLessThan(2);
-  expect(continueBox.x + continueBox.width).toBeLessThanOrEqual(390);
-  await page.screenshot({ path: testInfo.outputPath("admin-setup-popup-mobile.png") });
+  // On phones down to 320 px, the pop-up's two choices stay side by side, whole and inside the
+  // dialog, and the methods stack.
+  for (const width of [390, 320]) {
+    await page.setViewportSize({ width, height: 844 });
+    const dialogBox = (await setup.boundingBox())!;
+    const choices = [setup.getByRole("button", { name: "Cancel" }), setup.getByRole("link", { name: "Go to Food Catalogs →" })];
+    const [cancelBox, continueBox] = await Promise.all(choices.map(async (choice) => (await choice.boundingBox())!));
+    expect(Math.abs(cancelBox.y - continueBox.y)).toBeLessThan(2);
+    expect(cancelBox.x + cancelBox.width).toBeLessThanOrEqual(continueBox.x);
+    for (const box of [cancelBox, continueBox]) {
+      expect(box.x).toBeGreaterThanOrEqual(dialogBox.x);
+      expect(box.x + box.width).toBeLessThanOrEqual(dialogBox.x + dialogBox.width);
+    }
+    for (const choice of choices) {
+      expect(await choice.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+    }
+    await page.screenshot({ path: testInfo.outputPath(`admin-setup-popup-${width}.png`) });
+  }
   const stackedTops = await methods.evaluateAll((elements) => elements.map((element) => Math.round(element.getBoundingClientRect().top)));
   expect(new Set(stackedTops).size).toBe(4);
   await page.setViewportSize({ width: 1280, height: 720 });
