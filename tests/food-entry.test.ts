@@ -16,8 +16,11 @@ import {
   CatalogNotInstalledError,
   CatalogFoodNotFoundError,
   CatalogInvalidDataError,
+  CatalogStaleReviewError,
   CatalogUnavailableError,
+  CatalogUnknownProviderError,
   CatalogUnsafeMeasurementError,
+  FoodCatalog,
 } from "../app/catalog/food-catalog.server";
 import {
   openApplicationDatabase,
@@ -40,6 +43,11 @@ import {
 import { scaleCatalogNutrient } from "../app/food-entry/snapshot.server";
 import { FoodLogService } from "../app/food-log/food-log.server";
 import { FutureFoodLogDateError, InvalidFoodLogDateError } from "../app/food-log/food-log.server";
+import {
+  BarcodeLookupUnavailableError,
+  createBarcodeService,
+} from "../app/barcode/index.server";
+import { exampleCerealProduct, fakeOffApi, type OffApiReply } from "./support/off-api";
 
 const temporaryDirectories: string[] = [];
 
@@ -1872,4 +1880,74 @@ test("manual decimal nutrition corrections preserve all units and later quantity
     client.delete(userPreferences).where(eq(userPreferences.userId, userId)).run();
     expect(service.logManual(userId, input).id).toBe(created.id);
   } finally { database.close(); }
+});
+
+async function barcodeFoodEntries(replies: Record<string, OffApiReply>) {
+  const database = await setupDatabase();
+  const client = database.getClient();
+  const userId = insertConfiguredUser(client, "barcode.entry.user");
+  const api = fakeOffApi(replies);
+  const barcode = createBarcodeService(client, api.fetch);
+  barcode.saveContact("family@example.com");
+  const service = new FoodEntryService(client, new FoodCatalog([]), () => new Date("2026-08-29T18:00:00.000Z"), barcode);
+  return { api, barcode, database, service, userId };
+}
+
+function barcodeLogInput(catalogGeneration: string | undefined, idempotencyKey = "barcode-entry") {
+  return {
+    catalogGeneration,
+    foodLogDate: "2026-08-29",
+    idempotencyKey,
+    provider: "open-food-facts",
+    providerFoodId: "0034000470693",
+    quantity: "2",
+    selectedMeasurementId: "serving",
+  };
+}
+
+test("an Open Food Facts product saves when it still matches the reviewed fingerprint, under its canonical code", async () => {
+  const { api, barcode, database, service, userId } = await barcodeFoodEntries({ "034000470693": exampleCerealProduct, "0034000470693": exampleCerealProduct });
+  const reviewed = await barcode.lookup("034000470693");
+
+  const created = await service.log(userId, barcodeLogInput(reviewed.catalogGeneration));
+
+  expect(created).toMatchObject({
+    barcode: "0034000470693",
+    provider: "open-food-facts",
+    providerFoodId: "0034000470693",
+    energyMilliKcal: 360_000,
+    carbohydrateMilligrams: 48_000,
+    selectedMeasurementLabel: "1 serving (30 g)",
+  });
+  expect(api.requests.map((request) => request.url.pathname)).toEqual([
+    "/api/v3.5/product/034000470693",
+    "/api/v3.5/product/0034000470693",
+  ]);
+  database.close();
+});
+
+test("an Open Food Facts save refuses a product that changed or could not be verified, and never trusts the client", async () => {
+  let reply: OffApiReply = exampleCerealProduct;
+  const { barcode, database, service, userId } = await barcodeFoodEntries({ "0034000470693": () => reply instanceof Response ? reply : Response.json({ product: reply }) });
+  const reviewed = await barcode.lookup("0034000470693");
+
+  reply = { ...exampleCerealProduct, product_name: "Renamed cereal" };
+  await expect(service.log(userId, barcodeLogInput(reviewed.catalogGeneration, "barcode-changed"))).rejects.toBeInstanceOf(CatalogStaleReviewError);
+  await expect(service.log(userId, barcodeLogInput(undefined, "barcode-unreviewed"))).rejects.toBeInstanceOf(CatalogStaleReviewError);
+
+  reply = new Response("Too many requests", { status: 429 });
+  await expect(service.log(userId, barcodeLogInput(reviewed.catalogGeneration, "barcode-unavailable"))).rejects.toBeInstanceOf(BarcodeLookupUnavailableError);
+
+  await expect(service.log(userId, barcodeLogInput("not-a-fingerprint", "barcode-malformed"))).rejects.toBeInstanceOf(InvalidFoodEntryInputError);
+  expect(new FoodLogService(database.getClient(), () => new Date("2026-08-29T18:00:00.000Z")).read(userId, "2026-08-29")?.entries).toHaveLength(0);
+  database.close();
+});
+
+test("Open Food Facts saves need the barcode service", async () => {
+  const database = await setupDatabase();
+  const client = database.getClient();
+  const userId = insertConfiguredUser(client, "no.barcode.user");
+  const service = new FoodEntryService(client, new FoodCatalog([]), () => new Date("2026-08-29T18:00:00.000Z"));
+  await expect(service.log(userId, barcodeLogInput("0".repeat(64)))).rejects.toBeInstanceOf(CatalogUnknownProviderError);
+  database.close();
 });

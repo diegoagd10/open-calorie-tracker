@@ -6,13 +6,15 @@ import {
   CatalogInvalidDataError,
   CatalogStaleReviewError,
   CatalogNutritionUnavailableError,
+  CatalogUnknownProviderError,
   CatalogUnsafeMeasurementError,
   type CatalogFood,
   type CatalogMeasurement,
   type CatalogOperationContext,
   type FoodCatalogReader,
 } from "../catalog/food-catalog.server";
-import { isSupportedCommercialBarcode } from "../catalog/barcode";
+import { isSupportedCommercialBarcode } from "../barcode";
+import type { BarcodeService } from "../barcode/index.server";
 import type { ApplicationDatabaseClient } from "../database/database.server";
 import {
   insertSavedFood,
@@ -71,7 +73,8 @@ function copyKeyBelongsToEntry(key: string, entryId: number): boolean {
 
 function logFoodInputSchema() {
   return z.object({
-    catalogGeneration: z.string().uuid().optional(),
+    /** A USDA catalog generation UUID, or the SHA-256 fingerprint of an Open Food Facts product. */
+    catalogGeneration: z.union([z.uuid(), z.string().regex(/^[0-9a-f]{64}$/)]).optional(),
     foodLogDate: z.string(),
     idempotencyKey: idempotencyKeySchema.refine(
       (value) => !value.startsWith("copy:"),
@@ -569,15 +572,18 @@ export class FoodEntryService {
   readonly #database: ApplicationDatabaseClient;
   readonly #now: () => Date;
   readonly #catalog: FoodCatalogReader;
+  readonly #barcode: BarcodeService | undefined;
 
   constructor(
     database: ApplicationDatabaseClient,
     catalog: FoodCatalogReader,
     now: () => Date = () => new Date(),
+    barcode?: BarcodeService,
   ) {
     this.#database = database;
     this.#catalog = catalog;
     this.#now = now;
+    this.#barcode = barcode;
   }
 
   async log(
@@ -604,14 +610,16 @@ export class FoodEntryService {
     if (existing) return existing;
 
     this.#requireWritableDate(userId, parsed.data.foodLogDate);
-    const food = await this.#catalog.getFood(
-      parsed.data.provider,
-      parsed.data.providerFoodId,
-      {
-        requestId: context?.requestId ?? randomUUID(),
-        reviewedCatalogGeneration: parsed.data.catalogGeneration,
-      },
-    );
+    const food = parsed.data.provider === "open-food-facts"
+      ? await this.#barcodeFood(parsed.data.providerFoodId)
+      : await this.#catalog.getFood(
+        parsed.data.provider,
+        parsed.data.providerFoodId,
+        {
+          requestId: context?.requestId ?? randomUUID(),
+          reviewedCatalogGeneration: parsed.data.catalogGeneration,
+        },
+      );
     if (food.catalogGeneration !== parsed.data.catalogGeneration) throw new CatalogStaleReviewError();
     if (!food.isSelectable) throw new CatalogNutritionUnavailableError();
     const measurement = selectedCatalogMeasurement(
@@ -632,6 +640,12 @@ export class FoodEntryService {
       },
       this.#now(),
     );
+  }
+
+  /** The current Open Food Facts product; its fingerprint is compared with the reviewed one. */
+  #barcodeFood(barcode: string): Promise<CatalogFood> {
+    if (!this.#barcode) throw new CatalogUnknownProviderError();
+    return this.#barcode.lookup(barcode);
   }
 
   logManual(userId: number, input: LogManualFoodInput) {

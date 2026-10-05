@@ -15,7 +15,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 
 import { requestHttp, waitForHttpResponse } from "./support/http";
-import { offArchive, offWithBasis, offJsonlArchive } from "./support/off-archive";
+import { foundationArchive } from "./support/foundation-archive";
 
 const executeFile = promisify(execFile);
 const temporaryDirectories: string[] = [];
@@ -171,12 +171,12 @@ test("the Tunnel listener resolves HTTPS mutations without trusting forwarded pr
   expect(await response.text()).toContain("CSRF token rejected.");
 });
 
-test.each(["csv", "jsonl"])("the compiled OFF command imports %s through the running application", async format => {
+test("the compiled USDA command imports through the running application", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "calory-command-"));
   temporaryDirectories.push(directory);
   const catalogDirectory = path.join(directory, "catalogs");
-  const archivePath = path.join(directory, `products.${format}.gz`);
-  await writeFile(archivePath, format === "csv" ? offArchive([offWithBasis("100g")]) : offJsonlArchive([{ code: "0643843715887", product_name: "Native serving", nutriments: { "energy-kcal_serving": 150, proteins_serving: 30 } }]));
+  const archivePath = path.join(directory, "foundation.zip");
+  await writeFile(archivePath, await foundationArchive());
   const port = await availablePort();
   const environment = {
     ...process.env,
@@ -184,9 +184,6 @@ test.each(["csv", "jsonl"])("the compiled OFF command imports %s through the run
     CATALOG_DIRECTORY: catalogDirectory,
     DATABASE_PATH: path.join(directory, "application.sqlite"),
     NODE_ENV: "production",
-    OFF_CATALOG_MAX_DATABASE_BYTES: String(16 * 1024 * 1024),
-    OFF_CATALOG_MAX_EXPANDED_BYTES: String(16 * 1024 * 1024),
-    OFF_CATALOG_MAX_UPLOAD_BYTES: String(2 * 1024 * 1024),
     PORT: String(port),
     TRUST_PROXY: "172.30.0.0/16",
   };
@@ -195,12 +192,12 @@ test.each(["csv", "jsonl"])("the compiled OFF command imports %s through the run
 
   const imported = await executeFile(
     "pnpm",
-    ["catalog:import:off", "--", archivePath],
+    ["catalog:import:usda", "--", archivePath],
     { cwd: process.cwd(), env: environment },
   );
 
   expect(imported.stderr).not.toContain("import failed");
-  expect(imported.stdout).toContain("Open Food Facts: succeeded; 1 foods installed");
+  expect(imported.stdout).toContain("USDA Foundation: succeeded; 4 foods installed");
   running.child.kill("SIGTERM");
   await waitForExit(running.child);
 });

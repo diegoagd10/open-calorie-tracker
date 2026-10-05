@@ -4,7 +4,7 @@ import path from "node:path";
 
 import { eq, sql } from "drizzle-orm";
 import { RouterContextProvider } from "react-router";
-import { afterAll, beforeAll, expect, test } from "vitest";
+import { afterAll, beforeAll, expect, test, vi } from "vitest";
 
 import { serializeSessionCookie } from "../../app/auth/http.server";
 import { getAuthenticationService } from "../../app/auth/runtime.server";
@@ -12,12 +12,9 @@ import {
   CatalogFoodNotFoundError,
   CatalogStaleReviewError,
   CatalogNutritionUnavailableError,
-  FoodCatalog,
 } from "../../app/catalog/food-catalog.server";
-import {
-  setFoodCatalogForTests,
-  setFoodCatalogProviderForTests,
-} from "../../app/catalog/runtime.server";
+import { setFoodCatalogProviderForTests } from "../../app/catalog/runtime.server";
+import { getBarcodeService } from "../../app/barcode/index.server";
 import {
   getApplicationDatabase,
   initializeApplicationDatabase,
@@ -37,6 +34,7 @@ import { completeTestSetup } from "../support/setup";
 import { getWaterEventService } from "../../app/water-event/runtime.server";
 import { action as waterAction } from "../../app/water-event/routes/web";
 import { seedAuthenticatedAccount } from "../support/authentication";
+import { exampleCerealProduct, fakeOffApi, offApiFixtureReplies } from "../support/off-api";
 
 const origin = "http://localhost:3000";
 const instant = "2026-08-31T16:00:00.000Z";
@@ -48,6 +46,9 @@ let incompleteCookie: string;
 let incompleteCsrfToken: string;
 let otherUserId: number;
 let userId: number;
+let memberCookie: string;
+const offReplies = offApiFixtureReplies();
+const offApi = fakeOffApi(offReplies);
 
 function routeArgs(request: Request) {
   return {
@@ -59,10 +60,10 @@ function routeArgs(request: Request) {
   };
 }
 
-function get(pathname = "/") {
+function get(pathname = "/", sessionCookie = cookie) {
   return new Request(`${origin}${pathname}`, {
     headers: {
-      Cookie: cookie,
+      Cookie: sessionCookie,
       "X-Test-Food-Log-Now": instant,
       "x-open-calory-request-id": "home-route-request",
     },
@@ -98,8 +99,8 @@ function post(
   });
 }
 
-async function load(pathname = "/") {
-  const result = await homeLoader(routeArgs(get(pathname)));
+async function load(pathname = "/", sessionCookie = cookie) {
+  const result = await homeLoader(routeArgs(get(pathname, sessionCookie)));
   expect(result).not.toBeInstanceOf(Response);
   if (result instanceof Response) throw new Error(`home redirected from ${pathname}`);
   return result;
@@ -141,9 +142,23 @@ beforeAll(async () => {
   incompleteCookie = serializeSessionCookie(incomplete).split(";", 1)[0];
   incompleteCsrfToken = incomplete.csrfToken;
   otherUserId = incomplete.user.id;
+
+  const member = await seedAuthenticatedAccount(
+    getAuthenticationService(),
+    getApplicationDatabase().getClient(),
+    "home.member",
+    "correct horse battery staple",
+    "203.0.113.232",
+  );
+  memberCookie = serializeSessionCookie(member).split(";", 1)[0];
+  completeTestSetup(member.user.id);
+
+  vi.stubGlobal("fetch", offApi.fetch);
+  getBarcodeService().saveContact("family@example.com");
 });
 
 afterAll(async () => {
+  vi.unstubAllGlobals();
   shutdownCredentialStorage();
   shutdownApplicationDatabase();
   await rm(temporaryDirectory, { force: true, recursive: true });
@@ -428,24 +443,27 @@ test("home loader exposes barcode lookup without creating a Food Entry", async (
   expect(found.data.catalog).toMatchObject({
     barcode: "034000470693",
     food: {
-      authoritativeBaseUnit: "serving",
+      authoritativeBaseUnit: "g",
       barcode: "0034000470693",
+      catalogGeneration: expect.stringMatching(/^[0-9a-f]{64}$/) as unknown,
       name: "Example cereal",
       provider: "open-food-facts",
       providerFoodId: "0034000470693",
-      authoritativeBaseQuantityMicrounits: 1_000_000,
+      authoritativeBaseQuantityMicrounits: 30_000_000,
       brand: "Example Foods",
       dataType: "Open Food Facts",
       isSelectable: true,
       marketCountry: "United States",
-      measurementSummary: "1 serving",
+      measurementSummary: "1 serving (30 g)",
       measurements: [
         {
-          baseQuantityMicrounits: 1_000_000,
+          baseQuantityMicrounits: 30_000_000,
           id: "serving",
-          label: "1 serving",
-          unit: "serving",
+          label: "1 serving (30 g)",
+          unit: "g",
         },
+        { baseQuantityMicrounits: 1_000_000, id: "g", label: "1 g", unit: "g" },
+        { baseQuantityMicrounits: 100_000_000, id: "100g", label: "100 g", unit: "g" },
       ],
       nutritionPerAuthoritativeBase: {
         carbohydrateMilligrams: { amount: 24, fixedPointMultiplier: 1_000 },
@@ -470,12 +488,10 @@ test("home loader exposes barcode lookup without creating a Food Entry", async (
   expect(getFoodLogService().read(1, today)?.entries).toHaveLength(0);
 
   for (const [barcode, status, title, message] of [
-    ["0000000000000", 503, "Open Food Facts is not installed", "Food Catalogs"],
     ["0000000000001", 404, "Product not found", "another code"],
-    ["0000000000002", 422, "Nutrition unavailable", "calculation basis"],
-    ["0000000000004", 503, "Open Food Facts is unavailable", "Retry"],
-    ["0000000000005", 500, "Open Food Facts catalog data could not be used", "could not be used safely"],
-    ["0000000000007", 422, "Measurement unavailable", "selected supported measurement"],
+    ["0000000000002", 404, "Product not found", "log it manually"],
+    ["0000000000004", 503, "Open Food Facts isn't responding", "Try again or log it manually."],
+    ["0000000000005", 503, "Open Food Facts isn't responding", "Try again or log it manually."],
   ] as const) {
     const result = await load(`/?food=barcode&barcode=${barcode}`);
     expect(result.init?.status).toBe(status);
@@ -575,29 +591,27 @@ test("home passes request correlation to the catalog and propagates unknown fail
   }
 });
 
-test("home propagates an unexpected barcode provider failure", async () => {
-  const unexpected = new Error("unexpected barcode adapter failure");
-  setFoodCatalogForTests(
-    new FoodCatalog([
-      {
-        capability: "barcode",
-        provider: "open-food-facts",
-        service: {
-          async getFood() {
-            throw unexpected;
-          },
-          async lookupBarcode() {
-            throw unexpected;
-          },
-        },
-      },
-    ]),
-  );
-  const failure = await homeLoader(
-    routeArgs(get("/?food=barcode&barcode=034000470693")) as never,
-  ).catch((error: unknown) => error);
-  expect(failure).toBe(unexpected);
-  setFoodCatalogProviderForTests(undefined);
+test("Scan barcode is offered once a contact is set, set up by administrators and hidden from members until then", async () => {
+  expect((await load("/?food=choose")).data.barcodeLookup).toBe("enabled");
+  expect((await load("/?food=choose", memberCookie)).data.barcodeLookup).toBe("enabled");
+
+  getBarcodeService().removeContact();
+  try {
+    expect((await load("/?food=choose")).data.barcodeLookup).toBe("admin-setup");
+    expect((await load("/?food=choose", memberCookie)).data.barcodeLookup).toBe("hidden");
+    const requests = offApi.requests.length;
+    for (const sessionCookie of [cookie, memberCookie]) {
+      for (const pathname of ["/?food=barcode", "/?food=barcode&barcode=034000470693"]) {
+        expectRedirect(await homeLoader(routeArgs(get(`${pathname}&date=${today}`, sessionCookie))), `/?date=${today}&food=choose`);
+      }
+    }
+    const detail = await load("/?food=0034000470693&provider=open-food-facts");
+    expect(detail.init?.status).toBe(503);
+    expect(detail.data.catalog).toMatchObject({ mode: "barcode", title: "Barcode lookup isn't configured" });
+    expect(offApi.requests).toHaveLength(requests);
+  } finally {
+    getBarcodeService().saveContact("family@example.com");
+  }
 });
 
 test("home actions enforce security, request shape, and writable dates", async () => {
@@ -890,9 +904,11 @@ test("home food actions log, edit, detect conflicts, delete, and map catalog fai
     init: { status: 400 },
   });
 
+  const reviewed = await getBarcodeService().lookup("034000470693");
   const openFoodFacts = await homeAction(
     routeArgs(
       post({
+        catalogGeneration: reviewed.catalogGeneration!,
         carbohydrateGrams: "999999",
         energyKcal: "999999",
         idempotencyKey: "off-route-success",
@@ -909,6 +925,7 @@ test("home food actions log, edit, detect conflicts, delete, and map catalog fai
   const repeatedOpenFoodFacts = await homeAction(
     routeArgs(
       post({
+        catalogGeneration: reviewed.catalogGeneration!,
         idempotencyKey: "off-route-success",
         intent: "log-food",
         provider: "open-food-facts",
@@ -930,20 +947,20 @@ test("home food actions log, edit, detect conflicts, delete, and map catalog fai
     name: "Example cereal",
     proteinMilligrams: null,
     quantityMicrounits: 500_000,
-    selectedMeasurementLabel: "1 serving",
+    selectedMeasurementLabel: "1 serving (30 g)",
   });
 
-  for (const [providerFoodId, status] of [
-    ["0000000000000", 503],
-    ["0000000000001", 404],
-    ["0000000000002", 422],
-    ["0000000000004", 503],
-    ["0000000000005", 500],
-    ["0000000000007", 422],
+  for (const [providerFoodId, status, message] of [
+    ["0000000000001", 404, "Product not found"],
+    ["0000000000002", 404, "Product not found"],
+    ["0000000000004", 503, "Try again or log it manually."],
+    ["0000000000005", 503, "Try again or log it manually."],
+    ["0034000470693", 409, "The product changed on Open Food Facts. Review it again before saving."],
   ] as const) {
     const failedConfirmation = await homeAction(
       routeArgs(
         post({
+          catalogGeneration: "0".repeat(64),
           idempotencyKey: `off-confirmation-${providerFoodId}`,
           intent: "log-food",
           provider: "open-food-facts",
@@ -954,9 +971,50 @@ test("home food actions log, edit, detect conflicts, delete, and map catalog fai
       ),
     );
     expect(failedConfirmation).toMatchObject({
-      data: { tone: "error" },
+      data: { message: expect.stringContaining(message) as unknown, tone: "error" },
       init: { status },
     });
+  }
+
+  offReplies["0034000470693"] = { ...exampleCerealProduct, nutrition: { input_sets: [{ ...exampleCerealProduct.nutrition.input_sets[0], per_quantity: 40 }] } };
+  try {
+    const changed = await homeAction(
+      routeArgs(
+        post({
+          catalogGeneration: reviewed.catalogGeneration!,
+          idempotencyKey: "off-changed-after-review",
+          intent: "log-food",
+          provider: "open-food-facts",
+          providerFoodId: "0034000470693",
+          quantity: "1",
+          selectedMeasurementId: "serving",
+        }),
+      ),
+    );
+    expect(changed).toMatchObject({ data: { message: "The product changed on Open Food Facts. Review it again before saving." }, init: { status: 409 } });
+  } finally {
+    offReplies["0034000470693"] = exampleCerealProduct;
+  }
+
+  const conflicting = await getBarcodeService().lookup("0000000000007");
+  expect(conflicting).toMatchObject({ isSelectable: false, calculationUnavailableReason: "conflicting_nutrition_bases" });
+  for (const [fields, status, message] of [
+    [{ providerFoodId: "0000000000007", catalogGeneration: conflicting.catalogGeneration!, selectedMeasurementId: "serving" }, 422, "no usable nutrition"],
+    [{ providerFoodId: "0034000470693", catalogGeneration: reviewed.catalogGeneration!, selectedMeasurementId: "100ml" }, 422, "selected supported measurement"],
+    [{ providerFoodId: "034000470693", catalogGeneration: reviewed.catalogGeneration!, selectedMeasurementId: "serving" }, 500, "could not be used safely"],
+  ] as const) {
+    const refused = await homeAction(
+      routeArgs(
+        post({
+          ...fields,
+          idempotencyKey: `off-refused-${status}-${fields.providerFoodId}-${fields.selectedMeasurementId}`,
+          intent: "log-food",
+          provider: "open-food-facts",
+          quantity: "1",
+        }),
+      ),
+    );
+    expect(refused).toMatchObject({ data: { message: expect.stringContaining(message) as unknown, tone: "error" }, init: { status } });
   }
 
   const invalid = await homeAction(

@@ -21,6 +21,8 @@ import styles from "../../app/food-log.module.css";
 
 class TestElement {
   isConnected = true;
+  open = false;
+  showModal() { this.open = true; }
   offsetParent: object | null = {};
   tagName = "BUTTON";
   getAttribute() {
@@ -114,6 +116,7 @@ const baseFoodLog = {
 };
 
 const baseLoaderData = {
+  barcodeLookup: "enabled",
   calendar: undefined,
   catalog: undefined,
   copyDialog: undefined,
@@ -1073,6 +1076,38 @@ test("Add Food offers My foods, Search food, Scan barcode and Manual as a list o
   expect(allText(renderer)).not.toContain("Nothing changes in your Food Log until a later confirmation step.");
   expect(renderer.root.findAllByType("img")).toHaveLength(0);
   await act(async () => renderer.unmount());
+});
+
+test("without a barcode contact, members see no Scan barcode and administrators get a setup pop-up", async () => {
+  const member = await renderHome({ barcodeLookup: "hidden", catalog: { mode: "choose", query: "" } });
+  const memberMethods = member.root.findByProps({ "aria-label": "Add Food methods" });
+  expect(memberMethods.children.map(method => typeof method === "string" ? method : nodeText(method))).toEqual(["My foods", "Search food", "Manual"]);
+  expect(allText(member)).not.toMatch(/barcode/i);
+  await act(async () => member.unmount());
+
+  const admin = await renderHome({ barcodeLookup: "admin-setup", catalog: { mode: "choose", query: "" } });
+  const scan = admin.root.findByProps({ "aria-haspopup": "dialog" });
+  expect(scan.type).toBe("button");
+  expect(nodeText(scan)).toBe("Scan barcode");
+  expect(admin.root.findAll(node => node.props.href === "/?date=2026-08-31&food=barcode")).toHaveLength(0);
+  expect(admin.root.findAllByType("dialog")).toHaveLength(0);
+  await act(async () => (scan.props as { onClick: () => void }).onClick());
+  const popup = admin.root.findByType("dialog");
+  expect(lastNodeMock?.open).toBe(true);
+  expect(nodeText(popup)).toContain("Barcode scanning is not enabled");
+  expect(nodeText(popup)).toContain("Open Food Facts requires a contact email before this app can look up barcodes. Add one in Food Catalogs to enable scanning for every member.");
+  expect(popup.findByProps({ href: "/settings/catalogs" }).children.map(child => typeof child === "string" ? child : nodeText(child)).join("")).toBe("Go to Food Catalogs →");
+  const stopped = vi.fn();
+  (popup.props as { onKeyDown: (event: { stopPropagation: () => void }) => void }).onKeyDown({ stopPropagation: stopped });
+  expect(stopped).toHaveBeenCalled();
+  await act(async () => (popup.findByProps({ children: "Cancel" }).props as { onClick: () => void }).onClick());
+  expect(admin.root.findAllByType("dialog")).toHaveLength(0);
+  await act(async () => (admin.root.findByProps({ "aria-haspopup": "dialog" }).props as { onClick: () => void }).onClick());
+  const cancelEvent = { preventDefault: vi.fn() };
+  await act(async () => (admin.root.findByType("dialog").props as { onCancel: (event: typeof cancelEvent) => void }).onCancel(cancelEvent));
+  expect(cancelEvent.preventDefault).toHaveBeenCalled();
+  expect(admin.root.findAllByType("dialog")).toHaveLength(0);
+  await act(async () => admin.unmount());
 });
 
 test("manual Food Entry form keeps entered totals when quantity changes and restores invalid drafts", async () => {

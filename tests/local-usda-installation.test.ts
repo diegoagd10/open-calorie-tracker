@@ -8,7 +8,9 @@ import { pathToFileURL } from "node:url";
 import { afterEach, expect, test, vi } from "vitest";
 import { CatalogManagement, type CatalogImportJob, type CatalogManagementOptions } from "../app/catalog-management/catalog-management.server";
 import { LocalUsdaAdapter } from "../app/catalog/local-usda.server";
-import { TestFoodCatalogProvider, TestOpenFoodFactsProvider } from "../app/catalog/test-fixture.server";
+import { TestFoodCatalogProvider } from "../app/catalog/test-fixture.server";
+import { createBarcodeService } from "../app/barcode/index.server";
+import { fakeOffApi } from "./support/off-api";
 import { CatalogUnavailableError, FoodCatalog } from "../app/catalog/food-catalog.server";
 import { catalogGenerationIsReadable } from "../app/database/catalog-generation-validation.server";
 import { openApplicationDatabase } from "../app/database/database.server";
@@ -51,7 +53,7 @@ test("a fresh Foundation import stores only foods and their search index", async
   const generation = management.read().installed!.generation;
 
   expect(generationLayout(path.join(directory, `${generation}.sqlite`))).toEqual({ tables: ["foods", "names"], foodColumns: ["id", "published", "record"] });
-  expect(catalogGenerationIsReadable(directory, generation, "usda-fdc")).toBe(true);
+  expect(catalogGenerationIsReadable(directory, generation)).toBe(true);
 });
 
 test("a generation installed with capability and category tables still validates and searches without a reimport", async () => {
@@ -73,7 +75,7 @@ test("a generation installed with capability and category tables still validates
   `);
   earlier.close();
 
-  expect(catalogGenerationIsReadable(directory, generation, "usda-fdc")).toBe(true);
+  expect(catalogGenerationIsReadable(directory, generation)).toBe(true);
   await expect(catalog.search("broccoli")).resolves.toEqual([
     expect.objectContaining({ providerFoodId: "747447" }),
     expect.objectContaining({ providerFoodId: "321900" }),
@@ -90,7 +92,7 @@ test("an unreadable installed generation makes search unavailable", async () => 
   await chmod(filename, 0o600);
   await writeFile(filename, "corrupt generation");
 
-  expect(catalogGenerationIsReadable(directory, generation, "usda-fdc")).toBe(false);
+  expect(catalogGenerationIsReadable(directory, generation)).toBe(false);
   await expect(catalog.search("broccoli")).rejects.toBeInstanceOf(CatalogUnavailableError);
 });
 
@@ -204,7 +206,7 @@ test("restart restores the prior USDA catalog and personal entries before a succ
     installed: { ...previous, generation: replacementId, filename: job.filename },
     retiring: previous,
     job,
-  }, "usda-fdc");
+  });
 
   const restarted = new CatalogManagement(database.getClient(), {
     directory,
@@ -923,11 +925,16 @@ test("USDA and OFF history created before installation remains readable, editabl
   const { management, entries, database, userId } = await setup();
   const formerCatalog = new FoodCatalog([
     { provider: "usda-fdc", capability: "search", service: new TestFoodCatalogProvider() },
-    { provider: "open-food-facts", capability: "barcode", service: new TestOpenFoodFactsProvider() },
   ]);
-  const formerEntries = new FoodEntryService(database.getClient(), formerCatalog, () => new Date("2026-09-07T12:00:00.000Z"));
+  const formerApi = fakeOffApi({ "0012345678905": { code: "0012345678905", product_name: "Example cereal", nutrition: { input_sets: [{ source: "packaging", preparation: "as_sold", per: "serving", per_quantity: 30, per_unit: "g", nutrients: { "energy-kcal": { value: 180, unit: "kcal" } } }] } } });
+  const formerBarcode = createBarcodeService(database.getClient(), formerApi.fetch);
+  formerBarcode.saveContact("family@example.com");
+  const formerEntries = new FoodEntryService(database.getClient(), formerCatalog, () => new Date("2026-09-07T12:00:00.000Z"), formerBarcode);
   const oldUsda = await formerEntries.log(userId, { provider: "usda-fdc", providerFoodId: "1001", foodLogDate: "2026-09-06", idempotencyKey: "old-usda-snapshot", selectedMeasurementId: "base:g:100000000", quantity: "1" });
-  const oldOff = await formerEntries.log(userId, { provider: "open-food-facts", providerFoodId: "0012345678905", foodLogDate: "2026-09-06", idempotencyKey: "old-off-snapshot", selectedMeasurementId: "serving", quantity: "1" });
+  const reviewed = await formerBarcode.lookup("0012345678905");
+  const oldOff = await formerEntries.log(userId, { provider: "open-food-facts", providerFoodId: "0012345678905", catalogGeneration: reviewed.catalogGeneration, foodLogDate: "2026-09-06", idempotencyKey: "old-off-snapshot", selectedMeasurementId: "serving", quantity: "1" });
+  formerBarcode.removeContact();
+  const requestsBeforeHistory = formerApi.requests.length;
   expect(entries.read(userId, oldUsda.id).energyMilliKcal).toBe(59_000);
   await management.submitArchive({ filename: "foundation.zip", stream: Readable.from(await foundationArchive()) });
   await vi.waitFor(() => expect(management.read().busy).toBe(false));
@@ -940,6 +947,7 @@ test("USDA and OFF history created before installation remains readable, editabl
   }
   expect(entries.read(userId, oldUsda.id).energyMilliKcal).toBe(118_000);
   expect(entries.read(userId, oldOff.id).energyMilliKcal).toBe(360_000);
+  expect(formerApi.requests).toHaveLength(requestsBeforeHistory);
 });
 
 test("shutdown records interrupted work and a fresh management instance can retry", async () => {

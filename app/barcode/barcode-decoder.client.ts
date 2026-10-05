@@ -9,7 +9,7 @@ import {
   NotFoundException,
 } from "@zxing/library";
 
-import { isSupportedCommercialBarcode } from "./barcode";
+import { isSupportedCommercialBarcode } from "./barcode.utils";
 import type {
   BarcodeDecoder,
   BarcodeDecoderSession,

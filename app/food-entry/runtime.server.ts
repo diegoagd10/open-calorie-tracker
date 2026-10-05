@@ -1,3 +1,4 @@
+import { getBarcodeService } from "../barcode/index.server";
 import { getFoodCatalog } from "../catalog/runtime.server";
 import { getApplicationDatabase } from "../database/runtime.server";
 import { FoodEntryService } from "./food-entry.server";
@@ -21,12 +22,14 @@ export function getFoodEntryService(now?: Date): FoodEntryService {
       getApplicationDatabase().getClient(),
       getFoodCatalog(),
       () => new Date(now),
+      getBarcodeService(),
     );
   }
   foodEntryService ??= new FoodEntryService(
     getApplicationDatabase().getClient(),
     getFoodCatalog(),
     foodEntryClock(),
+    getBarcodeService(),
   );
   return foodEntryService;
 }

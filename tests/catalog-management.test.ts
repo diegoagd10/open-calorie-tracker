@@ -6,12 +6,10 @@ import { PassThrough, Readable } from "node:stream";
 import { afterEach, expect, test, vi } from "vitest";
 import BetterSqlite3 from "better-sqlite3";
 import { CatalogManagement, type CatalogImportJob, type CatalogManagementOptions, type FoundationReleaseMetadata } from "../app/catalog-management/catalog-management.server";
-import { LocalOpenFoodFactsAdapter } from "../app/catalog/local-off.server";
 import { LocalUsdaAdapter } from "../app/catalog/local-usda.server";
 import { openApplicationDatabase } from "../app/database/database.server";
-import { saveCatalogState, saveCatalogUpdateCheck } from "../app/database/catalog-state.server";
+import { saveCatalogState } from "../app/database/catalog-state.server";
 import { foundationArchive } from "./support/foundation-archive";
-import { offArchive, offWithBasis } from "./support/off-archive";
 
 vi.mock("node:fs/promises", async importOriginal => {
   const actual = await importOriginal<typeof import("node:fs/promises")>();
@@ -23,7 +21,7 @@ afterEach(async () => { vi.resetAllMocks(); for (const cleanup of cleanups.splic
 async function setup(options: Partial<CatalogManagementOptions> = {}, defaults = false) {
   const directory = await fs.mkdtemp(path.join(tmpdir(), "catalog-management-"));
   const database = openApplicationDatabase({ databasePath: path.join(directory, "app.sqlite"), migrationsFolder: path.resolve("drizzle") });
-  const settings = { directory, provider: "open-food-facts" as const, workerPath: path.resolve("app/catalog-management/import-worker.ts"), ...(defaults ? {} : { maxExpandedBytes: 10 * 1024 * 1024, maxUploadBytes: 1024 * 1024 }), ...options };
+  const settings = { directory, workerPath: path.resolve("app/catalog-management/import-worker.ts"), ...(defaults ? {} : { maxExpandedBytes: 10 * 1024 * 1024, maxUploadBytes: 1024 * 1024 }), ...options };
   const management = new CatalogManagement(database.getClient(), settings);
   cleanups.push(async () => { await management.shutdown(); database.close(); await fs.rm(directory, { recursive: true, force: true }); });
   return { management, directory, database, settings };
@@ -39,23 +37,23 @@ const officialRelease: FoundationReleaseMetadata = {
 };
 
 test.each([
-  ["off.zip", undefined], ["a".repeat(253) + ".gz", undefined], ["off.gz", 0], ["off.gz", -1], ["off.gz", 1.5], ["off.gz", Number.NaN], ["off.gz", 1025],
+  ["foundation.gz", undefined], ["a".repeat(252) + ".zip", undefined], ["foundation.zip", 0], ["foundation.zip", -1], ["foundation.zip", 1.5], ["foundation.zip", Number.NaN], ["foundation.zip", 1025],
 ] as const)("invalid upload metadata %# is rejected before claiming installation", async (filename, size) => {
   const { management } = await setup({ maxUploadBytes: 1024 });
-  await expect(management.submitArchive({ filename, size, stream: Readable.from("unused") })).rejects.toThrow(filename.endsWith(".gz") && filename.length <= 255 ? "Archive exceeds the configured upload limit or is empty." : "Choose a Open Food Facts .gz archive.");
+  await expect(management.submitArchive({ filename, size, stream: Readable.from("unused") })).rejects.toThrow(filename.endsWith(".zip") && filename.length <= 255 ? "Archive exceeds the configured upload limit or is empty." : "Choose a USDA .zip archive.");
   expect(management.read()).toEqual({ installed: null, job: null, busy: false });
 });
 
 test("boundary-sized uppercase uploads preserve metadata and remove private staging files", async () => {
-  const archive = offArchive([offWithBasis("serving")]);
+  const archive = await foundationArchive();
   const { management, directory } = await setup({ maxUploadBytes: archive.length });
-  const filename = "a".repeat(252) + ".GZ";
+  const filename = "a".repeat(251) + ".ZIP";
   await management.submitArchive({ filename, size: archive.length, stream: Readable.from([archive.subarray(0, 5), archive.subarray(5)]) });
   expect(management.read().job?.phase).toBe("queued");
   await finished(management);
   const state = management.read();
-  expect(state.installed).toMatchObject({ filename, sha256: createHash("sha256").update(archive).digest("hex"), foodCount: 1 });
-  expect(state.job).toMatchObject({ phase: "succeeded", filename, receivedBytes: archive.length, processedRecords: 1, importedRecords: 1, rejectedRecords: 0, error: null });
+  expect(state.installed).toMatchObject({ filename, sha256: createHash("sha256").update(archive).digest("hex"), foodCount: 4 });
+  expect(state.job).toMatchObject({ phase: "succeeded", filename, receivedBytes: archive.length, error: null });
   const databaseFile = await fs.stat(path.join(directory, `${state.installed!.generation}.sqlite`));
   expect(state.installed?.databaseBytes).toBe(databaseFile.size);
   expect(databaseFile.mode & 0o777).toBe(0o444);
@@ -68,7 +66,7 @@ test.each([
   [11, undefined, "Archive exceeds the configured upload limit."],
 ] as const)("failed upload %# reports the specific error and removes the archive", async (bytes, size, error) => {
   const { management, directory } = await setup({ maxUploadBytes: 10 });
-  await management.submitArchive({ filename: "off.gz", stream: Readable.from(Buffer.alloc(bytes)), size });
+  await management.submitArchive({ filename: "foundation.zip", stream: Readable.from(Buffer.alloc(bytes)), size });
   expect(management.read()).toMatchObject({ installed: null, busy: false, job: { phase: "failed", error } });
   expect((await fs.readdir(directory)).filter(name => name.startsWith(management.read().job!.id))).toEqual([]);
 });
@@ -76,15 +74,15 @@ test.each([
 test("stream errors are reported as upload failures and shutdown cancels an unfinished upload", async () => {
   const { management, directory } = await setup();
   const stream = new Readable({ read() { this.destroy(new Error("private stream error")); } });
-  await management.submitArchive({ filename: "off.gz", stream });
-  expect(management.read().job?.error).toBe("Open Food Facts upload failed. Check available disk space and upload the archive again.");
+  await management.submitArchive({ filename: "foundation.zip", stream });
+  expect(management.read().job?.error).toBe("USDA upload failed. Check available disk space and upload the archive again.");
   const pending = new PassThrough();
-  const receiving = management.submitArchive({ filename: "off.gz", stream: pending });
+  const receiving = management.submitArchive({ filename: "foundation.zip", stream: pending });
   pending.write("partial");
   await vi.waitFor(() => expect(management.read().job?.receivedBytes).toBe(7));
   expect(management.read().job).toMatchObject({ phase: "uploading", processedRecords: 0, exclusions: {}, error: null });
   await management.shutdown(); await receiving;
-  expect(management.read()).toMatchObject({ busy: false, installed: null, job: { phase: "interrupted", error: "Open Food Facts installation was interrupted by server shutdown. Upload the archive again." } });
+  expect(management.read()).toMatchObject({ busy: false, installed: null, job: { phase: "interrupted", error: "USDA installation was interrupted by server shutdown. Upload the archive again." } });
   expect((await fs.readdir(directory)).filter(name => name.startsWith(management.read().job!.id))).toEqual([]);
 });
 
@@ -92,79 +90,72 @@ test("disk preflight uses expanded reserve plus the advertised upload size", asy
   const { management } = await setup({ maxUploadBytes: 1000, maxExpandedBytes: 10000 });
   const real = await fs.statfs(tmpdir());
   vi.mocked(fs.statfs).mockResolvedValue({ ...real, bavail: 20009, bsize: 1 });
-  await management.submitArchive({ filename: "off.gz", size: 10, stream: Readable.from(Buffer.alloc(10)) });
-  expect(management.read().job?.error).toBe("Not enough disk space for Open Food Facts import. Free space and retry.");
+  await management.submitArchive({ filename: "foundation.zip", size: 10, stream: Readable.from(Buffer.alloc(10)) });
+  expect(management.read().job?.error).toBe("Not enough disk space for USDA import. Free space and retry.");
   vi.mocked(fs.statfs).mockResolvedValue({ ...real, bavail: 20010, bsize: 1 });
-  await management.submitArchive({ filename: "off.gz", size: 10, stream: Readable.from(Buffer.alloc(10)) });
+  await management.submitArchive({ filename: "foundation.zip", size: 10, stream: Readable.from(Buffer.alloc(10)) });
   await finished(management);
-  expect(management.read().job?.error).toBe("Corrupt OFF GZIP or malformed TSV/JSONL. Download the archive again.");
+  expect(management.read().job?.error).toBe("Invalid or corrupt Foundation CSV ZIP, or insufficient disk space. Verify the download and retry.");
 });
 
-test.each(["usda-fdc", "open-food-facts"] as const)("%s defaults reserve independent archive sizes", async provider => {
-  const { management } = await setup({ provider }, true);
+test("defaults reserve the expanded and upload archive sizes", async () => {
+  const { management } = await setup({}, true);
   const real = await fs.statfs(tmpdir());
-  const reserve = provider === "usda-fdc" ? 576 * 1024 ** 2 : 80 * 1024 ** 3;
+  const reserve = 576 * 1024 ** 2;
   vi.mocked(fs.statfs).mockResolvedValue({ ...real, bavail: reserve - 1, bsize: 1 });
-  await management.submitArchive({ filename: provider === "usda-fdc" ? "source.zip" : "source.gz", stream: Readable.from("test") });
-  expect(management.read().job?.error).toBe(`Not enough disk space for ${provider === "usda-fdc" ? "USDA" : "Open Food Facts"} import. Free space and retry.`);
+  await management.submitArchive({ filename: "source.zip", stream: Readable.from("test") });
+  expect(management.read().job?.error).toBe("Not enough disk space for USDA import. Free space and retry.");
   vi.mocked(fs.statfs).mockResolvedValue({ ...real, bavail: reserve, bsize: 1 });
-  await management.submitArchive({ filename: provider === "usda-fdc" ? "source.zip" : "source.gz", stream: Readable.from("test") });
+  await management.submitArchive({ filename: "source.zip", stream: Readable.from("test") });
   await finished(management);
-  expect(management.read().job?.error).toBe(provider === "usda-fdc" ? "Invalid or corrupt Foundation CSV ZIP, or insufficient disk space. Verify the download and retry." : "Corrupt OFF GZIP or malformed TSV/JSONL. Download the archive again.");
+  expect(management.read().job?.error).toBe("Invalid or corrupt Foundation CSV ZIP, or insufficient disk space. Verify the download and retry.");
 });
 
 test.each(["present", "missing"] as const)("restart marks an unfinished provider job interrupted when staging is %s, cleans up, and permits retry", async staging => {
   const { database, settings, directory } = await setup();
   const id = "interrupted-job";
-  const job = { id, operation: "install" as const, filename: "off.gz", phase: "importing" as const, receivedBytes: 100, processedRecords: 7, exclusions: {}, error: null, startedAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z" };
-  saveCatalogState(database.getClient(), { installed: null, job }, "open-food-facts");
-  await fs.writeFile(path.join(directory, `${id}.gz`), "partial");
+  const job = { id, operation: "install" as const, filename: "foundation.zip", phase: "importing" as const, receivedBytes: 100, processedRecords: 7, exclusions: {}, error: null, startedAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z" };
+  saveCatalogState(database.getClient(), { installed: null, job });
+  await fs.writeFile(path.join(directory, `${id}.zip`), "partial");
   await fs.writeFile(path.join(directory, `${id}.sqlite`), "partial database");
   await fs.writeFile(path.join(directory, `${id}.sqlite-journal`), "partial journal");
   if (staging === "present") await fs.mkdir(path.join(directory, `${id}.staging`));
   const recovered = new CatalogManagement(database.getClient(), settings);
-  expect(recovered.read()).toMatchObject({ installed: null, busy: false, job: { phase: "interrupted", processedRecords: 7, error: "Open Food Facts installation was interrupted by a server restart. Upload the archive again." } });
+  expect(recovered.read()).toMatchObject({ installed: null, busy: false, job: { phase: "interrupted", processedRecords: 7, error: "USDA installation was interrupted by a server restart. Upload the archive again." } });
   await vi.waitFor(async () => expect((await fs.readdir(directory)).filter(name => name.startsWith(id))).toEqual([]));
   expect(recovered.outcomes()[0]).toMatchObject({ phase: "interrupted", operation: "install" });
   const unchanged = new CatalogManagement(database.getClient(), settings);
   expect(unchanged.read()).toEqual(recovered.read());
-  await recovered.submitArchive({ filename: "retry.gz", stream: Readable.from(offArchive([offWithBasis("serving")])) });
+  await recovered.submitArchive({ filename: "retry.zip", stream: Readable.from(await foundationArchive()) });
   await finished(recovered);
-  expect(recovered.read()).toMatchObject({ installed: { filename: "retry.gz" }, job: { phase: "succeeded", error: null } });
+  expect(recovered.read()).toMatchObject({ installed: { filename: "retry.zip" }, job: { phase: "succeeded", error: null } });
 });
 
-test("startup removes abandoned generation artifacts without touching either active catalog or unrelated files", async () => {
-  const { management: usda, database, directory, settings } = await setup({ provider: "usda-fdc" });
+test("startup removes abandoned generation artifacts, including leftover OFF uploads, without touching the active catalog or unrelated files", async () => {
+  const { management: usda, database, directory, settings } = await setup();
   await usda.submitArchive({ filename: "foundation.zip", stream: Readable.from(await foundationArchive()) });
   await finished(usda);
-  const off = new CatalogManagement(database.getClient(), { ...settings, provider: "open-food-facts" });
-  cleanups.unshift(() => off.shutdown());
-  await off.submitArchive({ filename: "products.gz", stream: Readable.from(offArchive([offWithBasis("serving")])) });
-  await finished(off);
-  const activeFiles = [usda.read().installed!.generation, off.read().installed!.generation].map(generation => `${generation}.sqlite`);
+  const activeFile = `${usda.read().installed!.generation}.sqlite`;
   const abandoned = "00000000-0000-4000-8000-000000000099";
   const retiring = "00000000-0000-4000-8000-000000000097";
-  const inFlight = "00000000-0000-4000-8000-000000000098";
   await Promise.all([
     fs.writeFile(path.join(directory, `${abandoned}.sqlite`), "abandoned generation"),
     fs.writeFile(path.join(directory, `${abandoned}.sqlite-journal`), "abandoned journal"),
     fs.writeFile(path.join(directory, `${abandoned}.zip`), "abandoned upload"),
-    fs.writeFile(path.join(directory, `${abandoned}.gz`), "abandoned upload"),
+    fs.writeFile(path.join(directory, `${abandoned}.gz`), "abandoned OFF upload"),
     fs.mkdir(path.join(directory, `${abandoned}.staging`)),
     fs.writeFile(path.join(directory, `${retiring}.sqlite`), "protected retiring generation"),
-    fs.writeFile(path.join(directory, `${inFlight}.gz`), "protected in-flight upload"),
-    fs.writeFile(path.join(directory, `${inFlight}.sqlite`), "protected in-flight generation"),
-    fs.mkdir(path.join(directory, `${inFlight}.staging`)),
     fs.writeFile(path.join(directory, "operator-note.txt"), "keep me"),
     fs.writeFile(path.join(directory, `${abandoned}.sqlite.backup`), "keep me"),
     fs.writeFile(path.join(directory, `prefix-${abandoned}.sqlite`), "keep me"),
   ]);
-  const offInstalled = off.read().installed!;
+  const installed = usda.read().installed!;
+  await usda.shutdown();
   saveCatalogState(database.getClient(), {
-    installed: offInstalled,
-    retiring: { ...offInstalled, generation: retiring },
-    job: { ...off.read().job!, id: inFlight, phase: "importing" },
-  }, "open-food-facts");
+    installed,
+    retiring: { ...installed, generation: retiring },
+    job: usda.read().job,
+  });
 
   const restarted = new CatalogManagement(database.getClient(), settings);
   cleanups.unshift(() => restarted.shutdown());
@@ -173,18 +164,13 @@ test("startup removes abandoned generation artifacts without touching either act
   await restarted.shutdown();
 
   expect(await fs.readdir(directory)).toEqual(expect.arrayContaining([
-    ...activeFiles,
+    activeFile,
     `${retiring}.sqlite`,
-    `${inFlight}.gz`,
-    `${inFlight}.sqlite`,
-    `${inFlight}.staging`,
     `${abandoned}.sqlite.backup`,
     `prefix-${abandoned}.sqlite`,
     "app.sqlite",
     "operator-note.txt",
   ]));
-  await expect(restarted.withActiveGeneration(generation => generation)).resolves.toBe(usda.read().installed!.generation);
-  await expect(off.withActiveGeneration(generation => generation)).resolves.toBe(off.read().installed!.generation);
 });
 
 test("worker crashes and activation failures never install a generation", async () => {
@@ -192,14 +178,14 @@ test("worker crashes and activation failures never install a generation", async 
   const workerPath = path.join(directory, "crash.mjs");
   await fs.writeFile(workerPath, 'throw new Error("private worker error");');
   const crashing = new CatalogManagement(database.getClient(), { ...settings, workerPath });
-  await crashing.submitArchive({ filename: "off.gz", stream: Readable.from("bytes") });
+  await crashing.submitArchive({ filename: "foundation.zip", stream: Readable.from("bytes") });
   await finished(crashing);
-  expect(crashing.read().job?.error).toBe("Open Food Facts import worker failed. Check server storage and retry the upload.");
+  expect(crashing.read().job?.error).toBe("USDA import worker failed. Check server storage and retry the upload.");
   await crashing.shutdown();
   vi.mocked(fs.chmod).mockRejectedValue(new Error("private disk failure"));
-  await management.submitArchive({ filename: "off.gz", stream: Readable.from(offArchive([offWithBasis("serving")])) });
+  await management.submitArchive({ filename: "foundation.zip", stream: Readable.from(await foundationArchive()) });
   await finished(management);
-  expect(management.read()).toMatchObject({ installed: null, job: { phase: "failed", error: "Open Food Facts activation failed. Check server storage and retry the upload." } });
+  expect(management.read()).toMatchObject({ installed: null, job: { phase: "failed", error: "USDA activation failed. Check server storage and retry the upload." } });
   expect((await fs.readdir(directory)).filter(name => name.startsWith(management.read().job!.id))).toEqual([]);
 });
 
@@ -231,19 +217,17 @@ function activatingJob(id: string, filename = "replacement.zip"): CatalogImportJ
     exclusions: {}, error: null, startedAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z",
   };
 }
-type RecoveryProvider = "usda-fdc" | "open-food-facts";
-type BrokenReplacement = (input: { databaseBytes: number; path: string; provider: RecoveryProvider; sourcePath: string }) => Promise<void>;
-async function restartWithBrokenPublishedReplacement(provider: RecoveryProvider, breakReplacement: BrokenReplacement) {
-  const context = await setup({ provider });
-  const archive = provider === "usda-fdc" ? await foundationArchive() : offArchive([offWithBasis("serving")]);
-  const filename = provider === "usda-fdc" ? "foundation.zip" : "products.gz";
-  await context.management.submitArchive({ filename, stream: Readable.from(archive) });
+type BrokenReplacement = (input: { databaseBytes: number; path: string; sourcePath: string }) => Promise<void>;
+async function restartWithBrokenPublishedReplacement(breakReplacement: BrokenReplacement) {
+  const context = await setup();
+  const filename = "foundation.zip";
+  await context.management.submitArchive({ filename, stream: Readable.from(await foundationArchive()) });
   await finished(context.management);
   const previous = context.management.read().installed!;
   const replacementId = "00000000-0000-4000-8000-000000000009";
   const replacement = { ...previous, generation: replacementId, filename: `replacement${path.extname(filename)}` };
-  await breakReplacement({ databaseBytes: previous.databaseBytes!, path: path.join(context.directory, `${replacementId}.sqlite`), provider, sourcePath: path.join(context.directory, `${previous.generation}.sqlite`) });
-  saveCatalogState(context.database.getClient(), { installed: replacement, retiring: previous, job: activatingJob(replacementId, replacement.filename) }, provider);
+  await breakReplacement({ databaseBytes: previous.databaseBytes!, path: path.join(context.directory, `${replacementId}.sqlite`), sourcePath: path.join(context.directory, `${previous.generation}.sqlite`) });
+  saveCatalogState(context.database.getClient(), { installed: replacement, retiring: previous, job: activatingJob(replacementId, replacement.filename) });
   const restarted = new CatalogManagement(context.database.getClient(), context.settings);
   cleanups.unshift(() => restarted.shutdown());
   return { ...context, previous, restarted };
@@ -261,33 +245,33 @@ const brokenPublishedReplacements: [string, BrokenReplacement][] = [
     generation.exec("CREATE TABLE recovery_padding (value BLOB); INSERT INTO recovery_padding VALUES (zeroblob(65536))");
     generation.close();
   }],
-  ["unusable required records", async ({ path: replacementPath, provider, sourcePath }) => {
+  ["unusable required records", async ({ path: replacementPath, sourcePath }) => {
     await fs.copyFile(sourcePath, replacementPath);
     await fs.chmod(replacementPath, 0o600);
     const generation = new BetterSqlite3(replacementPath);
-    generation.exec(`DELETE FROM ${provider === "usda-fdc" ? "names" : "products"}`);
+    generation.exec("DELETE FROM names");
     generation.close();
   }],
 ];
 
 test("shutdown interrupts the live worker and removes its partial generation", async () => {
   const { management, directory } = await workerSetup(resultMessage);
-  await management.submitArchive({ filename: "off.gz", stream: Readable.from("archive") });
+  await management.submitArchive({ filename: "foundation.zip", stream: Readable.from("archive") });
   await vi.waitFor(() => expect(management.read().job?.processedRecords).toBe(7));
   expect(management.read().job?.exclusions).toEqual({ invalid_record: 2 });
   await management.shutdown();
-  expect(management.outcomes()).toMatchObject([{ provider: "open-food-facts", phase: "interrupted", installed: null, acknowledgedAt: null }]);
-  expect(management.read()).toMatchObject({ installed: null, busy: false, job: { phase: "interrupted", error: "Open Food Facts installation was interrupted by server shutdown. Upload the archive again." } });
+  expect(management.outcomes()).toMatchObject([{ provider: "usda-fdc", phase: "interrupted", installed: null, acknowledgedAt: null }]);
+  expect(management.read()).toMatchObject({ installed: null, busy: false, job: { phase: "interrupted", error: "USDA installation was interrupted by server shutdown. Upload the archive again." } });
   expect((await fs.readdir(directory)).filter(name => name.startsWith(management.read().job!.id))).toEqual([]);
 });
 
 test.each([
-  ["", "Open Food Facts import stopped before completion. Upload the archive again."],
-  [`${resultMessage} process.exitCode = 1;`, "Open Food Facts import stopped before completion. Upload the archive again."],
+  ["", "USDA import stopped before completion. Upload the archive again."],
+  [`${resultMessage} process.exitCode = 1;`, "USDA import stopped before completion. Upload the archive again."],
   [`parentPort.postMessage({error: "Source validation failed"}); ${resultMessage}`, "Source validation failed"],
 ] as const)("an incomplete, nonzero, or rejected worker outcome %# cannot activate a generation", async (ending, error) => {
   const { management, directory, release } = await workerSetup(ending);
-  await management.submitArchive({ filename: "off.gz", stream: Readable.from("archive") });
+  await management.submitArchive({ filename: "foundation.zip", stream: Readable.from("archive") });
   await release();
   await finished(management);
   expect(management.read()).toMatchObject({ installed: null, busy: false, job: { phase: "failed", error } });
@@ -296,30 +280,31 @@ test.each([
 
 test.each(["missing", "different", "interrupted"] as const)("a stale worker does not activate over a %s job", async change => {
   const { management, database, directory, release } = await workerSetup(resultMessage);
-  await management.submitArchive({ filename: "off.gz", stream: Readable.from("archive") });
+  await management.submitArchive({ filename: "foundation.zip", stream: Readable.from("archive") });
   await vi.waitFor(() => expect(management.read().job?.processedRecords).toBe(7));
   const job = management.read().job!;
-  saveCatalogState(database.getClient(), { installed: null, job: change === "missing" ? null : { ...job, id: change === "different" ? "new-job" : job.id, phase: "interrupted" } }, "open-food-facts");
+  saveCatalogState(database.getClient(), { installed: null, job: change === "missing" ? null : { ...job, id: change === "different" ? "new-job" : job.id, phase: "interrupted" } });
   await release();
-  await vi.waitFor(async () => { await expect(fs.access(path.join(directory, `${job.id}.gz`))).rejects.toMatchObject({ code: "ENOENT" }); });
+  await vi.waitFor(async () => { await expect(fs.access(path.join(directory, `${job.id}.zip`))).rejects.toMatchObject({ code: "ENOENT" }); });
   expect(management.read().installed).toBeNull();
 });
 
-test("installation claims prevent overlap and permit deliberate OFF reimport", async () => {
+test("installation claims prevent overlap and permit deliberate reimport", async () => {
   const { management } = await setup();
+  const archive = await foundationArchive();
   const pending = new PassThrough();
-  const upload = management.submitArchive({ filename: "off.gz", stream: pending });
-  await expect(management.submitArchive({ filename: "off.gz", stream: Readable.from("other") })).rejects.toThrow("A Open Food Facts installation is already running.");
-  pending.end(offArchive([offWithBasis("serving")])); await upload; await finished(management);
+  const upload = management.submitArchive({ filename: "foundation.zip", stream: pending });
+  await expect(management.submitArchive({ filename: "foundation.zip", stream: Readable.from("other") })).rejects.toThrow("A USDA installation is already running.");
+  pending.end(archive); await upload; await finished(management);
   const firstGeneration = management.read().installed?.generation;
-  await management.submitArchive({ filename: "off-reimport.gz", stream: Readable.from(offArchive([offWithBasis("serving")])) });
+  await management.submitArchive({ filename: "reimport.zip", stream: Readable.from(archive) });
   await finished(management);
-  expect(management.read()).toMatchObject({ installed: { filename: "off-reimport.gz" }, job: { phase: "succeeded" } });
+  expect(management.read()).toMatchObject({ installed: { filename: "reimport.zip" }, job: { phase: "succeeded" } });
   expect(management.read().installed?.generation).not.toBe(firstGeneration);
 });
 
 test("activation publishes the replacement to new readers before retiring the generation held by an in-flight reader", async () => {
-  const { management, directory } = await setup({ provider: "usda-fdc" });
+  const { management, directory } = await setup();
   const archive = await foundationArchive();
   await management.submitArchive({ filename: "foundation.zip", stream: Readable.from(archive) });
   await finished(management);
@@ -363,7 +348,7 @@ test("activation publishes the replacement to new readers before retiring the ge
 });
 
 test("restart completes an already-published activation handoff instead of interrupting the replacement", async () => {
-  const { management, directory, database, settings } = await setup({ provider: "usda-fdc" });
+  const { management, directory, database, settings } = await setup();
   const archive = await foundationArchive();
   await management.submitArchive({ filename: "foundation.zip", stream: Readable.from(archive) });
   await finished(management);
@@ -371,7 +356,7 @@ test("restart completes an already-published activation handoff instead of inter
   const replacement = { ...old, generation: "00000000-0000-4000-8000-000000000001", filename: "replacement.zip", databaseBytes: undefined };
   await fs.copyFile(path.join(directory, `${old.generation}.sqlite`), path.join(directory, `${replacement.generation}.sqlite`));
   const activating = { ...activatingJob(replacement.generation, replacement.filename), operation: "update" as const };
-  saveCatalogState(database.getClient(), { installed: replacement, retiring: old, job: activating }, "usda-fdc");
+  saveCatalogState(database.getClient(), { installed: replacement, retiring: old, job: activating });
 
   const restarted = new CatalogManagement(database.getClient(), settings);
   cleanups.unshift(() => restarted.shutdown());
@@ -388,7 +373,7 @@ test("restart completes an already-published activation handoff instead of inter
 });
 
 test("restart rejects an unconfirmed published generation when no previous catalog is available", async () => {
-  const { database, directory, settings } = await setup({ provider: "usda-fdc" });
+  const { database, directory, settings } = await setup();
   const replacementId = "00000000-0000-4000-8000-000000000013";
   const replacement = {
     generation: replacementId,
@@ -400,7 +385,7 @@ test("restart rejects an unconfirmed published generation when no previous catal
     publicationDateRange: { earliest: "2025-01-01", latest: "2026-01-01" },
   };
   await fs.writeFile(path.join(directory, `${replacementId}.sqlite`), "invalid catalog generation");
-  saveCatalogState(database.getClient(), { installed: replacement, job: activatingJob(replacementId, replacement.filename) }, "usda-fdc");
+  saveCatalogState(database.getClient(), { installed: replacement, job: activatingJob(replacementId, replacement.filename) });
 
   const restarted = new CatalogManagement(database.getClient(), settings);
   cleanups.unshift(() => restarted.shutdown());
@@ -417,43 +402,24 @@ test("restart rejects an unconfirmed published generation when no previous catal
   await expect(fs.access(path.join(directory, `${replacementId}.sqlite`))).rejects.toMatchObject({ code: "ENOENT" });
 });
 
-const recoveryProviders: { provider: RecoveryProvider; label: string; verify: (management: CatalogManagement, directory: string, generation: string) => Promise<void> }[] = [
-  {
-    provider: "usda-fdc",
-    label: "USDA",
-    verify: async (management, directory, generation) => {
-      await expect(new LocalUsdaAdapter(management, directory).search("egg")).resolves.toEqual(expect.arrayContaining([expect.objectContaining({ catalogGeneration: generation })]));
-    },
-  },
-  {
-    provider: "open-food-facts",
-    label: "Open Food Facts",
-    verify: async (management, directory, generation) => {
-      const catalog = new LocalOpenFoodFactsAdapter(management, directory);
-      await expect(catalog.lookupBarcode("0012345678905")).resolves.toMatchObject({ catalogGeneration: generation });
-    },
-  },
-];
-for (const { provider, label, verify } of recoveryProviders) {
-  test.each(brokenPublishedReplacements)(`${provider} restart restores the previous generation when the published replacement is %s`, async (_failure, breakReplacement) => {
-    const { previous, restarted, directory } = await restartWithBrokenPublishedReplacement(provider, breakReplacement);
+test.each(brokenPublishedReplacements)("restart restores the previous generation when the published replacement is %s", async (_failure, breakReplacement) => {
+  const { previous, restarted, directory } = await restartWithBrokenPublishedReplacement(breakReplacement);
 
-    expect(restarted.read()).toMatchObject({
-      installed: previous,
-      busy: false,
-      job: {
-        phase: "interrupted",
-        error: `${label} replacement could not be confirmed after restart. The previous catalog remains active. Upload the archive again.`,
-      },
-    });
-    expect(restarted.read().retiring).toBeUndefined();
-    await expect(fs.access(path.join(directory, `${previous.generation}.sqlite`))).resolves.toBeUndefined();
-    await verify(restarted, directory, previous.generation);
+  expect(restarted.read()).toMatchObject({
+    installed: previous,
+    busy: false,
+    job: {
+      phase: "interrupted",
+      error: "USDA replacement could not be confirmed after restart. The previous catalog remains active. Upload the archive again.",
+    },
   });
-}
+  expect(restarted.read().retiring).toBeUndefined();
+  await expect(fs.access(path.join(directory, `${previous.generation}.sqlite`))).resolves.toBeUndefined();
+  await expect(new LocalUsdaAdapter(restarted, directory).search("egg")).resolves.toEqual(expect.arrayContaining([expect.objectContaining({ catalogGeneration: previous.generation })]));
+});
 
 test("restart interrupts activation before publication and preserves the previous generation", async () => {
-  const { management, directory, database, settings } = await setup({ provider: "usda-fdc" });
+  const { management, directory, database, settings } = await setup();
   const archive = await foundationArchive();
   await management.submitArchive({ filename: "foundation.zip", stream: Readable.from(archive) });
   await finished(management);
@@ -462,7 +428,7 @@ test("restart interrupts activation before publication and preserves the previou
   const activating = activatingJob(pendingId);
   await fs.copyFile(path.join(directory, `${working.generation}.sqlite`), path.join(directory, `${pendingId}.sqlite`));
   await fs.writeFile(path.join(directory, `${pendingId}.zip`), archive);
-  saveCatalogState(database.getClient(), { installed: working, job: activating }, "usda-fdc");
+  saveCatalogState(database.getClient(), { installed: working, job: activating });
 
   const restarted = new CatalogManagement(database.getClient(), settings);
   cleanups.unshift(() => restarted.shutdown());
@@ -476,11 +442,11 @@ test("restart interrupts activation before publication and preserves the previou
 });
 
 test("restart interrupts an unpublished activation when no previous generation exists", async () => {
-  const { database, directory, settings } = await setup({ provider: "usda-fdc" });
+  const { database, directory, settings } = await setup();
   const pendingId = "00000000-0000-4000-8000-000000000004";
   const activating = activatingJob(pendingId, "foundation.zip");
   await fs.writeFile(path.join(directory, `${pendingId}.sqlite`), "unpublished generation");
-  saveCatalogState(database.getClient(), { installed: null, job: activating }, "usda-fdc");
+  saveCatalogState(database.getClient(), { installed: null, job: activating });
 
   const restarted = new CatalogManagement(database.getClient(), settings);
   cleanups.unshift(() => restarted.shutdown());
@@ -493,7 +459,7 @@ test("restart interrupts an unpublished activation when no previous generation e
 });
 
 test("reader release completes only the exact published activation handoff", async () => {
-  const { management, database } = await setup({ provider: "usda-fdc" });
+  const { management, database } = await setup();
   await management.submitArchive({ filename: "foundation.zip", stream: Readable.from(await foundationArchive()) });
   await finished(management);
   const installed = management.read().installed!;
@@ -508,9 +474,9 @@ test("reader release completes only the exact published activation handoff", asy
   ];
 
   for (const incomplete of incompleteStates) {
-    saveCatalogState(database.getClient(), { installed, job: succeeded }, "usda-fdc");
+    saveCatalogState(database.getClient(), { installed, job: succeeded });
     const read = management.withActiveGeneration(generation => {
-      saveCatalogState(database.getClient(), incomplete, "usda-fdc");
+      saveCatalogState(database.getClient(), incomplete);
       return generation;
     });
     await expect(read).resolves.toBe(installed.generation);
@@ -519,7 +485,7 @@ test("reader release completes only the exact published activation handoff", asy
 });
 
 test("a retirement failure keeps the replacement usable, reports the handoff error and recovers on restart", async () => {
-  const { management, database, directory, settings } = await setup({ provider: "usda-fdc" });
+  const { management, database, directory, settings } = await setup();
   const archive = await foundationArchive();
   await management.submitArchive({ filename: "foundation.zip", stream: Readable.from(archive) });
   await finished(management);
@@ -566,7 +532,7 @@ test("a retirement failure keeps the replacement usable, reports the handoff err
 });
 
 test.each(["missing job", "nonfailed job", "mismatched generation", "missing installed generation"] as const)("restart does not recover a handoff with %s", async invalid => {
-  const { management, database, settings } = await setup({ provider: "usda-fdc" });
+  const { management, database, settings } = await setup();
   await management.submitArchive({ filename: "foundation.zip", stream: Readable.from(await foundationArchive()) });
   await finished(management);
   const installed = management.read().installed!;
@@ -580,7 +546,7 @@ test.each(["missing job", "nonfailed job", "mismatched generation", "missing ins
       : invalid === "mismatched generation"
         ? { installed, job: { ...failed, id: "00000000-0000-4000-8000-000000000006" }, retiring }
         : { installed: null, job: failed, retiring };
-  saveCatalogState(database.getClient(), candidate, "usda-fdc");
+  saveCatalogState(database.getClient(), candidate);
 
   const restarted = new CatalogManagement(database.getClient(), settings);
   cleanups.unshift(() => restarted.shutdown());
@@ -588,7 +554,7 @@ test.each(["missing job", "nonfailed job", "mismatched generation", "missing ins
 });
 
 test("a USDA replacement activation failure leaves the working generation active and permits retry", async () => {
-  const { management, directory } = await setup({ provider: "usda-fdc" });
+  const { management, directory } = await setup();
   const archive = await foundationArchive();
   await management.submitArchive({ filename: "foundation.zip", stream: Readable.from(archive) });
   await finished(management);
@@ -615,7 +581,7 @@ test.each([
 ] as const)("USDA update checks report %s releases from explicit source metadata", async (status, installedRelease, availableRelease) => {
   const transport = { latestFoundationRelease: vi.fn().mockResolvedValue(availableRelease) };
   const now = vi.fn(() => new Date("2026-09-09T14:30:00.000Z"));
-  const { management, database } = await setup({ provider: "usda-fdc", sourceTransport: transport, now });
+  const { management, database } = await setup({ sourceTransport: transport, now });
   saveCatalogState(database.getClient(), {
     installed: {
       generation: "installed-generation", filename: "foundation.zip", sha256: "installed-sha", foodCount: 469,
@@ -634,7 +600,7 @@ test.each([
 test("USDA update checks cache results and explicit checks bypass the cache", async () => {
   let current = new Date("2026-09-09T14:30:00.000Z");
   const transport = { latestFoundationRelease: vi.fn().mockResolvedValue(officialRelease) };
-  const { management } = await setup({ provider: "usda-fdc", sourceTransport: transport, now: () => current, updateCheckCacheMs: 60_000 });
+  const { management } = await setup({ sourceTransport: transport, now: () => current, updateCheckCacheMs: 60_000 });
 
   await management.checkForUpdate();
   current = new Date("2026-09-09T14:30:30.000Z");
@@ -649,7 +615,7 @@ test("USDA update checks cache results and explicit checks bypass the cache", as
 test("the default USDA update cache lasts six hours", async () => {
   let current = new Date("2026-09-09T00:00:00.000Z");
   const transport = { latestFoundationRelease: vi.fn().mockResolvedValue(officialRelease) };
-  const { management } = await setup({ provider: "usda-fdc", sourceTransport: transport, now: () => current });
+  const { management } = await setup({ sourceTransport: transport, now: () => current });
   await management.checkForUpdate();
   current = new Date("2026-09-09T05:59:59.999Z"); await management.checkForUpdate();
   expect(transport.latestFoundationRelease).toHaveBeenCalledOnce();
@@ -660,7 +626,7 @@ test("the default USDA update cache lasts six hours", async () => {
 test("concurrent USDA checks share one metadata request", async () => {
   let release!: (value: FoundationReleaseMetadata) => void;
   const transport = { latestFoundationRelease: vi.fn(() => new Promise<FoundationReleaseMetadata>(resolve => { release = resolve; })) };
-  const { management } = await setup({ provider: "usda-fdc", sourceTransport: transport });
+  const { management } = await setup({ sourceTransport: transport });
   const first = management.checkForUpdate({ force: true });
   const second = management.checkForUpdate({ force: true });
   expect(transport.latestFoundationRelease).toHaveBeenCalledOnce();
@@ -672,22 +638,13 @@ test("concurrent USDA checks share one metadata request", async () => {
   expect(transport.latestFoundationRelease).toHaveBeenCalledTimes(2);
 });
 
-test("Open Food Facts ignores the USDA-only update transport", async () => {
-  const transport = { latestFoundationRelease: vi.fn().mockResolvedValue(officialRelease) };
-  const { management, database } = await setup({ provider: "open-food-facts", sourceTransport: transport });
-  saveCatalogUpdateCheck(database.getClient(), { status: "newer", checkedAt: "2026-09-09T14:30:00.000Z", availableRelease: officialRelease, error: null }, "open-food-facts");
-  await management.checkForUpdate({ force: true });
-  expect(transport.latestFoundationRelease).not.toHaveBeenCalled();
-  expect(management.read().updateCheck).toMatchObject({ status: "indeterminate", availableSnapshot: null });
-});
-
 test.each([
   [{ identifier: null, releasedOn: null }, { ...officialRelease, identifier: null, releasedOn: null }],
   [{ identifier: "  FoodData Central 15.0  " }, officialRelease],
 ] as const)("valid USDA metadata normalizes optional enrichment %#", async (patch, expected) => {
   const available = { ...officialRelease, ...patch };
   const transport = { latestFoundationRelease: vi.fn().mockResolvedValue(available) };
-  const { management, database } = await setup({ provider: "usda-fdc", sourceTransport: transport });
+  const { management, database } = await setup({ sourceTransport: transport });
   saveCatalogState(database.getClient(), {
     installed: { generation: "generation", filename: "foundation.zip", sha256: "sha", foodCount: 1, installedAt: "2026-01-01T00:00:00Z", publicationDateRange: { earliest: "2020-01-01", latest: "2025-12-18" }, sourceRelease: { ...officialRelease, releasePeriod: "2025-12" } },
     job: null,
@@ -713,7 +670,7 @@ test.each([
   { archiveUrl: "not a URL" },
 ] as const)("successful but invalid official metadata is indeterminate %#", async patch => {
   const transport = { latestFoundationRelease: vi.fn().mockResolvedValue({ ...officialRelease, ...patch }) };
-  const { management } = await setup({ provider: "usda-fdc", sourceTransport: transport });
+  const { management } = await setup({ sourceTransport: transport });
   await management.checkForUpdate();
   expect(management.read().updateCheck).toMatchObject({ status: "indeterminate", availableRelease: null, error: null });
 });
@@ -724,7 +681,7 @@ test.each([
 ] as const)("same-period descriptors compare unchanged when only one side lacks update-log enrichment", async (installedIdentifier, availableIdentifier) => {
   const available = { ...officialRelease, identifier: availableIdentifier };
   const transport = { latestFoundationRelease: vi.fn().mockResolvedValue(available) };
-  const { management, database } = await setup({ provider: "usda-fdc", sourceTransport: transport });
+  const { management, database } = await setup({ sourceTransport: transport });
   saveCatalogState(database.getClient(), {
     installed: { generation: "generation", filename: "foundation.zip", sha256: "sha", foodCount: 1, installedAt: "2026-01-01T00:00:00Z", publicationDateRange: { earliest: "2020-01-01", latest: "2026-04-30" }, sourceRelease: { releasePeriod: officialRelease.releasePeriod, identifier: installedIdentifier, releasedOn: officialRelease.releasedOn, archiveFilename: officialRelease.archiveFilename, archiveByteLength: officialRelease.archiveByteLength } },
     job: null,
@@ -735,7 +692,7 @@ test.each([
 
 test("same-period conflicting USDA versions are indeterminate", async () => {
   const transport = { latestFoundationRelease: vi.fn().mockResolvedValue(officialRelease) };
-  const { management, database } = await setup({ provider: "usda-fdc", sourceTransport: transport });
+  const { management, database } = await setup({ sourceTransport: transport });
   saveCatalogState(database.getClient(), {
     installed: { generation: "generation", filename: "foundation.zip", sha256: "sha", foodCount: 1, installedAt: "2026-01-01T00:00:00Z", publicationDateRange: { earliest: "2020-01-01", latest: "2026-04-30" }, sourceRelease: { releasePeriod: officialRelease.releasePeriod, identifier: "FoodData Central 14.9", releasedOn: officialRelease.releasedOn, archiveFilename: officialRelease.archiveFilename, archiveByteLength: officialRelease.archiveByteLength } },
     job: null,
@@ -746,7 +703,7 @@ test("same-period conflicting USDA versions are indeterminate", async () => {
 
 test("same-period conflicting exact USDA release dates are indeterminate", async () => {
   const transport = { latestFoundationRelease: vi.fn().mockResolvedValue(officialRelease) };
-  const { management, database } = await setup({ provider: "usda-fdc", sourceTransport: transport });
+  const { management, database } = await setup({ sourceTransport: transport });
   saveCatalogState(database.getClient(), {
     installed: { generation: "generation", filename: "foundation.zip", sha256: "sha", foodCount: 1, installedAt: "2026-01-01T00:00:00Z", publicationDateRange: { earliest: "2020-01-01", latest: "2026-04-29" }, sourceRelease: { releasePeriod: officialRelease.releasePeriod, identifier: officialRelease.identifier, releasedOn: "2026-04-29", archiveFilename: officialRelease.archiveFilename, archiveByteLength: officialRelease.archiveByteLength } },
     job: null,
@@ -764,7 +721,7 @@ test.each([
   ["a same-release filename revision", { releasePeriod: officialRelease.releasePeriod, identifier: officialRelease.identifier, releasedOn: officialRelease.releasedOn, archiveFilename: "foundation-renamed.zip", archiveByteLength: officialRelease.archiveByteLength }, officialRelease, "indeterminate", null],
 ] as const)("USDA update checks keep %s honest", async (_case, sourceRelease, available, status, error) => {
   const transport = { latestFoundationRelease: vi.fn().mockResolvedValue(available) };
-  const { management, database } = await setup({ provider: "usda-fdc", sourceTransport: transport, now: () => new Date("2026-09-09T14:30:00.000Z") });
+  const { management, database } = await setup({ sourceTransport: transport, now: () => new Date("2026-09-09T14:30:00.000Z") });
   if (sourceRelease) saveCatalogState(database.getClient(), {
     installed: {
       generation: "installed-generation", filename: "foundation.zip", sha256: "installed-sha", foodCount: 469,
@@ -780,7 +737,7 @@ test.each([
 
 test("failed USDA metadata checks preserve the installed catalog and manual upload state", async () => {
   const transport = { latestFoundationRelease: vi.fn().mockRejectedValue(new Error("private network failure")) };
-  const { management } = await setup({ provider: "usda-fdc", sourceTransport: transport, now: () => new Date("2026-09-09T14:30:00.000Z") });
+  const { management } = await setup({ sourceTransport: transport, now: () => new Date("2026-09-09T14:30:00.000Z") });
   const archive = await foundationArchive();
   await management.submitArchive({ filename: "foundation.zip", stream: Readable.from(archive) });
   await finished(management);
@@ -798,7 +755,7 @@ test("failed USDA metadata checks preserve the installed catalog and manual uplo
 
 test("a successful USDA metadata check cannot activate or mutate the installed catalog", async () => {
   const transport = { latestFoundationRelease: vi.fn().mockResolvedValue(officialRelease) };
-  const { management, database, directory } = await setup({ provider: "usda-fdc", sourceTransport: transport, now: () => new Date("2026-09-09T14:30:00.000Z") });
+  const { management, database, directory } = await setup({ sourceTransport: transport, now: () => new Date("2026-09-09T14:30:00.000Z") });
   const archive = await foundationArchive();
   await management.submitArchive({ filename: "foundation.zip", stream: Readable.from(archive) });
   await finished(management);
@@ -820,7 +777,7 @@ test("a validated upload records the corroborated official release only when fil
   const archive = await foundationArchive();
   const release = { ...officialRelease, archiveByteLength: archive.length };
   const transport = { latestFoundationRelease: vi.fn().mockResolvedValue(release) };
-  const { management } = await setup({ provider: "usda-fdc", sourceTransport: transport, now: () => new Date("2026-09-09T14:30:00.000Z") });
+  const { management } = await setup({ sourceTransport: transport, now: () => new Date("2026-09-09T14:30:00.000Z") });
   await management.checkForUpdate();
 
   await management.submitArchive({ filename: release.archiveFilename, size: archive.length, stream: Readable.from(archive) });
@@ -837,7 +794,7 @@ test.each([
   const archive = await foundationArchive();
   const release = { ...officialRelease, archiveByteLength: archive.length + lengthDelta };
   const transport = { latestFoundationRelease: vi.fn().mockResolvedValue(release) };
-  const { management } = await setup({ provider: "usda-fdc", sourceTransport: transport });
+  const { management } = await setup({ sourceTransport: transport });
   await management.checkForUpdate();
   await management.submitArchive({ filename, size: archive.length, stream: Readable.from(archive) });
   await finished(management);
@@ -848,35 +805,35 @@ test.each([
 
 test("terminal outcomes survive replacement and acknowledgement across management instances", async () => {
   const { management, database, settings } = await setup();
-  await management.submitArchive({ filename: "products.gz", stream: Readable.from(offArchive()) });
+  await management.submitArchive({ filename: "foundation.zip", stream: Readable.from(await foundationArchive()) });
   expect(management.outcomes()).toEqual([]);
   await finished(management);
   const outcome = management.outcomes()[0];
-  expect(outcome).toMatchObject({ provider: "open-food-facts", jobId: management.read().job!.id, phase: "succeeded", filename: "products.gz", installed: { filename: "products.gz", foodCount: 1 }, acknowledgedAt: null });
+  expect(outcome).toMatchObject({ provider: "usda-fdc", jobId: management.read().job!.id, phase: "succeeded", filename: "foundation.zip", installed: { filename: "foundation.zip", foodCount: 4 }, acknowledgedAt: null });
   management.acknowledgeOutcome(outcome.jobId, outcome.completedAt);
   management.acknowledgeOutcome(outcome.jobId, outcome.completedAt);
   const acknowledged = management.outcomes();
   expect(acknowledged).toHaveLength(1);
   expect(acknowledged[0].acknowledgedAt).not.toBeNull();
-  await management.submitArchive({ filename: "broken.gz", stream: Readable.from("invalid gzip") });
+  await management.submitArchive({ filename: "broken.zip", stream: Readable.from("invalid zip") });
   await finished(management);
   const restarted = new CatalogManagement(database.getClient(), settings);
   cleanups.unshift(() => restarted.shutdown());
   expect(restarted.outcomes()).toHaveLength(2);
   expect(restarted.outcomes()).toContainEqual(acknowledged[0]);
-  expect(restarted.outcomes().find(item => item.phase === "failed")).toMatchObject({ filename: "broken.gz", installed: outcome.installed, acknowledgedAt: null });
+  expect(restarted.outcomes().find(item => item.phase === "failed")).toMatchObject({ filename: "broken.zip", installed: outcome.installed, acknowledgedAt: null });
   expect(restarted.outcomes()).toEqual(restarted.outcomes());
 });
 
 
 test("legacy terminal state remains readable without claiming first installation", async () => {
   const { management, database, settings } = await setup();
-  await management.submitArchive({ filename: "products.gz", stream: Readable.from(offArchive()) });
+  await management.submitArchive({ filename: "foundation.zip", stream: Readable.from(await foundationArchive()) });
   await finished(management);
   const state = management.read();
   const legacyJob = { ...state.job!, id: "legacy-job" };
   delete legacyJob.operation;
-  saveCatalogState(database.getClient(), { installed: { ...state.installed!, generation: legacyJob.id }, job: legacyJob }, "open-food-facts");
+  saveCatalogState(database.getClient(), { installed: { ...state.installed!, generation: legacyJob.id }, job: legacyJob });
   const restarted = new CatalogManagement(database.getClient(), settings);
   cleanups.unshift(() => restarted.shutdown());
   const legacy = restarted.outcomes().find(outcome => outcome.jobId === legacyJob.id)!;

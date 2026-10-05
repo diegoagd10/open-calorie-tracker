@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -19,7 +19,6 @@ import {
   mountLocalCatalogImport,
 } from "../server/local-catalog-import";
 import { foundationArchive } from "./support/foundation-archive";
-import { offArchive, offWithBasis, offJsonlArchive } from "./support/off-archive";
 
 const controlToken = "a".repeat(64);
 const cleanups: Array<() => Promise<void>> = [];
@@ -35,7 +34,7 @@ async function closeServer(server: Server): Promise<void> {
   });
 }
 
-async function fixture(provider: "open-food-facts" | "usda-fdc") {
+async function fixture() {
   const directory = await mkdtemp(path.join(tmpdir(), "catalog-command-"));
   const database = openApplicationDatabase({
     databasePath: path.join(directory, "application.sqlite"),
@@ -45,16 +44,12 @@ async function fixture(provider: "open-food-facts" | "usda-fdc") {
     directory: path.join(directory, "catalogs"),
     maxExpandedBytes: 16 * 1024 * 1024,
     maxUploadBytes: 2 * 1024 * 1024,
-    provider,
     workerPath: path.resolve("app/catalog-management/import-worker.ts"),
   });
   const app = express();
   mountLocalCatalogImport(app, {
     controlToken,
-    getManagement(requestedProvider) {
-      if (requestedProvider !== provider) throw new Error("Unexpected provider");
-      return management;
-    },
+    getManagement: () => management,
   });
   const server = createServer(app);
   await new Promise<void>((resolve, reject) => {
@@ -77,21 +72,14 @@ async function fixture(provider: "open-food-facts" | "usda-fdc") {
   };
 }
 
-test.each([
-  ["usda-fdc", "foundation.zip"],
-  ["open-food-facts", "products.csv.gz"],
-  ["open-food-facts", "products.jsonl.gz"],
-] as const)(
-  "imports a local %s archive through the running application and waits for its outcome",
-  async (provider, filename) => {
-    const { baseUrl, directory, management } = await fixture(provider);
+test(
+  "imports a local USDA archive through the running application and waits for its outcome",
+  async () => {
+    const provider = "usda-fdc";
+    const filename = "foundation.zip";
+    const { baseUrl, directory, management } = await fixture();
     const archivePath = path.join(directory, filename);
-    await writeFile(
-      archivePath,
-      provider === "usda-fdc"
-        ? await foundationArchive()
-        : filename.endsWith("jsonl.gz") ? offJsonlArchive([JSON.parse(await readFile("tests/fixtures/off-native-serving.json", "utf8"))]) : offArchive([offWithBasis("100g")]),
-    );
+    await writeFile(archivePath, await foundationArchive());
     const standardOutput: string[] = [];
     const standardError: string[] = [];
 
@@ -105,9 +93,7 @@ test.each([
 
     expect(exitCode).toBe(0);
     expect(standardError).toEqual([]);
-    expect(standardOutput.join("")).toContain(
-      provider === "usda-fdc" ? "USDA Foundation" : "Open Food Facts",
-    );
+    expect(standardOutput.join("")).toContain("USDA Foundation");
     expect(standardOutput.join("")).toContain("succeeded; ");
     expect(management.read()).toMatchObject({
       busy: false,
@@ -128,15 +114,15 @@ test.each([
 );
 
 test("rejects a symbolic link before contacting the application", async () => {
-  const { baseUrl, directory, management } = await fixture("open-food-facts");
-  const target = path.join(directory, "target.gz");
-  const archivePath = path.join(directory, "products.gz");
-  await writeFile(target, offArchive());
+  const { baseUrl, directory, management } = await fixture();
+  const target = path.join(directory, "target.zip");
+  const archivePath = path.join(directory, "foundation.zip");
+  await writeFile(target, await foundationArchive());
   await symlink(target, archivePath);
   const standardError: string[] = [];
 
   const exitCode = await runCatalogImportCommand(
-    ["open-food-facts", archivePath],
+    ["usda-fdc", archivePath],
     {
       baseUrl,
       controlToken,
@@ -151,13 +137,13 @@ test("rejects a symbolic link before contacting the application", async () => {
 });
 
 test("reports importer failure and returns a non-zero exit code", async () => {
-  const { baseUrl, directory, management } = await fixture("open-food-facts");
-  const archivePath = path.join(directory, "invalid.gz");
-  await writeFile(archivePath, "not a gzip archive");
+  const { baseUrl, directory, management } = await fixture();
+  const archivePath = path.join(directory, "invalid.zip");
+  await writeFile(archivePath, "not a zip archive");
   const standardError: string[] = [];
 
   const exitCode = await runCatalogImportCommand(
-    ["open-food-facts", archivePath],
+    ["usda-fdc", archivePath],
     {
       baseUrl,
       controlToken,
@@ -168,7 +154,7 @@ test("reports importer failure and returns a non-zero exit code", async () => {
   );
 
   expect(exitCode).toBe(1);
-  expect(standardError.join("")).toContain("Open Food Facts import failed:");
+  expect(standardError.join("")).toContain("USDA Foundation import failed:");
   expect(management.read()).toMatchObject({
     busy: false,
     installed: null,
@@ -177,7 +163,7 @@ test("reports importer failure and returns a non-zero exit code", async () => {
 });
 
 test("the local endpoint requires both loopback transport and its private token", async () => {
-  const { baseUrl } = await fixture("usda-fdc");
+  const { baseUrl } = await fixture();
   const withoutToken = await fetch(`${baseUrl}/internal/catalog-imports`, {
     body: JSON.stringify({ archivePath: "/tmp/archive.zip", provider: "usda-fdc" }),
     headers: { "Content-Type": "application/json" },
@@ -192,7 +178,7 @@ test("the local endpoint requires both loopback transport and its private token"
 });
 
 test("the local endpoint rejects invalid requests without claiming an import", async () => {
-  const { baseUrl, directory, management } = await fixture("usda-fdc");
+  const { baseUrl, directory, management } = await fixture();
   const headers = {
     Authorization: `Bearer ${controlToken}`,
     "Content-Type": "application/json",
@@ -260,11 +246,11 @@ test("the private control token is durable, permission-restricted, and validated
   await expect(readLocalCatalogImportToken()).rejects.toThrow("token is invalid");
 });
 
-test("prints command usage for an invalid provider", async () => {
+test.each(["other", "open-food-facts"])("prints command usage for the unsupported provider %s", async (provider) => {
   const standardError: string[] = [];
 
   const exitCode = await runCatalogImportCommand(
-    ["other", "/tmp/archive.zip"],
+    [provider, "/tmp/archive.zip"],
     {
       controlToken,
       writeStandardError: (value) => standardError.push(value),
@@ -274,4 +260,5 @@ test("prints command usage for an invalid provider", async () => {
 
   expect(exitCode).toBe(1);
   expect(standardError.join("")).toContain("pnpm catalog:import:usda");
+  expect(standardError.join("")).not.toContain("catalog:import:off");
 });

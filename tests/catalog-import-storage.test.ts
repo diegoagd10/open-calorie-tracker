@@ -2,7 +2,6 @@ import type BetterSqlite3 from "better-sqlite3";
 import { afterEach, expect, test, vi } from "vitest";
 import { runArchive } from "./support/catalog-import";
 import { foundationArchive } from "./support/foundation-archive";
-import { offArchive, offWithBasis } from "./support/off-archive";
 
 const driver = vi.hoisted(() => ({ connections: [] as BetterSqlite3.Database[], invalid: false }));
 // Observe real SQLite handles and inject an integrity fault at the external driver boundary.
@@ -26,11 +25,11 @@ afterEach(async () => {
   await Promise.all(cleanups.splice(0).map(cleanup => cleanup()));
 });
 
-test.each(["off", "usda"] as const)("%s closes SQLite handles after import, lookup and missing lookup", async provider => {
-  const imported = await runArchive(provider, provider === "off" ? offArchive([offWithBasis("serving")]) : await foundationArchive(), cleanup => cleanups.push(cleanup));
+test("Foundation closes SQLite handles after import, lookup and missing lookup", async () => {
+  const imported = await runArchive(await foundationArchive(), cleanup => cleanups.push(cleanup));
   expect(imported.final.result?.foodCount).toBeGreaterThan(0);
   expect(driver.connections.every(connection => !connection.open)).toBe(true);
-  expect(imported.read(provider === "off" ? "0012345678905" : "748967")).toBeDefined();
+  expect(imported.read("748967")).toBeDefined();
   expect(driver.connections.every(connection => !connection.open)).toBe(true);
   expect(imported.read("99999999999999")).toBeUndefined();
   expect(driver.connections.every(connection => !connection.open)).toBe(true);
@@ -38,20 +37,17 @@ test.each(["off", "usda"] as const)("%s closes SQLite handles after import, look
 });
 
 test("Foundation closes search handles on success and SQL failure", async () => {
-  const imported = await runArchive("usda", await foundationArchive(), cleanup => cleanups.push(cleanup));
+  const imported = await runArchive(await foundationArchive(), cleanup => cleanups.push(cleanup));
   expect(imported.search('"broccoli"*')).toHaveLength(2);
   expect(driver.connections.every(connection => !connection.open)).toBe(true);
   expect(() => imported.search('"unterminated')).toThrow();
   expect(driver.connections.every(connection => !connection.open)).toBe(true);
 });
 
-test.each([
-  ["off", "OFF database validation failed. Nothing was installed."],
-  ["usda", "Invalid or corrupt Foundation CSV ZIP, or insufficient disk space. Verify the download and retry."],
-] as const)("%s rejects a failed integrity check and closes its generation", async (provider, error) => {
+test("Foundation rejects a failed integrity check and closes its generation", async () => {
   driver.invalid = true;
-  const imported = await runArchive(provider, provider === "off" ? offArchive([offWithBasis("serving")]) : await foundationArchive(), cleanup => cleanups.push(cleanup));
-  expect(imported.final.error).toBe(error);
+  const imported = await runArchive(await foundationArchive(), cleanup => cleanups.push(cleanup));
+  expect(imported.final.error).toBe("Invalid or corrupt Foundation CSV ZIP, or insufficient disk space. Verify the download and retry.");
   expect(imported.final.progress?.processedRecords).toBeGreaterThan(0);
   expect(imported.final.progress?.exclusions).toBeDefined();
   expect(imported.messages.some(message => message.result)).toBe(false);

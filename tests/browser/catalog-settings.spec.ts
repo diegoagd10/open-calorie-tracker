@@ -9,13 +9,12 @@ import { once } from "node:events";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { installSimulatedBarcodeCamera } from "./barcode-camera-fixture";
 import AxeBuilder from "@axe-core/playwright";
-import { bootstrapOrSignInBrowserTestUser, expect, signInProvisionedMember, test } from "./reset-database";
-import { offArchive, offProduct, offWithBasis, offJsonlArchive } from "../support/off-archive";
+import { bootstrapOrSignInBrowserTestUser, configureBarcodeContact, expect, signInProvisionedMember, test } from "./reset-database";
 import { basicFoodsArchive } from "../support/basic-foods-archive";
 
 const password = "correct horse 🔐 battery";
 test.setTimeout(120_000);
-async function commandImport(provider: "usda-fdc" | "open-food-facts", filename: string, archive: Buffer, succeeds = true) {
+async function commandImport(provider: "usda-fdc", filename: string, archive: Buffer, succeeds = true) {
   const directory = path.resolve("data/playwright-tests");
   const archivePath = path.join(directory, filename);
   await writeFile(archivePath, archive);
@@ -93,16 +92,8 @@ test("terminal imports notify connected clients while a member searches and logs
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.screenshot({ path: testInfo.outputPath("food-catalogs-mobile.png"), fullPage: true });
 
-  const products = offArchive([
-    { ...offWithBasis("100ml"), product_name: "Local oat drink" },
-    { ...offProduct, code: "0012345678906", product_name: "Ambiguous oats" },
-    { ...offWithBasis("100g", "0012345678907"), product_name: "Broccoli crunch", generic_name: "Vegetable chips", brands: "Exact Brand" },
-  ]);
-  await commandImport("open-food-facts", "products.csv.gz", products);
-  await expectSuccess("Open Food Facts catalog installed.", "open-food-facts");
-  await page.reload();
-  await commandImport("open-food-facts", "products-update.csv.gz", products);
-  for (const client of clients) await expect(toast(client)).toHaveText("Open Food Facts catalog updated.");
+  await commandImport("usda-fdc", "foundation-browser-update.zip", archive);
+  for (const client of clients) await expect(toast(client)).toHaveText("USDA Foundation catalog updated.");
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
   const visibleToast = notifications.locator('[data-phase="succeeded"]');
   await expect(visibleToast).toHaveCSS("background-color", "rgb(31, 43, 27)");
@@ -114,7 +105,7 @@ test("terminal imports notify connected clients while a member searches and logs
   for (let poll = 0; poll < 3; poll++) {
     const response = await page.waitForResponse(response => response.url().endsWith("/catalog-notifications") && response.request().method() === "GET");
     expect(response.status()).toBe(200);
-    expect((await response.json() as { outcomes: unknown[] }).outcomes).toHaveLength(4);
+    expect((await response.json() as { outcomes: unknown[] }).outcomes).toHaveLength(3);
   }
   await page.context().setOffline(true);
   await page.evaluate(() => window.dispatchEvent(new Event("focus")));
@@ -123,36 +114,24 @@ test("terminal imports notify connected clients while a member searches and logs
   await page.context().setOffline(false);
   await reconnected;
   await expect(notifications).toHaveCount(0);
-  await expect(page.getByText("3 foods installed", { exact: true })).toBeVisible();
-  await expect(page.getByText("52 foods installed", { exact: true })).toBeVisible();
-  const failingReplacement = offArchive(Array.from({ length: 75_000 }, (_, index) => ({
-    ...offWithBasis("100g", String(1_000_000_000_000 + index)), product_name: `Replacement cereal ${index}`,
-  }))).subarray(0, -8);
-  await commandImport("open-food-facts", "corrupt.csv.gz", failingReplacement, false);
+  await commandImport("usda-fdc", "corrupt.zip", Buffer.from("not a zip"), false);
   await page.goto("/settings/goals");
-  await expect(notifications).toHaveText("Open Food Facts import failed. Inspect the terminal and retry the command.");
+  await expect(notifications).toHaveText("USDA Foundation import failed. Inspect the terminal and retry the command.");
   await expect(notifications.locator('[data-phase="failed"]')).toHaveCSS("background-color", "rgb(55, 30, 27)");
   await notifications.getByRole("button", { name: "Dismiss notification" }).click();
   for (const member of members) {
-    await expect(toast(member)).toHaveCount(0);
     const response = await (await member.request.get("/catalog-notifications")).text();
-    expect(response).not.toMatch(/corrupt.csv.gz|failed|interrupted|error|filename|csrfToken/);
+    expect(response).not.toMatch(/corrupt.zip|failed|interrupted|error|filename|csrfToken/);
   }
   await page.goto("/settings/catalogs");
   await expect(page.getByRole("alert")).toHaveCount(0);
-  await expect(page.getByText("3 foods installed", { exact: true })).toBeVisible();
   await expect(page.getByText("52 foods installed", { exact: true })).toBeVisible();
+  await expect(page.getByText("Archive: foundation-browser-update.zip", { exact: true })).toBeVisible();
   await expect(page.getByText(/records processed|foods imported|records rejected|installation failed/)).toHaveCount(0);
-  await commandImport("usda-fdc", "corrupt.zip", Buffer.from("not a zip"), false);
-  await expect(notifications).toHaveText("USDA Foundation import failed. Inspect the terminal and retry the command.");
-  await notifications.getByRole("button", { name: "Dismiss notification" }).click();
-  await commandImport("open-food-facts", "products-reimport.csv.gz", products);
-  for (const client of clients) await expect(toast(client)).toHaveText("Open Food Facts catalog updated.");
-  for (const client of clients) await toast(client).getByRole("button", { name: "Dismiss notification" }).click();
-  await page.reload();
-  await expect(page.getByText("Archive: products-reimport.csv.gz", { exact: true })).toBeVisible();
+  await expect(page.locator('section[aria-labelledby="open-food-facts-heading"]')).toContainText("○ Not configured");
+  await expect(page.getByText(/Check OFF updates|Official OFF downloads|OFF export/)).toHaveCount(0);
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
-  await page.screenshot({ path: testInfo.outputPath("both-catalogs-mobile.png"), fullPage: true });
+  await page.screenshot({ path: testInfo.outputPath("food-catalogs-final-mobile.png"), fullPage: true });
   for (const context of memberContexts) await context.close();
 
   const context = await browser.newContext({ baseURL: new URL(page.url()).origin, ignoreHTTPSErrors: true });
@@ -179,6 +158,7 @@ test("terminal imports notify connected clients while a member searches and logs
     await expect(member.getByText("Broccoli, raw", { exact: true })).toBeVisible();
     await member.reload();
     await expect(member.getByText("Broccoli, raw", { exact: true })).toBeVisible();
+    configureBarcodeContact();
     await installSimulatedBarcodeCamera(member);
     await member.goto("/?food=barcode");
     await member.getByRole("button", { name: "Use camera" }).click();
@@ -202,8 +182,8 @@ test("terminal imports notify connected clients while a member searches and logs
     await expect(member.getByRole("button", { name: "Add to Food Log", exact: true })).toHaveCount(0);
     await member.goto("/?food=barcode&barcode=9999999999999");
     await expect(member.getByText("Product not found", { exact: true })).toBeVisible();
-    const deniedOff = await context.request.post("/settings/catalogs", { headers: { Origin: new URL(page.url()).origin, "Content-Type": "application/gzip", "X-Catalog-Provider": "open-food-facts", "X-Archive-Name": "denied.gz" }, data: products });
-    expect(deniedOff.status()).toBe(404);
+    const deniedContact = await context.request.post("/settings/catalogs", { headers: { Origin: new URL(page.url()).origin }, form: { intent: "remove-off-contact", csrfToken: "denied" } });
+    expect(deniedContact.status()).toBe(404);
 
     for (const [query, expected] of [
       ["tilapia", /Fish, tilapia,/], ["eggs", /Eggs,/], ["HUÉVOS", /Eggs,/],
@@ -231,64 +211,6 @@ test("terminal imports notify connected clients while a member searches and logs
 });
 
 
-test("administrator checks rolling OFF snapshots independently of terminal imports", async ({ page }) => {
-  const fixturePath = "data/playwright-tests/off-metadata.json";
-  const requestsPath = "data/playwright-tests/off-metadata-requests.jsonl";
-  const original = { "Content-Type": "application/gzip", "Content-Length": "252", "Last-Modified": "Mon, 07 Sep 2026 12:00:00 GMT", ETag: '"snapshot-a"', "x-amz-checksum-type": "FULL_OBJECT", "x-amz-checksum-crc64nvme": "JX7I3P/MX4I=" };
-  await rm(requestsPath, { force: true });
-  await writeFile(fixturePath, JSON.stringify({ headers: original }));
-  try {
-    await bootstrapOrSignInBrowserTestUser(page, "off.metadata.admin", password);
-    await page.getByRole("button", { name: "Finish setup" }).click();
-    await page.goto("/settings/catalogs");
-    const off = page.locator('section[aria-labelledby="open-food-facts-heading"]');
-    const usda = page.locator('section[aria-labelledby="usda-fdc-heading"]');
-    const usdaBefore = await usda.innerText();
-    const check = off.getByRole("button", { name: "Check OFF updates again" });
-    const checkUpdates = async () => {
-      await Promise.all([
-        page.waitForResponse(response => new URL(response.url()).pathname === "/settings/catalogs.data" && response.request().method() === "GET" && response.ok()),
-        check.click(),
-      ]);
-      await expect(check).toBeEnabled();
-    };
-    await checkUpdates();
-    await expect(off.getByText("OFF snapshot metadata cannot be compared safely.", { exact: true })).toBeVisible();
-    await expect(off.getByText("Installed official snapshot: Unknown", { exact: true })).toBeVisible();
-    await expect(off.getByRole("link", { name: /Official OFF downloads/ })).toHaveAttribute("href", "https://world.openfoodfacts.org/data");
-    const unknown = offArchive([{ ...offProduct, product_name: "Unidentified snapshot" }]);
-    await commandImport("open-food-facts", "unknown.gz", unknown);
-    await page.reload();
-    await expect(off.getByText("Archive: unknown.gz", { exact: true })).toBeVisible();
-    await expect(off.getByText("Installed official snapshot: Unknown", { exact: true })).toBeVisible();
-    await commandImport("open-food-facts", "renamed-snapshot.gz", offArchive());
-    await page.reload();
-    await expect(off.getByText("No change detected in the OFF export.", { exact: true })).toBeVisible();
-    await expect(off.getByText("Installed official snapshot: 2026-09-07T12:00:00.000Z", { exact: true })).toBeVisible();
-    const installedBefore = await off.getByText(/^Installed: /).innerText();
-    for (const [fixture, message] of [
-      [{ headers: original }, "No change detected in the OFF export."],
-      [{ headers: { ...original, ETag: '"snapshot-b"', "Last-Modified": "Tue, 08 Sep 2026 12:00:00 GMT", "x-amz-checksum-crc64nvme": "1Oju86qC+6I=" } }, "A newer OFF export snapshot is available."],
-      [{ headers: { ...original, ETag: "", "x-amz-checksum-crc64nvme": "", "Last-Modified": "" } }, "OFF snapshot metadata cannot be compared safely."],
-      [{ status: 503 }, "OFF snapshot metadata is temporarily unavailable."],
-    ] as const) {
-      await writeFile(fixturePath, JSON.stringify(fixture));
-      await checkUpdates();
-      await expect(off.getByText(message, { exact: true })).toBeVisible();
-      await expect(off.getByText("Archive: renamed-snapshot.gz", { exact: true })).toBeVisible();
-      await expect(off.getByText(/^Installed: /)).toHaveText(installedBefore);
-      await expect(off.locator('input[type="file"], progress')).toHaveCount(0);
-      expect(await usda.innerText()).toBe(usdaBefore);
-    }
-    const beforeReload = (await readFile(requestsPath, "utf8")).trim().split("\n");
-    await page.reload();
-    await expect(off.getByText("OFF snapshot metadata is temporarily unavailable.", { exact: true })).toBeVisible();
-    expect((await readFile(requestsPath, "utf8")).trim().split("\n")).toEqual(beforeReload);
-    expect(beforeReload.map(line => JSON.parse(line) as { method: string; url: string })).toEqual(beforeReload.map(() => ({ method: "HEAD", url: "https://static.openfoodfacts.org/data/en.openfoodfacts.org.products.csv.gz" })));
-  } finally { await rm(fixturePath, { force: true }); }
-});
-
-
 async function unusedPort() {
   const listener = createServer();
   await new Promise<void>(resolve => listener.listen(0, "127.0.0.1", resolve));
@@ -312,7 +234,7 @@ test("a real backend restart delivers independent interruption toasts only to ad
     DATABASE_PATH: path.join(directory, "application.sqlite"), CATALOG_DIRECTORY: path.join(directory, "catalogs"), APPLICATION_SECRETS_PATH: path.join(directory, "secrets"),
     APPLICATION_URL: `https://localhost:${publicPort}`, LAN_URL: origin, LAN_PORT: lanPort,
   };
-  const start = () => spawn(process.execPath, ["--import", "./tests/browser/off-metadata-fixture.mjs", "server/playwright-https.js", key, cert, publicPort, lanPort], { env: environment, stdio: "ignore" });
+  const start = () => spawn(process.execPath, ["--import", "./tests/browser/off-api-fixture.mjs", "server/playwright-https.js", key, cert, publicPort, lanPort], { env: environment, stdio: "ignore" });
   let backend = start();
   const adminContext = await browser.newContext({ baseURL: origin });
   const memberContext = await browser.newContext({ baseURL: origin });
@@ -338,9 +260,10 @@ test("a real backend restart delivers independent interruption toasts only to ad
     await member.getByRole("button", { name: "Set password and continue" }).click();
     await member.getByRole("button", { name: "Finish setup" }).click();
     await admin.goto("/settings/goals");
-    for (const provider of ["usda-fdc", "open-food-facts"] as const) {
-      const archive = provider === "usda-fdc" ? await basicFoodsArchive(750000) : offArchive(Array.from({ length: 150000 }, (_, index) => offWithBasis("100g", String(1000000000000 + index))));
-      const archivePath = path.join(directory, provider === "usda-fdc" ? "interrupted.zip" : "interrupted.gz");
+    {
+      const provider = "usda-fdc";
+      const archive = await basicFoodsArchive(750000);
+      const archivePath = path.join(directory, "interrupted.zip");
       await writeFile(archivePath, archive);
       const token = (await readFile(path.join(directory, "catalogs/.local-import-token"), "utf8")).trim();
       let notifyActive!: () => void;
@@ -366,7 +289,7 @@ test("a real backend restart delivers independent interruption toasts only to ad
       await expect.poll(async () => adminContext.request.get("/health/live").then(response => response.status(), () => 0)).toBe(200);
       await admin.reload();
       await member.reload();
-      await expect(toast(admin)).toHaveText(`${provider === "usda-fdc" ? "USDA Foundation" : "Open Food Facts"} import interrupted. Inspect the terminal and retry the command.`);
+      await expect(toast(admin)).toHaveText("USDA Foundation import interrupted. Inspect the terminal and retry the command.");
       await expect(toast(member)).toHaveCount(0);
       const response = await (await member.request.get("/catalog-notifications")).text();
       expect(response).not.toMatch(/interrupted|failed|filename|error|csrfToken/);
@@ -381,16 +304,11 @@ test("a real backend restart delivers independent interruption toasts only to ad
   }
 });
 
-test("JSONL import makes native serving nutrition scannable and saves source-backed totals", async ({ page }) => {
-  await bootstrapOrSignInBrowserTestUser(page, "jsonl.browser.admin", password);
+test("native serving nutrition from the Open Food Facts API is scannable and saves source-backed totals", async ({ page }) => {
+  configureBarcodeContact();
+  await bootstrapOrSignInBrowserTestUser(page, "native.serving.admin", password);
   await page.getByRole("button", { name: "Finish setup" }).click();
   await expect(page).toHaveURL("/");
-  const target = JSON.parse(await readFile("tests/fixtures/off-native-serving.json", "utf8")) as unknown;
-  const products = offJsonlArchive([target, { code: "0012345678906", product_name: "Incomplete JSONL food", nutriments: { "energy-kcal_100g": 100 } }]);
-  await page.goto("/settings/catalogs");
-  await commandImport("open-food-facts", "products.jsonl.gz", products);
-  await page.reload();
-  await expect(page.getByText("Archive: products.jsonl.gz", { exact: true })).toBeVisible();
   await installSimulatedBarcodeCamera(page);
   await page.goto("/?food=barcode");
   await page.getByRole("button", { name: "Use camera" }).click();
@@ -399,6 +317,7 @@ test("JSONL import makes native serving nutrition scannable and saves source-bac
     state.barcode = "643843715887"; state.emit = true;
   });
   await expect(page.getByRole("heading", { name: "100% Whey Protein Powder", exact: true })).toBeVisible();
+  await expect(page.getByText("Barcode 0643843715887")).toBeVisible();
   await expect(page.getByRole("combobox", { name: /Measurement/ })).toHaveValue("serving");
   await expect(page.getByText("150 kcal", { exact: true })).toBeVisible();
   await expect(page.getByText("30 g", { exact: true })).toBeVisible();

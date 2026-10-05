@@ -38,7 +38,7 @@ vi.mock("@zxing/browser", async (importOriginal) => {
   };
 });
 
-import { localBarcodeDecoder } from "../app/catalog/barcode-decoder.client";
+import { localBarcodeDecoder } from "../app/barcode/barcode-decoder.client";
 
 type DecodeContinuouslyCallback = Parameters<
   BrowserMultiFormatReader["scan"]

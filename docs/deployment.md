@@ -52,10 +52,11 @@ Losing only the secrets mount leaves accounts, Food Entries, history and catalog
 intact, but anything sealed with the old key, such as API key copies, becomes
 unreadable.
 Optional catalog
-limits and storage configuration are described in [USDA operations](local-usda-catalog.md),
-[OFF operations](local-off-catalog.md) and the [catalog workflow](food-catalog-operations.md).
-No USDA/OFF lookup API credentials are needed. Barcode and food lookups use the
-installed local SQLite generations.
+limits and storage configuration are described in [USDA operations](local-usda-catalog.md)
+and the [catalog workflow](food-catalog-operations.md).
+No USDA API credentials are needed: food search uses the installed local SQLite
+generation. Barcode lookups call the live Open Food Facts API and stay disabled
+until an administrator sets a contact email in **Settings → Food Catalogs**.
 
 ## Configure and restrict the Tunnel
 
@@ -215,11 +216,10 @@ of passing through the public reverse proxy. First copy the archive into the
 persistent data volume. A conventional location is `/app/data/imports`; create
 it if necessary and keep the source archive there until the import succeeds.
 
-Run the provider-specific command inside the running application container:
+Run the command inside the running application container:
 
 ```sh
 docker compose exec -T application pnpm catalog:import:usda -- /app/data/imports/FoodData_Central_foundation_food_csv.zip
-docker compose exec -T application pnpm catalog:import:off -- /app/data/imports/openfoodfacts-products.jsonl.gz
 ```
 
 For a Portainer-managed container, open its console and run the corresponding
@@ -258,14 +258,14 @@ Install USDA Foundation with the [terminal workflow](../README.md#install-food-c
 
 ### Recover an interrupted catalog update
 
-Catalog imports run inside the single application process; there is no separate worker service to restart. After an application/container restart, sign in as the administrator and open **Settings → Food Catalogs**. Each source recovers independently:
+Catalog imports run inside the single application process; there is no separate worker service to restart. After an application/container restart, sign in as the administrator and open **Settings → Food Catalogs**:
 
 1. A job interrupted before publication keeps the prior catalog active and removes its partial upload, staging data, database, and journal.
 2. A job interrupted after publication confirms the replacement database's recorded size and provider schema before removing the prior generation. If confirmation fails, the prior complete generation is restored.
-3. Rerun `pnpm catalog:import:usda -- PATH` or `pnpm catalog:import:off -- PATH` on the running server with the full server-visible archive, following the [README workflow](../README.md#install-food-catalogs-from-the-terminal). Partial imports cannot be resumed.
-4. If Food Catalogs shows the source as not installed, restore the application database and catalog directory from the same backup or perform a fresh catalog installation.
+3. Rerun `pnpm catalog:import:usda -- PATH` on the running server with the full server-visible archive, following the [README workflow](../README.md#install-food-catalogs-from-the-terminal). Partial imports cannot be resumed.
+4. If Food Catalogs shows USDA as not installed, restore the application database and catalog directory from the same backup or perform a fresh catalog installation.
 
-Do not delete UUID-named catalog files by hand. Startup removes abandoned artifacts while preserving both providers' active, retiring, and in-progress generations. A failed/interrupted catalog job does not rewrite Food Entries. See the [USDA](local-usda-catalog.md#operations-and-verification) and [OFF](local-off-catalog.md#resources-and-operations) guides for archive formats, free-space calculations, archive limits, and source-specific errors.
+Do not delete UUID-named catalog files by hand. Startup removes abandoned artifacts while preserving the USDA catalog's active, retiring, and in-progress generations. A failed/interrupted catalog job does not rewrite Food Entries. See the [USDA guide](local-usda-catalog.md#operations-and-verification) for archive formats, free-space calculations, archive limits, and errors.
 
 Use a short maintenance window:
 
@@ -282,7 +282,22 @@ directory during recovery; restore a complete backup to a new `DATA_PATH` and
 use the application version that matches it. Never run an older application
 against a database containing newer migrations.
 
-OFF imports recommend the official product JSONL GZIP while preserving existing CSV generations. Defaults allow 16 GiB compressed, 96 GiB expanded, 32 GiB staged SQLite and 8 MiB per JSONL document. Set `OFF_CATALOG_MAX_UPLOAD_BYTES`, `OFF_CATALOG_MAX_EXPANDED_BYTES`, `OFF_CATALOG_MAX_DATABASE_BYTES` and `OFF_CATALOG_MAX_DOCUMENT_BYTES` in the application's environment for future archive growth. Provide up to 80 GiB free for the staged compressed archive, staging and rollback/index work in addition to occupied storage. The expanded archive is streamed without an expanded disk copy. The command submits a container-visible local file path, so public reverse-proxy upload limits do not apply; all application resource/schema/integrity checks remain enforced. See [OFF operations](local-off-catalog.md#resources-and-operations).
+### Remove the old local Open Food Facts catalog
+
+Releases before live barcode lookup imported Open Food Facts into a local catalog.
+After upgrading (or before; the order does not matter), reclaim its space and
+clear its leftover metadata with the standalone cleanup script, which uses the
+same `DATABASE_PATH` and `CATALOG_DIRECTORY` as the application:
+
+```sh
+docker compose exec -T application node scripts/remove-local-off-catalog.mjs        # print the plan
+docker compose exec -T application node scripts/remove-local-off-catalog.mjs --yes  # delete it
+```
+
+It deletes only the Open Food Facts metadata keys and the generation, journal,
+staging and upload files they reference; USDA state and files are never touched.
+Running it again is a no-op. Remove any `OFF_CATALOG_*` variables from the stack;
+they are no longer read.
 
 ## Key enrollment preview
 
