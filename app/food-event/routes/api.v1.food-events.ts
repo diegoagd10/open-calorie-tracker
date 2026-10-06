@@ -14,12 +14,12 @@ import {
   FoodEventValidationError,
   FoodSourceError,
 } from "../food-event.exceptions";
-import type { VersionedId } from "../food-event.model";
 import {
   presentFoodEvent,
   presentFoodEventDeletion,
   presentFoodEventList,
   saveFoodEventFromJson,
+  versionedIdsFromJson,
 } from "../present.server";
 import { getFoodEventService } from "../runtime.server";
 import { foodEventErrorStatus } from "../transport.server";
@@ -80,8 +80,8 @@ export function loader({ request }: Route.LoaderArgs) {
 async function save(request: Request, userId: number): Promise<Response> {
   const body = await readJson(request);
   if (typeof body !== "object" || body === null || Array.isArray(body)) return apiError("invalid_input", 400);
-  const input = saveFoodEventFromJson(body);
   try {
+    const input = saveFoodEventFromJson(body);
     const event = await getFoodEventService().save(userId, input, {
       requestId: request.headers.get("x-open-calory-request-id") ?? undefined,
     });
@@ -95,7 +95,7 @@ async function remove(request: Request, userId: number): Promise<Response> {
   const body = deleteBodySchema.safeParse(await readJson(request));
   if (!body.success) return apiError("invalid_event_ids", 400);
   try {
-    const deletedCount = getFoodEventService().delete(userId, body.data.events as VersionedId[]);
+    const deletedCount = getFoodEventService().delete(userId, versionedIdsFromJson(body.data.events));
     return json(presentFoodEventDeletion(deletedCount));
   } catch (error) {
     return foodEventError(error);

@@ -560,9 +560,12 @@ test("the daily log names each food's source and brand", async () => {
 
 test("JSON bodies of the wrong shape become refusals", async () => {
   for (const [body, error] of [
-    [manual({ quantity: true }), "invalid_quantity"],
-    [manual({ nutrition: [180] }), "invalid_nutrition"],
-    [{ id: 999_999, expectedUpdatedAt: now, changes: [] }, "not_found"],
+    [manual({ quantity: true }), "invalid_input"],
+    [manual({ nutrition: [180] }), "invalid_input"],
+    [manual({ method: "photo" }), "invalid_input"],
+    [manual({ method: undefined }), "invalid_input"],
+    [{ id: 999_999, expectedUpdatedAt: now, changes: [] }, "invalid_input"],
+    [{ id: 999_999, expectedUpdatedAt: now }, "not_found"],
   ] as const) {
     const response = await post(writerKey, body);
     expect(await response.json()).toEqual({ error });

@@ -1,7 +1,7 @@
 import { and, asc, desc, eq, gte, lt, sql } from "drizzle-orm";
 
 import type { ApplicationDatabaseClient } from "../database/database.server";
-import { userPreferences } from "../database/schema.server";
+import { readUserTimeZone } from "../database/user-preferences.server";
 import { laterInstant } from "../shared/date-time";
 import type { Favorite, FoodEvent, FoodEventRange, FoodSnapshot, VersionedId } from "./food-event.model";
 import { favoriteFoods, foodEvents } from "./food-event.schema.server";
@@ -25,7 +25,7 @@ export type InsertFoodEvent = {
   favorite: FavoritePolicy;
 };
 
-/** An edit's new snapshot columns and the instant it was made. */
+/** The snapshot columns an edit changes. */
 export type UpdateFoodEvent = Partial<SnapshotColumns>;
 
 export type DeleteOutcome =
@@ -231,10 +231,6 @@ export class FoodEventRepository {
   }
 
   #timeZone(database: Reader, userId: number): string | null {
-    return database
-      .select({ timeZone: userPreferences.timeZone })
-      .from(userPreferences)
-      .where(eq(userPreferences.userId, userId))
-      .get()?.timeZone ?? null;
+    return readUserTimeZone(database, userId) ?? null;
   }
 }

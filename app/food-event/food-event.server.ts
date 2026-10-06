@@ -245,16 +245,13 @@ export class FoodEventService {
    * or unowned item is not found, and a changed one is a conflict carrying its current version.
    */
   delete(userId: number, items: readonly VersionedId[]): number {
-    if (!Array.isArray(items) || items.length > MAXIMUM_DELETED_EVENTS) {
-      throw invalid("invalid_event_ids", `Send at most ${MAXIMUM_DELETED_EVENTS} events, each with its id and expectedUpdatedAt.`);
-    }
+    const refused = invalid("invalid_event_ids", `Send at most ${MAXIMUM_DELETED_EVENTS} events, each with its id and expectedUpdatedAt.`);
+    if (!Array.isArray(items) || items.length > MAXIMUM_DELETED_EVENTS) throw refused;
     const versions = new Map<number, string>();
     for (const item of items as unknown[]) {
       const { id, expectedUpdatedAt } = (typeof item === "object" && item !== null ? item : {}) as Partial<VersionedId>;
       const version = versionSchema.safeParse(expectedUpdatedAt);
-      if (!isEventId(id) || !version.success || (versions.has(id) && versions.get(id) !== version.data)) {
-        throw invalid("invalid_event_ids", `Send at most ${MAXIMUM_DELETED_EVENTS} events, each with its id and expectedUpdatedAt.`);
-      }
+      if (!isEventId(id) || !version.success || (versions.has(id) && versions.get(id) !== version.data)) throw refused;
       versions.set(id, version.data);
     }
     const outcome = this.#repository.delete(userId, [...versions].map(([id, expectedUpdatedAt]) => ({ id, expectedUpdatedAt })));

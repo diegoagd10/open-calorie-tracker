@@ -1,9 +1,13 @@
+import { z } from "zod";
+
+import { FoodEventValidationError } from "./food-event.exceptions";
 import type {
   FoodEvent,
   FoodEventList,
   NutrientField,
   NutritionTotals,
   SaveFoodEvent,
+  VersionedId,
 } from "./food-event.model";
 import { NUTRIENT_FIELDS } from "./nutrition";
 
@@ -67,74 +71,78 @@ export function presentFoodEventDeletion(deletedCount: number) {
   return { deletedCount };
 }
 
-/** Decimal text from a JSON number or string; anything else becomes text the rules reject. */
-function decimalText(value: unknown): string {
-  if (typeof value === "string") return value;
-  return typeof value === "number" && Number.isFinite(value) ? String(value) : "";
-}
+/** A JSON amount as decimal text; the rules decide whether it is a valid amount. */
+const decimal = z.union([z.string(), z.number().finite().transform(String)]);
 
-function optionalDecimalText(value: unknown): string | undefined {
-  return value === undefined ? undefined : decimalText(value);
-}
+const nutrientAmount = decimal.nullable().optional();
 
-function record(value: unknown): Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : {};
-}
+/** Every entered nutrient field, each optional; null clears one in an edit. */
+const nutritionSchema = z.object(Object.fromEntries(
+  NUTRIENT_FIELDS.map(({ field }) => [field, nutrientAmount]),
+) as Record<NutrientField, typeof nutrientAmount>);
 
-/** Entered nutrients by field: omitted stays omitted, and null stays null when `allowNull`. */
-function nutritionFromJson(value: unknown, allowNull: boolean): Partial<Record<NutrientField, string | null>> {
-  const entered = record(value);
-  const nutrition: Partial<Record<NutrientField, string | null>> = {};
-  for (const { field } of NUTRIENT_FIELDS) {
-    const amount = entered[field];
-    if (amount === undefined || (amount === null && !allowNull)) continue;
-    nutrition[field] = amount === null ? null : decimalText(amount);
-  }
-  return nutrition;
-}
+/** A new manual food's totals; null means unknown, the same as leaving a nutrient out. */
+const manualNutritionSchema = nutritionSchema.transform((nutrition) =>
+  Object.fromEntries(Object.entries(nutrition).filter(([, amount]) => amount !== null && amount !== undefined)));
+
+/** Absent text reaches the rules as empty, so they refuse it with their own code. */
+const text = z.string().default("");
+
+const createSchema = z.discriminatedUnion("method", [
+  z.object({
+    method: z.enum(["lookup", "barcode"]),
+    logDate: text,
+    providerFoodId: text,
+    reviewVersion: text,
+    measurementId: text,
+    quantity: decimal.default(""),
+  }),
+  z.object({
+    method: z.literal("manual"),
+    logDate: text,
+    name: text,
+    quantity: decimal.default(""),
+    nutrition: manualNutritionSchema.default({}),
+    saveAsFavorite: z.boolean().default(false),
+  }),
+  z.object({ method: z.literal("favorite"), logDate: text, favoriteId: z.number() }),
+]);
+
+const editSchema = z.object({
+  id: z.number(),
+  expectedUpdatedAt: text,
+  changes: z.object({
+    name: z.string().optional(),
+    quantity: decimal.optional(),
+    measurementId: z.string().optional(),
+    nutrition: nutritionSchema.optional(),
+  }).default({}),
+});
 
 /**
- * A REST body or MCP arguments as a save. With `id` it is an edit of the version read at
- * `expectedUpdatedAt`; without it, a create by `method`. The service validates every value.
+ * A REST body or MCP arguments as a save: with `id` an edit of the version read at
+ * `expectedUpdatedAt`, otherwise a create by `method`. A body of the wrong shape, including an
+ * unknown method, is refused here; the service then checks every value.
  */
 export function saveFoodEventFromJson(value: unknown): SaveFoodEvent {
-  const body = record(value);
-  if (body.id !== undefined) {
-    const changes = record(body.changes);
-    return {
-      id: body.id as number,
-      expectedUpdatedAt: body.expectedUpdatedAt as string,
-      changes: {
-        name: changes.name as string | undefined,
-        quantity: optionalDecimalText(changes.quantity),
-        measurementId: changes.measurementId as string | undefined,
-        nutrition: changes.nutrition === undefined ? undefined : nutritionFromJson(changes.nutrition, true),
-      },
-    };
+  const isEdit = typeof value === "object" && value !== null && "id" in value && value.id !== undefined;
+  const parsed = (isEdit ? editSchema : createSchema).safeParse(value);
+  if (!parsed.success) {
+    throw new FoodEventValidationError(
+      "invalid_input",
+      "Send method as lookup, barcode, manual, or favorite with that method's fields, or id and expectedUpdatedAt with changes.",
+    );
   }
-  const logDate = body.logDate as string;
-  switch (body.method) {
-    case "lookup":
-    case "barcode":
-      return {
-        method: body.method,
-        logDate,
-        providerFoodId: body.providerFoodId as string,
-        reviewVersion: body.reviewVersion as string,
-        measurementId: body.measurementId as string,
-        quantity: decimalText(body.quantity),
-      };
-    case "manual":
-      return {
-        method: "manual",
-        logDate,
-        name: body.name as string,
-        quantity: decimalText(body.quantity),
-        nutrition: nutritionFromJson(body.nutrition, false) as { energyKcal: string },
-        saveAsFavorite: body.saveAsFavorite === true,
-      };
-    default:
-      return { method: body.method as "favorite", logDate, favoriteId: body.favoriteId as number };
-  }
+  return parsed.data as SaveFoodEvent;
 }
 
+const versionedIdsSchema = z.array(z.object({ id: z.number(), expectedUpdatedAt: z.string() }));
+
+/** A delete's events, each an `id` and `expectedUpdatedAt`; anything else is refused here. */
+export function versionedIdsFromJson(value: unknown): VersionedId[] {
+  const parsed = versionedIdsSchema.safeParse(value);
+  if (!parsed.success) {
+    throw new FoodEventValidationError("invalid_event_ids", "Send events as a list of objects with id and expectedUpdatedAt.");
+  }
+  return parsed.data;
+}
