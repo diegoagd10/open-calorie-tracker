@@ -3,7 +3,7 @@ import { z } from "zod";
 
 import type { Route } from "./+types/web";
 import { getApplicationMutationSession, readApplicationMutationForm } from "../../auth/http.server";
-import { isTestEnvironment } from "../../runtime.server";
+import { testRequestInstant } from "../../runtime.server";
 import { zonedDateTimeToUtc } from "../../shared/date-time";
 import { getWaterEventService } from "../runtime.server";
 import type { WaterEventService } from "../water-event.server";
@@ -59,15 +59,6 @@ function runCommand(service: WaterEventService, userId: number, timeZone: string
 /** The account's Food Log day for a saved event; a skipped wall-clock time can move it past the submitted date. */
 function localDay(logDate: string, timeZone: string): string {
   return waterEventLocalDateTime(logDate, timeZone).slice(0, 10);
-}
-
-/** The instant a browser test pins with `X-Test-Food-Log-Now`, as the Food Log does. */
-function testRequestInstant(request: Request): Date | undefined {
-  const requested = isTestEnvironment() ? request.headers.get("X-Test-Food-Log-Now") : null;
-  if (!requested) return undefined;
-  const instant = new Date(requested);
-  if (Number.isNaN(instant.getTime())) throw new Response("Test Food Log instant is invalid.", { status: 400 });
-  return instant;
 }
 
 /**

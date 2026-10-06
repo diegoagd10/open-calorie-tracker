@@ -80,3 +80,11 @@ export function localDayRange(localDate: string, timeZone: string): { from: stri
   next.setUTCFullYear(Number(localDate.slice(0, 4)), Number(localDate.slice(5, 7)) - 1, Number(localDate.slice(8, 10)) + 1);
   return { from: start, to: zonedDateTimeToUtc(`${next.toISOString().slice(0, 10)}T00:00:00`, timeZone)! };
 }
+
+/**
+ * `now`, or one millisecond after `previous` when the clock has not moved past it, so a
+ * record's version always advances. Both are UTC ISO instants.
+ */
+export function laterInstant(now: string, previous: string): string {
+  return now > previous ? now : new Date(new Date(previous).getTime() + 1).toISOString();
+}

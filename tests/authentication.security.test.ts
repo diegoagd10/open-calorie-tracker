@@ -10,7 +10,7 @@ import { AuthenticationService } from "../app/auth/authentication.server";
 import { hashPassword } from "../app/auth/password.server";
 import { PreAuthenticationCsrfService } from "../app/auth/pre-authentication-csrf.server";
 import { FoodCatalog } from "../app/catalog/food-catalog.server";
-import { TestFoodCatalogProvider } from "../app/catalog/test-fixture.server";
+import { TEST_CATALOG_GENERATION, TestFoodCatalogProvider } from "../app/catalog/test-fixture.server";
 import { openApplicationDatabase } from "../app/database/database.server";
 import {
   passwordCredentials,
@@ -19,10 +19,8 @@ import {
   sessions,
   users,
 } from "../app/database/schema.server";
-import {
-  FoodEntryService,
-  FoodEntryUnavailableError,
-} from "../app/food-entry/food-entry.server";
+import { FoodEventNotFoundError } from "../app/food-event/food-event.exceptions";
+import { createFoodEventService } from "../app/food-event/runtime.server";
 import { createDailyGoalService } from "../app/daily-goal/index.server";
 import { createSetupService } from "../app/setup/runtime.server";
 import { TEST_DAILY_GOAL } from "./support/setup";
@@ -711,8 +709,9 @@ test("administrator deletion removes a disabled member's owned nutrition history
   const setup = createSetupService(fixture.database, now);
   const goals = createDailyGoalService(fixture.database, now);
   const foodProvider = new TestFoodCatalogProvider();
-  const foodEntries = new FoodEntryService(
+  const foodEvents = createFoodEventService(
     fixture.database,
+    now,
     new FoodCatalog([
       {
         capability: "search",
@@ -720,17 +719,16 @@ test("administrator deletion removes a disabled member's owned nutrition history
         service: foodProvider,
       },
     ]),
-    now,
   );
   const waterEvents = createWaterEventService(fixture.database, now);
   setup.complete(member.user.id, { goal: TEST_DAILY_GOAL, timeZone: "UTC" });
-  const foodEntry = await foodEntries.log(member.user.id, {
-    foodLogDate: "2026-08-29",
-    idempotencyKey: "deleted-owned-food-entry",
-    provider: "usda-fdc",
+  const foodEvent = await foodEvents.save(member.user.id, {
+    method: "lookup",
+    logDate: "2026-08-29T12:00:00.000Z",
     providerFoodId: "1001",
+    reviewVersion: TEST_CATALOG_GENERATION,
     quantity: "1",
-    selectedMeasurementId: "serving:g:170000000",
+    measurementId: "serving:g:170000000",
   });
   const waterEvent = waterEvents.save(member.user.id, {
     logDate: "2026-08-29T08:00:00Z",
@@ -756,8 +754,8 @@ test("administrator deletion removes a disabled member's owned nutrition history
 
   expect(setup.isComplete(member.user.id)).toBe(false);
   expect(goals.read(member.user.id)).toBeNull();
-  expect(() => foodEntries.read(member.user.id, foodEntry.id)).toThrow(
-    FoodEntryUnavailableError,
+  expect(() => foodEvents.read(member.user.id, foodEvent.id)).toThrow(
+    FoodEventNotFoundError,
   );
   expect(() => waterEvents.read(member.user.id, waterEvent.id)).toThrow(
     WaterEventNotFoundError,
@@ -777,8 +775,8 @@ test("administrator deletion removes a disabled member's owned nutrition history
   expect(replacementLogin.session.user.id).not.toBe(member.user.id);
   expect(goals.read(replacementLogin.session.user.id)).toBeNull();
   expect(() =>
-    foodEntries.read(replacementLogin.session.user.id, foodEntry.id)
-  ).toThrow(FoodEntryUnavailableError);
+    foodEvents.read(replacementLogin.session.user.id, foodEvent.id)
+  ).toThrow(FoodEventNotFoundError);
   expect(() =>
     waterEvents.read(replacementLogin.session.user.id, waterEvent.id)
   ).toThrow(WaterEventNotFoundError);

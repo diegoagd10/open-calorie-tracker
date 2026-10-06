@@ -5,6 +5,9 @@ export const API_KEY_SCOPES = [
   { scope: "daily-log:read", label: "Read Food Log" },
   { scope: "water-events:read", label: "Read water" },
   { scope: "water-events:write", label: "Log water" },
+  { scope: "food-events:read", label: "Read food" },
+  { scope: "food-events:write", label: "Log food" },
+  { scope: "catalog:read", label: "Search food catalogs" },
 ] as const;
 export type ApiKeyScope = (typeof API_KEY_SCOPES)[number]["scope"];
 

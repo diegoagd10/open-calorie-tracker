@@ -4,7 +4,7 @@ import path from "node:path";
 import { afterEach, expect, test } from "vitest";
 import { openApplicationDatabase, type ApplicationDatabase } from "../app/database/database.server";
 import { FoodCatalog } from "../app/catalog/food-catalog.server";
-import { FoodEntryService } from "../app/food-entry/food-entry.server";
+import { createFoodEventService } from "../app/food-event/runtime.server";
 import { FoodLogService } from "../app/food-log/food-log.server";
 import { summarizeDailyLog } from "../app/mcp/daily-log-summary";
 import { createMigrationFolder } from "./support/migrations";
@@ -61,7 +61,9 @@ async function seedPreRemovalDatabase() {
 
 test("upgrading converts AI photo entries to manual entries and deletes photo data, AI secrets and AI configuration", async () => {
   const seeded = await seedPreRemovalDatabase();
-  const database = openApplicationDatabase({ databasePath: seeded.databasePath, migrationsFolder: path.resolve("drizzle") });
+  // Food Entries became Food Events in 0033; this checks the photo removal release itself.
+  const migrationsFolder = await createMigrationFolder(path.join(path.dirname(seeded.databasePath), "removal-migrations"), { throughTag: "0032_remove_ai_photo_schema" });
+  const database = openApplicationDatabase({ databasePath: seeded.databasePath, migrationsFolder });
   try {
     const sqlite = database.getClient().$client;
     const after = sqlite.prepare("SELECT * FROM food_entries ORDER BY id").all() as Array<Record<string, unknown>>;
@@ -85,18 +87,19 @@ test("a former AI photo entry behaves like a manual entry", async () => {
   const seeded = await seedPreRemovalDatabase();
   const database = openApplicationDatabase({ databasePath: seeded.databasePath, migrationsFolder: path.resolve("drizzle") });
   try {
-    const entries = new FoodEntryService(database.getClient(), new FoodCatalog([]), () => new Date("2026-09-08T12:00:00Z"));
-    const formerAi = entries.read(seeded.userId, seeded.formerAiIds[0]);
-    expect(formerAi).toMatchObject({ provider: "manual", dataType: "User entered", name: "Chicken rice bowl", selectedMeasurementLabel: "Analyzed plate" });
+    const events = createFoodEventService(database.getClient(), () => new Date("2026-09-08T12:00:00Z"), new FoodCatalog([]));
+    const formerAi = events.read(seeded.userId, seeded.formerAiIds[0]);
+    expect(formerAi).toMatchObject({ logDate: "2026-09-06T12:00:00.000Z", source: { provider: "manual", dataType: "User entered" }, name: "Chicken rice bowl", measurement: { label: "Analyzed plate" } });
 
-    const updated = entries.update(seeded.userId, formerAi.id, { expectedUpdatedAt: formerAi.updatedAt, foodLogDate: formerAi.foodLogDate, name: "Edited bowl", quantity: "2", selectedMeasurementId: "plate", energyKcal: "1040" });
-    expect(updated).toMatchObject({ name: "Edited bowl", energyMilliKcal: 1040000, selectedMeasurementLabel: "Analyzed plate" });
+    const updated = await events.save(seeded.userId, { id: formerAi.id, expectedUpdatedAt: formerAi.updatedAt, changes: { name: "Edited bowl", quantity: "2", nutrition: { energyKcal: "1040" } } });
+    expect(updated).toMatchObject({ name: "Edited bowl", nutrients: { energyMilliKcal: 1040000 }, measurement: { label: "Analyzed plate" } });
 
-    expect(entries.saveManualEntry(seeded.userId, formerAi.id)).toMatchObject({ name: "Edited bowl" });
-    expect(entries.isManualEntrySaved(seeded.userId, formerAi.id)).toBe(true);
+    const favorite = events.addFavorite(seeded.userId, formerAi.id);
+    expect(favorite).toMatchObject({ name: "Edited bowl" });
+    expect(events.read(seeded.userId, formerAi.id).favoriteId).toBe(favorite.id);
 
-    const copy = entries.copyToToday(seeded.userId, formerAi.id, { foodLogDate: formerAi.foodLogDate, idempotencyKey: `copy:${formerAi.id}:former-ai` });
-    expect(copy).toMatchObject({ provider: "manual", name: "Edited bowl", energyMilliKcal: 1040000 });
+    const copy = events.copy(seeded.userId, { eventId: formerAi.id, sourceDate: "2026-09-06", logDate: "2026-09-08T12:00:00.000Z" });
+    expect(copy).toMatchObject({ source: { provider: "manual" }, name: "Edited bowl", nutrients: { energyMilliKcal: 1040000 } });
   } finally { database.close(); }
 });
 

@@ -12,8 +12,9 @@ import {
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { expect, test, vi } from "vitest";
 
-import { buildCalendarMonth, getNearbyLocalDates } from "../../app/food-log/date";
+import { buildCalendarMonth, getNearbyLocalDates } from "../../app/shared/local-date";
 import Home from "../../app/routes/home";
+import eventStyles from "../../app/food-event/food-event.module.css";
 import styles from "../../app/food-log.module.css";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean })
@@ -104,8 +105,8 @@ const emptyTotals = {
 };
 
 const baseFoodLog = {
-  entries: [],
   events: [],
+  foodEvents: [],
   goal: completeGoal,
   isFuture: false,
   nutritionTotals: emptyTotals,
@@ -118,13 +119,7 @@ const baseFoodLog = {
 const baseLoaderData = {
   barcodeLookup: "enabled",
   calendar: undefined,
-  catalog: undefined,
-  copyDialog: undefined,
-  copyError: undefined,
-  copyIdempotencyKeys: {},
   csrfToken: "home-component-csrf",
-  foodEntryEditor: undefined,
-  manualEntrySaved: false,
   foodLog: baseFoodLog,
   nearbyDates: [
     { date: "2026-08-30", isFuture: false, isSelected: false },
@@ -136,26 +131,93 @@ const baseLoaderData = {
   waterDialog: undefined,
 };
 
-function withSavedSearchResults(overrides: Record<string, unknown>) {
-  const catalog = overrides.catalog;
+function withSearchFavorites(overrides: Record<string, unknown>) {
+  const addFood = overrides.addFood;
   if (
-    catalog &&
-    typeof catalog === "object" &&
-    "mode" in catalog &&
-    catalog.mode === "search" &&
-    !("savedResults" in catalog)
+    addFood &&
+    typeof addFood === "object" &&
+    "mode" in addFood &&
+    addFood.mode === "search" &&
+    !("favorites" in addFood)
   ) {
-    return { ...overrides, catalog: { ...catalog, savedResults: [] } };
+    return { ...overrides, addFood: { ...addFood, favorites: [] } };
   }
   return overrides;
 }
+
+/** A complete Food Event as the read model serves it; tests override what they exercise. */
+function foodEvent(change: Record<string, unknown> = {}) {
+  return {
+    authority: {
+      nutrition: {
+        carbohydrateMilligrams: { amount: 3.5, fixedPointMultiplier: 1_000 },
+        energyMilliKcal: { amount: 59, fixedPointMultiplier: 1_000 },
+        fatMilligrams: { amount: 0, fixedPointMultiplier: 1_000 },
+        fiberMilligrams: null,
+        proteinMilligrams: { amount: 10.5, fixedPointMultiplier: 1_000 },
+        sodiumMilligrams: { amount: 36, fixedPointMultiplier: 1 },
+        sugarMilligrams: { amount: 3.5, fixedPointMultiplier: 1_000 },
+      },
+      quantityMicrounits: 100_000_000,
+      unit: "g",
+    },
+    copiedFromId: null,
+    createdAt: "2026-08-31T16:00:00.000Z",
+    editedName: null,
+    favoriteId: null,
+    id: 41,
+    kind: "food",
+    logDate: "2026-08-31T16:00:00.000Z",
+    measurement: { baseQuantityMicrounits: 100_000_000, id: "base", label: "100 g", unit: "g" },
+    measurements: [
+      { baseQuantityMicrounits: 100_000_000, id: "base", label: "100 g", unit: "g" },
+      { baseQuantityMicrounits: 170_000_000, id: "serving", label: "1 container", unit: "g" },
+    ],
+    name: "Editable yogurt",
+    nutrients: {
+      carbohydrateMilligrams: 3_001,
+      energyMilliKcal: 59_000,
+      fatMilligrams: 0,
+      fiberMilligrams: null,
+      proteinMilligrams: 10_100,
+      sodiumMilligrams: 36,
+      sugarMilligrams: 3_500,
+    },
+    originalName: "Editable yogurt",
+    quantityMicrounits: 1_000_000,
+    source: {
+      barcode: null,
+      brand: null,
+      dataType: "Branded",
+      marketCountry: null,
+      modifiedDate: null,
+      provider: "usda-fdc",
+      providerFoodId: "1001",
+      publishedDate: null,
+    },
+    updatedAt: "2026-08-31T16:00:00.000Z",
+    ...change,
+  };
+}
+
+/** A manual food's source, as a manual Food Event or favorite records it. */
+const manualSource = {
+  barcode: null,
+  brand: null,
+  dataType: "User entered",
+  marketCountry: null,
+  modifiedDate: null,
+  provider: "manual",
+  providerFoodId: "manual-food",
+  publishedDate: null,
+};
 
 async function renderHome(
   loaderOverrides: Record<string, unknown> = {},
   actionData?: Record<string, unknown>,
   initialPath = "/",
 ): Promise<ReactTestRenderer> {
-  const loaderData = { ...baseLoaderData, ...withSavedSearchResults(loaderOverrides) };
+  const loaderData = { ...baseLoaderData, ...withSearchFavorites(loaderOverrides) };
   const Routes = createRoutesStub([{
     Component: Home,
     id: "home",
@@ -183,11 +245,47 @@ async function renderHome(
   return renderer!;
 }
 
+/**
+ * Home under a memory router with a `/food-events` route, so a test can submit a dialog's keyed
+ * fetcher and see what the mounted dialog shows for the action's answer.
+ */
+async function renderFoodHome(
+  loaderOverrides: Record<string, unknown>,
+  foodAction: () => unknown = () => new Promise(() => undefined),
+) {
+  const loaderData = { ...baseLoaderData, ...withSearchFavorites(loaderOverrides) };
+  const router = createMemoryRouter(
+    [
+      { Component: () => Home({ actionData: undefined, loaderData } as never), id: "home", loader: () => loaderData, path: "/" },
+      { action: foodAction, id: "food-events", path: "/food-events" },
+    ],
+    { hydrationData: { loaderData: { home: loaderData } }, initialEntries: ["/"] },
+  );
+  let renderer: ReactTestRenderer | undefined;
+  await act(async () => {
+    renderer = create(createElement(RouterProvider, { router }), {
+      createNodeMock: () => {
+        lastNodeMock = new TestElement();
+        return lastNodeMock;
+      },
+    });
+  });
+  const submit = async (key: string, fields: Record<string, string>) => {
+    const formData = new FormData();
+    for (const [name, value] of Object.entries(fields)) formData.set(name, value);
+    await act(async () => {
+      void router.fetch(key, "home", "/food-events", { formData, formMethod: "post" });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+  };
+  return { renderer: renderer!, router, submit };
+}
+
 async function renderPendingHome(
   loaderOverrides: Record<string, unknown>,
   navigation: { formData?: FormData; to: string },
 ) {
-  const loaderData = { ...baseLoaderData, ...withSavedSearchResults(loaderOverrides) };
+  const loaderData = { ...baseLoaderData, ...withSearchFavorites(loaderOverrides) };
   const never = new Promise<never>(() => undefined);
   const PendingHome = () => Home({ actionData: undefined, loaderData } as never);
   const router = createMemoryRouter(
@@ -262,7 +360,6 @@ function semanticDom(renderer: ReactTestRenderer): string {
     .update(JSON.stringify(normalize(renderer.toJSON())))
     .digest("hex");
 }
-
 test("home renders today's empty log and all goal progress contracts", async () => {
   const renderer = await renderHome();
   expect(semanticDom(renderer)).toMatchSnapshot();
@@ -571,10 +668,10 @@ test("home distinguishes past, future, no-goal, and incomplete summaries", async
 
 test("week strip and calendar compare each logged day with the Daily Goal's calories", async () => {
   const dailyCalories = {
-    "2026-08-29": { entryCount: 2, goalMilliKcal: 2_000_000, isIncomplete: false, knownMilliKcal: 2_345_600 },
-    "2026-08-30": { entryCount: 1, goalMilliKcal: 2_000_000, isIncomplete: true, knownMilliKcal: 640_000 },
-    "2026-08-31": { entryCount: 1, goalMilliKcal: null, isIncomplete: false, knownMilliKcal: 95_000 },
-    "2026-08-28": { entryCount: 0, goalMilliKcal: 2_000_000, isIncomplete: false, knownMilliKcal: 0 },
+    "2026-08-29": { eventCount: 2, goalMilliKcal: 2_000_000, isIncomplete: false, knownMilliKcal: 2_345_600 },
+    "2026-08-30": { eventCount: 1, goalMilliKcal: 2_000_000, isIncomplete: true, knownMilliKcal: 640_000 },
+    "2026-08-31": { eventCount: 1, goalMilliKcal: null, isIncomplete: false, knownMilliKcal: 95_000 },
+    "2026-08-28": { eventCount: 0, goalMilliKcal: 2_000_000, isIncomplete: false, knownMilliKcal: 0 },
   };
   const week = await renderHome({
     dailyCalories,
@@ -672,43 +769,36 @@ test("home renders calendar navigation, selected dates, and future days", async 
     .toBe("/?date=2026-08-31&calendar=2026-08");
   await act(async () => withNext.unmount());
 });
-
 test("home renders food and water timeline entries with factual units", async () => {
-  const foodEvent = {
-    amountMicroliters: undefined,
-    dataType: "Branded",
-    energyMilliKcal: 59_000,
-    foodLogDate: "2026-08-31",
+  const timelineFood = foodEvent({
     id: 11,
-    kind: "food" as const,
-    localEventTime: "00:05:00",
+    logDate: "2026-08-31T04:05:00.000Z",
+    measurement: { baseQuantityMicrounits: 100_000_000, id: "base", label: "100 g", unit: "g" },
     name: "Timeline yogurt",
-    provider: "open-food-facts",
+    nutrients: { ...foodEvent().nutrients, energyMilliKcal: 59_000 },
     quantityMicrounits: 1_500_000,
-    selectedMeasurementLabel: "100 g",
-  };
+    source: { ...foodEvent().source, dataType: "Open Food Facts", provider: "open-food-facts" },
+  });
   const waterEvent = {
     createdAt: "2026-08-31T17:07:00.000Z",
-    foodLogDate: "2026-08-31",
     id: 12,
     kind: "water" as const,
-    localEventTime: "13:07:00",
     logDate: "2026-08-31T17:07:00.000Z",
     ounces: "16",
     updatedAt: "2026-08-31T17:07:00.000Z",
     userId: 1,
   };
-  const unknownEnergyEvent = {
-    ...foodEvent,
-    energyMilliKcal: null,
+  const unknownEnergyEvent = foodEvent({
+    ...timelineFood,
     id: 14,
     name: "Unknown energy food",
-  };
+    nutrients: { ...timelineFood.nutrients, energyMilliKcal: null },
+  });
   const renderer = await renderHome({
     foodLog: {
       ...baseFoodLog,
-      entries: [foodEvent, { ...foodEvent, id: 13, name: "Second food" }],
-      events: [foodEvent, waterEvent, unknownEnergyEvent],
+      events: [timelineFood, waterEvent, unknownEnergyEvent],
+      foodEvents: [timelineFood, { ...timelineFood, id: 13, name: "Second food" }],
       nutritionTotals: {
         carbohydrateMilligrams: { isIncomplete: false, known: 300_000 },
         energyMilliKcal: { isIncomplete: false, known: 3_000_000 },
@@ -732,6 +822,8 @@ test("home renders food and water timeline entries with factual units", async ()
   expect(allText(renderer)).toContain("Unknown energy food");
   expect(allText(renderer)).toContain("— kcal");
   expect(allText(renderer)).toContain("Timeline action completed");
+  const foodTime = renderer.root.findAllByType("time")[0];
+  expect(foodTime.props.dateTime).toBe("2026-08-31T04:05:00.000Z");
   expect(renderer.root.findAllByProps({ "data-entry-editor-trigger": true })[0].props.to)
     .toBe("/?date=2026-08-31&entry=11");
   expect(renderer.root.findByProps({ "data-water-editor-trigger": true }).props.to)
@@ -770,8 +862,8 @@ test("home renders food and water timeline entries with factual units", async ()
   const singular = await renderHome({
     foodLog: {
       ...baseFoodLog,
-      entries: [foodEvent],
-      events: [foodEvent],
+      events: [timelineFood],
+      foodEvents: [timelineFood],
       nutritionTotals: {
         ...emptyTotals,
         energyMilliKcal: { isIncomplete: true, known: 1_025_000 },
@@ -802,36 +894,22 @@ test("home renders food and water timeline entries with factual units", async ()
 });
 
 test("historical Food Entries expose copy in the editor, not the daily log", async () => {
-  const historicalFood = {
-    amountMicroliters: undefined,
-    dataType: "Branded",
-    energyMilliKcal: 59_000,
-    foodLogDate: "2026-08-29",
-    id: 91,
-    kind: "food" as const,
-    localEventTime: "08:05:00",
-    name: "Historical yogurt",
-    provider: "usda-fdc",
-    quantityMicrounits: 1_000_000,
-    selectedMeasurementLabel: "100 g",
-  };
+  const historicalFood = foodEvent({ id: 91, logDate: "2026-08-29T12:05:00.000Z", name: "Historical yogurt" });
   const waterEvent = {
-    foodLogDate: "2026-08-29",
     id: 92,
     kind: "water" as const,
-    localEventTime: "08:10:00",
     logDate: "2026-08-29T12:10:00.000Z",
     ounces: "8",
   };
+  const historicalLog = {
+    ...baseFoodLog,
+    events: [historicalFood, waterEvent],
+    foodEvents: [historicalFood],
+    selectedDate: "2026-08-29",
+  };
   const historical = await renderHome({
-    copyIdempotencyKeys: { [historicalFood.id]: "copy:historical-key" },
-    foodEntryEditor: { ...editableEntry, foodLogDate: "2026-08-29", id: 91, name: "Historical yogurt" },
-    foodLog: {
-      ...baseFoodLog,
-      entries: [historicalFood],
-      events: [historicalFood, waterEvent],
-      selectedDate: "2026-08-29",
-    },
+    editor: { canCopy: true, event: historicalFood },
+    foodLog: historicalLog,
   });
 
   expect(historical.root.findAllByProps({ "aria-label": "More actions for Historical yogurt" })).toHaveLength(0);
@@ -842,19 +920,21 @@ test("historical Food Entries expose copy in the editor, not the daily log", asy
   expect(
     historical.root.findByProps({ "data-entry-editor-trigger": true }).props.to,
   ).toBe("/?date=2026-08-29&entry=91");
-  expect(input(historical, "entryId").props.value).toBe(91);
-  expect(input(historical, "idempotencyKey").props.value).toBe(
-    "copy:historical-key",
-  );
+  const copyToToday = historical.root.findAllByType("form").find(
+    (form) => form.findAllByProps({ name: "intent", value: "copy" }).length > 0,
+  )!;
+  expect(copyToToday.props.action).toBe("/food-events");
+  expect(copyToToday.findAllByType("input").map((field) => [field.props.name, field.props.value])).toEqual([
+    ["csrfToken", "home-component-csrf"],
+    ["intent", "copy"],
+    ["id", 91],
+    ["date", "2026-08-29"],
+  ]);
   expect(
     historical.root.findAllByType("button").find(
       (button) => nodeText(button) === "Copy to today",
     )?.props,
-  ).toMatchObject({
-    disabled: false,
-    name: "intent",
-    value: "copy-food-to-today",
-  });
+  ).toMatchObject({ disabled: false, type: "submit" });
   expect(
     historical.root.findAllByType("a").find(
       (link) => nodeText(link) === "Copy to another date…",
@@ -872,13 +952,7 @@ test("historical Food Entries expose copy in the editor, not the daily log", asy
   await act(async () => historical.unmount());
 
   const today = await renderHome({
-    copyIdempotencyKeys: {},
-    foodEntryEditor: { ...editableEntry, id: 91, name: "Historical yogurt" },
-    foodLog: {
-      ...baseFoodLog,
-      entries: [{ ...historicalFood, foodLogDate: "2026-08-31" }],
-      events: [{ ...historicalFood, foodLogDate: "2026-08-31" }, waterEvent],
-    },
+    editor: { canCopy: false, event: { ...historicalFood, logDate: "2026-08-31T12:05:00.000Z" } },
   });
   expect(
     today.root.findAll(
@@ -889,64 +963,61 @@ test("historical Food Entries expose copy in the editor, not the daily log", asy
   ).toHaveLength(0);
   await act(async () => today.unmount());
 
-  const copyForm = new FormData();
-  copyForm.set("entryId", "91");
-  copyForm.set("intent", "copy-food-to-today");
-  const pending = await renderPendingHome(
-    {
-      copyIdempotencyKeys: { [historicalFood.id]: "copy:historical-key" },
-      foodEntryEditor: { ...editableEntry, foodLogDate: "2026-08-29", id: 91, name: "Historical yogurt" },
-      foodLog: {
-        ...baseFoodLog,
-        entries: [historicalFood],
-        events: [historicalFood],
-        selectedDate: "2026-08-29",
-      },
-    },
-    { formData: copyForm, to: "/" },
-  );
+  const pending = await renderFoodHome({
+    editor: { canCopy: true, event: historicalFood },
+    foodLog: historicalLog,
+  });
   await act(async () =>
-    pending.root
+    pending.renderer.root
       .findByProps({ "aria-label": "Copy entry" })
       .props.onClick(),
   );
+  await pending.submit("food-event:copy-to-today", { date: "2026-08-29", id: "91", intent: "copy" });
   expect(
-    pending.root.findAllByType("button").find(
+    pending.renderer.root.findAllByType("button").find(
       (button) => nodeText(button) === "Copying…",
     )?.props.disabled,
   ).toBe(true);
-  await act(async () => pending.unmount());
+  await act(async () => pending.renderer.unmount());
+
+  const refused = await renderFoodHome({
+    editor: { canCopy: true, event: historicalFood },
+    foodLog: historicalLog,
+  }, () => ({ code: "not_found", message: "Food event not found." }));
+  await act(async () =>
+    refused.renderer.root.findByProps({ "aria-label": "Copy entry" }).props.onClick(),
+  );
+  await refused.submit("food-event:copy-to-today", { date: "2026-08-29", id: "91", intent: "copy" });
+  expect(nodeText(refused.renderer.root.findByProps({ role: "alert" }))).toBe("Food event not found.");
+  await act(async () => refused.renderer.unmount());
 });
 
-test("copy-date dialog exposes eligible calendar days and requires confirmation", async () => {
-  const entry = {
-    foodLogDate: "2026-08-28",
-    id: 93,
-    name: "Historical yogurt",
+function copyDialogModel(event: ReturnType<typeof foodEvent>, sourceDate: string, today: string, destinationDate?: string) {
+  const calendar = buildCalendarMonth(sourceDate.slice(0, 7), today, destinationDate ?? "");
+  return {
+    calendar: {
+      ...calendar,
+      days: calendar.days.map((day) => ({ ...day, isSource: day.date === sourceDate })),
+    },
+    destinationDate,
+    event,
+    sourceDate,
   };
-  const calendar = buildCalendarMonth("2026-08", "2026-08-30", "2026-08-29");
+}
+
+test("copy-date dialog exposes eligible calendar days and requires confirmation", async () => {
+  const event = foodEvent({ id: 93, logDate: "2026-08-28T16:00:00.000Z", name: "Historical yogurt" });
   const renderer = await renderHome(
     {
-      copyDialog: {
-        calendar: {
-          ...calendar,
-          days: calendar.days.map((day) => ({
-            ...day,
-            isSource: day.date === entry.foodLogDate,
-          })),
-        },
-        destinationDate: "2026-08-29",
-        entry,
-        idempotencyKey: `copy:${entry.id}:dialog-action`,
-      },
+      copy: copyDialogModel(event, "2026-08-28", "2026-08-30", "2026-08-29"),
       foodLog: {
         ...baseFoodLog,
-        selectedDate: entry.foodLogDate,
+        selectedDate: "2026-08-28",
         today: "2026-08-30",
       },
     },
     undefined,
-    `/?date=${entry.foodLogDate}&copy=${entry.id}&copyDate=2026-08-29`,
+    "/?date=2026-08-28&copy=93&copyDate=2026-08-29",
   );
 
   expect(renderer.root.findByProps({ role: "dialog" }).props).toMatchObject({
@@ -962,9 +1033,12 @@ test("copy-date dialog exposes eligible calendar days and requires confirmation"
     renderer.root.findByProps({ "aria-label": "Monday, August 31" }).props,
   ).toMatchObject({ disabled: true });
   expect(input(renderer, "destinationDate").props.value).toBe("2026-08-29");
+  expect(input(renderer, "intent").props.value).toBe("copy");
+  expect(input(renderer, "id").props.value).toBe(93);
+  expect(input(renderer, "date").props.value).toBe("2026-08-28");
   expect(
     renderer.root.findAllByType("button").find(
-      (button) => button.props.value === "copy-food-to-date",
+      (button) => nodeText(button) === "Copy",
     )?.props.disabled,
   ).toBe(false);
   expect(allText(renderer)).toContain("Cancel");
@@ -972,23 +1046,18 @@ test("copy-date dialog exposes eligible calendar days and requires confirmation"
 });
 
 test("home labels user-entered Food Entries as Manual", async () => {
-  const manualEntry = {
-    dataType: "User entered",
-    energyMilliKcal: 180_000,
-    foodLogDate: "2026-08-31",
+  const manualEntry = foodEvent({
     id: 19,
-    kind: "food" as const,
-    localEventTime: "12:00:00",
+    measurement: { baseQuantityMicrounits: 1_000_000, id: "serving", label: "1 serving", unit: "serving" },
     name: "Tortillas",
-    provider: "manual",
     quantityMicrounits: 3_000_000,
-    selectedMeasurementLabel: "1 serving",
-  };
+    source: manualSource,
+  });
   const renderer = await renderHome({
     foodLog: {
       ...baseFoodLog,
-      entries: [manualEntry],
       events: [manualEntry],
+      foodEvents: [manualEntry],
     },
   });
 
@@ -1002,6 +1071,7 @@ const catalogFood = {
   authoritativeBaseUnit: "g",
   barcode: "0012345678905",
   brand: "Example Dairy",
+  catalogGeneration: "00000000-0000-4000-8000-000000001001",
   dataType: "Branded",
   isSelectable: true,
   marketCountry: "United States",
@@ -1033,6 +1103,7 @@ const barcodeFood = {
   authoritativeBaseUnit: "serving",
   barcode: "0034000470693",
   brand: "Example Foods",
+  catalogGeneration: "a".repeat(64),
   dataType: "Open Food Facts",
   marketCountry: "United States",
   measurementSummary: "1 serving",
@@ -1061,8 +1132,14 @@ const barcodeFood = {
   providerPublishedDate: null,
 };
 
+/** The fields a save form posts, in document order. */
+function formFields(form: ReactTestRenderer["root"]) {
+  return form.findAll((node) => (node.type === "input" || node.type === "select") && typeof node.props.name === "string")
+    .map((field) => field.props.name as string);
+}
+
 test("Add Food offers My foods, Search food, Scan barcode and Manual as a list of four rows", async () => {
-  const renderer = await renderHome({ catalog: { mode: "choose", query: "" } });
+  const renderer = await renderHome({ addFood: { mode: "choose" } });
   expect(semanticDom(renderer)).toMatchSnapshot();
   const methods = renderer.root.findByProps({ "aria-label": "Add Food methods" });
   expect(methods.children.map(method => typeof method === "string" ? method : nodeText(method))).toEqual(["My foods", "Search food", "Scan barcode", "Manual"]);
@@ -1079,13 +1156,13 @@ test("Add Food offers My foods, Search food, Scan barcode and Manual as a list o
 });
 
 test("without a barcode contact, members see no Scan barcode and administrators get a setup pop-up", async () => {
-  const member = await renderHome({ barcodeLookup: "hidden", catalog: { mode: "choose", query: "" } });
+  const member = await renderHome({ addFood: { mode: "choose" }, barcodeLookup: "hidden" });
   const memberMethods = member.root.findByProps({ "aria-label": "Add Food methods" });
   expect(memberMethods.children.map(method => typeof method === "string" ? method : nodeText(method))).toEqual(["My foods", "Search food", "Manual"]);
   expect(allText(member)).not.toMatch(/barcode/i);
   await act(async () => member.unmount());
 
-  const admin = await renderHome({ barcodeLookup: "admin-setup", catalog: { mode: "choose", query: "" } });
+  const admin = await renderHome({ addFood: { mode: "choose" }, barcodeLookup: "admin-setup" });
   const scan = admin.root.findByProps({ "aria-haspopup": "dialog" });
   expect(scan.type).toBe("button");
   expect(nodeText(scan)).toBe("Scan barcode");
@@ -1110,17 +1187,15 @@ test("without a barcode contact, members see no Scan barcode and administrators 
   await act(async () => admin.unmount());
 });
 
-test("manual Food Entry form keeps entered totals when quantity changes and restores invalid drafts", async () => {
-  const catalog = {
-    idempotencyKey: "manual-form-key",
-    mode: "manual" as const,
-    query: "",
-  };
+test("the manual form keeps entered totals when quantity changes, saves to My foods by default, and keeps a refused draft", async () => {
   queriedSelectors.length = 0;
-  const renderer = await renderHome({ catalog });
+  const { renderer, submit } = await renderFoodHome(
+    { addFood: { mode: "manual" } },
+    () => ({ code: "invalid_nutrition", message: "Enter the calories for this quantity; zero is allowed." }),
+  );
 
   expect(queriedSelectors).toContain('input[name="name"]:not([disabled])');
-  expect(nodeText(renderer.root.findByProps({ className: styles.dialogChip }))).toBe("Manual");
+  expect(nodeText(renderer.root.findByProps({ className: eventStyles.dialogChip }))).toBe("Manual");
   expect(allText(renderer)).toContain("Add food manually");
   expect(allText(renderer)).toContain("1 serving");
   expect(input(renderer, "name").props.required).toBe(true);
@@ -1130,7 +1205,7 @@ test("manual Food Entry form keeps entered totals when quantity changes and rest
   for (const name of ["name", "energyKcal", "proteinGrams", "carbohydrateGrams", "fatGrams", "fiberGrams", "sugarGrams", "sodiumMilligrams"]) {
     expect(input(renderer, name).props.value).toBe("");
   }
-  expect(renderer.root.findByProps({ className: styles.backToResults }).props.to).toBe("/?date=2026-08-31&food=choose");
+  expect(renderer.root.findByProps({ className: eventStyles.backToResults }).props.to).toBe("/?date=2026-08-31&food=choose");
   expect(renderer.root.findByType("fieldset").props.disabled).toBe(false);
   expect(allText(renderer)).toContain("Add to Food Log");
   for (const name of ["energyKcal", "proteinGrams", "carbohydrateGrams", "fatGrams", "fiberGrams", "sugarGrams", "sodiumMilligrams"]) {
@@ -1139,78 +1214,45 @@ test("manual Food Entry form keeps entered totals when quantity changes and rest
       step: name === "sodiumMilligrams" ? "1" : "0.001",
     });
   }
+  const form = renderer.root.findAllByType("form").find((candidate) => candidate.props.action === "/food-events")!;
+  expect(form).toBeDefined();
+  expect([input(renderer, "intent").props.value, input(renderer, "method").props.value, input(renderer, "date").props.value])
+    .toEqual(["log", "manual", "2026-08-31"]);
+  const favorite = input(renderer, "saveAsFavorite");
+  expect(favorite.props).toMatchObject({ checked: true, type: "checkbox" });
+  expect(allText(renderer)).toContain("Save to My foods");
+  await act(async () => favorite.props.onChange({ target: { checked: false } }));
+  expect(input(renderer, "saveAsFavorite").props.checked).toBe(false);
+
   await act(async () => input(renderer, "name").props.onChange({ target: { value: "Tortilla" } }));
-  expect(input(renderer, "name").props.value).toBe("Tortilla");
-
-  expect(input(renderer, "idempotencyKey").props.value).toBe("manual-form-key");
-  expect(input(renderer, "intent").props.value).toBe("log-manual-food");
-
-  await act(async () =>
-    input(renderer, "energyKcal").props.onChange({
-      target: { value: "180" },
-    }),
-  );
-  await act(async () =>
-    input(renderer, "proteinGrams").props.onChange({
-      target: { value: "6" },
-    }),
-  );
-  await act(async () =>
-    input(renderer, "quantity").props.onChange({
-      target: { value: "3" },
-    }),
-  );
+  await act(async () => input(renderer, "energyKcal").props.onChange({ target: { value: "180" } }));
+  await act(async () => input(renderer, "proteinGrams").props.onChange({ target: { value: "6" } }));
+  await act(async () => input(renderer, "quantity").props.onChange({ target: { value: "3" } }));
   expect(input(renderer, "quantity").props.value).toBe("3");
   expect(input(renderer, "name").props.value).toBe("Tortilla");
   expect(input(renderer, "energyKcal").props.value).toBe("180");
   expect(input(renderer, "proteinGrams").props.value).toBe("6");
+
+  await submit("food-event:add", { intent: "log", method: "manual", name: "Tortilla" });
+  expect(allText(renderer)).toContain("Enter the calories for this quantity; zero is allowed.");
+  expect(input(renderer, "name").props.value).toBe("Tortilla");
+  expect(input(renderer, "energyKcal").props.value).toBe("180");
+  expect(input(renderer, "quantity").props.value).toBe("3");
+  expect(input(renderer, "saveAsFavorite").props.checked).toBe(false);
   await act(async () => renderer.unmount());
-
-  const draft = {
-    carbohydrateGrams: "20.1",
-    date: "2026-08-31",
-    energyKcal: "-180",
-    fatGrams: "4",
-    fiberGrams: "2",
-    idempotencyKey: "manual-draft-key",
-    intent: "log-manual-food",
-    name: "Incomplete tortilla",
-    proteinGrams: "6",
-    quantity: "3",
-    sodiumMilligrams: "100",
-    sugarGrams: "1.5",
-  };
-  const invalid = await renderHome(
-    { catalog },
-    {
-      manualFoodDraft: draft,
-      message: "The Food Entry request is invalid.",
-      tone: "error",
-    },
-  );
-  expect(input(invalid, "name").props.value).toBe("Incomplete tortilla");
-  for (const name of ["energyKcal", "proteinGrams", "carbohydrateGrams", "fatGrams", "fiberGrams", "sugarGrams", "sodiumMilligrams"] as const) {
-    expect(input(invalid, name).props.value).toBe(draft[name]);
-  }
-
-  expect(input(invalid, "quantity").props.value).toBe("3");
-  expect(input(invalid, "idempotencyKey").props.value).toBe("manual-draft-key");
-  expect(allText(invalid)).toContain("The Food Entry request is invalid.");
-  await act(async () => invalid.unmount());
 });
 
 test("barcode mode separates confirmation from scanning while keeping errors recoverable", async () => {
-  for (const catalog of [
-    { barcode: "", mode: "barcode", query: "" },
+  for (const addFood of [
+    { barcode: "", mode: "barcode" },
     {
       barcode: "0000000000004",
       message: "Open Food Facts is unavailable right now. Retry in a moment.",
       mode: "barcode",
-      query: "",
       title: "Open Food Facts is unavailable",
     },
   ] as const) {
-    const renderer = await renderHome({ catalog });
+    const renderer = await renderHome({ addFood });
     expect(semanticDom(renderer)).toMatchSnapshot();
     expect(input(renderer, "barcode")).toBeDefined();
     expect(allText(renderer)).toContain("Enter barcode");
@@ -1224,13 +1266,7 @@ test("barcode mode separates confirmation from scanning while keeping errors rec
   }
 
   const detail = await renderHome({
-    catalog: {
-      barcode: "034000470693",
-      food: barcodeFood,
-      idempotencyKey: "off-detail",
-      mode: "barcode",
-      query: "",
-    },
+    addFood: { barcode: "034000470693", food: barcodeFood, mode: "barcode" },
   });
   const text = allText(detail);
   expect(semanticDom(detail)).toMatchSnapshot();
@@ -1252,28 +1288,23 @@ test("barcode mode separates confirmation from scanning while keeping errors rec
   expect(detail.root.findByProps({
     href: "/?date=2026-08-31&food=barcode",
   })).toBeDefined();
-  expect(input(detail, "idempotencyKey").props.value).toBe("off-detail");
-  expect(input(detail, "provider").props.value).toBe("open-food-facts");
+  expect(input(detail, "method").props.value).toBe("barcode");
   expect(input(detail, "providerFoodId").props.value).toBe("0034000470693");
-  expect(detail.root.findByProps({ name: "selectedMeasurementId" }).props.value).toBe("serving");
+  expect(input(detail, "reviewVersion").props.value).toBe(barcodeFood.catalogGeneration);
+  expect(detail.root.findByProps({ name: "measurementId" }).props.value).toBe("serving");
   expect(input(detail, "quantity").props.value).toBe("1");
   const confirmationForm = detail.root.findAllByType("form").find(
-    (form) =>
-      form.findAllByProps({ name: "intent" })[0]?.props.value === "log-food",
+    (form) => form.props.action === "/food-events",
   )!;
-  expect(
-    confirmationForm
-      .findAllByType("input")
-      .map((field) => field.props.name)
-      .sort(),
-  ).toEqual([
+  expect(formFields(confirmationForm).sort()).toEqual([
     "csrfToken",
     "date",
-    "idempotencyKey",
     "intent",
-    "provider",
+    "measurementId",
+    "method",
     "providerFoodId",
     "quantity",
+    "reviewVersion",
   ]);
   await act(async () =>
     input(detail, "quantity").props.onChange({
@@ -1302,7 +1333,7 @@ test("barcode mode separates confirmation from scanning while keeping errors rec
   await act(async () => detail.unmount());
 
   const unnamed = await renderHome({
-    catalog: {
+    addFood: {
       barcode: "0000000000006",
       food: {
         ...barcodeFood,
@@ -1315,9 +1346,7 @@ test("barcode mode separates confirmation from scanning while keeping errors rec
         originalName: "Unnamed product",
         providerFoodId: "0000000000006",
       },
-      idempotencyKey: "off-unnamed",
       mode: "barcode",
-      query: "",
     },
   });
   expect(semanticDom(unnamed)).toMatchSnapshot();
@@ -1325,43 +1354,28 @@ test("barcode mode separates confirmation from scanning while keeping errors rec
   expect(allText(unnamed)).toContain("6 g");
   await act(async () => unnamed.unmount());
 
-  const failedConfirmation = await renderHome(
-    {
-      catalog: {
-        barcode: "034000470693",
-        food: barcodeFood,
-        idempotencyKey: "off-error",
-        mode: "barcode",
-        query: "",
-      },
-    },
-    {
-      message: "Open Food Facts is unavailable right now. Retry in a moment.",
-      tone: "error",
-    },
+  const failedConfirmation = await renderFoodHome(
+    { addFood: { barcode: "034000470693", food: barcodeFood, mode: "barcode" } },
+    () => ({ code: "source_unavailable", message: "Open Food Facts isn't responding; try again or log it manually." }),
   );
-  expect(failedConfirmation.root.findByProps({ role: "alert" })).toBeDefined();
-  expect(allText(failedConfirmation)).toContain(
-    "Open Food Facts is unavailable right now. Retry in a moment.",
+  await failedConfirmation.submit("food-event:add", { intent: "log", method: "barcode" });
+  expect(failedConfirmation.renderer.root.findByProps({ role: "alert" })).toBeDefined();
+  expect(allText(failedConfirmation.renderer)).toContain(
+    "Open Food Facts isn't responding; try again or log it manually.",
   );
-  await act(async () => failedConfirmation.unmount());
+  expect(failedConfirmation.renderer.root.findByProps({ role: "dialog" })).toBeDefined();
+  await act(async () => failedConfirmation.renderer.unmount());
 
   const missingMeasurement = await renderHome({
-    catalog: {
-      barcode: "034000470693",
-      food: { ...barcodeFood, measurements: [] },
-      idempotencyKey: "off-no-measurement",
-      mode: "barcode",
-      query: "",
-    },
+    addFood: { barcode: "034000470693", food: { ...barcodeFood, measurements: [] }, mode: "barcode" },
   });
-  expect(missingMeasurement.root.findByProps({ name: "selectedMeasurementId" }).props.value).toBe("");
+  expect(missingMeasurement.root.findByProps({ name: "measurementId" }).props.value).toBe("");
   await act(async () => missingMeasurement.unmount());
 });
 
 test("barcode entry validates client-side and exposes only matching navigation as pending", async () => {
   const renderer = await renderHome({
-    catalog: { barcode: "", mode: "barcode", query: "" },
+    addFood: { barcode: "", mode: "barcode" },
   });
   const barcodeInput = input(renderer, "barcode");
   const form = renderer.root.findAllByType("form").find((candidate) =>
@@ -1390,21 +1404,21 @@ test("barcode entry validates client-side and exposes only matching navigation a
   await act(async () => renderer.unmount());
 
   const pending = await renderPendingHome(
-    { catalog: { barcode: "034000470693", mode: "barcode", query: "" } },
+    { addFood: { barcode: "034000470693", mode: "barcode" } },
     { to: "/?food=barcode&barcode=034000470693" },
   );
   expect(allText(pending)).toContain("Checking Open Food Facts");
   await act(async () => pending.unmount());
 
   const otherNavigation = await renderPendingHome(
-    { catalog: { barcode: "034000470693", mode: "barcode", query: "" } },
+    { addFood: { barcode: "034000470693", mode: "barcode" } },
     { to: "/?food=search&query=yogurt" },
   );
   expect(allText(otherNavigation)).not.toContain("Checking Open Food Facts");
   await act(async () => otherNavigation.unmount());
 
   const unknownNavigation = await renderPendingHome(
-    { catalog: { barcode: "034000470693", mode: "barcode", query: "" } },
+    { addFood: { barcode: "034000470693", mode: "barcode" } },
     { to: "/?unrelated=1" },
   );
   expect(allText(unknownNavigation)).not.toContain("Checking Open Food Facts");
@@ -1412,11 +1426,11 @@ test("barcode entry validates client-side and exposes only matching navigation a
 });
 
 test("local barcode nutrition preview scales the selected source measure and quantity", async () => {
-  const renderer = await renderHome({ catalog: { barcode: barcodeFood.barcode, mode: "barcode", query: "", idempotencyKey: "volume-review", food: {
+  const renderer = await renderHome({ addFood: { barcode: barcodeFood.barcode, mode: "barcode", food: {
     ...barcodeFood, authoritativeBaseUnit: "ml", authoritativeBaseQuantityMicrounits: 100_000_000,
     measurements: [{ id: "ml", label: "1 ml", unit: "ml", baseQuantityMicrounits: 1_000_000 }, { id: "100ml", label: "100 ml", unit: "ml", baseQuantityMicrounits: 100_000_000 }],
   } } });
-  const measurement = renderer.root.findByProps({ name: "selectedMeasurementId" });
+  const measurement = renderer.root.findByProps({ name: "measurementId" });
   expect(measurement.props["aria-label"]).toBe("Measurement");
   expect(measurement.props.disabled).toBe(false);
   expect(measurement.findAllByType("option").map(option => [option.props.value, nodeText(option)])).toEqual([["ml", "1 ml"], ["100ml", "100 ml"]]);
@@ -1441,10 +1455,10 @@ test.each([
   ["constructor", "Calculation unavailable for this product."],
   [undefined, "Calculation unavailable for this product."],
 ] as const)("an unavailable barcode reports %s and cannot submit nutrition", async (reason, message) => {
-  const renderer = await renderHome({ catalog: { barcode: barcodeFood.barcode, mode: "barcode", query: "", idempotencyKey: "unavailable", food: { ...barcodeFood, brand: null, isSelectable: false, calculationUnavailableReason: reason, measurements: [] } } });
+  const renderer = await renderHome({ addFood: { barcode: barcodeFood.barcode, mode: "barcode", food: { ...barcodeFood, brand: null, isSelectable: false, calculationUnavailableReason: reason, measurements: [] } } });
   expect(allText(renderer)).not.toContain("Example Foods");
   expect(nodeText(renderer.root.findByProps({ role: "alert" }))).toBe(message);
-  expect(renderer.root.findByProps({ name: "selectedMeasurementId" }).props.disabled).toBe(true);
+  expect(renderer.root.findByProps({ name: "measurementId" }).props.disabled).toBe(true);
   expect(renderer.root.findAllByType("dl")).toHaveLength(0);
   expect(renderer.root.findAllByType("button").find(button => nodeText(button) === "Add to Food Log")?.props.disabled).toBe(true);
   await act(() => renderer.unmount());
@@ -1452,7 +1466,7 @@ test.each([
 
 test("USDA search validates its controlled query before navigation", async () => {
   const renderer = await renderHome({
-    catalog: { mode: "search", query: "", results: [] },
+    addFood: { mode: "search", query: "", results: [] },
   });
   const queryInput = input(renderer, "query");
   const form = renderer.root.findAllByType("form").find((candidate) =>
@@ -1494,14 +1508,13 @@ test("home catalog renders initial, empty, failure, and selectable result states
       "Search unavailable",
     ],
   ] as const;
-  for (const [catalog, expected] of states) {
-    const renderer = await renderHome({ catalog });
+  for (const [addFood, expected] of states) {
+    const renderer = await renderHome({ addFood });
     expect(semanticDom(renderer)).toMatchSnapshot();
     expect(renderer.root.findByProps({ role: "dialog" }).props["aria-labelledby"])
       .toBe("food-dialog-title");
     expect(allText(renderer)).toContain("Add Food");
     expect(allText(renderer)).toContain(expected);
-    expect(input(renderer, "csrfToken").props.value).toBe("home-component-csrf");
     await act(async () => renderer.unmount());
   }
 
@@ -1533,7 +1546,7 @@ test("home catalog renders initial, empty, failure, and selectable result states
   (globalThis.document as unknown as { activeElement: TestElement }).activeElement =
     catalogPreviousFocus;
   const renderer = await renderHome({
-    catalog: {
+    addFood: {
       mode: "search",
       query: "yogurt",
       results,
@@ -1594,7 +1607,7 @@ test("home catalog renders initial, empty, failure, and selectable result states
   expect(documentSelectors).toContain("[data-food-dialog-trigger]");
 
   const queryless = await renderHome({
-    catalog: {
+    addFood: {
       mode: "search",
       query: "",
       results: [results[0]],
@@ -1606,7 +1619,7 @@ test("home catalog renders initial, empty, failure, and selectable result states
   await act(async () => queryless.unmount());
 
   const idleFallback = await renderHome({
-    catalog: {
+    addFood: {
       message: "Food disappeared",
       mode: "search",
       query: "a",
@@ -1634,7 +1647,7 @@ test("home catalog search renders a flat USDA result list with one attribution",
     providerPublishedDate: "2026-08-01",
   } as const;
   const renderer = await renderHome({
-    catalog: {
+    addFood: {
       mode: "search",
       query: "egg",
       results: [usdaResult],
@@ -1648,12 +1661,12 @@ test("home catalog search renders a flat USDA result list with one attribution",
   expect(allText(renderer)).toContain("Example Farm · 100 g · 2026-08-01");
   expect(allText(renderer)).toContain("USDA FoodData Central");
   expect(allText(renderer)).not.toContain("Open Food Facts");
-  expect(renderer.root.findAllByProps({ className: styles.catalogType }))
+  expect(renderer.root.findAllByProps({ className: eventStyles.catalogType }))
     .toHaveLength(0);
   await act(async () => renderer.unmount());
 
   const empty = await renderHome({
-    catalog: {
+    addFood: {
       mode: "search",
       query: "missing food",
       results: [],
@@ -1666,9 +1679,8 @@ test("home catalog search renders a flat USDA result list with one attribution",
 
 test("legacy OFF detail links use the complete barcode-backed review behavior", async () => {
   const renderer = await renderHome({
-    catalog: {
+    addFood: {
       food: barcodeFood,
-      idempotencyKey: "off-search-detail",
       mode: "detail",
       query: "example cereal",
     },
@@ -1685,18 +1697,17 @@ test("legacy OFF detail links use the complete barcode-backed review behavior", 
   expect(renderer.root.findByProps({
     href: "/?date=2026-08-31&food=search&query=example+cereal",
   })).toBeDefined();
-  expect(input(renderer, "provider").props.value).toBe("open-food-facts");
+  expect(input(renderer, "method").props.value).toBe("barcode");
   expect(input(renderer, "providerFoodId").props.value).toBe(
     barcodeFood.providerFoodId,
   );
   await act(async () => renderer.unmount());
 });
 
-test("home catalog detail recalculates previews and exposes the log contract", async () => {
+test("home catalog detail recalculates previews and exposes the save contract", async () => {
   const renderer = await renderHome({
-    catalog: {
+    addFood: {
       food: catalogFood,
-      idempotencyKey: "detail-idempotency",
       mode: "detail",
       query: "yogurt",
     },
@@ -1708,9 +1719,12 @@ test("home catalog detail recalculates previews and exposes the log contract", a
     "USDA FoodData Central · Example Dairy",
   );
   expect(allText(renderer)).toContain("Saved as a Nutrition Snapshot");
-  expect(input(renderer, "idempotencyKey").props.value).toBe("detail-idempotency");
-  expect(input(renderer, "provider").props.value).toBe("usda-fdc");
-  expect(renderer.root.findAllByProps({ name: "pendingFoodName" })).toHaveLength(0);
+  const saveForm = renderer.root.findAllByType("form").find((form) => form.props.action === "/food-events")!;
+  expect(formFields(saveForm)).toEqual([
+    "csrfToken", "intent", "method", "date", "providerFoodId", "reviewVersion", "measurementId", "quantity",
+  ]);
+  expect(input(renderer, "method").props.value).toBe("lookup");
+  expect(input(renderer, "reviewVersion").props.value).toBe(catalogFood.catalogGeneration);
   expect(input(renderer, "providerFoodId").props.value).toBe("1001");
   expect(input(renderer, "quantity").props.value).toBe("1");
   expect(allText(renderer)).toContain("100.3 kcal");
@@ -1727,7 +1741,7 @@ test("home catalog detail recalculates previews and exposes the log contract", a
   );
   expect(nodeText(renderer.root.findByType("dl"))).toContain("0 kcal");
 
-  const select = renderer.root.findByProps({ name: "selectedMeasurementId" });
+  const select = renderer.root.findByProps({ name: "measurementId" });
   await act(async () => select.props.onChange({ currentTarget: { value: "base" } }));
   await act(async () =>
     input(renderer, "quantity").props.onChange({ currentTarget: { value: "2" } }),
@@ -1740,7 +1754,7 @@ test("home catalog detail recalculates previews and exposes the log contract", a
   await act(async () => renderer.unmount());
 
   const unavailableMeasurement = await renderHome({
-    catalog: {
+    addFood: {
       food: {
         ...catalogFood,
         brand: null,
@@ -1750,14 +1764,13 @@ test("home catalog detail recalculates previews and exposes the log contract", a
           energyMilliKcal: null,
         },
       },
-      idempotencyKey: "no-measurement",
       mode: "detail",
       query: "none",
     },
   });
   expect(semanticDom(unavailableMeasurement)).toMatchSnapshot();
   expect(unavailableMeasurement.root.findByProps({
-    name: "selectedMeasurementId",
+    name: "measurementId",
   }).props.value)
     .toBe("");
   expect(allText(unavailableMeasurement)).toContain("Not reported");
@@ -1766,51 +1779,29 @@ test("home catalog detail recalculates previews and exposes the log contract", a
   await act(async () => unavailableMeasurement.unmount());
 });
 
-const editableEntry = {
-  authoritativeBaseQuantityMicrounits: 100_000_000,
-  authoritativeNutrition: {
-    carbohydrateMilligrams: { amount: 3.5, fixedPointMultiplier: 1_000 },
-    energyMilliKcal: { amount: 59, fixedPointMultiplier: 1_000 },
-    fatMilligrams: { amount: 0, fixedPointMultiplier: 1_000 },
-    fiberMilligrams: null,
-    proteinMilligrams: { amount: 10.5, fixedPointMultiplier: 1_000 },
-    sodiumMilligrams: { amount: 36, fixedPointMultiplier: 1 },
-    sugarMilligrams: { amount: 3.5, fixedPointMultiplier: 1_000 },
-  },
-  carbohydrateMilligrams: 3_001,
-  dataType: "Branded",
-  energyMilliKcal: 59_000,
-  fatMilligrams: 0,
-  fiberMilligrams: null,
-  foodLogDate: "2026-08-31",
-  id: 41,
-  localEventTime: "12:00:00",
-  name: "Editable yogurt",
-  proteinMilligrams: 10_100,
-  providerFoodId: "1001",
-  quantityMicrounits: 1_000_000,
-  selectedMeasurementId: "base",
-  sodiumMilligrams: 36,
-  sugarMilligrams: 3_500,
-  supportedMeasurements: [
-    { baseQuantityMicrounits: 100_000_000, id: "base", label: "100 g", unit: "g" },
-    { baseQuantityMicrounits: 170_000_000, id: "serving", label: "1 container", unit: "g" },
-  ],
-  updatedAt: "2026-08-31T12:00:00.000Z",
-};
-
 test("home food editor exposes saved fields, recalculation, and delete confirmation", async () => {
-  const renderer = await renderHome({ foodEntryEditor: editableEntry }, {
-    message: "Editor validation message",
-  });
+  const { renderer, submit } = await renderFoodHome(
+    { editor: { canCopy: false, event: foodEvent() } },
+    () => ({ code: "invalid_input", message: "Editor validation message" }),
+  );
   expect(semanticDom(renderer)).toMatchSnapshot();
   expect(renderer.root.findByProps({ role: "dialog" }).props["aria-labelledby"])
     .toBe("edit-food-entry-title");
+  const form = renderer.root.findByProps({ id: "food-entry-edit-form" });
+  expect(form.props.action).toBe("/food-events");
+  expect(formFields(form)).toEqual([
+    "csrfToken", "date", "id", "expectedUpdatedAt", "name", "measurementId", "quantity",
+    "energyKcal", "proteinGrams", "carbohydrateGrams", "fatGrams", "fiberGrams", "sugarGrams", "sodiumMilligrams",
+  ]);
+  expect(input(renderer, "expectedUpdatedAt").props.value).toBe("2026-08-31T16:00:00.000Z");
+  expect(renderer.root.findByProps({ "aria-label": "Save changes" }).props).toMatchObject({ name: "intent", value: "update" });
   expect(input(renderer, "name").props.value).toBe("Editable yogurt");
   expect(input(renderer, "quantity").props.value).toBe("1");
   expect(input(renderer, "energyKcal").props.value).toBe("59");
   expect(input(renderer, "fiberGrams").props.value).toBe("");
   expect(input(renderer, "sodiumMilligrams").props.value).toBe("36");
+
+  await submit("food-event:edit", { intent: "update" });
   expect(allText(renderer)).toContain("Editor validation message");
 
   await act(async () =>
@@ -1821,7 +1812,7 @@ test("home food editor exposes saved fields, recalculation, and delete confirmat
     input(renderer, "energyKcal").props.onChange({ target: { value: "61" } }),
   );
   expect(input(renderer, "energyKcal").props.value).toBe("61");
-  const select = renderer.root.findByProps({ name: "selectedMeasurementId" });
+  const select = renderer.root.findByProps({ name: "measurementId" });
   await act(async () => select.props.onChange({ target: { value: "serving" } }));
   expect(semanticDom(renderer)).toMatchSnapshot();
   expect(input(renderer, "energyKcal").props.value).toBe("100.3");
@@ -1829,7 +1820,7 @@ test("home food editor exposes saved fields, recalculation, and delete confirmat
   expect(input(renderer, "fiberGrams").props.value).toBe("");
 
   await act(async () => select.props.onChange({ target: { value: "missing" } }));
-  expect(renderer.root.findByProps({ name: "selectedMeasurementId" }).props.value)
+  expect(renderer.root.findByProps({ name: "measurementId" }).props.value)
     .toBe("missing");
   expect(input(renderer, "energyKcal").props.value).toBe("100.3");
   await act(async () =>
@@ -1844,7 +1835,7 @@ test("home food editor exposes saved fields, recalculation, and delete confirmat
   focusTarget.lastFocusOptions = undefined;
   focusTarget.lastScrollOptions = undefined;
   await act(async () => deleteButton.props.onClick());
-  expect(queriedSelectors).toEqual(['button[name="intent"][value="delete-food"]']);
+  expect(queriedSelectors).toEqual(['button[name="intent"][value="delete"]']);
   expect(document.activeElement).toBe(focusTarget);
   expect(focusTarget.lastFocusOptions).toEqual({ preventScroll: true });
   expect(focusTarget.lastScrollOptions).toEqual({ block: "nearest" });
@@ -1861,9 +1852,32 @@ test("home food editor exposes saved fields, recalculation, and delete confirmat
   await act(async () => renderer.unmount());
 });
 
+test("a stale editor reloads the current version, and an event deleted elsewhere closes the editor", async () => {
+  const current = foodEvent({ name: "Changed elsewhere", nutrients: { ...foodEvent().nutrients, energyMilliKcal: 80_000 }, updatedAt: "2026-08-31T16:05:00.000Z" });
+  const stale = await renderFoodHome(
+    { editor: { canCopy: false, event: foodEvent() } },
+    () => ({ code: "edit_conflict", event: current, message: "This Food Event changed after you opened it. Review it and try again." }),
+  );
+  await act(async () => input(stale.renderer, "name").props.onChange({ target: { value: "My rejected draft" } }));
+  await stale.submit("food-event:edit", { intent: "update" });
+  expect(input(stale.renderer, "name").props.value).toBe("Changed elsewhere");
+  expect(input(stale.renderer, "energyKcal").props.value).toBe("80");
+  expect(input(stale.renderer, "expectedUpdatedAt").props.value).toBe("2026-08-31T16:05:00.000Z");
+  expect(allText(stale.renderer)).toContain("This Food Event changed after you opened it. Review it and try again.");
+  await act(async () => stale.renderer.unmount());
+
+  const deleted = await renderFoodHome(
+    { editor: { canCopy: false, event: foodEvent() }, foodLog: { ...baseFoodLog, selectedDate: "2026-08-30" } },
+    () => ({ code: "not_found", message: "Food event not found." }),
+  );
+  await deleted.submit("food-event:edit", { intent: "delete" });
+  expect(deleted.router.state.location.search).toBe("?date=2026-08-30");
+  await act(async () => deleted.renderer.unmount());
+});
+
 test("manual Food Entry editor keeps calories required", async () => {
   const renderer = await renderHome({
-    foodEntryEditor: { ...editableEntry, provider: "manual" },
+    editor: { canCopy: false, event: foodEvent({ source: manualSource }) },
   });
 
   expect(input(renderer, "energyKcal").props.required).toBe(true);
@@ -1872,25 +1886,34 @@ test("manual Food Entry editor keeps calories required", async () => {
 });
 
 const savedTortilla = {
-  carbohydrateMilligrams: 18_000,
-  energyMilliKcal: 100_000,
-  fatMilligrams: 2_000,
-  fiberMilligrams: null,
+  createdAt: "2026-08-27T12:00:00.000Z",
   id: 77,
   name: "Mexican tortilla",
-  proteinMilligrams: 3_000,
-  quantityMicrounits: 2_000_000,
-  selectedMeasurementLabel: "1 serving",
-  sodiumMilligrams: 25,
-  sugarMilligrams: 0,
+  snapshot: {
+    ...foodEvent(),
+    measurement: { baseQuantityMicrounits: 1_000_000, id: "serving", label: "1 serving", unit: "serving" },
+    nutrients: {
+      carbohydrateMilligrams: 18_000,
+      energyMilliKcal: 100_000,
+      fatMilligrams: 2_000,
+      fiberMilligrams: null,
+      proteinMilligrams: 3_000,
+      sodiumMilligrams: 25,
+      sugarMilligrams: 0,
+    },
+    quantityMicrounits: 2_000_000,
+    source: manualSource,
+  },
+  sourceEventId: 5,
 };
 
 test("My foods can be browsed and searched before selecting a saved food", async () => {
   const listed = await renderHome({
-    catalog: { mode: "my", query: "", results: [savedTortilla] },
+    addFood: { favorites: [savedTortilla], mode: "my", query: "" },
   });
   expect(allText(listed)).toContain("Mexican tortilla");
   expect(allText(listed)).toContain("1 serving × 2");
+  expect(allText(listed)).toContain("100 kcal");
   expect(listed.root.findByProps({
     href: "/?date=2026-08-31&food=saved%3A77",
   })).toBeDefined();
@@ -1898,20 +1921,22 @@ test("My foods can be browsed and searched before selecting a saved food", async
   await act(async () => listed.unmount());
 
   const noMatches = await renderHome({
-    catalog: { mode: "my", query: "rice", results: [] },
+    addFood: { favorites: [], mode: "my", query: "rice" },
   });
   expect(allText(noMatches)).toContain("No matching foods");
   await act(async () => noMatches.unmount());
 
   const noFoods = await renderHome({
-    catalog: { mode: "my", query: "", results: [] },
+    addFood: { favorites: [], mode: "my", query: "" },
   });
   expect(allText(noFoods)).toContain("No foods saved yet");
-  expect(allText(noFoods)).toContain("Open an older manual entry");
+  expect(allText(noFoods)).toContain("Save a manual food here when you add it");
+  expect(allText(noFoods)).toContain("open an older manual entry");
   await act(async () => noFoods.unmount());
 
   const searched = await renderHome({
-    catalog: {
+    addFood: {
+      favorites: [savedTortilla],
       mode: "search",
       query: "tortilla",
       results: [{
@@ -1924,7 +1949,6 @@ test("My foods can be browsed and searched before selecting a saved food", async
         providerFoodId: "9999",
         providerPublishedDate: null,
       }],
-      savedResults: [savedTortilla],
     },
   });
   expect(allText(searched)).toContain("My foods");
@@ -1935,58 +1959,60 @@ test("My foods can be browsed and searched before selecting a saved food", async
 });
 
 test("saved food review keeps its recorded values and targets the displayed day", async () => {
-  const catalog = {
-    food: savedTortilla,
-    idempotencyKey: "saved-review-key",
-    mode: "saved",
-    query: "",
-  };
+  const addFood = { favorite: savedTortilla, mode: "saved", query: "" };
   const reviewed = await renderHome({
-    catalog,
+    addFood,
     foodLog: { ...baseFoodLog, selectedDate: "2026-08-29" },
   });
   expect(allText(reviewed)).toContain("Mexican tortilla");
   expect(allText(reviewed)).toContain("Review the saved values before adding this food to");
+  expect(allText(reviewed)).toContain("Saturday, August 29, 2026");
   expect(allText(reviewed)).toContain("100");
   expect(allText(reviewed)).toContain("Unknown");
   expect(input(reviewed, "date").props.value).toBe("2026-08-29");
-  expect(input(reviewed, "savedFoodId").props.value).toBe(77);
-  expect(input(reviewed, "idempotencyKey").props.value).toBe("saved-review-key");
-  expect(reviewed.root.findByProps({ value: "log-saved-food" }).props.disabled)
-    .toBe(false);
+  expect(input(reviewed, "favoriteId").props.value).toBe(77);
+  expect(input(reviewed, "method").props.value).toBe("favorite");
+  const addButton = () => reviewed.root.findByProps({ role: "dialog" }).findAllByType("button").find((button) => button.props.type === "submit")!;
+  expect(addButton().props.disabled).toBe(false);
   await act(async () => reviewed.unmount());
 
-  const formData = new FormData();
-  formData.set("intent", "log-saved-food");
-  const pending = await renderPendingHome(
-    { catalog },
-    { formData, to: "/?date=2026-08-31&food=saved%3A77" },
-  );
-  expect(allText(pending)).toContain("Adding…");
-  expect(pending.root.findByProps({ value: "log-saved-food" }).props.disabled)
+  const pending = await renderFoodHome({ addFood });
+  await pending.submit("food-event:add", { intent: "log", method: "favorite" });
+  expect(allText(pending.renderer)).toContain("Adding…");
+  expect(pending.renderer.root.findByProps({ role: "dialog" }).findAllByType("button").find((button) => button.props.type === "submit")!.props.disabled)
     .toBe(true);
-  await act(async () => pending.unmount());
+  // Only catalog saves replace the dialog with a pending row.
+  expect(pending.renderer.root.findAllByProps({ "aria-label": "Adding food to Daily log" })).toHaveLength(0);
+  await act(async () => pending.renderer.unmount());
 });
 
 test("an older manual entry offers a top action to save its independent food", async () => {
-  const manualEntry = { ...editableEntry, provider: "manual" };
   const unsaved = await renderHome({
-    foodEntryEditor: manualEntry,
-    manualEntrySaved: false,
+    editor: { canCopy: false, event: foodEvent({ source: manualSource }) },
   });
   expect(allText(unsaved)).toContain("Add to My foods");
-  expect(unsaved.root.findByProps({ value: "save-manual-food" }).type)
-    .toBe("button");
+  const favoriteForm = unsaved.root.findAllByType("form").find((form) =>
+    form.findAllByProps({ name: "intent", value: "add-favorite" }).length > 0)!;
+  expect(favoriteForm.props.action).toBe("/food-events");
+  expect(favoriteForm.findAllByType("input").map((field) => [field.props.name, field.props.value])).toEqual([
+    ["csrfToken", "home-component-csrf"],
+    ["intent", "add-favorite"],
+    ["id", 41],
+    ["date", "2026-08-31"],
+  ]);
   await act(async () => unsaved.unmount());
 
   const saved = await renderHome({
-    foodEntryEditor: manualEntry,
-    manualEntrySaved: true,
+    editor: { canCopy: false, event: foodEvent({ favoriteId: 7, source: manualSource }) },
   });
   expect(allText(saved)).toContain("In My foods");
   expect(allText(saved)).toContain("Changes to this daily entry do not change the saved food");
-  expect(saved.root.findAllByProps({ value: "save-manual-food" })).toHaveLength(0);
+  expect(saved.root.findAllByProps({ value: "add-favorite" })).toHaveLength(0);
   await act(async () => saved.unmount());
+
+  const catalog = await renderHome({ editor: { canCopy: false, event: foodEvent() } });
+  expect(allText(catalog)).not.toContain("My foods");
+  await act(async () => catalog.unmount());
 });
 
 test("home water dialog creates with a consumption time and edits only the amount", async () => {
@@ -2074,105 +2100,62 @@ test("home water dialog creates with a consumption time and edits only the amoun
   expect(allText(precise)).not.toContain(" ml");
   await act(async () => precise.unmount());
 });
-
 test("home renders submission and navigation pending states", async () => {
-  const logFood = new FormData();
-  logFood.set("intent", "log-food");
-  const pendingFood = await renderPendingHome(
-    {
-      catalog: {
-        food: catalogFood,
-        idempotencyKey: "pending",
-        mode: "detail",
-        query: "yogurt",
-      },
-      foodLog: {
-        ...baseFoodLog,
-        events: [{
-          dataType: "Branded",
-          energyMilliKcal: 59_000,
-          foodLogDate: "2026-08-31",
-          id: 71,
-          kind: "food",
-          localEventTime: "12:00:00",
-          name: "Existing food",
-          quantityMicrounits: 1_000_000,
-          selectedMeasurementLabel: "100 g",
-        }],
-      },
-    },
-    { formData: logFood, to: "/" },
-  );
-  expect(semanticDom(pendingFood)).toMatchSnapshot();
-  expect(allText(pendingFood)).toContain("Plain Greek yogurt");
-  expect(pendingFood.root.findByProps({
+  const existing = foodEvent({ id: 71, name: "Existing food" });
+  const pendingFood = await renderFoodHome({
+    addFood: { food: catalogFood, mode: "detail", query: "yogurt" },
+    foodLog: { ...baseFoodLog, events: [existing], foodEvents: [existing] },
+  });
+  await pendingFood.submit("food-event:add", { intent: "log", method: "lookup" });
+  expect(semanticDom(pendingFood.renderer)).toMatchSnapshot();
+  expect(allText(pendingFood.renderer)).toContain("Plain Greek yogurt");
+  expect(pendingFood.renderer.root.findByProps({
     "aria-label": "Adding food to Daily log",
   })).toBeDefined();
-  expect(pendingFood.root.findAllByProps({ role: "dialog" })).toHaveLength(0);
-  await act(async () => pendingFood.unmount());
+  // The dialog waits hidden, so a refusal can reappear with what was chosen.
+  const dialogWrapper = pendingFood.renderer.root.findAll((node) => node.type === "div" && node.props.hidden === true);
+  expect(dialogWrapper).toHaveLength(1);
+  expect(dialogWrapper[0].findAllByProps({ role: "dialog" })).toHaveLength(1);
+  expect(pendingFood.renderer.root.findByProps({ className: `${styles.shell} ${styles.foodLogShell}` }).props.inert)
+    .toBeUndefined();
+  await act(async () => pendingFood.renderer.unmount());
 
-  const openFoodFactsPending = await renderPendingHome(
-    {
-      catalog: {
-        barcode: "034000470693",
-        food: barcodeFood,
-        idempotencyKey: "off-pending",
-        mode: "barcode",
-        query: "",
-      },
-    },
-    { formData: logFood, to: "/" },
-  );
-  expect(allText(openFoodFactsPending)).toContain("Example cereal");
-  await act(async () => openFoodFactsPending.unmount());
-
-  const unnamedLogFood = new FormData();
-  unnamedLogFood.set("intent", "log-food");
-  const unnamedPendingFood = await renderPendingHome({}, {
-    formData: unnamedLogFood,
-    to: "/",
+  const openFoodFactsPending = await renderFoodHome({
+    addFood: { barcode: "034000470693", food: barcodeFood, mode: "barcode" },
   });
-  expect(allText(unnamedPendingFood)).toContain("Selected food");
-  await act(async () => unnamedPendingFood.unmount());
+  await openFoodFactsPending.submit("food-event:add", { intent: "log", method: "barcode" });
+  expect(nodeText(openFoodFactsPending.renderer.root.findByProps({ "aria-label": "Adding food to Daily log" })))
+    .toContain("Example cereal");
+  await act(async () => openFoodFactsPending.renderer.unmount());
 
-  const updateFood = new FormData();
-  updateFood.set("entryId", "41");
-  updateFood.set("intent", "update-food");
-  const pendingEditor = await renderPendingHome(
-    { foodEntryEditor: editableEntry },
-    { formData: updateFood, to: "/" },
-  );
-  expect(semanticDom(pendingEditor)).toMatchSnapshot();
-  expect(pendingEditor.root.findByType("fieldset").props.disabled).toBe(true);
-  expect(pendingEditor.root.findByProps({ "aria-label": "Saving changes" }).props.disabled).toBe(true);
-  await act(async () => pendingEditor.unmount());
+  const unnamedPendingFood = await renderFoodHome({});
+  await unnamedPendingFood.submit("food-event:add", { intent: "log", method: "lookup" });
+  expect(allText(unnamedPendingFood.renderer)).toContain("Selected food");
+  await act(async () => unnamedPendingFood.renderer.unmount());
 
-  const deleteFood = new FormData();
-  deleteFood.set("entryId", "41");
-  deleteFood.set("intent", "delete-food");
-  const deletingEditor = await renderPendingHome(
-    { foodEntryEditor: editableEntry },
-    { formData: deleteFood, to: "/" },
-  );
-  const revealFoodDelete = deletingEditor.root.findByProps({ "aria-label": "Delete entry" });
+  const pendingEditor = await renderFoodHome({ editor: { canCopy: false, event: foodEvent() } });
+  await pendingEditor.submit("food-event:edit", { intent: "update" });
+  expect(semanticDom(pendingEditor.renderer)).toMatchSnapshot();
+  expect(pendingEditor.renderer.root.findByType("fieldset").props.disabled).toBe(true);
+  expect(pendingEditor.renderer.root.findByProps({ "aria-label": "Saving changes" }).props.disabled).toBe(true);
+  await act(async () => pendingEditor.renderer.unmount());
+
+  const deletingEditor = await renderFoodHome({ editor: { canCopy: false, event: foodEvent() } });
+  const revealFoodDelete = deletingEditor.renderer.root.findByProps({ "aria-label": "Delete entry" });
   await act(async () => revealFoodDelete.props.onClick());
-  expect(allText(deletingEditor)).toContain("Deleting…");
-  await act(async () => deletingEditor.unmount());
+  await deletingEditor.submit("food-event:edit", { intent: "delete" });
+  expect(allText(deletingEditor.renderer)).toContain("Deleting…");
+  await act(async () => deletingEditor.renderer.unmount());
 
-  const wrongFood = new FormData();
-  wrongFood.set("entryId", "999");
-  wrongFood.set("intent", "update-food");
-  const idleEditor = await renderPendingHome(
-    { foodEntryEditor: editableEntry },
-    { formData: wrongFood, to: "/" },
-  );
-  expect(idleEditor.root.findByType("fieldset").props.disabled).toBe(false);
-  expect(idleEditor.root.findByProps({ "aria-label": "Save changes" }).props.disabled).toBe(false);
-  await act(async () => idleEditor.unmount());
-
+  // Another dialog's submission leaves the editor editable.
+  const idleEditor = await renderFoodHome({ editor: { canCopy: false, event: foodEvent() } });
+  await idleEditor.submit("food-event:add", { intent: "log", method: "manual" });
+  expect(idleEditor.renderer.root.findByType("fieldset").props.disabled).toBe(false);
+  expect(idleEditor.renderer.root.findByProps({ "aria-label": "Save changes" }).props.disabled).toBe(false);
+  await act(async () => idleEditor.renderer.unmount());
 
   const search = await renderPendingHome(
-    { catalog: { mode: "search", query: "", results: [] } },
+    { addFood: { mode: "search", query: "", results: [] } },
     { to: "/?food=search&query=yogurt" },
   );
   expect(semanticDom(search)).toMatchSnapshot();
@@ -2180,7 +2163,7 @@ test("home renders submission and navigation pending states", async () => {
   await act(async () => search.unmount());
 
   const detail = await renderPendingHome(
-    { catalog: { mode: "search", query: "yogurt", results: [] } },
+    { addFood: { mode: "search", query: "yogurt", results: [] } },
     { to: "/?food=1001&query=yogurt" },
   );
   expect(semanticDom(detail)).toMatchSnapshot();
@@ -2189,7 +2172,7 @@ test("home renders submission and navigation pending states", async () => {
   await act(async () => detail.unmount());
 
   const unrelated = await renderPendingHome(
-    { catalog: { mode: "search", query: "", results: [] } },
+    { addFood: { mode: "search", query: "", results: [] } },
     { to: "/?other=1" },
   );
   expect(allText(unrelated)).toContain("Searching USDA foods");
@@ -2198,14 +2181,7 @@ test("home renders submission and navigation pending states", async () => {
   await act(async () => unrelated.unmount());
 
   const detailCatalogDuringLoad = await renderPendingHome(
-    {
-      catalog: {
-        food: catalogFood,
-        idempotencyKey: "loading-detail",
-        mode: "detail",
-        query: "yogurt",
-      },
-    },
+    { addFood: { food: catalogFood, mode: "detail", query: "yogurt" } },
     { to: "/?food=1001&query=yogurt" },
   );
   expect(allText(detailCatalogDuringLoad)).toContain("Plain Greek yogurt");
@@ -2224,7 +2200,7 @@ test("home modal keyboard and backdrop behavior is observable", async () => {
   (globalThis.document as unknown as { activeElement: TestElement }).activeElement =
     previousFocus;
   globalThis.document.body.style.overflow = "scroll";
-  const renderer = await renderHome({ foodEntryEditor: editableEntry });
+  const renderer = await renderHome({ editor: { event: foodEvent(), canCopy: false } });
   expect(globalThis.document.body.style.overflow).toBe("hidden");
   expect(globalThis.document.activeElement).toBe(modalFocusables[0]);
   expect(queriedSelectors).toContain("input:not([disabled])");
@@ -2302,7 +2278,7 @@ test("home modal closes only from a direct backdrop click", async () => {
   (globalThis.document as unknown as { activeElement: TestElement }).activeElement =
     connectedPreviousFocus;
   const renderer = await renderHome({
-    catalog: { mode: "search", query: "", results: [] },
+    addFood: { mode: "search", query: "", results: [] },
   });
   const backdrop = renderer.root.findAllByType("div").find(
     (node) => typeof node.props.onClick === "function",
@@ -2321,24 +2297,21 @@ test("home modal closes only from a direct backdrop click", async () => {
   expect(globalThis.document.activeElement).toBe(connectedPreviousFocus);
   await act(async () => renderer.unmount());
 });
-
 test("copy calendar links preserve the source and destination, highlight dates and restore focus", async () => {
   queriedSelectors.length = 0;
   documentSelectors.length = 0;
   const originalFocus = new TestElement();
   originalFocus.focus();
-  const entry = { foodLogDate: "2026-08-28", id: 93, name: "Historical yogurt" };
-  const calendar = buildCalendarMonth("2026-08", "2026-09-05", "2026-08-29");
-  const renderer = await renderHome({
-    copyDialog: {
-      calendar: { ...calendar, days: calendar.days.map((day) => ({ ...day, isSource: day.date === entry.foodLogDate })) },
-      destinationDate: "2026-08-29", entry, idempotencyKey: "copy:93:calendar",
-    },
-  }, { tone: "error", message: "The copy could not be saved. Try again." });
+  const event = foodEvent({ id: 93, logDate: "2026-08-28T16:00:00.000Z", name: "Historical yogurt" });
+  const { renderer, submit } = await renderFoodHome(
+    { copy: copyDialogModel(event, "2026-08-28", "2026-09-05", "2026-08-29") },
+    () => ({ code: "future_date", message: "Future Food Logs cannot be changed" }),
+  );
   expect(queriedSelectors).toContain("[data-copy-calendar-day]");
+  await submit("food-event:copy", { intent: "copy" });
   const dialog = renderer.root.findByProps({ role: "dialog" });
-  expect(dialog.props.className).toBe(`${styles.foodDialog} ${styles.copyFoodDialog}`);
-  expect(nodeText(dialog.findByProps({ role: "alert" }))).toBe("The copy could not be saved. Try again.");
+  expect(dialog.props.className).toBe(styles.foodDialog);
+  expect(nodeText(dialog.findByProps({ role: "alert" }))).toBe("Future Food Logs cannot be changed");
   expect(dialog.findByProps({ "aria-label": "Previous month" }).props.to).toBe("/?date=2026-08-28&copy=93&copyDate=2026-08-29&copyMonth=2026-07");
   expect(dialog.findByProps({ "aria-label": "Next month" }).props.to).toBe("/?date=2026-08-28&copy=93&copyDate=2026-08-29&copyMonth=2026-09");
   const grid = dialog.findByProps({ "aria-label": "August 2026 destination calendar" });
@@ -2360,55 +2333,53 @@ test("copy calendar links preserve the source and destination, highlight dates a
   originalFocus.isConnected = true;
 });
 
-test("copy confirmation needs a destination and locks only while submitting this entry", async () => {
-  const entry = { foodLogDate: "2026-08-28", id: 93, name: "Historical yogurt" };
-  const calendar = buildCalendarMonth("2026-08", "2026-08-30", "2026-08-30");
-  const copyDialog = {
-    calendar: { ...calendar, days: calendar.days.map((day) => ({ ...day, isSource: day.date === entry.foodLogDate })) },
-    destinationDate: undefined as string | undefined, entry, idempotencyKey: "copy:93:pending",
-  };
-  const empty = await renderHome({ copyDialog });
-  const confirm = (renderer: ReactTestRenderer) => renderer.root.findAllByType("button").find((button) => button.props.value === "copy-food-to-date")!;
+test("copy confirmation needs a destination and locks only while this copy submits", async () => {
+  const event = foodEvent({ id: 93, logDate: "2026-08-28T16:00:00.000Z", name: "Historical yogurt" });
+  const empty = await renderHome({ copy: copyDialogModel(event, "2026-08-28", "2026-08-30") });
+  const confirm = (renderer: ReactTestRenderer) => renderer.root.findByProps({ role: "dialog" }).findAllByType("button").find((button) => button.props.type === "submit")!;
   expect(allText(empty)).toContain("Choose an eligible date");
-  expect(input(empty, "destinationDate").props.value).toBe("");
+  expect(input(empty, "destinationDate")).toBeUndefined();
   expect(confirm(empty).props.disabled).toBe(true);
   expect(nodeText(confirm(empty))).toBe("Copy");
-  expect(empty.root.findByProps({ "aria-label": "Sunday, August 30" }).props.className).toBe(`${styles.calendarDay} ${styles.calendarToday} ${styles.calendarSelected}`);
+  expect(empty.root.findByProps({ "aria-label": "Sunday, August 30" }).props.className).toBe(`${styles.calendarDay} ${styles.calendarToday}`);
   await act(async () => empty.unmount());
-  for (const [intent, entryId, pending] of [
-    ["copy-food-to-date", "93", true],
-    ["copy-food-to-date", "94", false],
-    ["copy-food-to-today", "93", false],
+  for (const [key, pending] of [
+    ["food-event:copy", true],
+    ["food-event:copy-to-today", false],
   ] as const) {
-    const formData = new FormData();
-    formData.set("intent", intent);
-    formData.set("entryId", entryId);
-    const renderer = await renderPendingHome({ copyDialog: { ...copyDialog, destinationDate: "2026-08-30" } }, { formData, to: "/" });
+    const { renderer, submit } = await renderFoodHome({ copy: copyDialogModel(event, "2026-08-28", "2026-08-30", "2026-08-30") });
+    await submit(key, { intent: "copy" });
     expect(confirm(renderer).props.disabled).toBe(pending);
     expect(nodeText(confirm(renderer))).toBe(pending ? "Copying…" : "Copy");
     await act(async () => renderer.unmount());
   }
 });
 
-test("manual entry submission disables editing only for the manual action", async () => {
-  for (const intent of ["log-manual-food", "copy-food-to-today"]) {
-    const formData = new FormData();
-    formData.set("intent", intent);
-    const renderer = await renderPendingHome({ catalog: { mode: "manual", query: "", idempotencyKey: "manual-pending" } }, { formData, to: "/" });
-    expect(renderer.root.findByType("fieldset").props.disabled).toBe(intent === "log-manual-food");
-    expect(allText(renderer)).toContain(intent === "log-manual-food" ? "Adding…" : "Add to Food Log");
+test("manual entry submission disables editing only for its own submission", async () => {
+  for (const [key, pending] of [["food-event:add", true], ["food-event:copy-to-today", false]] as const) {
+    const { renderer, submit } = await renderFoodHome({ addFood: { mode: "manual" } });
+    await submit(key, { intent: "log", method: "manual" });
+    expect(renderer.root.findByType("fieldset").props.disabled).toBe(pending);
+    expect(allText(renderer)).toContain(pending ? "Adding…" : "Add to Food Log");
+    // A manual save keeps its dialog open rather than showing a pending row.
+    expect(renderer.root.findAllByProps({ "aria-label": "Adding food to Daily log" })).toHaveLength(0);
     await act(async () => renderer.unmount());
   }
 });
 
 test("a former photo meal reads as a manual entry in the timeline and opens the manual editor", async () => {
-  const formerEstimate = {
-    ...editableEntry, name: "Chicken rice bowl", kind: "food", provider: "manual", dataType: "User entered",
-    authoritativeBaseQuantityMicrounits: 1_000_000, selectedMeasurementId: "plate", selectedMeasurementLabel: "Analyzed plate",
-    supportedMeasurements: [{ baseQuantityMicrounits: 1_000_000, id: "plate", label: "Analyzed plate", unit: "serving" }],
-  };
-  const water = { id: editableEntry.id, kind: "water", foodLogDate: "2026-08-31", localEventTime: "12:05:00", logDate: "2026-08-31T16:05:00.000Z", ounces: "8" };
-  const renderer = await renderHome({ foodLog: { ...baseFoodLog, entries: [formerEstimate], events: [formerEstimate, water] }, foodEntryEditor: formerEstimate, manualEntrySaved: false });
+  const formerEstimate = foodEvent({
+    authority: { ...foodEvent().authority, quantityMicrounits: 1_000_000, unit: "serving" },
+    measurement: { baseQuantityMicrounits: 1_000_000, id: "plate", label: "Analyzed plate", unit: "serving" },
+    measurements: [{ baseQuantityMicrounits: 1_000_000, id: "plate", label: "Analyzed plate", unit: "serving" }],
+    name: "Chicken rice bowl",
+    source: manualSource,
+  });
+  const water = { id: 41, kind: "water", logDate: "2026-08-31T16:05:00.000Z", ounces: "8" };
+  const renderer = await renderHome({
+    editor: { canCopy: false, event: formerEstimate },
+    foodLog: { ...baseFoodLog, events: [water, formerEstimate], foodEvents: [formerEstimate] },
+  });
   const timeline = renderer.root.findByProps({ className: styles.entryList });
   expect(timeline.findAllByType("article")).toHaveLength(2);
   const entryLink = timeline.findAllByType("a").find(node => node.props.href === "/?date=2026-08-31&entry=41")!;
@@ -2419,7 +2390,7 @@ test("a former photo meal reads as a manual entry in the timeline and opens the 
   expect(timeline.findAllByProps({ role: "status" })).toHaveLength(0);
   expect(renderer.root.findByType("fieldset").props.disabled).toBe(false);
   expect(input(renderer, "name").props.value).toBe("Chicken rice bowl");
-  expect(renderer.root.findByProps({ value: "save-manual-food" }).type).toBe("button");
+  expect(renderer.root.findByProps({ value: "add-favorite" }).type).toBe("input");
   expect(allText(renderer)).not.toMatch(/photo|\bAI\b|Analysis/i);
   await act(async () => renderer.unmount());
 });

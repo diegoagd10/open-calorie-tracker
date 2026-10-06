@@ -9,8 +9,8 @@ import {
   BarcodeLookupUnavailableError,
   BarcodeNotConfiguredError,
   BarcodeProductNotFoundError,
-  createBarcodeService,
-} from "../app/barcode/index.server";
+} from "../app/catalog/open-food-facts.exceptions";
+import { createOpenFoodFactsClient } from "../app/catalog/runtime.server";
 import { openApplicationDatabase } from "../app/database/database.server";
 import { version } from "../package.json";
 import { fakeOffApi, offNativeServingProduct, type OffApiReply } from "./support/off-api";
@@ -28,7 +28,7 @@ async function barcodeLookup(replies: Record<string, OffApiReply> = {}, contact:
     migrationsFolder: path.resolve("drizzle"),
   });
   const api = fakeOffApi(replies);
-  const service = createBarcodeService(database.getClient(), api.fetch);
+  const service = createOpenFoodFactsClient(database.getClient(), api.fetch);
   if (contact !== null) service.saveContact(contact);
   return { ...api, database, service };
 }

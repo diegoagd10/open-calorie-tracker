@@ -5,7 +5,8 @@ import { getAuthenticationService } from "../auth/runtime.server";
 import type { CatalogState, FoundationReleaseMetadata } from "../catalog-management/catalog-management.server";
 import { getCatalogManagement } from "../catalog-management/runtime.server";
 import { BarcodeContactSection, type BarcodeContactResult } from "../barcode";
-import { BarcodeContactInvalidError, getBarcodeService } from "../barcode/index.server";
+import { BarcodeContactInvalidError } from "../catalog/open-food-facts.exceptions";
+import { getOpenFoodFactsClient } from "../catalog/runtime.server";
 import { SettingsDestinations, SettingsShell } from "../settings-destinations";
 import shellStyles from "../food-log.module.css";
 import styles from "./settings.catalogs.module.css";
@@ -17,7 +18,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   const session = await requireAdministratorSession(request);
   const catalog = getCatalogManagement();
   await catalog.checkForUpdate();
-  return { csrfToken: session.csrfToken, today: navigationToday(session.user.id), catalog: catalogInformation(catalog.read()), offContact: getBarcodeService().contact() };
+  return { csrfToken: session.csrfToken, today: navigationToday(session.user.id), catalog: catalogInformation(catalog.read()), offContact: getOpenFoodFactsClient().contact() };
 }
 export async function action({ request }: Route.ActionArgs) {
   requireValidOrigin(request);
@@ -37,7 +38,7 @@ export async function action({ request }: Route.ActionArgs) {
 }
 
 function contactAction(intent: "save-off-contact" | "remove-off-contact", form: FormData): Response {
-  const barcode = getBarcodeService();
+  const barcode = getOpenFoodFactsClient();
   if (intent === "remove-off-contact") {
     barcode.removeContact();
     return Response.json({ contact: "removed" } satisfies BarcodeContactResult, { headers: headers() });

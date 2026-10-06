@@ -1,10 +1,9 @@
 import * as fc from "fast-check";
 import { expect, test } from "vitest";
 
+import { addLocalDays, parseIsoLocalDate } from "../app/shared/local-date";
 import {
-  addLocalDays,
   compareFoodLogEventsDescending,
-  parseIsoLocalDate,
   type FoodLogEventOrderKey,
 } from "../app/food-log/date";
 import {
@@ -105,7 +104,7 @@ const eventArbitrary = fc.record({
   ),
   id: fc.integer({ max: 4, min: 1 }),
   kind: fc.constantFrom<FoodLogEventOrderKey["kind"]>("food", "water"),
-  localEventTime: fc.constantFrom("00:00:00", "12:00:00", "23:59:59"),
+  logDate: fc.constantFrom("2026-08-29T04:00:00.000Z", "2026-08-29T16:00:00.000Z", "2026-08-30T03:59:59.000Z"),
 });
 
 function comparisonSign(value: number): number {
@@ -114,13 +113,8 @@ function comparisonSign(value: number): number {
   return 0;
 }
 
-function localTimeAt(secondOfDay: number): string {
-  const hours = Math.floor(secondOfDay / 3_600);
-  const minutes = Math.floor((secondOfDay % 3_600) / 60);
-  const seconds = secondOfDay % 60;
-  return [hours, minutes, seconds]
-    .map((part) => String(part).padStart(2, "0"))
-    .join(":");
+function logDateAt(secondOfDay: number): string {
+  return new Date(Date.UTC(2026, 0, 1) + secondOfDay * 1_000).toISOString();
 }
 
 const tieBreakerBaseArbitrary = fc.record({
@@ -219,13 +213,13 @@ test("Food Log event comparison applies every descending tie-breaker", () => {
           createdAt,
           id,
           kind: "water" as const,
-          localEventTime: localTimeAt(secondOfDay),
+          logDate: logDateAt(secondOfDay),
         };
 
         expect(
           compareFoodLogEventsDescending(base, {
             ...base,
-            localEventTime: localTimeAt(secondOfDay + 1),
+            logDate: logDateAt(secondOfDay + 1),
           }),
         ).toBeGreaterThan(0);
         expect(
@@ -239,10 +233,11 @@ test("Food Log event comparison applies every descending tie-breaker", () => {
         expect(
           compareFoodLogEventsDescending(base, { ...base, id: id + 1 }),
         ).toBeGreaterThan(0);
+        // Kind decides before ID: food and water IDs come from different tables.
         expect(
           compareFoodLogEventsDescending(
             { ...base, kind: "food" },
-            base,
+            { ...base, id: id + 1 },
           ),
         ).toBeLessThan(0);
       },

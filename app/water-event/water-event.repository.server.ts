@@ -2,6 +2,7 @@ import { and, desc, eq, gte, inArray, lt } from "drizzle-orm";
 
 import type { ApplicationDatabaseClient } from "../database/database.server";
 import { userPreferences } from "../database/schema.server";
+import { laterInstant } from "../shared/date-time";
 import type { CreateWaterEvent, WaterEvent, WaterEventRange } from "./water-event.model";
 import { waterEvents } from "./water-event.schema.server";
 
@@ -75,9 +76,4 @@ export class WaterEventRepository {
       .where(eq(userPreferences.userId, userId))
       .get()?.timeZone ?? null;
   }
-}
-
-/** `now`, or one millisecond after `previous` when the clock has not moved past it. */
-function laterInstant(now: string, previous: string): string {
-  return now > previous ? now : new Date(new Date(previous).getTime() + 1).toISOString();
 }

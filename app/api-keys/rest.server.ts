@@ -26,3 +26,43 @@ export function authenticateApiRequest(
     ? apiError("insufficient_scope", 403, { "WWW-Authenticate": `Bearer realm="${realm}", error="insufficient_scope", scope="${requiredScope}"` })
     : apiError("invalid_token", 401, { "WWW-Authenticate": `Bearer realm="${realm}", error="invalid_token"` });
 }
+
+/** A REST write body is a few hundred bytes; 16 KiB leaves room for client metadata. */
+const MAX_BODY_BYTES = 16 * 1024;
+
+/** Thrown while reading a body past `MAX_BODY_BYTES`, so nothing larger is buffered. */
+export class BodyTooLargeError extends Error {}
+
+/** The body as text, counting received bytes rather than trusting `Content-Length`. */
+async function readBoundedText(request: Request): Promise<string> {
+  if (Number(request.headers.get("Content-Length") ?? 0) > MAX_BODY_BYTES) {
+    await request.body?.cancel();
+    throw new BodyTooLargeError();
+  }
+  const reader = request.body?.getReader();
+  if (!reader) return "";
+  const decoder = new TextDecoder();
+  let text = "";
+  let bytes = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    bytes += value.byteLength;
+    if (bytes > MAX_BODY_BYTES) {
+      await reader.cancel();
+      throw new BodyTooLargeError();
+    }
+    text += decoder.decode(value, { stream: true });
+  }
+  return text + decoder.decode();
+}
+
+/** The parsed JSON body, or undefined when it is not JSON. */
+export async function readJson(request: Request): Promise<unknown> {
+  const text = await readBoundedText(request);
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return undefined;
+  }
+}

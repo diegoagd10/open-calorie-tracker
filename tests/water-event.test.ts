@@ -284,7 +284,7 @@ describe("day summary", () => {
 });
 
 describe("Food Log", () => {
-  test("lists the selected local day's water events with their local times and total", async () => {
+  test("lists the selected local day's water events by consumption time, with their total", async () => {
     const { client, service, owner } = await setup();
     const morning = service.save(owner, { logDate: "2026-09-30T13:15:00Z", quantity: { ounces: "8" } });
     const evening = service.save(owner, { logDate: "2026-10-01T01:30:00Z", quantity: { ounces: "16.5" } });
@@ -293,9 +293,9 @@ describe("Food Log", () => {
     const foodLog = new FoodLogService(client, () => new Date(NOW)).read(owner, "2026-09-30")!;
     expect(foodLog.waterTotalOunces).toBe("24.5");
     expect(foodLog.waterEvents.map((event) => event.id)).toEqual([evening.id, morning.id]);
-    expect(foodLog.events.map((event) => [event.kind, event.localEventTime])).toEqual([
-      ["water", "21:30:00"],
-      ["water", "09:15:00"],
+    expect(foodLog.events.map((event) => [event.kind, event.logDate])).toEqual([
+      ["water", "2026-10-01T01:30:00.000Z"],
+      ["water", "2026-09-30T13:15:00.000Z"],
     ]);
   });
 

@@ -21,22 +21,22 @@ function insertPastFoodEntry(username: string, date: string) {
   const database = openBrowserTestDatabase();
   database
     .prepare(
-      `INSERT INTO food_entries (
-         user_id, food_log_date, local_event_time, provider, provider_food_id,
+      `INSERT INTO food_events (
+         user_id, log_date, provider, provider_food_id,
          source_data_type, original_name, authoritative_base_unit,
          authoritative_base_quantity_microunits, authoritative_nutrition,
          selected_measurement_id, selected_measurement_label,
          selected_measurement_unit, selected_measurement_base_quantity_microunits,
          supported_measurements, quantity_microunits,
-         authoritative_energy_milli_kcal, idempotency_key, created_at, updated_at
+         authoritative_energy_milli_kcal, created_at, updated_at
        )
-       SELECT id, ?, '12:00:00', 'usda-fdc', 'past-meal', 'Foundation', 'Past meal', 'g',
+       SELECT id, ?, 'usda-fdc', 'past-meal', 'Foundation', 'Past meal', 'g',
               100000000, ?, 'base:g:100000000', '100 g', 'g',
-              100000000, '[]', 1000000, 1500000, 'past-meal', ?, ?
+              100000000, '[]', 1000000, 1500000, ?, ?
        FROM users WHERE username_normalized = ?`,
     )
     .run(
-      date,
+      `${date}T16:00:00.000Z`,
       JSON.stringify(Object.fromEntries([
         "carbohydrateMilligrams", "energyMilliKcal", "fatMilligrams", "fiberMilligrams",
         "proteinMilligrams", "sodiumMilligrams", "sugarMilligrams",

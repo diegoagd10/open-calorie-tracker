@@ -12,6 +12,8 @@ import { getApplicationDatabase, initializeApplicationDatabase, shutdownApplicat
 import { action as mutateDailyLog, loader as readDailyLog } from "../../app/routes/api.v1.daily-log";
 import { action as keysAction, loader as keysLoader } from "../../app/routes/settings.api-keys";
 import { action as copyAction } from "../../app/routes/settings.api-keys.copy";
+import { presentFoodEvent } from "../../app/food-event/index.server";
+import { getFoodEventService } from "../../app/food-event/runtime.server";
 import { completeTestSetup } from "../support/setup";
 import { seedAuthenticatedAccount } from "../support/authentication";
 
@@ -88,17 +90,17 @@ afterAll(async () => {
   await rm(directory, { recursive: true, force: true });
 });
 
-test("a valid key reads its owner's Food Log in the v1 shape", async () => {
+test("a valid key reads its owner's Food Log in the v2 shape", async () => {
   const { key } = await createKey(reader, "Muse");
   const response = apiGet(`Bearer ${key}`, freshIp());
   expect(response.status).toBe(200);
   expect(response.headers.get("Cache-Control")).toContain("no-store");
   const body = await response.json() as Record<string, unknown>;
   expect(Object.keys(body).sort()).toEqual([
-    "events", "foodEntries", "goal", "isFuture", "nutritionTotals",
+    "events", "foodEvents", "goal", "isFuture", "nutritionTotals",
     "selectedDate", "timeZone", "today", "version", "waterEvents", "waterTotalOunces",
   ].sort());
-  expect(body).toMatchObject({ version: "1", selectedDate: date, timeZone: "America/New_York" });
+  expect(body).toMatchObject({ version: "2", selectedDate: date, timeZone: "America/New_York" });
   expect(body.goal).toEqual({
     calorieTargetMilliKcal: 2_050_000,
     waterTargetOunces: 80,
@@ -250,9 +252,29 @@ test("the versioned resource covers historical, empty, and future days", async (
   const { key } = await createKey(reader, "History");
   const read = (day: string) => apiGet(`Bearer ${key}`, freshIp(), `date=${day}`);
   const empty: unknown = await read("2026-08-29").json();
-  expect(empty).toMatchObject({ selectedDate: "2026-08-29", isFuture: false, foodEntries: [], waterEvents: [], events: [], waterTotalOunces: 0, goal: { calorieTargetMilliKcal: 2_050_000, waterTargetOunces: 80 } });
+  expect(empty).toMatchObject({ selectedDate: "2026-08-29", isFuture: false, foodEvents: [], waterEvents: [], events: [], waterTotalOunces: 0, goal: { calorieTargetMilliKcal: 2_050_000, waterTargetOunces: 80 } });
   const future: unknown = await read("2026-09-01").json();
-  expect(future).toMatchObject({ selectedDate: "2026-09-01", isFuture: true, foodEntries: [], goal: { calorieTargetMilliKcal: 2_050_000 } });
+  expect(future).toMatchObject({ selectedDate: "2026-09-01", isFuture: true, foodEvents: [], goal: { calorieTargetMilliKcal: 2_050_000 } });
+});
+
+test("v2 food carries its UTC logDate, as the Food Events API presents it, instead of local date fields", async () => {
+  const { key } = await createKey(reader, "Food events");
+  const oatmeal = await getFoodEventService(new Date("2026-08-28T16:00:00.000Z")).save(reader.id, {
+    method: "manual", logDate: "2026-08-28T03:30:00.000Z", name: "Late oatmeal", quantity: "1", saveAsFavorite: false,
+    nutrition: { energyKcal: "350", proteinGrams: "12" },
+  });
+  // 03:30 UTC on August 28 is 23:30 on August 27 in New York.
+  const body = await apiGet(`Bearer ${key}`, freshIp(), "date=2026-08-27").json() as {
+    events: Array<Record<string, unknown>>;
+    foodEvents: Array<Record<string, unknown>>;
+    nutritionTotals: Record<string, unknown>;
+  };
+  expect(body.foodEvents).toEqual([presentFoodEvent(oatmeal)]);
+  expect(body.foodEvents[0]).toMatchObject({ logDate: "2026-08-28T03:30:00.000Z", energyMilliKcal: 350_000, provider: "manual" });
+  expect(body.foodEvents[0]).not.toHaveProperty("foodLogDate");
+  expect(body.foodEvents[0]).not.toHaveProperty("localEventTime");
+  expect(body.events).toEqual([{ kind: "food", ...presentFoodEvent(oatmeal) }]);
+  expect(body.nutritionTotals).toMatchObject({ energyMilliKcal: { known: 350_000, isIncomplete: false }, sodiumMilligrams: { known: 0, isIncomplete: true } });
 });
 
 test("API errors are machine readable, private, and account scoped", async () => {

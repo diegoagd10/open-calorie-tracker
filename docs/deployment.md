@@ -282,6 +282,27 @@ directory during recovery; restore a complete backup to a new `DATA_PATH` and
 use the application version that matches it. Never run an older application
 against a database containing newer migrations.
 
+### Upgrade to Food Events
+
+The release that introduces Food Events renames the `food_entries` and
+`saved_foods` tables to `food_events` and `favorite_foods`, and replaces each
+food's local date and time with a UTC `log_date`. Follow the maintenance window
+above: stop the application, back up the complete `DATA_PATH` including the
+WAL-related files, then upgrade.
+
+- Startup converts each migrated time to UTC with the account's current time
+  zone, or UTC for an account without one, in one transaction before the
+  application reports ready. If a stored time cannot be read, the whole
+  conversion rolls back and startup fails; the next start retries it from the
+  beginning.
+- The original time zone of an entry was never stored. An account that changed
+  time zones before the upgrade sees that history shift by the difference.
+- Rolling back means restoring that backup: the previous release cannot read the
+  renamed tables.
+
+Food logged on a past day from the web app now records noon on that day, as
+Water Events do, and a resubmitted form records the food again.
+
 ### Remove the old local Open Food Facts catalog
 
 Releases before live barcode lookup imported Open Food Facts into a local catalog.

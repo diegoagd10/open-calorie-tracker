@@ -20,6 +20,18 @@ export function isTestEnvironment(): boolean {
   return process.env.NODE_ENV === "test";
 }
 
+/**
+ * The instant a browser test pins with the `X-Test-Food-Log-Now` header, so the Food Log and
+ * its events read one fixed "now"; undefined outside tests or without the header.
+ */
+export function testRequestInstant(request: Request): Date | undefined {
+  const requested = isTestEnvironment() ? request.headers.get("X-Test-Food-Log-Now") : null;
+  if (!requested) return undefined;
+  const instant = new Date(requested);
+  if (Number.isNaN(instant.getTime())) throw new Response("Test Food Log instant is invalid.", { status: 400 });
+  return instant;
+}
+
 export type RequestEntry = "tunnel" | "lan" | "development";
 export type RequestPolicy = { entry: RequestEntry; origin: string };
 export const requestPolicyContext = new AsyncLocalStorage<RequestPolicy>();

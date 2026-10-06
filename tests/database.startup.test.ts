@@ -21,10 +21,24 @@ const temporaryDirectories: string[] = [];
 /** Every reviewed migration, so these tests follow the journal instead of a fixed count. */
 const migrationCount = readMigrationFiles({ migrationsFolder: path.resolve("drizzle") }).length;
 
-function readRepresentativeData(client: ApplicationDatabaseClient) {
+/**
+ * Representative rows that every migration keeps. Food rows are compared without the columns
+ * Food Events replaced: the local date and time became `log_date`, keys were dropped, and the
+ * favorite and copy links were renamed or added.
+ */
+function readRepresentativeData(client: ApplicationDatabaseClient, foodTable: "food_entries" | "food_events" = "food_entries") {
   return {
-    foodEntries: client.all<Record<string, unknown>>(sql`SELECT * FROM food_entries ORDER BY id`)
-      .map(({ source_saved_food_id: _sourceSavedFoodId, ...entry }) => entry),
+    foodEntries: client.all<Record<string, unknown>>(sql.raw(`SELECT * FROM ${foodTable} ORDER BY id`))
+      .map(({
+        source_saved_food_id: _sourceSavedFoodId,
+        source_favorite_id: _sourceFavoriteId,
+        copied_from_event_id: _copiedFromEventId,
+        food_log_date: _foodLogDate,
+        local_event_time: _localEventTime,
+        log_date: _logDate,
+        idempotency_key: _idempotencyKey,
+        ...entry
+      }) => entry),
     passwordCredentials: client.select().from(schema.passwordCredentials).all(),
     sessions: client.select().from(schema.sessions).all(),
     userPreferences: client.all(sql`SELECT user_id, time_zone, created_at, updated_at FROM user_preferences`),
@@ -385,9 +399,12 @@ test("the production migration preserves every representative field from the pri
     writable: true,
   });
   expect(isDatabaseReady(upgraded.getStatus())).toBe(true);
-  expect(readRepresentativeData(upgraded.getClient())).toEqual(
+  expect(readRepresentativeData(upgraded.getClient(), "food_events")).toEqual(
     representativeData,
   );
+  expect(upgraded.getClient().get(sql`SELECT log_date AS logDate FROM food_events`)).toEqual({
+    logDate: "2026-08-30T14:00:00.000Z",
+  });
   expect(upgraded.getClient().select().from(dailyGoals).all()).toEqual([{
     userId: user.id,
     calorieTarget: 2_000_000,

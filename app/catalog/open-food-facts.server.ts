@@ -2,16 +2,17 @@ import { createHash } from "node:crypto";
 
 import { z } from "zod";
 
-import type { CatalogFood } from "../catalog/food-catalog.server";
+import type { CatalogFood } from "./food-catalog.server";
 import {
   BarcodeContactInvalidError,
   BarcodeLookupUnavailableError,
   BarcodeNotConfiguredError,
   BarcodeProductNotFoundError,
-} from "./barcode.exceptions";
-import { OFF_PRODUCT_FIELDS, offProductResponseSchema } from "./barcode.model";
-import type { BarcodeRepository } from "./barcode.repository.server";
-import { isSupportedCommercialBarcode, offNutrition } from "./barcode.utils";
+} from "./open-food-facts.exceptions";
+import { isSupportedCommercialBarcode } from "../barcode";
+import type { OffContactRepository } from "./off-contact.repository.server";
+import { OFF_PRODUCT_FIELDS, offProductResponseSchema } from "./open-food-facts.model";
+import { offNutrition } from "./open-food-facts.utils";
 
 const OFF_PRODUCT_URL = "https://world.openfoodfacts.org/api/v3.5/product/";
 const LOOKUP_TIMEOUT_MS = 5_000;
@@ -30,13 +31,13 @@ function fingerprint(food: Omit<CatalogFood, "catalogGeneration">): string {
   return createHash("sha256").update(JSON.stringify(food)).digest("hex");
 }
 
-/** Barcode lookup against the Open Food Facts product API, and the contact email it requires. */
-export class BarcodeService {
-  readonly #repository: BarcodeRepository;
+/** The Open Food Facts product API client: live barcode lookup, and the contact email it requires. */
+export class OpenFoodFactsClient {
+  readonly #repository: OffContactRepository;
   readonly #fetch: typeof fetch;
   readonly #version: string;
 
-  constructor(repository: BarcodeRepository, fetcher: typeof fetch, version: string) {
+  constructor(repository: OffContactRepository, fetcher: typeof fetch, version: string) {
     this.#repository = repository;
     this.#fetch = fetcher;
     this.#version = version;

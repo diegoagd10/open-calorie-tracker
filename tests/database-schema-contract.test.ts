@@ -76,6 +76,7 @@ test("Drizzle schema metadata matches the migrated SQLite contract", async () =>
   const schema = (await import("../app/database/schema.server?schema-contract")) as unknown as typeof import("../app/database/schema.server");
   const { waterEvents } = await import("../app/water-event/water-event.schema.server");
   const { dailyGoals } = await import("../app/daily-goal/daily-goal.schema.server");
+  const { favoriteFoods, foodEvents } = await import("../app/food-event/food-event.schema.server");
   const tables: SQLiteTable[] = [
     schema.applicationMetadata,
     schema.users,
@@ -86,7 +87,8 @@ test("Drizzle schema metadata matches the migrated SQLite contract", async () =>
     schema.rateLimitCounters,
     schema.userPreferences,
     dailyGoals,
-    schema.foodEntries,
+    foodEvents,
+    favoriteFoods,
     waterEvents,
   ];
   const directory = await mkdtemp(path.join(tmpdir(), "calory-schema-contract-"));
@@ -269,21 +271,20 @@ test("food snapshots accept coherent providers and reject mixed provider semanti
     sourceDataType?: string;
   }) =>
     client.run(sql.raw(`
-      INSERT INTO food_entries (
-        user_id, food_log_date, local_event_time, provider, provider_food_id,
+      INSERT INTO food_events (
+        user_id, log_date, provider, provider_food_id,
         source_data_type, original_name, authoritative_base_unit,
         authoritative_base_quantity_microunits, selected_measurement_id,
         selected_measurement_label, selected_measurement_unit,
         selected_measurement_base_quantity_microunits, quantity_microunits,
-        idempotency_key, created_at, updated_at
+        created_at, updated_at
       ) VALUES (
-        1, '2026-09-01', '12:00:00', '${change.provider ?? "open-food-facts"}',
-        '0034000470693', '${change.sourceDataType ?? "Open Food Facts"}',
+        1, '2026-09-01T16:00:00.000Z', '${change.provider ?? "open-food-facts"}',
+        '${change.idempotencyKey}', '${change.sourceDataType ?? "Open Food Facts"}',
         'Example cereal', '${change.authoritativeBaseUnit ?? "serving"}',
         1000000, 'serving', '1 serving',
         '${change.selectedMeasurementUnit ?? "serving"}', 1000000, 1000000,
-        '${change.idempotencyKey}', '2026-09-01T12:00:00.000Z',
-        '2026-09-01T12:00:00.000Z'
+        '2026-09-01T12:00:00.000Z', '2026-09-01T12:00:00.000Z'
       )
     `));
 

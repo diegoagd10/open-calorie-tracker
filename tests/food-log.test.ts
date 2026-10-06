@@ -8,31 +8,24 @@ import { afterEach, expect, test } from "vitest";
 import {
   addLocalDays,
   buildCalendarMonth,
-  compareFoodLogEventsDescending,
   formatLocalDate,
   getNearbyLocalDates,
   localDateAt,
   parseIsoLocalDate,
-} from "../app/food-log/date";
+} from "../app/shared/local-date";
+import { compareFoodLogEventsDescending } from "../app/food-log/date";
 import {
   FoodLogService,
   FutureFoodLogDateError,
   InvalidFoodLogDateError,
 } from "../app/food-log/food-log.server";
 import {
-  localEventTimeForNewFoodLogEvent,
-  nextUpdatedAt,
-  type EventTimeDatabase,
-} from "../app/food-log/event-time.server";
-import {
   openApplicationDatabase,
   type ApplicationDatabaseClient,
 } from "../app/database/database.server";
-import {
-  foodEntries,
-  userPreferences,
-  users,
-} from "../app/database/schema.server";
+import { userPreferences, users } from "../app/database/schema.server";
+import { foodEvents } from "../app/food-event/food-event.schema.server";
+import { zonedDateTimeToUtc } from "../app/shared/date-time";
 import { createDailyGoalService } from "../app/daily-goal/index.server";
 import type { DailyGoalTargets } from "../app/daily-goal/daily-goal.model";
 
@@ -91,11 +84,13 @@ function insertConfiguredUser(
   return userId;
 }
 
-function insertFoodEntry(
+/** A Food Event eaten at `time` (noon by default) on local `date` in New York. */
+function insertFoodEvent(
   client: ApplicationDatabaseClient,
   options: {
     date: string;
     id: string;
+    time?: string;
     nutrients: {
       carbohydrateMilligrams: number | null;
       energyMilliKcal: number | null;
@@ -110,7 +105,7 @@ function insertFoodEntry(
 ) {
   const createdAt = "2026-08-29T12:00:00.000Z";
   client
-    .insert(foodEntries)
+    .insert(foodEvents)
     .values({
       authoritativeBaseQuantityMicrounits: 100_000_000,
       authoritativeBaseUnit: "g",
@@ -126,9 +121,7 @@ function insertFoodEntry(
       barcode: null,
       brand: null,
       createdAt,
-      foodLogDate: options.date,
-      idempotencyKey: options.id,
-      localEventTime: "12:00:00",
+      logDate: zonedDateTimeToUtc(`${options.date}T${options.time ?? "12:00"}`, "America/New_York")!,
       marketCountry: null,
       originalName: `Entry ${options.id}`,
       provider: "usda-fdc",
@@ -310,59 +303,6 @@ test("local date formatting is UTC-stable and rejects invalid dates", () => {
   );
 });
 
-test("event clocks cover current, retroactive, cap, and monotonic boundaries", () => {
-  const currentDatabase = {
-    get: () => undefined,
-  } as unknown as EventTimeDatabase;
-  expect(
-    localEventTimeForNewFoodLogEvent(
-      currentDatabase,
-      1,
-      "2026-08-29",
-      "2026-08-29",
-      new Date("2026-08-29T18:45:30.000Z"),
-      "America/New_York",
-    ),
-  ).toBe("14:45:30");
-
-  const retroactive = (localEventTime: string | null | undefined) =>
-    localEventTimeForNewFoodLogEvent(
-      {
-        get: () =>
-          localEventTime === undefined ? undefined : { localEventTime },
-      } as unknown as EventTimeDatabase,
-      1,
-      "2026-08-28",
-      "2026-08-29",
-      new Date("2026-08-29T18:45:30.000Z"),
-      "UTC",
-    );
-  expect(retroactive(undefined)).toBe("12:00:00");
-  expect(retroactive(null)).toBe("12:00:00");
-  expect(retroactive("12:34:56")).toBe("12:35:56");
-  expect(retroactive("23:59:00")).toBe("23:59:00");
-  expect(retroactive("23:59:30")).toBe("23:59:30");
-
-  expect(
-    nextUpdatedAt(
-      new Date("2026-08-29T18:45:31.000Z"),
-      "2026-08-29T18:45:30.000Z",
-    ),
-  ).toBe("2026-08-29T18:45:31.000Z");
-  expect(
-    nextUpdatedAt(
-      new Date("2026-08-29T18:45:30.000Z"),
-      "2026-08-29T18:45:30.000Z",
-    ),
-  ).toBe("2026-08-29T18:45:30.001Z");
-  expect(
-    nextUpdatedAt(
-      new Date("2026-08-29T18:45:29.000Z"),
-      "2026-08-29T18:45:30.000Z",
-    ),
-  ).toBe("2026-08-29T18:45:30.001Z");
-});
-
 test("Food Log errors retain their public contract", () => {
   expect(new InvalidFoodLogDateError()).toMatchObject({
     message: "Food Log date is invalid",
@@ -475,7 +415,7 @@ test("daily nutrition totals preserve known values and mark only nutrients affec
     username: "nutrition.summary.other",
   });
 
-  insertFoodEntry(client, {
+  insertFoodEvent(client, {
     date: "2026-08-29",
     id: "summary-one",
     nutrients: {
@@ -489,7 +429,7 @@ test("daily nutrition totals preserve known values and mark only nutrients affec
     },
     userId,
   });
-  insertFoodEntry(client, {
+  insertFoodEvent(client, {
     date: "2026-08-29",
     id: "summary-two",
     nutrients: {
@@ -503,7 +443,7 @@ test("daily nutrition totals preserve known values and mark only nutrients affec
     },
     userId,
   });
-  insertFoodEntry(client, {
+  insertFoodEvent(client, {
     date: "2026-08-28",
     id: "other-day",
     nutrients: {
@@ -517,7 +457,7 @@ test("daily nutrition totals preserve known values and mark only nutrients affec
     },
     userId,
   });
-  insertFoodEntry(client, {
+  insertFoodEvent(client, {
     date: "2026-08-29",
     id: "other-user",
     nutrients: {
@@ -572,7 +512,7 @@ test("daily nutrition totals are recomputed after edits and deletes and empty Lo
     sugarMilligrams: { isIncomplete: false, known: 0 },
   });
 
-  insertFoodEntry(client, {
+  insertFoodEvent(client, {
     date: "2026-08-29",
     id: "fresh-summary",
     nutrients: {
@@ -587,9 +527,9 @@ test("daily nutrition totals are recomputed after edits and deletes and empty Lo
     userId,
   });
   const entry = client
-    .select({ id: foodEntries.id })
-    .from(foodEntries)
-    .where(eq(foodEntries.userId, userId))
+    .select({ id: foodEvents.id })
+    .from(foodEvents)
+    .where(eq(foodEvents.userId, userId))
     .get()!;
 
   expect(service.read(userId, "2026-08-29")?.nutritionTotals).toMatchObject({
@@ -598,16 +538,16 @@ test("daily nutrition totals are recomputed after edits and deletes and empty Lo
   });
 
   client
-    .update(foodEntries)
+    .update(foodEvents)
     .set({ energyMilliKcal: 1_002, proteinMilligrams: 1_002 })
-    .where(eq(foodEntries.id, entry.id))
+    .where(eq(foodEvents.id, entry.id))
     .run();
   expect(service.read(userId, "2026-08-29")?.nutritionTotals).toMatchObject({
     energyMilliKcal: { isIncomplete: false, known: 1_002 },
     proteinMilligrams: { isIncomplete: false, known: 1_002 },
   });
 
-  client.delete(foodEntries).where(eq(foodEntries.id, entry.id)).run();
+  client.delete(foodEvents).where(eq(foodEvents.id, entry.id)).run();
   expect(service.read(userId, "2026-08-29")?.nutritionTotals).toEqual(
     emptyTotals,
   );
@@ -636,21 +576,21 @@ test("daily calories summarize every requested date against the current Daily Go
     sodiumMilligrams: null,
     sugarMilligrams: null,
   });
-  insertFoodEntry(client, { date: "2026-08-27", id: "day-one", nutrients: nutrients(2_100_000), userId });
-  insertFoodEntry(client, { date: "2026-08-28", id: "day-two-a", nutrients: nutrients(900_000), userId });
-  insertFoodEntry(client, { date: "2026-08-28", id: "day-two-b", nutrients: nutrients(null), userId });
-  insertFoodEntry(client, { date: "2026-08-28", id: "other-user", nutrients: nutrients(5_000_000), userId: otherUserId });
+  insertFoodEvent(client, { date: "2026-08-27", id: "day-one", nutrients: nutrients(2_100_000), userId });
+  insertFoodEvent(client, { date: "2026-08-28", id: "day-two-a", nutrients: nutrients(900_000), userId });
+  insertFoodEvent(client, { date: "2026-08-28", id: "day-two-b", nutrients: nutrients(null), userId });
+  insertFoodEvent(client, { date: "2026-08-28", id: "other-user", nutrients: nutrients(5_000_000), userId: otherUserId });
   const service = new FoodLogService(client, () => new Date("2026-08-29T16:00:00.000Z"));
 
   const goal = service.read(userId)!.goal;
   expect(service.dailyCalories(userId, ["2026-08-29", "2026-08-27", "2026-08-28", "2024-12-31"], goal)).toEqual({
-    "2024-12-31": { entryCount: 0, goalMilliKcal: 1_800_000, isIncomplete: false, knownMilliKcal: 0 },
-    "2026-08-27": { entryCount: 1, goalMilliKcal: 1_800_000, isIncomplete: false, knownMilliKcal: 2_100_000 },
-    "2026-08-28": { entryCount: 2, goalMilliKcal: 1_800_000, isIncomplete: true, knownMilliKcal: 900_000 },
-    "2026-08-29": { entryCount: 0, goalMilliKcal: 1_800_000, isIncomplete: false, knownMilliKcal: 0 },
+    "2024-12-31": { eventCount: 0, goalMilliKcal: 1_800_000, isIncomplete: false, knownMilliKcal: 0 },
+    "2026-08-27": { eventCount: 1, goalMilliKcal: 1_800_000, isIncomplete: false, knownMilliKcal: 2_100_000 },
+    "2026-08-28": { eventCount: 2, goalMilliKcal: 1_800_000, isIncomplete: true, knownMilliKcal: 900_000 },
+    "2026-08-29": { eventCount: 0, goalMilliKcal: 1_800_000, isIncomplete: false, knownMilliKcal: 0 },
   });
   expect(service.dailyCalories(otherUserId, ["2026-08-28"], service.read(otherUserId)!.goal)["2026-08-28"]).toEqual(
-    { entryCount: 1, goalMilliKcal: 2_050_000, isIncomplete: false, knownMilliKcal: 5_000_000 },
+    { eventCount: 1, goalMilliKcal: 2_050_000, isIncomplete: false, knownMilliKcal: 5_000_000 },
   );
   expect(service.dailyCalories(userId, [], goal)).toEqual({});
   database.close();
@@ -719,31 +659,63 @@ test("an account with a time zone but no Daily Goal reads days without a goal", 
   database.close();
 });
 
-test("Food Log events sort by local time, creation instant, then id descending", () => {
+test("daily calories group events by local day in the account's time zone, including 25-hour days", async () => {
+  const database = await setupDatabase();
+  const client = database.getClient();
+  const userId = insertConfiguredUser(client, {
+    timeZone: "America/New_York",
+    username: "daily.calories.zone",
+  });
+  const nutrients = (energyMilliKcal: number) => ({
+    carbohydrateMilligrams: null,
+    energyMilliKcal,
+    fatMilligrams: null,
+    fiberMilligrams: null,
+    proteinMilligrams: null,
+    sodiumMilligrams: null,
+    sugarMilligrams: null,
+  });
+  // New York falls back on 2026-11-01: 23:30 that night is 04:30 UTC on November 2.
+  insertFoodEvent(client, { date: "2026-10-31", id: "before", nutrients: nutrients(100_000), time: "23:59", userId });
+  insertFoodEvent(client, { date: "2026-11-01", id: "midnight", nutrients: nutrients(200_000), time: "00:00", userId });
+  insertFoodEvent(client, { date: "2026-11-01", id: "late", nutrients: nutrients(300_000), time: "23:30", userId });
+  insertFoodEvent(client, { date: "2026-11-02", id: "next", nutrients: nutrients(400_000), time: "00:30", userId });
+  const service = new FoodLogService(client, () => new Date("2026-11-03T16:00:00.000Z"));
+
+  expect(service.dailyCalories(userId, ["2026-11-01", "2026-10-31", "2026-11-02"], null)).toEqual({
+    "2026-10-31": { eventCount: 1, goalMilliKcal: null, isIncomplete: false, knownMilliKcal: 100_000 },
+    "2026-11-01": { eventCount: 2, goalMilliKcal: null, isIncomplete: false, knownMilliKcal: 500_000 },
+    "2026-11-02": { eventCount: 1, goalMilliKcal: null, isIncomplete: false, knownMilliKcal: 400_000 },
+  });
+  expect(service.read(userId, "2026-11-01")?.foodEvents.map((event) => event.originalName)).toEqual(["Entry late", "Entry midnight"]);
+  database.close();
+});
+
+test("Food Log events sort by consumption time, save time, kind, then id descending", () => {
   const events = [
     {
       createdAt: "2026-08-29T17:00:00.000Z",
       id: 3,
       kind: "food" as const,
-      localEventTime: "12:00:00",
+      logDate: "2026-08-29T16:00:00.000Z",
     },
     {
       createdAt: "2026-08-29T18:00:00.000Z",
       id: 1,
       kind: "food" as const,
-      localEventTime: "12:00:00",
+      logDate: "2026-08-29T16:00:00.000Z",
     },
     {
       createdAt: "2026-08-29T18:00:00.000Z",
       id: 2,
       kind: "food" as const,
-      localEventTime: "12:00:00",
+      logDate: "2026-08-29T16:00:00.000Z",
     },
     {
       createdAt: "2026-08-29T16:00:00.000Z",
       id: 4,
       kind: "water" as const,
-      localEventTime: "12:01:00",
+      logDate: "2026-08-29T16:01:00.000Z",
     },
   ];
 
@@ -751,23 +723,30 @@ test("Food Log events sort by local time, creation instant, then id descending",
     4, 2, 1, 3,
   ]);
 
-  const crossTypeCollision = [
+  // Food and water IDs come from different tables, so kind decides before ID.
+  const crossType = [
     {
       createdAt: "2026-08-29T18:00:00.000Z",
-      id: 7,
+      id: 9,
       kind: "water" as const,
-      localEventTime: "12:00:00",
+      logDate: "2026-08-29T16:00:00.000Z",
     },
     {
       createdAt: "2026-08-29T18:00:00.000Z",
       id: 7,
       kind: "food" as const,
-      localEventTime: "12:00:00",
+      logDate: "2026-08-29T16:00:00.000Z",
+    },
+    {
+      createdAt: "2026-08-29T18:00:00.000Z",
+      id: 7,
+      kind: "water" as const,
+      logDate: "2026-08-29T16:00:00.000Z",
     },
   ];
   expect(
-    crossTypeCollision
+    crossType
       .sort(compareFoodLogEventsDescending)
-      .map((event) => event.kind),
-  ).toEqual(["food", "water"]);
+      .map((event) => `${event.kind}-${event.id}`),
+  ).toEqual(["food-7", "water-9", "water-7"]);
 });
