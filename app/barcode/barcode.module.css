@@ -1,4 +1,4 @@
-/* The Food Catalogs card look, shared with the USDA card in routes/settings.catalogs.module.css. */
+/* The Food Catalogs card look, shared with the USDA card in catalog-management/usda-catalog-card.module.css. */
 .card {
   max-width: 44rem;
   padding: clamp(1rem, 3vw, 1.5rem);
