@@ -1146,6 +1146,27 @@ test("an authenticated user can add, reset, and later rescale a manual Food Entr
   await page.getByLabel("Quantity").fill("4");
   await expect(page.getByLabel("Calories (kcal)")).toHaveValue("240");
   await expect(page.getByLabel("Protein (g)")).toHaveValue("8");
+  await page.getByRole("button", { name: "Save changes" }).click();
+  await expect(page).toHaveURL("/?date=2026-08-28");
+
+  const expectUpdatedLog = async () => {
+    await expect(page.getByRole("heading", {
+      name: "Food Log for Friday, August 28, 2026",
+    })).toBeVisible();
+    await expect(page.getByRole("dialog", { name: "Edit Food Entry" })).toHaveCount(0);
+    await expect(page.getByRole("status")).toHaveCount(0);
+    await expect(saved).toContainText("1 serving × 4");
+    await expect(saved).toContainText("240 kcal");
+    await expect(page.getByRole("region", { name: "Calories" })).toContainText("240");
+    await expect(page.getByRole("article", { name: /^Protein: 8 / })).toBeVisible();
+  };
+  await expectUpdatedLog();
+  await page.reload();
+  await expectUpdatedLog();
+  await page.goto("/?date=2026-08-28&notice=updated");
+  await expectUpdatedLog();
+  await page.reload();
+  await expectUpdatedLog();
 });
 
 test("@camera-matrix simulated scan stays local and follows review before one snapshot", async ({
@@ -1621,16 +1642,13 @@ test("an authenticated user can correct and delete one Food Entry", async ({
   releaseUpdate();
   await saveClick;
   await page.unroute("**/*", delayUpdate);
-  await expect(page).toHaveURL(/date=2026-08-29&notice=updated/);
-  await expect(page.getByRole("status")).toContainText(
-    "Food Entry updated. Daily totals refreshed.",
-  );
-  await expectFoodEntryStatusResponsive(
-    page,
-    "Food Entry updated. Daily totals refreshed.",
-  );
+  await expect(page).toHaveURL("/?date=2026-08-29");
+  await expect(editor).toHaveCount(0);
+  await expect(page.getByRole("status")).toHaveCount(0);
   await expect(page.getByText("Breakfast yogurt", { exact: true })).toBeVisible();
   await expect(page.getByText("29.5 kcal", { exact: true })).toBeVisible();
+  await expect(page.getByRole("progressbar", { name: "Calorie progress" }))
+    .toHaveAttribute("aria-valuenow", "29.5");
 
   const database = openBrowserTestDatabase();
   const persisted = database
@@ -2232,7 +2250,9 @@ test("a stale Food Entry editor refreshes to the current occurrence and can retr
   await expect(page.getByLabel("Food name")).toHaveValue("Updated elsewhere");
 
   await page.getByRole("button", { name: "Save changes" }).click();
-  await expect(page).toHaveURL(/date=2026-08-29&notice=updated/);
+  await expect(page).toHaveURL("/?date=2026-08-29");
+  await expect(editor).toHaveCount(0);
+  await expect(page.getByRole("status")).toHaveCount(0);
   await expect(
     page.getByText("Updated elsewhere", { exact: true }),
   ).toBeVisible();

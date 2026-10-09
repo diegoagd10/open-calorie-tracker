@@ -246,7 +246,7 @@ test("home publishes metadata and enforces account/setup/date boundaries", async
   });
 
   for (const [notice, message] of [
-    ["updated", "Food Entry updated. Daily totals refreshed."],
+    ["updated", undefined],
     ["deleted", "Food Entry deleted. Daily totals updated."],
     ["water-created", undefined],
     ["water-updated", "Water Event updated. Daily total refreshed."],
@@ -1032,13 +1032,17 @@ test("the web food route saves a reviewed Open Food Facts product and explains e
   getApplicationDatabase().getClient().delete(foodEvents).where(eq(foodEvents.userId, userId)).run();
 });
 
-test("the editor edits and deletes the version it read, and a conflict returns the current event", async () => {
-  const food = await saveLookup(instant);
-  const editor = await load(`/?entry=${food.id}`);
-  expect(editor.data.editor).toEqual({ event: food, canCopy: false });
+test.each([
+  [today, instant],
+  ["2026-08-30", "2026-08-30T16:00:00.000Z"],
+])("the editor edits and deletes the version it read on %s, and a conflict returns the current event", async (date, logDate) => {
+  const food = await saveLookup(logDate);
+  const editor = await load(`/?date=${date}&entry=${food.id}`);
+  expect(editor.data.editor).toEqual({ event: food, canCopy: date < today });
 
   const common = {
     carbohydrateGrams: "3.5",
+    date,
     energyKcal: "60",
     expectedUpdatedAt: food.updatedAt,
     fatGrams: "0",
@@ -1057,8 +1061,16 @@ test("the editor edits and deletes the version it read, and a conflict returns t
   expect(await postFood({ ...common, expectedUpdatedAt: "2000-01-01T00:00:00.000Z" }))
     .toMatchObject({ data: { code: "edit_conflict", event: food }, init: { status: 409 } });
 
-  expectRedirect(await postFood(common), "/?date=2026-08-31&notice=updated");
-  const updated = (await load(`/?entry=${food.id}`)).data.editor!.event;
+  expectRedirect(await postFood(common), `/?date=${date}`);
+  const saved = (await load(`/?date=${date}`)).data;
+  expect(saved.editor).toBeUndefined();
+  expect(saved.notice).toBeUndefined();
+  expect(saved.foodLog.selectedDate).toBe(date);
+  const expectedEnergy = editor.data.foodLog.nutritionTotals.energyMilliKcal.known
+    - (food.nutrients.energyMilliKcal ?? 0) + 60_000;
+  expect(saved.foodLog.nutritionTotals.energyMilliKcal.known).toBe(expectedEnergy);
+  expect(saved.dailyCalories[date].knownMilliKcal).toBe(expectedEnergy);
+  const updated = (await load(`/?date=${date}&entry=${food.id}`)).data.editor!.event;
   expect(updated).toMatchObject({
     logDate: food.logDate,
     name: "Edited yogurt",
@@ -1073,11 +1085,11 @@ test("the editor edits and deletes the version it read, and a conflict returns t
     },
   });
 
-  const remove = { expectedUpdatedAt: updated.updatedAt, id: String(food.id), intent: "delete" };
+  const remove = { date, expectedUpdatedAt: updated.updatedAt, id: String(food.id), intent: "delete" };
   expect(await postFood({ ...remove, expectedUpdatedAt: food.updatedAt }))
     .toMatchObject({ data: { code: "edit_conflict", event: updated }, init: { status: 409 } });
   expect(await postFood({ ...remove, id: "999999" })).toMatchObject(refused(404, "not_found"));
-  expectRedirect(await postFood(remove), "/?date=2026-08-31&notice=deleted");
+  expectRedirect(await postFood(remove), `/?date=${date}&notice=deleted`);
   // An event deleted elsewhere closes the editor rather than offering a retry.
   expect(await postFood({ ...common, expectedUpdatedAt: updated.updatedAt })).toMatchObject(refused(404, "not_found"));
 });

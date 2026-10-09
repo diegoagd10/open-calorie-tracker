@@ -192,8 +192,6 @@ function notice(url: URL, service: FoodEventService, userId: number, day: FoodLo
         ? `Copied ${copied.name} to today's Food Log.`
         : `Copied ${copied.name} to ${fullDate(destination)}.`;
     }
-    case "updated":
-      return "Food Entry updated. Daily totals refreshed.";
     case "deleted":
       return "Food Entry deleted. Daily totals updated.";
     case "food-saved":

@@ -142,7 +142,7 @@ async function runCommand(
           nutrition: nutrition(command, "clear"),
         },
       });
-      return redirect(foodLogHref(command.date, { notice: "updated" }));
+      return redirect(foodLogHref(command.date));
     case "delete":
       service.delete(userId, [{ id: command.id, expectedUpdatedAt: command.expectedUpdatedAt }]);
       return redirect(foodLogHref(command.date, { notice: "deleted" }));
