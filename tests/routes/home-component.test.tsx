@@ -2043,23 +2043,18 @@ test("home water dialog creates with a consumption time and edits only the amoun
   });
   expect(semanticDom(createDialog)).toMatchSnapshot();
   expect(allText(createDialog)).toContain("Add Water");
-  expect(queriedSelectors).toContain('input:not([type="hidden"])');
+  expect(queriedSelectors).toContain("[data-water-initial-focus]");
   expect(createDialog.root.findAll((node) => node.type === "form" && node.props.action === "/water-events")).toHaveLength(1);
   expect(input(createDialog, "intent").props.value).toBe("save");
   expect(input(createDialog, "returnDate").props.value).toBe("2026-08-31");
   expect(input(createDialog, "csrfToken").props.value).toBe("home-component-csrf");
   expect(input(createDialog, "localLogDate").props).toMatchObject({
     defaultValue: "2026-08-31T12:00",
-    max: "2026-08-31T12:00",
-    required: true,
-    type: "datetime-local",
+    type: "hidden",
   });
   expect(input(createDialog, "ounces").props).toMatchObject({
-    defaultValue: "",
-    max: "500",
-    min: "0.001",
-    step: "0.001",
-    type: "number",
+    value: "",
+    type: "hidden",
   });
   expect(input(createDialog, "id")).toBeUndefined();
   expect(allText(createDialog)).toContain("Add water");
@@ -2089,7 +2084,7 @@ test("home water dialog creates with a consumption time and edits only the amoun
   });
   expect(allText(edit)).toContain("Edit Water Event");
   expect(input(edit, "id").props.value).toBe(51);
-  expect(input(edit, "ounces").props.defaultValue).toBe("16");
+  expect(input(edit, "ounces").props.value).toBe("16");
   expect(input(edit, "localLogDate")).toBeUndefined();
   expect(allText(edit)).toContain("Save amount");
   expect(edit.root.findAllByProps({ role: "alert" })).toHaveLength(0);

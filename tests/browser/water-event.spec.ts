@@ -23,12 +23,16 @@ async function fillSteadily(field: Locator, value: string) {
   }).toPass();
 }
 
-async function addWater(page: Page, ounces: string, consumedAt?: string): Promise<Locator> {
+async function addWater(page: Page, ounces: string): Promise<Locator> {
   const dialog = page.getByRole("dialog", { name: "Add Water" });
   if (!(await dialog.isVisible())) await page.getByRole("button", { name: "Add Water", exact: true }).click();
   await expect(dialog).toBeVisible();
-  if (consumedAt) await dialog.getByLabel("Consumed at").fill(consumedAt);
-  await fillSteadily(dialog.getByLabel("Amount (fl oz)"), ounces);
+  if (["8", "11", "16", "24"].includes(ounces)) {
+    await dialog.getByRole("button", { name: `${ounces} fl oz`, exact: true }).click();
+  } else {
+    await dialog.getByRole("button", { name: "Custom", exact: true }).click();
+    await fillSteadily(dialog.getByLabel("Custom amount"), ounces);
+  }
   await dialog.getByRole("button", { name: "Add water", exact: true }).click();
   return dialog;
 }
@@ -43,10 +47,10 @@ test("a user can add, inspect, edit, and delete one Water Event", async ({
 
   await page.getByRole("button", { name: "Add Water", exact: true }).click();
   const addDialog = page.getByRole("dialog", { name: "Add Water" });
-  await expect(addDialog.getByLabel("Consumed at")).toHaveValue("2026-08-29T14:00");
-  await expect(addDialog.getByLabel("Consumed at")).toBeFocused();
-  await addDialog.getByLabel("Consumed at").fill("2026-08-29T08:30");
-  await addDialog.getByLabel("Amount (fl oz)").fill("16");
+  await expect(addDialog.getByLabel("Consumed at")).toHaveCount(0);
+  await expect(addDialog.getByRole("button", { name: "8 fl oz", exact: true })).toBeFocused();
+  await expect(addDialog.getByRole("button", { name: "Add water", exact: true })).toBeDisabled();
+  await addDialog.getByRole("button", { name: "16 fl oz", exact: true }).click();
   await addDialog.getByRole("button", { name: "Add water", exact: true }).click();
 
   await expect(addDialog).not.toBeVisible();
@@ -54,7 +58,7 @@ test("a user can add, inspect, edit, and delete one Water Event", async ({
     "aria-valuetext",
     "16 fl oz of 80 fl oz target",
   );
-  const waterEventLink = page.getByRole("link", { name: /8:30 AM.*Water.*16 fl oz/ });
+  const waterEventLink = page.getByRole("link", { name: /2:00 PM.*Water.*16 fl oz/ });
   await page.setViewportSize({ height: 908, width: 385 });
   const mobileContentStartRatio = await waterEventLink.evaluate((link) => {
     const content = link.children.item(2);
@@ -72,17 +76,23 @@ test("a user can add, inspect, edit, and delete one Water Event", async ({
   const editDialog = page.getByRole("dialog", { name: "Edit Water Event" });
   await expect(editDialog).toBeVisible();
   await expect(editDialog.getByLabel("Consumed at")).toHaveCount(0);
-  await expect(editDialog.getByLabel("Amount (fl oz)")).toHaveValue("16");
-  await editDialog.getByLabel("Amount (fl oz)").fill("20.25");
+  await expect(editDialog.getByRole("button", { name: "16 fl oz", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(editDialog.getByRole("button", { name: "16 fl oz", exact: true })).toBeFocused();
+  await editDialog.getByRole("button", { name: "Custom", exact: true }).click();
+  await expect(editDialog.getByLabel("Custom amount")).toBeFocused();
+  await editDialog.getByLabel("Custom amount").fill("20.25");
   await editDialog.getByRole("button", { name: "Save amount" }).click();
 
   await expect(page.getByRole("status")).toContainText(
     "Water Event updated. Daily total refreshed.",
   );
-  const editedLink = page.getByRole("link", { name: /8:30 AM.*Water.*20\.25 fl oz/ });
+  const editedLink = page.getByRole("link", { name: /2:00 PM.*Water.*20\.25 fl oz/ });
   await expect(editedLink).toBeVisible();
 
   await editedLink.click();
+  await expect(editDialog.getByRole("button", { name: "Custom", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(editDialog.getByLabel("Custom amount")).toHaveValue("20.25");
+  await expect(editDialog.getByLabel("Custom amount")).toBeFocused();
   const eventId = await editDialog.locator('input[name="id"]').inputValue();
   const otherContext = await browser.newContext();
   await otherContext.setExtraHTTPHeaders({ "X-Test-Client-IP": "203.0.113.92" });
@@ -136,30 +146,60 @@ test("water is shown in fluid ounces against the Daily Goal's water target", asy
   );
 });
 
-test("a future consumption time is stopped in the browser and, if forced, by the server", async ({
+test("today's automatic consumption time advances until the amount is saved", async ({
   context,
   page,
 }) => {
   await context.setExtraHTTPHeaders({ "X-Test-Client-IP": "203.0.113.93" });
-  await completeSetupForTestUser(page, "water.future.time");
-
-  const dialog = await addWater(page, "8", "2026-08-29T23:00");
-  const consumedAt = dialog.getByLabel("Consumed at");
-  await expect(consumedAt).toHaveAttribute("max", "2026-08-29T14:00");
-  expect(await consumedAt.evaluate((input) => (input as HTMLInputElement).validity.rangeOverflow)).toBe(true);
+  await completeSetupForTestUser(page, "water.automatic.time");
+  await page.clock.install();
+  await page.getByRole("button", { name: "Add Water", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Add Water" });
   await expect(dialog).toBeVisible();
-  await expect(page).toHaveURL(/water=new$/);
-
-  await consumedAt.evaluate((input) => input.removeAttribute("max"));
+  await dialog.getByRole("button", { name: "8 fl oz", exact: true }).click();
+  await page.clock.fastForward(65_000);
   await dialog.getByRole("button", { name: "Add water", exact: true }).click();
-  await expect(dialog.getByRole("alert")).toHaveText(
-    "Enter when the water was consumed; it cannot be in the future.",
-  );
-  await expect(consumedAt).toHaveValue("2026-08-29T23:00");
-  await expect(dialog.getByLabel("Amount (fl oz)")).toHaveValue("8");
+  await expect(dialog).not.toBeVisible();
+  await expect(page.getByRole("link", { name: /2:01 PM.*Water.*8 fl oz/ })).toBeVisible();
+});
 
-  await consumedAt.fill("2026-08-28T23:30");
-  await dialog.getByRole("button", { name: "Add water", exact: true }).click();
+test("historical water keeps the selected day and its automatic noon time", async ({ context, page }) => {
+  await context.setExtraHTTPHeaders({ "X-Test-Client-IP": "203.0.113.94" });
+  await completeSetupForTestUser(page, "water.historical.time");
+  await page.goto("/?date=2026-08-28");
+  const dialog = await addWater(page, "11");
+  await expect(dialog).not.toBeVisible();
   await expect(page).toHaveURL(/date=2026-08-28$/);
-  await expect(page.getByRole("link", { name: /11:30 PM.*Water.*8 fl oz/ })).toBeVisible();
+  await expect(page.getByRole("link", { name: /12:00 PM.*Water.*11 fl oz/ })).toBeVisible();
+});
+
+test("presets and Custom work on mobile and preserve the custom amount", async ({ context, page }) => {
+  await context.setExtraHTTPHeaders({ "X-Test-Client-IP": "203.0.113.95" });
+  await completeSetupForTestUser(page, "water.mobile.presets");
+  await page.setViewportSize({ width: 320, height: 720 });
+  await page.getByRole("button", { name: "Add Water", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Add Water" });
+  await expect(dialog).toBeVisible();
+  for (const amount of ["8", "11", "16", "24"]) {
+    const preset = dialog.getByRole("button", { name: `${amount} fl oz`, exact: true });
+    await preset.click();
+    await expect(preset).toHaveAttribute("aria-pressed", "true");
+    await expect(dialog.locator('button[aria-pressed="true"]')).toHaveCount(1);
+  }
+  await dialog.getByRole("button", { name: "Custom", exact: true }).click();
+  const custom = dialog.getByLabel("Custom amount");
+  await expect(custom).toBeFocused();
+  await custom.fill("500.001");
+  await expect(dialog.getByRole("alert")).toContainText("Enter an amount from 0.001 to 500 fl oz");
+  await expect(dialog.getByRole("button", { name: "Add water", exact: true })).toBeDisabled();
+  await custom.fill("12.5");
+  await dialog.getByRole("button", { name: "16 fl oz", exact: true }).click();
+  await expect(custom).not.toBeVisible();
+  await dialog.getByRole("button", { name: "Custom", exact: true }).click();
+  await expect(custom).toHaveValue("12.5");
+  expect(await dialog.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+  await dialog.getByRole("button", { name: "Add water", exact: true }).click();
+  await expect(dialog).not.toBeVisible();
+  await expect(page.locator("[data-water-editor-trigger]").filter({ hasText: "12.5 fl oz" })).toBeVisible();
 });

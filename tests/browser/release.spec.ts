@@ -42,14 +42,6 @@ async function csrfTokenFor(page: Page, buttonName: "Add Food" | "Add Water") {
     .inputValue();
 }
 
-/** Fills a dialog field and waits until the value holds, so a late re-render cannot drop it. */
-async function fillSteadily(field: Locator, value: string) {
-  await expect(async () => {
-    await field.fill(value);
-    await expect(field).toHaveValue(value, { timeout: 1_000 });
-  }).toPass();
-}
-
 async function tabTo(page: Page, target: Locator) {
   await expect(target).toBeVisible({ timeout: 5_000 });
   for (let attempt = 0; attempt < 80; attempt += 1) {
@@ -255,20 +247,20 @@ test("one mobile Chromium journey verifies the complete private MVP", async ({
   await page.getByRole("button", { name: "Add Water", exact: true }).click();
   const waterDialog = page.getByRole("dialog", { name: "Add Water" });
   await expectNoSeriousAxeViolations(page);
-  await waterDialog.getByLabel("Consumed at").fill("2026-08-29T09:15");
-  await fillSteadily(waterDialog.getByLabel("Amount (fl oz)"), "16");
+  await waterDialog.getByRole("button", { name: "16 fl oz", exact: true }).click();
   await waterDialog.getByRole("button", { name: "Add water", exact: true }).click();
   await expect(waterDialog).not.toBeVisible();
   await expect(
     page.getByRole("progressbar", { name: "Water progress" }),
   ).toHaveAttribute("aria-valuetext", "16 fl oz of 80 fl oz target");
-  await page.getByRole("link", { name: /9:15 AM.*Water.*16 fl oz/ }).click();
+  await page.getByRole("link", { name: /2:00 PM.*Water.*16 fl oz/ }).click();
   const waterEditor = page.getByRole("dialog", { name: "Edit Water Event" });
   await expectNoSeriousAxeViolations(page);
-  await waterEditor.getByLabel("Amount (fl oz)").fill("20");
+  await waterEditor.getByRole("button", { name: "Custom", exact: true }).click();
+  await waterEditor.getByLabel("Custom amount").fill("20");
   await waterEditor.getByRole("button", { name: "Save amount" }).click();
   await expect(
-    page.getByRole("link", { name: /9:15 AM.*Water.*20 fl oz/ }),
+    page.getByRole("link", { name: /2:00 PM.*Water.*20 fl oz/ }),
   ).toBeVisible();
   await expectNoSeriousAxeViolations(page);
 
@@ -288,7 +280,7 @@ test("one mobile Chromium journey verifies the complete private MVP", async ({
   await page.getByRole("link", { name: /Release yogurt/ }).click();
   await page.getByRole("button", { name: "Delete entry" }).click();
   await page.getByRole("button", { name: "Delete", exact: true }).click();
-  await page.getByRole("link", { name: /9:15 AM.*Water.*20 fl oz/ }).click();
+  await page.getByRole("link", { name: /2:00 PM.*Water.*20 fl oz/ }).click();
   await page.getByRole("button", { name: "Delete", exact: true }).click();
   await page.getByRole("button", { name: "Confirm delete" }).click();
   await expect(page.getByText("No entries for this day")).toBeVisible();
@@ -353,7 +345,7 @@ test("a second user cannot list, read, edit, or delete another user's records", 
 
   await page.getByRole("button", { name: "Add Water", exact: true }).click();
   const isolationWaterDialog = page.getByRole("dialog", { name: "Add Water" });
-  await fillSteadily(isolationWaterDialog.getByLabel("Amount (fl oz)"), "8");
+  await isolationWaterDialog.getByRole("button", { name: "8 fl oz", exact: true }).click();
   await isolationWaterDialog.getByRole("button", { name: "Add water", exact: true }).click();
   await expect(isolationWaterDialog).not.toBeVisible();
   await page
@@ -626,10 +618,10 @@ test("the critical mobile experience is operable with only a keyboard", async ({
   await tabTo(page, addWater);
   await page.keyboard.press("Enter");
   const addWaterDialog = page.getByRole("dialog", { name: "Add Water" });
-  await expect(addWaterDialog.getByLabel("Consumed at")).toBeFocused();
-  const newAmount = addWaterDialog.getByLabel("Amount (fl oz)");
+  await expect(addWaterDialog.getByRole("button", { name: "8 fl oz", exact: true })).toBeFocused();
+  const newAmount = addWaterDialog.getByRole("button", { name: "16 fl oz", exact: true });
   await tabTo(page, newAmount);
-  await newAmount.pressSequentially("16");
+  await page.keyboard.press("Enter");
   const saveWater = addWaterDialog.getByRole("button", { name: "Add water", exact: true });
   await tabTo(page, saveWater);
   await page.keyboard.press("Enter");
@@ -641,7 +633,10 @@ test("the critical mobile experience is operable with only a keyboard", async ({
   await tabTo(page, waterEvent);
   await page.keyboard.press("Enter");
   const waterEditor = page.getByRole("dialog", { name: "Edit Water Event" });
-  const waterAmount = waterEditor.getByLabel("Amount (fl oz)");
+  await expect(waterEditor.getByRole("button", { name: "16 fl oz", exact: true })).toBeFocused();
+  await tabTo(page, waterEditor.getByRole("button", { name: "Custom", exact: true }));
+  await page.keyboard.press("Enter");
+  const waterAmount = waterEditor.getByLabel("Custom amount");
   await expect(waterAmount).toBeFocused();
   await page.keyboard.press("ControlOrMeta+A");
   await waterAmount.pressSequentially("20");

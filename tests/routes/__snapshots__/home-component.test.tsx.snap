@@ -54,4 +54,4 @@ exports[`home renders today's empty log and all goal progress contracts 1`] = `"
 
 exports[`home renders today's empty log and all goal progress contracts 2`] = `"96c1a6777ee377c9f47fa17e509caaba97e9f67b176c006635fcbb42753f76b5"`;
 
-exports[`home water dialog creates with a consumption time and edits only the amount 1`] = `"36c0e30275fafbed0337fede8b89c9233ce9e3f589c3c4bf552c75f42f8ac513"`;
+exports[`home water dialog creates with a consumption time and edits only the amount 1`] = `"e91f5dc8ec58ec28e6282139e852aa04a787cd5b5e5a8b94e4f5d2a46a5a5e85"`;
