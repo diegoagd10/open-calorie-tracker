@@ -182,14 +182,13 @@ export type CopyFoodEventDialogModel = {
   calendar: Omit<CalendarMonth, "days"> & { days: Array<CalendarMonth["days"][number] & { isSource: boolean }> };
 };
 
-/** Everything Home needs to show Food Event dialogs and notices for one request. */
+/** Everything Home needs to show Food Event dialogs for one request. */
 export type FoodEventDialogs = {
   addFood?: AddFoodStage;
   barcodeLookup: BarcodeLookupAccess;
   editor?: { event: FoodEvent; canCopy: boolean };
   copy?: CopyFoodEventDialogModel;
   copyError?: string;
-  notice?: string;
 };
 
 /** What `/food-events` answers a rejected submission with; a conflict carries the current event. */

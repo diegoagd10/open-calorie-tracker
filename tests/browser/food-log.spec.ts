@@ -68,23 +68,6 @@ async function expectFoodEntryEditorResponsive(page: Page) {
   await page.setViewportSize({ height: 720, width: 1_280 });
 }
 
-async function expectFoodEntryStatusResponsive(page: Page, message: string) {
-  for (const viewport of [
-    { height: 844, width: 390 },
-    { height: 900, width: 800 },
-    { height: 900, width: 1_120 },
-  ]) {
-    await page.setViewportSize(viewport);
-    await expect(page.getByRole("status")).toContainText(message);
-    expect(
-      await page.evaluate(
-        () => document.documentElement.scrollWidth <= window.innerWidth,
-      ),
-    ).toBe(true);
-  }
-  await page.setViewportSize({ height: 720, width: 1_280 });
-}
-
 /** The fields a dialog form posts besides its submit button. */
 async function postedFields(submitButton: Locator): Promise<Record<string, string>> {
   return submitButton
@@ -1132,6 +1115,7 @@ test("an authenticated user can add, reset, and later rescale a manual Food Entr
   await expect(page.getByLabel("Calories (kcal)")).toHaveValue("180");
   await expect(page.getByLabel("Protein (g)")).toHaveValue("6");
   await page.getByLabel("Quantity").fill("3");
+  await page.getByRole("checkbox", { name: "Save to My foods" }).uncheck();
 
   const accessibilityScan = await new AxeBuilder({ page }).analyze();
   expect(accessibilityScan.violations).toEqual([]);
@@ -1146,6 +1130,49 @@ test("an authenticated user can add, reset, and later rescale a manual Food Entr
   await page.getByLabel("Quantity").fill("4");
   await expect(page.getByLabel("Calories (kcal)")).toHaveValue("240");
   await expect(page.getByLabel("Protein (g)")).toHaveValue("8");
+  await page.getByRole("button", { name: "Save changes" }).click();
+  await expect(page).toHaveURL("/?date=2026-08-28");
+
+  const expectUpdatedLog = async () => {
+    await expect(page.getByRole("heading", {
+      name: "Food Log for Friday, August 28, 2026",
+    })).toBeVisible();
+    await expect(page.getByRole("dialog", { name: "Edit Food Entry" })).toHaveCount(0);
+    await expect(page.getByRole("status")).toHaveCount(0);
+    await expect(saved).toContainText("1 serving × 4");
+    await expect(saved).toContainText("240 kcal");
+    await expect(page.getByRole("region", { name: "Calories" })).toContainText("240");
+    await expect(page.getByRole("article", { name: /^Protein: 8 / })).toBeVisible();
+  };
+  await expectUpdatedLog();
+  await page.reload();
+  await expectUpdatedLog();
+  await page.goto("/?date=2026-08-28&notice=updated");
+  await expectUpdatedLog();
+  await page.reload();
+  await expectUpdatedLog();
+
+  const editorHref = await saved.getByRole("link").getAttribute("href");
+  await saved.getByRole("link").click();
+  const editor = page.getByRole("dialog", { name: "Edit Food Entry" });
+  await editor.getByRole("button", { name: "Add to My foods" }).click();
+  const expectSavedFood = async () => {
+    await expect(editor).toContainText("In My foods.");
+    await expect(editor.getByRole("button", { name: "Add to My foods" })).toHaveCount(0);
+    await expect(page.getByRole("status")).toHaveText(
+      "In My foods. Changes to this daily entry do not change the saved food.",
+    );
+  };
+  await expectSavedFood();
+  await expect(page).toHaveURL(editorHref!);
+  await page.reload();
+  await expectSavedFood();
+  await page.goto(`${editorHref}&notice=food-saved`);
+  await expectSavedFood();
+  await page.reload();
+  await expectSavedFood();
+  await editor.getByRole("link", { name: "Cancel" }).click();
+  await expectUpdatedLog();
 });
 
 test("@camera-matrix simulated scan stays local and follows review before one snapshot", async ({
@@ -1530,7 +1557,7 @@ test("Food Entry deletion reveals its confirmation on narrow displays", async ({
   await expect(confirmDelete).toBeInViewport();
   await expect(confirmDelete).toBeFocused();
   await confirmDelete.click();
-  await expect(page).toHaveURL(/date=2026-08-29&notice=deleted/);
+  await expect(page).toHaveURL("/?date=2026-08-29");
   await expect(page.getByText("No entries for this day")).toBeVisible();
 });
 
@@ -1621,16 +1648,13 @@ test("an authenticated user can correct and delete one Food Entry", async ({
   releaseUpdate();
   await saveClick;
   await page.unroute("**/*", delayUpdate);
-  await expect(page).toHaveURL(/date=2026-08-29&notice=updated/);
-  await expect(page.getByRole("status")).toContainText(
-    "Food Entry updated. Daily totals refreshed.",
-  );
-  await expectFoodEntryStatusResponsive(
-    page,
-    "Food Entry updated. Daily totals refreshed.",
-  );
+  await expect(page).toHaveURL("/?date=2026-08-29");
+  await expect(editor).toHaveCount(0);
+  await expect(page.getByRole("status")).toHaveCount(0);
   await expect(page.getByText("Breakfast yogurt", { exact: true })).toBeVisible();
   await expect(page.getByText("29.5 kcal", { exact: true })).toBeVisible();
+  await expect(page.getByRole("progressbar", { name: "Calorie progress" }))
+    .toHaveAttribute("aria-valuenow", "29.5");
 
   const database = openBrowserTestDatabase();
   const persisted = database
@@ -1727,15 +1751,20 @@ test("an authenticated user can correct and delete one Food Entry", async ({
   await expectFoodEntryEditorResponsive(page);
   await expect(editor.getByText("Delete this Food Entry?")).toBeVisible();
   await page.getByRole("button", { name: "Delete", exact: true }).click();
-  await expect(page).toHaveURL(/date=2026-08-29&notice=deleted/);
-  await expect(page.getByRole("status")).toContainText(
-    "Food Entry deleted. Daily totals updated.",
-  );
-  await expectFoodEntryStatusResponsive(
-    page,
-    "Food Entry deleted. Daily totals updated.",
-  );
-  await expect(page.getByText("No entries for this day")).toBeVisible();
+  await expect(page).toHaveURL("/?date=2026-08-29");
+  const expectDeletedLog = async () => {
+    await expect(editor).toHaveCount(0);
+    await expect(page.getByRole("status")).toHaveCount(0);
+    await expect(page.getByText("No entries for this day")).toBeVisible();
+    await expect(page.getByRole("progressbar", { name: "Calorie progress" })).toHaveAttribute("aria-valuenow", "0");
+  };
+  await expectDeletedLog();
+  await page.reload();
+  await expectDeletedLog();
+  await page.goto("/?date=2026-08-29&notice=deleted");
+  await expectDeletedLog();
+  await page.reload();
+  await expectDeletedLog();
 
   const accessibilityScan = await new AxeBuilder({ page }).analyze();
   expect(accessibilityScan.violations).toEqual([]);
@@ -1836,12 +1865,11 @@ test("an authenticated user can copy a historical Food Entry to today", async ({
   await submission;
   await page.unroute("**/*");
 
-  await expect(page).toHaveURL(
-    /date=2026-08-28&notice=copied&copied=[1-9]\d*/,
-  );
-  await expect(page.getByRole("status")).toContainText(
-    "Copied Reusable yogurt to today's Food Log.",
-  );
+  await expect(page).toHaveURL("/?date=2026-08-28");
+  await expect(editor).toHaveCount(0);
+  await expect(page.getByRole("status")).toHaveCount(0);
+  await page.reload();
+  await expect(page.getByRole("status")).toHaveCount(0);
   await expect(correctedSourceCard).toBeVisible();
   await expect(
     page.locator("[data-water-editor-trigger]").filter({ hasText: "8 fl oz" }),
@@ -1855,6 +1883,14 @@ test("an authenticated user can copy a historical Food Entry to today", async ({
     name: /Reusable yogurt.*USDA FoodData Central · Branded.*111\.1 kcal/,
   });
   await expect(copiedCard).toBeVisible();
+  const copiedHref = await copiedCard.getAttribute("href");
+  const copiedId = new URL(copiedHref!, page.url()).searchParams.get("entry");
+  await page.goto(`/?date=2026-08-28&notice=copied&copied=${copiedId}`);
+  await expect(page.getByRole("status")).toHaveCount(0);
+  await expect(correctedSourceCard).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole("status")).toHaveCount(0);
+  await page.goto("/");
   await expect(
     page.getByRole("progressbar", { name: "Calorie progress" }),
   ).toHaveAttribute("aria-valuetext", /111\.1 of 2,050 kcal target/);
@@ -2034,12 +2070,9 @@ test("an authenticated user can review and copy a Food Entry to another eligible
   await submission;
   await page.unroute("**/*");
 
-  await expect(page).toHaveURL(
-    /date=2026-08-26&notice=copied&copied=[1-9]\d*/,
-  );
-  await expect(page.getByRole("status")).toContainText(
-    "Copied Plain nonfat Greek yogurt to Thursday, August 27, 2026.",
-  );
+  await expect(page).toHaveURL("/?date=2026-08-26");
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByRole("status")).toHaveCount(0);
   await expect(
     page.getByRole("link", { name: /Plain nonfat Greek yogurt.*100\.3 kcal/ }),
   ).toHaveCount(1);
@@ -2069,9 +2102,9 @@ test("an authenticated user can review and copy a Food Entry to another eligible
   });
   await dialog.getByRole("link", { name: "Thursday, August 27" }).click();
   await dialog.getByRole("button", { name: "Copy", exact: true }).click();
-  await expect(page.getByRole("status")).toContainText(
-    "Copied Plain nonfat Greek yogurt to Thursday, August 27, 2026.",
-  );
+  await expect(page).toHaveURL("/?date=2026-08-26");
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByRole("status")).toHaveCount(0);
   await page.goto("/?date=2026-08-27");
   copiedCards = page.getByRole("link", {
     name: /Plain nonfat Greek yogurt.*100\.3 kcal/,
@@ -2096,9 +2129,9 @@ test("an authenticated user can review and copy a Food Entry to another eligible
   });
   await dialog.getByRole("link", { name: "Saturday, August 29" }).click();
   await dialog.getByRole("button", { name: "Copy", exact: true }).click();
-  await expect(page.getByRole("status")).toContainText(
-    "Copied Plain nonfat Greek yogurt to today's Food Log.",
-  );
+  await expect(page).toHaveURL("/?date=2026-08-26");
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByRole("status")).toHaveCount(0);
   await page.goto("/");
   const todayCopy = page.getByRole("link", {
     name: /Plain nonfat Greek yogurt.*100\.3 kcal/,
@@ -2232,7 +2265,9 @@ test("a stale Food Entry editor refreshes to the current occurrence and can retr
   await expect(page.getByLabel("Food name")).toHaveValue("Updated elsewhere");
 
   await page.getByRole("button", { name: "Save changes" }).click();
-  await expect(page).toHaveURL(/date=2026-08-29&notice=updated/);
+  await expect(page).toHaveURL("/?date=2026-08-29");
+  await expect(editor).toHaveCount(0);
+  await expect(page.getByRole("status")).toHaveCount(0);
   await expect(
     page.getByText("Updated elsewhere", { exact: true }),
   ).toBeVisible();
@@ -2281,5 +2316,6 @@ test("delete pending state names only the destructive mutation", async ({
   }
   await deleteClick;
   await page.unroute("**/*", delayDelete);
-  await expect(page).toHaveURL(/date=2026-08-29&notice=deleted/);
+  await expect(page).toHaveURL("/?date=2026-08-29");
+  await expect(page.getByRole("status")).toHaveCount(0);
 });

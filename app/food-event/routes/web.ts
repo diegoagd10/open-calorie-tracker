@@ -142,22 +142,22 @@ async function runCommand(
           nutrition: nutrition(command, "clear"),
         },
       });
-      return redirect(foodLogHref(command.date, { notice: "updated" }));
+      return redirect(foodLogHref(command.date));
     case "delete":
       service.delete(userId, [{ id: command.id, expectedUpdatedAt: command.expectedUpdatedAt }]);
-      return redirect(foodLogHref(command.date, { notice: "deleted" }));
+      return redirect(foodLogHref(command.date));
     case "copy": {
       const destination = command.destinationDate ?? localDateAt(clock, timeZone);
-      const copied = service.copy(userId, {
+      service.copy(userId, {
         eventId: command.id,
         sourceDate: command.date,
         logDate: webLogDate(destination, clock, timeZone),
       });
-      return redirect(foodLogHref(command.date, { notice: "copied", copied: String(copied.id) }));
+      return redirect(foodLogHref(command.date));
     }
     case "add-favorite":
       service.addFavorite(userId, command.id);
-      return redirect(`${editorHref(command.date, command.id)}&notice=food-saved`);
+      return redirect(editorHref(command.date, command.id));
   }
 }
 

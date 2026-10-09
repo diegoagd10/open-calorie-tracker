@@ -6,7 +6,7 @@ import type { CatalogOperationContext, CatalogSearchResult, FoodCatalog } from "
 import { CatalogFoodNotFoundError } from "../catalog/food-catalog.server";
 import { getFoodCatalog, getOpenFoodFactsClient } from "../catalog/runtime.server";
 import { testRequestInstant } from "../runtime.server";
-import { buildCalendarMonth, formatLocalDate, parseIsoLocalDate } from "../shared/local-date";
+import { buildCalendarMonth, parseIsoLocalDate } from "../shared/local-date";
 import type {
   AddFoodStage,
   BarcodeLookupAccess,
@@ -32,10 +32,6 @@ type Reads = {
   context: CatalogOperationContext;
   userId: number;
 };
-
-function fullDate(date: string): string {
-  return formatLocalDate(date, { day: "numeric", month: "long", weekday: "long", year: "numeric" });
-}
 
 /** Scan barcode is usable once an administrator set the Open Food Facts contact. */
 function barcodeLookupAccess(role: string): BarcodeLookupAccess {
@@ -173,38 +169,8 @@ async function addFoodStage(url: URL, reads: Reads, route: AddFoodRoute): Promis
   }
 }
 
-/** Home's notice for a finished Food Event action, such as a copy's destination. */
-function notice(url: URL, service: FoodEventService, userId: number, day: FoodLogDay): string | undefined {
-  switch (url.searchParams.get("notice")) {
-    case "copied": {
-      const copiedId = positiveIntegerId(url.searchParams.get("copied"));
-      if (copiedId === undefined) return undefined;
-      let copied: FoodEvent;
-      try {
-        copied = service.read(userId, copiedId);
-      } catch (error) {
-        if (error instanceof FoodEventNotFoundError) return undefined;
-        throw error;
-      }
-      if (copied.copiedFromId === null) return undefined;
-      const destination = localDay(copied.logDate, day.timeZone);
-      return destination === day.today
-        ? `Copied ${copied.name} to today's Food Log.`
-        : `Copied ${copied.name} to ${fullDate(destination)}.`;
-    }
-    case "updated":
-      return "Food Entry updated. Daily totals refreshed.";
-    case "deleted":
-      return "Food Entry deleted. Daily totals updated.";
-    case "food-saved":
-      return "Added to My foods.";
-    default:
-      return undefined;
-  }
-}
-
 /**
- * Home's Food Event read model: parses `food=`, `entry=`, `copy=`, and `notice=`, reads catalog
+ * Home's Food Event read model: parses `food=`, `entry=`, and `copy=`, reads catalog
  * discovery and favorites, and answers which dialog to show with the response status it implies.
  * Returns a redirect when Scan barcode is not available to the account.
  */
@@ -215,7 +181,7 @@ export async function loadFoodEventDialogs(
   const url = new URL(request.url);
   const service = getFoodEventService(testRequestInstant(request));
   const barcodeLookup = barcodeLookupAccess(role);
-  const dialogs: FoodEventDialogs = { barcodeLookup, notice: notice(url, service, userId, day) };
+  const dialogs: FoodEventDialogs = { barcodeLookup };
   let status = 200;
 
   if (url.searchParams.get("entry") !== null && !day.isFuture) {

@@ -168,16 +168,15 @@ export async function loader({ request }: Route.LoaderArgs) {
     }
   }
 
-  const { notice: foodNotice, ...foodDialogs } = foodEvents.dialogs;
   return data(
     {
-      ...foodDialogs,
+      ...foodEvents.dialogs,
       calendar,
       csrfToken: session.csrfToken,
       dailyCalories,
       foodLog,
       nearbyDates,
-      notice: foodNotice ?? waterNotice(url.searchParams.get("notice")),
+      notice: waterNotice(url.searchParams.get("notice")),
       username: session.user.username,
       waterDialog,
     },

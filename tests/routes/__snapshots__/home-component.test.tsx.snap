@@ -26,7 +26,7 @@ exports[`home catalog renders initial, empty, failure, and selectable result sta
 
 exports[`home catalog renders initial, empty, failure, and selectable result states 5`] = `"ec0bd92d3c17075aa11307ebd5e7590bfcb53a3f263d2f1e93c36093637d5aad"`;
 
-exports[`home distinguishes past, future, no-goal, and incomplete summaries 1`] = `"78d8c9c6f0bd57f89a9d272b5737048d0b105a82e18f8c503ab14b5963590c9f"`;
+exports[`home distinguishes past, future, no-goal, and incomplete summaries 1`] = `"a2a567e92feaf5a903a9e0e146e7646697ca8fcbcf62b235f81509bfc2a35c6c"`;
 
 exports[`home distinguishes past, future, no-goal, and incomplete summaries 2`] = `"1480319c497856184a51634aac00ee81dd71a853fea25ede42cb0e9563b10e42"`;
 
