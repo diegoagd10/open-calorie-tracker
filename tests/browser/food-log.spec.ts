@@ -102,30 +102,30 @@ test("today, historical navigation, calendar access, travel, and future rejectio
   await expect(
     page.getByText("Saturday, August 29, 2026", { exact: true }).first(),
   ).toBeVisible();
+  // Desktop logs from the summary column: inside the content, under the
+  // day's totals, never pinned to the window edge.
   const quickLog = page.getByRole("group", { name: "Quick log" });
+  const summaryActions = page.getByRole("group", { name: "Log food or water" });
+  await expect(quickLog).toBeHidden();
   await expect(
-    quickLog.getByRole("button", { name: "Add Food" }),
+    summaryActions.getByRole("button", { name: "Add Food" }),
   ).toBeVisible();
   await expect(
-    quickLog.getByRole("button", { name: "Add Water" }),
+    summaryActions.getByRole("button", { name: "Add Water" }),
   ).toBeVisible();
   await expect(page.getByRole("button", { name: "Dismiss notification" })).toHaveCount(0);
   expect(
-    await quickLog.evaluate((element) =>
+    await summaryActions.evaluate((element) =>
       getComputedStyle(element.parentElement!).position,
     ),
-  ).toBe("fixed");
-  expect(
-    await quickLog.evaluate((element) =>
-      getComputedStyle(element.parentElement!).pointerEvents,
-    ),
-  ).toBe("none");
-  expect(
-    await quickLog.evaluate((element) => getComputedStyle(element).pointerEvents),
-  ).toBe("auto");
-  expect(
-    await quickLog.evaluate((element) => getComputedStyle(element).backgroundColor),
-  ).toBe("rgba(0, 0, 0, 0)");
+  ).toBe("sticky");
+  const waterBox = (await page
+    .getByRole("region", { exact: true, name: "Water" })
+    .boundingBox())!;
+  const summaryActionsBox = (await summaryActions.boundingBox())!;
+  expect(summaryActionsBox.y).toBeGreaterThanOrEqual(waterBox.y + waterBox.height);
+  expect(summaryActionsBox.x).toBeCloseTo(waterBox.x, 0);
+  expect(summaryActionsBox.width).toBeCloseTo(waterBox.width, 0);
 
   for (const viewport of [
     { height: 844, width: 390 },
@@ -136,8 +136,9 @@ test("today, historical navigation, calendar access, travel, and future rejectio
     // An empty day carries its own actions below the desktop layout, so
     // floating buttons never cover the empty-state guidance.
     const emptyDayActions = page.getByRole("group", { name: "Add to this day" });
-    const visibleActions = viewport.width < 1_120 ? emptyDayActions : quickLog;
-    await expect(viewport.width < 1_120 ? quickLog : emptyDayActions).toBeHidden();
+    const visibleActions = viewport.width < 1_120 ? emptyDayActions : summaryActions;
+    await expect(quickLog).toBeHidden();
+    await expect(viewport.width < 1_120 ? summaryActions : emptyDayActions).toBeHidden();
     await expect(visibleActions).toBeVisible();
     const quickLogBox = await visibleActions.boundingBox();
     expect(quickLogBox).not.toBeNull();

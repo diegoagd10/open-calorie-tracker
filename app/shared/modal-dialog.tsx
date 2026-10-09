@@ -47,7 +47,9 @@ export function useModalDialog({
         const restoreTarget =
           previousFocus?.isConnected && previousFocus !== document.body
             ? previousFocus
-            : document.querySelector<HTMLElement>(restoreFocusSelector);
+            : // Responsive layouts keep hidden copies of an opener; focus the shown one.
+              [...document.querySelectorAll<HTMLElement>(restoreFocusSelector)]
+                .find((element) => element.getClientRects().length > 0);
         restoreTarget?.focus();
       });
     };

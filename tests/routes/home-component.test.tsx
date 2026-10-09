@@ -35,6 +35,9 @@ class TestElement {
   hasAttribute() {
     return false;
   }
+  getClientRects() {
+    return this.offsetParent ? [{}] : [];
+  }
   lastFocusOptions: FocusOptions | undefined;
   lastScrollOptions: ScrollIntoViewOptions | undefined;
   scrollIntoView(options?: ScrollIntoViewOptions) { this.lastScrollOptions = options; }
@@ -62,15 +65,20 @@ const modalFocusables = [
 modalFocusables[1].offsetParent = null;
 let lastNodeMock: TestElement | undefined;
 let documentRestoreTarget: TestElement | null = null;
+// A responsive copy of the opener that CSS hides at the current width.
+const hiddenRestoreTarget = new TestElement();
+hiddenRestoreTarget.offsetParent = null;
 const documentSelectors: string[] = [];
 (globalThis as unknown as { HTMLElement: typeof TestElement })
   .HTMLElement = TestElement;
 (globalThis as typeof globalThis & { document: Document }).document = {
   activeElement: new TestElement(),
   body: { style: { overflow: "" } },
-  querySelector: (selector: string) => {
+  querySelectorAll: (selector: string) => {
     documentSelectors.push(selector);
-    return documentRestoreTarget;
+    return documentRestoreTarget
+      ? [hiddenRestoreTarget, documentRestoreTarget]
+      : [];
   },
 } as unknown as Document;
 (globalThis as typeof globalThis & { requestAnimationFrame: typeof requestAnimationFrame })
@@ -395,10 +403,17 @@ test("home renders today's empty log and all goal progress contracts", async () 
     { label: "Add Food", value: "add-food" },
     { label: "Add Water", value: "add-water" },
   ]);
-  // Floating actions plus the empty day's own actions; CSS shows one set per width.
+  const summaryActions = renderer.root.findByProps({
+    "aria-label": "Log food or water",
+    role: "group",
+  });
+  expect(
+    summaryActions.findAllByType("button").map((button) => button.props.value),
+  ).toEqual(["add-food", "add-water"]);
+  // Floating, empty-day, and summary-column actions; CSS shows one set per width.
   expect(renderer.root.findAllByType("button").filter(
     (button) => ["add-food", "add-water"].includes(button.props.value),
-  )).toHaveLength(4);
+  )).toHaveLength(6);
   expect(renderer.root.findByProps({ "aria-label": "Calorie progress" }).props)
     .toMatchObject({
       "aria-valuemax": 2050,
@@ -855,9 +870,10 @@ test("home renders food and water timeline entries with factual units", async ()
       "aria-valuenow": 80,
       style: { "--progress": "100%" },
     });
+  // Floating and summary-column actions; a logged day has no empty-day set.
   expect(renderer.root.findAllByType("button").filter(
     (button) => ["add-food", "add-water"].includes(button.props.value),
-  )).toHaveLength(2);
+  )).toHaveLength(4);
   await act(async () => renderer.unmount());
 
   const singular = await renderHome({
