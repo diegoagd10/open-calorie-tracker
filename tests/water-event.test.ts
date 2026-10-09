@@ -195,7 +195,24 @@ describe("list", () => {
 
   test("an empty range result totals zero", async () => {
     const { service, owner } = await setup();
-    expect(service.list(owner, { from: "2026-09-30T00:00:00Z", to: "2026-09-30T00:00:01Z" })).toEqual({ events: [], totalOunces: "0" });
+    expect(service.list(owner, { from: "2026-09-30T00:00:00Z", to: "2026-09-30T00:00:01Z" })).toEqual({ events: [], totalOunces: "0", days: {} });
+  });
+
+  test("groups events by local date in the account's time zone with exact daily totals", async () => {
+    const { client, service, owner } = await setup();
+    const at = (logDate: string, ounces: string, userId = owner) => service.save(userId, { logDate, quantity: { ounces } });
+    // 03:59 UTC on October 1 is 23:59 on September 30 in New York.
+    at("2026-09-30T04:00:00Z", "0.1");
+    at("2026-10-01T03:59:00Z", "0.2");
+    at("2026-10-01T04:00:00Z", "1.005");
+
+    const range = { from: "2026-09-30T00:00:00-04:00", to: "2026-10-02T00:00:00-04:00" };
+    expect(service.list(owner, range).days).toEqual({
+      "2026-09-30": { eventCount: 2, totalOunces: "0.3" },
+      "2026-10-01": { eventCount: 1, totalOunces: "1.005" },
+    });
+    const unconfigured = insertUser(client, "water.days.unconfigured", null);
+    expect(service.list(unconfigured, range).days).toEqual({});
   });
 
   test.each([
@@ -328,7 +345,8 @@ describe("utilities", () => {
       updatedAt: "2026-10-01T12:00:00.000Z",
     };
     expect(presentWaterEvent(event)).toEqual(presented);
-    expect(presentWaterEventList({ events: [event], totalOunces: "12.5" })).toEqual({ events: [presented], totalOunces: 12.5 });
+    const days = { "2026-09-30": { eventCount: 1, totalOunces: "12.5" } };
+    expect(presentWaterEventList({ events: [event], totalOunces: "12.5", days })).toEqual({ events: [presented], totalOunces: 12.5 });
     expect(presentWaterEventDeletion(2)).toEqual({ deletedCount: 2 });
   });
 

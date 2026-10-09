@@ -56,9 +56,14 @@ async function rpc(key: string, method: string, params: Record<string, unknown> 
   expect(response.headers.get("Mcp-Session-Id")).toBeNull();
   return await response.json() as RpcResponse;
 }
+type ToolResult = { isError?: boolean; structuredContent?: Record<string, unknown>; content: { type: string; text: string }[] };
 async function callDailyLog(key: string, toolArguments: Record<string, unknown> = {}) {
   const { result } = await rpc(key, "tools/call", { name: "get_daily_log", arguments: toolArguments });
-  return result as { isError?: boolean; structuredContent?: Record<string, unknown>; content: { type: string; text: string }[] };
+  return result as ToolResult;
+}
+async function callDailyLogs(key: string, toolArguments: Record<string, unknown>) {
+  const { result } = await rpc(key, "tools/call", { name: "get_daily_logs", arguments: toolArguments });
+  return result as ToolResult;
 }
 async function account(username: string): Promise<Account> {
   const session = await seedAuthenticatedAccount(getAuthenticationService(), getApplicationDatabase().getClient(), username, "correct horse battery staple", "203.0.113.10");
@@ -107,7 +112,7 @@ afterAll(async () => {
   await rm(directory, { recursive: true, force: true });
 });
 
-test("a client initializes statelessly and lists the Food Log tool", async () => {
+test("a client initializes statelessly and lists the Food Log tools", async () => {
   const initialized = await rpc(readerKey, "initialize", {
     protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "1.0.0" },
   });
@@ -115,9 +120,11 @@ test("a client initializes statelessly and lists the Food Log tool", async () =>
 
   const listed = await rpc(readerKey, "tools/list");
   const tools = listed.result?.tools as { name: string; inputSchema: { properties: Record<string, unknown> }; annotations?: Record<string, unknown> }[];
-  expect(tools.map((tool) => tool.name)).toEqual(["get_daily_log"]);
+  expect(tools.map((tool) => tool.name)).toEqual(["get_daily_log", "get_daily_logs"]);
   expect(Object.keys(tools[0].inputSchema.properties)).toEqual(["date"]);
   expect(tools[0].annotations).toMatchObject({ readOnlyHint: true });
+  expect(Object.keys(tools[1].inputSchema.properties)).toEqual(["startDate", "endDate"]);
+  expect(tools[1].annotations).toMatchObject({ readOnlyHint: true, openWorldHint: false });
 });
 
 test("get_daily_log summarizes today's Food Log by default", async () => {
@@ -217,6 +224,69 @@ test("get_daily_log reports no goal for an account with a time zone but no Daily
     water: { unit: "fl oz", consumed: 0, goal: null, remaining: null },
   });
   expect(result.content[0].text).toContain("Water: 0 fl oz (no goal set)");
+});
+
+test("get_daily_logs returns every date with each day's summary and local food times, plus range totals and averages", async () => {
+  const result = await callDailyLogs(readerKey, { startDate: "2026-08-29", endDate: "2026-09-01" });
+  expect(result.isError).toBeFalsy();
+  const structured = result.structuredContent as Record<string, unknown> & { days: Array<Record<string, unknown> & { date: string; foods: Array<Record<string, unknown>> }> };
+  expect(structured).toMatchObject({
+    startDate: "2026-08-29",
+    endDate: "2026-09-01",
+    today,
+    timeZone: "America/New_York",
+    totals: {
+      nutrients: {
+        energy: { unit: "kcal", consumed: 350, isIncomplete: false },
+        fat: { unit: "g", consumed: 6.3, isIncomplete: false },
+        sodium: { unit: "mg", consumed: 0, isIncomplete: true },
+      },
+      water: { unit: "fl oz", consumed: 16 },
+    },
+    averages: {
+      foodDayCount: 1,
+      waterDayCount: 1,
+      nutrients: { energy: 350, protein: 12, fat: 6.3, sodium: 0 },
+      waterOunces: 16,
+    },
+  });
+  expect(structured.totals).not.toHaveProperty("nutrients.energy.goal");
+  expect(structured.days.map((day) => [day.date, day.isFuture])).toEqual([
+    ["2026-08-29", false], ["2026-08-30", false], ["2026-08-31", false], ["2026-09-01", true],
+  ]);
+  expect(structured.days[2].foods.map((food) => [food.name, food.localTime])).toEqual([["Oatmeal", "10:30"]]);
+  for (const day of structured.days) {
+    const single = (await callDailyLog(readerKey, { date: day.date })).structuredContent as { foods: Array<Record<string, unknown>> };
+    expect(day).toEqual({ ...single, foods: single.foods.map((food, index) => ({ ...food, localTime: day.foods[index].localTime })) });
+  }
+
+  const text = result.content.map((part) => part.text).join("\n");
+  expect(text).toContain("2026-08-29 to 2026-09-01");
+  expect(text).toContain("America/New_York");
+  expect(text).toMatch(/average/iu);
+  expect(text).toContain("2026-08-31 (today): 350 of 2050 kcal, 16 of 80 fl oz water");
+  expect(text).toContain("- 10:30 Oatmeal, Manual, 1 serving × 1: 350 kcal");
+  expect(text).toContain("2026-09-01 (future)");
+});
+
+test("get_daily_logs rejects invalid, reversed, and longer than 92-day ranges, and needs account setup", async () => {
+  expect((await callDailyLogs(readerKey, { startDate: "2026-06-01", endDate: "2026-08-31" })).isError).toBeFalsy();
+  for (const [startDate, endDate] of [
+    ["2026-06-01", "2026-09-01"],
+    ["2026-08-31", "2026-08-30"],
+    ["2026-02-30", "2026-03-01"],
+    ["2026-08-01", "tomorrow"],
+  ]) {
+    const result = await callDailyLogs(readerKey, { startDate, endDate });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toMatch(/date range/iu);
+    expect(result.content[0].text).toContain("92");
+  }
+  const unset = await account("mcp.range.unset");
+  const { key } = await createKey(unset, "Range unset");
+  const result = await callDailyLogs(key, { startDate: "2026-08-30", endDate: "2026-08-31" });
+  expect(result.isError).toBe(true);
+  expect(result.content[0].text).toMatch(/setup/iu);
 });
 
 test("an invalid date and a missing account setup are tool errors, not HTTP errors", async () => {

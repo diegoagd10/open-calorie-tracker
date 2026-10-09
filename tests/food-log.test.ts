@@ -18,6 +18,7 @@ import {
   FoodLogService,
   FutureFoodLogDateError,
   InvalidFoodLogDateError,
+  InvalidFoodLogRangeError,
 } from "../app/food-log/food-log.server";
 import {
   openApplicationDatabase,
@@ -28,6 +29,7 @@ import { foodEvents } from "../app/food-event/food-event.schema.server";
 import { zonedDateTimeToUtc } from "../app/shared/date-time";
 import { createDailyGoalService } from "../app/daily-goal/index.server";
 import type { DailyGoalTargets } from "../app/daily-goal/daily-goal.model";
+import { createWaterEventService } from "../app/water-event/index.server";
 
 const temporaryDirectories: string[] = [];
 
@@ -688,6 +690,134 @@ test("daily calories group events by local day in the account's time zone, inclu
     "2026-11-02": { eventCount: 1, goalMilliKcal: null, isIncomplete: false, knownMilliKcal: 400_000 },
   });
   expect(service.read(userId, "2026-11-01")?.foodEvents.map((event) => event.originalName)).toEqual(["Entry late", "Entry midnight"]);
+  database.close();
+});
+
+test("a date range reads every local date with one day's detail, range totals, and averages over days with records", async () => {
+  const database = await setupDatabase();
+  const client = database.getClient();
+  const userId = insertConfiguredUser(client, {
+    timeZone: "America/New_York",
+    username: "food.log.range",
+  });
+  const otherUserId = insertConfiguredUser(client, {
+    timeZone: "America/New_York",
+    username: "food.log.range.other",
+  });
+  const nutrients = (energyMilliKcal: number | null, sodiumMilligrams: number | null = 100) => ({
+    carbohydrateMilligrams: null,
+    energyMilliKcal,
+    fatMilligrams: null,
+    fiberMilligrams: null,
+    proteinMilligrams: null,
+    sodiumMilligrams,
+    sugarMilligrams: null,
+  });
+  insertFoodEvent(client, { date: "2026-08-27", id: "breakfast", nutrients: nutrients(2_100_000), time: "08:15", userId });
+  insertFoodEvent(client, { date: "2026-08-28", id: "lunch", nutrients: nutrients(900_000, 200), userId });
+  // 23:30 in New York is 03:30 UTC on the next day.
+  insertFoodEvent(client, { date: "2026-08-28", id: "late", nutrients: nutrients(null, 1), time: "23:30", userId });
+  insertFoodEvent(client, { date: "2026-08-28", id: "other", nutrients: nutrients(5_000_000), userId: otherUserId });
+  const now = () => new Date("2026-08-29T16:00:00.000Z");
+  const water = createWaterEventService(client, now);
+  water.save(userId, { logDate: "2026-08-26T16:00:00.000Z", quantity: { ounces: "16" } });
+  water.save(userId, { logDate: "2026-08-27T16:00:00.000Z", quantity: { ounces: "8.125" } });
+  water.save(userId, { logDate: "2026-08-29T03:30:00.000Z", quantity: { ounces: "0.5" } });
+  water.save(otherUserId, { logDate: "2026-08-27T16:00:00.000Z", quantity: { ounces: "100" } });
+  const service = new FoodLogService(client, now);
+
+  const range = service.readRange(userId, "2026-08-26", "2026-08-30")!;
+  expect(range).toMatchObject({
+    startDate: "2026-08-26",
+    endDate: "2026-08-30",
+    today: "2026-08-29",
+    timeZone: "America/New_York",
+    waterTotalOunces: "24.625",
+    averages: {
+      foodDayCount: 2,
+      waterDayCount: 3,
+      // 24.625 fl oz over three days is 8.208333…
+      waterOunces: "8.208",
+    },
+  });
+  expect(range.days.map((day) => day.selectedDate)).toEqual([
+    "2026-08-26", "2026-08-27", "2026-08-28", "2026-08-29", "2026-08-30",
+  ]);
+  for (const day of range.days) expect(day).toEqual(service.read(userId, day.selectedDate));
+  expect(range.days.map((day) => [day.foodEvents.length, day.waterTotalOunces, day.isFuture])).toEqual([
+    [0, "16", false], [1, "8.125", false], [2, "0.5", false], [0, "0", false], [0, "0", true],
+  ]);
+  expect(range.totals.energyMilliKcal).toEqual({ known: 3_000_000, isIncomplete: true });
+  expect(range.totals.sodiumMilligrams).toEqual({ known: 301, isIncomplete: false });
+  expect(range.totals.proteinMilligrams).toEqual({ known: 0, isIncomplete: true });
+  expect(range.averages.nutrition).toEqual({
+    energyMilliKcal: 1_500_000,
+    proteinMilligrams: 0,
+    carbohydrateMilligrams: 0,
+    fatMilligrams: 0,
+    fiberMilligrams: 0,
+    sugarMilligrams: 0,
+    // 301 mg over two days rounds to the nearest milligram.
+    sodiumMilligrams: 151,
+  });
+  database.close();
+});
+
+test("an empty date range averages zero, and one date is a valid range", async () => {
+  const database = await setupDatabase();
+  const client = database.getClient();
+  const userId = insertConfiguredUser(client, {
+    timeZone: "America/New_York",
+    username: "food.log.range.empty",
+  });
+  const service = new FoodLogService(client, () => new Date("2026-08-29T16:00:00.000Z"));
+
+  const range = service.readRange(userId, "2026-08-29", "2026-08-29")!;
+  expect(range.days).toEqual([service.read(userId, "2026-08-29")]);
+  expect(range.waterTotalOunces).toBe("0");
+  expect(range.averages).toEqual({
+    foodDayCount: 0,
+    waterDayCount: 0,
+    nutrition: {
+      energyMilliKcal: 0,
+      proteinMilligrams: 0,
+      carbohydrateMilligrams: 0,
+      fatMilligrams: 0,
+      fiberMilligrams: 0,
+      sugarMilligrams: 0,
+      sodiumMilligrams: 0,
+    },
+    waterOunces: "0",
+  });
+  database.close();
+});
+
+test("a date range covers at most 92 dates, in order, and needs account setup", async () => {
+  const database = await setupDatabase();
+  const client = database.getClient();
+  const userId = insertConfiguredUser(client, {
+    timeZone: "America/New_York",
+    username: "food.log.range.limits",
+  });
+  const service = new FoodLogService(client, () => new Date("2026-08-29T16:00:00.000Z"));
+
+  // January through March 2026 plus April 1 and 2 is 31 + 28 + 31 + 2 = 92 dates.
+  expect(service.readRange(userId, "2026-01-01", "2026-04-02")?.days).toHaveLength(92);
+  for (const [start, end] of [
+    ["2026-01-01", "2026-04-03"],
+    ["2026-08-29", "2026-08-28"],
+    ["2026-02-30", "2026-03-01"],
+    ["2026-03-01", "not-a-date"],
+  ]) {
+    expect(() => service.readRange(userId, start, end)).toThrow(InvalidFoodLogRangeError);
+  }
+  expect(new InvalidFoodLogRangeError()).toMatchObject({ name: "InvalidFoodLogRangeError" });
+
+  const unconfigured = client.insert(users).values({
+    createdAt: "2026-01-01T00:00:00.000Z",
+    usernameNormalized: "food.log.range.unconfigured",
+  }).returning({ id: users.id }).get().id;
+  expect(service.readRange(unconfigured, "2026-08-01", "2026-08-29")).toBeUndefined();
   database.close();
 });
 
