@@ -7,3 +7,5 @@ minimumReleaseAgeExclude:
 # Keep every direct and transitive consumer on the patched qs release.
 overrides:
   qs: 6.16.0
+  # Keep gel's transitive shell-quote on the command-injection fix.
+  shell-quote: 1.11.0
