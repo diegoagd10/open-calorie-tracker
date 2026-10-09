@@ -25,10 +25,22 @@ async function post<T>(
     .json()
     .catch(() => ({ error: "Key request failed. Retry." }))) as T & {
     error?: string;
+    code?: string;
   };
   if (!response.ok)
-    throw new Error(result.error ?? "Key request failed. Retry.");
+    throw new KeyRequestError(
+      result.error ?? "Key request failed. Retry.",
+      result.code,
+    );
   return result;
+}
+class KeyRequestError extends Error {
+  constructor(
+    message: string,
+    readonly code?: string,
+  ) {
+    super(message);
+  }
 }
 export async function enrollKey(csrf: string, name: string, enabled = false) {
   activePrompt = new AbortController();
@@ -66,7 +78,14 @@ export async function enrollKey(csrf: string, name: string, enabled = false) {
     throw error;
   }
 }
-export async function signInWithKey(csrf: string, username: string) {
+export type SignInOutcome =
+  | { kind: "signed-in"; nextPath: string }
+  | { kind: "password" }
+  | { kind: "cancelled" };
+export async function beginSignIn(
+  csrf: string,
+  username: string,
+): Promise<SignInOutcome> {
   activePrompt = new AbortController();
   const prompt = activePrompt;
   try {
@@ -77,9 +96,21 @@ export async function signInWithKey(csrf: string, username: string) {
     const response = await startAuthentication({
       optionsJSON: verification.options,
     });
-    return await post<{ nextPath: string }>(csrf, "login-finish", { response });
+    const { nextPath } = await post<{ nextPath: string }>(
+      csrf,
+      "login-finish",
+      { response },
+    );
+    return { kind: "signed-in", nextPath };
   } catch (error) {
     await post(csrf, "cancel").catch(() => {});
+    if (error instanceof KeyRequestError && error.code === "unavailable")
+      return { kind: "password" };
+    if (
+      error instanceof Error &&
+      (error.name === "NotAllowedError" || error.name === "AbortError")
+    )
+      return { kind: "cancelled" };
     throw error;
   }
 }

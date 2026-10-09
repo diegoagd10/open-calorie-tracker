@@ -99,6 +99,19 @@ export async function provisionBrowserTestMember(
   database.close();
 }
 
+// Public HTTPS asks for the username first; LAN HTTP keeps the combined form.
+export async function submitPasswordLogin(
+  page: Page,
+  username: string,
+  password: string,
+): Promise<void> {
+  await page.getByLabel("Username").fill(username);
+  if (new URL(page.url()).protocol === "https:")
+    await page.getByRole("button", { name: "Next", exact: true }).click();
+  await page.getByLabel("Password", { exact: true }).fill(password);
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+}
+
 export async function signInProvisionedMember(
   page: Page,
   username: string,
@@ -106,9 +119,7 @@ export async function signInProvisionedMember(
 ): Promise<void> {
   await provisionBrowserTestMember(username, password);
   await page.goto("/login");
-  await page.getByLabel("Username").fill(username);
-  await page.getByLabel("Password", { exact: true }).fill(password);
-  await page.getByRole("button", { name: "Sign in" }).click();
+  await submitPasswordLogin(page, username, password);
   await expect(page).toHaveURL("/setup");
 }
 

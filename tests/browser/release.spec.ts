@@ -5,6 +5,7 @@ import {
   expect,
   openBrowserTestDatabase,
   test,
+  submitPasswordLogin,
 } from "./reset-database";
 
 const validPassword = "correct horse 🔐 battery";
@@ -297,9 +298,7 @@ test("one mobile Chromium journey verifies the complete private MVP", async ({
   await page.getByRole("button", { name: "Sign out" }).click();
   await expect(page).toHaveURL("/login");
   await expectNoSeriousAxeViolations(page);
-  await page.getByLabel("Username").fill("release.owner");
-  await page.getByLabel("Password", { exact: true }).fill(validPassword);
-  await page.getByRole("button", { name: "Sign in" }).click();
+  await submitPasswordLogin(page, "release.owner", validPassword);
   await expect(page).toHaveURL("/");
 
   await page.getByRole("link", { name: "Settings" }).click();
@@ -687,7 +686,12 @@ test("the critical mobile experience is operable with only a keyboard", async ({
   await expect(page).toHaveURL("/login");
   await tabTo(page, page.getByLabel("Username"));
   await page.keyboard.type("release.keyboard");
-  await tabTo(page, page.getByLabel("Password", { exact: true }));
+  const loginPassword = page.getByLabel("Password", { exact: true });
+  if (new URL(page.url()).protocol === "https:") {
+    // Enter submits the username step and focus lands on the password.
+    await page.keyboard.press("Enter");
+    await expect(loginPassword).toBeFocused();
+  } else await tabTo(page, loginPassword);
   await page.keyboard.type(validPassword);
   const signIn = page.getByRole("button", { name: "Sign in" });
   await tabTo(page, signIn);

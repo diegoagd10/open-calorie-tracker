@@ -13,7 +13,10 @@ import {
   requireValidOrigin,
   requireAdministratorSession,
 } from "../auth/http.server";
-import { KeyAuthenticationError } from "../database/webauthn.server";
+import {
+  KeyAuthenticationError,
+  type KeyErrorCode,
+} from "../database/webauthn.server";
 import { getAuthenticationService } from "../auth/runtime.server";
 import { applicationOrigin, effectiveRequestPolicy } from "../runtime.server";
 import { fallbackPasswordChangeSchema, usernameSchema } from "../auth/validation";
@@ -53,6 +56,7 @@ const bodySchema = z
     response: z.unknown().optional(),
   })
   .strict();
+type KeyCeremonyErrorBody = { error: string; code?: KeyErrorCode };
 const cookieName = "__Host-calorie_key_ceremony";
 function ceremonyCookie(value: string) {
   return `${cookieName}=${value}; Path=/; Max-Age=${value ? 300 : 0}; HttpOnly; Secure; SameSite=Strict`;
@@ -301,13 +305,12 @@ export async function action({ request }: Route.ActionArgs) {
   } catch (error) {
     service.keys.cancel(browser);
     headers.set("Set-Cookie", ceremonyCookie(""));
+    const body: KeyCeremonyErrorBody =
+      error instanceof KeyAuthenticationError
+        ? { error: error.message, code: error.code }
+        : { error: "Key request failed. Retry." };
     return Response.json(
-      {
-        error:
-          error instanceof KeyAuthenticationError
-            ? error.message
-            : "Key request failed. Retry.",
-      },
+      body,
       {
         headers,
         status:

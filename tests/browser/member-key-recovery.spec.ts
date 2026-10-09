@@ -1,6 +1,6 @@
 import AxeBuilder from "@axe-core/playwright";
 import type { Page, BrowserContext } from "@playwright/test";
-import { bootstrapOrSignInBrowserTestUser, signInProvisionedMember, expect, test } from "./reset-database";
+import { bootstrapOrSignInBrowserTestUser, signInProvisionedMember, expect, test, submitPasswordLogin } from "./reset-database";
 import { playwrightBrowserPorts } from "../../scripts/catalog-browser-runtime";
 
 const password = "correct horse battery staple";
@@ -83,9 +83,7 @@ for (const method of ["password", "key"]) {
       await expect(member).toHaveURL(`${publicOrigin}/login`);
       await lanMember.goto("/");
       await expect(lanMember).toHaveURL(`${lanOrigin}/login`);
-      await member.getByLabel("Username").fill("recovery.member");
-      await member.getByLabel("Password", { exact: true }).fill(password);
-      await member.getByRole("button", { name: "Sign in", exact: true }).click();
+      await submitPasswordLogin(member, "recovery.member", password);
       await expect(member).toHaveURL(`${publicOrigin}/`);
       await member.goto("/settings/security");
       await expect(member.getByText("Lost member key", { exact: true })).toBeVisible();
@@ -94,9 +92,7 @@ for (const method of ["password", "key"]) {
       await member.getByLabel("Current account password").fill(password);
       await member.getByRole("button", { name: "Confirm deletion", exact: true }).click();
       await expect(member).toHaveURL(`${publicOrigin}/login`);
-      await member.getByLabel("Username").fill("recovery.member");
-      await member.getByLabel("Password", { exact: true }).fill(password);
-      await member.getByRole("button", { name: "Sign in", exact: true }).click();
+      await submitPasswordLogin(member, "recovery.member", password);
       await expect(member).toHaveURL(`${publicOrigin}/`);
       await member.goto("/settings/security");
       await expect(member.getByText("Lost member key", { exact: true })).toHaveCount(0);
@@ -106,9 +102,9 @@ for (const method of ["password", "key"]) {
       await memberKey.cdp.detach();
       await page.goto("/settings/goals");
       await page.getByRole("button", { name: "Sign out" }).click();
-      await page.getByLabel("Username").fill("recovery.admin");
-      await page.getByLabel("Password", { exact: true }).fill(password);
-      await page.getByRole("button", { name: "Sign in", exact: true }).click();
+      // Public HTTPS sends key accounts to their key; LAN still offers the password form.
+      await page.goto(`${lanOrigin}/login`);
+      await submitPasswordLogin(page, "recovery.admin", password);
       await expect(page.getByRole("alert")).toContainText("The username or password is incorrect.");
       await adminKey.cdp.detach();
     } finally {

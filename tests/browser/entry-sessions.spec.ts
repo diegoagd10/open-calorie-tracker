@@ -1,4 +1,4 @@
-import { expect, test } from "./reset-database";
+import { expect, test, submitPasswordLogin } from "./reset-database";
 import { playwrightBrowserPorts } from "../../scripts/catalog-browser-runtime";
 
 const password = "correct horse 🔐 battery";
@@ -32,9 +32,7 @@ test("desktop and phone sessions share data across entries and logout stays loca
     const otherPage = await phone.newPage();
     await otherPage.goto("/");
     await expect(otherPage).toHaveURL(`${otherOrigin}/login`);
-    await otherPage.getByLabel("Username").fill("entry.admin");
-    await otherPage.getByLabel("Password", { exact: true }).fill(password);
-    await otherPage.getByRole("button", { name: "Sign in" }).click();
+    await submitPasswordLogin(otherPage, "entry.admin", password);
     await expect(otherPage).toHaveURL(`${otherOrigin}/`);
     await otherPage.goto("/settings/goals");
     await expect(otherPage.getByLabel("Calories target")).toHaveValue("1900");

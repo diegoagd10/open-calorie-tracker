@@ -122,6 +122,27 @@ describe("login route", () => {
     expect(anonymous.cookie).toContain("__Host-calorie_auth_csrf=");
   });
 
+  test("a username-only submission moves to the password step without a failure", async () => {
+    const preAuthentication = await issuePreAuthentication(loginLoader, "/login");
+    const usernameOnly = await loginAction(
+      routeArgs(
+        post(
+          "/login",
+          new URLSearchParams({
+            csrfToken: preAuthentication.csrfToken,
+            username: "login.owner",
+          }),
+          preAuthentication.cookie,
+        ),
+        "/login",
+      ),
+    );
+    expect(usernameOnly).toMatchObject({
+      data: { error: "", username: "login.owner" },
+      init: { status: 200 },
+    });
+  });
+
   test("uses one generic failure and establishes a valid session", async () => {
     const invalidCsrf = await issuePreAuthentication(loginLoader, "/login");
     const invalid = await loginAction(
@@ -254,7 +275,7 @@ describe("login route", () => {
 
   test.each([
     [{ password }, "", 400],
-    [{ username: "login.owner" }, "login.owner", 400],
+    [{ password: "", username: "login.owner" }, "login.owner", 400],
   ])("rejects missing login fields %#", async (fields, username, status) => {
     const csrf = await issuePreAuthentication(loginLoader, "/login");
     const result = await loginAction(

@@ -91,6 +91,22 @@
   background: var(--green-hover);
 }
 
+.secondary {
+  min-height: 2.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.secondary:hover {
+  background: var(--green-soft);
+}
+
 @media (max-width: 420px) {
   .shell {
     align-items: start;

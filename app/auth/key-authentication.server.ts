@@ -536,10 +536,10 @@ export class KeyAuthenticationService {
   }
 
   async beginLogin(username: string, browser: string, clientIp: string) {
-    if (
-      !this.#limits.consume("key-login", clientIp, 20, 15 * 60_000) ||
-      !this.#limits.consume("key-login-account", username, 20, 15 * 60_000)
-    )
+    // Every attempt spends the IP budget, which bounds username probing. Only
+    // key-eligible accounts spend their own budget, so nobody can lock a
+    // password-mode account out of reaching its password step.
+    if (!this.#limits.consume("key-login", clientIp, 20, 15 * 60_000))
       throw new KeyAuthenticationError(
         "Too many key attempts. Try again later.",
       );
@@ -548,12 +548,18 @@ export class KeyAuthenticationService {
       operationalLog("info", "key_login", { outcome: "rejected" });
       throw new KeyAuthenticationError(
         "Key sign-in is unavailable for this account.",
+        "unavailable",
       );
     }
     const credentials = this.#storage.credentials(user.id);
     if (!credentials.length)
       throw new KeyAuthenticationError(
         "Key sign-in is unavailable for this account.",
+        "unavailable",
+      );
+    if (!this.#limits.consume("key-login-account", username, 20, 15 * 60_000))
+      throw new KeyAuthenticationError(
+        "Too many key attempts. Try again later.",
       );
     const boundary = keyOrigin();
     const { generateAuthenticationOptions } = await import(

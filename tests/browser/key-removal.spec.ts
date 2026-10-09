@@ -3,6 +3,7 @@ import {
   bootstrapOrSignInBrowserTestUser,
   expect,
   test,
+  submitPasswordLogin,
 } from "./reset-database";
 import { playwrightBrowserPorts } from "../../scripts/catalog-browser-runtime";
 
@@ -91,9 +92,7 @@ for (const enabled of [true, false]) {
       await useKey(n);
       await page.goto("/login");
       await page.getByLabel("Username").fill(username);
-      await page
-        .getByRole("button", { name: "Use registered key", exact: true })
-        .click();
+      await page.getByRole("button", { name: "Next", exact: true }).click();
       await expect(page).toHaveURL("/");
       saved[n] = await rememberKey();
     }
@@ -114,11 +113,10 @@ for (const enabled of [true, false]) {
       await expect(page).toHaveURL("/login");
       for (let n = 0; n < 5; n++) {
         await useKey(n);
+        await page.goto("/login");
         await page.getByLabel("Username").fill(username);
-        await page
-          .getByRole("button", { name: "Use registered key", exact: true })
-          .click();
-        await expect(page.getByRole("alert")).toContainText("unavailable");
+        await page.getByRole("button", { name: "Next", exact: true }).click();
+        await expect(page.getByLabel("Password", { exact: true })).toBeVisible();
       }
       await page.getByLabel("Password", { exact: true }).fill(password);
       await page.getByRole("button", { name: "Sign in", exact: true }).click();
@@ -160,51 +158,46 @@ for (const enabled of [true, false]) {
       await olderPage.goto("/");
       await expect(olderPage).toHaveURL("/login");
       await older.close();
-      // A removed authenticator stays unavailable even though it still has its private key.
-      const csrf = await page.locator('input[name="csrfToken"]').inputValue();
-      const denied = await page.evaluate(
-        async ({ csrf, username, id }) => {
-          const start = await fetch("/key-ceremony", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              action: "login-start",
-              csrfToken: csrf,
-              username,
-            }),
-          });
-          const result = (await start.json()) as {
-            options?: { allowCredentials?: { id: string }[] };
-          };
-          return {
-            status: start.status,
-            allowed: result.options?.allowCredentials?.some(
-              (key) => key.id === id,
-            ),
-          };
-        },
-        {
-          csrf,
-          username,
-          id: saved[n].credentialId
-            .replace(/\+/g, "-")
-            .replace(/\//g, "_")
-            .replace(/=+$/, ""),
-        },
-      );
       if (enabled && n < 4) {
+        // A removed authenticator stays unavailable even though it still has its private key.
+        const csrf = await page.locator('input[name="csrfToken"]').inputValue();
+        const denied = await page.evaluate(
+          async ({ csrf, username, id }) => {
+            const start = await fetch("/key-ceremony", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                action: "login-start",
+                csrfToken: csrf,
+                username,
+              }),
+            });
+            const result = (await start.json()) as {
+              options?: { allowCredentials?: { id: string }[] };
+            };
+            return {
+              allowed: result.options?.allowCredentials?.some(
+                (key) => key.id === id,
+              ),
+            };
+          },
+          {
+            csrf,
+            username,
+            id: saved[n].credentialId
+              .replace(/\+/g, "-")
+              .replace(/\//g, "_")
+              .replace(/=+$/, ""),
+          },
+        );
         expect(denied.allowed).toBe(false);
         for (let remaining = n + 1; remaining < 5; remaining++) {
           if (remaining > n + 1) await signOut();
           await keyLogin(remaining);
         }
       } else {
-        expect(denied.status).toBe(400);
-        await page.getByLabel("Username").fill(username);
-        await page.getByLabel("Password", { exact: true }).fill(password);
-        await page
-          .getByRole("button", { name: "Sign in", exact: true })
-          .click();
+        // Password mode: Next itself is the denied probe, landing on the password step.
+        await submitPasswordLogin(page, username, password);
         await expect(page).toHaveURL("/");
       }
       await page.goto("/settings/security");
