@@ -1,11 +1,10 @@
 import { z } from "zod";
 import type { FoodLogDay, FoodLogRange } from "../food-log/food-log.server";
-import { utcToZonedDateTime } from "../shared/date-time";
+import { localTimeOfDay } from "../food-log/date";
 import { formatOunceThousandths, ounceThousandths } from "../water-event/water-event.utils";
 
-type FoodLog = FoodLogDay;
-type Totals = FoodLog["nutritionTotals"];
-type Goal = NonNullable<FoodLog["goal"]>;
+type Totals = FoodLogDay["nutritionTotals"];
+type Goal = NonNullable<FoodLogDay["goal"]>;
 
 /**
  * Each summarized nutrient: its unit, the canonical total and goal fields it
@@ -105,7 +104,7 @@ function display(canonical: number | null, name: NutrientName): number | null {
   return canonical === null ? null : round(canonical / scale, decimals);
 }
 
-function summarizeNutrient(name: NutrientName, totals: Totals, goal: FoodLog["goal"]) {
+function summarizeNutrient(name: NutrientName, totals: Totals, goal: FoodLogDay["goal"]) {
   const { unit, total, goalType } = NUTRIENTS[name];
   const { known, isIncomplete } = totals[total];
   const goalValue = goal ? goal[NUTRIENTS[name].goal] : null;
@@ -125,7 +124,7 @@ function ounces(thousandths: bigint): number {
 }
 
 /** Water consumed, goal, and remaining, computed in thousandths of a fluid ounce like stored amounts. */
-function summarizeWater(foodLog: FoodLog) {
+function summarizeWater(foodLog: FoodLogDay) {
   const consumed = ounceThousandths(foodLog.waterTotalOunces)!;
   const goal = foodLog.goal ? ounceThousandths(foodLog.goal.waterTarget) : null;
   return {
@@ -136,7 +135,7 @@ function summarizeWater(foodLog: FoodLog) {
   };
 }
 
-function summarizeFood(event: FoodLog["foodEvents"][number]) {
+function summarizeFood(event: FoodLogDay["foodEvents"][number]) {
   const { nutrients } = event;
   return {
     logDate: event.logDate,
@@ -168,13 +167,8 @@ function sourceLabel(food: DailyLogSummary["foods"][number]): string {
   return `USDA FoodData Central · ${food.dataType}`;
 }
 
-/** The `HH:MM` wall-clock time of a UTC instant in `timeZone`. */
-function localTime(logDate: string, timeZone: string): string {
-  return utcToZonedDateTime(logDate, timeZone).slice(11, 16);
-}
-
 function foodLine(food: DailyLogSummary["foods"][number], timeZone: string): string {
-  return `- ${localTime(food.logDate, timeZone)} ${food.name}${food.brand ? ` (${food.brand})` : ""}, ${sourceLabel(food)}, ${food.serving}: ${food.energyKcal ?? "unknown"} kcal`;
+  return `- ${localTimeOfDay(food.logDate, timeZone)} ${food.name}${food.brand ? ` (${food.brand})` : ""}, ${sourceLabel(food)}, ${food.serving}: ${food.energyKcal ?? "unknown"} kcal`;
 }
 
 function summaryText(summary: DailyLogSummary): string {
@@ -218,7 +212,7 @@ function rangeText(summary: DailyLogsSummary): string {
 }
 
 /** One Food Log in display units, with goals and remaining amounts. */
-function dailyLogStructured(foodLog: FoodLog): DailyLogSummary {
+function dailyLogStructured(foodLog: FoodLogDay): DailyLogSummary {
   const nutrients = Object.fromEntries(
     NUTRIENT_NAMES.map((name) => [name, summarizeNutrient(name, foodLog.nutritionTotals, foodLog.goal)]),
   ) as DailyLogSummary["nutrients"];
@@ -268,7 +262,7 @@ export function summarizeDailyLogs(range: FoodLogRange) {
     },
     days: range.days.map((day) => {
       const summary = dailyLogStructured(day);
-      return { ...summary, foods: summary.foods.map((food) => ({ ...food, localTime: localTime(food.logDate, day.timeZone) })) };
+      return { ...summary, foods: summary.foods.map((food) => ({ ...food, localTime: localTimeOfDay(food.logDate, day.timeZone) })) };
     }),
   };
   return { structured, text: rangeText(structured) };

@@ -1,6 +1,6 @@
 import { presentFoodEvent, presentNutritionTotals } from "../food-event/index.server";
-import { utcToZonedDateTime } from "../shared/date-time";
 import { presentWaterEvent } from "../water-event/index.server";
+import { localTimeOfDay } from "./date";
 import type { FoodLogDay, FoodLogRange } from "./food-log.server";
 
 /**
@@ -62,7 +62,7 @@ export function presentDailyFoodLogs(range: FoodLogRange) {
         ...presented,
         foodEvents: presented.foodEvents.map((event) => ({
           ...event,
-          localTime: utcToZonedDateTime(event.logDate, day.timeZone).slice(11, 16),
+          localTime: localTimeOfDay(event.logDate, day.timeZone),
         })),
       };
     }),

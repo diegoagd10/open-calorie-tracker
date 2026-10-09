@@ -12,7 +12,7 @@ import { formatOunceThousandths, ounceThousandths } from "../water-event/water-e
 import { compareFoodLogEventsDescending } from "./date";
 
 /** The most local dates one range read covers: a quarter. */
-const MAXIMUM_RANGE_DAYS = 92;
+export const MAXIMUM_RANGE_DAYS = 92;
 
 export class InvalidFoodLogDateError extends Error {
   constructor() {
@@ -36,6 +36,17 @@ export class InvalidFoodLogRangeError extends Error {
 }
 
 export type FoodLogDay = NonNullable<ReturnType<FoodLogService["read"]>>;
+
+/**
+ * `startDate` and `endDate` when both are `YYYY-MM-DD` dates, in order, covering at most
+ * `MAXIMUM_RANGE_DAYS` dates counting both; otherwise undefined.
+ */
+export function parseFoodLogRange(startDate: string, endDate: string): { startDate: string; endDate: string } | undefined {
+  const start = parseIsoLocalDate(startDate);
+  const end = parseIsoLocalDate(endDate);
+  if (!start || !end || start > end || addLocalDays(start, MAXIMUM_RANGE_DAYS - 1) < end) return undefined;
+  return { startDate: start, endDate: end };
+}
 
 /** Every local date from `startDate` through `endDate`, with totals and per-day averages. */
 export type FoodLogRange = {
@@ -106,11 +117,9 @@ export class FoodLogService {
    * One range read covers food and one covers water; days are grouped in the account's time zone.
    */
   readRange(userId: number, startDate: string, endDate: string): FoodLogRange | undefined {
-    const start = parseIsoLocalDate(startDate);
-    const end = parseIsoLocalDate(endDate);
-    if (!start || !end || start > end || addLocalDays(start, MAXIMUM_RANGE_DAYS - 1) < end) {
-      throw new InvalidFoodLogRangeError();
-    }
+    const requested = parseFoodLogRange(startDate, endDate);
+    if (!requested) throw new InvalidFoodLogRangeError();
+    const { startDate: start, endDate: end } = requested;
     const timeZone = readUserTimeZone(this.#database, userId);
     if (!timeZone) return undefined;
 
