@@ -377,6 +377,9 @@ test("home renders today's empty log and all goal progress contracts", async () 
   expect(allText(renderer)).toContain("Monday, August 31, 2026");
   expect(allText(renderer)).toContain("No entries for this day");
   expect(allText(renderer)).toContain("Add food or water when you’re ready.");
+  expect(allText(renderer)).not.toContain("◈ Private");
+  expect(allText(renderer)).not.toContain("Private by default");
+  expect(allText(renderer)).not.toContain("Private tracker");
   const emptyDayActions = renderer.root.findByProps({
     "aria-label": "Add to this day",
     role: "group",
@@ -752,6 +755,9 @@ test("home renders calendar navigation, selected dates, and future days", async 
   expect(renderer.root.findByType("h1").props["aria-label"])
     .toBe("Food Log history");
   expect(renderer.root.findByType("h1").children.join("")).toBe("History");
+  expect(allText(renderer)).not.toContain("◈ Private");
+  expect(allText(renderer)).not.toContain("Private by default");
+  expect(allText(renderer)).not.toContain("Private tracker");
   expect(renderer.root.findAllByProps({ "aria-label": "Quick log" }))
     .toHaveLength(0);
   expect(renderer.root.findAllByProps({ "aria-current": "page" })

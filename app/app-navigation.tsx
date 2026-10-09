@@ -36,10 +36,7 @@ export function AppNavigation({
             <span />
             <span />
           </span>
-          <span>
-            <strong>Open Calorie</strong>
-            <small>Private tracker</small>
-          </span>
+          <strong>Open Calorie</strong>
         </div>
         <nav className={styles.railNav}>
           <Link
@@ -65,13 +62,6 @@ export function AppNavigation({
           </Link>
         </nav>
         <div className={styles.railFooter}>
-          <div className={styles.railPrivacy}>
-            <UiIcon name="lock" />
-            <div>
-              <strong>Private by default</strong>
-              <p>Your Food Log is isolated to this account.</p>
-            </div>
-          </div>
           <Form action="/logout" method="post">
             <input name="csrfToken" type="hidden" value={csrfToken} />
             <button className={styles.logout} type="submit">

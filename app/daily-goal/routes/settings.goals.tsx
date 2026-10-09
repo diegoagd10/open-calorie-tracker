@@ -91,7 +91,6 @@ export default function Goals({ actionData, loaderData }: Route.ComponentProps) 
         <header className={shellStyles.mobileHeader}>
           <div className={shellStyles.titleLine}>
             <h1>Settings</h1>
-            <span className={shellStyles.privacyCue}>◈ Private</span>
           </div>
           <p className={shellStyles.selectedDateLabel}>
             Every Food Log day, past and present, is measured against your Daily Goal.
