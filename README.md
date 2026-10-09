@@ -29,7 +29,7 @@ for it:
 
 | Scope | REST | MCP tools |
 | --- | --- | --- |
-| `daily-log:read` | `GET /api/v1/daily-log?date=YYYY-MM-DD` (version 2) | `get_daily_log` |
+| `daily-log:read` | `GET /api/v1/daily-log?date=YYYY-MM-DD` (version 2), `GET /api/v1/daily-logs?startDate=YYYY-MM-DD&endDate=YYYY-MM-DD` (version 1) | `get_daily_log`, `get_daily_logs` |
 | `water-events:read` / `water-events:write` | `/api/v1/water-events` | `list_water` / `log_water`, `delete_water` |
 | `food-events:read` / `food-events:write` | `/api/v1/food-events` | `list_food` / `log_food`, `delete_food` |
 | `catalog:read` | `GET /api/v1/catalog?query=`, `?providerFoodId=`, or `?barcode=` | `search_foods`, `get_food`, `lookup_barcode` |
@@ -43,7 +43,12 @@ refused. Manual foods send their nutrition totals for the quantity eaten, and
 favorites send a `favoriteId`. Edits and deletes name the `updatedAt` they read
 as `expectedUpdatedAt`, and a changed event is refused with its current version.
 Version 2 of the daily log replaces version 1's `foodEntries`, `foodLogDate`, and
-`localEventTime` with `foodEvents` and their `logDate`.
+`localEventTime` with `foodEvents` and their `logDate`. The date-range daily logs
+(`/api/v1/daily-logs` and `get_daily_logs`) return every date from `startDate`
+through `endDate`, both inclusive and at most 92 dates, in the account's time
+zone: each day as the single-day log shows it, each food with its local
+`localTime` (`HH:MM`), and the range's totals and daily averages. Nutrient
+averages count only dates with food, and the water average only dates with water.
 
 ## Barcode lookup
 

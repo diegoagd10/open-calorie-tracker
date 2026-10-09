@@ -263,7 +263,7 @@ test("REST requires the matching water permission and supports only GET, POST, a
 });
 
 test("MCP lists water tools by scope and logs, lists, and deletes water", async () => {
-  expect((await listTools(writerKey)).map((tool) => tool.name)).toEqual(["get_daily_log", "log_water", "list_water", "delete_water"]);
+  expect((await listTools(writerKey)).map((tool) => tool.name)).toEqual(["get_daily_log", "get_daily_logs", "log_water", "list_water", "delete_water"]);
   expect((await listTools(readerKey)).map((tool) => tool.name)).toEqual(["list_water"]);
   expect((await listTools(writerKey)).find((tool) => tool.name === "delete_water")?.annotations)
     .toMatchObject({ destructiveHint: true, idempotentHint: true, readOnlyHint: false });

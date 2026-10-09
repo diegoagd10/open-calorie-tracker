@@ -21,4 +21,9 @@ export type WaterEvent = {
   updatedAt: string;
 };
 
-export type WaterEventList = { events: WaterEvent[]; totalOunces: string };
+export type WaterEventList = {
+  events: WaterEvent[];
+  totalOunces: string;
+  /** Per local date in the account's time zone; empty before setup. */
+  days: Record<string, { eventCount: number; totalOunces: string }>;
+};

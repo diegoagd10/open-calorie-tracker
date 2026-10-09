@@ -9,6 +9,7 @@ export default [
   route("settings/api-keys", "./routes/settings.api-keys.tsx"),
   route("settings/api-keys/copy", "./routes/settings.api-keys.copy.ts"),
   route("api/v1/daily-log", "./routes/api.v1.daily-log.ts"),
+  route("api/v1/daily-logs", "./routes/api.v1.daily-logs.ts"),
   route("food-events", "./food-event/routes/web.ts"),
   route("api/v1/food-events", "./food-event/routes/api.v1.food-events.ts"),
   route("api/v1/catalog", "./catalog/routes/api.v1.catalog.ts"),

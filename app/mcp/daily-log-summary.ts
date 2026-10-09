@@ -1,11 +1,10 @@
 import { z } from "zod";
-import type { FoodLogService } from "../food-log/food-log.server";
-import { utcToZonedDateTime } from "../shared/date-time";
+import type { FoodLogDay, FoodLogRange } from "../food-log/food-log.server";
+import { localTimeOfDay } from "../food-log/date";
 import { formatOunceThousandths, ounceThousandths } from "../water-event/water-event.utils";
 
-type FoodLog = NonNullable<ReturnType<FoodLogService["read"]>>;
-type Totals = FoodLog["nutritionTotals"];
-type Goal = NonNullable<FoodLog["goal"]>;
+type Totals = FoodLogDay["nutritionTotals"];
+type Goal = NonNullable<FoodLogDay["goal"]>;
 
 /**
  * Each summarized nutrient: its unit, the canonical total and goal fields it
@@ -34,6 +33,25 @@ const nutrientSchema = z.object({
   isIncomplete: z.boolean().describe("True when some foods have no value for this nutrient, so consumed is a lower bound"),
 });
 
+/** A nutrient consumed over a range, which has no goal of its own. */
+const rangeNutrientSchema = nutrientSchema.pick({ unit: true, consumed: true, isIncomplete: true });
+
+const foodSchema = z.object({
+  logDate: z.string().describe("When the food was eaten, as a UTC ISO date-time"),
+  name: z.string(),
+  provider: z.string().describe("Food source: usda-fdc, open-food-facts, or manual"),
+  dataType: z.string().describe("Source data type, for example Foundation, Open Food Facts, or User entered"),
+  brand: z.string().nullable(),
+  serving: z.string(),
+  energyKcal: z.number().nullable(),
+  proteinG: z.number().nullable(),
+  carbohydrateG: z.number().nullable(),
+  fatG: z.number().nullable(),
+  fiberG: z.number().nullable(),
+  sugarG: z.number().nullable(),
+  sodiumMg: z.number().nullable(),
+});
+
 export const dailyLogSummarySchema = {
   date: z.string().describe("The Food Log date (YYYY-MM-DD)"),
   today: z.string().describe("Today in the account's time zone (YYYY-MM-DD)"),
@@ -47,23 +65,34 @@ export const dailyLogSummarySchema = {
     remaining: z.number().nullable().describe("goal minus consumed; negative means over the goal"),
   }).describe("Water in fluid ounces, exact to three decimals"),
   incompleteNutrients: z.array(z.enum(NUTRIENT_NAMES as [NutrientName, ...NutrientName[]])),
-  foods: z.array(z.object({
-    logDate: z.string().describe("When the food was eaten, as a UTC ISO date-time"),
-    name: z.string(),
-    provider: z.string().describe("Food source: usda-fdc, open-food-facts, or manual"),
-    dataType: z.string().describe("Source data type, for example Foundation, Open Food Facts, or User entered"),
-    brand: z.string().nullable(),
-    serving: z.string(),
-    energyKcal: z.number().nullable(),
-    proteinG: z.number().nullable(),
-    carbohydrateG: z.number().nullable(),
-    fatG: z.number().nullable(),
-    fiberG: z.number().nullable(),
-    sugarG: z.number().nullable(),
-    sodiumMg: z.number().nullable(),
-  })).describe("Foods logged on the date, most recent first; null means the value is unknown"),
+  foods: z.array(foodSchema).describe("Foods logged on the date, most recent first; null means the value is unknown"),
 };
 type DailyLogSummary = z.infer<z.ZodObject<typeof dailyLogSummarySchema>>;
+
+export const dailyLogsSummarySchema = {
+  startDate: z.string().describe("The first date of the range (YYYY-MM-DD)"),
+  endDate: z.string().describe("The last date of the range, inclusive (YYYY-MM-DD)"),
+  today: z.string().describe("Today in the account's time zone (YYYY-MM-DD)"),
+  timeZone: z.string(),
+  totals: z.object({
+    nutrients: z.object(Object.fromEntries(NUTRIENT_NAMES.map((name) => [name, rangeNutrientSchema])) as Record<NutrientName, typeof rangeNutrientSchema>),
+    water: z.object({ unit: z.literal("fl oz"), consumed: z.number() }),
+  }).describe("Everything consumed over the range"),
+  averages: z.object({
+    foodDayCount: z.number().describe("Dates with at least one food; nutrient averages divide by this"),
+    waterDayCount: z.number().describe("Dates with at least one water entry; the water average divides by this"),
+    nutrients: z.object(Object.fromEntries(NUTRIENT_NAMES.map((name) => [name, z.number()])) as Record<NutrientName, z.ZodNumber>)
+      .describe("Known amount per date with food, in each nutrient's unit"),
+    waterOunces: z.number().describe("Fluid ounces per date with water"),
+  }).describe("Daily averages over the dates that have records; 0 when there are none"),
+  days: z.array(z.object({
+    ...dailyLogSummarySchema,
+    foods: z.array(foodSchema.extend({
+      localTime: z.string().describe("When the food was eaten on the account's clock (HH:MM)"),
+    })).describe("Foods logged on the date, most recent first; null means the value is unknown"),
+  })).describe("Every date of the range in order, including empty and future dates, each against the current Daily Goal"),
+};
+type DailyLogsSummary = z.infer<z.ZodObject<typeof dailyLogsSummarySchema>>;
 
 function round(value: number, decimals: number): number {
   const factor = 10 ** decimals;
@@ -75,7 +104,7 @@ function display(canonical: number | null, name: NutrientName): number | null {
   return canonical === null ? null : round(canonical / scale, decimals);
 }
 
-function summarizeNutrient(name: NutrientName, totals: Totals, goal: FoodLog["goal"]) {
+function summarizeNutrient(name: NutrientName, totals: Totals, goal: FoodLogDay["goal"]) {
   const { unit, total, goalType } = NUTRIENTS[name];
   const { known, isIncomplete } = totals[total];
   const goalValue = goal ? goal[NUTRIENTS[name].goal] : null;
@@ -95,7 +124,7 @@ function ounces(thousandths: bigint): number {
 }
 
 /** Water consumed, goal, and remaining, computed in thousandths of a fluid ounce like stored amounts. */
-function summarizeWater(foodLog: FoodLog) {
+function summarizeWater(foodLog: FoodLogDay) {
   const consumed = ounceThousandths(foodLog.waterTotalOunces)!;
   const goal = foodLog.goal ? ounceThousandths(foodLog.goal.waterTarget) : null;
   return {
@@ -106,7 +135,7 @@ function summarizeWater(foodLog: FoodLog) {
   };
 }
 
-function summarizeFood(event: FoodLog["foodEvents"][number]) {
+function summarizeFood(event: FoodLogDay["foodEvents"][number]) {
   const { nutrients } = event;
   return {
     logDate: event.logDate,
@@ -138,6 +167,10 @@ function sourceLabel(food: DailyLogSummary["foods"][number]): string {
   return `USDA FoodData Central · ${food.dataType}`;
 }
 
+function foodLine(food: DailyLogSummary["foods"][number], timeZone: string): string {
+  return `- ${localTimeOfDay(food.logDate, timeZone)} ${food.name}${food.brand ? ` (${food.brand})` : ""}, ${sourceLabel(food)}, ${food.serving}: ${food.energyKcal ?? "unknown"} kcal`;
+}
+
 function summaryText(summary: DailyLogSummary): string {
   const lines = [`Food Log for ${summary.date}${summary.date === summary.today ? " (today)" : ""}, time zone ${summary.timeZone}.`];
   for (const name of NUTRIENT_NAMES) {
@@ -147,18 +180,43 @@ function summaryText(summary: DailyLogSummary): string {
   }
   lines.push(amountLine("Water", summary.water));
   lines.push(summary.foods.length ? "Foods:" : "No foods logged.");
-  for (const food of summary.foods) {
-    lines.push(`- ${utcToZonedDateTime(food.logDate, summary.timeZone).slice(11, 16)} ${food.name}${food.brand ? ` (${food.brand})` : ""}, ${sourceLabel(food)}, ${food.serving}: ${food.energyKcal ?? "unknown"} kcal`);
+  for (const food of summary.foods) lines.push(foodLine(food, summary.timeZone));
+  return lines.join("\n");
+}
+
+/** `350 of 2050 kcal`, or `350 kcal` without a goal. */
+function ofGoal(amount: { unit: string; consumed: number; goal: number | null }): string {
+  return amount.goal === null ? `${amount.consumed} ${amount.unit}` : `${amount.consumed} of ${amount.goal} ${amount.unit}`;
+}
+
+function amounts(nutrients: Record<NutrientName, number>, water: number): string {
+  return [...NUTRIENT_NAMES.map((name) => `${nutrients[name]} ${NUTRIENTS[name].unit} ${name}`), `${water} fl oz water`].join(", ");
+}
+
+function rangeText(summary: DailyLogsSummary): string {
+  const { totals, averages } = summary;
+  const incomplete = NUTRIENT_NAMES.filter((name) => totals.nutrients[name].isIncomplete);
+  const consumed = Object.fromEntries(NUTRIENT_NAMES.map((name) => [name, totals.nutrients[name].consumed])) as Record<NutrientName, number>;
+  const lines = [
+    `Food Log from ${summary.startDate} to ${summary.endDate} (${summary.days.length} days), time zone ${summary.timeZone}, today ${summary.today}.`,
+    `Totals: ${amounts(consumed, totals.water.consumed)}.` + (incomplete.length ? ` Incomplete, some foods have no value: ${incomplete.join(", ")}.` : ""),
+    `Daily averages over ${averages.foodDayCount} days with food and ${averages.waterDayCount} days with water: ${amounts(averages.nutrients, averages.waterOunces)}.`,
+  ];
+  for (const day of summary.days) {
+    const label = day.date === summary.today ? " (today)" : day.isFuture ? " (future)" : "";
+    const foods = day.foods.length ? `${day.foods.length} ${day.foods.length === 1 ? "food" : "foods"}:` : "no foods";
+    lines.push(`${day.date}${label}: ${ofGoal(day.nutrients.energy)}, ${ofGoal(day.water)} water, ${foods}`);
+    for (const food of day.foods) lines.push(foodLine(food, summary.timeZone));
   }
   return lines.join("\n");
 }
 
-/** A model-friendly summary of one Food Log in display units, with goals and remaining amounts. */
-export function summarizeDailyLog(foodLog: NonNullable<ReturnType<FoodLogService["read"]>>) {
+/** One Food Log in display units, with goals and remaining amounts. */
+function dailyLogStructured(foodLog: FoodLogDay): DailyLogSummary {
   const nutrients = Object.fromEntries(
     NUTRIENT_NAMES.map((name) => [name, summarizeNutrient(name, foodLog.nutritionTotals, foodLog.goal)]),
   ) as DailyLogSummary["nutrients"];
-  const structured: DailyLogSummary = {
+  return {
     date: foodLog.selectedDate,
     today: foodLog.today,
     timeZone: foodLog.timeZone,
@@ -168,5 +226,44 @@ export function summarizeDailyLog(foodLog: NonNullable<ReturnType<FoodLogService
     incompleteNutrients: NUTRIENT_NAMES.filter((name) => nutrients[name].isIncomplete),
     foods: foodLog.foodEvents.map(summarizeFood),
   };
+}
+
+/** A model-friendly summary of one Food Log in display units, with goals and remaining amounts. */
+export function summarizeDailyLog(foodLog: FoodLogDay) {
+  const structured = dailyLogStructured(foodLog);
   return { structured, text: summaryText(structured) };
+}
+
+/**
+ * A model-friendly summary of every date in a range: each day as `summarizeDailyLog` shows it,
+ * each food with its local time, and the range's totals (without goals) and daily averages.
+ */
+export function summarizeDailyLogs(range: FoodLogRange) {
+  const structured: DailyLogsSummary = {
+    startDate: range.startDate,
+    endDate: range.endDate,
+    today: range.today,
+    timeZone: range.timeZone,
+    totals: {
+      nutrients: Object.fromEntries(NUTRIENT_NAMES.map((name) => {
+        const { known, isIncomplete } = range.totals[NUTRIENTS[name].total];
+        return [name, { unit: NUTRIENTS[name].unit, consumed: display(known, name)!, isIncomplete }];
+      })) as DailyLogsSummary["totals"]["nutrients"],
+      water: { unit: "fl oz", consumed: ounces(ounceThousandths(range.waterTotalOunces)!) },
+    },
+    averages: {
+      foodDayCount: range.averages.foodDayCount,
+      waterDayCount: range.averages.waterDayCount,
+      nutrients: Object.fromEntries(NUTRIENT_NAMES.map((name) => [
+        name,
+        display(range.averages.nutrition[NUTRIENTS[name].total], name)!,
+      ])) as Record<NutrientName, number>,
+      waterOunces: ounces(ounceThousandths(range.averages.waterOunces)!),
+    },
+    days: range.days.map((day) => {
+      const summary = dailyLogStructured(day);
+      return { ...summary, foods: summary.foods.map((food) => ({ ...food, localTime: localTimeOfDay(food.logDate, day.timeZone) })) };
+    }),
+  };
+  return { structured, text: rangeText(structured) };
 }

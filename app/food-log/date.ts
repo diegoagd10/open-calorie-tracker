@@ -1,3 +1,5 @@
+import { utcToZonedDateTime } from "../shared/date-time";
+
 /** What orders the Food Log timeline: consumption time, then save time, then kind, then ID. */
 export type FoodLogEventOrderKey = {
   createdAt: string;
@@ -23,4 +25,9 @@ export function compareFoodLogEventsDescending(
     EVENT_KIND_TIE_BREAKER[right.kind] - EVENT_KIND_TIE_BREAKER[left.kind] ||
     right.id - left.id
   );
+}
+
+/** The `HH:MM` wall-clock time in `timeZone` of a UTC consumption instant. */
+export function localTimeOfDay(logDate: string, timeZone: string): string {
+  return utcToZonedDateTime(logDate, timeZone).slice(11, 16);
 }

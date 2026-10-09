@@ -73,7 +73,10 @@ export class WaterEventService {
     return event;
   }
 
-  /** Owned events consumed from `range.from` (inclusive) to `range.to` (exclusive), newest first. */
+  /**
+   * Owned events consumed from `range.from` (inclusive) to `range.to` (exclusive), newest first,
+   * with the exact total and per-day totals grouped by local date in the account's time zone.
+   */
   list(userId: number, range: WaterEventRange): WaterEventList {
     const from = typeof range.from === "string" ? parseIsoDateTime(range.from) : null;
     const to = typeof range.to === "string" ? parseIsoDateTime(range.to) : null;
@@ -84,7 +87,20 @@ export class WaterEventService {
       );
     }
     const events = this.#repository.list(userId, { from, to });
-    return { events, totalOunces: sumOunces(events.map((event) => event.ounces)) };
+    const timeZone = this.#repository.timeZone(userId);
+    const byDay = new Map<string, string[]>();
+    for (const event of timeZone ? events : []) {
+      const day = waterEventLocalDateTime(event.logDate, timeZone!).slice(0, 10);
+      byDay.set(day, [...(byDay.get(day) ?? []), event.ounces]);
+    }
+    return {
+      events,
+      totalOunces: sumOunces(events.map((event) => event.ounces)),
+      days: Object.fromEntries([...byDay].map(([day, amounts]) => [
+        day,
+        { eventCount: amounts.length, totalOunces: sumOunces(amounts) },
+      ])),
+    };
   }
 
   /** Removes the owned events among `eventIds`; missing and other accounts' IDs are ignored. */

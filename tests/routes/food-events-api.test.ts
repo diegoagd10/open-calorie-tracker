@@ -364,7 +364,7 @@ test("the catalog REST API searches USDA, reviews one food, and looks barcodes u
 
 test("MCP lists food and catalog tools by scope", async () => {
   expect((await listTools(writerKey)).map((tool) => tool.name)).toEqual([
-    "get_daily_log", "log_food", "list_food", "delete_food", "search_foods", "get_food", "lookup_barcode",
+    "get_daily_log", "get_daily_logs", "log_food", "list_food", "delete_food", "search_foods", "get_food", "lookup_barcode",
   ]);
   expect((await listTools(readerKey)).map((tool) => tool.name)).toEqual(["list_food"]);
   expect((await listTools(catalogKey)).map((tool) => tool.name)).toEqual(["search_foods", "get_food", "lookup_barcode"]);

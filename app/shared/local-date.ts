@@ -70,6 +70,17 @@ export function addLocalDays(localDate: string, amount: number): string {
   return formatUtcLocalDate(instant);
 }
 
+/**
+ * Whole days from `start` to `end`, negative when `end` is earlier. Counted on UTC instants,
+ * so it holds at the ends of the four-digit calendar where `addLocalDays` leaves it.
+ */
+export function localDaysBetween(start: string, end: string): number {
+  const parsedStart = parseIsoLocalDate(start);
+  const parsedEnd = parseIsoLocalDate(end);
+  if (!parsedStart || !parsedEnd) throw new Error("Invalid local date");
+  return Math.round((utcDateFromLocalDate(parsedEnd).getTime() - utcDateFromLocalDate(parsedStart).getTime()) / 86_400_000);
+}
+
 export function getNearbyLocalDates(selectedDate: string, today: string) {
   const daysSinceMonday = (utcDateFromLocalDate(selectedDate).getUTCDay() + 6) % 7;
   return Array.from({ length: 7 }, (_, index) =>
