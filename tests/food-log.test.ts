@@ -11,6 +11,7 @@ import {
   formatLocalDate,
   getNearbyLocalDates,
   localDateAt,
+  localDaysBetween,
   parseIsoLocalDate,
 } from "../app/shared/local-date";
 import { compareFoodLogEventsDescending } from "../app/food-log/date";
@@ -19,6 +20,7 @@ import {
   FutureFoodLogDateError,
   InvalidFoodLogDateError,
   InvalidFoodLogRangeError,
+  parseFoodLogRange,
 } from "../app/food-log/food-log.server";
 import {
   openApplicationDatabase,
@@ -231,6 +233,14 @@ test.each([
   "0000-02-30",
 ])("ISO local date %s is rejected without normalization", (value) => {
   expect(parseIsoLocalDate(value)).toBeUndefined();
+});
+
+test("days between local dates span leap years and both ends of the four-digit calendar", () => {
+  expect(localDaysBetween("2026-08-29", "2026-08-29")).toBe(0);
+  expect(localDaysBetween("2024-02-28", "2024-03-01")).toBe(2);
+  expect(localDaysBetween("2026-03-01", "2026-02-28")).toBe(-1);
+  expect(localDaysBetween("0000-01-01", "9999-12-31")).toBe(3_652_424);
+  expect(() => localDaysBetween("2026-02-30", "2026-03-01")).toThrow("Invalid local date");
 });
 
 test("local-day arithmetic validates both date and integer amount", () => {
@@ -819,6 +829,23 @@ test("a date range covers at most 92 dates, in order, and needs account setup", 
   }).returning({ id: users.id }).get().id;
   expect(service.readRange(unconfigured, "2026-08-01", "2026-08-29")).toBeUndefined();
   database.close();
+});
+
+test.each([
+  ["9999-10-02", "9999-10-02"],
+  // October 1 through December 31 is 31 + 30 + 31 = 92 dates, ending on the last valid date.
+  ["9999-10-01", "9999-12-31"],
+  // Year 0 is a leap year: 31 + 29 + 31 + 1 = 92 dates from the first valid date.
+  ["0000-01-01", "0000-04-01"],
+])("a range from %s through %s at the calendar's edges is valid", (startDate, endDate) => {
+  expect(parseFoodLogRange(startDate, endDate)).toEqual({ startDate, endDate });
+});
+
+test.each([
+  ["9999-09-30", "9999-12-31"],
+  ["0000-01-01", "0000-04-02"],
+])("a range from %s through %s covers 93 dates and is rejected", (startDate, endDate) => {
+  expect(parseFoodLogRange(startDate, endDate)).toBeUndefined();
 });
 
 test("Food Log events sort by consumption time, save time, kind, then id descending", () => {

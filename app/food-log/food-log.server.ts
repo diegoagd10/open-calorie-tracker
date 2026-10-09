@@ -6,7 +6,7 @@ import type { FoodEvent, Nutrient, NutritionTotals } from "../food-event/food-ev
 import { createFoodEventService } from "../food-event/index.server";
 import { nutritionTotals } from "../food-event/nutrition";
 import { localDayRange, utcToZonedDateTime } from "../shared/date-time";
-import { addLocalDays, localDateAt, parseIsoLocalDate } from "../shared/local-date";
+import { addLocalDays, localDateAt, localDaysBetween, parseIsoLocalDate } from "../shared/local-date";
 import { createWaterEventService, type WaterEvent } from "../water-event/index.server";
 import { formatOunceThousandths, ounceThousandths } from "../water-event/water-event.utils";
 import { compareFoodLogEventsDescending } from "./date";
@@ -44,7 +44,7 @@ export type FoodLogDay = NonNullable<ReturnType<FoodLogService["read"]>>;
 export function parseFoodLogRange(startDate: string, endDate: string): { startDate: string; endDate: string } | undefined {
   const start = parseIsoLocalDate(startDate);
   const end = parseIsoLocalDate(endDate);
-  if (!start || !end || start > end || addLocalDays(start, MAXIMUM_RANGE_DAYS - 1) < end) return undefined;
+  if (!start || !end || start > end || localDaysBetween(start, end) >= MAXIMUM_RANGE_DAYS) return undefined;
   return { startDate: start, endDate: end };
 }
 
