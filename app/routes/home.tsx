@@ -3,6 +3,7 @@ import {
   useState,
   type CSSProperties,
   type PointerEvent as ReactPointerEvent,
+  type ReactNode,
 } from "react";
 import { z } from "zod";
 import type { Route } from "./+types/home";
@@ -432,21 +433,33 @@ function QuickLogActionForm({
   );
 }
 
+const quickLogPlacements = {
+  // Phones and tablets: docked bar above the tab bar. Hidden on desktop.
+  floating: { className: styles.quickLogActions, label: "Quick log" },
+  // Phones and tablets on an empty day, where the docked bar is hidden.
+  emptyDay: {
+    className: `${styles.quickLogActions} ${styles.emptyDayActions}`,
+    label: "Add to this day",
+  },
+  // Desktop: under the day's totals in the sticky summary column.
+  summary: {
+    className: `${styles.quickLogActions} ${styles.summaryActions}`,
+    label: "Log food or water",
+  },
+} as const;
+
 function QuickLogActions({
   csrfToken,
   date,
-  inline = false,
+  placement = "floating",
 }: {
   csrfToken: string;
   date: string;
-  inline?: boolean;
+  placement?: keyof typeof quickLogPlacements;
 }) {
+  const { className, label } = quickLogPlacements[placement];
   return (
-    <div
-      aria-label={inline ? "Add to this day" : "Quick log"}
-      className={inline ? `${styles.quickLogActions} ${styles.emptyDayActions}` : styles.quickLogActions}
-      role="group"
-    >
+    <div aria-label={label} className={className} role="group">
       <QuickLogActionForm
         className={`${styles.quickLogButton} ${styles.quickLogFood}`}
         csrfToken={csrfToken}
@@ -463,7 +476,7 @@ function QuickLogActions({
         icon="water"
         intent="add-water"
         label="Add Water"
-        visibleLabel={inline ? "Add water" : undefined}
+        visibleLabel={placement === "floating" ? undefined : "Add water"}
       />
     </div>
   );
@@ -533,8 +546,10 @@ function NutrientMetric({ metric }: { metric: NutritionMetric }) {
 }
 
 function DailySummary({
+  actions,
   foodLog,
 }: {
+  actions?: ReactNode;
   foodLog: Route.ComponentProps["loaderData"]["foodLog"];
 }) {
   const wideLayout = useWideLayout();
@@ -695,7 +710,7 @@ function DailySummary({
   } satisfies CSSProperties;
 
   return (
-    <>
+    <div className={styles.summaryColumn}>
       <section
         aria-labelledby="calorie-heading"
         className={styles.summarySurface}
@@ -803,7 +818,8 @@ function DailySummary({
         goalOunces={goal?.waterTarget ?? null}
         totalOunces={foodLog.waterTotalOunces}
       />
-    </>
+      {actions}
+    </div>
   );
 }
 
@@ -936,7 +952,18 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
                 today={foodLog.today}
               />
 
-              <DailySummary foodLog={foodLog} />
+              <DailySummary
+                actions={
+                  showQuickLog ? (
+                    <QuickLogActions
+                      csrfToken={csrfToken}
+                      date={foodLog.selectedDate}
+                      placement="summary"
+                    />
+                  ) : undefined
+                }
+                foodLog={foodLog}
+              />
 
               <section
                 className={styles.timelineSection}
@@ -1011,7 +1038,7 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
                     <QuickLogActions
                       csrfToken={csrfToken}
                       date={foodLog.selectedDate}
-                      inline
+                      placement="emptyDay"
                     />
                     {message ? (
                       <p className={styles.actionMessage} role="status">

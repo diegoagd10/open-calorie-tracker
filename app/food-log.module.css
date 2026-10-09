@@ -1436,9 +1436,9 @@
     display: none;
   }
 
-  .floatingUtilities {
-    right: 3rem;
-    bottom: 2rem;
+  /* Desktop logs from the summary column instead of a floating bar. */
+  .foodLogShell .floatingUtilities {
+    display: none;
   }
 
   .foodLogLayout {
@@ -1447,10 +1447,8 @@
     grid-template-areas:
       "dates dates"
       "log summary"
-      "log water"
-      "log ."
-      "note .";
-    grid-template-rows: auto auto auto 1fr auto;
+      "note summary";
+    grid-template-rows: auto 1fr auto;
     column-gap: 1.5rem;
     align-items: start;
   }
@@ -1460,12 +1458,10 @@
     margin-bottom: 1.5rem;
   }
 
-  .foodLogLayout > .summarySurface {
+  .foodLogLayout > .summaryColumn {
+    position: sticky;
+    top: 1.5rem;
     grid-area: summary;
-  }
-
-  .foodLogLayout > .waterOverview {
-    grid-area: water;
   }
 
   .foodLogLayout > .timelineSection {
@@ -1789,6 +1785,28 @@
 @media (min-width: 1120px) {
   .emptyDayActions {
     display: none;
+  }
+}
+
+.summaryActions {
+  display: none;
+}
+
+@media (min-width: 1120px) {
+  .summaryActions {
+    display: flex;
+    margin-top: 0.875rem;
+  }
+
+  .summaryActions > form {
+    flex: 1;
+  }
+
+  .summaryActions .quickLogButton {
+    width: 100%;
+    min-height: 3rem;
+    padding: 0 1rem;
+    box-shadow: none;
   }
 }
 
