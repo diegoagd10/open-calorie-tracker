@@ -4,6 +4,7 @@ import {
   signInProvisionedMember,
   expect,
   test,
+  submitPasswordLogin,
 } from "./reset-database";
 import { playwrightBrowserPorts } from "../../scripts/catalog-browser-runtime";
 
@@ -44,9 +45,7 @@ test("first key enrollment and username/key login use real WebAuthn and replace 
   });
   const otherPage = await older.newPage();
   await otherPage.goto("/login");
-  await otherPage.getByLabel("Username").fill("key.owner");
-  await otherPage.getByLabel("Password", { exact: true }).fill(password);
-  await otherPage.getByRole("button", { name: "Sign in", exact: true }).click();
+  await submitPasswordLogin(otherPage, "key.owner", password);
   await expect(otherPage).toHaveURL("/");
   await page.goto("/settings/security");
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
@@ -66,19 +65,29 @@ test("first key enrollment and username/key login use real WebAuthn and replace 
   await page.goto("/settings/goals");
   await page.getByRole("button", { name: "Sign out" }).click();
   await expect(page).toHaveURL("/login");
+  // Next opens the passkey prompt; a cancelled prompt keeps step one and retries.
+  await cdp.send("WebAuthn.setUserVerified", {
+    authenticatorId,
+    isUserVerified: false,
+  });
   await page.getByLabel("Username").fill("key.owner");
-  await page.getByLabel("Password", { exact: true }).fill(password);
-  await page.getByRole("button", { name: "Sign in", exact: true }).click();
-  await expect(page.getByRole("alert")).toContainText("incorrect");
-  await page.getByLabel("Password", { exact: true }).fill("");
-  await page
-    .getByRole("button", { name: "Use registered key", exact: true })
-    .click();
+  await page.getByRole("button", { name: "Next", exact: true }).click();
+  await expect(page.getByRole("alert")).toHaveText(
+    "The passkey prompt was cancelled.",
+  );
+  await expect(page.getByLabel("Username")).toHaveValue("key.owner");
+  await expect(page.getByLabel("Password", { exact: true })).toHaveCount(0);
+  await cdp.send("WebAuthn.setUserVerified", {
+    authenticatorId,
+    isUserVerified: true,
+  });
+  await page.getByRole("button", { name: "Next", exact: true }).click();
   await expect(page).toHaveURL("/");
   expect(
     (await cdp.send("WebAuthn.getCredentials", { authenticatorId }))
       .credentials,
   ).toHaveLength(1);
+  // The LAN form is unchanged and the server still refuses the password.
   await page.goto(`${lanOrigin}/login`);
   await expect(
     page.getByRole("link", { name: "Use key sign-in on public HTTPS" }),
@@ -86,6 +95,8 @@ test("first key enrollment and username/key login use real WebAuthn and replace 
   await expect(
     page.getByRole("button", { name: "Use registered key" }),
   ).toHaveCount(0);
+  await submitPasswordLogin(page, "key.owner", password);
+  await expect(page.getByRole("alert")).toContainText("incorrect");
   await cdp.detach();
 });
 
@@ -260,9 +271,7 @@ test("six virtual authenticators enroll with fresh proof, reject duplicate/cross
     await page.goto("/settings/goals");
     await page.getByRole("button", { name: "Sign out" }).click();
     await page.getByLabel("Username").fill("multiple.owner");
-    await page
-      .getByRole("button", { name: "Use registered key", exact: true })
-      .click();
+    await page.getByRole("button", { name: "Next", exact: true }).click();
     await expect(page).toHaveURL("/");
     saved[n] = await rememberKey();
   }
@@ -279,11 +288,8 @@ test("six virtual authenticators enroll with fresh proof, reject duplicate/cross
     await olderKeyPage.goto("/");
     await expect(olderKeyPage).toHaveURL("/login");
     await olderKey.close();
-    await page.getByLabel("Username").fill("multiple.owner");
-    await page.getByRole("button", { name: "Use registered key", exact: true }).click();
-    await expect(page.getByRole("alert")).toContainText("unavailable");
-    await page.getByLabel("Password", { exact: true }).fill(password);
-    await page.getByRole("button", { name: "Sign in", exact: true }).click();
+    // Password mode moves Next straight to the password step.
+    await submitPasswordLogin(page, "multiple.owner", password);
     await expect(page).toHaveURL("/");
     await page.goto("/settings/security");
     await expect(page.getByText(/Your keys are retained/)).toBeVisible();
@@ -295,9 +301,7 @@ test("six virtual authenticators enroll with fresh proof, reject duplicate/cross
     const lanPassword = await browser.newContext({ baseURL: lanOrigin });
     const lanPage = await lanPassword.newPage();
     await lanPage.goto("/login");
-    await lanPage.getByLabel("Username").fill("multiple.owner");
-    await lanPage.getByLabel("Password", { exact: true }).fill(password);
-    await lanPage.getByRole("button", { name: "Sign in", exact: true }).click();
+    await submitPasswordLogin(lanPage, "multiple.owner", password);
     await expect(lanPage).toHaveURL("/");
     await cdp.send("WebAuthn.setAutomaticPresenceSimulation", { authenticatorId: activeId, enabled: false });
     await page.getByRole("button", { name: "Re-enable key login", exact: true }).click();

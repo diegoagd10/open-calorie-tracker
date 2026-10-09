@@ -12,7 +12,15 @@ import { findActiveSessionByTokenHash } from "./credential-sessions.server";
 import { revokeAccountAuthentication } from "./authentication-policy.server";
 import { createSetupService } from "../setup/runtime.server";
 
-export class KeyAuthenticationError extends Error {}
+export type KeyErrorCode = "unavailable";
+export class KeyAuthenticationError extends Error {
+  constructor(
+    message: string,
+    readonly code?: KeyErrorCode,
+  ) {
+    super(message);
+  }
+}
 export type PendingKeyCeremony = typeof webauthnCeremonies.$inferSelect;
 export type StoredKeyCredential = typeof webauthnCredentials.$inferSelect;
 export type VerifiedKeyAssertion = {

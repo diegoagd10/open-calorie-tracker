@@ -1,9 +1,5 @@
-import { useState } from "react";
-import {
-  signInWithKey,
-  keyProviderError,
-  cancelKeyPrompt,
-} from "../auth/key-ceremony.client";
+import { useState, type FormEvent } from "react";
+import { beginSignIn } from "../auth/key-ceremony.client";
 import { applicationOrigin, effectiveRequestPolicy } from "../runtime.server";
 import { data, Form, redirect } from "react-router";
 
@@ -19,12 +15,13 @@ import {
   requireValidOrigin,
 } from "../auth/http.server";
 import { getAuthenticationService } from "../auth/runtime.server";
-import { loginSchema } from "../auth/validation";
+import { loginSchema, usernameSchema } from "../auth/validation";
 
 type LoginActionData = {
   error: string;
   username: string;
 };
+type LoginStep = "username" | "password";
 
 const genericLoginError = "The username or password is incorrect.";
 
@@ -75,6 +72,13 @@ export async function action({ request }: Route.ActionArgs) {
     request,
     String(formData.get("csrfToken") ?? ""),
   );
+  // The username step submits without a password field before hydration;
+  // answer it with the password step rather than a failure.
+  if (!formData.has("password"))
+    return data<LoginActionData>(
+      { error: "", username: fields.username },
+      { status: 200 },
+    );
   const parsed = loginSchema.safeParse(fields);
 
   if (!parsed.success) {
@@ -130,86 +134,207 @@ export default function Login({
   actionData,
   loaderData,
 }: Route.ComponentProps) {
-  const [keyError, setKeyError] = useState("");
-  const [keyBusy, setKeyBusy] = useState(false);
+  const [step, setStep] = useState<LoginStep>(
+    actionData ? "password" : "username",
+  );
+  const [username, setUsername] = useState(actionData?.username ?? "");
+  // Leaving the password step retires the failure it showed.
+  const [retiredFailure, setRetiredFailure] = useState<LoginActionData>();
   return (
     <AuthShell>
-      <Form className={styles.form} method="post" noValidate>
-        <input name="csrfToken" type="hidden" value={loaderData.csrfToken} />
-        <div className={styles.field}>
-          <label htmlFor="login-username">Username</label>
-          <input
-            autoComplete="username"
-            defaultValue={actionData?.username}
-            id="login-username"
-            maxLength={30}
-            name="username"
-            required
-          />
-        </div>
-
-        <div className={styles.field}>
-          <label htmlFor="login-password">Password</label>
-          <input
-            autoComplete="current-password"
-            id="login-password"
-            name="password"
-            required
-            type="password"
-          />
-        </div>
-
-        {actionData?.error ? (
-          <div className={styles.error} role="alert">
-            <strong>Couldn’t sign in</strong>
-            <br />
-            {actionData.error}
-          </div>
-        ) : null}
-
-        {loaderData.publicKeyUrl ? (
-          <a href={loaderData.publicKeyUrl}>Use key sign-in on public HTTPS</a>
-        ) : (
-          <button
-            className={styles.submit}
-            type="button"
-            disabled={keyBusy}
-            onClick={(event) => {
-              const form = event.currentTarget.form!;
-              const username = String(new FormData(form).get("username") ?? "");
-              setKeyBusy(true);
-              setKeyError("");
-              void (async () => {
-                try {
-                  const result = await signInWithKey(
-                    loaderData.csrfToken,
-                    username,
-                  );
-                  window.location.assign(result.nextPath);
-                } catch (error) {
-                  setKeyError(keyProviderError(error));
-                  setKeyBusy(false);
-                }
-              })();
-            }}
-          >
-            {keyBusy ? "Follow your key prompt…" : "Use registered key"}
-          </button>
-        )}
-        {keyBusy ? (
-          <button className={styles.submit} type="button" onClick={cancelKeyPrompt}>
-            Cancel key prompt
-          </button>
-        ) : null}
-        {keyError ? (
-          <p className={styles.error} role="alert">
-            {keyError}
-          </p>
-        ) : null}
-        <button className={styles.submit} type="submit">
-          Sign in
-        </button>
-      </Form>
+      {loaderData.publicKeyUrl ? (
+        <LanLoginForm
+          actionData={actionData}
+          csrfToken={loaderData.csrfToken}
+          publicKeyUrl={loaderData.publicKeyUrl}
+        />
+      ) : step === "username" ? (
+        <UsernameStep
+          csrfToken={loaderData.csrfToken}
+          defaultUsername={username}
+          onPassword={(next) => {
+            setUsername(next);
+            setStep("password");
+          }}
+        />
+      ) : (
+        <PasswordStep
+          csrfToken={loaderData.csrfToken}
+          error={actionData === retiredFailure ? undefined : actionData?.error}
+          onBack={() => {
+            setRetiredFailure(actionData);
+            setStep("username");
+          }}
+          username={username}
+        />
+      )}
     </AuthShell>
   );
+}
+
+function UsernameStep({
+  csrfToken,
+  defaultUsername,
+  onPassword,
+}: {
+  csrfToken: string;
+  defaultUsername: string;
+  onPassword: (username: string) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [cancelled, setCancelled] = useState(false);
+  const [error, setError] = useState("");
+  return (
+    <form
+      className={styles.form}
+      method="post"
+      noValidate
+      onSubmit={(event: FormEvent<HTMLFormElement>) => {
+        event.preventDefault();
+        const username = String(
+          new FormData(event.currentTarget).get("username") ?? "",
+        );
+        // A malformed username can never own a key; the password action
+        // answers it with the same generic failure as any other account.
+        if (!usernameSchema.safeParse(username).success) {
+          onPassword(username);
+          return;
+        }
+        setBusy(true);
+        setCancelled(false);
+        setError("");
+        void (async () => {
+          try {
+            const outcome = await beginSignIn(csrfToken, username);
+            if (outcome.kind === "signed-in")
+              return window.location.assign(outcome.nextPath);
+            if (outcome.kind === "password") return onPassword(username);
+            setCancelled(true);
+          } catch (failure) {
+            setError(
+              failure instanceof Error
+                ? failure.message
+                : "Key request failed. Retry.",
+            );
+          }
+          setBusy(false);
+        })();
+      }}
+    >
+      <input name="csrfToken" type="hidden" value={csrfToken} />
+      <div className={styles.field}>
+        <label htmlFor="login-username">Username</label>
+        <input
+          autoComplete="username"
+          defaultValue={defaultUsername}
+          id="login-username"
+          maxLength={30}
+          name="username"
+          required
+        />
+      </div>
+      {cancelled || error ? (
+        <p className={styles.error} role="alert">
+          {cancelled ? "The passkey prompt was cancelled." : error}
+        </p>
+      ) : null}
+      <button className={styles.submit} disabled={busy} type="submit">
+        Next
+      </button>
+    </form>
+  );
+}
+
+function PasswordStep({
+  csrfToken,
+  error,
+  onBack,
+  username,
+}: {
+  csrfToken: string;
+  error?: string;
+  onBack: () => void;
+  username: string;
+}) {
+  return (
+    <Form className={styles.form} method="post" noValidate>
+      <input name="csrfToken" type="hidden" value={csrfToken} />
+      <input
+        autoComplete="username"
+        name="username"
+        type="hidden"
+        value={username}
+      />
+      <div className={styles.field}>
+        <label htmlFor="login-password">Password</label>
+        <input
+          autoComplete="current-password"
+          autoFocus
+          id="login-password"
+          name="password"
+          required
+          type="password"
+        />
+      </div>
+      <LoginError error={error} />
+      <button className={styles.submit} type="submit">
+        Sign in
+      </button>
+      <button className={styles.secondary} onClick={onBack} type="button">
+        Back
+      </button>
+    </Form>
+  );
+}
+
+function LanLoginForm({
+  actionData,
+  csrfToken,
+  publicKeyUrl,
+}: {
+  actionData?: LoginActionData;
+  csrfToken: string;
+  publicKeyUrl: string;
+}) {
+  return (
+    <Form className={styles.form} method="post" noValidate>
+      <input name="csrfToken" type="hidden" value={csrfToken} />
+      <div className={styles.field}>
+        <label htmlFor="login-username">Username</label>
+        <input
+          autoComplete="username"
+          defaultValue={actionData?.username}
+          id="login-username"
+          maxLength={30}
+          name="username"
+          required
+        />
+      </div>
+      <div className={styles.field}>
+        <label htmlFor="login-password">Password</label>
+        <input
+          autoComplete="current-password"
+          id="login-password"
+          name="password"
+          required
+          type="password"
+        />
+      </div>
+      <LoginError error={actionData?.error} />
+      <a href={publicKeyUrl}>Use key sign-in on public HTTPS</a>
+      <button className={styles.submit} type="submit">
+        Sign in
+      </button>
+    </Form>
+  );
+}
+
+function LoginError({ error }: { error?: string }) {
+  return error ? (
+    <div className={styles.error} role="alert">
+      <strong>Couldn’t sign in</strong>
+      <br />
+      {error}
+    </div>
+  ) : null;
 }

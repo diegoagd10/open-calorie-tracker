@@ -1,9 +1,11 @@
 import AxeBuilder from "@axe-core/playwright";
 import type { BrowserContext, Page } from "@playwright/test";
-import { bootstrapOrSignInBrowserTestUser, signInProvisionedMember, expect, test } from "./reset-database";
+import { bootstrapOrSignInBrowserTestUser, signInProvisionedMember, expect, test, submitPasswordLogin } from "./reset-database";
+import { playwrightBrowserPorts } from "../../scripts/catalog-browser-runtime";
 
 const password = "correct horse battery staple";
 const replacement = "new private fallback password";
+const lanOrigin = `http://127.0.0.1:${playwrightBrowserPorts.lan}`;
 
 async function virtualKey(context: BrowserContext, page: Page) {
   const cdp = await context.newCDPSession(page);
@@ -46,18 +48,16 @@ test("forgotten fallback replacement requires a fresh key, supports cancellation
   await expect(page.getByLabel("New password", { exact: true })).toHaveValue("");
   await olderPage.reload();
   await expect(olderPage).toHaveURL("/login");
-  await olderPage.getByLabel("Username").fill("fallback.owner");
-  await olderPage.getByLabel("Password", { exact: true }).fill(replacement);
-  await olderPage.getByRole("button", { name: "Sign in", exact: true }).click();
+  // Key mode keeps refusing the fallback password on the LAN password form.
+  await olderPage.goto(`${lanOrigin}/login`);
+  await submitPasswordLogin(olderPage, "fallback.owner", replacement);
   await expect(olderPage.getByRole("alert")).toContainText("incorrect");
   await older.close();
   await page.goto("/settings/security");
   await expect(page.getByText("My fallback key", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Disable key login", exact: true }).click();
   await expect(page).toHaveURL("/login");
-  await page.getByLabel("Username").fill("fallback.owner");
-  await page.getByLabel("Password", { exact: true }).fill(replacement);
-  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await submitPasswordLogin(page, "fallback.owner", replacement);
   await expect(page).toHaveURL("/");
   await cdp.detach();
 });
@@ -87,7 +87,7 @@ test("a reset member uses their key to finish mandatory password replacement wit
   await memberPage.goto("/");
   await expect(memberPage).toHaveURL("/login");
   await memberPage.getByLabel("Username").fill("fallback.member");
-  await memberPage.getByRole("button", { name: "Use registered key", exact: true }).click();
+  await memberPage.getByRole("button", { name: "Next", exact: true }).click();
   await expect(memberPage).toHaveURL("/account/password");
   await memberPage.goto("/settings/security");
   await expect(memberPage).toHaveURL("/account/password");

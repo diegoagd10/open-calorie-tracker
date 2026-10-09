@@ -84,24 +84,59 @@ describe("authentication route metadata", () => {
   );
 });
 
+function buttons(renderer: ReactTestRenderer): string[] {
+  return renderer.root.findAllByType("button").map((button) =>
+    button.children.join(""),
+  );
+}
+
 describe("login component", () => {
-  test("renders its complete submission contract without an error", async () => {
+  test("starts on the username step without a password or an error", async () => {
     const renderer = await renderRoute(
       Login,
       "/login",
-      { csrfToken: "login-csrf" },
+      { csrfToken: "login-csrf", publicKeyUrl: null },
+    );
+    expect(input(renderer, "username").props).toMatchObject({
+      autoComplete: "username",
+      defaultValue: "",
+      id: "login-username",
+      maxLength: 30,
+      required: true,
+    });
+    expect(input(renderer, "csrfToken").props).toMatchObject({
+      type: "hidden",
+      value: "login-csrf",
+    });
+    expect(input(renderer, "password")).toBeUndefined();
+    // Before hydration the step posts to the action instead of leaking the token in a URL.
+    expect(renderer.root.findByType("form").props).toMatchObject({
+      method: "post",
+      noValidate: true,
+    });
+    expect(buttons(renderer)).toEqual(["Next"]);
+    expect(text(renderer)).toContain("Private account access");
+    expect(renderer.root.findAllByType("nav")).toHaveLength(0);
+    expect(renderer.root.findAllByType("a")).toHaveLength(0);
+    expect(renderer.root.findAllByProps({ role: "alert" })).toHaveLength(0);
+    renderer.unmount();
+  });
+
+  test("returns a password failure to the password step and Back retires it", async () => {
+    const renderer = await renderRoute(
+      Login,
+      "/login",
+      { csrfToken: "login-csrf", publicKeyUrl: null },
+      { error: "Credentials rejected", username: "Attempted.User" },
     );
     expect(input(renderer, "csrfToken").props).toMatchObject({
       type: "hidden",
       value: "login-csrf",
     });
     expect(input(renderer, "username").props).toMatchObject({
-      autoComplete: "username",
-      id: "login-username",
-      maxLength: 30,
-      required: true,
+      type: "hidden",
+      value: "Attempted.User",
     });
-    expect(input(renderer, "username").props.defaultValue).toBeUndefined();
     expect(input(renderer, "password").props).toMatchObject({
       autoComplete: "current-password",
       id: "login-password",
@@ -112,29 +147,52 @@ describe("login component", () => {
       method: "post",
       noValidate: true,
     });
-    expect(renderer.root.findAllByType("button").find((button) => button.props.type === "submit")!.children.join(""))
-      .toBe("Sign in");
-    expect(renderer.root.findAllByType("nav")).toHaveLength(0);
-    expect(renderer.root.findAllByType("a")).toHaveLength(0);
+    expect(buttons(renderer)).toEqual(["Sign in", "Back"]);
+    expect(renderer.root.findByProps({ role: "alert" }).children)
+      .toContain("Credentials rejected");
+    expect(text(renderer)).toContain("Couldn’t sign in");
+    expect(text(renderer)).not.toContain("Attempted.User");
+
+    const back = renderer.root.findAllByType("button")
+      .find((button) => button.children.includes("Back"))!;
+    act(() => (back.props as { onClick(): void }).onClick());
+    expect(input(renderer, "username").props.defaultValue)
+      .toBe("Attempted.User");
+    expect(input(renderer, "password")).toBeUndefined();
     expect(renderer.root.findAllByProps({ role: "alert" })).toHaveLength(0);
     renderer.unmount();
   });
 
-  test("preserves the attempted username and announces a failure", async () => {
+  test("a username-only action result opens the password step without an alert", async () => {
     const renderer = await renderRoute(
       Login,
       "/login",
-      { csrfToken: "login-csrf" },
+      { csrfToken: "login-csrf", publicKeyUrl: null },
+      { error: "", username: "No.Script" },
+    );
+    expect(input(renderer, "username").props.value).toBe("No.Script");
+    expect(input(renderer, "password").props.type).toBe("password");
+    expect(renderer.root.findAllByProps({ role: "alert" })).toHaveLength(0);
+    renderer.unmount();
+  });
+
+  test("keeps the combined form on the LAN entry", async () => {
+    const renderer = await renderRoute(
+      Login,
+      "/login",
+      { csrfToken: "login-csrf", publicKeyUrl: "https://tracker.example/login" },
       { error: "Credentials rejected", username: "Attempted.User" },
     );
     expect(input(renderer, "username").props.defaultValue)
       .toBe("Attempted.User");
+    expect(input(renderer, "password").props.type).toBe("password");
+    expect(buttons(renderer)).toEqual(["Sign in"]);
+    expect(renderer.root.findByType("a").props.href)
+      .toBe("https://tracker.example/login");
     expect(renderer.root.findByProps({ role: "alert" }).children)
       .toContain("Credentials rejected");
-    expect(text(renderer)).toContain("Couldn’t sign in");
     renderer.unmount();
   });
-
 });
 
 describe("registration component", () => {

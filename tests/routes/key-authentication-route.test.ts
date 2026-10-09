@@ -637,19 +637,16 @@ test("security UI and login UI complete real route ceremonies without an account
   vi.mocked(browserProvider.startAuthentication).mockImplementation(
     async ({ optionsJSON }) => key.assertion(optionsJSON, 2),
   );
-  const keyButton = loginPage.root
-    .findAllByType("button")
-    .find((node) => node.children.includes("Use registered key"))!;
   await act(async () => {
-    (
-      keyButton.props as {
-        onClick(event: { currentTarget: { form: object } }): void;
-      }
-    ).onClick({ currentTarget: { form: { username: "ui.owner" } } });
+    formSubmit(loginPage)({
+      preventDefault() {},
+      currentTarget: { username: "ui.owner" },
+    });
     await vi.waitFor(() =>
       expect(loginTransport.assign).toHaveBeenCalledWith("/"),
     );
   });
+  expect(loginPage.root.findAllByProps({ name: "password" })).toHaveLength(0);
   expect(
     parseCookies(loginTransport.cookie()).get("__Host-calorie_session"),
   ).toBeTruthy();
@@ -752,7 +749,7 @@ test("security page shows enabled credential names and omits preview enrollment 
   }
 });
 
-test("invalid login input returns a retryable UI outcome and the LAN UI links to public HTTPS", async () => {
+async function renderLogin() {
   const loaded = await loginLoader(
     args(new Request(`${origin}/login`), "/login"),
   );
@@ -762,26 +759,141 @@ test("invalid login input returns a retryable UI outcome and the LAN UI links to
     new Headers(loaded.init?.headers).get("Set-Cookie")!.split(";", 1)[0],
   );
   transport.installNavigation();
-  const button = renderer.root
-    .findAllByType("button")
-    .find((node) => node.children.includes("Use registered key"))!;
+  return { renderer, transport };
+}
+async function submitUsername(renderer: ReactTestRenderer, username: string) {
   await act(async () => {
-    (
-      button.props as {
-        onClick(event: { currentTarget: { form: object } }): void;
-      }
-    ).onClick({ currentTarget: { form: { username: "bad username" } } });
+    formSubmit(renderer)({
+      preventDefault() {},
+      currentTarget: { username },
+    });
     await new Promise((resolve) => setTimeout(resolve, 20));
   });
-  await vi.waitFor(() => expect(allText(renderer)).toContain("Retry"));
+}
+function namedInput(renderer: ReactTestRenderer, name: string) {
+  return renderer.root
+    .findAllByType("input")
+    .find((node) => node.props.name === name);
+}
+function buttonLabels(renderer: ReactTestRenderer) {
+  return renderer.root
+    .findAllByType("button")
+    .map((node) => node.children.join(""));
+}
+
+test("the public login asks only for a username before choosing a method", async () => {
+  const { renderer, transport } = await renderLogin();
+  expect(namedInput(renderer, "username")?.props).toMatchObject({
+    autoComplete: "username",
+    maxLength: 30,
+    required: true,
+  });
+  expect(namedInput(renderer, "password")).toBeUndefined();
+  expect(buttonLabels(renderer)).toEqual(["Next"]);
+  expect(allText(renderer)).not.toContain("Use registered key");
+  await act(async () => renderer.unmount());
+  expect(transport.outcomes).toEqual([]);
+  vi.unstubAllGlobals();
+});
+
+test.each([
+  ["an unknown account", "missing.login", ["login-start", "cancel"]],
+  ["a password-mode account", "password.mode", ["login-start", "cancel"]],
+  ["a malformed username", "bad username", []],
+] as const)(
+  "%s moves to the password step without revealing why",
+  async (_name, username, requests) => {
+    if (username === "password.mode") await account(username);
+    const { renderer, transport } = await renderLogin();
+    await submitUsername(renderer, username);
+    expect(transport.outcomes.map(({ action }) => action)).toEqual(requests);
+    expect(namedInput(renderer, "password")?.props).toMatchObject({
+      autoComplete: "current-password",
+      type: "password",
+      required: true,
+    });
+    expect(namedInput(renderer, "username")?.props).toMatchObject({
+      type: "hidden",
+      value: username,
+    });
+    expect(buttonLabels(renderer)).toEqual(["Sign in", "Back"]);
+    expect(allText(renderer)).not.toContain(username);
+    expect(renderer.root.findAllByProps({ role: "alert" })).toHaveLength(0);
+    expect(transport.assign).not.toHaveBeenCalled();
+    const back = renderer.root
+      .findAllByType("button")
+      .find((node) => node.children.includes("Back"))!;
+    await act(async () => (back.props as { onClick(): void }).onClick());
+    expect(namedInput(renderer, "password")).toBeUndefined();
+    expect(namedInput(renderer, "username")?.props.defaultValue).toBe(username);
+    await act(async () => renderer.unmount());
+    vi.unstubAllGlobals();
+  },
+);
+
+test("a cancelled passkey prompt stays on the username step and Next reopens it", async () => {
+  const { key } = await enabledAccount("cancel.login");
+  const { renderer, transport } = await renderLogin();
+  const cancelled = new Error("The operation either timed out or was not allowed.");
+  cancelled.name = "NotAllowedError";
+  vi.mocked(browserProvider.startAuthentication).mockRejectedValueOnce(cancelled);
+  await submitUsername(renderer, "cancel.login");
+  await vi.waitFor(() =>
+    expect(renderer.root.findByProps({ role: "alert" }).children).toContain(
+      "The passkey prompt was cancelled.",
+    ),
+  );
+  expect(namedInput(renderer, "password")).toBeUndefined();
+  expect(transport.outcomes.map(({ action }) => action)).toEqual([
+    "login-start",
+    "cancel",
+  ]);
+  vi.mocked(browserProvider.startAuthentication).mockImplementation(
+    async ({ optionsJSON }) => key.assertion(optionsJSON, 2),
+  );
+  await act(async () => {
+    formSubmit(renderer)({
+      preventDefault() {},
+      currentTarget: { username: "cancel.login" },
+    });
+    await vi.waitFor(() => expect(transport.assign).toHaveBeenCalledWith("/"));
+  });
+  await act(async () => renderer.unmount());
+  vi.unstubAllGlobals();
+});
+
+test("other passkey failures stay on the username step with a retryable alert", async () => {
+  await enabledAccount("failed.login");
+  const { renderer, transport } = await renderLogin();
+  vi.mocked(browserProvider.startAuthentication).mockRejectedValueOnce(
+    new Error("Key provider unavailable. Retry."),
+  );
+  await submitUsername(renderer, "failed.login");
+  await vi.waitFor(() =>
+    expect(renderer.root.findByProps({ role: "alert" }).children).toContain(
+      "Key provider unavailable. Retry.",
+    ),
+  );
+  expect(namedInput(renderer, "password")).toBeUndefined();
+  expect(
+    renderer.root
+      .findAllByType("button")
+      .find((node) => node.children.includes("Next"))!.props.disabled,
+  ).toBe(false);
   expect(transport.assign).not.toHaveBeenCalled();
   await act(async () => renderer.unmount());
   vi.unstubAllGlobals();
+});
+
+test("the LAN login keeps the combined form and links to public HTTPS", async () => {
   const lan = await renderPage(Login, "/login", {
     csrfToken: "csrf",
     publicKeyUrl: `${origin}/login`,
   });
   expect(allText(lan)).toContain("Use key sign-in on public HTTPS");
+  expect(namedInput(lan, "username")?.props.autoComplete).toBe("username");
+  expect(namedInput(lan, "password")).toBeDefined();
+  expect(buttonLabels(lan)).toEqual(["Sign in"]);
   await act(async () => lan.unmount());
 });
 
@@ -873,6 +985,23 @@ test("key routes enforce bounded bodies, CSRF, expired cookies, rate limits and 
   await expect(
     action(args(post({ action: "cancel", csrfToken: "wrong" }, loginCookie))),
   ).rejects.toMatchObject({ status: 403 });
+  const unavailable = await action(
+    args(
+      post(
+        {
+          action: "login-start",
+          csrfToken: loaded.data.csrfToken,
+          username: "missing.code",
+        },
+        loginCookie,
+      ),
+    ),
+  );
+  expect(unavailable.status).toBe(400);
+  expect(await unavailable.json()).toEqual({
+    error: "Key sign-in is unavailable for this account.",
+    code: "unavailable",
+  });
   let last: Response | undefined;
   for (let attempt = 0; attempt < 21; attempt++) {
     const request = post(
@@ -887,6 +1016,9 @@ test("key routes enforce bounded bodies, CSRF, expired cookies, rate limits and 
     last = await action(args(request));
   }
   expect(last?.status).toBe(429);
+  expect(await last?.json()).toEqual({
+    error: "Too many key attempts. Try again later.",
+  });
 });
 
 test("a key assertion after password reset keeps mandatory password replacement guards", async () => {

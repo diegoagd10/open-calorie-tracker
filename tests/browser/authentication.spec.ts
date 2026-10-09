@@ -1,6 +1,6 @@
 import AxeBuilder from "@axe-core/playwright";
 import type { BrowserContext, Page } from "@playwright/test";
-import { expect, test } from "./reset-database";
+import { expect, test, submitPasswordLogin } from "./reset-database";
 import { playwrightBrowserPorts } from "../../scripts/catalog-browser-runtime";
 
 const validPassword = "correct horse 🔐 battery";
@@ -24,9 +24,7 @@ async function signIn(
   password = validPassword,
 ) {
   await page.goto("/login");
-  await page.getByLabel("Username").fill(username);
-  await page.getByLabel("Password", { exact: true }).fill(password);
-  await page.getByRole("button", { name: "Sign in" }).click();
+  await submitPasswordLogin(page, username, password);
   await expect(page).toHaveURL("/");
 }
 
@@ -102,6 +100,36 @@ test("a claimed instance redirects anonymous registration and hides it from auth
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
 });
 
+test("public login asks for the username before the password and Back keeps it", async ({
+  page,
+}, testInfo) => {
+  test.skip(
+    testInfo.project.name !== "chromium",
+    "LAN HTTP keeps the combined login form.",
+  );
+  await page.goto("/login");
+  await expect(page.getByLabel("Password", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Use registered key" })).toHaveCount(0);
+  await page.getByLabel("Username").fill(administrator);
+  await page.getByRole("button", { name: "Next", exact: true }).click();
+  await expect(page.getByLabel("Password", { exact: true })).toBeFocused();
+  await expect(page.getByLabel("Username")).toHaveCount(0);
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+  await page.getByLabel("Password", { exact: true }).fill("wrong password value");
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(page.getByRole("alert")).toContainText(
+    "The username or password is incorrect.",
+  );
+  await page.getByRole("button", { name: "Back", exact: true }).click();
+  await expect(page.getByLabel("Username")).toHaveValue(administrator);
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  await page.getByRole("button", { name: "Next", exact: true }).click();
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  await page.getByLabel("Password", { exact: true }).fill(validPassword);
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(page).toHaveURL("/");
+});
+
 test("login failures remain generic and session-bound CSRF protects logout", async ({
   context,
   page,
@@ -114,17 +142,14 @@ test("login failures remain generic and session-bound CSRF protects logout", asy
   expect(loginWithoutCsrf.status()).toBe(403);
 
   await page.goto("/login");
-  await page.getByLabel("Username").fill(administrator);
-  await page.getByLabel("Password", { exact: true }).fill("wrong password value");
-  await page.getByRole("button", { name: "Sign in" }).click();
+  await submitPasswordLogin(page, administrator, "wrong password value");
   const existingAccountError = await page.getByRole("alert").textContent();
-  await page.getByLabel("Username").fill("missing.account");
-  await page.getByRole("button", { name: "Sign in" }).click();
+  await page.goto("/login");
+  await submitPasswordLogin(page, "missing.account", "wrong password value");
   expect(await page.getByRole("alert").textContent()).toBe(existingAccountError);
 
-  await page.getByLabel("Username").fill(administrator);
-  await page.getByLabel("Password", { exact: true }).fill(validPassword);
-  await page.getByRole("button", { name: "Sign in" }).click();
+  await page.goto("/login");
+  await submitPasswordLogin(page, administrator, validPassword);
   await expect(page).toHaveURL("/");
 
   const wrongOrigin = await page.request.post("/logout", {
@@ -178,9 +203,7 @@ test("password rotation revokes other devices and the previous credential", asyn
   const replayPage = await replayContext.newPage();
   await replayPage.goto("/");
   await expect(replayPage).toHaveURL("/login");
-  await replayPage.getByLabel("Username").fill(administrator);
-  await replayPage.getByLabel("Password", { exact: true }).fill(validPassword);
-  await replayPage.getByRole("button", { name: "Sign in" }).click();
+  await submitPasswordLogin(replayPage, administrator, validPassword);
   await expect(replayPage.getByRole("alert")).toContainText(
     "The username or password is incorrect.",
   );

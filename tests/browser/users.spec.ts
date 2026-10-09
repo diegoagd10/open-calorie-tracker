@@ -8,6 +8,7 @@ import {
   provisionBrowserTestMember,
   signInProvisionedMember,
   test,
+  submitPasswordLogin,
 } from "./reset-database";
 
 const validPassword = "correct horse 🔐 battery";
@@ -146,11 +147,7 @@ test("administrator provisions a member through mandatory password onboarding an
 
   await context.clearCookies();
   await page.goto("/login");
-  await page.getByLabel("Username").fill("invited.member");
-  await page.getByLabel("Password", { exact: true }).fill(
-    "temporary member passphrase",
-  );
-  await page.getByRole("button", { name: "Sign in" }).click();
+  await submitPasswordLogin(page, "invited.member", "temporary member passphrase");
   await expect(page).toHaveURL("/account/password");
   await expect(page.getByRole("heading", { name: "Set your private password" }))
     .toBeVisible();
@@ -201,9 +198,7 @@ test("administrator confirms suspension, signs out another device, and reactivat
   });
   const memberPage = await memberContext.newPage();
   await memberPage.goto("/login");
-  await memberPage.getByLabel("Username").fill("suspended.member");
-  await memberPage.getByLabel("Password", { exact: true }).fill(validPassword);
-  await memberPage.getByRole("button", { name: "Sign in" }).click();
+  await submitPasswordLogin(memberPage, "suspended.member", validPassword);
   await expect(memberPage).toHaveURL("/setup");
   await finishSetup(memberPage);
 
@@ -213,10 +208,7 @@ test("administrator confirms suspension, signs out another device, and reactivat
   });
   const otherMemberPage = await otherMemberContext.newPage();
   await otherMemberPage.goto("/login");
-  await otherMemberPage.getByLabel("Username").fill("suspended.member");
-  await otherMemberPage.getByLabel("Password", { exact: true })
-    .fill(validPassword);
-  await otherMemberPage.getByRole("button", { name: "Sign in" }).click();
+  await submitPasswordLogin(otherMemberPage, "suspended.member", validPassword);
   await expect(otherMemberPage).toHaveURL("/");
 
   await page.goto("/settings/users");
@@ -266,9 +258,7 @@ test("administrator confirms suspension, signs out another device, and reactivat
   await otherMemberPage.reload();
   await expect(otherMemberPage).toHaveURL("/login");
 
-  await memberPage.getByLabel("Username").fill("suspended.member");
-  await memberPage.getByLabel("Password", { exact: true }).fill(validPassword);
-  await memberPage.getByRole("button", { name: "Sign in" }).click();
+  await submitPasswordLogin(memberPage, "suspended.member", validPassword);
   await expect(memberPage).toHaveURL("/login");
   await expect(memberPage.getByRole("alert")).toContainText(
     "Your account has been disabled.",
@@ -282,10 +272,7 @@ test("administrator confirms suspension, signs out another device, and reactivat
   );
   await expect(memberRow).toContainText("Active");
 
-  await otherMemberPage.getByLabel("Username").fill("suspended.member");
-  await otherMemberPage.getByLabel("Password", { exact: true })
-    .fill(validPassword);
-  await otherMemberPage.getByRole("button", { name: "Sign in" }).click();
+  await submitPasswordLogin(otherMemberPage, "suspended.member", validPassword);
   await expect(otherMemberPage).toHaveURL("/");
 
   await memberContext.close();
@@ -362,11 +349,7 @@ test("administrator resets a member password and the member completes private on
 
   await memberPage.reload();
   await expect(memberPage).toHaveURL("/login");
-  await memberPage.getByLabel("Username").fill("forgotten.member");
-  await memberPage.getByLabel("Password", { exact: true }).fill(
-    originalPassword,
-  );
-  await memberPage.getByRole("button", { name: "Sign in" }).click();
+  await submitPasswordLogin(memberPage, "forgotten.member", originalPassword);
   await expect(memberPage.getByRole("alert")).toContainText(
     "username or password is incorrect",
   );
@@ -412,9 +395,7 @@ test("administrator deliberately deletes an active member and its live session",
   });
   const memberPage = await memberContext.newPage();
   await memberPage.goto("/login");
-  await memberPage.getByLabel("Username").fill("deleted.member");
-  await memberPage.getByLabel("Password", { exact: true }).fill(validPassword);
-  await memberPage.getByRole("button", { name: "Sign in" }).click();
+  await submitPasswordLogin(memberPage, "deleted.member", validPassword);
   await expect(memberPage).toHaveURL("/setup");
   await finishSetup(memberPage);
 
@@ -461,9 +442,7 @@ test("administrator deliberately deletes an active member and its live session",
 
   await memberPage.reload();
   await expect(memberPage).toHaveURL("/login");
-  await memberPage.getByLabel("Username").fill("deleted.member");
-  await memberPage.getByLabel("Password", { exact: true }).fill(validPassword);
-  await memberPage.getByRole("button", { name: "Sign in" }).click();
+  await submitPasswordLogin(memberPage, "deleted.member", validPassword);
   await expect(memberPage.getByRole("alert")).toContainText(
     "The username or password is incorrect",
   );

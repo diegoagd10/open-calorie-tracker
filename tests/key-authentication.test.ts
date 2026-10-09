@@ -730,7 +730,45 @@ test("key sign-in fails closed when enabled mode has no saved credentials", asyn
 
   await expect(
     f.service.keys.beginLogin("owner", "missing-key", "192.0.2.22"),
-  ).rejects.toThrow("unavailable");
+  ).rejects.toMatchObject({ code: "unavailable" });
+});
+
+test("key sign-in reports unavailability with a stable code that rate limits never carry", async () => {
+  const f = await fixture();
+  for (const username of ["owner", "missing"])
+    await expect(
+      f.service.keys.beginLogin(username, "unavailable", "192.0.2.23"),
+    ).rejects.toMatchObject({
+      code: "unavailable",
+      message: "Key sign-in is unavailable for this account.",
+    });
+  for (let n = 0; n < 18; n++)
+    await f.service.keys
+      .beginLogin("missing", "unavailable", "192.0.2.23")
+      .catch(() => {});
+  const limited = await f.service.keys
+    .beginLogin("missing", "unavailable", "192.0.2.23")
+    .catch((error: unknown) => error);
+  expect(limited).toMatchObject({ message: "Too many key attempts. Try again later." });
+  expect((limited as { code?: string }).code).toBeUndefined();
+});
+
+test("key-mode accounts keep their own key-login budget across addresses", async () => {
+  const f = await fixture();
+  await enroll(f.service, f.session.token);
+  for (let n = 0; n < 20; n++)
+    await f.service.keys.beginLogin("owner", `account-${n}`, `203.0.113.${n}`);
+  await expect(
+    f.service.keys.beginLogin("owner", "account-limited", "203.0.113.99"),
+  ).rejects.toThrow("Too many key attempts");
+});
+
+test("next attempts for a password-mode account never spend its key-login budget", async () => {
+  const f = await fixture();
+  for (let n = 0; n < 25; n++)
+    await expect(
+      f.service.keys.beginLogin("owner", "password-mode", `198.51.100.${n}`),
+    ).rejects.toMatchObject({ code: "unavailable" });
 });
 
 test("zero-counter authenticators can sign in repeatedly with new single-use challenges", async () => {

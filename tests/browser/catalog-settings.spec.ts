@@ -9,7 +9,7 @@ import { once } from "node:events";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { installSimulatedBarcodeCamera } from "./barcode-camera-fixture";
 import AxeBuilder from "@axe-core/playwright";
-import { bootstrapOrSignInBrowserTestUser, configureBarcodeContact, expect, signInProvisionedMember, test } from "./reset-database";
+import { bootstrapOrSignInBrowserTestUser, configureBarcodeContact, expect, signInProvisionedMember, test, submitPasswordLogin } from "./reset-database";
 import { basicFoodsArchive } from "../support/basic-foods-archive";
 
 const password = "correct horse 🔐 battery";
@@ -256,9 +256,7 @@ test("a real backend restart delivers independent interruption toasts only to ad
     await admin.getByLabel("Confirm initial password", { exact: true }).fill(password);
     await admin.getByRole("button", { name: /Create member/ }).click();
     await member.goto("/login");
-    await member.getByLabel("Username").fill("restart.member");
-    await member.getByLabel("Password", { exact: true }).fill(password);
-    await member.getByRole("button", { name: "Sign in" }).click();
+    await submitPasswordLogin(member, "restart.member", password);
     await member.getByLabel("Current password", { exact: true }).fill(password);
     await member.getByLabel("New password", { exact: true }).fill("private replacement horse battery");
     await member.getByLabel("Confirm new password", { exact: true }).fill("private replacement horse battery");
