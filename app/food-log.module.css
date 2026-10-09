@@ -1092,11 +1092,6 @@
   width: 0.55rem;
 }
 
-.railBrand strong,
-.railBrand small {
-  display: block;
-}
-
 .railBrand {
   padding-inline: 0.5rem;
 }
@@ -1104,12 +1099,6 @@
 .railBrand strong {
   font-size: 0.95rem;
   font-weight: 600;
-}
-
-.railBrand small {
-  margin-top: 0.1rem;
-  color: var(--muted);
-  font-size: 0.75rem;
 }
 
 .railNav {
@@ -1147,35 +1136,6 @@
   flex-direction: column;
   gap: 0.7rem;
   margin-top: auto;
-}
-
-.railPrivacy {
-  display: grid;
-  grid-template-columns: 1.5rem 1fr;
-  gap: 0.55rem;
-  padding: 0.9rem;
-  border-radius: 0.9rem;
-  color: var(--muted);
-  background: var(--surface-soft);
-}
-
-.railPrivacy > svg {
-  width: 1rem;
-  height: 1rem;
-  color: var(--green-strong);
-}
-
-.railPrivacy strong {
-  display: block;
-  color: var(--ink);
-  font-size: 0.82rem;
-  font-weight: 600;
-}
-
-.railPrivacy p {
-  margin: 0.15rem 0 0;
-  font-size: 0.75rem;
-  line-height: 1.4;
 }
 
 .logout {

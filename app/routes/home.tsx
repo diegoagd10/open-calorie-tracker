@@ -933,7 +933,6 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
                     ? "Today"
                     : "Food Log"}
               </h1>
-              <span className={styles.privacyCue}>◈ Private</span>
             </div>
           </header>
 
