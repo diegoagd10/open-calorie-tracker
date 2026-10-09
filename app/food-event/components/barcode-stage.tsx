@@ -6,9 +6,10 @@ import type { CatalogFood } from "../../catalog/food-catalog.server";
 import styles from "../../food-log.module.css";
 import eventStyles from "../food-event.module.css";
 import type { AddFoodStage } from "../food-event.model";
-import { addFoodHref, barcodeHref, catalogBarcode, FOOD_EVENT_FETCHERS } from "../links";
+import { addFoodHref, barcodeHref, catalogBarcode } from "../links";
 import { quantityMicrounitsFromDecimal } from "../nutrition";
-import { FoodFormActions, NutritionPreview, ProviderAttribution, useFoodEventFetcher } from "./food-fields";
+import { FoodFormActions, NutritionPreview, ProviderAttribution } from "./food-fields";
+import { ManualEntryLink, useAddFoodDraft, useAddFoodFetcher, useMethodHref } from "./add-food-session";
 
 const OPEN_FOOD_FACTS = { href: "https://world.openfoodfacts.org/", name: "Open Food Facts" };
 
@@ -40,9 +41,10 @@ export function BarcodeDetailStage({
   date: string;
   food: CatalogFood;
 }) {
-  const fetcher = useFoodEventFetcher(FOOD_EVENT_FETCHERS.add);
-  const [quantity, setQuantity] = useState("1");
-  const [measurementId, setMeasurementId] = useState(food.measurements[0]?.id ?? "");
+  const draftKey = `${food.provider}:${food.providerFoodId}`;
+  const fetcher = useAddFoodFetcher(draftKey);
+  const [quantity, setQuantity] = useAddFoodDraft(`${draftKey}:quantity`, "1");
+  const [measurementId, setMeasurementId] = useAddFoodDraft(`${draftKey}:measurement`, food.measurements[0]?.id ?? "");
   const measurement = food.measurements.find(value => value.id === measurementId);
   const quantityMicrounits = quantityMicrounitsFromDecimal(quantity);
   const multiplier =
@@ -111,7 +113,8 @@ export function BarcodeDetailStage({
           includeAdditional
           multiplier={multiplier}
         /> : null}
-        <FoodFormActions date={date} message={fetcher.data?.message}>
+        <FoodFormActions date={date} message={fetcher.message}>
+          <ManualEntryLink date={date} message={fetcher.message} />
           <button
             className={eventStyles.primaryButton}
             disabled={!food.isSelectable || !measurement || quantityMicrounits === undefined || fetcher.state !== "idle"}
@@ -143,7 +146,8 @@ export function BarcodeStage({
   stage: Extract<AddFoodStage, { mode: "barcode" }>;
 }) {
   const navigate = useNavigate();
-  const [barcode, setBarcode] = useState(stage.barcode);
+  const [barcode, setBarcode] = useAddFoodDraft("barcode:input", stage.barcode);
+  const searchHref = useMethodHref(date, "search");
   const [clientMessage, setClientMessage] = useState<string>();
   const validBarcode = catalogBarcode(barcode);
   const scannerKey = stage.barcode || "new-scan";
@@ -163,7 +167,7 @@ export function BarcodeStage({
   return (
     <>
       <div className={eventStyles.dialogActions}>
-        <Link className={eventStyles.backToResults} to={addFoodHref(date, "search")}>
+        <Link className={eventStyles.backToResults} to={searchHref}>
           Search for food
         </Link>
       </div>
@@ -233,6 +237,7 @@ export function BarcodeStage({
         <div className={eventStyles.catalogState} role="alert">
           <h3>{stage.title}</h3>
           <p>{stage.message}</p>
+          <ManualEntryLink date={date} message={stage.message} />
         </div>
       ) : (
         <div className={eventStyles.catalogState}>

@@ -4,23 +4,26 @@ import eventStyles from "../food-event.module.css";
 import { formatLocalDate } from "../../shared/local-date";
 import type { AddFoodStage, Favorite } from "../food-event.model";
 import { formatEnergy } from "../format";
-import { addFoodHref, FOOD_EVENT_FETCHERS } from "../links";
+import { addFoodHref } from "../links";
 import { NUTRIENT_FIELDS, nutrientToDecimal } from "../nutrition";
-import { FoodFormActions, useFoodEventFetcher } from "./food-fields";
+import { FoodFormActions } from "./food-fields";
+import { useAddFoodDraft, useAddFoodFetcher } from "./add-food-session";
 
 export function FavoriteResults({
   date,
   favorites,
+  origin = "my",
   query,
 }: {
   date: string;
   favorites: Favorite[];
+  origin?: "my" | "search";
   query: string;
 }) {
   return (
     <div className={eventStyles.catalogResults} aria-label="My foods results">
       {favorites.map((favorite) => (
-        <Link key={favorite.id} to={addFoodHref(date, `saved:${favorite.id}`, query)}>
+        <Link key={favorite.id} to={addFoodHref(date, `saved:${favorite.id}`, query, undefined, origin)}>
           <span>
             <strong>{favorite.name}</strong>
             <small>
@@ -43,11 +46,9 @@ export function FavoritesStage({
   date: string;
   stage: Extract<AddFoodStage, { mode: "my" }>;
 }) {
+  const [query, setQuery] = useAddFoodDraft(`my:query:${stage.query}`, stage.query);
   return (
     <section aria-labelledby="my-foods-title">
-      <Link className={eventStyles.backToResults} to={addFoodHref(date, "choose")}>
-        ‹ Back to methods
-      </Link>
       <div className={eventStyles.foodIdentity}>
         <span className={eventStyles.catalogType}>Manual foods</span>
         <h3 id="my-foods-title">My foods</h3>
@@ -60,7 +61,8 @@ export function FavoritesStage({
         <div className={eventStyles.searchControl}>
           <input
             autoComplete="off"
-            defaultValue={stage.query}
+            value={query}
+            onChange={(event) => setQuery(event.currentTarget.value)}
             id="my-food-query"
             name="query"
             placeholder="Try Mexican tortilla"
@@ -92,12 +94,12 @@ export function FavoriteStage({
   stage: Extract<AddFoodStage, { mode: "saved" }>;
 }) {
   const { favorite } = stage;
-  const fetcher = useFoodEventFetcher(FOOD_EVENT_FETCHERS.add);
+  const fetcher = useAddFoodFetcher(`saved:${favorite.id}`);
   const pending = fetcher.state !== "idle";
   return (
     <section aria-labelledby="saved-food-title">
-      <Link className={eventStyles.backToResults} to={addFoodHref(date, "my", stage.query)}>
-        ‹ Back to My foods
+      <Link className={eventStyles.backToResults} to={addFoodHref(date, stage.origin ?? "my", stage.query)}>
+        {stage.origin === "search" ? "‹ Back to results" : "‹ Back to My foods"}
       </Link>
       <div className={eventStyles.foodIdentity}>
         <span className={eventStyles.catalogType}>My foods</span>
@@ -131,7 +133,7 @@ export function FavoriteStage({
         <input name="method" type="hidden" value="favorite" />
         <input name="date" type="hidden" value={date} />
         <input name="favoriteId" type="hidden" value={favorite.id} />
-        <FoodFormActions date={date} message={fetcher.data?.message}>
+        <FoodFormActions date={date} message={fetcher.message}>
           <button className={eventStyles.primaryButton} disabled={pending} type="submit">
             {pending ? "Adding…" : "Add to Food Log"}
           </button>

@@ -499,9 +499,27 @@ article > .pendingFoodEntryCard::after {
 }
 
 .providerAttribution a,
+.changeMethod,
 .backToResults {
   color: var(--green-strong);
   font-weight: 600;
+}
+
+.methodNavigation {
+  position: sticky;
+  top: -1px;
+  z-index: 2;
+  display: flex;
+  padding-block: 0.5rem;
+  margin-bottom: 0.75rem;
+  background: var(--surface);
+}
+
+.changeMethod {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.75rem;
+  font-size: 0.82rem;
 }
 
 .backToResults {

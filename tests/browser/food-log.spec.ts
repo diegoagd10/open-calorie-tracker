@@ -1070,11 +1070,11 @@ test("an authenticated user can add, reset, and later rescale a manual Food Entr
 
   await page.getByLabel("Food name").fill("Discarded tortilla");
   await page.getByLabel("Calories (kcal)").fill("60");
-  await dialog.getByRole("link", { name: "Back to methods" }).click();
+  await dialog.getByRole("link", { name: "Change method" }).click();
   await page.getByRole("link", { name: /Manual/ }).click();
   await expect(page.getByLabel("Food name")).toBeFocused();
-  await expect(page.getByLabel("Food name")).toHaveValue("");
-  await expect(page.getByLabel("Calories (kcal)")).toHaveValue("");
+  await expect(page.getByLabel("Food name")).toHaveValue("Discarded tortilla");
+  await expect(page.getByLabel("Calories (kcal)")).toHaveValue("60");
 
   await page.getByLabel("Food name").fill("Cancelled tortilla");
   await page.getByLabel("Calories (kcal)").fill("60");
@@ -1166,6 +1166,103 @@ test("an authenticated user can add, reset, and later rescale a manual Food Entr
   await editor.getByRole("link", { name: "Cancel" }).click();
   await expectUpdatedLog();
 });
+
+for (const width of [1280, 390]) {
+  test(`Add Food session navigation keeps drafts and origins at ${width}px`, async ({ context, page }) => {
+    await context.setExtraHTTPHeaders({ "X-Test-Client-IP": "203.0.113.96" });
+    configureBarcodeContact();
+    await completeSetupForTestUser(page, `food.session.${width}`);
+    await page.setViewportSize({ width, height: 844 });
+    await page.goto("/?date=2026-08-28&food=manual");
+    await page.getByLabel("Food name").fill("Saved tortilla");
+    await page.getByLabel("Calories (kcal)").fill("100");
+    await page.getByRole("button", { name: "Add to Food Log" }).click();
+    await expect(page).toHaveURL("/?date=2026-08-28");
+    await page.getByRole("button", { name: "Add Food" }).click();
+    await page.getByRole("link", { name: "Manual", exact: true }).click();
+    await expect(page.getByLabel("Food name")).toHaveValue("");
+    await page.getByLabel("Food name").fill("Manual draft");
+    await page.getByLabel("Calories (kcal)").fill("80");
+    await page.getByLabel("Quantity", { exact: true }).fill("3");
+    await page.getByRole("checkbox", { name: "Save to My foods" }).uncheck();
+    const changeMethod = page.getByRole("link", { name: "Change method", exact: true });
+    await changeMethod.click();
+    await expect(page).toHaveURL("/?date=2026-08-28&food=choose");
+    await page.getByRole("link", { name: "My foods", exact: true }).click();
+    await page.getByRole("searchbox", { name: "Search My foods" }).fill("tortilla");
+    await page.getByRole("button", { name: "Search", exact: true }).click();
+    await page.getByRole("dialog", { name: "Add Food" }).getByRole("link", { name: /Saved tortilla/ }).click();
+    await changeMethod.click();
+    await page.getByRole("link", { name: "My foods", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Saved tortilla" })).toBeVisible();
+    await page.getByRole("link", { name: "Back to My foods" }).click();
+    await expect(page.getByRole("searchbox", { name: "Search My foods" })).toHaveValue("tortilla");
+    await changeMethod.click();
+    await page.getByRole("link", { name: "Search for food", exact: true }).click();
+    const search = page.getByRole("searchbox", { name: "Search local foods" });
+    await search.fill("tortilla");
+    await page.getByRole("button", { name: "Search", exact: true }).click();
+    await page.getByRole("dialog", { name: "Add Food" }).getByRole("link", { name: /Saved tortilla/ }).click();
+    await expect(page).toHaveURL(/origin=search/);
+    await page.getByRole("link", { name: "Back to results" }).click();
+    await expect(search).toHaveValue("tortilla");
+    await search.fill("yogurt");
+    await page.getByRole("button", { name: "Search", exact: true }).click();
+    const yogurt = page.getByRole("link", { name: /Plain nonfat Greek yogurt/ });
+    await yogurt.click();
+    await page.getByLabel("Quantity", { exact: true }).fill("2.5");
+    await page.getByRole("combobox").selectOption({ label: "100 g" });
+    await changeMethod.click();
+    await page.getByRole("link", { name: "Search for food", exact: true }).click();
+    await expect(page.getByLabel("Quantity", { exact: true })).toHaveValue("2.5");
+    await page.getByRole("link", { name: "Back to results" }).click();
+    await expect(search).toHaveValue("yogurt");
+    await expect(search).toBeFocused();
+    await yogurt.click();
+    await expect(page.getByLabel("Quantity", { exact: true })).toHaveValue("2.5");
+    await expect(page.getByRole("combobox")).toHaveValue("base:g:100000000");
+    await changeMethod.click();
+    await page.getByRole("link", { name: "Scan barcode", exact: true }).click();
+    const barcode = page.getByLabel("Enter barcode");
+    await barcode.fill("034000470693");
+    await page.getByRole("button", { name: "Look up", exact: true }).click();
+    await page.getByLabel("Quantity", { exact: true }).fill("0.5");
+    await changeMethod.click();
+    await page.getByRole("link", { name: "Scan barcode", exact: true }).click();
+    await expect(page.getByLabel("Quantity", { exact: true })).toHaveValue("0.5");
+    await page.getByRole("link", { name: "Back to scanner" }).click();
+    await expect(barcode).toHaveValue("034000470693");
+    await expect(page.getByRole("button", { name: "Use camera" })).toBeVisible();
+    await barcode.fill("0000000000001");
+    await page.getByRole("button", { name: "Look up", exact: true }).click();
+    await page.getByRole("link", { name: "Add manually", exact: true }).click();
+    await expect(page.getByLabel("Food name")).toHaveValue("Manual draft");
+    await expect(page.getByLabel("Calories (kcal)")).toHaveValue("80");
+    await expect(page.getByLabel("Quantity", { exact: true })).toHaveValue("3");
+    await expect(page.getByRole("checkbox", { name: "Save to My foods" })).not.toBeChecked();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    const accessibility = await new AxeBuilder({ page }).analyze();
+    expect(accessibility.violations).toEqual([]);
+    await page.getByRole("link", { name: "Cancel", exact: true }).click();
+    await expect(page.locator("[data-entry-editor-trigger]")).toHaveCount(1);
+    await page.getByRole("button", { name: "Add Food" }).click();
+    await page.getByRole("link", { name: "Manual", exact: true }).click();
+    await expect(page.getByLabel("Food name")).toHaveValue("");
+    await page.getByLabel("Food name").fill("Rejected draft");
+    await page.getByRole("button", { name: "Add to Food Log" }).click();
+    await expect(page.getByRole("alert")).toContainText("calories");
+    await changeMethod.click();
+    await page.getByRole("link", { name: "Manual", exact: true }).click();
+    await expect(page.getByRole("alert")).toContainText("calories");
+    await expect(page.getByLabel("Food name")).toHaveValue("Rejected draft");
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("button", { name: "Add Food" })).toBeFocused();
+    await page.getByRole("button", { name: "Add Food" }).click();
+    await page.getByRole("link", { name: "Manual", exact: true }).click();
+    await expect(page.getByLabel("Food name")).toHaveValue("");
+    await expect(page.getByRole("alert")).toHaveCount(0);
+  });
+}
 
 test("@camera-matrix simulated scan stays local and follows review before one snapshot", async ({
   context,
@@ -1353,6 +1450,21 @@ test("@camera-matrix simulated scan stays local and follows review before one sn
     }
   ).__scannerState.trackStops)).toBe(4);
   await expect(page.getByRole("button", { name: "Add Food" })).toBeFocused();
+
+  await page.getByRole("button", { name: "Add Food" }).click();
+  await page.getByRole("link", { name: /Scan barcode/ }).click();
+  await page.getByRole("button", { name: "Use camera" }).click();
+  await expect(page.getByText("Point the camera at the barcode")).toBeVisible();
+  await page.getByRole("link", { name: "Change method" }).click();
+  await expect(page.getByLabel("Add Food methods")).toBeVisible();
+  await expect.poll(() => page.evaluate(() => (
+    window as typeof window & { __scannerState: { trackStops: number } }
+  ).__scannerState.trackStops)).toBe(5);
+  await page.getByRole("link", { name: /Scan barcode/ }).click();
+  await expect(page.getByRole("button", { name: "Use camera" })).toBeVisible();
+  expect(await page.evaluate(() => (
+    window as typeof window & { __scannerState: { cameraStarts: number } }
+  ).__scannerState.cameraStarts)).toBe(5);
 });
 
 test("food selection immediately reveals the pending detail destination", async ({

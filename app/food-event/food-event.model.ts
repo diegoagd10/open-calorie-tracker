@@ -172,7 +172,7 @@ export type AddFoodStage =
       title?: string;
     }
   | { mode: "my"; query: string; favorites: Favorite[] }
-  | { mode: "saved"; query: string; favorite: Favorite }
+  | { mode: "saved"; query: string; favorite: Favorite; origin?: "my" | "search" }
   | { mode: "detail"; query: string; food: CatalogFood };
 
 export type CopyFoodEventDialogModel = {

@@ -6,6 +6,7 @@ import { createElement } from "react";
 import {
   createMemoryRouter,
   createRoutesStub,
+  redirect,
   RouterProvider,
   useLoaderData,
 } from "react-router";
@@ -21,6 +22,7 @@ import styles from "../../app/food-log.module.css";
   .IS_REACT_ACT_ENVIRONMENT = true;
 
 class TestElement {
+  scrollTop = 0;
   isConnected = true;
   open = false;
   showModal() { this.open = true; }
@@ -1155,6 +1157,22 @@ const barcodeFood = {
   providerPublishedDate: null,
 };
 
+test("every Add Food method and catalog review offers Change method for the viewed date", async () => {
+  for (const stage of [
+    { mode: "manual" },
+    { mode: "my", query: "tortilla", favorites: [] },
+    { mode: "search", query: "yogurt", results: [], favorites: [] },
+    { mode: "barcode", barcode: "" },
+    { mode: "barcode", barcode: barcodeFood.barcode, food: barcodeFood },
+    { mode: "detail", query: "yogurt", food: catalogFood },
+  ]) {
+    const renderer = await renderHome({ addFood: stage });
+    const changeMethod = renderer.root.findAllByType("a").find((link) => nodeText(link) === "Change method");
+    expect(changeMethod?.props.href).toBe("/?date=2026-08-31&food=choose");
+    await act(async () => renderer.unmount());
+  }
+});
+
 /** The fields a save form posts, in document order. */
 function formFields(form: ReactTestRenderer["root"]) {
   return form.findAll((node) => (node.type === "input" || node.type === "select") && typeof node.props.name === "string")
@@ -1228,7 +1246,7 @@ test("the manual form keeps entered totals when quantity changes, saves to My fo
   for (const name of ["name", "energyKcal", "proteinGrams", "carbohydrateGrams", "fatGrams", "fiberGrams", "sugarGrams", "sodiumMilligrams"]) {
     expect(input(renderer, name).props.value).toBe("");
   }
-  expect(renderer.root.findByProps({ className: eventStyles.backToResults }).props.to).toBe("/?date=2026-08-31&food=choose");
+  expect(renderer.root.findByProps({ className: eventStyles.changeMethod }).props.to).toBe("/?date=2026-08-31&food=choose");
   expect(renderer.root.findByType("fieldset").props.disabled).toBe(false);
   expect(allText(renderer)).toContain("Add to Food Log");
   for (const name of ["energyKcal", "proteinGrams", "carbohydrateGrams", "fatGrams", "fiberGrams", "sugarGrams", "sodiumMilligrams"]) {
@@ -1930,6 +1948,280 @@ const savedTortilla = {
   sourceEventId: 5,
 };
 
+/** Navigate real dialog components while the loader supplies deterministic catalog reads. */
+async function renderAddFoodSession(action = vi.fn((): unknown => ({ code: "invalid_nutrition", message: "Enter calories." }))) {
+  const router = createMemoryRouter([
+    {
+      id: "home", path: "/",
+      loader: ({ request }) => {
+        const url = new URL(request.url);
+        const food = url.searchParams.get("food");
+        const query = url.searchParams.get("query") ?? "";
+        const barcode = url.searchParams.get("barcode") ?? "";
+        const addFood = food === "choose" || food === "manual" ? { mode: food }
+          : food === "my" ? { mode: "my", query, favorites: [savedTortilla] }
+          : food === "search" ? { mode: "search", query, favorites: [savedTortilla], results: [catalogFood] }
+          : food === "saved:77" ? { mode: "saved", query, favorite: savedTortilla, origin: url.searchParams.get("origin") === "search" ? "search" : "my" }
+          : food === "barcode" ? { mode: "barcode", barcode, ...(barcode === "0000000000004" ? { title: "Product not found", message: "Product not found. Check the barcode or log it manually." } : barcode ? { food: { ...barcodeFood, providerFoodId: barcode, barcode } } : {}) }
+          : food ? { mode: "detail", query, food: { ...catalogFood, providerFoodId: food, name: food === "1001" ? catalogFood.name : "Another food" } }
+          : undefined;
+        return { ...baseLoaderData, addFood, foodLog: { ...baseFoodLog, selectedDate: url.searchParams.get("date") ?? baseFoodLog.selectedDate } };
+      },
+      Component: () => Home({ actionData: undefined, loaderData: useLoaderData() } as never),
+    },
+    { id: "food-events", path: "/food-events", action },
+  ], { initialEntries: ["/?date=2026-08-31&food=choose"] });
+  let renderer: ReactTestRenderer;
+  await act(async () => {
+    renderer = create(createElement(RouterProvider, { router }), { createNodeMock: () => new TestElement() });
+  });
+  async function navigate(href: string) {
+    await act(async () => { await router.navigate(href); });
+  }
+  async function follow(text: string) {
+    const link = renderer.root.findAllByType("a").find((node) => nodeText(node).replace(/^‹\s*/, "") === text)!;
+    expect(link, text).toBeDefined();
+    await navigate(link.props.href as string);
+  }
+  async function change(name: string, value: string | boolean) {
+    const field = name === "measurementId" ? renderer.root.findByType("select") : input(renderer, name);
+    await act(async () => field.props.onChange({ target: { value, checked: value }, currentTarget: { value, checked: value } }));
+  }
+  async function submit(fields: Record<string, string>) {
+    const formData = new FormData();
+    for (const [name, value] of Object.entries(fields)) formData.set(name, value);
+    await act(async () => {
+      await router.fetch("food-event:add", "home", "/food-events", { formData, formMethod: "post" });
+    });
+  }
+  return { renderer: renderer!, router, follow, navigate, change, submit, action };
+}
+
+test("changing methods restores the manual draft, both searches and the last selected review without saving", async () => {
+  const { renderer, follow, navigate, change, action } = await renderAddFoodSession();
+  await follow("Manual");
+  await change("name", "Dinner");
+  await change("quantity", "3");
+  await change("energyKcal", "180");
+  await change("proteinGrams", "12");
+  await change("saveAsFavorite", false);
+  await follow("Change method");
+  await follow("Search food");
+  await change("query", "unsubmitted search");
+  await follow("Change method");
+  await follow("My foods");
+  await change("query", "unsubmitted favorite search");
+  await follow("Change method");
+  await follow("Scan barcode");
+  await change("barcode", barcodeFood.barcode);
+  await follow("Change method");
+  await follow("Manual");
+  expect(input(renderer, "name").props.value).toBe("Dinner");
+  expect(input(renderer, "quantity").props.value).toBe("3");
+  expect(input(renderer, "energyKcal").props.value).toBe("180");
+  expect(input(renderer, "proteinGrams").props.value).toBe("12");
+  expect(input(renderer, "saveAsFavorite").props.checked).toBe(false);
+  await follow("Change method");
+  await follow("My foods");
+  expect(input(renderer, "query").props.value).toBe("unsubmitted favorite search");
+  await follow("Change method");
+  await follow("Search food");
+  expect(input(renderer, "query").props.value).toBe("unsubmitted search");
+  await navigate("/?date=2026-08-31&food=search&query=yogurt");
+  await navigate("/?date=2026-08-31&food=1001&query=yogurt&provider=usda-fdc");
+  await change("quantity", "2.5");
+  await change("measurementId", "base");
+  await follow("Change method");
+  await follow("Search food");
+  expect(input(renderer, "providerFoodId").props.value).toBe("1001");
+  expect(input(renderer, "quantity").props.value).toBe("2.5");
+  expect(renderer.root.findByType("select").props.value).toBe("base");
+  await follow("Change method");
+  await follow("Scan barcode");
+  expect(input(renderer, "barcode").props.value).toBe(barcodeFood.barcode);
+  expect(action).not.toHaveBeenCalled();
+  await act(async () => renderer.unmount());
+});
+
+test("review Back preserves the search context and each product's own quantity and measurement", async () => {
+  const { renderer, follow, navigate, change } = await renderAddFoodSession();
+  await navigate("/?date=2026-08-31&food=search&query=yogurt");
+  await change("query", "next search draft");
+  await navigate("/?date=2026-08-31&food=1001&query=yogurt&provider=usda-fdc");
+  await change("quantity", "4");
+  await change("measurementId", "base");
+  await follow("Back to results");
+  expect(input(renderer, "query").props.value).toBe("next search draft");
+  expect(allText(renderer)).toContain(catalogFood.name);
+  await navigate("/?date=2026-08-31&food=1002&query=yogurt&provider=usda-fdc");
+  expect(input(renderer, "quantity").props.value).toBe("1");
+  expect(renderer.root.findByType("select").props.value).toBe("serving");
+  await change("quantity", "7");
+  await follow("Back to results");
+  await navigate("/?date=2026-08-31&food=1001&query=yogurt&provider=usda-fdc");
+  expect(input(renderer, "quantity").props.value).toBe("4");
+  expect(renderer.root.findByType("select").props.value).toBe("base");
+  await navigate("/?date=2026-08-31");
+  await navigate("/?date=2026-08-31&food=1001&query=yogurt&provider=usda-fdc");
+  expect(input(renderer, "quantity").props.value).toBe("1");
+  expect(renderer.root.findByType("select").props.value).toBe("serving");
+  await act(async () => renderer.unmount());
+});
+
+test("returning to a list restores its scroll context within the session", async () => {
+  const { renderer, follow, navigate } = await renderAddFoodSession();
+  await navigate("/?date=2026-08-31&food=search&query=yogurt");
+  const dialog = renderer.root.findByProps({ role: "dialog" });
+  const node = dialog.props.ref.current as TestElement;
+  node.scrollTop = 180;
+  await act(async () => dialog.props.onScroll({ currentTarget: node }));
+  await navigate("/?date=2026-08-31&food=1001&query=yogurt&provider=usda-fdc");
+  expect(node.scrollTop).toBe(0);
+  await follow("Back to results");
+  expect(node.scrollTop).toBe(180);
+  await follow("Change method");
+  await follow("Search food");
+  expect(node.scrollTop).toBe(180);
+  await act(async () => renderer.unmount());
+});
+
+test("saved foods return to the list that opened them and resume under that method", async () => {
+  const { renderer, follow, navigate, change } = await renderAddFoodSession();
+  for (const origin of ["my", "search"] as const) {
+    await navigate(`/?date=2026-08-31&food=${origin}&query=tortilla`);
+    await change("query", `${origin} draft`);
+    const result = renderer.root.findAllByType("a").find((link) => nodeText(link).startsWith(savedTortilla.name))!;
+    expect(result.props.href).toContain(origin === "search" ? "origin=search" : "food=saved%3A77");
+    await navigate(result.props.href as string);
+    expect(allText(renderer)).toContain("Change method");
+    await follow("Change method");
+    await follow(origin === "my" ? "My foods" : "Search food");
+    expect(input(renderer, "favoriteId").props.value).toBe(77);
+    await follow(origin === "my" ? "Back to My foods" : "Back to results");
+    expect(input(renderer, "query").props.value).toBe(`${origin} draft`);
+  }
+  await act(async () => renderer.unmount());
+});
+
+test("barcode review resumes its draft and Back returns to an inactive scanner", async () => {
+  const { renderer, follow, navigate, change, action } = await renderAddFoodSession();
+  await follow("Scan barcode");
+  await change("barcode", barcodeFood.barcode);
+  await navigate(`/?date=2026-08-31&food=barcode&barcode=${barcodeFood.barcode}`);
+  await change("quantity", "3");
+  await follow("Change method");
+  await follow("Scan barcode");
+  expect(input(renderer, "quantity").props.value).toBe("3");
+  await follow("Back to scanner");
+  expect(input(renderer, "barcode").props.value).toBe(barcodeFood.barcode);
+  expect(allText(renderer)).toContain("Use camera");
+  expect(renderer.root.findByType("video").parent!.props.hidden).toBe(true);
+  await navigate(`/?date=2026-08-31&food=barcode&barcode=${barcodeFood.barcode}`);
+  expect(input(renderer, "quantity").props.value).toBe("3");
+  expect(action).not.toHaveBeenCalled();
+  await act(async () => renderer.unmount());
+});
+
+test("a refused save keeps its manual draft, and a successful save starts a clean session", async () => {
+  const action = vi.fn((): unknown => ({ code: "invalid_nutrition", message: "Enter calories." }));
+  const { renderer, follow, change, submit, navigate } = await renderAddFoodSession(action);
+  await follow("Manual");
+  await change("name", "Dinner");
+  await change("quantity", "3");
+  await submit({ intent: "log", method: "manual", name: "Dinner" });
+  expect(allText(renderer)).toContain("Enter calories.");
+  expect(input(renderer, "name").props.value).toBe("Dinner");
+  await follow("Change method");
+  await follow("Manual");
+  expect(input(renderer, "quantity").props.value).toBe("3");
+  expect(allText(renderer)).toContain("Enter calories.");
+  action.mockImplementation(() => redirect("/?date=2026-08-31"));
+  await submit({ intent: "log", method: "manual", name: "Dinner", energyKcal: "180" });
+  expect(renderer.root.findAllByProps({ role: "dialog" })).toHaveLength(0);
+  await navigate("/?date=2026-08-31&food=manual");
+  expect(input(renderer, "name").props.value).toBe("");
+  expect(input(renderer, "quantity").props.value).toBe("1");
+  expect(allText(renderer)).not.toContain("Enter calories.");
+  await act(async () => renderer.unmount());
+});
+
+test("lookup and save errors offer Add manually with the existing draft and retain rejected product adjustments", async () => {
+  const action = vi.fn((): unknown => ({ code: "source_unavailable", message: "Try again or log it manually." }));
+  const { renderer, follow, navigate, change, submit } = await renderAddFoodSession(action);
+  await follow("Manual");
+  await change("name", "Manual draft");
+  await change("energyKcal", "80");
+  await follow("Change method");
+  await navigate("/?date=2026-08-31&food=barcode&barcode=0000000000004");
+  await follow("Add manually");
+  expect(input(renderer, "name").props.value).toBe("Manual draft");
+  expect(input(renderer, "date").props.value).toBe("2026-08-31");
+  await follow("Change method");
+  await navigate(`/?date=2026-08-31&food=barcode&barcode=${barcodeFood.barcode}`);
+  await change("quantity", "2");
+  await submit({ intent: "log", method: "barcode", providerFoodId: barcodeFood.providerFoodId });
+  expect(input(renderer, "quantity").props.value).toBe("2");
+  await follow("Add manually");
+  expect(input(renderer, "energyKcal").props.value).toBe("80");
+  expect(allText(renderer)).not.toContain("Try again or log it manually.");
+  await follow("Change method");
+  await follow("Scan barcode");
+  expect(input(renderer, "quantity").props.value).toBe("2");
+  expect(allText(renderer)).toContain("Try again or log it manually.");
+  await follow("Back to scanner");
+  await navigate("/?date=2026-08-31&food=barcode&barcode=0034000470709");
+  expect(input(renderer, "quantity").props.value).toBe("1");
+  expect(allText(renderer)).not.toContain("Try again or log it manually.");
+  await act(async () => renderer.unmount());
+});
+
+test("close, Cancel, Escape, backdrop and a different date discard Add Food drafts", async () => {
+  for (const close of ["close", "Cancel", "Escape", "backdrop", "date"] as const) {
+    const { renderer, follow, change, navigate } = await renderAddFoodSession();
+    await follow("Manual");
+    await change("name", "Discard this");
+    await change("quantity", "5");
+    if (close === "close") {
+      await navigate(renderer.root.findByProps({ "aria-label": "Close food search", href: "/?date=2026-08-31" }).props.href as string);
+    } else if (close === "Cancel") await follow("Cancel");
+    else if (close === "date") await navigate("/?date=2026-08-30&food=manual");
+    else await act(async () => {
+      if (close === "Escape") renderer.root.findByProps({ role: "dialog" }).props.onKeyDown({ key: "Escape", preventDefault: vi.fn() });
+      else {
+        const target = {};
+        renderer.root.findByProps({ className: styles.dialogBackdrop }).props.onClick({ target, currentTarget: target });
+      }
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    await navigate("/?date=2026-08-31&food=manual");
+    expect(input(renderer, "name").props.value, close).toBe("");
+    expect(input(renderer, "quantity").props.value, close).toBe("1");
+    await act(async () => renderer.unmount());
+  }
+});
+
+test("a refusal arriving after closing the dialog does not enter the next session", async () => {
+  let refuse!: (value: unknown) => void;
+  const response = new Promise((resolve) => { refuse = resolve; });
+  const { renderer, router, follow, change, navigate } = await renderAddFoodSession(vi.fn(() => response));
+  await follow("Manual");
+  await change("name", "Previous draft");
+  await act(async () => {
+    void router.fetch("food-event:add", "home", "/food-events", { formMethod: "post", formData: new FormData() });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+  await follow("Cancel");
+  await navigate("/?date=2026-08-31&food=manual");
+  expect(input(renderer, "name").props.value).toBe("");
+  await act(async () => {
+    refuse({ code: "invalid_nutrition", message: "Previous refusal" });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+  expect(allText(renderer)).not.toContain("Previous refusal");
+  expect(input(renderer, "name").props.value).toBe("");
+  await act(async () => renderer.unmount());
+});
+
 test("My foods can be browsed and searched before selecting a saved food", async () => {
   const listed = await renderHome({
     addFood: { favorites: [savedTortilla], mode: "my", query: "" },
@@ -1940,7 +2232,7 @@ test("My foods can be browsed and searched before selecting a saved food", async
   expect(listed.root.findByProps({
     href: "/?date=2026-08-31&food=saved%3A77",
   })).toBeDefined();
-  expect(input(listed, "query").props.defaultValue).toBe("");
+  expect(input(listed, "query").props.value).toBe("");
   await act(async () => listed.unmount());
 
   const noMatches = await renderHome({
