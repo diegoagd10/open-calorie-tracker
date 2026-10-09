@@ -41,11 +41,14 @@ test("terminal imports notify connected clients while a member searches and logs
   await page.getByRole("link", { name: /Food Catalogs/ }).click();
   await expect(page.getByRole("heading", { name: "Food Catalogs", exact: true })).toBeVisible();
   const usdaCard = page.locator('section[aria-labelledby="usda-fdc-heading"]');
-  await expect(usdaCard.getByText("Install a Foundation archive before comparing it with USDA's declared release.", { exact: true })).toBeVisible();
+  await expect(usdaCard.getByText("Not installed", { exact: true })).toBeVisible();
+  await expect(usdaCard.getByRole("heading", { name: "Install USDA Foundation" })).toBeVisible();
   const officialDownload = usdaCard.getByRole("link", { name: /Official USDA downloads/ });
   await expect(officialDownload).toHaveAttribute("href", "https://fdc.nal.usda.gov/download-datasets/");
   await expect(officialDownload).toHaveAttribute("target", "_blank");
-  await usdaCard.getByRole("button", { name: "Check USDA updates again" }).click();
+  await usdaCard.getByRole("button", { name: /^(Check again|Try again|Check for updates)$/ }).click();
+  await expect(usdaCard.getByText(/^Last checked /)).toBeVisible();
+
   await expect(page.locator('input[type="file"], progress')).toHaveCount(0);
   const memberContexts = await Promise.all([browser.newContext({ baseURL: new URL(page.url()).origin, ignoreHTTPSErrors: true }), browser.newContext({ baseURL: new URL(page.url()).origin, ignoreHTTPSErrors: true })]);
   const members = await Promise.all(memberContexts.map(async (context, index) => {
@@ -84,7 +87,7 @@ test("terminal imports notify connected clients while a member searches and logs
   await expect(page.getByRole("button", { name: /Install|Replace|Retry/ })).toHaveCount(0);
   await commandImport("usda-fdc", "foundation-browser-reimport.zip", archive);
   await expectSuccess("USDA Foundation catalog updated.", "usda-fdc");
-  await expect(page.getByText("Archive: foundation-browser-reimport.zip", { exact: true })).toBeVisible();
+  await expect(page.getByText("foundation-browser-reimport.zip", { exact: true })).toBeAttached();
   const notifications = toast(page);
 
 
@@ -126,7 +129,9 @@ test("terminal imports notify connected clients while a member searches and logs
   await page.goto("/settings/catalogs");
   await expect(page.getByRole("alert")).toHaveCount(0);
   await expect(page.getByText("52 foods installed", { exact: true })).toBeVisible();
-  await expect(page.getByText("Archive: foundation-browser-update.zip", { exact: true })).toBeVisible();
+  await page.getByText("Details & how to update", { exact: true }).click();
+  await expect(page.getByText("foundation-browser-update.zip", { exact: true })).toBeVisible();
+
   await expect(page.getByText(/records processed|foods imported|records rejected|installation failed/)).toHaveCount(0);
   await expect(page.locator('section[aria-labelledby="open-food-facts-heading"]')).toContainText("○ Not configured");
   await expect(page.getByText(/Check OFF updates|Official OFF downloads|OFF export/)).toHaveCount(0);

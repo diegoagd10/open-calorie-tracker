@@ -5,6 +5,7 @@ import { afterEach, expect, test, vi } from "vitest";
 import CatalogSettings, { meta } from "../../app/routes/settings.catalogs";
 import type { CatalogState, ImportPhase } from "../../app/catalog-management/catalog-management.server";
 import { BarcodeContactSection, type BarcodeContactResult } from "../../app/barcode";
+import { UsdaCatalogCard } from "../../app/catalog-management/usda-catalog-card";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const renderers: ReactTestRenderer[] = [];
@@ -13,7 +14,7 @@ const empty: CatalogState = { installed: null, job: null, busy: false };
 function job(phase: ImportPhase): NonNullable<CatalogState["job"]> { return { id: "job", filename: "archive.gz", phase, receivedBytes: 1234, processedRecords: 5678, importedRecords: 4321, rejectedRecords: 123, exclusions: {}, error: null, startedAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z" }; }
 function text(node: ReactTestInstance): string { return node.children.map(child => typeof child === "string" ? child : text(child)).join(""); }
 async function render(catalog: CatalogState = empty, offContact?: string, actionResult?: BarcodeContactResult) {
-  const load = vi.fn(() => ({ catalog, offContact, today: "2026-09-08", csrfToken: "catalog-csrf" }));
+  const load = vi.fn(() => ({ catalog, offContact, today: "2026-09-08", csrfToken: "catalog-csrf", renderedAt: "2026-09-09T14:45:00.000Z" }));
   const Routes = createRoutesStub([{ path: "/settings/catalogs", id: "catalogs", Component: CatalogSettings, loader: load, action: () => actionResult ?? null }]);
   let renderer!: ReactTestRenderer;
   await act(() => { renderer = create(createElement(Routes, { initialEntries: ["/settings/catalogs"], hydrationData: { loaderData: { catalogs: load() } } })); });
@@ -24,7 +25,8 @@ async function render(catalog: CatalogState = empty, offContact?: string, action
 test("an installed USDA catalog reports only catalog details, with no analysis status", async () => {
   const installed = { generation: "generation", filename: "foundation.zip", sha256: "abc", installedAt: "2026-01-02T03:04:05.000Z", foodCount: 4, publicationDateRange: { earliest: "2019-04-01", latest: "2026-04-30" } };
   const { card } = await render({ ...empty, installed });
-  expect(text(card("usda-fdc"))).toContain("4 foods installedArchive: foundation.zip");
+  expect(text(card("usda-fdc"))).toContain("4 foods installed");
+  expect(text(card("usda-fdc"))).toContain("Archivefoundation.zip");
   expect(text(card("usda-fdc"))).not.toMatch(/Analysis|Reimport required/);
 });
 
@@ -41,9 +43,13 @@ test("the USDA card shows availability, official downloads and metadata controls
   const usda = card("usda-fdc");
   expect(text(renderer.root)).toContain("Shared reference foods for local search and logging.");
   expect(text(usda)).toContain("Saved Food Entries keep their original nutrition and measurements.");
-  expect(usda.findByType("a").props.href).toBe("https://fdc.nal.usda.gov/download-datasets/");
+  expect(new Set(usda.findAllByType("a").map(link => link.props.href as string))).toEqual(new Set(["https://fdc.nal.usda.gov/download-datasets/"]));
   expect(renderer.root.findAllByProps({ type: "file" })).toHaveLength(0);
-  expect(text(usda.findByType("button"))).toBe("Check USDA updates");
+  expect(text(usda.findByProps({ type: "submit" }))).toBe("Check for updates");
+  expect(text(usda)).toContain("Not installed");
+  expect(usda.findByType("details").props.open).toBe(true);
+  expect(text(usda.findByType("details"))).toContain("Install USDA Foundation");
+  expect(text(usda)).toContain("pnpm catalog:import:usda -- /absolute/path/to/FoodData_Central_foundation_food_csv.zip");
   expect(text(renderer.root)).not.toMatch(/Check OFF updates|JSONL|OFF export|Official OFF downloads/);
 });
 
@@ -88,54 +94,118 @@ test.each(["uploading", "queued", "validating", "importing", "indexing", "activa
   expect(renderer.root.findAllByProps({ type: "file" })).toHaveLength(0);
   expect(renderer.root.findAllByType("progress")).toHaveLength(0);
   expect(renderer.root.findAllByProps({ role: "alert" })).toHaveLength(0);
-  expect(renderer.root.findAllByType("details")).toHaveLength(0);
   expect(text(renderer.root)).not.toMatch(/Private archive error|bytes received|records processed|foods imported|records rejected|invalid identity|installation complete|installation failed|installation interrupted|Receiving archive|Queued for import|Validating archive|Importing foods|Building search index|Activating catalog|Excluded records/);
   expect(renderer.root.findAllByType("button").filter(button => /Install|Replace|Retry/.test(text(button)))).toHaveLength(0);
   await act(async () => { await vi.advanceTimersByTimeAsync(9000); });
   expect(load).toHaveBeenCalledTimes(1);
 });
 
+const availableRelease = { releasePeriod: "2026-04", identifier: "FoodData Central 15.0", releasedOn: "2026-04-30", archiveUrl: "https://fdc.nal.usda.gov/fdc-datasets/foundation.zip", archiveFilename: "foundation-2026-04.zip", archiveByteLength: 48250000 };
+const boundInstalled = {
+  generation: "generation", filename: "foundation-old.zip", sha256: "3f9a7d1e0b5c42a88e6f1d93b7c0a5e4d2f81c6b9a0e3d7f5c1b8a2e6d4f9c21e", installedAt: "2026-08-22T14:45:00.000Z", foodCount: 1234,
+  publicationDateRange: { earliest: "2020-01-01", latest: "2025-01-01" },
+  sourceRelease: { releasePeriod: "2025-12", identifier: "FoodData Central 14.0", releasedOn: "2025-12-18", archiveFilename: "foundation-old.zip", archiveByteLength: 3000000 },
+};
+function checked(status: "newer" | "unchanged" | "unavailable" | "indeterminate"): NonNullable<CatalogState["updateCheck"]> {
+  return { status, checkedAt: "2026-09-09T14:30:00.000Z", availableRelease: status === "unavailable" ? null : availableRelease, error: status === "unavailable" ? "Official USDA release metadata could not be checked." : null };
+}
+
 test.each([
-  ["newer", "A newer USDA Foundation release is available."],
-  ["unchanged", "No newer declared USDA Foundation release was found."],
-  ["unavailable", "USDA release metadata is temporarily unavailable."],
-  ["indeterminate", "USDA release metadata cannot be compared safely."],
-] as const)("USDA %s update state keeps release, install and check times distinct", async (status, message) => {
-  const availableRelease = { releasePeriod: "2026-04", identifier: "FoodData Central 15.0", releasedOn: "2026-04-30", archiveUrl: "https://fdc.nal.usda.gov/fdc-datasets/foundation.zip", archiveFilename: "foundation.zip", archiveByteLength: 3825741 };
-  const installed = {
-    generation: "generation", filename: "foundation.zip", sha256: "abc123", installedAt: new Date(2026, 0, 2, 3, 4, 5).toISOString(), foodCount: 1234,
-    publicationDateRange: { earliest: "2020-01-01", latest: "2025-01-01" },
-    sourceRelease: { releasePeriod: "2025-12", identifier: "FoodData Central 14.0", releasedOn: "2025-12-18", archiveFilename: "foundation-old.zip", archiveByteLength: 3000000 },
-  };
-  const { card } = await render({ ...empty, installed, updateCheck: { status, checkedAt: "2026-09-09T14:30:00.000Z", availableRelease: status === "unavailable" ? null : availableRelease, error: status === "unavailable" ? "Official USDA release metadata could not be checked." : null } });
+  ["unchanged", "Up to date", "FoodData Central 14.0 is the latest USDA release.", "Check again"],
+  ["unavailable", "Couldn’t reach USDA", "Your installed catalog keeps working. Try again later.", "Try again"],
+  ["indeterminate", "Couldn’t compare with USDA", "USDA release metadata cannot be compared safely.", "Try again"],
+] as const)("USDA %s update state leads with its status and a check action", async (status, title, detail, action) => {
+  const { card } = await render({ ...empty, installed: boundInstalled, updateCheck: checked(status) });
   const usda = card("usda-fdc");
-  expect(text(usda)).toContain(message);
-  expect(text(usda)).toContain("Installed official release: FoodData Central 14.0 · 2025-12-18");
-  expect(text(usda)).toContain(status === "unavailable" ? "Available official release: Unknown" : "Available official release: FoodData Central 15.0 · 2026-04-30");
-  expect(text(usda)).toContain("Installed: 1/2/2026, 3:04:05 AM");
-  expect(text(usda)).toContain("Last checked: 9/9/2026, 10:30:00 AM");
-  expect(text(usda.findByProps({ action: "/settings/catalogs" }))).toContain("Check USDA updates again");
+  expect(text(usda)).toContain(title);
+  expect(text(usda)).toContain(detail);
+  expect(text(usda.findByProps({ action: "/settings/catalogs" }))).toBe(action);
+  expect(text(usda)).toContain("Last checked 15 minutes ago");
+  expect(text(usda)).toContain("Installed18 days ago");
+  expect(text(usda)).toContain("ReleaseFDC 14.02025-12-18");
+  expect(text(usda)).toContain("SHA-2563f9a…c21e");
+  expect(text(usda.findByType("details"))).toContain("Reinstall this archive");
+  expect(text(usda)).toContain("/absolute/path/to/foundation-old.zip");
+});
+
+test("a newer USDA release turns the card amber and opens the update steps on demand", async () => {
+  const { card } = await render({ ...empty, installed: boundInstalled, updateCheck: checked("newer") });
+  const usda = card("usda-fdc");
+  expect(text(usda)).toContain("New release: FDC 15.0Published 2026-04-30 · you have FDC 14.0");
+  expect(text(usda)).toContain("ReleaseFDC 14.0FDC 15.0 available");
+  expect(text(usda.findByProps({ action: "/settings/catalogs" }))).toBe("Check again");
+  const details = usda.findByType("details");
+  expect(details.props.open).toBe(false);
+  expect(text(details)).toContain("Update to FDC 15.0");
+  expect(text(details)).toContain("Foundation Foods · CSV · 48.3 MB");
+  expect(text(details)).toContain("pnpm catalog:import:usda -- /absolute/path/to/foundation-2026-04.zip");
+});
+
+async function renderCard(props: Partial<Parameters<typeof UsdaCatalogCard>[0]>, details?: { open: boolean; scrollIntoView: () => void }) {
+  const Routes = createRoutesStub([{ path: "/", Component: () => createElement(UsdaCatalogCard, { catalog: { installed: boundInstalled, updateCheck: checked("unchanged") }, csrfToken: "catalog-csrf", renderedAt: "2026-09-09T14:30:10.000Z", rechecked: false, ...props }) }]);
+  let renderer!: ReactTestRenderer;
+  await act(() => { renderer = create(createElement(Routes, { initialEntries: ["/"] }), { createNodeMock: element => element.type === "details" ? details ?? null : null }); });
+  renderers.push(renderer);
+  return renderer;
+}
+
+test("How to update opens the details and scrolls them into view", async () => {
+  const details = { open: false, scrollIntoView: vi.fn() };
+  const renderer = await renderCard({ catalog: { installed: boundInstalled, updateCheck: checked("newer") } }, details);
+  await act(() => { (renderer.root.findByProps({ children: "How to update" }).props as { onClick: () => void }).onClick(); });
+  expect(details.open).toBe(true);
+  expect(details.scrollIntoView).toHaveBeenCalledWith({ behavior: "smooth", block: "start" });
+  const unmounted = await renderCard({ catalog: { installed: boundInstalled, updateCheck: checked("newer") } });
+  await act(() => { (unmounted.root.findByProps({ children: "How to update" }).props as { onClick: () => void }).onClick(); });
+});
+
+test("Copy puts the full SHA-256 on the clipboard and reports failures", async () => {
+  const writeText = vi.fn().mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error("denied"));
+  vi.stubGlobal("navigator", { clipboard: { writeText } });
+  const renderer = await renderCard({});
+  const copy = () => renderer.root.findByProps({ "aria-label": "Copy full SHA-256" });
+  await act(async () => { (copy().props as { onClick: () => void }).onClick(); await Promise.resolve(); });
+  expect(writeText).toHaveBeenCalledWith(boundInstalled.sha256);
+  expect(text(renderer.root.findByProps({ role: "status" }))).toBe("Copied");
+  await act(async () => { (copy().props as { onClick: () => void }).onClick(); await Promise.resolve(); });
+  expect(text(renderer.root.findByProps({ role: "alert" }))).toBe("Could not copy");
+});
+
+test("an unchecked catalog asks for its first check", async () => {
+  const renderer = await renderCard({ catalog: { installed: boundInstalled, updateCheck: undefined } });
+  expect(text(renderer.root)).toContain("Not checked yetUSDA update status has not been checked.");
+  expect(text(renderer.root)).toContain("USDA has not been checked");
+  expect(text(renderer.root.findByProps({ type: "submit" }))).toBe("Check for updates");
+});
+
+test("a just-run check that finds no newer release confirms it was checked", async () => {
+  const renderer = await renderCard({ rechecked: true });
+  expect(text(renderer.root)).toContain("Still up to dateNo newer release at USDA.");
+  expect(text(renderer.root)).toContain("Last checked just now");
 });
 
 test("a not-installed USDA catalog and an unbound archive never claim to be current", async () => {
-  const check = { status: "indeterminate" as const, checkedAt: "2026-09-09T14:30:00.000Z", availableRelease: { releasePeriod: "2026-04", identifier: "FoodData Central 15.0", releasedOn: "2026-04-30", archiveUrl: "https://fdc.nal.usda.gov/fdc-datasets/foundation.zip", archiveFilename: "foundation.zip", archiveByteLength: 3825741 }, error: null };
-  const notInstalled = await render({ ...empty, updateCheck: check });
-  expect(text(notInstalled.card("usda-fdc"))).toContain("Install a Foundation archive before comparing it with USDA's declared release.");
-  const unbound = await render({ ...empty, installed: { generation: "generation", filename: "renamed.zip", sha256: "abc", installedAt: "2026-01-02T03:04:05.000Z", foodCount: 1, publicationDateRange: { earliest: "2025-01-01", latest: "2026-04-30" } }, updateCheck: check });
-  expect(text(unbound.card("usda-fdc"))).toContain("The installed archive could not be tied to a declared USDA release.");
-  expect(text(unbound.card("usda-fdc"))).not.toContain("No newer declared USDA Foundation release was found.");
+  const notInstalled = await render({ ...empty, updateCheck: checked("indeterminate") });
+  expect(text(notInstalled.card("usda-fdc"))).toContain("Not installed");
+  expect(text(notInstalled.card("usda-fdc"))).not.toContain("Up to date");
+  const unbound = await render({ ...empty, installed: { ...boundInstalled, filename: "renamed.zip", sourceRelease: undefined }, updateCheck: checked("unchanged") });
+  expect(text(unbound.card("usda-fdc"))).toContain("Release unknownThe installed archive could not be tied to a declared USDA release.");
+  expect(text(unbound.card("usda-fdc"))).toContain("ReleaseUnknownNot declared");
+  expect(text(unbound.card("usda-fdc"))).not.toContain("Up to date");
 });
 
 test("an installed USDA catalog shows its dates and immutable snapshot metadata", async () => {
   const installed = { generation: "generation", filename: "release.zip", sha256: "abc123", installedAt: new Date(2026, 0, 2, 3, 4, 5).toISOString(), foodCount: 1234, publicationDateRange: { earliest: "2020-01-01", latest: "2023-01-01" } };
   const { card } = await render({ ...empty, installed, job: job("succeeded") });
   const usda = card("usda-fdc");
-  expect(text(usda)).toContain("1,234 foods installedArchive: release.zip");
-  expect(text(usda)).toContain("Food publication dates: 2020-01-01 – 2023-01-01");
+  expect(text(usda)).toContain("1,234 foods installed");
   expect(text(usda)).not.toContain("USDA installation complete");
-  expect(text(usda.findByType("details"))).toBe("Source snapshot fingerprintSHA-256: abc123");
-  expect(text(usda)).toContain("Installed: 1/2/2026, 3:04:05 AM");
-  expect(text(usda)).toContain("Import a newer Foundation archive, or deliberately reimport this archive, while the installed catalog remains available.");
+  const details = text(usda.findByType("details"));
+  expect(details).toContain("Archiverelease.zip");
+  expect(details).toContain("Food dates2020-01-01 – 2023-01-01");
+  expect(details).toContain("SHA-256abc123");
+  expect(details).toContain("Installed1/2/2026, 3:04:05 AM");
+  expect(details).toContain("Saved Food Entries keep their original nutrition and measurements.");
 });
 
 async function renderContact(email: string | undefined, result: BarcodeContactResult) {
