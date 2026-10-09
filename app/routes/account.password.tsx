@@ -136,7 +136,7 @@ export default function ChangePassword({
     <main className={styles.shell}>
       <section className={styles.panel} aria-labelledby="password-heading">
         {!loaderData.passwordChangeRequired ? (
-          <Link className={styles.backLink} to="/">
+          <Link className={styles.backLink} to="/settings/security">
             ← Back to account
           </Link>
         ) : null}

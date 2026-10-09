@@ -15,6 +15,7 @@ import Register, {
   headers as registerHeaders,
   meta as registerMeta,
 } from "../../app/routes/register";
+import SecuritySettings from "../../app/routes/settings.security";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean })
   .IS_REACT_ACT_ENVIRONMENT = true;
@@ -198,6 +199,71 @@ describe("registration component", () => {
 });
 
 describe("password component", () => {
+  test("returns to Account security after opening Change account password", async () => {
+    const securityData = {
+      csrfToken: "password-csrf",
+      credentials: [],
+      enabled: false,
+      isAdministrator: false,
+      preview: false,
+      today: "2026-10-09",
+      username: "account.owner",
+    };
+    const Routes = createRoutesStub([
+      {
+        Component: SecuritySettings as never,
+        id: "security",
+        loader: () => securityData,
+        path: "/settings/security",
+      },
+      {
+        Component: ChangePassword as never,
+        loader: () => ({
+          csrfToken: "password-csrf",
+          keyLoginEnabled: false,
+          passwordChangeRequired: false,
+          username: "account.owner",
+        }),
+        path: "/account/password",
+      },
+      { Component: () => <h1>Daily log</h1>, path: "/" },
+    ]);
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(createElement(Routes, {
+        hydrationData: { loaderData: { security: securityData } },
+        initialEntries: ["/settings/security"],
+      }));
+    });
+    const clickLink = async (label: string) => {
+      const link = renderer.root.findAllByType("a").find(
+        (candidate) => candidate.children.join("").includes(label),
+      )!;
+      await act(async () => {
+        (link.props as {
+          onClick(event: {
+            button: number;
+            defaultPrevented: boolean;
+            preventDefault(): void;
+          }): void;
+        }).onClick({ button: 0, defaultPrevented: false, preventDefault() {} });
+      });
+    };
+    try {
+      await clickLink("Change account password");
+      expect(renderer.root.findAllByType(ChangePassword)).toHaveLength(1);
+      expect(input(renderer, "currentPassword").props.type).toBe("password");
+
+      await clickLink("Back to account");
+      expect(renderer.root.findAllByType(SecuritySettings)).toHaveLength(1);
+      expect(renderer.root.findByProps({ id: "security-title" }).children)
+        .toEqual(["Account security"]);
+      expect(renderer.root.findAllByType(ChangePassword)).toHaveLength(0);
+    } finally {
+      await act(async () => renderer.unmount());
+    }
+  });
+
   test.each([
     [undefined, undefined, undefined],
     [{ error: "Current password rejected" }, "Current password rejected", undefined],
@@ -271,9 +337,7 @@ describe("password component", () => {
       "Replace the temporary password before continuing.",
     );
     expect(input(renderer, "currentPassword").props.autoFocus).toBe(true);
-    expect(
-      renderer.root.findAllByProps({ href: "/" }),
-    ).toHaveLength(0);
+    expect(renderer.root.findAllByType("a")).toHaveLength(0);
     const forms = renderer.root.findAllByType("form");
     expect(forms).toHaveLength(2);
     expect(forms.at(-1)?.props).toMatchObject({ action: "/logout" });
