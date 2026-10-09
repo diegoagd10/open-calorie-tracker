@@ -623,7 +623,7 @@ test("home distinguishes past, future, no-goal, and incomplete summaries", async
   const past = await renderHome({
     foodLog: pastFoodLog,
     nearbyDates: [{ date: "2026-08-30", isFuture: false, isSelected: true }],
-    notice: "Food Entry deleted. Daily totals updated.",
+    notice: "Water Event deleted. Daily total updated.",
   }, { message: "Visible route message" });
   expect(semanticDom(past)).toMatchSnapshot();
   expect(past.root.findByType("h1").props["aria-label"])
@@ -635,7 +635,7 @@ test("home distinguishes past, future, no-goal, and incomplete summaries", async
   expect(allText(past)).not.toContain(" ml");
   expect(allText(past)).toContain("/ No active goal");
   expect(past.root.findAllByProps({ role: "status" }).map((node) => node.children.join("")))
-    .toContain("Food Entry deleted. Daily totals updated.");
+    .toContain("Water Event deleted. Daily total updated.");
   expect(allText(past)).toContain("Visible route message");
   expect(past.root.findAllByProps({ "aria-label": "Calorie progress" }))
     .toHaveLength(0);

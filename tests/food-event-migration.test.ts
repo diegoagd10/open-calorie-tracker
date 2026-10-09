@@ -179,20 +179,22 @@ test("upgraded history keeps favorites, links, and IDs usable through the Food E
   }
 });
 
-test("Home's copied notice reads a legacy copy", async () => {
+test("a legacy copied URL opens the migrated entry without a notice", async () => {
   const seeded = await seedPreviousRelease();
   vi.stubEnv("DATABASE_PATH", seeded.databasePath);
   initializeApplicationDatabase();
-  const request = new Request(`http://localhost/?date=2026-08-27&notice=copied&copied=${seeded.ids.copy}`, {
+  const request = new Request(`http://localhost/?date=2026-08-28&entry=${seeded.ids.copy}&notice=copied&copied=${seeded.ids.copy}`, {
     headers: { "X-Test-Food-Log-Now": "2026-08-29T18:00:00.000Z" },
   });
 
   const loaded = await loadFoodEventDialogs(
     { request, role: "member", userId: seeded.owner },
-    { selectedDate: "2026-08-27", today: "2026-08-29", isFuture: false, timeZone: "America/New_York" },
+    { selectedDate: "2026-08-28", today: "2026-08-29", isFuture: false, timeZone: "America/New_York" },
   );
 
-  expect(loaded).toMatchObject({ dialogs: { notice: "Copied Tortilla to Friday, August 28, 2026." } });
+  expect(loaded).toMatchObject({ dialogs: { editor: { event: { id: seeded.ids.copy, name: "Tortilla" } } } });
+  if (loaded instanceof Response) throw new Error("Expected Food Event dialogs");
+  expect(loaded.dialogs).not.toHaveProperty("notice");
 });
 
 test("a second startup changes nothing, and a fresh database starts empty", async () => {

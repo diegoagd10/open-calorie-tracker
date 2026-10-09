@@ -247,7 +247,9 @@ test("home publishes metadata and enforces account/setup/date boundaries", async
 
   for (const [notice, message] of [
     ["updated", undefined],
-    ["deleted", "Food Entry deleted. Daily totals updated."],
+    ["deleted", undefined],
+    ["copied", undefined],
+    ["food-saved", undefined],
     ["water-created", undefined],
     ["water-updated", "Water Event updated. Daily total refreshed."],
     ["water-deleted", "Water Event deleted. Daily total updated."],
@@ -1089,7 +1091,14 @@ test.each([
   expect(await postFood({ ...remove, expectedUpdatedAt: food.updatedAt }))
     .toMatchObject({ data: { code: "edit_conflict", event: updated }, init: { status: 409 } });
   expect(await postFood({ ...remove, id: "999999" })).toMatchObject(refused(404, "not_found"));
-  expectRedirect(await postFood(remove), `/?date=${date}&notice=deleted`);
+  expectRedirect(await postFood(remove), `/?date=${date}`);
+  const deleted = (await load(`/?date=${date}`)).data;
+  expect(deleted.editor).toBeUndefined();
+  expect(deleted.notice).toBeUndefined();
+  expect(deleted.foodLog.selectedDate).toBe(date);
+  expect(deleted.foodLog.foodEvents.map((event) => event.id)).not.toContain(food.id);
+  expect(deleted.foodLog.nutritionTotals.energyMilliKcal.known).toBe(expectedEnergy - 60_000);
+  expect(deleted.dailyCalories[date].knownMilliKcal).toBe(expectedEnergy - 60_000);
   // An event deleted elsewhere closes the editor rather than offering a retry.
   expect(await postFood({ ...common, expectedUpdatedAt: updated.updatedAt })).toMatchObject(refused(404, "not_found"));
 });
@@ -1119,19 +1128,15 @@ test("the editor opens only an owned event on the selected day", async () => {
   getFoodEventService().delete(userId, [yesterday, todayEvent].map((event) => ({ id: event.id, expectedUpdatedAt: event.updatedAt })));
 });
 
-test("copying an earlier day's food to today returns to the source day with a notice", async () => {
+test("copying an earlier day's food to today returns to the source day without a notice", async () => {
   const source = await saveLookup("2026-08-29T16:00:00.000Z");
   const copyFields = { date: "2026-08-29", id: String(source.id), intent: "copy" };
 
   const copied = await postFood(copyFields);
-  const destination = (copied as Response).headers.get("Location")!;
-  const destinationUrl = new URL(destination, origin);
-  expect(destinationUrl.searchParams.get("date")).toBe("2026-08-29");
-  expect(destinationUrl.searchParams.get("notice")).toBe("copied");
-  expectRedirect(copied, destination);
+  expectRedirect(copied, "/?date=2026-08-29");
 
-  const sourcePage = await load(destination);
-  expect(sourcePage.data.notice).toBe(`Copied ${source.name} to today's Food Log.`);
+  const sourcePage = await load("/?date=2026-08-29");
+  expect(sourcePage.data.notice).toBeUndefined();
   expect(sourcePage.data.foodLog.foodEvents).toEqual([source]);
   expect(await foodEventsOn(today)).toEqual([expect.objectContaining({
     copiedFromId: source.id,
@@ -1140,6 +1145,7 @@ test("copying an earlier day's food to today returns to the source day with a no
   })]);
 
   const todayEvent = (await foodEventsOn(today))[0];
+  expect((await load(`/?date=2026-08-29&notice=copied&copied=${todayEvent.id}`)).data.notice).toBeUndefined();
   for (const [fields, expected] of [
     [{ ...copyFields, id: "999999" }, refused(404, "not_found")],
     [{ ...copyFields, date: "2026-08-28" }, refused(404, "not_found")],
@@ -1167,8 +1173,8 @@ test("the copy dialog chooses an eligible date and copies once to noon on that d
   const selected = await load(`/?date=2026-08-26&copy=${source.id}&copyDate=2026-08-27`);
   expect(selected.data.copy?.destinationDate).toBe("2026-08-27");
   const copied = await postFood({ date: "2026-08-26", destinationDate: "2026-08-27", id: String(source.id), intent: "copy" });
-  const destination = (copied as Response).headers.get("Location")!;
-  expect((await load(destination)).data.notice).toBe(`Copied ${source.name} to Thursday, August 27, 2026.`);
+  expectRedirect(copied, "/?date=2026-08-26");
+  expect((await load("/?date=2026-08-26")).data.notice).toBeUndefined();
   expect(await foodEventsOn("2026-08-27")).toEqual([expect.objectContaining({
     copiedFromId: source.id,
     logDate: "2026-08-27T16:00:00.000Z",
@@ -1241,7 +1247,7 @@ test("reused and copied favorites do not offer to save the same food again", asy
 
   expectRedirect(
     await postFood({ date: "2026-08-28", id: String(reused.id), intent: "add-favorite" }),
-    `/?date=2026-08-28&entry=${reused.id}&notice=food-saved`,
+    `/?date=2026-08-28&entry=${reused.id}`,
   );
   expect(service.findFavorites(userId, { query: "Linked tortilla QA" })).toHaveLength(1);
 });
@@ -1251,12 +1257,13 @@ test("an older manual food joins My foods only through the editor's action", asy
   expect((await load(`/?date=2026-08-24&entry=${source.id}`)).data.editor?.event.favoriteId).toBeNull();
   expectRedirect(
     await postFood({ date: "2026-08-24", id: String(source.id), intent: "add-favorite" }),
-    `/?date=2026-08-24&entry=${source.id}&notice=food-saved`,
+    `/?date=2026-08-24&entry=${source.id}`,
   );
-  expect((await load(`/?date=2026-08-24&entry=${source.id}&notice=food-saved`)).data).toMatchObject({
+  expect((await load(`/?date=2026-08-24&entry=${source.id}`)).data).toMatchObject({
     editor: { event: { favoriteId: expect.any(Number) as unknown } },
-    notice: "Added to My foods.",
+    notice: undefined,
   });
+  expect((await load(`/?date=2026-08-24&entry=${source.id}&notice=food-saved`)).data.notice).toBeUndefined();
   expect((await load("/?date=2026-08-31&food=my&query=flatbread")).data.addFood).toMatchObject({
     mode: "my",
     favorites: [expect.objectContaining({ name: "Old manual flatbread" })],
@@ -1344,10 +1351,10 @@ test("the food read model ignores unknown providers and notices, and propagates 
     throw unexpected;
   };
   try {
-    for (const query of [`copy=${source.id}`, `notice=copied&copied=${source.id}`]) {
-      const request = new Request(`${origin}/?date=2026-08-21&${query}`, { headers: { Cookie: cookie } });
-      await expect(homeLoader(routeArgs(request))).rejects.toBe(unexpected);
-    }
+    const request = new Request(`${origin}/?date=2026-08-21&copy=${source.id}`, { headers: { Cookie: cookie } });
+    await expect(homeLoader(routeArgs(request))).rejects.toBe(unexpected);
+    const legacyNotice = new Request(`${origin}/?date=2026-08-21&notice=copied&copied=${source.id}`, { headers: { Cookie: cookie } });
+    await expect(homeLoader(routeArgs(legacyNotice))).resolves.toMatchObject({ data: { notice: undefined } });
   } finally {
     service.read = read;
   }
