@@ -1,0 +1,353 @@
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Geist:wght@400;500;600&display=swap');
+  #water-presets-proposal {
+    --water-panel: light-dark(#faf8f1, #1c1b16);
+    --water-soft: light-dark(#efede5, #25241e);
+    --water-ground: light-dark(#fffdf8, #12110e);
+    --water-ink: light-dark(#26241d, #f0ede4);
+    --water-muted: light-dark(#625e52, #cec8ba);
+    --water-rule: light-dark(#d8d3c6, #353329);
+    --water-strong-rule: light-dark(#b9b3a5, #484438);
+    --water-blue: light-dark(#306a9d, #8fbae5);
+    --water-on-blue: light-dark(#ffffff, #122333);
+    --water-blue-soft: light-dark(#e3effa, #243443);
+    --water-error: light-dark(#a42e27, #f6a8a0);
+    width: 100%;
+    max-width: 640px;
+    margin: 0 auto;
+    color: var(--water-ink);
+    font-family: 'Geist', Arial, sans-serif;
+    font-size: 14px;
+    line-height: 1.45;
+    color-scheme: light dark;
+  }
+  #water-presets-proposal *,
+  #water-presets-proposal *::before,
+  #water-presets-proposal *::after { box-sizing: border-box; }
+  #water-presets-proposal [hidden] { display: none !important; }
+  #water-presets-proposal .water-panel {
+    padding: 22px 16px 20px;
+    background: var(--water-panel);
+    border: 1px solid var(--water-rule);
+    border-radius: 24px;
+  }
+  #water-presets-proposal .water-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 16px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--water-rule);
+  }
+  #water-presets-proposal h2 {
+    margin: 0 0 4px;
+    font-family: 'Fraunces', Georgia, serif;
+    font-size: 30px;
+    font-weight: 600;
+    line-height: 1.2;
+    letter-spacing: -0.5px;
+    color: var(--water-ink);
+  }
+  #water-presets-proposal .water-subtitle { margin: 0; color: var(--water-muted); }
+  #water-presets-proposal button { font: inherit; }
+  #water-presets-proposal .water-close {
+    display: grid;
+    flex: 0 0 44px;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    place-items: center;
+    border: 0;
+    border-radius: 50%;
+    background: var(--water-soft);
+    color: var(--water-muted);
+  }
+  #water-presets-proposal .water-close svg { width: 18px; height: 18px; }
+  #water-presets-proposal .water-amount-section {
+    margin: 16px 0 0;
+    padding: 14px 12px;
+    border: 0;
+    border-radius: 14px;
+    background: var(--water-soft);
+  }
+  #water-presets-proposal .water-amount-label {
+    display: block;
+    margin-bottom: 10px;
+    font-weight: 600;
+  }
+  #water-presets-proposal .water-presets {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 8px;
+  }
+  #water-presets-proposal .water-preset {
+    display: flex;
+    min-width: 0;
+    min-height: 76px;
+    padding: 13px 4px 12px;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    gap: 1px;
+    border: 1px solid var(--water-strong-rule);
+    border-radius: 12px;
+    background: var(--water-ground);
+    color: var(--water-ink);
+    transition: background 120ms ease, border-color 120ms ease;
+  }
+  #water-presets-proposal .water-preset:hover { border-color: var(--water-blue); }
+  #water-presets-proposal .water-preset[aria-pressed="true"] {
+    background: var(--water-blue-soft);
+    border-color: var(--water-blue);
+    color: var(--water-blue);
+    box-shadow: inset 0 0 0 1px var(--water-blue);
+  }
+  #water-presets-proposal .water-preset strong { font-size: 23px; line-height: 1.2; font-weight: 600; }
+  #water-presets-proposal .water-preset small { color: var(--water-muted); font-size: 12px; }
+  #water-presets-proposal .water-preset[aria-pressed="true"] small { color: var(--water-blue); }
+  #water-presets-proposal .water-custom-choice strong { font-size: 14px; }
+  #water-presets-proposal .water-custom-choice svg { width: 18px; height: 18px; margin-bottom: 4px; }
+  #water-presets-proposal .water-custom-field {
+    display: grid;
+    gap: 7px;
+    margin-top: 16px;
+    font-weight: 500;
+  }
+  #water-presets-proposal .water-input-wrap { position: relative; }
+  #water-presets-proposal .water-input-wrap input {
+    display: block;
+    width: 100%;
+    min-height: 48px;
+    padding: 11px 72px 11px 14px;
+    border: 1px solid var(--water-strong-rule);
+    border-radius: 11px;
+    background: var(--water-ground);
+    color: var(--water-ink);
+    font: inherit;
+    font-size: 16px;
+    appearance: textfield;
+  }
+  #water-presets-proposal .water-input-wrap input::-webkit-inner-spin-button { appearance: none; }
+  #water-presets-proposal .water-input-unit {
+    position: absolute;
+    right: 14px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--water-muted);
+    font-size: 13px;
+    font-weight: 400;
+    pointer-events: none;
+  }
+  #water-presets-proposal .water-error { margin: 8px 0 0; color: var(--water-error); font-size: 13px; }
+  #water-presets-proposal .water-status { margin: 12px 0 0; color: var(--water-blue); }
+  #water-presets-proposal .water-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 16px;
+  }
+  #water-presets-proposal .water-action {
+    min-height: 44px;
+    padding: 11px 19px;
+    border: 1px solid var(--water-rule);
+    border-radius: 999px;
+    background: var(--water-panel);
+    color: var(--water-ink);
+    font-weight: 600;
+  }
+  #water-presets-proposal .water-primary {
+    border-color: var(--water-blue);
+    background: var(--water-blue);
+    color: var(--water-on-blue);
+  }
+  #water-presets-proposal .water-action:disabled { opacity: 0.45; cursor: not-allowed; }
+  #water-presets-proposal .water-reopen { padding: 20px 0; text-align: center; }
+  #water-presets-proposal .water-reopen p { margin: 0 0 12px; }
+  #water-presets-proposal[data-density="compact"] .water-preset { min-height: 60px; }
+  #water-presets-proposal[data-density="compact"] .water-preset strong { font-size: 19px; }
+  #water-presets-proposal[data-density="compact"] .water-custom-choice strong { font-size: 14px; }
+  @media (max-width: 440px) {
+    #water-presets-proposal .water-panel { padding: 20px 14px 16px; }
+    #water-presets-proposal .water-presets { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    #water-presets-proposal .water-custom-choice {
+      grid-column: 1 / -1;
+      min-height: 44px;
+      flex-direction: row;
+      gap: 8px;
+      padding: 10px;
+    }
+    #water-presets-proposal .water-custom-choice svg { margin: 0; }
+    #water-presets-proposal .water-actions > button { flex: 1; }
+    #water-presets-proposal h2 { font-size: 28px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    #water-presets-proposal .water-preset { transition: none; }
+  }
+</style>
+
+<div id="water-presets-proposal" data-density="comfortable" aria-label="Add Water proposal">
+  <section class="water-panel" role="region" aria-labelledby="water-preview-title">
+    <header class="water-header">
+      <div>
+        <h2 id="water-preview-title">Add Water</h2>
+        <p class="water-subtitle">Record how much water you drank</p>
+      </div>
+      <button class="water-close cursor-interaction" type="button" aria-label="Close water dialog">
+        <i data-lucide="x" aria-hidden="true"></i>
+      </button>
+    </header>
+    <form novalidate>
+      <div class="water-amount-section">
+        <span class="water-amount-label" id="water-preview-amount-label">Amount (fl oz)</span>
+        <div class="water-presets" role="group" aria-labelledby="water-preview-amount-label">
+          <button class="water-preset cursor-interaction" type="button" data-amount="8" aria-pressed="false" aria-label="8 fl oz"><strong>8</strong><small>fl oz</small></button>
+          <button class="water-preset cursor-interaction" type="button" data-amount="11" aria-pressed="false" aria-label="11 fl oz"><strong>11</strong><small>fl oz</small></button>
+          <button class="water-preset cursor-interaction" type="button" data-amount="16" aria-pressed="false" aria-label="16 fl oz"><strong>16</strong><small>fl oz</small></button>
+          <button class="water-preset cursor-interaction" type="button" data-amount="24" aria-pressed="false" aria-label="24 fl oz"><strong>24</strong><small>fl oz</small></button>
+          <button class="water-preset water-custom-choice cursor-interaction" type="button" data-amount="custom" aria-pressed="false" aria-controls="water-preview-custom" aria-expanded="false"><i data-lucide="pencil" aria-hidden="true"></i><strong>Custom</strong></button>
+        </div>
+        <div class="water-custom-field" id="water-preview-custom" hidden>
+          <label for="water-preview-ounces">Custom amount</label>
+          <div class="water-input-wrap">
+            <input id="water-preview-ounces" type="number" inputmode="decimal" min="0.001" max="500" step="0.001" placeholder="Enter amount" aria-describedby="water-preview-error" disabled>
+            <span class="water-input-unit">fl oz</span>
+          </div>
+          <p class="water-error" id="water-preview-error" role="alert" hidden>Enter an amount from 0.001 to 500 fl oz, with at most three decimals.</p>
+        </div>
+      </div>
+      <p class="water-status" role="status" aria-live="polite" hidden></p>
+      <footer class="water-actions">
+        <button class="water-action water-cancel cursor-interaction" type="button">Cancel</button>
+        <button class="water-action water-primary water-submit cursor-interaction" type="button" disabled>Add water</button>
+      </footer>
+    </form>
+  </section>
+  <div class="water-reopen" hidden>
+    <p role="status" aria-live="polite"></p>
+    <button class="water-action water-primary cursor-interaction" type="button">Add water</button>
+  </div>
+</div>
+
+<script>
+(() => {
+  const root = document.getElementById('water-presets-proposal');
+  const panel = root.querySelector('.water-panel');
+  const form = root.querySelector('form');
+  const buttons = [...root.querySelectorAll('[data-amount]')];
+  const customChoice = root.querySelector('[data-amount="custom"]');
+  const customField = root.querySelector('.water-custom-field');
+  const input = root.querySelector('#water-preview-ounces');
+  const submit = root.querySelector('.water-submit');
+  const error = root.querySelector('.water-error');
+  const status = root.querySelector('.water-status');
+  const reopen = root.querySelector('.water-reopen');
+  const design = { density: 'comfortable' };
+  let selected = null;
+  let closed = false;
+
+  function amount() {
+    if (selected === 'custom') return input.value;
+    return selected || '';
+  }
+  function valid() {
+    const value = amount();
+    const numeric = Number(value);
+    return /^\d+(?:\.\d{1,3})?$/.test(value) && numeric >= 0.001 && numeric <= 500;
+  }
+  function render() {
+    root.dataset.density = design.density;
+    panel.hidden = closed;
+    reopen.hidden = !closed;
+    buttons.forEach(button => button.setAttribute('aria-pressed', String(button.dataset.amount === selected)));
+    const isCustom = selected === 'custom';
+    customChoice.setAttribute('aria-expanded', String(isCustom));
+    customField.hidden = !isCustom;
+    input.disabled = !isCustom;
+    input.required = isCustom;
+    submit.disabled = !valid();
+    input.setAttribute('aria-invalid', String(!error.hidden));
+  }
+  function persist() {
+    if (!window.openai?.setWidgetState) return;
+    const snapshot = {
+      modelContent: { selectedAmount: selected, customAmount: input.value, density: design.density },
+      privateContent: { closed }
+    };
+    window.openai.setWidgetState(snapshot).catch(() => {});
+  }
+  function restore(snapshot) {
+    if (!snapshot || typeof snapshot !== 'object') return;
+    const values = snapshot.modelContent || {};
+    if ([null, '8', '11', '16', '24', 'custom'].includes(values.selectedAmount)) selected = values.selectedAmount;
+    if (typeof values.customAmount === 'string' && input.value !== values.customAmount && document.activeElement !== input) input.value = values.customAmount;
+    if (['comfortable', 'compact'].includes(values.density)) design.density = values.density;
+    closed = snapshot.privateContent?.closed === true;
+    error.hidden = selected !== 'custom' || input.value === '' || valid();
+    render();
+  }
+  buttons.forEach(button => button.addEventListener('click', () => {
+    selected = button.dataset.amount;
+    error.hidden = true;
+    status.hidden = true;
+    render();
+    if (selected === 'custom') input.focus();
+    persist();
+  }));
+  input.addEventListener('input', () => {
+    error.hidden = input.value === '' || valid();
+    status.hidden = true;
+    render();
+  });
+  input.addEventListener('change', persist);
+  function close() {
+    closed = true;
+    reopen.querySelector('p').textContent = '';
+    render();
+    reopen.querySelector('button').focus();
+    persist();
+  }
+  root.querySelector('.water-close').addEventListener('click', close);
+  root.querySelector('.water-cancel').addEventListener('click', close);
+  root.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && !closed) close();
+  });
+  reopen.querySelector('button').addEventListener('click', () => {
+    selected = null;
+    input.value = '';
+    error.hidden = true;
+    status.hidden = true;
+    closed = false;
+    render();
+    buttons[0].focus();
+    persist();
+  });
+  function savePreview() {
+    if (!valid()) {
+      error.hidden = selected !== null;
+      render();
+      return;
+    }
+    status.textContent = `${Number(amount()).toLocaleString('en-US', { maximumFractionDigits: 3 })} fl oz added`;
+    status.hidden = false;
+    persist();
+  }
+  submit.addEventListener('click', savePreview);
+  form.addEventListener('submit', event => event.preventDefault());
+  input.addEventListener('keydown', event => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      savePreview();
+    }
+  });
+  window.addEventListener('openai:set_globals', event => {
+    const snapshot = event.detail?.globals?.widgetState;
+    if (snapshot) restore(snapshot);
+  });
+  restore(window.openai?.widgetState);
+  render();
+  if (globalThis.Tweak) {
+    const tweak = new Tweak({ container: root, onChange: () => { render(); persist(); } });
+    tweak.addSelect(design, 'density', { label: 'Preset spacing', options: [{ label: 'Comfortable', value: 'comfortable' }, { label: 'Compact', value: 'compact' }] });
+  }
+})();
+</script>

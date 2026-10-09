@@ -827,15 +827,17 @@ function WaterDialogModal({
   csrfToken,
   date,
   dialog,
+  timeZone,
 }: {
   csrfToken: string;
   date: string;
   dialog: NonNullable<Route.ComponentProps["loaderData"]["waterDialog"]>;
+  timeZone: string;
 }) {
   const closeHref = foodLogHref(date);
   const { closeDialog, dialogRef, handleDialogKeyDown } = useModalDialog({
     closeHref,
-    initialFocusSelector: 'input:not([type="hidden"])',
+    initialFocusSelector: "[data-water-initial-focus]",
     restoreFocusSelector:
       "[data-water-editor-trigger], [data-water-dialog-trigger]",
   });
@@ -851,6 +853,7 @@ function WaterDialogModal({
         maxLocalLogDate={dialog.maxLocalLogDate}
         onKeyDown={handleDialogKeyDown}
         returnDate={date}
+        timeZone={timeZone}
       />
     </DialogBackdrop>
   );
@@ -1079,7 +1082,8 @@ export default function Home({ actionData, loaderData }: Route.ComponentProps) {
           csrfToken={csrfToken}
           date={foodLog.selectedDate}
           dialog={waterDialog}
-          key={waterDialog.event?.updatedAt ?? "create"}
+          key={waterDialog.event?.updatedAt ?? foodLog.selectedDate}
+          timeZone={foodLog.timeZone}
         />
       ) : null}
       {copy ? (
