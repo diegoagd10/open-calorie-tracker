@@ -1225,8 +1225,13 @@ test("Save to My foods favorites a manual food only when checked, and My foods r
   const detail = await load(`/?date=2026-08-29&food=saved:${favoriteId}`);
   expect(detail.data.addFood).toMatchObject({
     mode: "saved",
+    origin: "my",
     favorite: { name: "Mexican tortilla", snapshot: { nutrients: { energyMilliKcal: 100_000 } } },
   });
+  const searchDetail = await load(`/?date=2026-08-29&food=saved:${favoriteId}&query=tortilla&origin=search`);
+  expect(searchDetail.data.addFood).toMatchObject({ mode: "saved", origin: "search", query: "tortilla", favorite: { id: favoriteId } });
+  const invalidOrigin = await load(`/?date=2026-08-29&food=saved:${favoriteId}&origin=barcode`);
+  expect(invalidOrigin.data.addFood).toMatchObject({ mode: "saved", origin: "my" });
 
   expectRedirect(await postFood({ date: "2026-08-29", favoriteId: String(favoriteId), intent: "log", method: "favorite" }), "/?date=2026-08-29");
   expect(await foodEventsOn("2026-08-29")).toContainEqual(expect.objectContaining({

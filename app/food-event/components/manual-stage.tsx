@@ -1,13 +1,9 @@
-import { useState } from "react";
-import { Link } from "react-router";
-
 import eventStyles from "../food-event.module.css";
-import { addFoodHref, FOOD_EVENT_FETCHERS } from "../links";
+import { useAddFoodDraft, useAddFoodFetcher } from "./add-food-session";
 import {
   FoodFormActions,
   FoodNameField,
   FoodNutritionInputs,
-  useFoodEventFetcher,
   type NutrientFieldValues,
 } from "./food-fields";
 
@@ -16,11 +12,11 @@ import {
  * keeps everything typed, since the form stays mounted while its fetcher submits.
  */
 export function ManualStage({ csrfToken, date }: { csrfToken: string; date: string }) {
-  const fetcher = useFoodEventFetcher(FOOD_EVENT_FETCHERS.add);
-  const [name, setName] = useState("");
-  const [quantity, setQuantity] = useState("1");
-  const [saveAsFavorite, setSaveAsFavorite] = useState(true);
-  const [nutrients, setNutrients] = useState<NutrientFieldValues>({
+  const fetcher = useAddFoodFetcher("manual");
+  const [name, setName] = useAddFoodDraft("manual:name", "");
+  const [quantity, setQuantity] = useAddFoodDraft("manual:quantity", "1");
+  const [saveAsFavorite, setSaveAsFavorite] = useAddFoodDraft("manual:favorite", true);
+  const [nutrients, setNutrients] = useAddFoodDraft<NutrientFieldValues>("manual:nutrients", {
     carbohydrateGrams: "",
     energyKcal: "",
     fatGrams: "",
@@ -33,9 +29,6 @@ export function ManualStage({ csrfToken, date }: { csrfToken: string; date: stri
 
   return (
     <section aria-labelledby="manual-food-title">
-      <Link className={eventStyles.backToResults} to={addFoodHref(date, "choose")}>
-        ‹ Back to methods
-      </Link>
       <div className={eventStyles.foodIdentity}>
         <span className={eventStyles.catalogType}>Manual</span>
         <h3 id="manual-food-title">Add food manually</h3>
@@ -87,7 +80,7 @@ export function ManualStage({ csrfToken, date }: { csrfToken: string; date: stri
             />
             <span>Save to My foods</span>
           </label>
-          <FoodFormActions date={date} message={fetcher.data?.message}>
+          <FoodFormActions date={date} message={fetcher.message}>
             <button className={eventStyles.primaryButton} type="submit">
               {pending ? "Adding…" : "Add to Food Log"}
             </button>

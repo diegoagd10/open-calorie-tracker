@@ -158,7 +158,7 @@ async function addFoodStage(url: URL, reads: Reads, route: AddFoodRoute): Promis
     case "saved": {
       const [favorite] = reads.service.findFavorites(reads.userId, { favoriteId: route.favoriteId });
       if (!favorite) throw new Response("That food is no longer in My foods.", { status: 404 });
-      return { stage: { mode: "saved", query, favorite }, status: 200 };
+      return { stage: { mode: "saved", query, favorite, origin: url.searchParams.get("origin") === "search" ? "search" : "my" }, status: 200 };
     }
     case "barcode":
       return barcodeStage(reads.catalog, url.searchParams.get("barcode") ?? "");

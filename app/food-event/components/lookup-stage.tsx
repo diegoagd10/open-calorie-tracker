@@ -4,9 +4,10 @@ import { Form, Link } from "react-router";
 import type { CatalogFood } from "../../catalog/food-catalog.server";
 import eventStyles from "../food-event.module.css";
 import type { AddFoodStage } from "../food-event.model";
-import { addFoodHref, catalogQuery, FOOD_EVENT_FETCHERS } from "../links";
+import { addFoodHref, catalogQuery } from "../links";
 import { FavoriteResults } from "./favorite-stage";
-import { FoodFormActions, NutritionPreview, ProviderAttribution, useFoodEventFetcher } from "./food-fields";
+import { ManualEntryLink, useAddFoodDraft, useAddFoodFetcher } from "./add-food-session";
+import { FoodFormActions, NutritionPreview, ProviderAttribution } from "./food-fields";
 
 const USDA = { href: "https://fdc.nal.usda.gov/", name: "USDA FoodData Central" };
 
@@ -22,7 +23,7 @@ export function LookupSearchStage({
   stage: Extract<AddFoodStage, { mode: "search" }>;
 }) {
   const [clientSearchMessage, setClientSearchMessage] = useState<string>();
-  const [searchQuery, setSearchQuery] = useState(stage.query);
+  const [searchQuery, setSearchQuery] = useAddFoodDraft(`search:query:${stage.query}`, stage.query);
   return (
     <>
       <Form
@@ -86,13 +87,14 @@ export function LookupSearchStage({
           {stage.favorites.length > 0 ? (
             <section aria-label="My foods">
               <h3>My foods</h3>
-              <FavoriteResults date={date} favorites={stage.favorites} query={stage.query} />
+              <FavoriteResults date={date} favorites={stage.favorites} origin="search" query={stage.query} />
             </section>
           ) : null}
           {stage.message ? (
             <div className={eventStyles.catalogState} role="alert">
               <h3>{stage.title ?? "Search unavailable"}</h3>
               <p>{stage.message}</p>
+              <ManualEntryLink date={date} message={stage.message} />
             </div>
           ) : null}
           {stage.results.length > 0 ? (
@@ -169,11 +171,12 @@ export function LookupDetailStage({
   food: CatalogFood;
   query: string;
 }) {
-  const fetcher = useFoodEventFetcher(FOOD_EVENT_FETCHERS.add);
-  const [measurementId, setMeasurementId] = useState(
+  const draftKey = `${food.provider}:${food.providerFoodId}`;
+  const fetcher = useAddFoodFetcher(draftKey);
+  const [measurementId, setMeasurementId] = useAddFoodDraft(`${draftKey}:measurement`,
     food.measurements[0]?.id ?? "",
   );
-  const [quantity, setQuantity] = useState("1");
+  const [quantity, setQuantity] = useAddFoodDraft(`${draftKey}:quantity`, "1");
   const measurement =
     food.measurements.find((candidate) => candidate.id === measurementId) ??
     food.measurements[0];
@@ -247,7 +250,8 @@ export function LookupDetailStage({
           </label>
         </div>
         <NutritionPreview food={food} multiplier={multiplier} />
-        <FoodFormActions date={date} message={fetcher.data?.message}>
+        <FoodFormActions date={date} message={fetcher.message}>
+          <ManualEntryLink date={date} message={fetcher.message} />
           <button className={eventStyles.primaryButton} disabled={fetcher.state !== "idle"} type="submit">
             Add to Food Log
           </button>

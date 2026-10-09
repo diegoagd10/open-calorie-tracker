@@ -19,10 +19,11 @@ export function foodLogHref(date: string, parameters: Record<string, string> = {
   return `/?${new URLSearchParams({ date, ...parameters })}`;
 }
 
-export function addFoodHref(date: string, food: string, query?: string, provider?: CatalogProviderId): string {
+export function addFoodHref(date: string, food: string, query?: string, provider?: CatalogProviderId, origin?: "my" | "search"): string {
   const parameters = new URLSearchParams({ date, food });
   if (query) parameters.set("query", query);
   if (provider) parameters.set("provider", provider);
+  if (origin === "search") parameters.set("origin", origin);
   return `/?${parameters}`;
 }
 
