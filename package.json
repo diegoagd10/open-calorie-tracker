@@ -1,11 +1,19 @@
 {
   "name": "open-calorie-tracker",
   "private": true,
-  "packageManager": "pnpm@12.15.0",
   "scripts": {
     "dev:web": "pnpm --filter web dev",
     "dev:api": "pnpm --filter api start:dev",
     "build": "pnpm -r build",
-    "lint": "pnpm -r lint"
-  }
+    "check": "vp check",
+    "lint": "vp lint",
+    "fmt": "vp fmt",
+    "test": "vp run -r test",
+    "test:cov": "vp run -r test:cov"
+  },
+  "devDependencies": {
+    "@vitest/coverage-v8": "catalog:",
+    "vite-plus": "catalog:"
+  },
+  "packageManager": "pnpm@12.15.0"
 }

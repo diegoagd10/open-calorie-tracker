@@ -18,3 +18,15 @@ cp apps/web/.env.example apps/web/.env.local
 pnpm dev:api                  # http://localhost:3001
 pnpm dev:web                  # http://localhost:3000
 ```
+
+## Calidad de código ([Vite+](https://viteplus.dev))
+
+```bash
+pnpm check      # formato + lint + type check
+pnpm lint       # vp lint (Oxlint)
+pnpm fmt        # vp fmt (Oxfmt)
+pnpm test       # vp test (Vitest)
+pnpm test:cov   # tests con coverage
+```
+
+La configuración de lint y formato vive en `vite.config.ts` (raíz); la de tests en `apps/api/vite.config.ts`.
