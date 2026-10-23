@@ -13,6 +13,7 @@ Created in [T3 Code](https://t3.codes).
 
 ```bash
 pnpm install
+pnpm --filter web exec playwright install chromium   # tests de navegador
 cp apps/api/.env.example apps/api/.env
 cp apps/web/.env.example apps/web/.env.local
 pnpm dev:api                  # http://localhost:3001
