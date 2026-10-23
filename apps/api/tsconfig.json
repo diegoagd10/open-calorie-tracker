@@ -1,4 +1,5 @@
 {
+  "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "module": "nodenext",
     "moduleResolution": "nodenext",
@@ -15,9 +16,6 @@
     "outDir": "./dist",
     "rootDir": ".",
     "incremental": true,
-    "skipLibCheck": true,
-    "strict": true,
-    "strictPropertyInitialization": false,
     "types": ["vite-plus/test/globals", "node"]
   }
 }

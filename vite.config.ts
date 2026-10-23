@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite-plus';
+import { defineConfig } from 'vite-plus'
 
 export default defineConfig({
   lint: {
@@ -10,6 +10,15 @@ export default defineConfig({
     },
     rules: {
       'typescript/no-floating-promises': 'error',
+      'typescript/no-explicit-any': 'error',
+      'typescript/no-non-null-assertion': 'error',
+      'typescript/no-unsafe-argument': 'error',
+      'typescript/no-unsafe-assignment': 'error',
+      'typescript/no-unsafe-call': 'error',
+      'typescript/no-unsafe-member-access': 'error',
+      'typescript/no-unsafe-return': 'error',
+      'typescript/consistent-type-imports': 'error',
+      'typescript/switch-exhaustiveness-check': 'error',
     },
     overrides: [
       {
@@ -24,7 +33,9 @@ export default defineConfig({
     ],
   },
   fmt: {
+    semi: false,
     singleQuote: true,
+    printWidth: 100,
     trailingComma: 'all',
   },
-});
+})
