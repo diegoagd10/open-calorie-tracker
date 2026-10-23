@@ -6,3 +6,5 @@ dist
 .next
 coverage
 *.tsbuildinfo
+*.db
+*.db-journal

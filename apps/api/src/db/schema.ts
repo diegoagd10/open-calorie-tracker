@@ -1,2 +1,2 @@
-// TODO: define tables (users) with drizzle-orm/pg-core
+// TODO: define tables (users) with drizzle-orm/sqlite-core
 export {};

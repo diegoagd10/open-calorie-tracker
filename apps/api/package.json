@@ -25,12 +25,12 @@
     "db:studio": "drizzle-kit studio"
   },
   "dependencies": {
+    "@libsql/client": "^0.18.0",
     "@nestjs/common": "^12.0.1",
     "@nestjs/config": "^12.0.1",
     "@nestjs/core": "^12.0.1",
     "@nestjs/platform-express": "^12.0.1",
     "drizzle-orm": "^0.45.4",
-    "pg": "^8.23.1",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1"
   },
@@ -41,7 +41,6 @@
     "@nestjs/testing": "^12.0.1",
     "@types/express": "^5.0.0",
     "@types/node": "^24.0.0",
-    "@types/pg": "^8.23.1",
     "@types/supertest": "^7.0.0",
     "@vitest/coverage-v8": "^4.1.2",
     "drizzle-kit": "^0.31.11",

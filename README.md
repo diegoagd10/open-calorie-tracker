@@ -7,13 +7,12 @@ Created in [T3 Code](https://t3.codes).
 ## Stack
 
 - `apps/web` — Next.js (App Router, TypeScript, Tailwind)
-- `apps/api` — NestJS + Drizzle ORM (PostgreSQL)
+- `apps/api` — NestJS + Drizzle ORM (SQLite)
 
 ## Desarrollo
 
 ```bash
 pnpm install
-docker compose up -d          # PostgreSQL
 cp apps/api/.env.example apps/api/.env
 cp apps/web/.env.example apps/web/.env.local
 pnpm dev:api                  # http://localhost:3001
