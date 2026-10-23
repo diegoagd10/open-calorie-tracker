@@ -19,10 +19,7 @@
     "test:watch": "vitest",
     "test:cov": "vitest run --coverage",
     "test:debug": "vitest --inspect-brk --no-file-parallelism",
-    "test:e2e": "vitest run --config ./vitest.config.e2e.ts --passWithNoTests",
-    "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate",
-    "db:studio": "drizzle-kit studio"
+    "test:e2e": "vitest run --config ./vitest.config.e2e.ts --passWithNoTests"
   },
   "dependencies": {
     "@libsql/client": "^0.18.0",
