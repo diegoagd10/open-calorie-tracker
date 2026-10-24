@@ -102,6 +102,13 @@ describe('POST /v1/login (e2e)', () => {
 
       expect(wrongPassword.body).toEqual(unknownUsername.body)
     })
+
+    it.each(['ANA', 'Ana'])('ignores case, logging %s in as the same user', async (username) => {
+      const response = await login({ username, password: PASSWORD })
+
+      expect(response.status).toBe(200)
+      expect(decodeJwt((response.body as LoginResponse).accessToken).sub).toBe(SEED_USER_ID)
+    })
   })
 
   describe('validation', () => {
@@ -183,6 +190,16 @@ describe('POST /v1/login (e2e)', () => {
       const response = await failLogin(ip, 'other')
 
       expect(response.status).toBe(401)
+    })
+
+    it('counts failed attempts across differently cased usernames', async () => {
+      const ip = '203.0.113.19'
+
+      for (let attempt = 1; attempt < MAX_FAILED_ATTEMPTS; attempt++) {
+        expect((await failLogin(ip, attempt % 2 === 0 ? 'ANA' : 'Ana')).status).toBe(401)
+      }
+
+      expect((await failLogin(ip, 'aNa')).status).toBe(423)
     })
 
     it('resets the failed attempts after a successful login', async () => {

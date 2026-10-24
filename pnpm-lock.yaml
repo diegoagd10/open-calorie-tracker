@@ -271,6 +271,9 @@ importers:
         specifier: 19.3.0
         version: 19.3.0(react@19.3.0)
     devDependencies:
+      '@libsql/client':
+        specifier: ^0.18.0
+        version: 0.18.0
       '@tailwindcss/turbopack':
         specifier: ^4
         version: 4.3.3

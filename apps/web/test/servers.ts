@@ -1,14 +1,18 @@
 import { type ChildProcess, execFile, spawn } from 'node:child_process'
-import { mkdtemp, rm } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { mkdir, rm } from 'node:fs/promises'
+import type { Server } from 'node:http'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import { startFaultProxy } from './fault-proxy'
-import { API_PORT, API_URL, PROXY_PORT, PROXY_URL, SEED_USER, WEB_PORT, WEB_URL } from './fixtures'
+import { EMPTY, type Environment, JWT, SEED_USER, SEEDED, TEST_DATA_DIR } from './fixtures'
 
 const apiDir = fileURLToPath(new URL('../../api', import.meta.url))
 const webDir = fileURLToPath(new URL('..', import.meta.url))
+
+const run = (command: string[], cwd: string, env: Record<string, string> = {}) => {
+  const [bin = '', ...args] = command
+  return promisify(execFile)(bin, args, { cwd, env: { ...process.env, ...env } })
+}
 
 const start = (command: string[], cwd: string, env: Record<string, string>) => {
   const [bin = '', ...args] = command
@@ -37,44 +41,70 @@ const waitFor = async (url: string, timeoutMs: number) => {
   throw new Error(`${url} did not respond within ${timeoutMs}ms`)
 }
 
-// Starts the real API (temporary database with the seeded test user), the fault proxy and the
-// Next.js app.
-export default async function setup() {
-  // A file database, because the API runs in its own process and is seeded before it starts.
-  const dataDir = await mkdtemp(join(tmpdir(), 'open-calorie-tracker-web-test-'))
-  const databaseUrl = `file:${join(dataDir, 'sqlite.db')}`
-  await promisify(execFile)('pnpm', ['db:seed'], {
-    cwd: apiDir,
-    env: {
-      ...process.env,
-      DATABASE_URL: databaseUrl,
-      SEED_USER_USERNAME: SEED_USER.username,
-      SEED_USER_PASSWORD: SEED_USER.password,
-    },
-  })
+const port = (url: string) => new URL(url).port
 
+const jwtEnv = {
+  JWT_SECRET: JWT.secret,
+  JWT_ISSUER: JWT.issuer,
+  JWT_AUDIENCE: JWT.audience,
+}
+
+// Starts the real API (on its own file database, because it runs in its own process), the fault
+// proxy and the built Next.js app for one environment.
+const startEnvironment = async (environment: Environment) => {
+  const databaseUrl = `file:${environment.databasePath}`
   const servers = [
-    start(['pnpm', 'start'], apiDir, {
-      PORT: String(API_PORT),
+    start(['pnpm', 'start:prod'], apiDir, {
+      PORT: port(environment.apiUrl),
       DATABASE_URL: databaseUrl,
-      JWT_SECRET: 'web-test-secret-that-is-long-enough',
-      JWT_ISSUER: 'open-calorie-tracker-api',
-      JWT_AUDIENCE: 'open-calorie-tracker-web',
       TRUST_PROXY: 'loopback',
+      ...jwtEnv,
     }),
-    start(['pnpm', 'exec', 'next', 'dev', '--port', String(WEB_PORT)], webDir, {
-      API_URL: PROXY_URL,
+    start(['pnpm', 'exec', 'next', 'start', '--port', port(environment.webUrl)], webDir, {
+      API_URL: environment.proxyUrl,
+      ...jwtEnv,
     }),
   ]
-  const proxy = await startFaultProxy(PROXY_PORT, API_URL)
+  const proxy = await startFaultProxy(Number(port(environment.proxyUrl)), environment.apiUrl)
+  return { servers, proxy }
+}
+
+// Starts two environments: one with the seed user and one without any user. Both APIs run the
+// build made by `db:seed`, and Next.js locks its build directory while `next dev` runs, so both
+// web servers serve a single production build instead.
+export default async function setup() {
+  await rm(TEST_DATA_DIR, { recursive: true, force: true })
+  await mkdir(TEST_DATA_DIR, { recursive: true })
+
+  await Promise.all([
+    run(['pnpm', 'db:seed'], apiDir, {
+      DATABASE_URL: `file:${SEEDED.databasePath}`,
+      SEED_USER_USERNAME: SEED_USER.username,
+      SEED_USER_PASSWORD: SEED_USER.password,
+    }),
+    run(['pnpm', 'exec', 'next', 'build'], webDir),
+  ])
+
+  const servers: ChildProcess[] = []
+  const proxies: Server[] = []
   const stopAll = async () => {
     servers.forEach(stop)
-    proxy.close()
-    await rm(dataDir, { recursive: true, force: true })
+    proxies.forEach((proxy) => proxy.close())
+    await rm(TEST_DATA_DIR, { recursive: true, force: true })
   }
 
   try {
-    await Promise.all([waitFor(`${API_URL}/v1/login`, 60_000), waitFor(`${WEB_URL}/login`, 60_000)])
+    for (const environment of [SEEDED, EMPTY]) {
+      const started = await startEnvironment(environment)
+      servers.push(...started.servers)
+      proxies.push(started.proxy)
+    }
+    await Promise.all(
+      [SEEDED, EMPTY].flatMap((environment) => [
+        waitFor(`${environment.apiUrl}/v1/setup`, 60_000),
+        waitFor(`${environment.webUrl}/login`, 60_000),
+      ]),
+    )
   } catch (error) {
     await stopAll()
     throw error
