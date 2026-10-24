@@ -4,19 +4,36 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
-import { afterEach, beforeEach, describe, expect, it } from 'vite-plus/test'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vite-plus/test'
 import { Database } from '../src/db/database.js'
 
 const apiDir = fileURLToPath(new URL('..', import.meta.url))
 
+// Not dist: `nest build` empties dist, which would pull it from under the API that the web tests
+// start from there. A direct child of apps/api, so the build still finds drizzle/ and node_modules.
+const BUILD_DIR = 'dist-test'
+
 const PASSWORD = 'correct-horse-battery-staple'
 
-// Each script rebuilds the API before running.
-const SCRIPT_TIMEOUT_MS = 60_000
+const BUILD_TIMEOUT_MS = 60_000
+
+const exec = (command: string[], env: Record<string, string> = {}) => {
+  const [bin = '', ...args] = command
+  return promisify(execFile)(bin, args, { cwd: apiDir, env: { ...process.env, ...env } })
+}
 
 describe('db:reset (e2e)', () => {
   let dataDir: string
   let databaseUrl: string
+
+  // Builds once, the way `nest build` does for the db:seed and db:reset scripts.
+  beforeAll(async () => {
+    await exec(['pnpm', 'exec', 'tsc', '-p', 'tsconfig.build.json', '--outDir', BUILD_DIR])
+  }, BUILD_TIMEOUT_MS)
+
+  afterAll(async () => {
+    await rm(join(apiDir, BUILD_DIR), { recursive: true, force: true })
+  })
 
   beforeEach(async () => {
     dataDir = await mkdtemp(join(tmpdir(), 'open-calorie-tracker-db-scripts-test-'))
@@ -27,14 +44,12 @@ describe('db:reset (e2e)', () => {
     await rm(dataDir, { recursive: true, force: true })
   })
 
-  const run = (script: string, env: Record<string, string> = {}) =>
-    promisify(execFile)('pnpm', [script], {
-      cwd: apiDir,
-      env: { ...process.env, DATABASE_URL: databaseUrl, ...env },
-    })
+  // Runs what the db:seed and db:reset scripts run after building.
+  const run = (script: 'seed' | 'reset', env: Record<string, string> = {}) =>
+    exec(['node', `${BUILD_DIR}/${script}`], { DATABASE_URL: databaseUrl, ...env })
 
   const seed = (username: string) =>
-    run('db:seed', { SEED_USER_USERNAME: username, SEED_USER_PASSWORD: PASSWORD })
+    run('seed', { SEED_USER_USERNAME: username, SEED_USER_PASSWORD: PASSWORD })
 
   const storedUsernames = async () => {
     const database = await Database.connect(databaseUrl)
@@ -45,32 +60,24 @@ describe('db:reset (e2e)', () => {
     }
   }
 
-  it(
-    'deletes every user',
-    async () => {
-      await seed('ana')
+  it('deletes every user', async () => {
+    await seed('ana')
 
-      await run('db:reset')
+    await run('reset')
 
-      expect(await storedUsernames()).toEqual([])
-    },
-    SCRIPT_TIMEOUT_MS * 2,
-  )
+    expect(await storedUsernames()).toEqual([])
+  })
 
-  it(
-    'refuses to run against a production database',
-    async () => {
-      await seed('ana')
+  it('refuses to run against a production database', async () => {
+    await seed('ana')
 
-      const failure: unknown = await run('db:reset', { NODE_ENV: 'production' }).catch(
-        (error: unknown) => error,
-      )
+    const failure: unknown = await run('reset', { NODE_ENV: 'production' }).catch(
+      (error: unknown) => error,
+    )
 
-      expect(String((failure as { stderr?: unknown } | undefined)?.stderr)).toContain(
-        'Refusing to reset a production database',
-      )
-      expect(await storedUsernames()).toEqual(['ana'])
-    },
-    SCRIPT_TIMEOUT_MS * 2,
-  )
+    expect(String((failure as { stderr?: unknown } | undefined)?.stderr)).toContain(
+      'Refusing to reset a production database',
+    )
+    expect(await storedUsernames()).toEqual(['ana'])
+  })
 })
