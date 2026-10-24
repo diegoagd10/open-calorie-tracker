@@ -9,7 +9,23 @@ export type Environment = {
   databasePath: string
 }
 
-export const TEST_DATA_DIR = join(tmpdir(), 'open-calorie-tracker-web-test')
+// Override with WEB_TEST_BASE_PORT to run alongside another checkout's tests. The seeded
+// environment uses the base port and the next two; the empty one starts 100 ports higher.
+const DEFAULT_BASE_PORT = 3100
+
+const basePortFromEnv = (value: string | undefined): number => {
+  if (value === undefined || value === '') return DEFAULT_BASE_PORT
+  const port = Number(value)
+  if (!Number.isInteger(port) || port < 1024 || port > 65_535 - 102) {
+    throw new Error(`WEB_TEST_BASE_PORT must be a port between 1024 and ${65_535 - 102}`)
+  }
+  return port
+}
+
+const BASE_PORT = basePortFromEnv(process.env['WEB_TEST_BASE_PORT'])
+
+// Per base port, so two runs on different ports never share a database.
+export const TEST_DATA_DIR = join(tmpdir(), `open-calorie-tracker-web-test-${BASE_PORT}`)
 
 const environment = (name: string, basePort: number): Environment => ({
   webUrl: `http://localhost:${basePort}`,
@@ -19,10 +35,10 @@ const environment = (name: string, basePort: number): Environment => ({
 })
 
 // Already has the seed user: for logging in and the redirects to /login.
-export const SEEDED = environment('seeded', 3100)
+export const SEEDED = environment('seeded', BASE_PORT)
 
 // Starts with no users: for registering and the redirects to /register.
-export const EMPTY = environment('empty', 3200)
+export const EMPTY = environment('empty', BASE_PORT + 100)
 
 export const SEED_USER = {
   username: 'ana',

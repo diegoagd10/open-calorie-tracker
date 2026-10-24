@@ -14,6 +14,7 @@
     "start:debug": "nest start --debug --watch",
     "start:prod": "node dist/main",
     "db:seed": "nest build && node dist/seed",
+    "db:reset": "nest build && node dist/reset",
     "test:watch": "vp test"
   },
   "dependencies": {

@@ -31,14 +31,20 @@ pnpm check:fix  # same, auto-fixing format and lint issues
 pnpm lint       # vp lint (Oxlint)
 pnpm fmt        # vp fmt (Oxfmt)
 pnpm test       # vp test (Vitest)
-pnpm test:cov   # tests with coverage; fails below 95%
+pnpm test:cov   # tests with coverage; fails below 95% of statements
 ```
 
 `packages/shared` is built with `vp pack` on `pnpm install`, on `pnpm build` and before the tests;
 while editing it, keep its `dev` script running in watch mode.
 
-The web tests start their own `next dev`, and Next.js allows only one per project, so stop
-`pnpm dev:web` before running them.
+The web tests run `next build`, and Next.js locks its build directory while `next dev` runs, so
+stop `pnpm dev:web` before running them. They start two environments, one with the seed user and
+one without users, on ports 3100–3102 and 3200–3202. To run them next to another checkout's tests,
+pick other ports with `WEB_TEST_BASE_PORT` (the second environment uses the base port + 100):
+
+```bash
+WEB_TEST_BASE_PORT=4100 pnpm --filter web exec vp test run
+```
 
 Lint and format settings live in the root `vite.config.ts`; test settings live in each package's
 `vite.config.ts`.

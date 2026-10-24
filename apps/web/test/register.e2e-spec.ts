@@ -221,7 +221,9 @@ describe('Register page (e2e)', () => {
 
     expect(await submitButton().isDisabled()).toBe(true)
     expect(postRequests).toHaveLength(1)
+    const response = page.waitForResponse('**/api/register')
     release()
+    await response
   })
 
   it('creates the account, stores the session in a secure HTTP-only cookie and redirects home', async () => {
