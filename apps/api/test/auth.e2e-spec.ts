@@ -19,7 +19,6 @@ const USERNAME_MAX_LENGTH = 32
 const PASSWORD_MAX_LENGTH = 128
 
 const MAX_FAILED_ATTEMPTS = 5
-const LOGIN_RATE_LIMIT = 10
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
@@ -193,35 +192,6 @@ describe('POST /v1/login (e2e)', () => {
       for (let attempt = 1; attempt < MAX_FAILED_ATTEMPTS; attempt++) {
         expect((await failLogin(ip)).status).toBe(401)
       }
-    })
-  })
-
-  describe('rate limit', () => {
-    const anyLogin = (ip: string, n: number) =>
-      login({ username: `user${n}`, password: 'whatever' }, ip)
-
-    it(`allows ${LOGIN_RATE_LIMIT} login requests per IP`, async () => {
-      for (let n = 0; n < LOGIN_RATE_LIMIT; n++) {
-        expect((await anyLogin('203.0.113.20', n)).status).not.toBe(429)
-      }
-    })
-
-    it('rejects further requests from the same IP with 429 and Retry-After', async () => {
-      const ip = '203.0.113.21'
-      for (let n = 0; n < LOGIN_RATE_LIMIT; n++) await anyLogin(ip, n)
-
-      const response = await anyLogin(ip, LOGIN_RATE_LIMIT)
-
-      expect(response.status).toBe(429)
-      expect(Number(response.headers['retry-after'])).toBeGreaterThan(0)
-    })
-
-    it('does not limit other IPs', async () => {
-      for (let n = 0; n < LOGIN_RATE_LIMIT; n++) await anyLogin('203.0.113.22', n)
-
-      const response = await anyLogin('203.0.113.23', 0)
-
-      expect(response.status).toBe(401)
     })
   })
 })

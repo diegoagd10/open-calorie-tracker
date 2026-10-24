@@ -61,7 +61,6 @@ export default async function setup() {
       JWT_ISSUER: 'open-calorie-tracker-api',
       JWT_AUDIENCE: 'open-calorie-tracker-web',
       TRUST_PROXY: 'loopback',
-      LOGIN_RATE_LIMIT: '1000',
     }),
     start(['pnpm', 'exec', 'next', 'dev', '--port', String(WEB_PORT)], webDir, {
       API_URL: PROXY_URL,
