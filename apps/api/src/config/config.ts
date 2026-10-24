@@ -7,8 +7,6 @@ const envSchema = z.object({
   JWT_AUDIENCE: z.string().min(1),
   TRUST_PROXY: z.string().optional(),
   LOGIN_RATE_LIMIT: z.coerce.number().int().positive().default(10),
-  SEED_USER_USERNAME: z.string().min(1).optional(),
-  SEED_USER_PASSWORD: z.string().min(1).optional(),
 })
 
 // Express "trust proxy" setting: a hop count, a boolean or a list of trusted addresses.
@@ -25,12 +23,10 @@ export class AppConfig {
     readonly jwt: { secret: Uint8Array; issuer: string; audience: string },
     readonly trustProxy: boolean | number | string,
     readonly loginRateLimit: number,
-    readonly seedUser: { username: string; password: string } | undefined,
   ) {}
 
   static fromEnv(env: NodeJS.ProcessEnv = process.env): AppConfig {
     const parsed = envSchema.parse(env)
-    const { SEED_USER_USERNAME: username, SEED_USER_PASSWORD: password } = parsed
 
     return new AppConfig(
       parsed.DATABASE_URL,
@@ -41,7 +37,6 @@ export class AppConfig {
       },
       parseTrustProxy(parsed.TRUST_PROXY),
       parsed.LOGIN_RATE_LIMIT,
-      username !== undefined && password !== undefined ? { username, password } : undefined,
     )
   }
 }

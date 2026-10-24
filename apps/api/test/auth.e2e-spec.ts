@@ -2,6 +2,8 @@ import { decodeJwt, jwtVerify } from 'jose'
 import request from 'supertest'
 import { afterEach, beforeEach, describe, expect, it } from 'vite-plus/test'
 import { createApp } from '../src/app.js'
+import { Database } from '../src/db/database.js'
+import { seedUser } from '../src/db/seed.js'
 
 const USERNAME = 'ana'
 // The seeded user is the only row in a fresh in-memory database.
@@ -33,12 +35,11 @@ describe('POST /v1/login (e2e)', () => {
     process.env['JWT_SECRET'] = JWT_SECRET
     process.env['JWT_ISSUER'] = JWT_ISSUER
     process.env['JWT_AUDIENCE'] = JWT_AUDIENCE
-    process.env['SEED_USER_USERNAME'] = USERNAME
-    process.env['SEED_USER_PASSWORD'] = PASSWORD
     process.env['TRUST_PROXY'] = 'loopback'
 
     app = await createApp()
     await app.init()
+    await seedUser(app.get(Database), { username: USERNAME, password: PASSWORD })
   })
 
   afterEach(async () => {

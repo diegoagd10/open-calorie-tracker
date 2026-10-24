@@ -21,7 +21,11 @@ export class Database implements OnApplicationShutdown {
     return new Database(client, db)
   }
 
-  onApplicationShutdown() {
+  close() {
     this.client.close()
+  }
+
+  onApplicationShutdown() {
+    this.close()
   }
 }

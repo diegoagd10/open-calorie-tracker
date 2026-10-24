@@ -16,6 +16,7 @@ pnpm install
 pnpm --filter web exec playwright install chromium   # tests de navegador
 cp apps/api/.env.example apps/api/.env
 cp apps/web/.env.example apps/web/.env.local
+pnpm --filter api db:seed     # crea el usuario de desarrollo (SEED_USER_* en apps/api/.env)
 pnpm dev:api                  # http://localhost:3001
 pnpm dev:web                  # http://localhost:3000
 ```

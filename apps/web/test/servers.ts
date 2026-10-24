@@ -1,5 +1,9 @@
-import { type ChildProcess, spawn } from 'node:child_process'
+import { type ChildProcess, execFile, spawn } from 'node:child_process'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { promisify } from 'node:util'
 import { startFaultProxy } from './fault-proxy'
 import { API_PORT, API_URL, PROXY_PORT, PROXY_URL, SEED_USER, WEB_PORT, WEB_URL } from './fixtures'
 
@@ -33,17 +37,29 @@ const waitFor = async (url: string, timeoutMs: number) => {
   throw new Error(`${url} did not respond within ${timeoutMs}ms`)
 }
 
-// Starts the real API (in-memory database, seeded test user), the fault proxy and the Next.js app.
+// Starts the real API (temporary database with the seeded test user), the fault proxy and the
+// Next.js app.
 export default async function setup() {
+  // A file database, because the API runs in its own process and is seeded before it starts.
+  const dataDir = await mkdtemp(join(tmpdir(), 'open-calorie-tracker-web-test-'))
+  const databaseUrl = `file:${join(dataDir, 'sqlite.db')}`
+  await promisify(execFile)('pnpm', ['db:seed'], {
+    cwd: apiDir,
+    env: {
+      ...process.env,
+      DATABASE_URL: databaseUrl,
+      SEED_USER_USERNAME: SEED_USER.username,
+      SEED_USER_PASSWORD: SEED_USER.password,
+    },
+  })
+
   const servers = [
     start(['pnpm', 'start'], apiDir, {
       PORT: String(API_PORT),
-      DATABASE_URL: ':memory:',
+      DATABASE_URL: databaseUrl,
       JWT_SECRET: 'web-test-secret-that-is-long-enough',
       JWT_ISSUER: 'open-calorie-tracker-api',
       JWT_AUDIENCE: 'open-calorie-tracker-web',
-      SEED_USER_USERNAME: SEED_USER.username,
-      SEED_USER_PASSWORD: SEED_USER.password,
       TRUST_PROXY: 'loopback',
       LOGIN_RATE_LIMIT: '1000',
     }),
@@ -52,15 +68,16 @@ export default async function setup() {
     }),
   ]
   const proxy = await startFaultProxy(PROXY_PORT, API_URL)
-  const stopAll = () => {
+  const stopAll = async () => {
     servers.forEach(stop)
     proxy.close()
+    await rm(dataDir, { recursive: true, force: true })
   }
 
   try {
     await Promise.all([waitFor(`${API_URL}/v1/login`, 60_000), waitFor(`${WEB_URL}/login`, 60_000)])
   } catch (error) {
-    stopAll()
+    await stopAll()
     throw error
   }
 
