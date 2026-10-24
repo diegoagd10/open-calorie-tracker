@@ -24,6 +24,11 @@ export default defineConfig({
       {
         files: ['apps/api/**'],
         env: { node: true },
+        rules: {
+          // Nest resolves constructor dependencies from emitted decorator metadata, which needs
+          // value imports of the injected classes. `import type` would break DI at runtime.
+          'typescript/consistent-type-imports': 'off',
+        },
       },
       {
         files: ['apps/web/**'],
@@ -33,6 +38,7 @@ export default defineConfig({
     ],
   },
   fmt: {
+    ignorePatterns: ['apps/api/drizzle/**'],
     semi: false,
     singleQuote: true,
     printWidth: 100,

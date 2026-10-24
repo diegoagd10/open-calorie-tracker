@@ -56,7 +56,9 @@ describe('Login page (e2e)', () => {
     ])
   }
 
-  const alertText = () => page.getByRole('alert').textContent()
+  // Scoped to the form because Next.js renders its own role="alert" route announcer.
+  const alertText = () =>
+    page.getByRole('form', { name: 'Log in' }).getByRole('alert').textContent()
 
   const accessTokenCookie = async () =>
     (await page.context().cookies()).find((cookie) => cookie.name === 'access_token')

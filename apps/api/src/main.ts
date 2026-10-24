@@ -1,11 +1,8 @@
-import { Module } from '@nestjs/common'
-import { NestFactory } from '@nestjs/core'
+import { existsSync } from 'node:fs'
+import { createApp } from './app.js'
 
-@Module({})
-class AppModule {}
+// Variables already set in the environment take precedence over the file.
+if (existsSync('.env')) process.loadEnvFile('.env')
 
-async function bootstrap() {
-  const app = await NestFactory.create(AppModule)
-  await app.listen(process.env['PORT'] ?? 3001)
-}
-await bootstrap()
+const app = await createApp()
+await app.listen(process.env['PORT'] ?? 3001)
