@@ -24,6 +24,7 @@ pnpm dev:web                  # http://localhost:3000
 
 ```bash
 pnpm check      # formato + lint + type check
+pnpm check:fix  # lo mismo, corrigiendo formato y lint automáticamente
 pnpm lint       # vp lint (Oxlint)
 pnpm fmt        # vp fmt (Oxfmt)
 pnpm test       # vp test (Vitest)

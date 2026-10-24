@@ -6,6 +6,7 @@
     "dev:api": "pnpm --filter api start:dev",
     "build": "pnpm -r build",
     "check": "vp check",
+    "check:fix": "vp check --fix",
     "lint": "vp lint",
     "fmt": "vp fmt",
     "test": "vp run -r test",
