@@ -6,7 +6,7 @@ import {
   Injectable,
 } from '@nestjs/common'
 import type { Request, Response } from 'express'
-import { AppConfig } from '../config.js'
+import { AppConfig } from '../config/config.js'
 
 const WINDOW_MS = 60 * 1000
 

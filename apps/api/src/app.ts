@@ -1,7 +1,7 @@
 import { NestFactory } from '@nestjs/core'
 import type { NestExpressApplication } from '@nestjs/platform-express'
 import { AppModule } from './app.module.js'
-import { AppConfig } from './config.js'
+import { AppConfig } from './config/config.js'
 
 export const createApp = async (): Promise<NestExpressApplication> => {
   const app = await NestFactory.create<NestExpressApplication>(

@@ -1,7 +1,7 @@
 import { Injectable, type OnModuleInit } from '@nestjs/common'
 import { eq } from 'drizzle-orm'
 import { hashPassword } from '../auth/password.js'
-import { AppConfig } from '../config.js'
+import { AppConfig } from '../config/config.js'
 import { Database } from '../db/database.js'
 import { type User, users } from '../db/schema.js'
 
