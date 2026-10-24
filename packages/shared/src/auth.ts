@@ -2,6 +2,8 @@ import { z } from 'zod'
 
 export const USERNAME_MAX_LENGTH = 32
 export const PASSWORD_MAX_LENGTH = 128
+// Only registration enforces it, so accounts with shorter passwords can still log in.
+export const PASSWORD_MIN_LENGTH = 8
 
 // Failed logins per (IP, username) before the API locks that pair out.
 export const MAX_FAILED_ATTEMPTS = 5

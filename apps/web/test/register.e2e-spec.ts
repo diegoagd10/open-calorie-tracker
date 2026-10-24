@@ -1,6 +1,8 @@
 import {
   ACCESS_TOKEN_TTL_SECONDS,
+  GENERIC_ERROR_MESSAGE,
   PASSWORD_MAX_LENGTH,
+  PASSWORD_MIN_LENGTH,
   USERNAME_MAX_LENGTH,
 } from '@open-calorie-tracker/shared'
 import { type Browser, type Page, chromium } from 'playwright'
@@ -11,13 +13,8 @@ import { EMPTY } from './fixtures'
 
 const { apiUrl: API_URL, proxyUrl: PROXY_URL, webUrl: WEB_URL } = EMPTY
 
-const GENERIC_ERROR = 'Something went wrong. Please try again later.'
-
 const USERNAME = 'ana'
 const PASSWORD = 'correct-horse-battery-staple'
-
-// Only registration enforces it: logging in still accepts shorter passwords.
-const PASSWORD_MIN_LENGTH = 8
 
 describe('Register page (e2e)', () => {
   let browser: Browser
@@ -266,7 +263,7 @@ describe('Register page (e2e)', () => {
 
       await submit(USERNAME, PASSWORD)
 
-      expect(await alert().textContent()).toBe(GENERIC_ERROR)
+      expect(await alert().textContent()).toBe(GENERIC_ERROR_MESSAGE)
       expect(page.url()).toBe(`${WEB_URL}/register`)
       expect(await accessTokenCookie()).toBeUndefined()
     })
@@ -276,7 +273,7 @@ describe('Register page (e2e)', () => {
 
       await submit(USERNAME, PASSWORD)
 
-      expect(await alert().textContent()).toBe(GENERIC_ERROR)
+      expect(await alert().textContent()).toBe(GENERIC_ERROR_MESSAGE)
       expect(page.url()).toBe(`${WEB_URL}/register`)
       expect(await accessTokenCookie()).toBeUndefined()
     })

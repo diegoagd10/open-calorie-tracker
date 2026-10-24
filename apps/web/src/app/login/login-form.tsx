@@ -1,10 +1,9 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import { type LoginInput, loginSchema } from '@open-calorie-tracker/shared'
+import { GENERIC_ERROR_MESSAGE, type LoginInput, loginSchema } from '@open-calorie-tracker/shared'
 import { type FormEvent, useState } from 'react'
 import { Alert } from '@/components/alert'
-import { GENERIC_ERROR_MESSAGE } from '@/lib/errors'
 
 type FieldErrors = Partial<Record<keyof LoginInput, string>>
 

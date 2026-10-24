@@ -1,5 +1,6 @@
 import {
   ACCESS_TOKEN_TTL_SECONDS,
+  GENERIC_ERROR_MESSAGE,
   MAX_FAILED_ATTEMPTS,
   PASSWORD_MAX_LENGTH,
   USERNAME_MAX_LENGTH,
@@ -10,8 +11,6 @@ import { clearFault, injectFault } from './fault-proxy'
 import { SEEDED, SEED_USER } from './fixtures'
 
 const { proxyUrl: PROXY_URL, webUrl: WEB_URL } = SEEDED
-
-const GENERIC_ERROR = 'Something went wrong. Please try again later.'
 
 describe('Login page (e2e)', () => {
   let browser: Browser
@@ -171,7 +170,7 @@ describe('Login page (e2e)', () => {
 
       await submit(SEED_USER.username, SEED_USER.password)
 
-      expect(await alertText()).toBe(GENERIC_ERROR)
+      expect(await alertText()).toBe(GENERIC_ERROR_MESSAGE)
       expect(page.url()).toBe(`${WEB_URL}/login`)
       expect(await accessTokenCookie()).toBeUndefined()
     })
@@ -181,7 +180,7 @@ describe('Login page (e2e)', () => {
 
       await submit(SEED_USER.username, SEED_USER.password)
 
-      expect(await alertText()).toBe(GENERIC_ERROR)
+      expect(await alertText()).toBe(GENERIC_ERROR_MESSAGE)
       expect(page.url()).toBe(`${WEB_URL}/login`)
       expect(await accessTokenCookie()).toBeUndefined()
     })

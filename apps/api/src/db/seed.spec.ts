@@ -1,3 +1,4 @@
+import { PASSWORD_MIN_LENGTH } from '@open-calorie-tracker/shared'
 import { afterEach, beforeEach, describe, expect, it } from 'vite-plus/test'
 import { Database } from './database.js'
 import { seedUser } from './seed.js'
@@ -38,10 +39,10 @@ describe('seedUser', () => {
     expect(await storedUsernames()).toEqual([])
   })
 
-  it('rejects a password shorter than 8 characters and creates no user', async () => {
-    await expect(seedUser(database, { username: 'ana', password: 'a'.repeat(7) })).rejects.toThrow(
-      'Password must be at least 8 characters',
-    )
+  it(`rejects a password shorter than ${PASSWORD_MIN_LENGTH} characters and creates no user`, async () => {
+    await expect(
+      seedUser(database, { username: 'ana', password: 'a'.repeat(PASSWORD_MIN_LENGTH - 1) }),
+    ).rejects.toThrow(`Password must be at least ${PASSWORD_MIN_LENGTH} characters`)
     expect(await storedUsernames()).toEqual([])
   })
 })

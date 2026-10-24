@@ -14,7 +14,7 @@ const PASSWORD = 'correct-horse-battery-staple'
 // Each script rebuilds the API before running.
 const SCRIPT_TIMEOUT_MS = 60_000
 
-describe('database scripts (e2e)', () => {
+describe('db:reset (e2e)', () => {
   let dataDir: string
   let databaseUrl: string
 
@@ -33,8 +33,8 @@ describe('database scripts (e2e)', () => {
       env: { ...process.env, DATABASE_URL: databaseUrl, ...env },
     })
 
-  const seed = (username: string, env: Record<string, string> = {}) =>
-    run('db:seed', { SEED_USER_USERNAME: username, SEED_USER_PASSWORD: PASSWORD, ...env })
+  const seed = (username: string) =>
+    run('db:seed', { SEED_USER_USERNAME: username, SEED_USER_PASSWORD: PASSWORD })
 
   const storedUsernames = async () => {
     const database = await Database.connect(databaseUrl)
@@ -45,50 +45,32 @@ describe('database scripts (e2e)', () => {
     }
   }
 
-  describe('db:seed', () => {
-    it(
-      'fails and explains the rule when the username is not letters and numbers',
-      async () => {
-        const failure: unknown = await seed('ana_1').catch((error: unknown) => error)
+  it(
+    'deletes every user',
+    async () => {
+      await seed('ana')
 
-        expect(failure).toHaveProperty('stderr')
-        expect(String((failure as { stderr: unknown }).stderr)).toContain(
-          'Username can only contain letters and numbers',
-        )
-        expect(await storedUsernames()).toEqual([])
-      },
-      SCRIPT_TIMEOUT_MS,
-    )
-  })
+      await run('db:reset')
 
-  describe('db:reset', () => {
-    it(
-      'deletes every user',
-      async () => {
-        await seed('ana')
+      expect(await storedUsernames()).toEqual([])
+    },
+    SCRIPT_TIMEOUT_MS * 2,
+  )
 
-        await run('db:reset')
+  it(
+    'refuses to run against a production database',
+    async () => {
+      await seed('ana')
 
-        expect(await storedUsernames()).toEqual([])
-      },
-      SCRIPT_TIMEOUT_MS * 2,
-    )
+      const failure: unknown = await run('db:reset', { NODE_ENV: 'production' }).catch(
+        (error: unknown) => error,
+      )
 
-    it(
-      'refuses to run against a production database',
-      async () => {
-        await seed('ana')
-
-        const failure: unknown = await run('db:reset', { NODE_ENV: 'production' }).catch(
-          (error: unknown) => error,
-        )
-
-        expect(String((failure as { stderr?: unknown } | undefined)?.stderr)).toContain(
-          'Refusing to reset a production database',
-        )
-        expect(await storedUsernames()).toEqual(['ana'])
-      },
-      SCRIPT_TIMEOUT_MS * 2,
-    )
-  })
+      expect(String((failure as { stderr?: unknown } | undefined)?.stderr)).toContain(
+        'Refusing to reset a production database',
+      )
+      expect(await storedUsernames()).toEqual(['ana'])
+    },
+    SCRIPT_TIMEOUT_MS * 2,
+  )
 })

@@ -1,12 +1,13 @@
-import { PASSWORD_MAX_LENGTH, USERNAME_MAX_LENGTH } from '@open-calorie-tracker/shared'
+import {
+  PASSWORD_MAX_LENGTH,
+  PASSWORD_MIN_LENGTH,
+  USERNAME_MAX_LENGTH,
+} from '@open-calorie-tracker/shared'
 import request from 'supertest'
 import { afterEach, beforeEach, describe, expect, it } from 'vite-plus/test'
-import { createApp } from '../src/app.js'
 import { Database } from '../src/db/database.js'
 import { seedUser } from '../src/db/seed.js'
-
-// Only registration enforces it: logging in still accepts shorter passwords.
-const PASSWORD_MIN_LENGTH = 8
+import { type TestApp, createTestApp } from './app.js'
 
 const USERNAME = 'ana'
 const PASSWORD = 'correct-horse-battery-staple'
@@ -15,18 +16,10 @@ const VALID = { username: USERNAME, password: PASSWORD, confirmPassword: PASSWOR
 const withPassword = (password: string) => ({ ...VALID, password, confirmPassword: password })
 
 describe('registration (e2e)', () => {
-  let app: Awaited<ReturnType<typeof createApp>>
+  let app: TestApp
 
-  // A fresh in-memory database per test, so every test starts with no users.
   beforeEach(async () => {
-    process.env['DATABASE_URL'] = ':memory:'
-    process.env['JWT_SECRET'] = 'test-secret-that-is-long-enough-for-hs256'
-    process.env['JWT_ISSUER'] = 'open-calorie-tracker-api'
-    process.env['JWT_AUDIENCE'] = 'open-calorie-tracker-web'
-    process.env['TRUST_PROXY'] = 'loopback'
-
-    app = await createApp()
-    await app.init()
+    app = await createTestApp()
   })
 
   afterEach(async () => {
