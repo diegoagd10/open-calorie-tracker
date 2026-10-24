@@ -2,9 +2,8 @@ import { loginResponseSchema, loginSchema } from '@open-calorie-tracker/shared'
 import { decodeJwt } from 'jose'
 import { cookies } from 'next/headers'
 import type { NextRequest } from 'next/server'
+import { API_URL } from '@/lib/api'
 import { ACCESS_TOKEN_COOKIE } from '@/lib/session'
-
-const apiUrl = process.env['API_URL'] ?? 'http://localhost:3001'
 
 // API statuses the form knows how to explain; anything else is reported as a generic failure.
 const FORWARDED_STATUSES = new Set([400, 401, 423, 429])
@@ -17,7 +16,7 @@ export async function POST(request: NextRequest) {
 
   let upstream: Response
   try {
-    upstream = await fetch(`${apiUrl}/v1/login`, {
+    upstream = await fetch(`${API_URL}/v1/login`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

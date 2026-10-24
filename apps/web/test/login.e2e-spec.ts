@@ -35,7 +35,7 @@ describe('Login page (e2e)', () => {
   })
 
   afterEach(async () => {
-    await clearFault(PROXY_URL)
+    await clearFault(PROXY_URL, SEED_USER.username)
     await page.context().close()
   })
 
@@ -148,7 +148,7 @@ describe('Login page (e2e)', () => {
 
   describe('backend failures', () => {
     it('shows a generic error when the backend responds 500', async () => {
-      await injectFault(PROXY_URL, { status: 500 })
+      await injectFault(PROXY_URL, SEED_USER.username, { status: 500 })
 
       await submit(SEED_USER.username, SEED_USER.password)
 
@@ -158,7 +158,7 @@ describe('Login page (e2e)', () => {
     })
 
     it('shows a generic error when the backend is unreachable', async () => {
-      await injectFault(PROXY_URL, 'connection-reset')
+      await injectFault(PROXY_URL, SEED_USER.username, 'connection-reset')
 
       await submit(SEED_USER.username, SEED_USER.password)
 

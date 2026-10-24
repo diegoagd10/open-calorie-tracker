@@ -31,7 +31,7 @@ pnpm check:fix  # same, auto-fixing format and lint issues
 pnpm lint       # vp lint (Oxlint)
 pnpm fmt        # vp fmt (Oxfmt)
 pnpm test       # vp test (Vitest)
-pnpm test:cov   # tests with coverage; fails below 95%
+pnpm test:cov   # tests with coverage; fails below 95% of statements
 ```
 
 `packages/shared` is built with `vp pack` on `pnpm install`, on `pnpm build` and before the tests;

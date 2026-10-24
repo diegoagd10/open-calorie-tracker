@@ -57,7 +57,7 @@ describe('Home page (e2e)', () => {
   })
 
   afterEach(async () => {
-    await clearFault(PROXY_URL)
+    await clearFault(PROXY_URL, username)
     await context.close()
   })
 
@@ -364,7 +364,7 @@ describe('Home page (e2e)', () => {
       })
 
       it('shows a generic error when the log cannot be loaded', async () => {
-        await injectFault(PROXY_URL, { status: 500 })
+        await injectFault(PROXY_URL, username, { status: 500 })
 
         await openHome(page)
 
@@ -372,7 +372,7 @@ describe('Home page (e2e)', () => {
       })
 
       it('shows a generic error when the backend is unreachable', async () => {
-        await injectFault(PROXY_URL, 'connection-reset')
+        await injectFault(PROXY_URL, username, 'connection-reset')
 
         await openHome(page)
 

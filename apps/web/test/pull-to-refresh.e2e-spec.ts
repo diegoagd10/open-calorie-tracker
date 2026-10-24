@@ -78,7 +78,7 @@ describe('Pull to refresh (e2e)', () => {
   })
 
   afterEach(async () => {
-    await clearFault(PROXY_URL)
+    await clearFault(PROXY_URL, username)
     await context?.close()
     context = undefined
   })
@@ -94,7 +94,7 @@ describe('Pull to refresh (e2e)', () => {
       const titleTop = await topOf(home.title())
       const weekTop = await topOf(home.week())
       // Slow the reload down so the loader can be observed.
-      await injectFault(PROXY_URL, { delayMs: 1_000 })
+      await injectFault(PROXY_URL, username, { delayMs: 1_000 })
 
       const touch = await finger(page)
       await touch.down()
@@ -132,7 +132,7 @@ describe('Pull to refresh (e2e)', () => {
 
     it('does not reload when released before 80 px', async () => {
       await logFood('Manzana', 95, '2026-10-24T10:58:00')
-      await clearReceivedRequests(PROXY_URL)
+      await clearReceivedRequests(PROXY_URL, username)
       const titleTop = await topOf(home.title())
 
       await pullToRefresh(page, 60)
@@ -140,12 +140,12 @@ describe('Pull to refresh (e2e)', () => {
       await expect.poll(() => topOf(home.title()), eventually).toBe(titleTop)
       await page.waitForTimeout(QUIET_PERIOD_MS)
       expect(await home.loader().count()).toBe(0)
-      expect(await dailyLogRequests()).toEqual([])
+      expect(await dailyLogRequests(username)).toEqual([])
       expect(await home.entry('Manzana').count()).toBe(0)
     })
 
     it('shows an error and keeps the entries on screen when the reload fails', async () => {
-      await injectFault(PROXY_URL, { status: 500 })
+      await injectFault(PROXY_URL, username, { status: 500 })
 
       await pullToRefresh(page)
 
@@ -155,15 +155,15 @@ describe('Pull to refresh (e2e)', () => {
     })
 
     it('does not start another reload while one is in progress', async () => {
-      await clearReceivedRequests(PROXY_URL)
-      await injectFault(PROXY_URL, { delayMs: 2_000 })
+      await clearReceivedRequests(PROXY_URL, username)
+      await injectFault(PROXY_URL, username, { delayMs: 2_000 })
 
       await pullToRefresh(page)
       await home.loader().waitFor()
       await pullToRefresh(page)
 
       await home.loader().waitFor({ state: 'hidden', timeout: 10_000 })
-      expect(await dailyLogRequests()).toHaveLength(1)
+      expect(await dailyLogRequests(username)).toHaveLength(1)
     })
   })
 
@@ -180,7 +180,7 @@ describe('Pull to refresh (e2e)', () => {
       await page.evaluate(() => window.scrollTo(0, 600))
       const scrolledTo = await page.evaluate(() => window.scrollY)
       expect(scrolledTo).toBeGreaterThan(0)
-      await clearReceivedRequests(PROXY_URL)
+      await clearReceivedRequests(PROXY_URL, username)
 
       await pullToRefresh(page, 150)
 
@@ -189,7 +189,7 @@ describe('Pull to refresh (e2e)', () => {
         .toBeLessThan(scrolledTo)
       await page.waitForTimeout(QUIET_PERIOD_MS)
       expect(await home.loader().count()).toBe(0)
-      expect(await dailyLogRequests()).toEqual([])
+      expect(await dailyLogRequests(username)).toEqual([])
     })
   })
 
@@ -200,7 +200,7 @@ describe('Pull to refresh (e2e)', () => {
     })
 
     it('does not reload when dragging down with the mouse', async () => {
-      await clearReceivedRequests(PROXY_URL)
+      await clearReceivedRequests(PROXY_URL, username)
 
       await page.mouse.move(640, 200)
       await page.mouse.down()
@@ -209,7 +209,7 @@ describe('Pull to refresh (e2e)', () => {
 
       await page.waitForTimeout(QUIET_PERIOD_MS)
       expect(await home.loader().count()).toBe(0)
-      expect(await dailyLogRequests()).toEqual([])
+      expect(await dailyLogRequests(username)).toEqual([])
     })
   })
 })

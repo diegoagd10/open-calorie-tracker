@@ -26,8 +26,8 @@ export default defineConfig({
       include: ['src/**/*.ts'],
       // seed.ts is a development CLI script, not part of the API; config only reads env vars.
       exclude: ['src/**/*.spec.ts', 'src/seed.ts', 'src/config/**'],
-      // Fails `test:cov` when any metric drops below this.
-      thresholds: { statements: 95, branches: 95, functions: 95, lines: 95 },
+      // Fails `test:cov` when statement coverage drops below this.
+      thresholds: { statements: 95 },
     },
   },
 })

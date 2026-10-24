@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common'
 import { ACCESS_TOKEN_TTL_SECONDS } from '@open-calorie-tracker/shared'
-import { SignJWT } from 'jose'
+import { SignJWT, jwtVerify } from 'jose'
 import { randomUUID } from 'node:crypto'
 import { AppConfig } from '../config/config.js'
 
@@ -21,5 +21,20 @@ export class TokenService {
       .setIssuedAt(issuedAt)
       .setExpirationTime(issuedAt + ACCESS_TOKEN_TTL_SECONDS)
       .sign(secret)
+  }
+
+  // Returns the user id of a valid, unexpired token signed by this API, or undefined.
+  async verifyAccessToken(token: string): Promise<number | undefined> {
+    const { secret, issuer, audience } = this.config.jwt
+    try {
+      const { payload } = await jwtVerify(token, secret, {
+        issuer,
+        audience,
+        algorithms: ['HS256'],
+      })
+      return Number(payload.sub)
+    } catch {
+      return undefined
+    }
   }
 }

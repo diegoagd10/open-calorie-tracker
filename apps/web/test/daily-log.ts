@@ -2,7 +2,7 @@ import { SignJWT } from 'jose'
 import type { BrowserContext, Locator, Page } from 'playwright'
 import { Database } from '../../api/src/db/database'
 import { seedFoodEntry, seedUser, seedWaterEntry } from '../../api/src/db/seed'
-import { API_URL, DATABASE_URL, JWT, PROXY_URL, SEED_USER, WEB_URL } from './fixtures'
+import { DATABASE_URL, JWT, PROXY_URL, SEED_USER, WEB_URL } from './fixtures'
 import { receivedRequests } from './fault-proxy'
 
 export { seedFoodEntry, seedWaterEntry }
@@ -41,10 +41,10 @@ const setSessionCookie = (context: BrowserContext, token: string) =>
     },
   ])
 
-// Logs in against the API directly (not through the fault proxy) and stores the session cookie
-// the same way the login page does.
+// Logs in through the fault proxy, which then knows the token belongs to this user, and stores the
+// session cookie the same way the login page does.
 export const logIn = async (context: BrowserContext, username: string) => {
-  const response = await fetch(`${API_URL}/v1/login`, {
+  const response = await fetch(`${PROXY_URL}/v1/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ username, password: PASSWORD }),
@@ -81,8 +81,10 @@ export const textOf = async (locator: Locator) =>
 // Waits for the UI to settle on a value, since the log loads after the page renders.
 export const eventually = { timeout: 5_000, interval: 100 }
 
-export const dailyLogRequests = async () =>
-  (await receivedRequests(PROXY_URL)).filter((request) => request.startsWith('GET /v1/daily-log'))
+export const dailyLogRequests = async (username: string) =>
+  (await receivedRequests(PROXY_URL, username)).filter((request) =>
+    request.startsWith('GET /v1/daily-log'),
+  )
 
 export const homePage = (page: Page) => ({
   title: () => page.getByRole('heading', { level: 1, name: 'Food Log' }),
