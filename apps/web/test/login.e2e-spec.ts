@@ -6,10 +6,9 @@ import {
 } from '@open-calorie-tracker/shared'
 import { type Browser, type Page, chromium } from 'playwright'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vite-plus/test'
+import { GENERIC_ERROR_MESSAGE } from '../src/lib/errors'
 import { clearFault, injectFault } from './fault-proxy'
 import { PROXY_URL, SEED_USER, WEB_URL } from './fixtures'
-
-const GENERIC_ERROR = 'Something went wrong. Please try again later.'
 
 describe('Login page (e2e)', () => {
   let browser: Browser
@@ -153,7 +152,7 @@ describe('Login page (e2e)', () => {
 
       await submit(SEED_USER.username, SEED_USER.password)
 
-      expect(await alertText()).toBe(GENERIC_ERROR)
+      expect(await alertText()).toBe(GENERIC_ERROR_MESSAGE)
       expect(page.url()).toBe(`${WEB_URL}/login`)
       expect(await accessTokenCookie()).toBeUndefined()
     })
@@ -163,7 +162,7 @@ describe('Login page (e2e)', () => {
 
       await submit(SEED_USER.username, SEED_USER.password)
 
-      expect(await alertText()).toBe(GENERIC_ERROR)
+      expect(await alertText()).toBe(GENERIC_ERROR_MESSAGE)
       expect(page.url()).toBe(`${WEB_URL}/login`)
       expect(await accessTokenCookie()).toBeUndefined()
     })

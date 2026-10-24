@@ -2,7 +2,7 @@ import { SignJWT } from 'jose'
 import type { BrowserContext, Locator, Page } from 'playwright'
 import { Database } from '../../api/src/db/database'
 import { seedFoodEntry, seedUser, seedWaterEntry } from '../../api/src/db/seed'
-import { API_URL, DATABASE_URL, JWT, PROXY_URL, WEB_URL } from './fixtures'
+import { API_URL, DATABASE_URL, JWT, PROXY_URL, SEED_USER, WEB_URL } from './fixtures'
 import { receivedRequests } from './fault-proxy'
 
 export { seedFoodEntry, seedWaterEntry }
@@ -14,9 +14,7 @@ export const NOW = new Date('2026-10-24T11:00:00-04:00')
 
 export const newYorkTime = (localDateTime: string) => new Date(`${localDateTime}-04:00`)
 
-export const GENERIC_ERROR = 'Something went wrong. Please try again later.'
-
-const PASSWORD = 'correct-horse-battery-staple'
+const PASSWORD = SEED_USER.password
 
 // The tests write to the same database the API reads.
 export const connectDatabase = () => Database.connect(DATABASE_URL)
@@ -98,7 +96,8 @@ export const homePage = (page: Page) => ({
   progress: (name: string) => page.getByRole('progressbar', { name, exact: true }),
   footer: () => page.getByRole('contentinfo'),
   loader: () => page.getByRole('status', { name: 'Reloading' }),
-  error: () => page.getByRole('alert').filter({ hasText: GENERIC_ERROR }),
+  // The page's Alert, scoped to <main> because Next.js renders its own role="alert" route announcer.
+  alert: () => page.getByRole('main').getByRole('alert'),
 })
 
 // A single finger on a touch screen, driven through the Chrome DevTools Protocol because

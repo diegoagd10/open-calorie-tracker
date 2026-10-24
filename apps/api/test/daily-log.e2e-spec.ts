@@ -1,17 +1,13 @@
 import { SignJWT } from 'jose'
 import request from 'supertest'
 import { afterEach, beforeEach, describe, expect, it } from 'vite-plus/test'
-import { createApp } from '../src/app.js'
 import { Database } from '../src/db/database.js'
 import { seedFoodEntry, seedUser, seedWaterEntry } from '../src/db/seed.js'
+import { TEST_ENV, type TestApp, createTestApp } from './app.js'
 
 const USERNAME = 'diego'
 const OTHER_USERNAME = 'ana'
 const PASSWORD = 'correct-horse-battery-staple'
-
-const JWT_SECRET = 'test-secret-that-is-long-enough-for-hs256'
-const JWT_ISSUER = 'open-calorie-tracker-api'
-const JWT_AUDIENCE = 'open-calorie-tracker-web'
 
 const DATE = '2026-10-24'
 const TIME_ZONE = 'America/New_York'
@@ -41,18 +37,11 @@ type DailyLog = {
 }
 
 describe('GET /v1/daily-log (e2e)', () => {
-  let app: Awaited<ReturnType<typeof createApp>>
+  let app: TestApp
   let database: Database
 
   beforeEach(async () => {
-    process.env['DATABASE_URL'] = ':memory:'
-    process.env['JWT_SECRET'] = JWT_SECRET
-    process.env['JWT_ISSUER'] = JWT_ISSUER
-    process.env['JWT_AUDIENCE'] = JWT_AUDIENCE
-    process.env['TRUST_PROXY'] = 'loopback'
-
-    app = await createApp()
-    await app.init()
+    app = await createTestApp()
     database = app.get(Database)
     await seedUser(database, { username: USERNAME, password: PASSWORD })
     await seedUser(database, { username: OTHER_USERNAME, password: PASSWORD })
@@ -99,8 +88,8 @@ describe('GET /v1/daily-log (e2e)', () => {
     const signToken = (secret: string, expiresAt: number) =>
       new SignJWT()
         .setProtectedHeader({ alg: 'HS256', typ: 'JWT' })
-        .setIssuer(JWT_ISSUER)
-        .setAudience(JWT_AUDIENCE)
+        .setIssuer(TEST_ENV.JWT_ISSUER)
+        .setAudience(TEST_ENV.JWT_AUDIENCE)
         .setSubject('1')
         .setIssuedAt(expiresAt - 60)
         .setExpirationTime(expiresAt)
@@ -116,7 +105,7 @@ describe('GET /v1/daily-log (e2e)', () => {
 
     it.each([
       ['a malformed token', () => Promise.resolve('not-a-jwt')],
-      ['an expired token', () => signToken(JWT_SECRET, now() - 60)],
+      ['an expired token', () => signToken(TEST_ENV.JWT_SECRET, now() - 60)],
       ['a token signed with another secret', () => signToken('x'.repeat(42), now() + 600)],
     ])('rejects %s with 401', async (_case, token) => {
       const response = await getDailyLog(await token(), { date: DATE, timeZone: TIME_ZONE })

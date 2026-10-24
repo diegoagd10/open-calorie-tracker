@@ -8,37 +8,26 @@ import {
 import { decodeJwt, jwtVerify } from 'jose'
 import request from 'supertest'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
-import { createApp } from '../src/app.js'
 import { Database } from '../src/db/database.js'
 import { seedUser } from '../src/db/seed.js'
+import { TEST_ENV, type TestApp, createTestApp } from './app.js'
 
 const USERNAME = 'ana'
 // The seeded user is the only row in a fresh in-memory database.
 const SEED_USER_ID = '1'
 const PASSWORD = 'correct-horse-battery-staple'
 
-const JWT_SECRET = 'test-secret-that-is-long-enough-for-hs256'
-const JWT_ISSUER = 'open-calorie-tracker-api'
-const JWT_AUDIENCE = 'open-calorie-tracker-web'
-
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
-const secretKey = new TextEncoder().encode(JWT_SECRET)
+const secretKey = new TextEncoder().encode(TEST_ENV.JWT_SECRET)
 
 type LoginResponse = { accessToken: string }
 
 describe('POST /v1/login (e2e)', () => {
-  let app: Awaited<ReturnType<typeof createApp>>
+  let app: TestApp
 
   beforeEach(async () => {
-    process.env['DATABASE_URL'] = ':memory:'
-    process.env['JWT_SECRET'] = JWT_SECRET
-    process.env['JWT_ISSUER'] = JWT_ISSUER
-    process.env['JWT_AUDIENCE'] = JWT_AUDIENCE
-    process.env['TRUST_PROXY'] = 'loopback'
-
-    app = await createApp()
-    await app.init()
+    app = await createTestApp()
     await seedUser(app.get(Database), { username: USERNAME, password: PASSWORD })
   })
 
@@ -66,8 +55,8 @@ describe('POST /v1/login (e2e)', () => {
       expect(protectedHeader).toEqual({ alg: 'HS256', typ: 'JWT' })
       const { jti, iat, ...claims } = payload
       expect(claims).toEqual({
-        iss: JWT_ISSUER,
-        aud: JWT_AUDIENCE,
+        iss: TEST_ENV.JWT_ISSUER,
+        aud: TEST_ENV.JWT_AUDIENCE,
         sub: SEED_USER_ID,
         exp: (iat ?? 0) + ACCESS_TOKEN_TTL_SECONDS,
       })

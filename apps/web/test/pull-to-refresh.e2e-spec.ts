@@ -1,6 +1,7 @@
 import { type Browser, type BrowserContext, type Locator, type Page, chromium } from 'playwright'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vite-plus/test'
 import type { Database } from '../../api/src/db/database'
+import { GENERIC_ERROR_MESSAGE } from '../src/lib/errors'
 import {
   TIME_ZONE,
   connectDatabase,
@@ -148,7 +149,7 @@ describe('Pull to refresh (e2e)', () => {
 
       await pullToRefresh(page)
 
-      await home.error().waitFor()
+      await expect.poll(() => home.alert().textContent(), eventually).toBe(GENERIC_ERROR_MESSAGE)
       await home.loader().waitFor({ state: 'hidden' })
       expect(await home.entry('2 tortillas de maíz').isVisible()).toBe(true)
     })

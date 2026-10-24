@@ -1,6 +1,7 @@
 import { type Browser, type BrowserContext, type Page, chromium } from 'playwright'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vite-plus/test'
 import type { Database } from '../../api/src/db/database'
+import { GENERIC_ERROR_MESSAGE } from '../src/lib/errors'
 import {
   TIME_ZONE,
   connectDatabase,
@@ -367,7 +368,7 @@ describe('Home page (e2e)', () => {
 
         await openHome(page)
 
-        await home.error().waitFor()
+        await expect.poll(() => home.alert().textContent(), eventually).toBe(GENERIC_ERROR_MESSAGE)
       })
 
       it('shows a generic error when the backend is unreachable', async () => {
@@ -375,7 +376,7 @@ describe('Home page (e2e)', () => {
 
         await openHome(page)
 
-        await home.error().waitFor()
+        await expect.poll(() => home.alert().textContent(), eventually).toBe(GENERIC_ERROR_MESSAGE)
       })
     })
   })
