@@ -1,7 +1,8 @@
 import type { NextConfig } from 'next'
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  // Hides the Next.js badge shown in the corner during development.
+  devIndicators: false,
   cacheComponents: true,
   partialPrefetching: true,
   turbopack: {

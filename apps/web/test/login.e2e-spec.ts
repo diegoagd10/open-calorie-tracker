@@ -71,9 +71,27 @@ describe('Login page (e2e)', () => {
   })
 
   describe('client-side validation', () => {
+    it('enables the login button only once both fields are filled in', async () => {
+      expect(await submitButton().isDisabled()).toBe(true)
+
+      await fill(SEED_USER.username, SEED_USER.password)
+
+      expect(await submitButton().isDisabled()).toBe(false)
+    })
+
     it.each([
-      ['an empty username', '', SEED_USER.password, 'Username is required'],
-      ['an empty password', SEED_USER.username, '', 'Password is required'],
+      ['an empty username', '', SEED_USER.password],
+      ['an empty password', SEED_USER.username, ''],
+    ])('keeps the login button disabled with %s', async (_case, username, password) => {
+      await fill(username, password)
+      // Enter would submit the form if the disabled button did not block it.
+      await passwordField().press('Enter')
+
+      expect(await submitButton().isDisabled()).toBe(true)
+      expect(postRequests).toEqual([])
+    })
+
+    it.each([
       [
         `a username longer than ${USERNAME_MAX_LENGTH} characters`,
         'a'.repeat(USERNAME_MAX_LENGTH + 1),
