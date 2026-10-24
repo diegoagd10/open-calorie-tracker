@@ -1,29 +1,21 @@
-import { cookies } from 'next/headers'
 import type { NextRequest } from 'next/server'
-import { API_URL } from '@/lib/api'
-import { ACCESS_TOKEN_COOKIE } from '@/lib/session'
+import { fetchDailyLog } from '@/clients/daily-log'
+import { sessionToken } from '@/lib/session'
+import { status } from '../token-exchange'
 
 // API statuses the page knows how to handle; anything else is reported as a generic failure.
 const FORWARDED_STATUSES = new Set([400, 401])
 
-const status = (code: number) => new Response(null, { status: code })
-
 export async function GET(request: NextRequest) {
-  const token = (await cookies()).get(ACCESS_TOKEN_COOKIE)?.value
+  const token = await sessionToken()
   if (token === undefined) return status(401)
 
   const { searchParams } = request.nextUrl
-  const query = new URLSearchParams({
-    date: searchParams.get('date') ?? '',
-    timeZone: searchParams.get('timeZone') ?? '',
-  })
+  const day = { date: searchParams.get('date') ?? '', timeZone: searchParams.get('timeZone') ?? '' }
 
   let upstream: Response
   try {
-    upstream = await fetch(`${API_URL}/v1/daily-log?${query}`, {
-      headers: { Authorization: `Bearer ${token}` },
-      cache: 'no-store',
-    })
+    upstream = await fetchDailyLog(day, token)
   } catch {
     return status(502)
   }

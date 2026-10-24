@@ -24,8 +24,9 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       include: ['src/**/*.ts'],
-      // seed.ts is a development CLI script, not part of the API; config only reads env vars.
-      exclude: ['src/**/*.spec.ts', 'src/seed.ts', 'src/config/**'],
+      // seed.ts and reset.ts are development CLI scripts, not part of the API; config only reads
+      // env vars.
+      exclude: ['src/**/*.spec.ts', 'src/seed.ts', 'src/reset.ts', 'src/config/**'],
       // Fails `test:cov` when statement coverage drops below this.
       thresholds: { statements: 95 },
     },

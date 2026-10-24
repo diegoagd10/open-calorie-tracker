@@ -3,12 +3,12 @@ import { UsersModule } from '../users/users.module.js'
 import { AccessTokenGuard } from './access-token.guard.js'
 import { AuthController } from './auth.controller.js'
 import { AuthService } from './auth.service.js'
-import { TokenService } from './token.service.js'
+import { TokenModule } from './token.module.js'
 
 @Module({
-  imports: [UsersModule],
+  imports: [UsersModule, TokenModule],
   controllers: [AuthController],
-  providers: [AuthService, TokenService, AccessTokenGuard],
-  exports: [TokenService, AccessTokenGuard],
+  providers: [AuthService, AccessTokenGuard],
+  exports: [TokenModule, AccessTokenGuard],
 })
 export class AuthModule {}

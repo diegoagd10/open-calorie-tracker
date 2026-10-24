@@ -8,6 +8,8 @@ import {
 
 export type Fault = { status: number } | { delayMs: number } | 'connection-reset'
 
+const EVERYONE = Symbol('everyone')
+
 const readBody = async (stream: IncomingMessage) => {
   const chunks: Buffer[] = []
   for await (const chunk of stream) chunks.push(chunk as Buffer)
@@ -27,20 +29,22 @@ const usernameIn = (body: Buffer): string | undefined => {
 // to fail or to answer slowly through the control endpoints, so tests can exercise backend
 // failures without mocks. It also records the requests it receives, e.g. "GET /v1/daily-log?...".
 //
-// Faults and recorded requests belong to one user, so spec files running in parallel do not
-// affect each other. A request belongs to the user named in its body (login) or to the user its
-// bearer token was issued to, which the proxy learns from the logins it forwards.
+// A fault can belong to one user, so spec files running in parallel do not affect each other, or
+// to everyone. Recorded requests always belong to a user. A request belongs to the user named in
+// its body (login) or to the user its bearer token was issued to, which the proxy learns from the
+// logins it forwards.
 export const startFaultProxy = async (port: number, targetUrl: string): Promise<Server> => {
   const target = new URL(targetUrl)
-  const faults = new Map<string, Fault>()
+  // Keyed by user; EVERYONE holds the fault that applies to all requests.
+  const faults = new Map<string | typeof EVERYONE, Fault>()
   const requests = new Map<string, string[]>()
   const tokenOwners = new Map<string, string>()
 
   const handleControl = async (req: IncomingMessage, res: ServerResponse) => {
-    const match = /^\/__(faults|requests)\/(.+)$/.exec(req.url ?? '')
+    const match = /^\/__(faults|requests)(?:\/(.+))?$/.exec(req.url ?? '')
     if (match === null) return false
-    const [, kind, encodedUser = ''] = match
-    const user = decodeURIComponent(encodedUser)
+    const [, kind, encodedUser] = match
+    const user = encodedUser === undefined ? EVERYONE : decodeURIComponent(encodedUser)
 
     if (kind === 'faults') {
       if (req.method === 'PUT')
@@ -48,6 +52,10 @@ export const startFaultProxy = async (port: number, targetUrl: string): Promise<
       else faults.delete(user)
       res.writeHead(204).end()
     } else {
+      if (typeof user !== 'string') {
+        res.writeHead(404).end()
+        return true
+      }
       if (req.method === 'DELETE') requests.delete(user)
       res.writeHead(200, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify(requests.get(user) ?? []))
@@ -68,7 +76,7 @@ export const startFaultProxy = async (port: number, targetUrl: string): Promise<
     const user = ownerOf(req, body)
     if (user !== undefined)
       requests.set(user, [...(requests.get(user) ?? []), `${req.method} ${req.url}`])
-    const fault = user === undefined ? undefined : faults.get(user)
+    const fault = (user === undefined ? undefined : faults.get(user)) ?? faults.get(EVERYONE)
 
     if (fault === 'connection-reset') {
       req.socket.destroy()
@@ -117,14 +125,15 @@ export const startFaultProxy = async (port: number, targetUrl: string): Promise<
   return server
 }
 
-const controlUrl = (proxyUrl: string, kind: 'faults' | 'requests', user: string) =>
-  `${proxyUrl}/__${kind}/${encodeURIComponent(user)}`
+const controlUrl = (proxyUrl: string, kind: 'faults' | 'requests', user?: string) =>
+  `${proxyUrl}/__${kind}${user === undefined ? '' : `/${encodeURIComponent(user)}`}`
 
-// Makes every request of this user fail, or answer slowly, until cleared.
-export const injectFault = (proxyUrl: string, user: string, fault: Fault) =>
+// Makes every request of this user, or of everyone without a user, fail or answer slowly until
+// cleared.
+export const injectFault = (proxyUrl: string, fault: Fault, user?: string) =>
   fetch(controlUrl(proxyUrl, 'faults', user), { method: 'PUT', body: JSON.stringify(fault) })
 
-export const clearFault = (proxyUrl: string, user: string) =>
+export const clearFault = (proxyUrl: string, user?: string) =>
   fetch(controlUrl(proxyUrl, 'faults', user), { method: 'DELETE' })
 
 export const receivedRequests = async (proxyUrl: string, user: string) =>

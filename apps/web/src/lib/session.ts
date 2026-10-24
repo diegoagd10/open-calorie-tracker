@@ -1,24 +1,40 @@
-import { jwtVerify } from 'jose'
+import { decodeJwt, jwtVerify } from 'jose'
+import { cookies } from 'next/headers'
+import type { NextRequest } from 'next/server'
 
-export const ACCESS_TOKEN_COOKIE = 'access_token'
+const ACCESS_TOKEN_COOKIE = 'access_token'
 
-const jwtConfig = () => {
-  const { JWT_SECRET, JWT_ISSUER, JWT_AUDIENCE } = process.env
-  if (!JWT_SECRET || !JWT_ISSUER || !JWT_AUDIENCE) {
-    throw new Error('JWT_SECRET, JWT_ISSUER and JWT_AUDIENCE must be set to check sessions')
-  }
-  return {
-    secret: new TextEncoder().encode(JWT_SECRET),
-    issuer: JWT_ISSUER,
-    audience: JWT_AUDIENCE,
-  }
+const requiredEnv = (name: string) => {
+  const value = process.env[name]
+  if (value === undefined || value === '') throw new Error(`${name} is not set`)
+  return value
 }
 
-// True for an unexpired access token signed by the API. The API still checks it on every call.
-export const isValidAccessToken = async (token: string): Promise<boolean> => {
-  const { secret, issuer, audience } = jwtConfig()
+// Stores the token the API signed in a cookie scripts cannot read, expiring with the token.
+export const startSession = async (accessToken: string) => {
+  const expiresAt = decodeJwt(accessToken).exp ?? 0
+  ;(await cookies()).set(ACCESS_TOKEN_COOKIE, accessToken, {
+    httpOnly: true,
+    secure: true,
+    sameSite: 'strict',
+    path: '/',
+    maxAge: Math.max(0, expiresAt - Math.floor(Date.now() / 1000)),
+  })
+}
+
+// The token the API signed, to authenticate calls made on the user's behalf.
+export const sessionToken = async () => (await cookies()).get(ACCESS_TOKEN_COOKIE)?.value
+
+// Checks the token the API signed, with the same secret, issuer and audience it uses.
+export const hasValidSession = async (request: NextRequest): Promise<boolean> => {
+  const token = request.cookies.get(ACCESS_TOKEN_COOKIE)?.value
+  if (token === undefined) return false
   try {
-    await jwtVerify(token, secret, { issuer, audience, algorithms: ['HS256'] })
+    await jwtVerify(token, new TextEncoder().encode(requiredEnv('JWT_SECRET')), {
+      algorithms: ['HS256'],
+      issuer: requiredEnv('JWT_ISSUER'),
+      audience: requiredEnv('JWT_AUDIENCE'),
+    })
     return true
   } catch {
     return false

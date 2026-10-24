@@ -2,7 +2,7 @@
 
 import { useRef } from 'react'
 import { Alert } from '@/components/alert'
-import { GENERIC_ERROR_MESSAGE } from '@/lib/errors'
+import { GENERIC_ERROR_MESSAGE } from '@open-calorie-tracker/shared'
 import { EntryList } from './entry-list'
 import { formatLongDay, parseDay } from './format'
 import { DropIcon, PlusIcon } from './icons'

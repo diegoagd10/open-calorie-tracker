@@ -16,8 +16,9 @@
     "react-dom": "19.3.0"
   },
   "devDependencies": {
+    "@libsql/client": "^0.18.0",
     "@tailwindcss/turbopack": "^4",
-    "@types/node": "^20",
+    "@types/node": "^24.0.0",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "playwright": "^1.64.1",

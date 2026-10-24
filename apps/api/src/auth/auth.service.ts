@@ -5,7 +5,7 @@ import {
   type LoginResponse,
   MAX_FAILED_ATTEMPTS,
 } from '@open-calorie-tracker/shared'
-import { UsersService } from '../users/users.service.js'
+import { UsersService, normalizeUsername } from '../users/users.service.js'
 import { hashPassword, verifyPassword } from './password.js'
 import { TokenService } from './token.service.js'
 
@@ -28,7 +28,7 @@ export class AuthService {
   ) {}
 
   async login({ username, password }: LoginInput, ip: string): Promise<LoginResponse> {
-    const attemptsKey = JSON.stringify([ip, username])
+    const attemptsKey = JSON.stringify([ip, normalizeUsername(username)])
     if (this.isLocked(attemptsKey)) throw accountLocked()
 
     const user = await this.users.findByUsername(username)

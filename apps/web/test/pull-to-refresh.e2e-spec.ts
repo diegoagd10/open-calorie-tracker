@@ -1,7 +1,7 @@
+import { GENERIC_ERROR_MESSAGE } from '@open-calorie-tracker/shared'
 import { type Browser, type BrowserContext, type Locator, type Page, chromium } from 'playwright'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vite-plus/test'
 import type { Database } from '../../api/src/db/database'
-import { GENERIC_ERROR_MESSAGE } from '../src/lib/errors'
 import {
   TIME_ZONE,
   connectDatabase,
@@ -18,7 +18,9 @@ import {
   textOf,
 } from './daily-log'
 import { clearFault, clearReceivedRequests, injectFault } from './fault-proxy'
-import { PROXY_URL } from './fixtures'
+import { SEEDED } from './fixtures'
+
+const { proxyUrl: PROXY_URL } = SEEDED
 
 // Long enough to make sure a reload that should not happen did not.
 const QUIET_PERIOD_MS = 1_000
@@ -94,7 +96,7 @@ describe('Pull to refresh (e2e)', () => {
       const titleTop = await topOf(home.title())
       const weekTop = await topOf(home.week())
       // Slow the reload down so the loader can be observed.
-      await injectFault(PROXY_URL, username, { delayMs: 1_000 })
+      await injectFault(PROXY_URL, { delayMs: 1_000 }, username)
 
       const touch = await finger(page)
       await touch.down()
@@ -145,7 +147,7 @@ describe('Pull to refresh (e2e)', () => {
     })
 
     it('shows an error and keeps the entries on screen when the reload fails', async () => {
-      await injectFault(PROXY_URL, username, { status: 500 })
+      await injectFault(PROXY_URL, { status: 500 }, username)
 
       await pullToRefresh(page)
 
@@ -156,7 +158,7 @@ describe('Pull to refresh (e2e)', () => {
 
     it('does not start another reload while one is in progress', async () => {
       await clearReceivedRequests(PROXY_URL, username)
-      await injectFault(PROXY_URL, username, { delayMs: 2_000 })
+      await injectFault(PROXY_URL, { delayMs: 2_000 }, username)
 
       await pullToRefresh(page)
       await home.loader().waitFor()

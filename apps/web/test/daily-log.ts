@@ -1,11 +1,13 @@
-import { SignJWT } from 'jose'
 import type { BrowserContext, Locator, Page } from 'playwright'
 import { Database } from '../../api/src/db/database'
 import { seedFoodEntry, seedUser, seedWaterEntry } from '../../api/src/db/seed'
-import { DATABASE_URL, JWT, PROXY_URL, SEED_USER, WEB_URL } from './fixtures'
 import { receivedRequests } from './fault-proxy'
+import { SEEDED, SEED_USER } from './fixtures'
 
 export { seedFoodEntry, seedWaterEntry }
+
+// The daily log tests add their own users to the environment that already has an account.
+const { databasePath, proxyUrl: PROXY_URL, webUrl: WEB_URL } = SEEDED
 
 export const TIME_ZONE = 'America/New_York'
 
@@ -17,14 +19,14 @@ export const newYorkTime = (localDateTime: string) => new Date(`${localDateTime}
 const PASSWORD = SEED_USER.password
 
 // The tests write to the same database the API reads.
-export const connectDatabase = () => Database.connect(DATABASE_URL)
+export const connectDatabase = () => Database.connect(`file:${databasePath}`)
 
 let users = 0
 
 // A fresh user per test, so every test starts with an empty log.
 export const createUser = async (database: Database) => {
   users += 1
-  const username = `diego-${Date.now()}-${users}`
+  const username = `diego${Date.now()}${users}`
   await seedUser(database, { username, password: PASSWORD })
   return username
 }
@@ -52,22 +54,6 @@ export const logIn = async (context: BrowserContext, username: string) => {
   const { accessToken } = (await response.json()) as { accessToken: string }
   await setSessionCookie(context, accessToken)
 }
-
-export const setExpiredSession = async (context: BrowserContext) => {
-  const expiresAt = Math.floor(Date.now() / 1000) - 60
-  const token = await new SignJWT()
-    .setProtectedHeader({ alg: 'HS256', typ: 'JWT' })
-    .setIssuer(JWT.issuer)
-    .setAudience(JWT.audience)
-    .setSubject('1')
-    .setIssuedAt(expiresAt - 60)
-    .setExpirationTime(expiresAt)
-    .sign(new TextEncoder().encode(JWT.secret))
-  await setSessionCookie(context, token)
-}
-
-export const setInvalidSession = (context: BrowserContext) =>
-  setSessionCookie(context, 'not-a-valid-token')
 
 // Fixes the browser clock and opens the home page.
 export const openHome = async (page: Page) => {

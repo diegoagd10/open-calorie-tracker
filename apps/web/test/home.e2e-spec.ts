@@ -1,7 +1,7 @@
+import { GENERIC_ERROR_MESSAGE } from '@open-calorie-tracker/shared'
 import { type Browser, type BrowserContext, type Page, chromium } from 'playwright'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vite-plus/test'
 import type { Database } from '../../api/src/db/database'
-import { GENERIC_ERROR_MESSAGE } from '../src/lib/errors'
 import {
   TIME_ZONE,
   connectDatabase,
@@ -13,12 +13,12 @@ import {
   openHome,
   seedFoodEntry,
   seedWaterEntry,
-  setExpiredSession,
-  setInvalidSession,
   textOf,
 } from './daily-log'
 import { clearFault, injectFault } from './fault-proxy'
-import { PROXY_URL, WEB_URL } from './fixtures'
+import { SEEDED } from './fixtures'
+
+const { proxyUrl: PROXY_URL } = SEEDED
 
 const food = (username: string, overrides: Partial<Parameters<typeof seedFoodEntry>[1]> = {}) => ({
   username,
@@ -59,37 +59,6 @@ describe('Home page (e2e)', () => {
   afterEach(async () => {
     await clearFault(PROXY_URL, username)
     await context.close()
-  })
-
-  describe('access', () => {
-    it.each(['/', '/any-other-page'])(
-      'redirects a user who is not logged in from %s to the login page',
-      async (path) => {
-        await page.goto(`${WEB_URL}${path}`)
-
-        await page.waitForURL(`${WEB_URL}/login`)
-      },
-    )
-
-    it.each([
-      ['an expired session', setExpiredSession],
-      ['an invalid session', setInvalidSession],
-    ])('treats %s as not logged in', async (_case, setSession) => {
-      await setSession(context)
-
-      await page.goto(`${WEB_URL}/`)
-
-      await page.waitForURL(`${WEB_URL}/login`)
-    })
-
-    it('lets a user who is not logged in open the login page', async () => {
-      await page.goto(`${WEB_URL}/login`)
-
-      expect(page.url()).toBe(`${WEB_URL}/login`)
-      expect(await page.getByRole('form', { name: 'Log in' }).isVisible()).toBe(true)
-    })
-
-    // Landing on "/" after logging in is covered by login.e2e-spec.ts.
   })
 
   describe('when logged in', () => {
@@ -364,7 +333,7 @@ describe('Home page (e2e)', () => {
       })
 
       it('shows a generic error when the log cannot be loaded', async () => {
-        await injectFault(PROXY_URL, username, { status: 500 })
+        await injectFault(PROXY_URL, { status: 500 }, username)
 
         await openHome(page)
 
@@ -372,7 +341,7 @@ describe('Home page (e2e)', () => {
       })
 
       it('shows a generic error when the backend is unreachable', async () => {
-        await injectFault(PROXY_URL, username, 'connection-reset')
+        await injectFault(PROXY_URL, 'connection-reset', username)
 
         await openHome(page)
 

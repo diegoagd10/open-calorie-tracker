@@ -1,28 +1,52 @@
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-export const API_PORT = 3101
-export const API_URL = `http://localhost:${API_PORT}`
+export type Environment = {
+  webUrl: string
+  apiUrl: string
+  // Next.js talks to the API through the fault proxy.
+  proxyUrl: string
+  databasePath: string
+}
 
-// Next.js talks to the API through the fault proxy.
-export const PROXY_PORT = 3102
-export const PROXY_URL = `http://localhost:${PROXY_PORT}`
+// Override with WEB_TEST_BASE_PORT to run alongside another checkout's tests. The seeded
+// environment uses the base port and the next two; the empty one starts 100 ports higher.
+const DEFAULT_BASE_PORT = 3100
 
-export const WEB_PORT = 3100
-export const WEB_URL = `http://localhost:${WEB_PORT}`
+const basePortFromEnv = (value: string | undefined): number => {
+  if (value === undefined || value === '') return DEFAULT_BASE_PORT
+  const port = Number(value)
+  if (!Number.isInteger(port) || port < 1024 || port > 65_535 - 102) {
+    throw new Error(`WEB_TEST_BASE_PORT must be a port between 1024 and ${65_535 - 102}`)
+  }
+  return port
+}
+
+const BASE_PORT = basePortFromEnv(process.env['WEB_TEST_BASE_PORT'])
+
+// Per base port, so two runs on different ports never share a database.
+export const TEST_DATA_DIR = join(tmpdir(), `open-calorie-tracker-web-test-${BASE_PORT}`)
+
+const environment = (name: string, basePort: number): Environment => ({
+  webUrl: `http://localhost:${basePort}`,
+  apiUrl: `http://localhost:${basePort + 1}`,
+  proxyUrl: `http://localhost:${basePort + 2}`,
+  databasePath: join(TEST_DATA_DIR, `${name}.sqlite`),
+})
+
+// Already has the seed user: for logging in and the redirects to /login.
+export const SEEDED = environment('seeded', BASE_PORT)
+
+// Starts with no users: for registering and the redirects to /register.
+export const EMPTY = environment('empty', BASE_PORT + 100)
 
 export const SEED_USER = {
   username: 'ana',
   password: 'correct-horse-battery-staple',
 }
 
-// Shared by the API, which signs the session tokens, and Next.js, which may verify them.
 export const JWT = {
   secret: 'web-test-secret-that-is-long-enough',
   issuer: 'open-calorie-tracker-api',
   audience: 'open-calorie-tracker-web',
 }
-
-// A fixed path, so the tests can seed the same database the API reads.
-export const DATABASE_PATH = join(tmpdir(), 'open-calorie-tracker-web-test.db')
-export const DATABASE_URL = `file:${DATABASE_PATH}`

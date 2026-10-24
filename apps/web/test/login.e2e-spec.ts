@@ -1,14 +1,16 @@
 import {
   ACCESS_TOKEN_TTL_SECONDS,
+  GENERIC_ERROR_MESSAGE,
   MAX_FAILED_ATTEMPTS,
   PASSWORD_MAX_LENGTH,
   USERNAME_MAX_LENGTH,
 } from '@open-calorie-tracker/shared'
 import { type Browser, type Page, chromium } from 'playwright'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vite-plus/test'
-import { GENERIC_ERROR_MESSAGE } from '../src/lib/errors'
 import { clearFault, injectFault } from './fault-proxy'
-import { PROXY_URL, SEED_USER, WEB_URL } from './fixtures'
+import { SEEDED, SEED_USER } from './fixtures'
+
+const { proxyUrl: PROXY_URL, webUrl: WEB_URL } = SEEDED
 
 describe('Login page (e2e)', () => {
   let browser: Browser
@@ -90,26 +92,42 @@ describe('Login page (e2e)', () => {
       expect(postRequests).toEqual([])
     })
 
-    it.each([
-      [
-        `a username longer than ${USERNAME_MAX_LENGTH} characters`,
-        'a'.repeat(USERNAME_MAX_LENGTH + 1),
-        SEED_USER.password,
-        `Username must be at most ${USERNAME_MAX_LENGTH} characters`,
-      ],
-      [
-        `a password longer than ${PASSWORD_MAX_LENGTH} characters`,
-        SEED_USER.username,
-        'a'.repeat(PASSWORD_MAX_LENGTH + 1),
-        `Password must be at most ${PASSWORD_MAX_LENGTH} characters`,
-      ],
-    ])('rejects %s without calling the server', async (_case, username, password, message) => {
-      await fill(username, password)
-      await submitButton().click()
+    it('drops anything but letters and numbers typed into the username', async () => {
+      await usernameField().pressSequentially('Ana_1 é-ñ!2')
 
-      expect(await page.getByText(message).isVisible()).toBe(true)
-      expect(postRequests).toEqual([])
+      expect(await usernameField().inputValue()).toBe('Ana12')
     })
+
+    it('drops anything but letters and numbers pasted into the username', async () => {
+      await usernameField().focus()
+      await page.keyboard.insertText('josé.peña')
+
+      expect(await usernameField().inputValue()).toBe('jospea')
+    })
+
+    it.each([
+      ['username', usernameField, USERNAME_MAX_LENGTH],
+      ['password', passwordField, PASSWORD_MAX_LENGTH],
+    ])('stops typing in the %s at its maximum length', async (_case, field, maxLength) => {
+      await field().focus()
+      await page.keyboard.insertText('a'.repeat(maxLength))
+      await field().press('b')
+
+      expect(await field().inputValue()).toBe('a'.repeat(maxLength))
+    })
+
+    it.each([
+      ['username', usernameField, USERNAME_MAX_LENGTH],
+      ['password', passwordField, PASSWORD_MAX_LENGTH],
+    ])(
+      'truncates text pasted into the %s to its maximum length',
+      async (_case, field, maxLength) => {
+        await field().focus()
+        await page.keyboard.insertText('a'.repeat(maxLength) + 'b'.repeat(10))
+
+        expect(await field().inputValue()).toBe('a'.repeat(maxLength))
+      },
+    )
   })
 
   it('logs in, stores the session in a secure HTTP-only cookie and redirects home', async () => {
@@ -148,7 +166,7 @@ describe('Login page (e2e)', () => {
 
   describe('backend failures', () => {
     it('shows a generic error when the backend responds 500', async () => {
-      await injectFault(PROXY_URL, SEED_USER.username, { status: 500 })
+      await injectFault(PROXY_URL, { status: 500 }, SEED_USER.username)
 
       await submit(SEED_USER.username, SEED_USER.password)
 
@@ -158,7 +176,7 @@ describe('Login page (e2e)', () => {
     })
 
     it('shows a generic error when the backend is unreachable', async () => {
-      await injectFault(PROXY_URL, SEED_USER.username, 'connection-reset')
+      await injectFault(PROXY_URL, 'connection-reset', SEED_USER.username)
 
       await submit(SEED_USER.username, SEED_USER.password)
 

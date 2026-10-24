@@ -1,22 +1,32 @@
 import { type NextRequest, NextResponse } from 'next/server'
-import { ACCESS_TOKEN_COOKIE, isValidAccessToken } from '@/lib/session'
+import { fetchNeedsSetup } from '@/clients/users'
+import { hasValidSession } from '@/lib/session'
 
-const PUBLIC_PAGES = new Set(['/login'])
+const redirectTo = (path: string, request: NextRequest) =>
+  NextResponse.redirect(new URL(path, request.url))
 
-// Sends every page request without a valid session to the login page.
+// Until the account exists every page leads to /register. Afterwards /register is closed, a
+// logged-in user has no use for /login, and every other page needs a valid session.
 export async function proxy(request: NextRequest) {
-  if (PUBLIC_PAGES.has(request.nextUrl.pathname)) return NextResponse.next()
+  const { pathname } = request.nextUrl
 
-  const token = request.cookies.get(ACCESS_TOKEN_COOKIE)?.value
-  if (token !== undefined && (await isValidAccessToken(token))) return NextResponse.next()
+  const needsSetup = await fetchNeedsSetup()
+  // The API is unreachable: let the page load, and its form report the failure.
+  if (needsSetup === undefined) return NextResponse.next()
 
-  const response = NextResponse.redirect(new URL('/login', request.url))
-  if (token !== undefined) response.cookies.delete(ACCESS_TOKEN_COOKIE)
-  return response
+  if (needsSetup) {
+    return pathname === '/register' ? NextResponse.next() : redirectTo('/register', request)
+  }
+
+  const loggedIn = await hasValidSession(request)
+  if (pathname === '/login' || pathname === '/register') {
+    if (loggedIn) return redirectTo('/', request)
+    return pathname === '/login' ? NextResponse.next() : redirectTo('/login', request)
+  }
+  return loggedIn ? NextResponse.next() : redirectTo('/login', request)
 }
 
 export const config = {
-  // Route handlers answer 401 themselves; Next.js internals and files with an extension
-  // (favicon, public assets) need no session.
+  // Pages only: API routes, Next.js assets and files with an extension pass straight through.
   matcher: ['/((?!api/|_next/|.*\\..*).*)'],
 }
