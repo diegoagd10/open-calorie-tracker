@@ -12,6 +12,8 @@ export default defineConfig({
       provider: 'v8',
       include: ['src/**/*.ts'],
       exclude: ['src/**/*.spec.ts', 'src/index.ts'],
+      // Fails `test:cov` when any metric drops below this.
+      thresholds: { statements: 95, branches: 95, functions: 95, lines: 95 },
     },
   },
 })

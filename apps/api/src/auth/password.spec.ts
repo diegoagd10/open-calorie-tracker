@@ -36,6 +36,7 @@ describe('password', () => {
       ['missing the key', phc('argon2id', version, parameters, salt)],
       ['malformed parameters', phc('argon2id', version, 'm=19456,t=2', salt, key)],
       ['non-numeric parameters', phc('argon2id', version, 'm=a,t=2,p=1', salt, key)],
+      ['parameters Argon2 rejects', phc('argon2id', version, 'm=0,t=2,p=1', salt, key)],
     ])('%s', async (_case, hash) => {
       expect(await verifyPassword(PASSWORD, hash)).toBe(false)
     })

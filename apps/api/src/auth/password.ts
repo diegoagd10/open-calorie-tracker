@@ -1,4 +1,5 @@
 import { argon2, randomBytes, timingSafeEqual } from 'node:crypto'
+import { promisify } from 'node:util'
 
 // OWASP minimum for Argon2id: 19 MiB of memory, 2 passes, 1 degree of parallelism.
 const PARAMETERS = { memory: 19_456, passes: 2, parallelism: 1 }
@@ -8,14 +9,10 @@ const VERSION = 19
 
 type Parameters = typeof PARAMETERS
 
+const argon2Async = promisify(argon2)
+
 const deriveKey = (password: string, salt: Buffer, parameters: Parameters, tagLength: number) =>
-  new Promise<Buffer>((resolve, reject) => {
-    argon2(
-      'argon2id',
-      { message: password, nonce: salt, tagLength, ...parameters },
-      (error, key) => (error ? reject(error) : resolve(key)),
-    )
-  })
+  argon2Async('argon2id', { message: password, nonce: salt, tagLength, ...parameters })
 
 // PHC string format, which stores the parameters so they can be raised later without breaking
 // existing hashes: $argon2id$v=19$m=<KiB>,t=<passes>,p=<parallelism>$<salt>$<hash>
@@ -36,8 +33,13 @@ export const verifyPassword = async (password: string, hash: string): Promise<bo
   if (parsed === undefined) return false
 
   const expected = Buffer.from(key, 'base64')
-  const actual = await deriveKey(password, Buffer.from(salt, 'base64'), parsed, expected.length)
-  return timingSafeEqual(actual, expected)
+  try {
+    const actual = await deriveKey(password, Buffer.from(salt, 'base64'), parsed, expected.length)
+    return timingSafeEqual(actual, expected)
+  } catch {
+    // Parameters Argon2 rejects (e.g. too little memory) mean the hash is not one of ours.
+    return false
+  }
 }
 
 // PHC strings use base64 without padding.
