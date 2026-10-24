@@ -3,7 +3,13 @@ import { z } from 'zod'
 export const USERNAME_MAX_LENGTH = 32
 export const PASSWORD_MAX_LENGTH = 128
 
-// Shared by the form (validates before calling the server) and the route handler.
+// Failed logins per (IP, username) before the API locks that pair out.
+export const MAX_FAILED_ATTEMPTS = 5
+export const ACCOUNT_LOCK_DURATION_SECONDS = 15 * 60
+
+export const ACCESS_TOKEN_TTL_SECONDS = 15 * 60
+
+// Validated by the web form before calling the server, and again by the API.
 export const loginSchema = z.object({
   username: z
     .string()
@@ -17,4 +23,6 @@ export const loginSchema = z.object({
 
 export type LoginInput = z.infer<typeof loginSchema>
 
-export const ACCESS_TOKEN_COOKIE = 'access_token'
+export const loginResponseSchema = z.object({ accessToken: z.string().min(1) })
+
+export type LoginResponse = z.infer<typeof loginResponseSchema>

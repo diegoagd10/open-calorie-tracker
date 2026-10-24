@@ -6,15 +6,14 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "test": "vp test run",
     "test:watch": "vp test"
   },
   "dependencies": {
+    "@open-calorie-tracker/shared": "workspace:*",
     "jose": "^6.2.13",
     "next": "16.4.2",
     "react": "19.3.0",
-    "react-dom": "19.3.0",
-    "zod": "^4.6.7"
+    "react-dom": "19.3.0"
   },
   "devDependencies": {
     "@tailwindcss/turbopack": "^4",

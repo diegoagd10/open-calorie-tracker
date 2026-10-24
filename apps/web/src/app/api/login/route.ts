@@ -1,12 +1,10 @@
+import { loginResponseSchema, loginSchema } from '@open-calorie-tracker/shared'
 import { decodeJwt } from 'jose'
 import { cookies } from 'next/headers'
 import type { NextRequest } from 'next/server'
-import { z } from 'zod'
-import { ACCESS_TOKEN_COOKIE, loginSchema } from '@/lib/login'
+import { ACCESS_TOKEN_COOKIE } from '@/lib/session'
 
 const apiUrl = process.env['API_URL'] ?? 'http://localhost:3001'
-
-const loginResponseSchema = z.object({ accessToken: z.string().min(1) })
 
 // API statuses the form knows how to explain; anything else is reported as a generic failure.
 const FORWARDED_STATUSES = new Set([400, 401, 423, 429])

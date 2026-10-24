@@ -1,9 +1,8 @@
 import { Injectable } from '@nestjs/common'
+import { ACCESS_TOKEN_TTL_SECONDS } from '@open-calorie-tracker/shared'
 import { SignJWT } from 'jose'
 import { randomUUID } from 'node:crypto'
 import { AppConfig } from '../config/config.js'
-
-export const ACCESS_TOKEN_TTL_SECONDS = 15 * 60
 
 @Injectable()
 export class TokenService {

@@ -1,12 +1,13 @@
+import {
+  ACCESS_TOKEN_TTL_SECONDS,
+  MAX_FAILED_ATTEMPTS,
+  PASSWORD_MAX_LENGTH,
+  USERNAME_MAX_LENGTH,
+} from '@open-calorie-tracker/shared'
 import { type Browser, type Page, chromium } from 'playwright'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vite-plus/test'
 import { clearFault, injectFault } from './fault-proxy'
 import { PROXY_URL, SEED_USER, WEB_URL } from './fixtures'
-
-const USERNAME_MAX_LENGTH = 32
-const PASSWORD_MAX_LENGTH = 128
-const MAX_FAILED_ATTEMPTS = 5
-const ACCESS_TOKEN_TTL_SECONDS = 15 * 60
 
 const GENERIC_ERROR = 'Something went wrong. Please try again later.'
 

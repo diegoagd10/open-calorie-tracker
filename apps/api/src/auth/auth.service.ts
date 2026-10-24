@@ -1,11 +1,13 @@
 import { HttpException, HttpStatus, Injectable, UnauthorizedException } from '@nestjs/common'
+import {
+  ACCOUNT_LOCK_DURATION_SECONDS,
+  type LoginInput,
+  type LoginResponse,
+  MAX_FAILED_ATTEMPTS,
+} from '@open-calorie-tracker/shared'
 import { UsersService } from '../users/users.service.js'
-import type { LoginDto } from './login.dto.js'
 import { hashPassword, verifyPassword } from './password.js'
 import { TokenService } from './token.service.js'
-
-const MAX_FAILED_ATTEMPTS = 5
-const LOCK_DURATION_MS = 15 * 60 * 1000
 
 type Attempts = { failures: number; lockedUntil: number | undefined }
 
@@ -25,7 +27,7 @@ export class AuthService {
     private readonly tokens: TokenService,
   ) {}
 
-  async login({ username, password }: LoginDto, ip: string): Promise<{ accessToken: string }> {
+  async login({ username, password }: LoginInput, ip: string): Promise<LoginResponse> {
     const attemptsKey = JSON.stringify([ip, username])
     if (this.isLocked(attemptsKey)) throw accountLocked()
 
@@ -56,7 +58,7 @@ export class AuthService {
     const locked = failures >= MAX_FAILED_ATTEMPTS
     this.attempts.set(attemptsKey, {
       failures,
-      lockedUntil: locked ? Date.now() + LOCK_DURATION_MS : undefined,
+      lockedUntil: locked ? Date.now() + ACCOUNT_LOCK_DURATION_SECONDS * 1000 : undefined,
     })
     return locked
   }

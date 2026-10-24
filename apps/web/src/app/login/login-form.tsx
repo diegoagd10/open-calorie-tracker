@@ -1,8 +1,10 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
+import { type LoginInput, loginSchema } from '@open-calorie-tracker/shared'
 import { type FormEvent, useState } from 'react'
-import { type LoginInput, loginSchema } from '@/lib/login'
+import { Alert } from '@/components/alert'
+import { GENERIC_ERROR_MESSAGE } from '@/lib/errors'
 
 type FieldErrors = Partial<Record<keyof LoginInput, string>>
 
@@ -11,8 +13,6 @@ const ERROR_MESSAGES: Record<number, string> = {
   423: 'Your account has been locked after too many failed login attempts. Please try again later.',
   429: 'Too many login attempts. Please wait a moment and try again.',
 }
-
-const GENERIC_ERROR = 'Something went wrong. Please try again later.'
 
 const fieldErrorsFrom = (issues: { path: PropertyKey[]; message: string }[]): FieldErrors => {
   const errors: FieldErrors = {}
@@ -57,9 +57,9 @@ export function LoginForm() {
         router.replace('/')
         return
       }
-      setFormError(ERROR_MESSAGES[response.status] ?? GENERIC_ERROR)
+      setFormError(ERROR_MESSAGES[response.status] ?? GENERIC_ERROR_MESSAGE)
     } catch {
-      setFormError(GENERIC_ERROR)
+      setFormError(GENERIC_ERROR_MESSAGE)
     } finally {
       setPending(false)
     }
@@ -91,11 +91,7 @@ export function LoginForm() {
         error={fieldErrors.password}
       />
 
-      {formError !== undefined && (
-        <p role="alert" className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
-          {formError}
-        </p>
-      )}
+      {formError !== undefined && <Alert>{formError}</Alert>}
 
       <button
         type="submit"

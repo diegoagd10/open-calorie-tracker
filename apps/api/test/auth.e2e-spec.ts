@@ -1,6 +1,13 @@
+import {
+  ACCESS_TOKEN_TTL_SECONDS,
+  ACCOUNT_LOCK_DURATION_SECONDS,
+  MAX_FAILED_ATTEMPTS,
+  PASSWORD_MAX_LENGTH,
+  USERNAME_MAX_LENGTH,
+} from '@open-calorie-tracker/shared'
 import { decodeJwt, jwtVerify } from 'jose'
 import request from 'supertest'
-import { afterEach, beforeEach, describe, expect, it } from 'vite-plus/test'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 import { createApp } from '../src/app.js'
 import { Database } from '../src/db/database.js'
 import { seedUser } from '../src/db/seed.js'
@@ -13,12 +20,6 @@ const PASSWORD = 'correct-horse-battery-staple'
 const JWT_SECRET = 'test-secret-that-is-long-enough-for-hs256'
 const JWT_ISSUER = 'open-calorie-tracker-api'
 const JWT_AUDIENCE = 'open-calorie-tracker-web'
-const ACCESS_TOKEN_TTL_SECONDS = 15 * 60
-
-const USERNAME_MAX_LENGTH = 32
-const PASSWORD_MAX_LENGTH = 128
-
-const MAX_FAILED_ATTEMPTS = 5
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
@@ -42,6 +43,7 @@ describe('POST /v1/login (e2e)', () => {
   })
 
   afterEach(async () => {
+    vi.useRealTimers()
     await app.close()
   })
 
@@ -192,6 +194,50 @@ describe('POST /v1/login (e2e)', () => {
       for (let attempt = 1; attempt < MAX_FAILED_ATTEMPTS; attempt++) {
         expect((await failLogin(ip)).status).toBe(401)
       }
+    })
+
+    describe('lock expiry', () => {
+      const lockDurationMs = ACCOUNT_LOCK_DURATION_SECONDS * 1000
+
+      // Only Date is faked, so the HTTP server, the database and Argon2 keep working normally.
+      const lockAt = async (ip: string) => {
+        vi.useFakeTimers({ toFake: ['Date'] })
+        const lockedAt = Date.now()
+        await failRepeatedly(ip, MAX_FAILED_ATTEMPTS)
+        return lockedAt
+      }
+
+      it('keeps the account locked until the lock duration has passed', async () => {
+        const ip = '203.0.113.16'
+        const lockedAt = await lockAt(ip)
+
+        vi.setSystemTime(lockedAt + lockDurationMs - 1000)
+        const response = await login({ username: USERNAME, password: PASSWORD }, ip)
+
+        expect(response.status).toBe(423)
+      })
+
+      it('unlocks the account once the lock duration has passed', async () => {
+        const ip = '203.0.113.17'
+        const lockedAt = await lockAt(ip)
+
+        vi.setSystemTime(lockedAt + lockDurationMs)
+        const response = await login({ username: USERNAME, password: PASSWORD }, ip)
+
+        expect(response.status).toBe(200)
+      })
+
+      it('starts counting failed attempts from zero after the lock expires', async () => {
+        const ip = '203.0.113.18'
+        const lockedAt = await lockAt(ip)
+
+        vi.setSystemTime(lockedAt + lockDurationMs)
+
+        for (let attempt = 1; attempt < MAX_FAILED_ATTEMPTS; attempt++) {
+          expect((await failLogin(ip)).status).toBe(401)
+        }
+        expect((await failLogin(ip)).status).toBe(423)
+      })
     })
   })
 })

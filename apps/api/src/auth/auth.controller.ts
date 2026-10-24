@@ -1,7 +1,7 @@
+import { type LoginInput, loginSchema } from '@open-calorie-tracker/shared'
 import { Body, Controller, HttpCode, HttpStatus, Ip, Post } from '@nestjs/common'
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js'
 import { AuthService } from './auth.service.js'
-import { type LoginDto, loginSchema } from './login.dto.js'
 
 @Controller('v1')
 export class AuthController {
@@ -9,7 +9,7 @@ export class AuthController {
 
   @Post('login')
   @HttpCode(HttpStatus.OK)
-  login(@Body(new ZodValidationPipe(loginSchema)) body: LoginDto, @Ip() ip: string) {
+  login(@Body(new ZodValidationPipe(loginSchema)) body: LoginInput, @Ip() ip: string) {
     return this.auth.login(body, ip)
   }
 }
