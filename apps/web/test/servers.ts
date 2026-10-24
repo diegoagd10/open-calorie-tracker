@@ -1,11 +1,20 @@
 import { type ChildProcess, execFile, spawn } from 'node:child_process'
-import { mkdtemp, rm } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { rm } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import { startFaultProxy } from './fault-proxy'
-import { API_PORT, API_URL, PROXY_PORT, PROXY_URL, SEED_USER, WEB_PORT, WEB_URL } from './fixtures'
+import {
+  API_PORT,
+  API_URL,
+  DATABASE_PATH,
+  DATABASE_URL,
+  JWT,
+  PROXY_PORT,
+  PROXY_URL,
+  SEED_USER,
+  WEB_PORT,
+  WEB_URL,
+} from './fixtures'
 
 const apiDir = fileURLToPath(new URL('../../api', import.meta.url))
 const webDir = fileURLToPath(new URL('..', import.meta.url))
@@ -40,9 +49,10 @@ const waitFor = async (url: string, timeoutMs: number) => {
 // Starts the real API (temporary database with the seeded test user), the fault proxy and the
 // Next.js app.
 export default async function setup() {
-  // A file database, because the API runs in its own process and is seeded before it starts.
-  const dataDir = await mkdtemp(join(tmpdir(), 'open-calorie-tracker-web-test-'))
-  const databaseUrl = `file:${join(dataDir, 'sqlite.db')}`
+  // A file database, because the API runs in its own process and the tests seed it too.
+  const removeDatabase = () => rm(DATABASE_PATH, { force: true })
+  await removeDatabase()
+  const databaseUrl = DATABASE_URL
   await promisify(execFile)('pnpm', ['db:seed'], {
     cwd: apiDir,
     env: {
@@ -57,20 +67,23 @@ export default async function setup() {
     start(['pnpm', 'start'], apiDir, {
       PORT: String(API_PORT),
       DATABASE_URL: databaseUrl,
-      JWT_SECRET: 'web-test-secret-that-is-long-enough',
-      JWT_ISSUER: 'open-calorie-tracker-api',
-      JWT_AUDIENCE: 'open-calorie-tracker-web',
+      JWT_SECRET: JWT.secret,
+      JWT_ISSUER: JWT.issuer,
+      JWT_AUDIENCE: JWT.audience,
       TRUST_PROXY: 'loopback',
     }),
     start(['pnpm', 'exec', 'next', 'dev', '--port', String(WEB_PORT)], webDir, {
       API_URL: PROXY_URL,
+      JWT_SECRET: JWT.secret,
+      JWT_ISSUER: JWT.issuer,
+      JWT_AUDIENCE: JWT.audience,
     }),
   ]
   const proxy = await startFaultProxy(PROXY_PORT, API_URL)
   const stopAll = async () => {
     servers.forEach(stop)
     proxy.close()
-    await rm(dataDir, { recursive: true, force: true })
+    await removeDatabase()
   }
 
   try {
