@@ -80,11 +80,54 @@ describe('Redirects once the account exists (e2e)', () => {
     })
   })
 
-  it('lets a logged-in user stay on /', async () => {
-    await setAccessToken(await loginThroughApi())
+  const INVALID_TOKENS = [
+    ['is not a valid token', () => Promise.resolve('not-a-token')],
+    ['has expired', () => signToken(Math.floor(Date.now() / 1000) - 60)],
+  ] as const
 
-    await page.goto(`${WEB_URL}/`)
+  it.each(INVALID_TOKENS)(
+    'shows the login form when the session token %s',
+    async (_case, token) => {
+      await setAccessToken(await token())
 
-    expect(page.url()).toBe(`${WEB_URL}/`)
+      await page.goto(`${WEB_URL}/login`)
+
+      expect(page.url()).toBe(`${WEB_URL}/login`)
+      expect(await page.getByRole('form', { name: 'Log in' }).isVisible()).toBe(true)
+    },
+  )
+
+  it.each(INVALID_TOKENS)(
+    'sends /register to /login when the session token %s',
+    async (_case, token) => {
+      await setAccessToken(await token())
+
+      await page.goto(`${WEB_URL}/register`)
+
+      expect(page.url()).toBe(`${WEB_URL}/login`)
+    },
+  )
+
+  describe('with a session', () => {
+    beforeEach(async () => {
+      await setAccessToken(await loginThroughApi())
+    })
+
+    it('lets the user stay on /', async () => {
+      await page.goto(`${WEB_URL}/`)
+
+      expect(page.url()).toBe(`${WEB_URL}/`)
+    })
+
+    it.each(['/login', '/register'])('sends %s straight to /', async (path) => {
+      const visited: string[] = []
+      page.on('request', (request) => {
+        if (request.isNavigationRequest()) visited.push(request.url())
+      })
+
+      await page.goto(`${WEB_URL}${path}`)
+
+      expect(visited).toEqual([`${WEB_URL}${path}`, `${WEB_URL}/`])
+    })
   })
 })
