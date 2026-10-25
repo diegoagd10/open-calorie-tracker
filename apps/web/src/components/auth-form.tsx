@@ -1,5 +1,6 @@
 import type { FormEvent, ReactNode } from 'react'
 import { Alert } from './alert'
+import { Logo } from './logo'
 
 type AuthFormProps = {
   title: string
@@ -25,27 +26,21 @@ export function AuthForm({
 }: AuthFormProps) {
   return (
     <div className="w-full max-w-sm">
-      <div className="mb-8 flex flex-col items-center gap-3 text-center">
-        <span
-          aria-hidden="true"
-          className="flex size-12 items-center justify-center rounded-xl bg-blue-600 text-lg font-semibold text-white shadow-sm"
-        >
-          OC
-        </span>
-        <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Open Calorie Tracker</p>
+      <div className="mb-8">
+        <Logo size="large" />
       </div>
 
       <form
         noValidate
         aria-labelledby="auth-form-title"
         onSubmit={onSubmit}
-        className="flex flex-col gap-5 rounded-2xl border border-gray-200 bg-white p-8 shadow-sm dark:border-gray-800 dark:bg-gray-900"
+        className="flex flex-col gap-5 rounded-[20px] border border-line bg-surface p-6 sm:p-8"
       >
-        <div className="flex flex-col gap-1">
-          <h1 id="auth-form-title" className="text-2xl font-semibold tracking-tight">
+        <div className="flex flex-col gap-1.5">
+          <h1 id="auth-form-title" className="font-serif text-[34px] leading-tight tracking-tight">
             {title}
           </h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400">{description}</p>
+          <p className="text-sm text-fg-soft">{description}</p>
         </div>
 
         {error !== undefined && <Alert>{error}</Alert>}
@@ -55,12 +50,12 @@ export function AuthForm({
         <button
           type="submit"
           disabled={!canSubmit}
-          className="mt-1 flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 font-medium text-white shadow-sm transition-colors hover:bg-blue-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 disabled:cursor-not-allowed disabled:bg-gray-300 disabled:text-gray-500 disabled:shadow-none dark:disabled:bg-gray-800 dark:disabled:text-gray-500"
+          className="mt-1 flex h-12 items-center justify-center gap-2 rounded-full bg-accent px-5 font-semibold text-on-accent transition hover:brightness-110 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:bg-disabled disabled:text-on-disabled disabled:hover:brightness-100"
         >
           {pending && (
             <span
               aria-hidden="true"
-              className="size-4 animate-spin rounded-full border-2 border-white/40 border-t-white"
+              className="size-4 animate-spin rounded-full border-2 border-on-accent/30 border-t-on-accent"
             />
           )}
           {submitLabel}

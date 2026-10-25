@@ -1,25 +1,107 @@
 @import 'tailwindcss';
 
+/* The app's palette. Dark is the default; light follows the system setting. */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  color-scheme: dark;
+  --bg: #13120f;
+  --surface: #1c1b18;
+  --line: #2e2c28;
+  --line-strong: #3a3833;
+  --fg: #ece8e1;
+  --fg-soft: #cfcac0;
+  --muted: #a19c92;
+  --accent: #a8d08d;
+  --on-accent: #13120f;
+  --accent-text: #a8d08d;
+  --focus: rgb(168 208 141 / 0.35);
+  --water: #8fb4f0;
+  --water-soft: #1c2a3a;
+  --food-soft: #1f3320;
+  --danger: #e5484d;
+  --danger-text: #f4a09c;
+  --danger-soft: #2a1514;
+  --danger-line: #5c2321;
+  --danger-focus: rgb(229 72 77 / 0.25);
+  --track: rgb(0 0 0 / 0.6);
+  --disabled: #2a2925;
+  --on-disabled: #7d786f;
+  --protein: #e8826b;
+  --carbohydrate: #f2cf7a;
+  --fat: #7aa2e8;
+  --fiber: #8fb4f0;
+  --sugar: #c9a7ef;
+  --sodium: #9fd3c7;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
+@media (prefers-color-scheme: light) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    color-scheme: light;
+    --bg: #f6f4ef;
+    --surface: #ffffff;
+    --line: #e3dfd5;
+    --line-strong: #cfc9bc;
+    --fg: #1c1b18;
+    --fg-soft: #45423b;
+    --muted: #6b665c;
+    --accent: #4f7a38;
+    --on-accent: #ffffff;
+    --accent-text: #3f6b2a;
+    --focus: rgb(79 122 56 / 0.3);
+    --water: #2f6bc4;
+    --water-soft: #e3ecfa;
+    --food-soft: #e6f0dd;
+    --danger: #c93a36;
+    --danger-text: #a82a26;
+    --danger-soft: #fbeceb;
+    --danger-line: #f1c9c6;
+    --danger-focus: rgb(201 58 54 / 0.2);
+    --track: #e9e5dc;
+    --disabled: #e6e2d9;
+    --on-disabled: #6b665c;
+    --protein: #c4563d;
+    --carbohydrate: #c9962a;
+    --fat: #3f6fc4;
+    --fiber: #2f6bc4;
+    --sugar: #8a5cc4;
+    --sodium: #2f8f7d;
   }
 }
 
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-fg: var(--fg);
+  --color-fg-soft: var(--fg-soft);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-on-accent: var(--on-accent);
+  --color-accent-text: var(--accent-text);
+  --color-focus: var(--focus);
+  --color-water: var(--water);
+  --color-water-soft: var(--water-soft);
+  --color-food-soft: var(--food-soft);
+  --color-danger: var(--danger);
+  --color-danger-text: var(--danger-text);
+  --color-danger-soft: var(--danger-soft);
+  --color-danger-line: var(--danger-line);
+  --color-danger-focus: var(--danger-focus);
+  --color-track: var(--track);
+  --color-disabled: var(--disabled);
+  --color-on-disabled: var(--on-disabled);
+  --color-protein: var(--protein);
+  --color-carbohydrate: var(--carbohydrate);
+  --color-fat: var(--fat);
+  --color-fiber: var(--fiber);
+  --color-sugar: var(--sugar);
+  --color-sodium: var(--sodium);
+  --font-sans: var(--font-geist-sans);
+  --font-serif: var(--font-newsreader);
+  --font-mono: var(--font-geist-mono);
+}
+
 body {
-  background: var(--background);
-  color: var(--foreground);
+  background: var(--bg);
+  color: var(--fg);
 }
