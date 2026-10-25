@@ -1,4 +1,4 @@
-import { ChevronIcon } from './icons'
+import { ChevronIcon } from '@/components/icons'
 import { formatShortWeekday, parseDay, weekOf } from './format'
 
 // The current week with today highlighted. Navigating between days is not available yet, so the

@@ -23,7 +23,7 @@ export function Logo({ size }: { size: keyof typeof SIZES }) {
       >
         OC
       </span>
-      <p className={`text-sm font-medium ${name}`}>Open Calorie Tracker</p>
+      <p className={`text-sm font-medium whitespace-nowrap ${name}`}>Open Calorie Tracker</p>
     </div>
   )
 }

@@ -1,15 +1,16 @@
 'use client'
 
+import Link from 'next/link'
 import { useRef } from 'react'
 import { Alert } from '@/components/alert'
-import { Logo } from '@/components/logo'
+import { AppHeader } from '@/components/app-header'
+import { DropIcon, GearIcon, PlusIcon } from '@/components/icons'
+import { useLogOut } from '@/components/use-log-out'
 import { GENERIC_ERROR_MESSAGE } from '@open-calorie-tracker/shared'
 import { EntryList } from './entry-list'
 import { formatLongDay, parseDay } from './format'
-import { DropIcon, PlusIcon } from './icons'
 import { Summary, WaterSummary } from './summary'
 import { useDailyLog } from './use-daily-log'
-import { useLogOut } from './use-log-out'
 import { usePullToRefresh } from './use-pull-to-refresh'
 import { useToday } from './use-today'
 import { WeekStrip } from './week-strip'
@@ -47,19 +48,6 @@ function AddButtons() {
   )
 }
 
-function LogOutButton({ pending, onClick }: { pending: boolean; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      disabled={pending}
-      onClick={onClick}
-      className="flex h-9 items-center rounded-full border border-line bg-surface px-4 text-sm font-semibold disabled:opacity-60"
-    >
-      Log out
-    </button>
-  )
-}
-
 // Today's food log: entries, calorie and nutrient totals and water, for the browser's day and
 // time zone. On touch screens, pulling down from the top reloads it.
 export function FoodLog() {
@@ -72,12 +60,15 @@ export function FoodLog() {
   return (
     <div className="flex min-h-screen flex-col bg-bg">
       {showLoader && <Loader />}
-      <header className="border-b border-line">
-        <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3.5 sm:px-8">
-          <Logo size="small" />
-          <LogOutButton pending={logOut.pending} onClick={() => void logOut.logOut()} />
-        </div>
-      </header>
+      <AppHeader logOut={logOut}>
+        <Link
+          href="/settings"
+          aria-label="Settings"
+          className="flex size-9 items-center justify-center rounded-full border border-line bg-surface text-fg-soft"
+        >
+          <GearIcon className="size-[18px]" />
+        </Link>
+      </AppHeader>
       <div
         ref={content}
         className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 px-4 pt-6 sm:px-8 sm:pt-8"

@@ -1,5 +1,5 @@
 import type { LogEntry } from '@open-calorie-tracker/shared'
-import { ChevronIcon, DropIcon, ForkKnifeIcon } from './icons'
+import { ChevronIcon, DropIcon, ForkKnifeIcon } from '@/components/icons'
 import { formatNumber, formatTime } from './format'
 
 const SOURCE_LABELS = { manual: 'Manual' } as const

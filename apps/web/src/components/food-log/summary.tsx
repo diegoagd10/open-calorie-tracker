@@ -1,16 +1,8 @@
-import type { DailyGoals, DailyTotals, Nutrient } from '@open-calorie-tracker/shared'
+import type { DailyGoals, DailyTotals } from '@open-calorie-tracker/shared'
+import { NUTRIENT_GOALS } from '@/components/goals'
+import { ChevronIcon } from '@/components/icons'
 import { formatNumber } from './format'
-import { ChevronIcon } from './icons'
 import { ProgressBar } from './progress-bar'
-
-const NUTRIENTS: { key: Nutrient; label: string; unit: string; color: string }[] = [
-  { key: 'protein', label: 'Protein', unit: 'g', color: 'var(--protein)' },
-  { key: 'carbohydrate', label: 'Carbohydrate', unit: 'g', color: 'var(--carbohydrate)' },
-  { key: 'fat', label: 'Fat', unit: 'g', color: 'var(--fat)' },
-  { key: 'fiber', label: 'Fiber', unit: 'g', color: 'var(--fiber)' },
-  { key: 'sugar', label: 'Sugar max', unit: 'g', color: 'var(--sugar)' },
-  { key: 'sodium', label: 'Sodium max', unit: 'mg', color: 'var(--sodium)' },
-]
 
 // A fieldset is the native group element; these hold figures, not form controls.
 const GROUP = 'm-0 min-w-0 border-0'
@@ -41,7 +33,7 @@ export function Summary({ goals, totals }: SummaryProps) {
         <p className="text-sm text-muted">{foodEntriesLabel(totals.foodEntries)}</p>
       </fieldset>
       <div className="grid grid-cols-3 border-t border-line">
-        {NUTRIENTS.map(({ key, label, unit, color }, index) => (
+        {NUTRIENT_GOALS.map(({ key, label, unit, color }, index) => (
           <fieldset
             key={key}
             aria-label={label}
