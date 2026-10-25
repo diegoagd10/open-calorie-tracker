@@ -1,5 +1,8 @@
 import type { Page } from 'playwright'
+import { dayRange } from '../../api/src/daily-log/day'
+import type { Database } from '../../api/src/db/database'
 import { seedFoodEntry, seedWaterEntry } from '../../api/src/db/seed'
+import { TIME_ZONE } from './browser'
 import { receivedRequests } from './fault-proxy'
 import { SEEDED } from './fixtures'
 
@@ -11,6 +14,32 @@ const { proxyUrl: PROXY_URL, webUrl: WEB_URL } = SEEDED
 export const NOW = new Date('2026-10-24T11:00:00-04:00')
 
 export const newYorkTime = (localDateTime: string) => new Date(`${localDateTime}-04:00`)
+
+// Tests that create entries through the API cannot fix its clock, so they work on the real today in
+// New York instead of NOW. A minute into the day keeps seeded entries older than the ones a test
+// creates, unless the test runs in the first minutes after midnight.
+export const minutesIntoToday = (minutes: number) => {
+  const date = new Intl.DateTimeFormat('en-CA', { timeZone: TIME_ZONE }).format(new Date())
+  return new Date(dayRange({ date, timeZone: TIME_ZONE }).start.getTime() + minutes * 60_000)
+}
+
+// How the Food Log shows the time of an entry, e.g. "12:01 AM".
+export const timeLabel = (instant: Date) =>
+  new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit', timeZone: TIME_ZONE })
+    .format(instant)
+    .replaceAll(/\s/g, ' ')
+
+// The user's water entries as stored, oldest first.
+export const storedWaterEntries = async (database: Database, username: string) => {
+  const user = await database.db.query.users.findFirst({
+    where: (table, { eq }) => eq(table.username, username),
+  })
+  if (user === undefined) throw new Error(`No user named "${username}"`)
+  return database.db.query.waterEntries.findMany({
+    where: (table, { eq }) => eq(table.userId, user.id),
+    orderBy: (table, { asc }) => asc(table.loggedAt),
+  })
+}
 
 // Fixes the browser clock and opens the home page.
 export const openHome = async (page: Page) => {

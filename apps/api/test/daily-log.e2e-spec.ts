@@ -1,9 +1,9 @@
-import { SignJWT } from 'jose'
+import { DEFAULT_DAILY_GOALS } from '@open-calorie-tracker/shared'
 import request from 'supertest'
 import { afterEach, beforeEach, describe, expect, it } from 'vite-plus/test'
 import { Database } from '../src/db/database.js'
 import { seedFoodEntry, seedUser, seedWaterEntry } from '../src/db/seed.js'
-import { TEST_ENV, type TestApp, createTestApp } from './app.js'
+import { INVALID_TOKENS, type TestApp, accessTokenFor, createTestApp } from './app.js'
 
 const USERNAME = 'diego'
 const OTHER_USERNAME = 'ana'
@@ -12,26 +12,15 @@ const PASSWORD = 'correct-horse-battery-staple'
 const DATE = '2026-10-24'
 const TIME_ZONE = 'America/New_York'
 
-const DEFAULT_GOALS = {
-  calories: 1600,
-  protein: 120,
-  carbohydrate: 230,
-  fat: 70,
-  fiber: 25,
-  sugar: 50,
-  sodium: 2300,
-  water: 64,
-}
-
 // New York is on daylight saving time (UTC-4) from 2026-10-23 to 2026-10-25.
 const newYorkTime = (localDateTime: string) => new Date(`${localDateTime}-04:00`)
 
-type Totals = Record<keyof typeof DEFAULT_GOALS | 'foodEntries', number>
+type Totals = Record<keyof typeof DEFAULT_DAILY_GOALS | 'foodEntries', number>
 type Entry = { type: 'food' | 'water'; name?: string; loggedAt: string }
 type DailyLog = {
   date: string
   timeZone: string
-  goals: typeof DEFAULT_GOALS
+  goals: typeof DEFAULT_DAILY_GOALS
   totals: Totals
   entries: Entry[]
 }
@@ -51,12 +40,7 @@ describe('GET /v1/daily-log (e2e)', () => {
     await app.close()
   })
 
-  const accessToken = async (username = USERNAME) => {
-    const response = await request(app.getHttpServer())
-      .post('/v1/login')
-      .send({ username, password: PASSWORD })
-    return (response.body as { accessToken: string }).accessToken
-  }
+  const accessToken = (username = USERNAME) => accessTokenFor(app, username, PASSWORD)
 
   const getDailyLog = (token: string | undefined, query: Record<string, string>) => {
     const pending = request(app.getHttpServer()).get('/v1/daily-log').query(query)
@@ -85,29 +69,13 @@ describe('GET /v1/daily-log (e2e)', () => {
   }
 
   describe('authentication', () => {
-    const signToken = (secret: string, expiresAt: number) =>
-      new SignJWT()
-        .setProtectedHeader({ alg: 'HS256', typ: 'JWT' })
-        .setIssuer(TEST_ENV.JWT_ISSUER)
-        .setAudience(TEST_ENV.JWT_AUDIENCE)
-        .setSubject('1')
-        .setIssuedAt(expiresAt - 60)
-        .setExpirationTime(expiresAt)
-        .sign(new TextEncoder().encode(secret))
-
-    const now = () => Math.floor(Date.now() / 1000)
-
     it('rejects a request without a token with 401', async () => {
       const response = await getDailyLog(undefined, { date: DATE, timeZone: TIME_ZONE })
 
       expect(response.status).toBe(401)
     })
 
-    it.each([
-      ['a malformed token', () => Promise.resolve('not-a-jwt')],
-      ['an expired token', () => signToken(TEST_ENV.JWT_SECRET, now() - 60)],
-      ['a token signed with another secret', () => signToken('x'.repeat(42), now() + 600)],
-    ])('rejects %s with 401', async (_case, token) => {
+    it.each(INVALID_TOKENS)('rejects %s with 401', async (_case, token) => {
       const response = await getDailyLog(await token(), { date: DATE, timeZone: TIME_ZONE })
 
       expect(response.status).toBe(401)
@@ -136,7 +104,7 @@ describe('GET /v1/daily-log (e2e)', () => {
   })
 
   it('returns the default daily goals', async () => {
-    expect((await dailyLog()).goals).toEqual(DEFAULT_GOALS)
+    expect((await dailyLog()).goals).toEqual(DEFAULT_DAILY_GOALS)
   })
 
   it('returns no entries and zero totals for an empty day', async () => {

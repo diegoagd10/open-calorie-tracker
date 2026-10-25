@@ -11,6 +11,14 @@ export const openPage = async (browser: Browser, options: BrowserContextOptions 
   return { context, page }
 }
 
+// A phone-sized touch screen, for openPage.
+export const MOBILE = {
+  viewport: { width: 390, height: 844 },
+  deviceScaleFactor: 3,
+  isMobile: true,
+  hasTouch: true,
+}
+
 export const textOf = async (locator: Locator) =>
   (await locator.innerText()).replaceAll(/\s+/g, ' ').trim()
 

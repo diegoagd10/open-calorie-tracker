@@ -2,7 +2,7 @@ import { GENERIC_ERROR_MESSAGE } from '@open-calorie-tracker/shared'
 import { type Browser, type BrowserContext, type Locator, type Page, chromium } from 'playwright'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vite-plus/test'
 import type { Database } from '../../api/src/db/database'
-import { eventually, openPage, textOf } from './browser'
+import { MOBILE, eventually, openPage, textOf } from './browser'
 import {
   dailyLogRequests,
   finger,
@@ -20,13 +20,6 @@ const { proxyUrl: PROXY_URL } = SEEDED
 
 // Long enough to make sure a reload that should not happen did not.
 const QUIET_PERIOD_MS = 1_000
-
-const MOBILE = {
-  viewport: { width: 390, height: 844 },
-  deviceScaleFactor: 3,
-  isMobile: true,
-  hasTouch: true,
-}
 
 describe('Pull to refresh (e2e)', () => {
   let browser: Browser

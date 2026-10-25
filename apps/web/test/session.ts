@@ -22,7 +22,7 @@ export const createUser = async (database: Database) => {
   return username
 }
 
-const setSessionCookie = (context: BrowserContext, token: string) =>
+export const setSessionCookie = (context: BrowserContext, token: string) =>
   context.addCookies([
     {
       name: 'access_token',
