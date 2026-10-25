@@ -89,10 +89,16 @@ describe('Water (e2e)', () => {
   const addButton = () => page.getByRole('button', { name: 'Add water' })
   const addDialog = () => page.getByRole('dialog', { name: 'Add water' })
   const editDialog = () => page.getByRole('dialog', { name: 'Edit water' })
-  const confirmation = () => page.getByRole('alertdialog', { name: 'Delete this water entry?' })
+  const confirmation = () => page.getByRole('alertdialog')
   const preset = (dialog: Locator, name: string) => dialog.getByRole('button', { name })
   const button = (dialog: Locator, name: string) =>
     dialog.getByRole('button', { name, exact: true })
+  // "Add" or "Save" while there is no amount to log, "Add 12 fl oz" once there is.
+  const submitButton = (dialog: Locator, verb: 'Add' | 'Save') =>
+    dialog.getByRole('button', { name: new RegExp(`^${verb}( [\\d.]+ fl oz)?$`) })
+  const addSubmit = () => submitButton(addDialog(), 'Add')
+  const saveSubmit = () => submitButton(editDialog(), 'Save')
+  const confirmDelete = () => confirmation().getByRole('button', { name: /^Delete [\d.]+ fl oz$/ })
   const amountField = (dialog: Locator) => dialog.getByRole('textbox', { name: 'Amount (fl oz)' })
   const entryButton = (amount: string, loggedAt: Date) =>
     page.getByRole('button', { name: `Water, ${amount} fl oz, ${timeLabel(loggedAt)}` })
@@ -109,11 +115,6 @@ describe('Water (e2e)', () => {
     await expect.poll(() => addDialog().isVisible(), eventually).toBe(true)
   }
 
-  const openCustom = async () => {
-    await openAddDialog()
-    await button(addDialog(), 'Custom').click()
-  }
-
   const openEditDialog = async (amount = '16', loggedAt = FIRST) => {
     await openLog()
     await entryButton(amount, loggedAt).click()
@@ -125,6 +126,8 @@ describe('Water (e2e)', () => {
     await button(editDialog(), 'Delete').click()
     await expect.poll(() => confirmation().isVisible(), eventually).toBe(true)
   }
+
+  const goal = DEFAULT_DAILY_GOALS.water
 
   const requestsTo = (method: string) =>
     waterRequests.filter((request) => request.startsWith(`${method} `))
@@ -143,7 +146,7 @@ describe('Water (e2e)', () => {
   }
 
   describe('the water dialog', () => {
-    it('opens from "Add water" with the presets and Custom', async () => {
+    it('opens from "Add water" with the presets and the amount field', async () => {
       await openAddDialog()
 
       for (const { name, amount } of WATER_PRESETS) {
@@ -151,11 +154,15 @@ describe('Water (e2e)', () => {
         expect(text).toContain(name)
         expect(text).toContain(`${amount} fl oz`)
       }
-      expect(await button(addDialog(), 'Custom').isVisible()).toBe(true)
+      expect(await amountField(addDialog()).inputValue()).toBe('')
+      expect(await textOf(addDialog())).toContain(
+        `Up to ${MAX_WATER_AMOUNT} fl oz, one decimal allowed.`,
+      )
     })
 
     it.each([
       ['clicking Cancel', () => button(addDialog(), 'Cancel').click()],
+      ['clicking Close', () => button(addDialog(), 'Close').click()],
       ['pressing Escape', () => page.keyboard.press('Escape')],
       ['clicking outside the dialog', () => page.mouse.click(10, 10)],
     ])('closes without saving anything when %s', async (_case, close) => {
@@ -165,6 +172,36 @@ describe('Water (e2e)', () => {
 
       await expect.poll(isHidden(addDialog()), eventually).toBe(true)
       expect(waterRequests).toEqual([])
+    })
+
+    it("shows today's water and what each preset would bring it to", async () => {
+      await seedWater(24)
+      await seedWater(16, SECOND)
+
+      await openAddDialog()
+
+      const text = await textOf(addDialog())
+      expect(text).toContain(`40 of ${goal} fl oz today · ${goal - 40} to go`)
+      expect(await textOf(preset(addDialog(), 'Glass'))).toContain('→ 48 today')
+      expect(await textOf(preset(addDialog(), 'Bottle'))).toContain('→ 56 today')
+      expect(await textOf(preset(addDialog(), 'Gallon'))).toContain('Goal reached')
+    })
+
+    it('shows the whole goal to go on an empty day', async () => {
+      await openAddDialog()
+
+      expect(await textOf(addDialog())).toContain(`0 of ${goal} fl oz today · ${goal} to go`)
+    })
+
+    it('says the goal is reached once today reaches it, and so does every preset', async () => {
+      await seedWater(goal)
+
+      await openAddDialog()
+
+      expect(await textOf(addDialog())).toContain(`${goal} of ${goal} fl oz today · goal reached`)
+      for (const { name } of WATER_PRESETS) {
+        expect(await textOf(preset(addDialog(), name))).toContain('Goal reached')
+      }
     })
   })
 
@@ -229,21 +266,12 @@ describe('Water (e2e)', () => {
   })
 
   describe('custom amount', () => {
-    it('shows an empty, focused amount field and an Add button', async () => {
-      await openCustom()
-
-      expect(await amountField(addDialog()).inputValue()).toBe('')
-      expect(
-        await amountField(addDialog()).evaluate((field) => field === document.activeElement),
-      ).toBe(true)
-      expect(await button(addDialog(), 'Add').isVisible()).toBe(true)
-    })
-
-    it('logs the amount typed', async () => {
-      await openCustom()
+    it('logs the amount typed, from a button that names it', async () => {
+      await openAddDialog()
 
       await amountField(addDialog()).pressSequentially('12.5')
-      await button(addDialog(), 'Add').click()
+      expect(await textOf(addSubmit())).toContain('Add 12.5 fl oz')
+      await addSubmit().click()
 
       await expect.poll(isHidden(addDialog()), eventually).toBe(true)
       await expect.poll(waterSummary, eventually).toContain(ofGoal(12.5))
@@ -251,12 +279,21 @@ describe('Water (e2e)', () => {
     })
 
     it('logs the amount when Enter is pressed', async () => {
-      await openCustom()
+      await openAddDialog()
 
       await amountField(addDialog()).pressSequentially('10')
       await amountField(addDialog()).press('Enter')
 
       await expect.poll(waterSummary, eventually).toContain(ofGoal(10))
+    })
+
+    it('previews the total with the amount typed', async () => {
+      await seedWater(40)
+      await openAddDialog()
+
+      await amountField(addDialog()).pressSequentially('12')
+
+      expect(await textOf(addDialog())).toContain(`With 12 fl oz: 52 / ${goal} fl oz`)
     })
 
     it.each([
@@ -268,7 +305,7 @@ describe('Water (e2e)', () => {
       [`${MAX_WATER_AMOUNT}0`, String(MAX_WATER_AMOUNT)],
       [String(MAX_WATER_AMOUNT), String(MAX_WATER_AMOUNT)],
     ])('shows %j typed as %j', async (typed, shown) => {
-      await openCustom()
+      await openAddDialog()
 
       await amountField(addDialog()).pressSequentially(typed)
 
@@ -280,7 +317,7 @@ describe('Water (e2e)', () => {
       [String(MAX_WATER_AMOUNT * 2), ''],
       ['7.25', '7.2'],
     ])('shows %j pasted as %j', async (pasted, shown) => {
-      await openCustom()
+      await openAddDialog()
 
       await amountField(addDialog()).focus()
       await page.keyboard.insertText(pasted)
@@ -288,30 +325,61 @@ describe('Water (e2e)', () => {
       expect(await amountField(addDialog()).inputValue()).toBe(shown)
     })
 
-    it('disables Add while the field is empty, so Enter sends nothing', async () => {
-      await openCustom()
+    it('shows a disabled Add without a preview while the field is empty, so Enter sends nothing', async () => {
+      await openAddDialog()
 
-      expect(await button(addDialog(), 'Add').isDisabled()).toBe(true)
+      expect(await textOf(addSubmit())).toBe('Add')
+      expect(await addSubmit().isDisabled()).toBe(true)
+      expect(await textOf(addDialog())).not.toContain('With ')
       await amountField(addDialog()).press('Enter')
       expect(requestsTo('POST')).toEqual([])
     })
 
     it('enables Add once an amount is typed and disables it again when cleared', async () => {
-      await openCustom()
+      await openAddDialog()
 
       await amountField(addDialog()).pressSequentially('8')
-      expect(await button(addDialog(), 'Add').isEnabled()).toBe(true)
+      expect(await addSubmit().isEnabled()).toBe(true)
 
       await amountField(addDialog()).clear()
-      expect(await button(addDialog(), 'Add').isDisabled()).toBe(true)
+      expect(await addSubmit().isDisabled()).toBe(true)
     })
 
     it.each(['0', '0.0', '.'])('keeps Add disabled for %j', async (typed) => {
-      await openCustom()
+      await openAddDialog()
 
       await amountField(addDialog()).pressSequentially(typed)
 
-      expect(await button(addDialog(), 'Add').isDisabled()).toBe(true)
+      expect(await addSubmit().isDisabled()).toBe(true)
+    })
+
+    it.each([
+      ['', 'Increase amount', '1'],
+      ['12', 'Increase amount', '13'],
+      ['12.5', 'Increase amount', '13.5'],
+      ['12', 'Decrease amount', '11'],
+      ['1.5', 'Decrease amount', '0.5'],
+    ])('turns %j into the amount %s gives', async (typed, stepper, shown) => {
+      await openAddDialog()
+      await amountField(addDialog()).pressSequentially(typed)
+
+      await button(addDialog(), stepper).click()
+
+      expect(await amountField(addDialog()).inputValue()).toBe(shown)
+    })
+
+    it.each([
+      ['Decrease amount', ''],
+      ['Decrease amount', '1'],
+      ['Decrease amount', '0.5'],
+      ['Increase amount', String(MAX_WATER_AMOUNT)],
+      ['Increase amount', String(MAX_WATER_AMOUNT - 0.5)],
+    ])('disables %s at %j', async (stepper, typed) => {
+      await openAddDialog()
+
+      await amountField(addDialog()).pressSequentially(typed)
+
+      expect(await button(addDialog(), stepper).isDisabled()).toBe(true)
     })
   })
 
@@ -323,28 +391,51 @@ describe('Water (e2e)', () => {
     it('opens a water entry in the Edit water dialog', async () => {
       await openEditDialog()
 
-      expect(await textOf(editDialog())).toContain(timeLabel(FIRST))
+      expect(await textOf(editDialog())).toContain(`Bottle · logged at ${timeLabel(FIRST)}`)
       for (const { name } of WATER_PRESETS) {
         expect(await preset(editDialog(), name).isVisible()).toBe(true)
       }
       expect(await amountField(editDialog()).inputValue()).toBe('16')
-      for (const name of ['Save', 'Delete', 'Cancel']) {
+      for (const name of ['Delete', 'Cancel', 'Close']) {
         expect(await button(editDialog(), name).isVisible()).toBe(true)
       }
+      expect(await textOf(saveSubmit())).toContain('Save 16 fl oz')
+    })
+
+    it('names an amount that matches no preset Water', async () => {
+      await seedWater(12, SECOND)
+
+      await openEditDialog('12', SECOND)
+
+      expect(await textOf(editDialog())).toContain(`Water · logged at ${timeLabel(SECOND)}`)
+    })
+
+    it('previews what the change does to the total', async () => {
+      await seedWater(8, SECOND)
+      await openEditDialog()
+
+      await amountField(editDialog()).fill('20')
+
+      expect(await textOf(editDialog())).toContain('Was 16 · today 24 → 28 fl oz')
+      expect(await textOf(saveSubmit())).toContain('Save 20 fl oz')
     })
 
     it('applies the same amount rules as adding', async () => {
       await openEditDialog()
 
       await amountField(editDialog()).clear()
-      expect(await button(editDialog(), 'Save').isDisabled()).toBe(true)
+      expect(await textOf(saveSubmit())).toBe('Save')
+      expect(await saveSubmit().isDisabled()).toBe(true)
 
       await amountField(editDialog()).pressSequentially('1a2.55')
       expect(await amountField(editDialog()).inputValue()).toBe('12.5')
 
+      await button(editDialog(), 'Increase amount').click()
+      expect(await amountField(editDialog()).inputValue()).toBe('13.5')
+
       await amountField(editDialog()).clear()
       await amountField(editDialog()).pressSequentially('0')
-      expect(await button(editDialog(), 'Save').isDisabled()).toBe(true)
+      expect(await saveSubmit().isDisabled()).toBe(true)
     })
 
     it('replaces the amount with one tap on a preset', async () => {
@@ -362,7 +453,7 @@ describe('Water (e2e)', () => {
       await openEditDialog()
 
       await amountField(editDialog()).fill('20.5')
-      await button(editDialog(), 'Save').click()
+      await saveSubmit().click()
 
       await expect.poll(isHidden(editDialog()), eventually).toBe(true)
       const expected = [
@@ -377,7 +468,7 @@ describe('Water (e2e)', () => {
     it('sends nothing when the amount did not change', async () => {
       await openEditDialog()
 
-      await button(editDialog(), 'Save').click()
+      await saveSubmit().click()
 
       await expect.poll(isHidden(editDialog()), eventually).toBe(true)
       expect(requestsTo('PATCH')).toEqual([])
@@ -400,19 +491,41 @@ describe('Water (e2e)', () => {
       await seedWater(16)
     })
 
-    it('asks for confirmation', async () => {
+    it('asks for confirmation, naming the entry and what it does to the total', async () => {
+      await seedWater(24, SECOND)
       await openConfirmation()
 
-      expect(await textOf(confirmation())).toContain(`16 fl oz · ${timeLabel(FIRST)}`)
-      expect(await button(confirmation(), 'Delete').isVisible()).toBe(true)
-      expect(await button(confirmation(), 'Cancel').isVisible()).toBe(true)
+      expect(await page.getByRole('alertdialog', { name: 'Delete this bottle?' }).isVisible()).toBe(
+        true,
+      )
+      const text = await textOf(confirmation())
+      expect(text).toContain('It comes off today’s total. This can’t be undone.')
+      expect(text).toContain(`Bottle ${timeLabel(FIRST)} 16 fl oz`)
+      expect(text).toContain(`Today’s water 40 → 24 / ${goal} fl oz`)
+      expect(await textOf(confirmDelete())).toContain('Delete 16 fl oz')
+      expect(await button(confirmation(), 'Keep it').isVisible()).toBe(true)
+    })
+
+    it('asks to delete a "water entry" when the amount matches no preset', async () => {
+      await seedWater(12, SECOND)
+      await openLog()
+      await entryButton('12', SECOND).click()
+
+      await button(editDialog(), 'Delete').click()
+
+      await expect
+        .poll(
+          () => page.getByRole('alertdialog', { name: 'Delete this water entry?' }).isVisible(),
+          eventually,
+        )
+        .toBe(true)
     })
 
     it('removes the entry and updates the total once confirmed', async () => {
       await seedWater(8, SECOND)
       await openConfirmation()
 
-      await button(confirmation(), 'Delete').click()
+      await confirmDelete().click()
 
       await expect.poll(isHidden(confirmation()), eventually).toBe(true)
       expect(await editDialog().isVisible()).toBe(false)
@@ -423,10 +536,10 @@ describe('Water (e2e)', () => {
       await expect.poll(entryTexts, eventually).toEqual(expected)
     })
 
-    it('goes back to the Edit water dialog when the confirmation is cancelled', async () => {
+    it('goes back to the Edit water dialog when the entry is kept', async () => {
       await openConfirmation()
 
-      await button(confirmation(), 'Cancel').click()
+      await button(confirmation(), 'Keep it').click()
 
       await expect.poll(isHidden(confirmation()), eventually).toBe(true)
       expect(await editDialog().isVisible()).toBe(true)
@@ -436,7 +549,7 @@ describe('Water (e2e)', () => {
     it('shows the empty state after deleting the last entry', async () => {
       await openConfirmation()
 
-      await button(confirmation(), 'Delete').click()
+      await confirmDelete().click()
 
       await expect
         .poll(() => textOf(home.dailyLog()), eventually)
@@ -550,7 +663,7 @@ describe('Water (e2e)', () => {
 
     it('keeps the Add water dialog open with what was typed when adding fails', async () => {
       await page.route(WATER_ENTRIES_URL, failWith)
-      await openCustom()
+      await openAddDialog()
       await amountField(addDialog()).pressSequentially('12.5')
 
       await preset(addDialog(), 'Bottle').click()
@@ -570,7 +683,7 @@ describe('Water (e2e)', () => {
       await openEditDialog()
       await amountField(editDialog()).fill('30')
 
-      await button(editDialog(), 'Save').click()
+      await saveSubmit().click()
 
       await expect
         .poll(() => editDialog().getByRole('alert').textContent(), eventually)
@@ -585,7 +698,7 @@ describe('Water (e2e)', () => {
       await page.route(`${WATER_ENTRIES_URL}/*`, failNetwork)
       await openConfirmation()
 
-      await button(confirmation(), 'Delete').click()
+      await confirmDelete().click()
 
       await expect
         .poll(() => confirmation().getByRole('alert').textContent(), eventually)
@@ -606,9 +719,9 @@ describe('Water (e2e)', () => {
         'Add',
         'POST',
         async () => {
-          await openCustom()
+          await openAddDialog()
           await amountField(addDialog()).pressSequentially('10')
-          return { dialog: addDialog(), target: button(addDialog(), 'Add') }
+          return { dialog: addDialog(), target: addSubmit() }
         },
       ],
       [
@@ -618,7 +731,7 @@ describe('Water (e2e)', () => {
           await seedWater(16)
           await openEditDialog()
           await amountField(editDialog()).fill('30')
-          return { dialog: editDialog(), target: button(editDialog(), 'Save') }
+          return { dialog: editDialog(), target: saveSubmit() }
         },
       ],
       [
@@ -627,7 +740,7 @@ describe('Water (e2e)', () => {
         async () => {
           await seedWater(16)
           await openConfirmation()
-          return { dialog: confirmation(), target: button(confirmation(), 'Delete') }
+          return { dialog: confirmation(), target: confirmDelete() }
         },
       ],
     ])('sends a single request when %s is double-clicked', async (_name, method, open) => {
@@ -657,7 +770,7 @@ describe('Water (e2e)', () => {
         async () => {
           await entryButton('16', FIRST).click()
           await amountField(editDialog()).fill('30')
-          await button(editDialog(), 'Save').click()
+          await saveSubmit().click()
         },
       ],
       [
@@ -665,7 +778,7 @@ describe('Water (e2e)', () => {
         async () => {
           await entryButton('16', FIRST).click()
           await button(editDialog(), 'Delete').click()
-          await button(confirmation(), 'Delete').click()
+          await confirmDelete().click()
         },
       ],
     ])('goes to the login page when the session expired before %s', async (_case, act) => {
@@ -683,14 +796,14 @@ describe('Water (e2e)', () => {
         'saving',
         async () => {
           await amountField(editDialog()).fill('30')
-          await button(editDialog(), 'Save').click()
+          await saveSubmit().click()
         },
       ],
       [
         'deleting',
         async () => {
           await button(editDialog(), 'Delete').click()
-          await button(confirmation(), 'Delete').click()
+          await confirmDelete().click()
         },
       ],
     ])('drops an entry deleted elsewhere without an error when %s it', async (_case, act) => {
@@ -734,7 +847,6 @@ describe('Water (e2e)', () => {
       await openLog()
 
       await addButton().tap()
-      await button(addDialog(), 'Custom').tap()
 
       await expectBottomSheet(addDialog())
     })
