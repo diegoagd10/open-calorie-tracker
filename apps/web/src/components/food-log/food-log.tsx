@@ -6,6 +6,7 @@ import { Alert } from '@/components/alert'
 import { AppHeader } from '@/components/app-header'
 import { DropIcon, GearIcon, PlusIcon } from '@/components/icons'
 import { useLogOut } from '@/components/use-log-out'
+import { useWaterDialogs } from '@/components/water/use-water-dialogs'
 import { GENERIC_ERROR_MESSAGE } from '@open-calorie-tracker/shared'
 import { EntryList } from './entry-list'
 import { formatLongDay, parseDay } from './format'
@@ -23,14 +24,14 @@ function Loader() {
   )
 }
 
-// Adding entries is not available yet. On small screens the buttons stay at the bottom of the
-// screen while the log scrolls.
-function AddButtons() {
+// Adding food is not available yet. On small screens the buttons stay at the bottom of the screen
+// while the log scrolls.
+function AddButtons({ onAddWater }: { onAddWater: () => void }) {
   return (
     <div className="sticky bottom-0 -mx-4 grid grid-cols-2 gap-3 border-t border-line bg-bg px-4 pt-3 pb-[max(1.5rem,env(safe-area-inset-bottom))] sm:-mx-8 sm:px-8 lg:static lg:col-start-2 lg:row-start-2 lg:mx-0 lg:border-0 lg:bg-transparent lg:p-0">
       <button
         type="button"
-        disabled
+        onClick={onAddWater}
         className="flex h-12 items-center justify-center gap-2 rounded-full border border-line bg-surface font-semibold disabled:opacity-60"
       >
         <DropIcon className="size-5 text-water" />
@@ -56,6 +57,7 @@ export function FoodLog() {
   const content = useRef<HTMLDivElement>(null)
   const { showLoader } = usePullToRefresh(content, reload)
   const logOut = useLogOut()
+  const water = useWaterDialogs(() => void reload())
 
   return (
     <div className="flex min-h-screen flex-col bg-bg">
@@ -99,10 +101,10 @@ export function FoodLog() {
                   </h2>
                   <p className="text-sm text-muted">{formatLongDay(parseDay(today.date))}</p>
                 </div>
-                {log !== undefined && <EntryList entries={log.entries} />}
+                {log !== undefined && <EntryList entries={log.entries} onOpenWater={water.edit} />}
               </section>
             )}
-            {log !== undefined && <AddButtons />}
+            {log !== undefined && <AddButtons onAddWater={water.add} />}
           </div>
         </main>
         {today !== null && (
@@ -111,6 +113,7 @@ export function FoodLog() {
           </footer>
         )}
       </div>
+      {water.dialogs}
     </div>
   )
 }

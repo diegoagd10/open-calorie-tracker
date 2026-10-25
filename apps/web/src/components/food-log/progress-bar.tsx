@@ -9,12 +9,21 @@ type ProgressBarProps = {
   goal: number
   // CSS color of the filled part while under the goal.
   color: string
+  // Whether going over the goal turns the bar red. Water past its goal is not a warning.
+  warnOverGoal?: boolean
   className?: string
 }
 
-// Fills up to the goal; past it the bar stays full and turns red.
-export function ProgressBar({ label, value, goal, color, className = 'h-1.5' }: ProgressBarProps) {
-  const overGoal = value > goal
+// Fills up to the goal; past it the bar stays full and, unless told otherwise, turns red.
+export function ProgressBar({
+  label,
+  value,
+  goal,
+  color,
+  warnOverGoal = true,
+  className = 'h-1.5',
+}: ProgressBarProps) {
+  const overGoal = warnOverGoal && value > goal
   const rounded = roundForDisplay(value)
 
   return (

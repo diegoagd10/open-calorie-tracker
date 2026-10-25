@@ -6,7 +6,6 @@ import {
   type FoodLogEntry,
   type LogEntry,
   type Nutrient,
-  type WaterLogEntry,
 } from '@open-calorie-tracker/shared'
 import { and, eq, getTableColumns, gte, lt } from 'drizzle-orm'
 import { Database } from '../db/database.js'
@@ -19,6 +18,7 @@ import {
   servingSizes,
   waterEntries,
 } from '../db/schema.js'
+import { toWaterLogEntry } from '../water-entries/water-entries.service.js'
 import { type DayQuery, dayRange } from './day.js'
 
 const NUTRIENTS: Nutrient[] = ['protein', 'carbohydrate', 'fat', 'fiber', 'sugar', 'sodium']
@@ -36,13 +36,6 @@ const toFoodLogEntry = ({
   ...entry,
   type: 'food',
   loggedAt: loggedAt.toISOString(),
-})
-
-const toWaterLogEntry = ({ id, loggedAt, amount }: WaterEntry): WaterLogEntry => ({
-  id,
-  type: 'water',
-  loggedAt: loggedAt.toISOString(),
-  amount,
 })
 
 // Rounds away floating point noise, e.g. 10 + 6.9 = 16.900000000000002.

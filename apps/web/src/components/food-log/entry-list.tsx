@@ -1,4 +1,4 @@
-import type { LogEntry } from '@open-calorie-tracker/shared'
+import type { LogEntry, WaterLogEntry } from '@open-calorie-tracker/shared'
 import { ChevronIcon, DropIcon, ForkKnifeIcon } from '@/components/icons'
 import { formatNumber, formatTime } from './format'
 
@@ -16,9 +16,11 @@ function EntryIcon({ type }: { type: LogEntry['type'] }) {
   )
 }
 
-function Entry({ entry }: { entry: LogEntry }) {
+const ROW = 'flex w-full items-center gap-4 rounded-2xl border border-line bg-surface px-4 py-3'
+
+function EntryContent({ entry }: { entry: LogEntry }) {
   return (
-    <li className="flex items-center gap-4 rounded-2xl border border-line bg-surface px-4 py-3">
+    <>
       <EntryIcon type={entry.type} />
       <div className="min-w-0 flex-1">
         <p className="text-xs text-muted">{formatTime(entry.loggedAt)}</p>
@@ -45,11 +47,36 @@ function Entry({ entry }: { entry: LogEntry }) {
         <p className="font-serif text-[22px] leading-tight">{formatNumber(entry.amount)} fl oz</p>
       )}
       <ChevronIcon direction="right" className="size-4 shrink-0 text-muted" />
+    </>
+  )
+}
+
+type EntryListProps = { entries: LogEntry[]; onOpenWater: (entry: WaterLogEntry) => void }
+
+// Water entries open for editing; food entries cannot be changed yet.
+function Entry({ entry, onOpenWater }: { entry: LogEntry } & Pick<EntryListProps, 'onOpenWater'>) {
+  if (entry.type === 'food') {
+    return (
+      <li className={ROW}>
+        <EntryContent entry={entry} />
+      </li>
+    )
+  }
+  return (
+    <li>
+      <button
+        type="button"
+        aria-label={`Water, ${formatNumber(entry.amount)} fl oz, ${formatTime(entry.loggedAt)}`}
+        onClick={() => onOpenWater(entry)}
+        className={`${ROW} text-left`}
+      >
+        <EntryContent entry={entry} />
+      </button>
     </li>
   )
 }
 
-export function EntryList({ entries }: { entries: LogEntry[] }) {
+export function EntryList({ entries, onOpenWater }: EntryListProps) {
   if (entries.length === 0) {
     return (
       <div className="flex flex-col items-center gap-2 rounded-2xl border border-dashed border-line-strong px-6 py-10 text-center">
@@ -65,7 +92,7 @@ export function EntryList({ entries }: { entries: LogEntry[] }) {
   return (
     <ul aria-label="Entries" className="flex flex-col gap-2">
       {entries.map((entry) => (
-        <Entry key={`${entry.type}-${entry.id}`} entry={entry} />
+        <Entry key={`${entry.type}-${entry.id}`} entry={entry} onOpenWater={onOpenWater} />
       ))}
     </ul>
   )

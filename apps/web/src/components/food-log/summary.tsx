@@ -79,6 +79,7 @@ export function WaterSummary({ goals, totals }: SummaryProps) {
         value={totals.water}
         goal={goals.water}
         color="var(--water)"
+        warnOverGoal={false}
         className="h-2"
       />
     </fieldset>
