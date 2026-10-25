@@ -9,6 +9,7 @@ import { formatLongDay, parseDay } from './format'
 import { DropIcon, PlusIcon } from './icons'
 import { Summary, WaterSummary } from './summary'
 import { useDailyLog } from './use-daily-log'
+import { useLogOut } from './use-log-out'
 import { usePullToRefresh } from './use-pull-to-refresh'
 import { useToday } from './use-today'
 import { WeekStrip } from './week-strip'
@@ -46,6 +47,19 @@ function AddButtons() {
   )
 }
 
+function LogOutButton({ pending, onClick }: { pending: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      disabled={pending}
+      onClick={onClick}
+      className="flex h-9 items-center rounded-full border border-line bg-surface px-4 text-sm font-semibold disabled:opacity-60"
+    >
+      Log out
+    </button>
+  )
+}
+
 // Today's food log: entries, calorie and nutrient totals and water, for the browser's day and
 // time zone. On touch screens, pulling down from the top reloads it.
 export function FoodLog() {
@@ -53,13 +67,15 @@ export function FoodLog() {
   const { log, failed, reload } = useDailyLog(today)
   const content = useRef<HTMLDivElement>(null)
   const { showLoader } = usePullToRefresh(content, reload)
+  const logOut = useLogOut()
 
   return (
     <div className="flex min-h-screen flex-col bg-bg">
       {showLoader && <Loader />}
       <header className="border-b border-line">
-        <div className="mx-auto max-w-6xl px-4 py-3.5 sm:px-8">
+        <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3.5 sm:px-8">
           <Logo size="small" />
+          <LogOutButton pending={logOut.pending} onClick={() => void logOut.logOut()} />
         </div>
       </header>
       <div
@@ -71,7 +87,7 @@ export function FoodLog() {
             Food Log
           </h1>
           {today !== null && <WeekStrip date={today.date} />}
-          {failed && <Alert>{GENERIC_ERROR_MESSAGE}</Alert>}
+          {(failed || logOut.failed) && <Alert>{GENERIC_ERROR_MESSAGE}</Alert>}
           {/* Small screens stack the totals above the log; wide ones put them beside it. */}
           <div className="flex flex-col gap-6 lg:grid lg:grid-cols-[minmax(0,1fr)_24rem] lg:items-start">
             {log !== undefined && (
