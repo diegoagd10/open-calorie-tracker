@@ -1,9 +1,21 @@
-// Response of GET /v1/daily-log, read by the web app.
+// Response of GET /v1/daily-log, read by the web app, and the goals it reports.
 
 export type Nutrient = 'protein' | 'carbohydrate' | 'fat' | 'fiber' | 'sugar' | 'sodium'
 
 // Calories in kcal, sodium in mg, water in US fl oz, every other nutrient in g.
 export type DailyGoals = Record<'calories' | Nutrient | 'water', number>
+
+// Every user gets these until goals can be changed.
+export const DEFAULT_DAILY_GOALS: DailyGoals = {
+  calories: 1600,
+  protein: 120,
+  carbohydrate: 230,
+  fat: 70,
+  fiber: 25,
+  sugar: 50,
+  sodium: 2300,
+  water: 64,
+}
 
 export type DailyTotals = DailyGoals & { foodEntries: number }
 

@@ -79,6 +79,7 @@ export const dailyLogRequests = async (username: string) =>
 export const homePage = (page: Page) => ({
   logo: () => page.getByRole('banner').getByText('Open Calorie Tracker'),
   logOut: () => page.getByRole('banner').getByRole('button', { name: 'Log out' }),
+  settings: () => page.getByRole('banner').getByRole('link', { name: 'Settings' }),
   title: () => page.getByRole('heading', { level: 1, name: 'Food Log' }),
   dailyLog: () => page.getByRole('region', { name: 'Daily log' }),
   week: () => page.getByRole('list', { name: 'Week' }),

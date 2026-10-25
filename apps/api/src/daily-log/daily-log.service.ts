@@ -1,11 +1,12 @@
 import { Injectable } from '@nestjs/common'
-import type {
-  DailyLog,
-  DailyTotals,
-  FoodLogEntry,
-  LogEntry,
-  Nutrient,
-  WaterLogEntry,
+import {
+  DEFAULT_DAILY_GOALS,
+  type DailyLog,
+  type DailyTotals,
+  type FoodLogEntry,
+  type LogEntry,
+  type Nutrient,
+  type WaterLogEntry,
 } from '@open-calorie-tracker/shared'
 import { and, eq, getTableColumns, gte, lt } from 'drizzle-orm'
 import { Database } from '../db/database.js'
@@ -19,7 +20,6 @@ import {
   waterEntries,
 } from '../db/schema.js'
 import { type DayQuery, dayRange } from './day.js'
-import { DEFAULT_DAILY_GOALS } from './goals.js'
 
 const NUTRIENTS: Nutrient[] = ['protein', 'carbohydrate', 'fat', 'fiber', 'sugar', 'sodium']
 
