@@ -7,15 +7,32 @@ import type {
   Nutrient,
   WaterLogEntry,
 } from '@open-calorie-tracker/shared'
-import { and, eq, gte, lt } from 'drizzle-orm'
+import { and, eq, getTableColumns, gte, lt } from 'drizzle-orm'
 import { Database } from '../db/database.js'
-import { type FoodEntry, type WaterEntry, foodEntries, waterEntries } from '../db/schema.js'
+import {
+  type FoodEntry,
+  type FoodSource,
+  type WaterEntry,
+  foodEntries,
+  foodSources,
+  servingSizes,
+  waterEntries,
+} from '../db/schema.js'
 import { type DayQuery, dayRange } from './day.js'
 import { DEFAULT_DAILY_GOALS } from './goals.js'
 
 const NUTRIENTS: Nutrient[] = ['protein', 'carbohydrate', 'fat', 'fiber', 'sugar', 'sodium']
 
-const toFoodLogEntry = ({ userId: _userId, loggedAt, ...entry }: FoodEntry): FoodLogEntry => ({
+// A food entry with the names of its serving size and source.
+type StoredFood = FoodEntry & { servingSize: string; source: FoodSource }
+
+const toFoodLogEntry = ({
+  userId: _userId,
+  servingSizeId: _servingSizeId,
+  sourceId: _sourceId,
+  loggedAt,
+  ...entry
+}: StoredFood): FoodLogEntry => ({
   ...entry,
   type: 'food',
   loggedAt: loggedAt.toISOString(),
@@ -34,7 +51,7 @@ const round = (value: number) => Math.round(value * 100) / 100
 const sum = (values: (number | null)[]) =>
   round(values.reduce<number>((total, value) => total + (value ?? 0), 0))
 
-const totalsOf = (food: FoodEntry[], water: WaterEntry[]): DailyTotals => ({
+const totalsOf = (food: StoredFood[], water: WaterEntry[]): DailyTotals => ({
   calories: sum(food.map((entry) => entry.calories)),
   ...(Object.fromEntries(
     NUTRIENTS.map((nutrient) => [nutrient, sum(food.map((entry) => entry[nutrient]))]),
@@ -51,8 +68,14 @@ export class DailyLogService {
     const { start, end } = dayRange(day)
     const [food, water] = await Promise.all([
       this.database.db
-        .select()
+        .select({
+          ...getTableColumns(foodEntries),
+          servingSize: servingSizes.name,
+          source: foodSources.name,
+        })
         .from(foodEntries)
+        .innerJoin(servingSizes, eq(foodEntries.servingSizeId, servingSizes.id))
+        .innerJoin(foodSources, eq(foodEntries.sourceId, foodSources.id))
         .where(
           and(
             eq(foodEntries.userId, userId),

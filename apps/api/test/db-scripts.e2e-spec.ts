@@ -26,9 +26,20 @@ describe('db:reset (e2e)', () => {
   let dataDir: string
   let databaseUrl: string
 
-  // Builds once, the way `nest build` does for the db:seed and db:reset scripts.
+  // Builds once, the way `nest build` does for the db:seed and db:reset scripts. Not incremental:
+  // the build info file is shared with `nest build` and would skip emitting into a fresh folder.
   beforeAll(async () => {
-    await exec(['pnpm', 'exec', 'tsc', '-p', 'tsconfig.build.json', '--outDir', BUILD_DIR])
+    await exec([
+      'pnpm',
+      'exec',
+      'tsc',
+      '-p',
+      'tsconfig.build.json',
+      '--outDir',
+      BUILD_DIR,
+      '--incremental',
+      'false',
+    ])
   }, BUILD_TIMEOUT_MS)
 
   afterAll(async () => {

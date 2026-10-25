@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "1f800b8f-3005-4b18-be53-4e729f8d5889",
+  "id": "ce5c518a-d8ef-4c11-84a8-fce16918b5a2",
   "prevId": "109faaa6-f54b-4997-a8b7-3b242191d571",
   "tables": {
     "food_entries": {
@@ -35,17 +35,16 @@
           "notNull": true,
           "autoincrement": false
         },
-        "source": {
-          "name": "source",
-          "type": "text",
+        "source_id": {
+          "name": "source_id",
+          "type": "integer",
           "primaryKey": false,
           "notNull": true,
-          "autoincrement": false,
-          "default": "'manual'"
+          "autoincrement": false
         },
-        "serving_size": {
-          "name": "serving_size",
-          "type": "text",
+        "serving_size_id": {
+          "name": "serving_size_id",
+          "type": "integer",
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false
@@ -130,8 +129,98 @@
           ],
           "onDelete": "cascade",
           "onUpdate": "no action"
+        },
+        "food_entries_source_id_food_sources_id_fk": {
+          "name": "food_entries_source_id_food_sources_id_fk",
+          "tableFrom": "food_entries",
+          "tableTo": "food_sources",
+          "columnsFrom": [
+            "source_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "food_entries_serving_size_id_serving_sizes_id_fk": {
+          "name": "food_entries_serving_size_id_serving_sizes_id_fk",
+          "tableFrom": "food_entries",
+          "tableTo": "serving_sizes",
+          "columnsFrom": [
+            "serving_size_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
         }
       },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "food_sources": {
+      "name": "food_sources",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "food_sources_name_unique": {
+          "name": "food_sources_name_unique",
+          "columns": [
+            "name"
+          ],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "serving_sizes": {
+      "name": "serving_sizes",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "serving_sizes_name_unique": {
+          "name": "serving_sizes_name_unique",
+          "columns": [
+            "name"
+          ],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "checkConstraints": {}

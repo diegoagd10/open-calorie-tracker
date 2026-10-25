@@ -1,7 +1,8 @@
 import { PASSWORD_MIN_LENGTH } from '@open-calorie-tracker/shared'
 import { afterEach, beforeEach, describe, expect, it } from 'vite-plus/test'
 import { Database } from './database.js'
-import { seedUser } from './seed.js'
+import { foodSources, servingSizes } from './schema.js'
+import { type SeedFoodEntry, seedFoodEntry, seedUser } from './seed.js'
 
 const PASSWORD = 'correct-horse-battery-staple'
 
@@ -44,5 +45,67 @@ describe('seedUser', () => {
       seedUser(database, { username: 'ana', password: 'a'.repeat(PASSWORD_MIN_LENGTH - 1) }),
     ).rejects.toThrow(`Password must be at least ${PASSWORD_MIN_LENGTH} characters`)
     expect(await storedUsernames()).toEqual([])
+  })
+})
+
+describe('seedFoodEntry', () => {
+  let database: Database
+
+  beforeEach(async () => {
+    database = await Database.connect(':memory:')
+    await seedUser(database, { username: 'ana', password: PASSWORD })
+  })
+
+  afterEach(() => {
+    database.close()
+  })
+
+  const entry = (overrides: Partial<SeedFoodEntry> = {}): SeedFoodEntry => ({
+    username: 'ana',
+    loggedAt: new Date('2026-10-24T14:53:00Z'),
+    name: '2 tortillas de maíz',
+    servingSize: '1 serving',
+    quantity: 1,
+    calories: 100,
+    ...overrides,
+  })
+
+  const storedEntries = () =>
+    database.db.query.foodEntries.findMany({ columns: { servingSizeId: true, sourceId: true } })
+
+  it('stores each serving size text once, shared by every entry that uses it', async () => {
+    await seedFoodEntry(database, entry())
+    await seedFoodEntry(database, entry({ name: 'Manzana' }))
+    await seedFoodEntry(database, entry({ name: 'Leche', servingSize: '1 cup' }))
+
+    const sizes = await database.db.select().from(servingSizes)
+    expect(sizes.map((size) => size.name).sort()).toEqual(['1 cup', '1 serving'])
+    const idOf = (name: string) => sizes.find((size) => size.name === name)?.id
+    expect((await storedEntries()).map((stored) => stored.servingSizeId)).toEqual([
+      idOf('1 serving'),
+      idOf('1 serving'),
+      idOf('1 cup'),
+    ])
+  })
+
+  it('stores the entry as manual when no source is given', async () => {
+    await seedFoodEntry(database, entry())
+
+    const [manual] = await database.db.select().from(foodSources)
+    expect(manual?.name).toBe('manual')
+    expect((await storedEntries()).map((stored) => stored.sourceId)).toEqual([manual?.id])
+  })
+
+  it('finds the user regardless of case', async () => {
+    await seedFoodEntry(database, entry({ username: 'Ana' }))
+
+    expect(await storedEntries()).toHaveLength(1)
+  })
+
+  it('rejects an unknown user and stores no entry', async () => {
+    await expect(seedFoodEntry(database, entry({ username: 'nadie' }))).rejects.toThrow(
+      'No user named "nadie"',
+    )
+    expect(await storedEntries()).toEqual([])
   })
 })

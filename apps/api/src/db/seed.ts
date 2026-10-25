@@ -1,9 +1,16 @@
 import { newUserSchema } from '@open-calorie-tracker/shared'
-import { eq } from 'drizzle-orm'
+import { eq, sql } from 'drizzle-orm'
 import { hashPassword } from '../auth/password.js'
 import { normalizeUsername } from '../users/users.service.js'
 import type { Database } from './database.js'
-import { foodEntries, users, waterEntries } from './schema.js'
+import {
+  type FoodSource,
+  foodEntries,
+  foodSources,
+  servingSizes,
+  users,
+  waterEntries,
+} from './schema.js'
 
 export type SeedUser = { username: string; password: string }
 
@@ -23,9 +30,12 @@ export const seedUser = async (database: Database, user: SeedUser) => {
     .onConflictDoUpdate({ target: users.username, set: { passwordHash } })
 }
 
-type ForUser<T> = Omit<T, 'id' | 'userId' | 'source'> & { username: string }
+type ForUser<T> = Omit<T, 'id' | 'userId'> & { username: string }
 
-export type SeedFoodEntry = ForUser<typeof foodEntries.$inferInsert>
+// Takes the serving size as text and the source by name, as the API returns them.
+export type SeedFoodEntry = ForUser<
+  Omit<typeof foodEntries.$inferInsert, 'servingSizeId' | 'sourceId'>
+> & { servingSize: string; source?: FoodSource }
 export type SeedWaterEntry = ForUser<typeof waterEntries.$inferInsert>
 
 const userIdOf = async (database: Database, username: string) => {
@@ -36,10 +46,28 @@ const userIdOf = async (database: Database, username: string) => {
   return user.id
 }
 
-export const seedFoodEntry = async (database: Database, { username, ...entry }: SeedFoodEntry) => {
-  await database.db
-    .insert(foodEntries)
-    .values({ ...entry, userId: await userIdOf(database, username) })
+// Reuses the serving size when another entry already has the same text.
+const servingSizeIdOf = async (database: Database, name: string) =>
+  (
+    await database.db
+      .insert(servingSizes)
+      .values({ name })
+      .onConflictDoUpdate({ target: servingSizes.name, set: { name } })
+      .returning({ id: servingSizes.id })
+      .get()
+  ).id
+
+export const seedFoodEntry = async (
+  database: Database,
+  { username, servingSize, source = 'manual', ...entry }: SeedFoodEntry,
+) => {
+  await database.db.insert(foodEntries).values({
+    ...entry,
+    userId: await userIdOf(database, username),
+    servingSizeId: await servingSizeIdOf(database, servingSize),
+    // The migration adds every source, so the lookup always finds one.
+    sourceId: sql<number>`(SELECT ${foodSources.id} FROM ${foodSources} WHERE ${foodSources.name} = ${source})`,
+  })
 }
 
 export const seedWaterEntry = async (
