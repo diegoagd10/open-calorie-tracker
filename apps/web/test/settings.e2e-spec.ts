@@ -2,18 +2,11 @@ import { DEFAULT_DAILY_GOALS } from '@open-calorie-tracker/shared'
 import { type Browser, type BrowserContext, type Locator, type Page, chromium } from 'playwright'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vite-plus/test'
 import type { Database } from '../../api/src/db/database'
-import {
-  TIME_ZONE,
-  connectDatabase,
-  createUser,
-  eventually,
-  homePage,
-  logIn,
-  openHome,
-  sessionCookie,
-  textOf,
-} from './daily-log'
+import { box, eventually, sameRow, textOf } from './browser'
+import { homePage, openHome } from './daily-log'
 import { INVALID_TOKENS, SEEDED } from './fixtures'
+import { header } from './header'
+import { connectDatabase, sessionCookie, signedInPage } from './session'
 
 const { webUrl: WEB_URL } = SEEDED
 
@@ -31,10 +24,6 @@ const GOALS = [
 ] as const
 
 const settingsPage = (page: Page) => ({
-  logo: () => page.getByRole('banner').getByText('Open Calorie Tracker'),
-  navigation: () => page.getByRole('banner').getByRole('navigation', { name: 'Main' }),
-  foodLog: () => page.getByRole('banner').getByRole('link', { name: 'Food Log' }),
-  logOut: () => page.getByRole('banner').getByRole('button', { name: 'Log out' }),
   title: () => page.getByRole('heading', { level: 1, name: 'Settings' }),
   sectionTitles: () => page.getByRole('main').getByRole('heading', { level: 2 }),
   section: (name: string) => page.getByRole('region', { name, exact: true }),
@@ -51,24 +40,13 @@ const descriptionOf = (field: Locator) =>
       .trim(),
   )
 
-const box = async (locator: Locator) => {
-  const bounds = await locator.boundingBox()
-  if (bounds === null) throw new Error('The element is hidden')
-  return bounds
-}
-
-const sameRow = async (a: Locator, b: Locator) => {
-  const first = await box(a)
-  const second = await box(b)
-  return second.y < first.y + first.height && second.y + second.height > first.y
-}
-
 describe('Settings page (e2e)', () => {
   let browser: Browser
   let database: Database
   let context: BrowserContext
   let page: Page
   let home: ReturnType<typeof homePage>
+  let banner: ReturnType<typeof header>
   let settings: ReturnType<typeof settingsPage>
 
   beforeAll(async () => {
@@ -82,12 +60,10 @@ describe('Settings page (e2e)', () => {
   })
 
   beforeEach(async () => {
-    context = await browser.newContext({ timezoneId: TIME_ZONE, locale: 'en-US' })
-    page = await context.newPage()
-    page.setDefaultTimeout(5_000)
+    ;({ context, page } = await signedInPage(browser, database))
     home = homePage(page)
+    banner = header(page)
     settings = settingsPage(page)
-    await logIn(context, await createUser(database))
   })
 
   afterEach(async () => {
@@ -103,33 +79,31 @@ describe('Settings page (e2e)', () => {
     it('shows a Settings icon link left of Log out, in the same row as the logo', async () => {
       await openHome(page)
 
-      expect(await textOf(home.settings())).toBe('')
-      expect(await home.settings().locator('svg').count()).toBe(1)
-      const link = await box(home.settings())
-      const button = await box(home.logOut())
+      expect(await textOf(banner.settings())).toBe('')
+      expect(await banner.settings().locator('svg').count()).toBe(1)
+      const link = await box(banner.settings())
+      const button = await box(banner.logOut())
       expect(link.x + link.width).toBeLessThanOrEqual(button.x)
-      expect(await sameRow(home.logo(), home.settings())).toBe(true)
+      expect(await sameRow(banner.logo(), banner.settings())).toBe(true)
     })
 
     it('opens Settings from the Settings link', async () => {
       await openHome(page)
 
-      await home.settings().click()
+      await banner.settings().click()
       await page.waitForURL(SETTINGS_URL)
 
       expect(await settings.title().isVisible()).toBe(true)
     })
 
-    it.each([390, 1280])('fits a %i px wide window', async (width) => {
+    it.each([390, 1280])('shows the Settings link in a %i px wide window', async (width) => {
       await page.setViewportSize({ width, height: 844 })
 
       await openHome(page)
 
-      for (const control of [home.settings(), home.logOut()]) {
-        expect(await control.isVisible()).toBe(true)
-        const bounds = await box(control)
-        expect(bounds.x + bounds.width).toBeLessThanOrEqual(width)
-      }
+      expect(await banner.settings().isVisible()).toBe(true)
+      const link = await box(banner.settings())
+      expect(link.x + link.width).toBeLessThanOrEqual(width)
     })
   })
 
@@ -137,17 +111,17 @@ describe('Settings page (e2e)', () => {
     it('shows the logo on the left, and Food Log and Log out on the right in its row', async () => {
       await openSettings()
 
-      const logo = await box(settings.logo())
-      for (const control of [settings.foodLog(), settings.logOut()]) {
+      const logo = await box(banner.logo())
+      for (const control of [banner.foodLog(), banner.logOut()]) {
         expect((await box(control)).x).toBeGreaterThan(logo.x + logo.width)
-        expect(await sameRow(settings.logo(), control)).toBe(true)
+        expect(await sameRow(banner.logo(), control)).toBe(true)
       }
     })
 
     it('goes back to the Food Log from the Food Log link', async () => {
       await openSettings()
 
-      await settings.foodLog().click()
+      await banner.foodLog().click()
       await page.waitForURL(`${WEB_URL}/`)
 
       expect(await home.title().isVisible()).toBe(true)
@@ -156,7 +130,7 @@ describe('Settings page (e2e)', () => {
     it('logs out from Settings', async () => {
       await openSettings()
 
-      await settings.logOut().click()
+      await banner.logOut().click()
       await page.waitForURL(`${WEB_URL}/login`)
 
       expect(await sessionCookie(context)).toBeUndefined()
@@ -169,7 +143,7 @@ describe('Settings page (e2e)', () => {
   ])('groups the %s header links in the Main navigation', async (path, link) => {
     await page.goto(`${WEB_URL}${path}`)
 
-    const navigation = settings.navigation()
+    const navigation = banner.navigation()
     expect(await navigation.getByRole('link', { name: link }).isVisible()).toBe(true)
     expect(await navigation.getByRole('button', { name: 'Log out' }).isVisible()).toBe(true)
   })
@@ -270,8 +244,8 @@ describe('Settings page (e2e)', () => {
 
     await openSettings()
 
-    expect(await settings.foodLog().isVisible()).toBe(true)
-    expect(await settings.logOut().isVisible()).toBe(true)
+    expect(await banner.foodLog().isVisible()).toBe(true)
+    expect(await banner.logOut().isVisible()).toBe(true)
     for (const name of ['Profile', 'Daily goals', 'API keys']) {
       expect(await settings.section(name).isVisible()).toBe(true)
     }

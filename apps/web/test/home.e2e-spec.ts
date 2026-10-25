@@ -2,21 +2,11 @@ import { GENERIC_ERROR_MESSAGE } from '@open-calorie-tracker/shared'
 import { type Browser, type BrowserContext, type Page, chromium } from 'playwright'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vite-plus/test'
 import type { Database } from '../../api/src/db/database'
-import {
-  TIME_ZONE,
-  connectDatabase,
-  createUser,
-  eventually,
-  homePage,
-  logIn,
-  newYorkTime,
-  openHome,
-  seedFoodEntry,
-  seedWaterEntry,
-  textOf,
-} from './daily-log'
+import { eventually, openPage, textOf } from './browser'
+import { homePage, newYorkTime, openHome, seedFoodEntry, seedWaterEntry } from './daily-log'
 import { clearFault, injectFault } from './fault-proxy'
 import { SEEDED } from './fixtures'
+import { connectDatabase, createUser, logIn } from './session'
 
 const { proxyUrl: PROXY_URL } = SEEDED
 
@@ -49,9 +39,7 @@ describe('Home page (e2e)', () => {
   })
 
   beforeEach(async () => {
-    context = await browser.newContext({ timezoneId: TIME_ZONE, locale: 'en-US' })
-    page = await context.newPage()
-    page.setDefaultTimeout(5_000)
+    ;({ context, page } = await openPage(browser))
     home = homePage(page)
     username = await createUser(database)
   })

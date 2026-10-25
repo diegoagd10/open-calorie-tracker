@@ -2,18 +2,12 @@ import { GENERIC_ERROR_MESSAGE } from '@open-calorie-tracker/shared'
 import { type Browser, type BrowserContext, type Page, type Route, chromium } from 'playwright'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vite-plus/test'
 import type { Database } from '../../api/src/db/database'
-import {
-  TIME_ZONE,
-  connectDatabase,
-  createUser,
-  eventually,
-  homePage,
-  logIn,
-  openHome,
-  sessionCookie,
-} from './daily-log'
+import { box, eventually, sameRow } from './browser'
+import { homePage, openHome } from './daily-log'
 import { clearFault, injectFault } from './fault-proxy'
 import { INVALID_TOKENS, SEEDED, SEED_USER } from './fixtures'
+import { header } from './header'
+import { connectDatabase, sessionCookie, signedInPage } from './session'
 
 const { proxyUrl: PROXY_URL, webUrl: WEB_URL } = SEEDED
 
@@ -27,6 +21,7 @@ describe('Log out (e2e)', () => {
   let username: string
   let token: string
   let home: ReturnType<typeof homePage>
+  let banner: ReturnType<typeof header>
 
   beforeAll(async () => {
     browser = await chromium.launch()
@@ -39,12 +34,9 @@ describe('Log out (e2e)', () => {
   })
 
   beforeEach(async () => {
-    context = await browser.newContext({ timezoneId: TIME_ZONE, locale: 'en-US' })
-    page = await context.newPage()
-    page.setDefaultTimeout(5_000)
+    ;({ context, page, username, token } = await signedInPage(browser, database))
     home = homePage(page)
-    username = await createUser(database)
-    token = await logIn(context, username)
+    banner = header(page)
   })
 
   afterEach(async () => {
@@ -60,7 +52,7 @@ describe('Log out (e2e)', () => {
 
   const logOut = async () => {
     await openLoadedHome()
-    await home.logOut().click()
+    await banner.logOut().click()
     await page.waitForURL(`${WEB_URL}/login`)
   }
 
@@ -90,13 +82,10 @@ describe('Log out (e2e)', () => {
     it('shows Log out on the right of the header, in the same row as the logo', async () => {
       await openLoadedHome()
 
-      expect(await home.logOut().textContent()).toBe('Log out')
-      const logo = await home.logo().boundingBox()
-      const button = await home.logOut().boundingBox()
-      if (logo === null || button === null) throw new Error('The logo or the button is hidden')
-      expect(button.x).toBeGreaterThan(logo.x + logo.width)
-      expect(button.y).toBeLessThan(logo.y + logo.height)
-      expect(button.y + button.height).toBeGreaterThan(logo.y)
+      expect(await banner.logOut().textContent()).toBe('Log out')
+      const logo = await box(banner.logo())
+      expect((await box(banner.logOut())).x).toBeGreaterThan(logo.x + logo.width)
+      expect(await sameRow(banner.logo(), banner.logOut())).toBe(true)
     })
 
     it.each([390, 1280])('shows Log out in a %i px wide window', async (width) => {
@@ -104,9 +93,9 @@ describe('Log out (e2e)', () => {
 
       await openLoadedHome()
 
-      expect(await home.logOut().isVisible()).toBe(true)
-      const button = await home.logOut().boundingBox()
-      expect((button?.x ?? Number.NaN) + (button?.width ?? 0)).toBeLessThanOrEqual(width)
+      expect(await banner.logOut().isVisible()).toBe(true)
+      const button = await box(banner.logOut())
+      expect(button.x + button.width).toBeLessThanOrEqual(width)
     })
   })
 
@@ -159,9 +148,9 @@ describe('Log out (e2e)', () => {
       })
       await openLoadedHome()
 
-      await home.logOut().dblclick()
+      await banner.logOut().dblclick()
 
-      expect(await home.logOut().isDisabled()).toBe(true)
+      expect(await banner.logOut().isDisabled()).toBe(true)
       release()
       await page.waitForURL(`${WEB_URL}/login`)
       expect(requests).toBe(1)
@@ -211,7 +200,7 @@ describe('Log out (e2e)', () => {
       await page.route(LOGOUT_URL, fail)
       await openLoadedHome()
 
-      await home.logOut().click()
+      await banner.logOut().click()
 
       await expect
         .poll(
@@ -221,7 +210,7 @@ describe('Log out (e2e)', () => {
         .toBe(1)
       expect(page.url()).toBe(`${WEB_URL}/`)
       expect(await home.summary('Calories').isVisible()).toBe(true)
-      expect(await home.logOut().isEnabled()).toBe(true)
+      expect(await banner.logOut().isEnabled()).toBe(true)
       expect(await sessionCookie(context)).toBeDefined()
     })
 
@@ -229,7 +218,7 @@ describe('Log out (e2e)', () => {
       await openLoadedHome()
       await injectFault(PROXY_URL, 'connection-reset', username)
 
-      await home.logOut().click()
+      await banner.logOut().click()
       await page.waitForURL(`${WEB_URL}/login`)
 
       expect(await sessionCookie(context)).toBeUndefined()

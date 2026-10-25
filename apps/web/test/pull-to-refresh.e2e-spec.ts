@@ -2,23 +2,19 @@ import { GENERIC_ERROR_MESSAGE } from '@open-calorie-tracker/shared'
 import { type Browser, type BrowserContext, type Locator, type Page, chromium } from 'playwright'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vite-plus/test'
 import type { Database } from '../../api/src/db/database'
+import { eventually, openPage, textOf } from './browser'
 import {
-  TIME_ZONE,
-  connectDatabase,
-  createUser,
   dailyLogRequests,
-  eventually,
   finger,
   homePage,
-  logIn,
   newYorkTime,
   openHome,
   pullToRefresh,
   seedFoodEntry,
-  textOf,
 } from './daily-log'
 import { clearFault, clearReceivedRequests, injectFault } from './fault-proxy'
 import { SEEDED } from './fixtures'
+import { connectDatabase, createUser, logIn } from './session'
 
 const { proxyUrl: PROXY_URL } = SEEDED
 
@@ -51,11 +47,11 @@ describe('Pull to refresh (e2e)', () => {
   })
 
   const open = async (device: object) => {
-    context = await browser.newContext({ timezoneId: TIME_ZONE, locale: 'en-US', ...device })
-    page = await context.newPage()
-    page.setDefaultTimeout(5_000)
+    const opened = await openPage(browser, device)
+    context = opened.context
+    page = opened.page
     home = homePage(page)
-    await logIn(context, username)
+    await logIn(opened.context, username)
     await openHome(page)
   }
 
