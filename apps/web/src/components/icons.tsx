@@ -1,5 +1,7 @@
 // Small inline icons, so the page needs no icon library.
 
+import type { ReactNode } from 'react'
+
 type IconProps = { label?: string; className?: string }
 
 const a11y = (label: string | undefined) =>
@@ -120,5 +122,75 @@ export function InfoIcon({ className }: IconProps) {
       <circle cx="12" cy="12" r="9" />
       <path d="M12 11v5m0-8h.01" />
     </svg>
+  )
+}
+
+// The outline icons below share one look: 24px grid, round 1.8px strokes, hidden from assistive
+// technology because a text label always sits next to them.
+function OutlineIcon({ className, children }: IconProps & { children: ReactNode }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.8}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden
+    >
+      {children}
+    </svg>
+  )
+}
+
+export function GlassIcon(props: IconProps) {
+  return (
+    <OutlineIcon {...props}>
+      <path d="M6 4h12l-1.5 16h-9L6 4Z" />
+      <path d="M7 10h10" />
+    </OutlineIcon>
+  )
+}
+
+export function BottleIcon(props: IconProps) {
+  return (
+    <OutlineIcon {...props}>
+      <path d="M10 3h4M10.5 3v3.5L8.5 9.5V20a1 1 0 0 0 1 1h5a1 1 0 0 0 1-1V9.5l-2-3V3" />
+      <path d="M8.5 13h7" />
+    </OutlineIcon>
+  )
+}
+
+export function JugIcon(props: IconProps) {
+  return (
+    <OutlineIcon {...props}>
+      <path d="M8 3h6M9 3v3L6 9v11a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1V9l-3-3V3" />
+      <path d="M17 11h1.5a1.5 1.5 0 0 1 1.5 1.5v3a1.5 1.5 0 0 1-1.5 1.5H17M6 13h11" />
+    </OutlineIcon>
+  )
+}
+
+export function TrashIcon(props: IconProps) {
+  return (
+    <OutlineIcon {...props}>
+      <path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" />
+    </OutlineIcon>
+  )
+}
+
+export function CloseIcon(props: IconProps) {
+  return (
+    <OutlineIcon {...props}>
+      <path d="M6 6l12 12M18 6 6 18" />
+    </OutlineIcon>
+  )
+}
+
+export function MinusIcon(props: IconProps) {
+  return (
+    <OutlineIcon {...props}>
+      <path d="M5 12h14" />
+    </OutlineIcon>
   )
 }

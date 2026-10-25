@@ -2,14 +2,24 @@
 
 import type { WaterLogEntry } from '@open-calorie-tracker/shared'
 import { useState } from 'react'
-import { DeleteWaterDialog, WaterDialog } from './water-dialog'
+import { AddWaterDialog } from './add-water-dialog'
+import { DeleteWaterDialog } from './delete-water-dialog'
+import { EditWaterDialog } from './edit-water-dialog'
 
 // Adding, or editing an entry and maybe confirming its deletion.
 type OpenDialog = { mode: 'add' } | { mode: 'edit'; entry: WaterLogEntry; deleting: boolean }
 
+type WaterDialogsOptions = {
+  // Today's water so far and the daily goal, in fl oz, which the dialogs measure changes against.
+  total: number
+  goal: number
+  // Runs once the log changed, e.g. to reload it.
+  onChanged: () => void
+}
+
 // The water dialogs a page can open. `dialogs` renders whichever is open; once the log changes
-// they close and `onChanged` runs, e.g. to reload the log.
-export const useWaterDialogs = (onChanged: () => void) => {
+// they close and `onChanged` runs.
+export const useWaterDialogs = ({ total, goal, onChanged }: WaterDialogsOptions) => {
   const [open, setOpen] = useState<OpenDialog>()
 
   const close = () => setOpen(undefined)
@@ -20,11 +30,14 @@ export const useWaterDialogs = (onChanged: () => void) => {
 
   const dialogs = (
     <>
-      {open?.mode === 'add' && <WaterDialog onClose={close} onChanged={changed} />}
+      {open?.mode === 'add' && (
+        <AddWaterDialog total={total} goal={goal} onClose={close} onAdded={changed} />
+      )}
       {open?.mode === 'edit' && (
         <>
-          <WaterDialog
+          <EditWaterDialog
             entry={open.entry}
+            total={total}
             onClose={close}
             onChanged={changed}
             onDelete={() => setOpen({ ...open, deleting: true })}
@@ -32,7 +45,9 @@ export const useWaterDialogs = (onChanged: () => void) => {
           {open.deleting && (
             <DeleteWaterDialog
               entry={open.entry}
-              onCancel={() => setOpen({ ...open, deleting: false })}
+              total={total}
+              goal={goal}
+              onKeep={() => setOpen({ ...open, deleting: false })}
               onDeleted={changed}
             />
           )}

@@ -39,7 +39,9 @@ export function Modal({ labelledBy, role = 'dialog', onDismiss, children }: Moda
       }}
       className="mx-0 mt-auto mb-0 w-full max-w-none rounded-t-[24px] border border-line bg-surface p-0 text-fg backdrop:bg-black/50 sm:m-auto sm:max-w-md sm:rounded-[24px]"
     >
-      <div className="flex flex-col gap-5 px-5 pt-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] sm:p-6">
+      <div className="flex flex-col gap-5 px-5 pt-3 pb-[max(1.5rem,env(safe-area-inset-bottom))] sm:p-6">
+        {/* The handle marks a bottom sheet; it is only decoration. */}
+        <span aria-hidden className="mx-auto h-1 w-9 rounded-full bg-line-strong sm:hidden" />
         {children}
       </div>
     </dialog>

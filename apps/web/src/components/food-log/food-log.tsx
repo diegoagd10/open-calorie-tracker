@@ -7,7 +7,7 @@ import { AppHeader } from '@/components/app-header'
 import { DropIcon, GearIcon, PlusIcon } from '@/components/icons'
 import { useLogOut } from '@/components/use-log-out'
 import { useWaterDialogs } from '@/components/water/use-water-dialogs'
-import { GENERIC_ERROR_MESSAGE } from '@open-calorie-tracker/shared'
+import { DEFAULT_DAILY_GOALS, GENERIC_ERROR_MESSAGE } from '@open-calorie-tracker/shared'
 import { EntryList } from './entry-list'
 import { formatLongDay, parseDay } from './format'
 import { Summary, WaterSummary } from './summary'
@@ -57,7 +57,11 @@ export function FoodLog() {
   const content = useRef<HTMLDivElement>(null)
   const { showLoader } = usePullToRefresh(content, reload)
   const logOut = useLogOut()
-  const water = useWaterDialogs(() => void reload())
+  const water = useWaterDialogs({
+    total: log?.totals.water ?? 0,
+    goal: log?.goals.water ?? DEFAULT_DAILY_GOALS.water,
+    onChanged: () => void reload(),
+  })
 
   return (
     <div className="flex min-h-screen flex-col bg-bg">
