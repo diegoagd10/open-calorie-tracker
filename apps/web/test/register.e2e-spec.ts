@@ -113,6 +113,10 @@ describe('Register page (e2e)', () => {
     expect(await submitButton().isVisible()).toBe(true)
   })
 
+  it('does not show the Log out button', async () => {
+    expect(await page.getByRole('button', { name: 'Log out' }).count()).toBe(0)
+  })
+
   describe('client-side validation', () => {
     it('enables the button only once all three fields are filled in', async () => {
       expect(await submitButton().isDisabled()).toBe(true)

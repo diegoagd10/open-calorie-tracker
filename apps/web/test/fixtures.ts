@@ -1,3 +1,4 @@
+import { SignJWT } from 'jose'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -50,3 +51,20 @@ export const JWT = {
   issuer: 'open-calorie-tracker-api',
   audience: 'open-calorie-tracker-web',
 }
+
+// A token signed like the API's, for user 1, that expires at the given Unix time.
+export const signAccessToken = (expiresAt: number) =>
+  new SignJWT({})
+    .setProtectedHeader({ alg: 'HS256', typ: 'JWT' })
+    .setIssuer(JWT.issuer)
+    .setAudience(JWT.audience)
+    .setSubject('1')
+    .setIssuedAt(expiresAt - 60)
+    .setExpirationTime(expiresAt)
+    .sign(new TextEncoder().encode(JWT.secret))
+
+// Session cookie values the web app must treat as no session.
+export const INVALID_TOKENS = [
+  ['is not a valid token', () => Promise.resolve('not-a-token')],
+  ['has expired', () => signAccessToken(Math.floor(Date.now() / 1000) - 60)],
+] as const

@@ -71,6 +71,10 @@ describe('Login page (e2e)', () => {
     expect(await submitButton().isVisible()).toBe(true)
   })
 
+  it('does not show the Log out button', async () => {
+    expect(await page.getByRole('button', { name: 'Log out' }).count()).toBe(0)
+  })
+
   describe('client-side validation', () => {
     it('enables the login button only once both fields are filled in', async () => {
       expect(await submitButton().isDisabled()).toBe(true)

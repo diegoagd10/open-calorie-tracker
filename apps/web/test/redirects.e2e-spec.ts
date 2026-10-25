@@ -1,7 +1,6 @@
-import { SignJWT } from 'jose'
 import { type Browser, type Page, chromium } from 'playwright'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vite-plus/test'
-import { JWT, SEEDED, SEED_USER } from './fixtures'
+import { INVALID_TOKENS, SEEDED, SEED_USER, signAccessToken } from './fixtures'
 
 const { apiUrl: API_URL, webUrl: WEB_URL } = SEEDED
 
@@ -29,16 +28,6 @@ describe('Redirects once the account exists (e2e)', () => {
 
   const setAccessToken = (value: string) =>
     page.context().addCookies([{ name: 'access_token', value, url: WEB_URL }])
-
-  const signToken = (expiresAt: number) =>
-    new SignJWT({})
-      .setProtectedHeader({ alg: 'HS256', typ: 'JWT' })
-      .setIssuer(JWT.issuer)
-      .setAudience(JWT.audience)
-      .setSubject('1')
-      .setIssuedAt(expiresAt - 60)
-      .setExpirationTime(expiresAt)
-      .sign(new TextEncoder().encode(JWT.secret))
 
   const loginThroughApi = async () => {
     const response = await fetch(`${API_URL}/v1/login`, {
@@ -72,18 +61,13 @@ describe('Redirects once the account exists (e2e)', () => {
     })
 
     it('sends / to /login when the session token has expired', async () => {
-      await setAccessToken(await signToken(Math.floor(Date.now() / 1000) - 60))
+      await setAccessToken(await signAccessToken(Math.floor(Date.now() / 1000) - 60))
 
       await page.goto(`${WEB_URL}/`)
 
       expect(page.url()).toBe(`${WEB_URL}/login`)
     })
   })
-
-  const INVALID_TOKENS = [
-    ['is not a valid token', () => Promise.resolve('not-a-token')],
-    ['has expired', () => signToken(Math.floor(Date.now() / 1000) - 60)],
-  ] as const
 
   it.each(INVALID_TOKENS)(
     'shows the login form when the session token %s',

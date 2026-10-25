@@ -44,7 +44,7 @@ const setSessionCookie = (context: BrowserContext, token: string) =>
   ])
 
 // Logs in through the fault proxy, which then knows the token belongs to this user, and stores the
-// session cookie the same way the login page does.
+// session cookie the same way the login page does. Returns the token.
 export const logIn = async (context: BrowserContext, username: string) => {
   const response = await fetch(`${PROXY_URL}/v1/login`, {
     method: 'POST',
@@ -53,7 +53,11 @@ export const logIn = async (context: BrowserContext, username: string) => {
   })
   const { accessToken } = (await response.json()) as { accessToken: string }
   await setSessionCookie(context, accessToken)
+  return accessToken
 }
+
+export const sessionCookie = async (context: BrowserContext) =>
+  (await context.cookies()).find((cookie) => cookie.name === 'access_token')
 
 // Fixes the browser clock and opens the home page.
 export const openHome = async (page: Page) => {
@@ -73,6 +77,8 @@ export const dailyLogRequests = async (username: string) =>
   )
 
 export const homePage = (page: Page) => ({
+  logo: () => page.getByRole('banner').getByText('Open Calorie Tracker'),
+  logOut: () => page.getByRole('banner').getByRole('button', { name: 'Log out' }),
   title: () => page.getByRole('heading', { level: 1, name: 'Food Log' }),
   dailyLog: () => page.getByRole('region', { name: 'Daily log' }),
   week: () => page.getByRole('list', { name: 'Week' }),
