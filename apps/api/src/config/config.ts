@@ -6,6 +6,8 @@ const envSchema = z.object({
   JWT_ISSUER: z.string().min(1),
   JWT_AUDIENCE: z.string().min(1),
   TRUST_PROXY: z.string().optional(),
+  // Encrypts the API keys the database stores, so they can be shown again but not read from it.
+  API_KEY_SECRET: z.string().min(32),
 })
 
 // Express "trust proxy" setting: a hop count, a boolean or a list of trusted addresses.
@@ -21,6 +23,7 @@ export class AppConfig {
     readonly databaseUrl: string,
     readonly jwt: { secret: Uint8Array; issuer: string; audience: string },
     readonly trustProxy: boolean | number | string,
+    readonly apiKeySecret: string,
   ) {}
 
   static fromEnv(env: NodeJS.ProcessEnv = process.env): AppConfig {
@@ -34,6 +37,7 @@ export class AppConfig {
         audience: parsed.JWT_AUDIENCE,
       },
       parseTrustProxy(parsed.TRUST_PROXY),
+      parsed.API_KEY_SECRET,
     )
   }
 }

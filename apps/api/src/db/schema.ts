@@ -100,3 +100,28 @@ export const dailyGoals = sqliteTable('daily_goals', {
   sodium: integer('sodium').notNull(),
   water: integer('water').notNull(),
 })
+
+// Keys a user creates for other apps. The key is stored encrypted, so Settings can show it again,
+// and hashed, to find a key by its value without decrypting every one. A user has each name once,
+// regardless of case.
+export const apiKeys = sqliteTable(
+  'api_keys',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    userId: integer('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    encryptedKey: text('encrypted_key').notNull(),
+    keyHash: text('key_hash').notNull().unique(),
+    preview: text('preview').notNull(),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+    lastUsedAt: integer('last_used_at', { mode: 'timestamp_ms' }),
+    // Null for a key that never expires.
+    expiresAt: integer('expires_at', { mode: 'timestamp_ms' }),
+  },
+  (table) => [
+    uniqueIndex('api_keys_user_name_unique').on(table.userId, sql`${table.name} COLLATE NOCASE`),
+    index('api_keys_user_created_at').on(table.userId, table.createdAt),
+  ],
+)

@@ -5,11 +5,12 @@ import Link from 'next/link'
 import { useState } from 'react'
 import { Alert } from '@/components/alert'
 import { AppHeader } from '@/components/app-header'
-import { CheckIcon, KeyIcon, PlusIcon } from '@/components/icons'
+import { CheckIcon } from '@/components/icons'
 import { useLogOut } from '@/components/use-log-out'
+import { ApiKeysSection } from './api-keys/api-keys-section'
 import { ChangePasswordDialog } from './change-password-dialog'
 import { DailyGoalsSection } from './daily-goals'
-import { DISABLED_BUTTON, INPUT, SECONDARY_BUTTON, Section } from './section'
+import { INPUT, SECONDARY_BUTTON, Section } from './section'
 
 // The username is not loaded yet; the password can be changed from a dialog.
 function Profile() {
@@ -61,30 +62,7 @@ function Profile() {
   )
 }
 
-function ApiKeys() {
-  return (
-    <Section
-      id="api-keys"
-      title="API keys"
-      description="Keys for connecting other apps to your account."
-    >
-      <div className="p-4 sm:p-5">
-        <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-line-strong px-4 py-8">
-          <span className="flex size-10 items-center justify-center rounded-full bg-bg text-muted">
-            <KeyIcon className="size-5" />
-          </span>
-          <p className="font-semibold">No API keys yet</p>
-          <button type="button" disabled className={DISABLED_BUTTON}>
-            <PlusIcon className="size-4" />
-            Create API key
-          </button>
-        </div>
-      </div>
-    </Section>
-  )
-}
-
-// Where the profile, daily goals and API keys are managed. API keys cannot be managed yet.
+// Where the profile, daily goals and API keys are managed.
 export function Settings() {
   const logOut = useLogOut()
 
@@ -103,7 +81,7 @@ export function Settings() {
         {logOut.failed && <Alert>{GENERIC_ERROR_MESSAGE}</Alert>}
         <Profile />
         <DailyGoalsSection />
-        <ApiKeys />
+        <ApiKeysSection />
       </main>
     </div>
   )

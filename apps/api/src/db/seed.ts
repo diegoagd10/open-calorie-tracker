@@ -1,5 +1,7 @@
 import {
+  type ApiKeyCreateInput,
   type DailyGoalsUpdate,
+  apiKeyCreateSchema,
   dailyGoalsUpdateSchema,
   newUserSchema,
   servingSizeSchema,
@@ -8,10 +10,11 @@ import { eq } from 'drizzle-orm'
 import { hashPassword } from '../auth/password.js'
 import { sourceIdOf } from '../food-entries/food-entries.service.js'
 import { ServingSizesService } from '../serving-sizes/serving-sizes.service.js'
+import { ApiKeysService } from '../settings/api-keys/api-keys.service.js'
 import { DailyGoalsService } from '../settings/daily-goals/daily-goals.service.js'
 import { normalizeUsername } from '../users/users.service.js'
 import type { Database } from './database.js'
-import { type FoodSource, foodEntries, users, waterEntries } from './schema.js'
+import { type FoodSource, apiKeys, foodEntries, users, waterEntries } from './schema.js'
 
 export type SeedUser = { username: string; password: string }
 
@@ -89,4 +92,27 @@ export const seedDailyGoals = async (
 ) => {
   const changes = parseOrThrow(dailyGoalsUpdateSchema.safeParse(goals))
   await new DailyGoalsService(database).update(await userIdOf(database, username), changes)
+}
+
+export type SeedApiKey = ApiKeyCreateInput & {
+  username: string
+  // When the key was created, now unless given; it expires counting from then.
+  createdAt?: Date
+  lastUsedAt?: Date | null
+}
+
+// Follows the same rules as the API, so it never stores a key the user could not have created.
+// Encrypts the key with the API's API_KEY_SECRET, so the API can show it. Returns the key as the
+// API answers it.
+export const seedApiKey = async (
+  database: Database,
+  { username, createdAt, lastUsedAt = null, ...input }: SeedApiKey,
+  apiKeySecret: string,
+) => {
+  const parsed = parseOrThrow(apiKeyCreateSchema.safeParse(input))
+  const userId = await userIdOf(database, username)
+  const created = await new ApiKeysService(database, apiKeySecret).create(userId, parsed, createdAt)
+  if (lastUsedAt === null) return created
+  await database.db.update(apiKeys).set({ lastUsedAt }).where(eq(apiKeys.id, created.id))
+  return { ...created, lastUsedAt: lastUsedAt.toISOString() }
 }
