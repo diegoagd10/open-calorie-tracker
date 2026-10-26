@@ -975,8 +975,8 @@ describe('API keys (e2e)', () => {
       const response = await send('DELETE', `/${id}`)
 
       expect(response.status).toBe(204)
-      expect(await storedKeys()).toEqual([])
       expect(await apiRequests()).toEqual([`DELETE /v1/settings/api-keys/${id}`])
+      expect(await storedKeys()).toEqual([])
     })
 
     it('answers 401 without a session cookie and does not call the API', async () => {

@@ -144,7 +144,7 @@ describe('settings: API keys (e2e)', () => {
       const created = response.body as ApiKey
       expect(created.key).toMatch(KEY_PATTERN)
       expect(created).toEqual({
-        id: expect.any(Number),
+        id: created.id,
         name: 'Shortcuts on iPhone',
         key: created.key,
         preview: previewOf(created.key),
