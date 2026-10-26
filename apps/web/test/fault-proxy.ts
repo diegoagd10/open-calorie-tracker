@@ -6,7 +6,8 @@ import {
   request,
 } from 'node:http'
 
-export type Fault = { status: number } | { delayMs: number } | 'connection-reset'
+// A status fault answers a JSON error body unless the test gives the raw body to send.
+export type Fault = { status: number; body?: string } | { delayMs: number } | 'connection-reset'
 
 const EVERYONE = Symbol('everyone')
 
@@ -84,7 +85,7 @@ export const startFaultProxy = async (port: number, targetUrl: string): Promise<
     }
     if (fault !== undefined && 'status' in fault) {
       res.writeHead(fault.status, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify({ message: 'Injected failure' }))
+      res.end(fault.body ?? JSON.stringify({ message: 'Injected failure' }))
       return
     }
 

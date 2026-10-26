@@ -21,6 +21,10 @@ export const createTestApp = async (): Promise<TestApp> => {
   return app
 }
 
+// Sends the request with the bearer token, or with no Authorization header when it is null.
+export const withBearer = (pending: request.Test, token: string | null) =>
+  token === null ? pending : pending.set('Authorization', `Bearer ${token}`)
+
 // Logs in through the API and returns the access token.
 export const accessTokenFor = async (app: TestApp, username: string, password: string) => {
   const response = await request(app.getHttpServer()).post('/v1/login').send({ username, password })

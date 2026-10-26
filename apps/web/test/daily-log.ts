@@ -1,12 +1,12 @@
 import type { Page } from 'playwright'
 import { dayRange } from '../../api/src/daily-log/day'
 import type { Database } from '../../api/src/db/database'
-import { seedFoodEntry, seedWaterEntry } from '../../api/src/db/seed'
+import { seedDailyGoals, seedFoodEntry, seedWaterEntry } from '../../api/src/db/seed'
 import { TIME_ZONE } from './browser'
 import { receivedRequests } from './fault-proxy'
 import { SEEDED } from './fixtures'
 
-export { seedFoodEntry, seedWaterEntry }
+export { seedDailyGoals, seedFoodEntry, seedWaterEntry }
 
 const { proxyUrl: PROXY_URL, webUrl: WEB_URL } = SEEDED
 

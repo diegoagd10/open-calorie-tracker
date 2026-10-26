@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vite-plus/test'
 import { Database } from '../src/db/database.js'
 import { users, waterEntries } from '../src/db/schema.js'
 import { seedUser, seedWaterEntry } from '../src/db/seed.js'
-import { INVALID_TOKENS, type TestApp, accessTokenFor, createTestApp } from './app.js'
+import { INVALID_TOKENS, type TestApp, accessTokenFor, createTestApp, withBearer } from './app.js'
 
 const USERNAME = 'diego'
 const OTHER_USERNAME = 'ana'
@@ -42,10 +42,8 @@ describe('water entries (e2e)', () => {
   // Sends diego's token unless the test passes another one, or null for none.
   type Bearer = string | null | undefined
 
-  const withToken = (pending: request.Test, bearer: Bearer) => {
-    const sent = bearer === undefined ? token : bearer
-    return sent === null ? pending : pending.set('Authorization', `Bearer ${sent}`)
-  }
+  const withToken = (pending: request.Test, bearer: Bearer) =>
+    withBearer(pending, bearer === undefined ? token : bearer)
 
   const create = (body: object, bearer?: Bearer) =>
     withToken(request(app.getHttpServer()).post('/v1/water-entries').send(body), bearer)

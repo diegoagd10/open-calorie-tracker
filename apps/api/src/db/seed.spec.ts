@@ -1,8 +1,8 @@
-import { PASSWORD_MIN_LENGTH } from '@open-calorie-tracker/shared'
+import { MAX_DAILY_GOAL, PASSWORD_MIN_LENGTH } from '@open-calorie-tracker/shared'
 import { afterEach, beforeEach, describe, expect, it } from 'vite-plus/test'
 import { Database } from './database.js'
 import { foodSources, servingSizes } from './schema.js'
-import { type SeedFoodEntry, seedFoodEntry, seedUser } from './seed.js'
+import { type SeedFoodEntry, seedDailyGoals, seedFoodEntry, seedUser } from './seed.js'
 
 const PASSWORD = 'correct-horse-battery-staple'
 
@@ -107,5 +107,25 @@ describe('seedFoodEntry', () => {
       'No user named "nadie"',
     )
     expect(await storedEntries()).toEqual([])
+  })
+})
+
+describe('seedDailyGoals', () => {
+  let database: Database
+
+  beforeEach(async () => {
+    database = await Database.connect(':memory:')
+    await seedUser(database, { username: 'ana', password: PASSWORD })
+  })
+
+  afterEach(() => {
+    database.close()
+  })
+
+  // The seed follows the same rules as the API, so it never stores goals the user could not save.
+  it('rejects a goal the app would reject', async () => {
+    await expect(seedDailyGoals(database, { username: 'ana', calories: 0 })).rejects.toThrow(
+      `Enter a number from 1 to ${MAX_DAILY_GOAL}`,
+    )
   })
 })

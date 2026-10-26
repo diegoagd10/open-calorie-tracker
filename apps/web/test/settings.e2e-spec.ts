@@ -1,16 +1,32 @@
-import { DEFAULT_DAILY_GOALS } from '@open-calorie-tracker/shared'
+import {
+  DEFAULT_DAILY_GOALS,
+  GENERIC_ERROR_MESSAGE,
+  MAX_DAILY_GOAL,
+} from '@open-calorie-tracker/shared'
 import { type Browser, type BrowserContext, type Locator, type Page, chromium } from 'playwright'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vite-plus/test'
 import type { Database } from '../../api/src/db/database'
 import { box, eventually, sameRow, textOf } from './browser'
-import { homePage, openHome } from './daily-log'
-import { INVALID_TOKENS, SEEDED } from './fixtures'
+import { homePage, openHome, seedDailyGoals } from './daily-log'
+import { type Fault, clearFault, injectFault, receivedRequests } from './fault-proxy'
+import { INVALID_TOKENS, SEEDED, signAccessToken } from './fixtures'
 import { header } from './header'
-import { connectDatabase, sessionCookie, signedInPage } from './session'
+import { connectDatabase, sessionCookie, setSessionCookie, signedInPage } from './session'
 
-const { webUrl: WEB_URL } = SEEDED
+const { proxyUrl: PROXY_URL, webUrl: WEB_URL } = SEEDED
 
 const SETTINGS_URL = `${WEB_URL}/settings`
+
+const DAILY_GOALS_URL = `${WEB_URL}/api/daily-goals`
+
+const GOAL_ERROR = `Enter a number from 1 to ${MAX_DAILY_GOAL}`
+
+const expiredToken = () => signAccessToken(Math.floor(Date.now() / 1000) - 60)
+
+const API_FAILURES: [string, Fault][] = [
+  ['answers 500', { status: 500 }],
+  ['is unreachable', 'connection-reset'],
+]
 
 const GOALS = [
   { label: 'Calories', key: 'calories', unit: 'kcal' },
@@ -28,6 +44,16 @@ const settingsPage = (page: Page) => ({
   sectionTitles: () => page.getByRole('main').getByRole('heading', { level: 2 }),
   section: (name: string) => page.getByRole('region', { name, exact: true }),
   goals: () => page.getByRole('form', { name: 'Daily goals' }),
+  goal: (label: string) =>
+    page
+      .getByRole('form', { name: 'Daily goals' })
+      .getByRole('textbox', { name: label, exact: true }),
+  goalFields: () => page.getByRole('form', { name: 'Daily goals' }).getByRole('textbox'),
+  save: () => page.getByRole('form', { name: 'Daily goals' }).getByRole('button'),
+  // The section's Alert, apart from the role="alert" route announcer Next.js renders.
+  goalsAlert: () => page.getByRole('region', { name: 'Daily goals' }).getByRole('alert'),
+  goalsSaved: () =>
+    page.getByRole('region', { name: 'Daily goals' }).getByText('Daily goals saved.'),
 })
 
 // The text of the elements the field's aria-describedby points to.
@@ -45,6 +71,8 @@ describe('Settings page (e2e)', () => {
   let database: Database
   let context: BrowserContext
   let page: Page
+  let username: string
+  let token: string
   let home: ReturnType<typeof homePage>
   let banner: ReturnType<typeof header>
   let settings: ReturnType<typeof settingsPage>
@@ -60,13 +88,14 @@ describe('Settings page (e2e)', () => {
   })
 
   beforeEach(async () => {
-    ;({ context, page } = await signedInPage(browser, database))
+    ;({ context, page, username, token } = await signedInPage(browser, database))
     home = homePage(page)
     banner = header(page)
     settings = settingsPage(page)
   })
 
   afterEach(async () => {
+    await clearFault(PROXY_URL, username)
     await context.close()
   })
 
@@ -183,36 +212,12 @@ describe('Settings page (e2e)', () => {
 
       const profile = settings.section('Profile')
       expect(await profile.getByText('Your username and password.').isVisible()).toBe(true)
-      const username = profile.getByLabel('Username')
-      expect(await username.isDisabled()).toBe(true)
-      expect(await username.inputValue()).toBe('')
+      const usernameField = profile.getByLabel('Username')
+      expect(await usernameField.isDisabled()).toBe(true)
+      expect(await usernameField.inputValue()).toBe('')
       expect(await profile.getByText('Password', { exact: true }).isVisible()).toBe(true)
       expect(await profile.getByText('Used to log in on this server.').isVisible()).toBe(true)
       expect(await profile.getByRole('button', { name: 'Change password' }).isDisabled()).toBe(true)
-    })
-
-    it.each(GOALS)(
-      'shows the default $label goal, disabled, in $unit',
-      async ({ label, key, unit }) => {
-        await openSettings()
-
-        const section = settings.section('Daily goals')
-        expect(
-          await section
-            .getByText('The targets the Food Log measures each day against.')
-            .isVisible(),
-        ).toBe(true)
-        const field = settings.goals().getByRole('textbox', { name: label, exact: true })
-        expect(await field.isDisabled()).toBe(true)
-        expect(await field.inputValue()).toBe(String(DEFAULT_DAILY_GOALS[key]))
-        expect(await descriptionOf(field)).toBe(unit)
-      },
-    )
-
-    it('shows a disabled Save button for the daily goals', async () => {
-      await openSettings()
-
-      expect(await settings.goals().getByRole('button', { name: 'Save' }).isDisabled()).toBe(true)
     })
 
     it('shows no API keys and a disabled Create API key button', async () => {
@@ -225,17 +230,381 @@ describe('Settings page (e2e)', () => {
       expect(await apiKeys.getByText('No API keys yet').isVisible()).toBe(true)
       expect(await apiKeys.getByRole('button', { name: 'Create API key' }).isDisabled()).toBe(true)
     })
+  })
 
-    it('sends no request to the web API', async () => {
-      const apiRequests: string[] = []
+  describe('daily goals', () => {
+    // The page's requests to the daily goals route, e.g. "PATCH {"calories":2000}".
+    let goalsRequests: string[]
+
+    beforeEach(() => {
+      goalsRequests = []
       page.on('request', (request) => {
-        if (request.url().startsWith(`${WEB_URL}/api/`)) apiRequests.push(request.url())
+        if (request.url() === DAILY_GOALS_URL) {
+          goalsRequests.push(`${request.method()} ${request.postData() ?? ''}`.trim())
+        }
+      })
+    })
+
+    // Opens Settings and waits for the goals to load.
+    const openGoals = async () => {
+      await openSettings()
+      await expect.poll(() => settings.goal('Calories').isEnabled(), eventually).toBe(true)
+    }
+
+    const goalValues = async () =>
+      Promise.all(GOALS.map(({ label }) => settings.goal(label).inputValue()))
+
+    const fieldsAreEmptyAndDisabled = async () => {
+      for (const { label } of GOALS) {
+        expect(await settings.goal(label).inputValue()).toBe('')
+        expect(await settings.goal(label).isDisabled()).toBe(true)
+      }
+      expect(await settings.save().isDisabled()).toBe(true)
+    }
+
+    // The section shows the generic error above the fields.
+    const showsGenericErrorAboveFields = async () => {
+      await expect
+        .poll(() => settings.goalsAlert().textContent(), eventually)
+        .toBe(GENERIC_ERROR_MESSAGE)
+      const alert = await box(settings.goalsAlert())
+      expect(alert.y + alert.height).toBeLessThanOrEqual((await box(settings.goal('Calories'))).y)
+    }
+
+    const clickSave = async () => {
+      await settings.save().click()
+      await expect.poll(() => settings.goalsSaved().isVisible(), eventually).toBe(true)
+    }
+
+    // Holds the page's PATCH requests to the daily goals route until released.
+    const holdSaving = async () => {
+      let release = () => {}
+      const released = new Promise<void>((resolve) => {
+        release = resolve
+      })
+      await page.route(DAILY_GOALS_URL, async (route) => {
+        if (route.request().method() === 'PATCH') await released
+        await route.continue()
+      })
+      return release
+    }
+
+    describe('seeing the goals', () => {
+      it.each(GOALS)(
+        'shows the default $label goal, editable, in $unit',
+        async ({ label, key, unit }) => {
+          await openGoals()
+
+          expect(
+            await settings
+              .section('Daily goals')
+              .getByText('The targets the Food Log measures each day against.')
+              .isVisible(),
+          ).toBe(true)
+          const field = settings.goal(label)
+          expect(await field.isEnabled()).toBe(true)
+          expect(await field.inputValue()).toBe(String(DEFAULT_DAILY_GOALS[key]))
+          expect(await descriptionOf(field)).toBe(unit)
+        },
+      )
+
+      it('shows a disabled Save button until a goal changes', async () => {
+        await openGoals()
+
+        expect(await textOf(settings.save())).toBe('Save')
+        expect(await settings.save().isDisabled()).toBe(true)
       })
 
-      await page.goto(SETTINGS_URL, { waitUntil: 'networkidle' })
+      it('shows the goals the user saved', async () => {
+        await seedDailyGoals(database, { username, calories: 2000, water: 80 })
 
-      expect(await settings.title().isVisible()).toBe(true)
-      expect(apiRequests).toEqual([])
+        await openGoals()
+
+        expect(await goalValues()).toEqual(
+          GOALS.map(({ key }) =>
+            String({ ...DEFAULT_DAILY_GOALS, calories: 2000, water: 80 }[key]),
+          ),
+        )
+      })
+
+      it('shows the fields empty and disabled while the goals load', async () => {
+        await injectFault(PROXY_URL, { delayMs: 3_000 }, username)
+
+        await page.goto(SETTINGS_URL)
+
+        await fieldsAreEmptyAndDisabled()
+      })
+
+      it.each(API_FAILURES)(
+        'shows the generic error and keeps the fields disabled when the API %s',
+        async (_case, fault) => {
+          await injectFault(PROXY_URL, fault, username)
+
+          await openSettings()
+
+          await showsGenericErrorAboveFields()
+          await fieldsAreEmptyAndDisabled()
+        },
+      )
+
+      it('goes to the login page when the session expired before the goals load', async () => {
+        await page.route(DAILY_GOALS_URL, async (route) => {
+          await setSessionCookie(context, await expiredToken())
+          await route.fulfill({ status: 401 })
+        })
+
+        await page.goto(SETTINGS_URL)
+
+        await page.waitForURL(`${WEB_URL}/login`)
+      })
+
+      it('asks the web API only for the daily goals', async () => {
+        const apiRequests: string[] = []
+        page.on('request', (request) => {
+          const { pathname } = new URL(request.url())
+          if (pathname.startsWith('/api/')) apiRequests.push(`${request.method()} ${pathname}`)
+        })
+
+        await page.goto(SETTINGS_URL, { waitUntil: 'networkidle' })
+
+        expect(await settings.title().isVisible()).toBe(true)
+        expect(apiRequests).toEqual(['GET /api/daily-goals'])
+      })
+    })
+
+    describe('editing the goals', () => {
+      it('enables Save once a goal changes', async () => {
+        await openGoals()
+
+        await settings.goal('Calories').fill('2000')
+
+        expect(await settings.save().isEnabled()).toBe(true)
+      })
+
+      it.each([
+        ['Calories', '2000', '1600'],
+        ['Sodium max', '1500', '2300'],
+        ['Water', '100', '64'],
+      ])(
+        'disables Save again when %s goes back to its saved value',
+        async (label, changed, saved) => {
+          await openGoals()
+          await settings.goal(label).fill(changed)
+
+          await settings.goal(label).fill(saved)
+
+          expect(await settings.save().isDisabled()).toBe(true)
+        },
+      )
+
+      it('keeps Save enabled when only one of two changes is undone', async () => {
+        await openGoals()
+        await settings.goal('Calories').fill('2000')
+        await settings.goal('Water').fill('80')
+
+        await settings.goal('Calories').fill('1600')
+
+        expect(await settings.save().isEnabled()).toBe(true)
+      })
+
+      it.each([
+        ['typed', '2000', '2000'],
+        ['typed', '1.5', '15'],
+        ['typed', '-200', '200'],
+        ['typed', '2,000', '2000'],
+        ['pasted', '2 000 kcal', '2000'],
+        ['pasted', '1234567', '12345'],
+        ['typed', 'abc', ''],
+      ])('shows %s %j as %j', async (action, input, shown) => {
+        await openGoals()
+        const field = settings.goal('Calories')
+        await field.fill('')
+
+        if (action === 'typed') await field.pressSequentially(input)
+        else await page.keyboard.insertText(input)
+
+        expect(await field.inputValue()).toBe(shown)
+      })
+
+      it.each(['', '0', '000'])(
+        'shows an error under the goal and disables Save for %j',
+        async (input) => {
+          await openGoals()
+          const field = settings.goal('Protein')
+
+          await field.fill(input)
+
+          const error = settings.section('Daily goals').getByText(GOAL_ERROR)
+          expect(await error.isVisible()).toBe(true)
+          expect((await box(error)).y).toBeGreaterThan((await box(field)).y)
+          expect(await descriptionOf(field)).toContain(GOAL_ERROR)
+          expect(await settings.save().isDisabled()).toBe(true)
+        },
+      )
+
+      it('drops leading zeros when saving', async () => {
+        await openGoals()
+        await settings.goal('Fat').fill('060')
+
+        await clickSave()
+
+        expect(goalsRequests).toContain('PATCH {"fat":60}')
+        expect(await settings.goal('Fat').inputValue()).toBe('60')
+      })
+    })
+
+    describe('saving the goals', () => {
+      it('sends only the changed goals and confirms left of Save', async () => {
+        await openGoals()
+        await settings.goal('Calories').fill('2000')
+        await settings.goal('Water').fill('80')
+
+        await clickSave()
+
+        expect(goalsRequests).toEqual(['GET', 'PATCH {"calories":2000,"water":80}'])
+        const saved = await box(settings.goalsSaved())
+        expect(saved.x + saved.width).toBeLessThanOrEqual((await box(settings.save())).x)
+        expect(await sameRow(settings.goalsSaved(), settings.save())).toBe(true)
+        expect(await settings.save().isDisabled()).toBe(true)
+      })
+
+      it('keeps the saved goals after a reload', async () => {
+        await openGoals()
+        await settings.goal('Calories').fill('2000')
+        await clickSave()
+
+        await openGoals()
+
+        expect(await settings.goal('Calories').inputValue()).toBe('2000')
+      })
+
+      it('measures the Food Log against the saved goals', async () => {
+        await seedDailyGoals(database, { username, calories: 2000, protein: 150, water: 80 })
+
+        await openHome(page)
+
+        await expect
+          .poll(() => textOf(home.summary('Calories')), eventually)
+          .toContain('/ 2,000 kcal')
+        expect(await textOf(home.summary('Protein'))).toContain('/ 150 g')
+        expect(await textOf(home.summary('Water'))).toContain('/ 80 fl oz')
+      })
+
+      it('disables the form and shows Saving… while the goals are saved', async () => {
+        await openGoals()
+        await settings.goal('Calories').fill('2000')
+        const release = await holdSaving()
+
+        await settings.save().click()
+
+        await expect.poll(() => textOf(settings.save()), eventually).toBe('Saving…')
+        expect(await settings.save().isDisabled()).toBe(true)
+        for (const field of await settings.goalFields().all()) {
+          expect(await field.isDisabled()).toBe(true)
+        }
+        release()
+        await expect.poll(() => settings.goalsSaved().isVisible(), eventually).toBe(true)
+      })
+
+      it.each(API_FAILURES)(
+        'shows the generic error and keeps what was typed when the API %s',
+        async (_case, fault) => {
+          await openGoals()
+          await settings.goal('Calories').fill('2000')
+          await injectFault(PROXY_URL, fault, username)
+
+          await settings.save().click()
+
+          await showsGenericErrorAboveFields()
+          expect(await settings.goal('Calories').inputValue()).toBe('2000')
+          expect(await settings.save().isEnabled()).toBe(true)
+          expect(await settings.goalsSaved().isVisible()).toBe(false)
+        },
+      )
+
+      it('goes to the login page when the session expired before saving', async () => {
+        await openGoals()
+        await settings.goal('Calories').fill('2000')
+        await setSessionCookie(context, await expiredToken())
+
+        await settings.save().click()
+
+        await page.waitForURL(`${WEB_URL}/login`)
+      })
+
+      it('hides the confirmation once a goal changes again', async () => {
+        await openGoals()
+        await settings.goal('Calories').fill('2000')
+        await clickSave()
+
+        await settings.goal('Water').fill('90')
+
+        expect(await settings.goalsSaved().isVisible()).toBe(false)
+      })
+    })
+
+    describe('the /api/daily-goals route', () => {
+      // Calls the route the way the page does, with the session cookie unless it is null.
+      const send = (method: string, body?: object, cookie: string | null = token) => {
+        const headers: Record<string, string> = {}
+        const init: RequestInit = { method, headers, redirect: 'manual' }
+        if (cookie !== null) headers['Cookie'] = `access_token=${cookie}`
+        if (body !== undefined) {
+          headers['Content-Type'] = 'application/json'
+          init.body = JSON.stringify(body)
+        }
+        return fetch(DAILY_GOALS_URL, init)
+      }
+
+      it('forwards GET to the API with the session token', async () => {
+        const response = await send('GET')
+
+        expect(response.status).toBe(200)
+        expect(await response.json()).toEqual(DEFAULT_DAILY_GOALS)
+        expect(await receivedRequests(PROXY_URL, username)).toContain(
+          'GET /v1/settings/daily-goals',
+        )
+      })
+
+      it('forwards PATCH to the API with the session token', async () => {
+        const response = await send('PATCH', { calories: 2000 })
+
+        expect(response.status).toBe(200)
+        expect(await response.json()).toEqual({ ...DEFAULT_DAILY_GOALS, calories: 2000 })
+        expect(await receivedRequests(PROXY_URL, username)).toContain(
+          'PATCH /v1/settings/daily-goals',
+        )
+      })
+
+      it('answers 401 without a session cookie and changes nothing', async () => {
+        const response = await send('PATCH', { calories: 2000 }, null)
+
+        expect(response.status).toBe(401)
+        expect(await (await send('GET')).json()).toEqual(DEFAULT_DAILY_GOALS)
+      })
+
+      it('forwards 400 and 401 as they are', async () => {
+        const statuses = [
+          (await send('PATCH', { calories: 0 })).status,
+          (await send('PATCH', { calories: 2000 }, await expiredToken())).status,
+        ]
+
+        expect(statuses).toEqual([400, 401])
+      })
+
+      it.each([
+        ...API_FAILURES,
+        ['answers 200 without JSON', { status: 200, body: 'not json' }] as [string, Fault],
+      ])('answers 502 when the API %s', async (_case, fault) => {
+        await injectFault(PROXY_URL, fault, username)
+
+        const statuses = [
+          (await send('GET')).status,
+          (await send('PATCH', { calories: 2000 })).status,
+        ]
+
+        expect(statuses).toEqual([502, 502])
+      })
     })
   })
 
