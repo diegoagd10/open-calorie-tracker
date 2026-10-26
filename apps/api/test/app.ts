@@ -10,6 +10,7 @@ export const TEST_ENV = {
   JWT_ISSUER: 'open-calorie-tracker-api',
   JWT_AUDIENCE: 'open-calorie-tracker-web',
   TRUST_PROXY: 'loopback',
+  API_KEY_SECRET: 'test-api-key-secret-that-is-long-enough',
 }
 
 export type TestApp = Awaited<ReturnType<typeof createApp>>

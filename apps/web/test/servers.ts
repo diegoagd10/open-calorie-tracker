@@ -4,7 +4,15 @@ import type { Server } from 'node:http'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import { startFaultProxy } from './fault-proxy'
-import { EMPTY, type Environment, JWT, SEED_USER, SEEDED, TEST_DATA_DIR } from './fixtures'
+import {
+  API_KEY_SECRET,
+  EMPTY,
+  type Environment,
+  JWT,
+  SEED_USER,
+  SEEDED,
+  TEST_DATA_DIR,
+} from './fixtures'
 
 const apiDir = fileURLToPath(new URL('../../api', import.meta.url))
 const webDir = fileURLToPath(new URL('..', import.meta.url))
@@ -58,6 +66,7 @@ const startEnvironment = async (environment: Environment) => {
       PORT: port(environment.apiUrl),
       DATABASE_URL: databaseUrl,
       TRUST_PROXY: 'loopback',
+      API_KEY_SECRET,
       ...jwtEnv,
     }),
     start(['pnpm', 'exec', 'next', 'start', '--port', port(environment.webUrl)], webDir, {

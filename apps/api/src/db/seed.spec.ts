@@ -1,13 +1,17 @@
 import {
+  API_KEY_NAME_MAX_LENGTH,
+  API_KEY_NAME_TAKEN_ERROR,
   MAX_DAILY_GOAL,
   MAX_SERVING_SIZE_LENGTH,
   PASSWORD_MIN_LENGTH,
   servingSizeSchema,
 } from '@open-calorie-tracker/shared'
+import { sql } from 'drizzle-orm'
 import { afterEach, beforeEach, describe, expect, it } from 'vite-plus/test'
+import { TEST_ENV } from '../../test/app.js'
 import { Database } from './database.js'
 import { foodSources, servingSizes } from './schema.js'
-import { type SeedFoodEntry, seedDailyGoals, seedFoodEntry, seedUser } from './seed.js'
+import { type SeedFoodEntry, seedApiKey, seedDailyGoals, seedFoodEntry, seedUser } from './seed.js'
 
 const PASSWORD = 'correct-horse-battery-staple'
 
@@ -176,5 +180,63 @@ describe('seedDailyGoals', () => {
     await expect(seedDailyGoals(database, { username: 'ana', calories: 0 })).rejects.toThrow(
       `Enter a number from 1 to ${MAX_DAILY_GOAL}`,
     )
+  })
+})
+
+describe('seedApiKey', () => {
+  let database: Database
+
+  beforeEach(async () => {
+    database = await Database.connect(':memory:')
+    await seedUser(database, { username: 'ana', password: PASSWORD })
+    await seedUser(database, { username: 'diego', password: PASSWORD })
+  })
+
+  afterEach(() => {
+    database.close()
+  })
+
+  const seedKey = (name: string, expiresIn: string, username = 'ana') =>
+    seedApiKey(
+      database,
+      // The seed is called from scripts too, so it must reject values the types would stop.
+      { username, name, expiresIn: expiresIn as '90d' },
+      TEST_ENV.API_KEY_SECRET,
+    )
+
+  const storedKeyCount = async () =>
+    (await database.db.all<{ count: number }>(sql`SELECT COUNT(*) AS count FROM api_keys`))[0]
+      ?.count
+
+  // The seed follows the same rules as the API, so it never stores a key the user could not create.
+  it.each([
+    [
+      `a name over ${API_KEY_NAME_MAX_LENGTH} characters`,
+      'a'.repeat(API_KEY_NAME_MAX_LENGTH + 1),
+      '90d',
+    ],
+    ['an empty name', '   ', '90d'],
+    ['an unknown expiry', 'Home Assistant', '7d'],
+  ])('rejects %s and stores no key', async (_case, name, expiresIn) => {
+    await expect(seedKey(name, expiresIn)).rejects.toThrow()
+    expect(await storedKeyCount()).toBe(0)
+  })
+
+  it.each(['Home Assistant', 'home assistant', ' HOME ASSISTANT '])(
+    'rejects %j when the user already has a key named "Home Assistant"',
+    async (name) => {
+      await seedKey('Home Assistant', '90d')
+
+      await expect(seedKey(name, 'never')).rejects.toThrow(API_KEY_NAME_TAKEN_ERROR)
+      expect(await storedKeyCount()).toBe(1)
+    },
+  )
+
+  it("allows a name another user's key already has", async () => {
+    await seedKey('Home Assistant', '90d', 'diego')
+
+    await seedKey('Home Assistant', '90d')
+
+    expect(await storedKeyCount()).toBe(2)
   })
 })

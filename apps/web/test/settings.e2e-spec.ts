@@ -229,15 +229,22 @@ describe('Settings page (e2e)', () => {
       expect(await profile.getByRole('button', { name: 'Change password' }).isEnabled()).toBe(true)
     })
 
-    it('shows no API keys and a disabled Create API key button', async () => {
+    it('shows no API keys and an enabled Create API key button', async () => {
       await openSettings()
 
       const apiKeys = settings.section('API keys')
       expect(
         await apiKeys.getByText('Keys for connecting other apps to your account.').isVisible(),
       ).toBe(true)
-      expect(await apiKeys.getByText('No API keys yet').isVisible()).toBe(true)
-      expect(await apiKeys.getByRole('button', { name: 'Create API key' }).isDisabled()).toBe(true)
+      await expect
+        .poll(() => apiKeys.getByText('No API keys yet').isVisible(), eventually)
+        .toBe(true)
+      expect(
+        await apiKeys
+          .getByText('Create one to log food and water from scripts, shortcuts or other apps.')
+          .isVisible(),
+      ).toBe(true)
+      expect(await apiKeys.getByRole('button', { name: 'Create API key' }).isEnabled()).toBe(true)
     })
   })
 
@@ -367,7 +374,7 @@ describe('Settings page (e2e)', () => {
         await page.waitForURL(`${WEB_URL}/login`)
       })
 
-      it('asks the web API only for the daily goals', async () => {
+      it('asks the web API only for the daily goals and the API keys', async () => {
         const apiRequests: string[] = []
         page.on('request', (request) => {
           const { pathname } = new URL(request.url())
@@ -377,7 +384,7 @@ describe('Settings page (e2e)', () => {
         await page.goto(SETTINGS_URL, { waitUntil: 'networkidle' })
 
         expect(await settings.title().isVisible()).toBe(true)
-        expect(apiRequests).toEqual(['GET /api/daily-goals'])
+        expect(apiRequests.sort()).toEqual(['GET /api/api-keys', 'GET /api/daily-goals'])
       })
     })
 

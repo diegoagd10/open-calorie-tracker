@@ -19,3 +19,7 @@ export const deleteAllUsers = (environment: Environment) =>
 // Deletes an entry behind the page's back, as if from another tab.
 export const deleteWaterEntry = (environment: Environment, id: number) =>
   execute(environment, 'DELETE FROM water_entries WHERE id = ?', [id])
+
+// Deletes an API key behind the page's back, as if from another tab.
+export const deleteApiKey = (environment: Environment, id: number) =>
+  execute(environment, 'DELETE FROM api_keys WHERE id = ?', [id])

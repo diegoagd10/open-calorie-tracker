@@ -52,6 +52,9 @@ export const JWT = {
   audience: 'open-calorie-tracker-web',
 }
 
+// Encrypts the API keys the API stores. The tests seed keys with it too.
+export const API_KEY_SECRET = 'web-test-api-key-secret-that-is-long-enough'
+
 // A token signed like the API's, for user 1, that expires at the given Unix time.
 export const signAccessToken = (expiresAt: number) =>
   new SignJWT({})
