@@ -1,6 +1,5 @@
 import { Injectable } from '@nestjs/common'
 import {
-  DEFAULT_DAILY_GOALS,
   type DailyLog,
   type DailyTotals,
   type FoodLogEntry,
@@ -19,6 +18,7 @@ import {
   waterEntries,
 } from '../db/schema.js'
 import { toWaterLogEntry } from '../water-entries/water-entries.service.js'
+import { DailyGoalsService } from '../settings/daily-goals/daily-goals.service.js'
 import { type DayQuery, dayRange } from './day.js'
 
 const NUTRIENTS: Nutrient[] = ['protein', 'carbohydrate', 'fat', 'fiber', 'sugar', 'sodium']
@@ -55,11 +55,14 @@ const totalsOf = (food: StoredFood[], water: WaterEntry[]): DailyTotals => ({
 
 @Injectable()
 export class DailyLogService {
-  constructor(private readonly database: Database) {}
+  constructor(
+    private readonly database: Database,
+    private readonly dailyGoals: DailyGoalsService,
+  ) {}
 
   async dailyLog(userId: number, day: DayQuery): Promise<DailyLog> {
     const { start, end } = dayRange(day)
-    const [food, water] = await Promise.all([
+    const [food, water, goals] = await Promise.all([
       this.database.db
         .select({
           ...getTableColumns(foodEntries),
@@ -86,12 +89,13 @@ export class DailyLogService {
             lt(waterEntries.loggedAt, end),
           ),
         ),
+      this.dailyGoals.goalsOf(userId),
     ])
 
     const entries: LogEntry[] = [...food.map(toFoodLogEntry), ...water.map(toWaterLogEntry)]
     // ISO 8601 UTC strings sort chronologically.
     entries.sort((a, b) => b.loggedAt.localeCompare(a.loggedAt))
 
-    return { ...day, goals: DEFAULT_DAILY_GOALS, totals: totalsOf(food, water), entries }
+    return { ...day, goals, totals: totalsOf(food, water), entries }
   }
 }

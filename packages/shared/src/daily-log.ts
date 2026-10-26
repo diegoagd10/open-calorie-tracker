@@ -5,7 +5,7 @@ export type Nutrient = 'protein' | 'carbohydrate' | 'fat' | 'fiber' | 'sugar' | 
 // Calories in kcal, sodium in mg, water in US fl oz, every other nutrient in g.
 export type DailyGoals = Record<'calories' | Nutrient | 'water', number>
 
-// Every user gets these until goals can be changed.
+// The goals of a user who never changed them.
 export const DEFAULT_DAILY_GOALS: DailyGoals = {
   calories: 1600,
   protein: 120,

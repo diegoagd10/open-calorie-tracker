@@ -1,6 +1,11 @@
-import { newUserSchema } from '@open-calorie-tracker/shared'
+import {
+  type DailyGoalsUpdate,
+  dailyGoalsUpdateSchema,
+  newUserSchema,
+} from '@open-calorie-tracker/shared'
 import { eq, sql } from 'drizzle-orm'
 import { hashPassword } from '../auth/password.js'
+import { DailyGoalsService } from '../settings/daily-goals/daily-goals.service.js'
 import { normalizeUsername } from '../users/users.service.js'
 import type { Database } from './database.js'
 import {
@@ -14,16 +19,22 @@ import {
 
 export type SeedUser = { username: string; password: string }
 
+const parseOrThrow = <T>(
+  result: { success: true; data: T } | { success: false; error: { issues: { message: string }[] } },
+) => {
+  if (!result.success) {
+    throw new Error(result.error.issues.map((issue) => issue.message).join('\n'))
+  }
+  return result.data
+}
+
 // Development and test data only: the API itself never seeds users or entries. Users follow the
 // same rules as registration, so it never creates a user that could not have been registered.
 export const seedUser = async (database: Database, user: SeedUser) => {
-  const parsed = newUserSchema.safeParse(user)
-  if (!parsed.success) {
-    throw new Error(parsed.error.issues.map((issue) => issue.message).join('\n'))
-  }
+  const parsed = parseOrThrow(newUserSchema.safeParse(user))
 
-  const username = normalizeUsername(parsed.data.username)
-  const passwordHash = await hashPassword(parsed.data.password)
+  const username = normalizeUsername(parsed.username)
+  const passwordHash = await hashPassword(parsed.password)
   await database.db
     .insert(users)
     .values({ username, passwordHash })
@@ -77,4 +88,13 @@ export const seedWaterEntry = async (
   await database.db
     .insert(waterEntries)
     .values({ ...entry, userId: await userIdOf(database, username) })
+}
+
+// Follows the same rules as the API, so it never stores goals the user could not have saved.
+export const seedDailyGoals = async (
+  database: Database,
+  { username, ...goals }: DailyGoalsUpdate & { username: string },
+) => {
+  const changes = parseOrThrow(dailyGoalsUpdateSchema.safeParse(goals))
+  await new DailyGoalsService(database).update(await userIdOf(database, username), changes)
 }

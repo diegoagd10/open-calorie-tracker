@@ -69,3 +69,18 @@ export const waterEntries = sqliteTable(
 )
 
 export type WaterEntry = typeof waterEntries.$inferSelect
+
+// One row per user who changed a goal; a user without one has the default goals.
+export const dailyGoals = sqliteTable('daily_goals', {
+  userId: integer('user_id')
+    .primaryKey()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  calories: integer('calories').notNull(),
+  protein: integer('protein').notNull(),
+  carbohydrate: integer('carbohydrate').notNull(),
+  fat: integer('fat').notNull(),
+  fiber: integer('fiber').notNull(),
+  sugar: integer('sugar').notNull(),
+  sodium: integer('sodium').notNull(),
+  water: integer('water').notNull(),
+})

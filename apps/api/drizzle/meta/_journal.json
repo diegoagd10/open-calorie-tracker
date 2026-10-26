@@ -15,6 +15,13 @@
       "when": 1792885850837,
       "tag": "0001_create_food_and_water_entries",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1793049811928,
+      "tag": "0002_create_daily_goals",
+      "breakpoints": true
     }
   ]
 }
