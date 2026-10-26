@@ -1,26 +1,7 @@
-// What became of a request to change the water log. "gone" means the entry no longer exists,
-// e.g. it was deleted in another tab.
-export type WaterOutcome = 'saved' | 'gone' | 'failed' | 'unauthorized'
+import { type Outcome, sendRequest } from '@/components/requests'
 
-const send = async (method: string, path: string, body?: unknown): Promise<WaterOutcome> => {
-  try {
-    const response = await fetch(`/api/water-entries${path}`, {
-      method,
-      ...(body === undefined
-        ? {}
-        : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
-    })
-    if (response.status === 401) {
-      // The session expired: a full navigation lets the proxy clear it and show the login page.
-      window.location.assign('/login')
-      return 'unauthorized'
-    }
-    if (response.status === 404) return 'gone'
-    return response.ok ? 'saved' : 'failed'
-  } catch {
-    return 'failed'
-  }
-}
+const send = async (method: string, path: string, body?: unknown): Promise<Outcome> =>
+  (await sendRequest(method, `/api/water-entries${path}`, body)).outcome
 
 export const addWater = (amount: number) => send('POST', '', { amount })
 

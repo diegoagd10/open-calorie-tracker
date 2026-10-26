@@ -2,41 +2,24 @@ import { Injectable } from '@nestjs/common'
 import {
   type DailyLog,
   type DailyTotals,
-  type FoodLogEntry,
   type LogEntry,
   type Nutrient,
 } from '@open-calorie-tracker/shared'
 import { and, eq, getTableColumns, gte, lt } from 'drizzle-orm'
 import { Database } from '../db/database.js'
 import {
-  type FoodEntry,
-  type FoodSource,
   type WaterEntry,
   foodEntries,
   foodSources,
   servingSizes,
   waterEntries,
 } from '../db/schema.js'
+import { type StoredFood, toFoodLogEntry } from '../food-entries/food-entries.service.js'
 import { toWaterLogEntry } from '../water-entries/water-entries.service.js'
 import { DailyGoalsService } from '../settings/daily-goals/daily-goals.service.js'
 import { type DayQuery, dayRange } from './day.js'
 
 const NUTRIENTS: Nutrient[] = ['protein', 'carbohydrate', 'fat', 'fiber', 'sugar', 'sodium']
-
-// A food entry with the names of its serving size and source.
-type StoredFood = FoodEntry & { servingSize: string; source: FoodSource }
-
-const toFoodLogEntry = ({
-  userId: _userId,
-  servingSizeId: _servingSizeId,
-  sourceId: _sourceId,
-  loggedAt,
-  ...entry
-}: StoredFood): FoodLogEntry => ({
-  ...entry,
-  type: 'food',
-  loggedAt: loggedAt.toISOString(),
-})
 
 // Rounds away floating point noise, e.g. 10 + 6.9 = 16.900000000000002.
 const round = (value: number) => Math.round(value * 100) / 100

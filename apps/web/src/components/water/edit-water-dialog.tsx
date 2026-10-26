@@ -10,14 +10,9 @@ import { Alert } from '@/components/alert'
 import { formatNumber, formatTime } from '@/components/food-log/format'
 import { TrashIcon } from '@/components/icons'
 import { Modal } from '@/components/modal'
-import {
-  AmountField,
-  DialogHeader,
-  PRIMARY_BUTTON,
-  SECONDARY_BUTTON,
-  WaterIcon,
-} from './dialog-parts'
-import { useSubmission } from './use-submission'
+import { DialogHeader, SECONDARY_BUTTON } from '@/components/dialog-parts'
+import { AmountField, PRIMARY_BUTTON, WaterIcon } from './dialog-parts'
+import { useSubmission } from '@/components/use-submission'
 import { addAmounts, loggableAmount, waterName } from './water-amount'
 import { updateWater } from './water-requests'
 

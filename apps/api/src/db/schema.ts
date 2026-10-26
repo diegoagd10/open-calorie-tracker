@@ -1,4 +1,5 @@
-import { index, integer, real, sqliteTable, text } from 'drizzle-orm/sqlite-core'
+import { sql } from 'drizzle-orm'
+import { index, integer, real, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core'
 
 export const users = sqliteTable('users', {
   id: integer('id').primaryKey({ autoIncrement: true }),
@@ -8,11 +9,26 @@ export const users = sqliteTable('users', {
 
 export type User = typeof users.$inferSelect
 
-// Each serving size text is stored once and shared by every entry that uses it.
-export const servingSizes = sqliteTable('serving_sizes', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  name: text('name').notNull().unique(),
-})
+// Each user's serving sizes; their food entries point to them. A user has each name once,
+// regardless of case.
+export const servingSizes = sqliteTable(
+  'serving_sizes',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    userId: integer('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+  },
+  (table) => [
+    uniqueIndex('serving_sizes_user_name_unique').on(
+      table.userId,
+      sql`${table.name} COLLATE NOCASE`,
+    ),
+  ],
+)
+
+export type ServingSize = typeof servingSizes.$inferSelect
 
 // Where food entries come from. The migration adds every source the app knows.
 export const foodSources = sqliteTable('food_sources', {

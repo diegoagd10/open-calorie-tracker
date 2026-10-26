@@ -6,16 +6,9 @@ import { Alert } from '@/components/alert'
 import { formatNumber } from '@/components/food-log/format'
 import { DropIcon } from '@/components/icons'
 import { Modal } from '@/components/modal'
-import {
-  AmountField,
-  DialogHeader,
-  GoalBar,
-  LIMITS_NOTE,
-  PRIMARY_BUTTON,
-  SECONDARY_BUTTON,
-  WaterIcon,
-} from './dialog-parts'
-import { useSubmission } from './use-submission'
+import { DialogHeader, GoalBar, SECONDARY_BUTTON } from '@/components/dialog-parts'
+import { AmountField, LIMITS_NOTE, PRIMARY_BUTTON, WaterIcon } from './dialog-parts'
+import { useSubmission } from '@/components/use-submission'
 import { addAmounts, loggableAmount } from './water-amount'
 import { addWater } from './water-requests'
 
@@ -56,7 +49,13 @@ export function AddWaterDialog({ total, goal, onClose, onAdded }: AddWaterDialog
           disabled={pending}
         />
         <div className="flex flex-col gap-2">
-          <GoalBar from={total} to={addAmounts(total, amount ?? 0)} goal={goal} tone="water" />
+          <GoalBar
+            from={total}
+            to={addAmounts(total, amount ?? 0)}
+            goal={goal}
+            fill="var(--water)"
+            stripes="var(--water)"
+          />
           {amount !== undefined && (
             <p className="text-xs">
               With {formatNumber(amount)} fl oz: {formatNumber(addAmounts(total, amount))} /{' '}

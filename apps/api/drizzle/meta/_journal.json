@@ -22,6 +22,13 @@
       "when": 1793049811928,
       "tag": "0002_create_daily_goals",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1793054144398,
+      "tag": "0003_give_users_their_own_serving_sizes",
+      "breakpoints": true
     }
   ]
 }

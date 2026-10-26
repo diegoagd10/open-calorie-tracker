@@ -6,8 +6,9 @@ import { Alert } from '@/components/alert'
 import { formatNumber, formatTime } from '@/components/food-log/format'
 import { TrashIcon } from '@/components/icons'
 import { Modal } from '@/components/modal'
-import { DANGER_BUTTON, DialogHeader, GoalBar, SECONDARY_BUTTON, WaterIcon } from './dialog-parts'
-import { useSubmission } from './use-submission'
+import { DANGER_BUTTON, DialogHeader, GoalBar, SECONDARY_BUTTON } from '@/components/dialog-parts'
+import { WaterIcon } from './dialog-parts'
+import { useSubmission } from '@/components/use-submission'
 import { addAmounts, waterName } from './water-amount'
 import { deleteWater } from './water-requests'
 
@@ -62,7 +63,7 @@ export function DeleteWaterDialog({
             {formatNumber(goal)} fl oz
           </p>
         </div>
-        <GoalBar from={total} to={after} goal={goal} tone="danger" />
+        <GoalBar from={total} to={after} goal={goal} fill="var(--water)" stripes="var(--danger)" />
       </div>
       {failed && <Alert>{GENERIC_ERROR_MESSAGE}</Alert>}
       <div className="grid grid-cols-[1fr_1.4fr] gap-2">

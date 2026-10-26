@@ -1,9 +1,10 @@
 'use client'
 
 import Link from 'next/link'
-import { useRef } from 'react'
+import { useRef, useState } from 'react'
 import { Alert } from '@/components/alert'
 import { AppHeader } from '@/components/app-header'
+import { AddFoodDialog } from '@/components/food/add-food-dialog'
 import { DropIcon, GearIcon, PlusIcon } from '@/components/icons'
 import { useLogOut } from '@/components/use-log-out'
 import { useWaterDialogs } from '@/components/water/use-water-dialogs'
@@ -24,9 +25,8 @@ function Loader() {
   )
 }
 
-// Adding food is not available yet. On small screens the buttons stay at the bottom of the screen
-// while the log scrolls.
-function AddButtons({ onAddWater }: { onAddWater: () => void }) {
+// On small screens the buttons stay at the bottom of the screen while the log scrolls.
+function AddButtons({ onAddWater, onAddFood }: { onAddWater: () => void; onAddFood: () => void }) {
   return (
     <div className="sticky bottom-0 -mx-4 grid grid-cols-2 gap-3 border-t border-line bg-bg px-4 pt-3 pb-[max(1.5rem,env(safe-area-inset-bottom))] sm:-mx-8 sm:px-8 lg:static lg:col-start-2 lg:row-start-2 lg:mx-0 lg:border-0 lg:bg-transparent lg:p-0">
       <button
@@ -39,7 +39,7 @@ function AddButtons({ onAddWater }: { onAddWater: () => void }) {
       </button>
       <button
         type="button"
-        disabled
+        onClick={onAddFood}
         className="flex h-12 items-center justify-center gap-2 rounded-full bg-accent font-semibold text-on-accent disabled:opacity-60"
       >
         <PlusIcon className="size-5" />
@@ -62,6 +62,7 @@ export function FoodLog() {
     goal: log?.goals.water ?? DEFAULT_DAILY_GOALS.water,
     onChanged: () => void reload(),
   })
+  const [addingFood, setAddingFood] = useState(false)
 
   return (
     <div className="flex min-h-screen flex-col bg-bg">
@@ -108,7 +109,9 @@ export function FoodLog() {
                 {log !== undefined && <EntryList entries={log.entries} onOpenWater={water.edit} />}
               </section>
             )}
-            {log !== undefined && <AddButtons onAddWater={water.add} />}
+            {log !== undefined && (
+              <AddButtons onAddWater={water.add} onAddFood={() => setAddingFood(true)} />
+            )}
           </div>
         </main>
         {today !== null && (
@@ -118,6 +121,17 @@ export function FoodLog() {
         )}
       </div>
       {water.dialogs}
+      {addingFood && (
+        <AddFoodDialog
+          total={log?.totals.calories ?? 0}
+          goal={log?.goals.calories ?? DEFAULT_DAILY_GOALS.calories}
+          onClose={() => setAddingFood(false)}
+          onAdded={() => {
+            setAddingFood(false)
+            void reload()
+          }}
+        />
+      )}
     </div>
   )
 }

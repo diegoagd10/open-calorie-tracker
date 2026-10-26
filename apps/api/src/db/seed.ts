@@ -2,20 +2,16 @@ import {
   type DailyGoalsUpdate,
   dailyGoalsUpdateSchema,
   newUserSchema,
+  servingSizeSchema,
 } from '@open-calorie-tracker/shared'
-import { eq, sql } from 'drizzle-orm'
+import { eq } from 'drizzle-orm'
 import { hashPassword } from '../auth/password.js'
+import { sourceIdOf } from '../food-entries/food-entries.service.js'
+import { ServingSizesService } from '../serving-sizes/serving-sizes.service.js'
 import { DailyGoalsService } from '../settings/daily-goals/daily-goals.service.js'
 import { normalizeUsername } from '../users/users.service.js'
 import type { Database } from './database.js'
-import {
-  type FoodSource,
-  foodEntries,
-  foodSources,
-  servingSizes,
-  users,
-  waterEntries,
-} from './schema.js'
+import { type FoodSource, foodEntries, users, waterEntries } from './schema.js'
 
 export type SeedUser = { username: string; password: string }
 
@@ -57,27 +53,23 @@ const userIdOf = async (database: Database, username: string) => {
   return user.id
 }
 
-// Reuses the serving size when another entry already has the same text.
-const servingSizeIdOf = async (database: Database, name: string) =>
-  (
-    await database.db
-      .insert(servingSizes)
-      .values({ name })
-      .onConflictDoUpdate({ target: servingSizes.name, set: { name } })
-      .returning({ id: servingSizes.id })
-      .get()
-  ).id
-
+// The serving size follows the same rules as the API and is added to the user's, or reused when
+// they already have it regardless of case.
 export const seedFoodEntry = async (
   database: Database,
   { username, servingSize, source = 'manual', ...entry }: SeedFoodEntry,
 ) => {
+  const input = parseOrThrow(servingSizeSchema.safeParse({ name: servingSize }))
+  const userId = await userIdOf(database, username)
+  const { servingSize: stored } = await new ServingSizesService(database).findOrCreate(
+    userId,
+    input,
+  )
   await database.db.insert(foodEntries).values({
     ...entry,
-    userId: await userIdOf(database, username),
-    servingSizeId: await servingSizeIdOf(database, servingSize),
-    // The migration adds every source, so the lookup always finds one.
-    sourceId: sql<number>`(SELECT ${foodSources.id} FROM ${foodSources} WHERE ${foodSources.name} = ${source})`,
+    userId,
+    servingSizeId: stored.id,
+    sourceId: sourceIdOf(source),
   })
 }
 

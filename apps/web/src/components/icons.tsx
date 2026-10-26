@@ -55,7 +55,12 @@ export function PlusIcon({ className }: IconProps) {
   )
 }
 
-export function ChevronIcon({ direction, className }: IconProps & { direction: 'left' | 'right' }) {
+const CHEVRONS = { left: 'M15 6l-6 6 6 6', right: 'M9 6l6 6-6 6', down: 'M6 9l6 6 6-6' }
+
+export function ChevronIcon({
+  direction,
+  className,
+}: IconProps & { direction: keyof typeof CHEVRONS }) {
   return (
     <svg
       viewBox="0 0 24 24"
@@ -67,7 +72,7 @@ export function ChevronIcon({ direction, className }: IconProps & { direction: '
       className={className}
       aria-hidden
     >
-      <path d={direction === 'left' ? 'M15 6l-6 6 6 6' : 'M9 6l6 6-6 6'} />
+      <path d={CHEVRONS[direction]} />
     </svg>
   )
 }
@@ -121,6 +126,23 @@ export function InfoIcon({ className }: IconProps) {
     >
       <circle cx="12" cy="12" r="9" />
       <path d="M12 11v5m0-8h.01" />
+    </svg>
+  )
+}
+
+export function CheckIcon({ label, className }: IconProps) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      {...a11y(label)}
+    >
+      <path d="M5 12.5l4.5 4.5L19 7.5" />
     </svg>
   )
 }
