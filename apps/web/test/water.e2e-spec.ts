@@ -14,11 +14,12 @@ import {
 } from 'playwright'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vite-plus/test'
 import type { Database } from '../../api/src/db/database'
-import { MOBILE, box, eventually, textOf } from './browser'
+import { MOBILE, box, eventually, holdRequests, isHidden, textOf } from './browser'
 import { deleteWaterEntry } from './database'
 import {
   homePage,
   minutesIntoToday,
+  openLog,
   seedFoodEntry,
   seedWaterEntry,
   storedWaterEntries,
@@ -26,7 +27,7 @@ import {
 } from './daily-log'
 import { clearFault, injectFault, receivedRequests } from './fault-proxy'
 import { SEEDED, signAccessToken } from './fixtures'
-import { connectDatabase, setSessionCookie, signedInPage } from './session'
+import { connectDatabase, sendToRoute, setSessionCookie, signedInPage } from './session'
 
 const { proxyUrl: PROXY_URL, webUrl: WEB_URL } = SEEDED
 
@@ -80,12 +81,6 @@ describe('Water (e2e)', () => {
   const seedWater = (amount: number, loggedAt = FIRST) =>
     seedWaterEntry(database, { username, loggedAt, amount })
 
-  // Uses the real clock, unlike openHome: entries the page creates get the API's real time.
-  const openLog = async () => {
-    await page.goto(`${WEB_URL}/`)
-    await expect.poll(() => home.summary('Calories').isVisible(), eventually).toBe(true)
-  }
-
   const addButton = () => page.getByRole('button', { name: 'Add water' })
   const addDialog = () => page.getByRole('dialog', { name: 'Add water' })
   const editDialog = () => page.getByRole('dialog', { name: 'Edit water' })
@@ -107,16 +102,14 @@ describe('Water (e2e)', () => {
   const entryTexts = async () => (await home.entries().allInnerTexts()).map(normalize)
   const normalize = (text: string) => text.replaceAll(/\s+/g, ' ').trim()
 
-  const isHidden = (locator: Locator) => async () => !(await locator.isVisible())
-
   const openAddDialog = async () => {
-    await openLog()
+    await openLog(page)
     await addButton().click()
     await expect.poll(() => addDialog().isVisible(), eventually).toBe(true)
   }
 
   const openEditDialog = async (amount = '16', loggedAt = FIRST) => {
-    await openLog()
+    await openLog(page)
     await entryButton(amount, loggedAt).click()
     await expect.poll(() => editDialog().isVisible(), eventually).toBe(true)
   }
@@ -133,17 +126,7 @@ describe('Water (e2e)', () => {
     waterRequests.filter((request) => request.startsWith(`${method} `))
 
   // Holds the page's requests to the water routes until released.
-  const holdWaterRequests = async () => {
-    let release = () => {}
-    const released = new Promise<void>((resolve) => {
-      release = resolve
-    })
-    await page.route('**/api/water-entries**', async (route) => {
-      await released
-      await route.continue()
-    })
-    return release
-  }
+  const holdWaterRequests = () => holdRequests(page, '**/api/water-entries**')
 
   describe('the water dialog', () => {
     it('opens from "Add water" with the presets and the amount field', async () => {
@@ -258,7 +241,7 @@ describe('Water (e2e)', () => {
       })
       await seedWater(DEFAULT_DAILY_GOALS.water + 8, SECOND)
 
-      await openLog()
+      await openLog(page)
 
       expect(await home.progress('Calories').getAttribute('data-over-goal')).toBe('true')
       expect(await home.progress('Water').getAttribute('data-over-goal')).toBe('false')
@@ -461,7 +444,7 @@ describe('Water (e2e)', () => {
         `${timeLabel(FIRST)} Water 20.5 fl oz`,
       ]
       await expect.poll(entryTexts, eventually).toEqual(expected)
-      await openLog()
+      await openLog(page)
       await expect.poll(entryTexts, eventually).toEqual(expected)
     })
 
@@ -508,7 +491,7 @@ describe('Water (e2e)', () => {
 
     it('asks to delete a "water entry" when the amount matches no preset', async () => {
       await seedWater(12, SECOND)
-      await openLog()
+      await openLog(page)
       await entryButton('12', SECOND).click()
 
       await button(editDialog(), 'Delete').click()
@@ -532,7 +515,7 @@ describe('Water (e2e)', () => {
       const expected = [`${timeLabel(SECOND)} Water 8 fl oz`]
       await expect.poll(entryTexts, eventually).toEqual(expected)
       expect(await waterSummary()).toContain(ofGoal(8))
-      await openLog()
+      await openLog(page)
       await expect.poll(entryTexts, eventually).toEqual(expected)
     })
 
@@ -559,17 +542,8 @@ describe('Water (e2e)', () => {
   })
 
   describe('the /api/water-entries routes', () => {
-    // Calls the route the way the page does, with the session cookie unless it is null.
-    const send = (method: string, path: string, body?: object, cookie: string | null = token) => {
-      const headers: Record<string, string> = {}
-      const init: RequestInit = { method, headers, redirect: 'manual' }
-      if (cookie !== null) headers['Cookie'] = `access_token=${cookie}`
-      if (body !== undefined) {
-        headers['Content-Type'] = 'application/json'
-        init.body = JSON.stringify(body)
-      }
-      return fetch(`${WATER_ENTRIES_URL}${path}`, init)
-    }
+    const send = (method: string, path: string, body?: object, cookie: string | null = token) =>
+      sendToRoute(`${WATER_ENTRIES_URL}${path}`, method, cookie, body)
 
     const seededId = async () => {
       await seedWater(16)
@@ -783,7 +757,7 @@ describe('Water (e2e)', () => {
       ],
     ])('goes to the login page when the session expired before %s', async (_case, act) => {
       await seedWater(16)
-      await openLog()
+      await openLog(page)
       await setSessionCookie(context, await signAccessToken(Math.floor(Date.now() / 1000) - 60))
 
       await act()
@@ -844,7 +818,7 @@ describe('Water (e2e)', () => {
     }
 
     it('opens Add water as a bottom sheet with large presets and a decimal keypad', async () => {
-      await openLog()
+      await openLog(page)
 
       await addButton().tap()
 
@@ -853,7 +827,7 @@ describe('Water (e2e)', () => {
 
     it('opens Edit water as a bottom sheet', async () => {
       await seedWater(16)
-      await openLog()
+      await openLog(page)
 
       await entryButton('16', FIRST).tap()
 

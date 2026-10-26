@@ -61,3 +61,15 @@ export const signedInPage = async (
   const token = await logIn(context, username)
   return { context, page, username, token }
 }
+
+// Calls a Next.js route the way the page does, with the session cookie unless it is null.
+export const sendToRoute = (url: string, method: string, cookie: string | null, body?: object) => {
+  const headers: Record<string, string> = {}
+  const init: RequestInit = { method, headers, redirect: 'manual' }
+  if (cookie !== null) headers['Cookie'] = `access_token=${cookie}`
+  if (body !== undefined) {
+    headers['Content-Type'] = 'application/json'
+    init.body = JSON.stringify(body)
+  }
+  return fetch(url, init)
+}

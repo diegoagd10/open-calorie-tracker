@@ -1,4 +1,9 @@
-import { MAX_DAILY_GOAL, PASSWORD_MIN_LENGTH } from '@open-calorie-tracker/shared'
+import {
+  MAX_DAILY_GOAL,
+  MAX_SERVING_SIZE_LENGTH,
+  PASSWORD_MIN_LENGTH,
+  servingSizeSchema,
+} from '@open-calorie-tracker/shared'
 import { afterEach, beforeEach, describe, expect, it } from 'vite-plus/test'
 import { Database } from './database.js'
 import { foodSources, servingSizes } from './schema.js'
@@ -73,19 +78,63 @@ describe('seedFoodEntry', () => {
   const storedEntries = () =>
     database.db.query.foodEntries.findMany({ columns: { servingSizeId: true, sourceId: true } })
 
-  it('stores each serving size text once, shared by every entry that uses it', async () => {
-    await seedFoodEntry(database, entry())
-    await seedFoodEntry(database, entry({ name: 'Manzana' }))
-    await seedFoodEntry(database, entry({ name: 'Leche', servingSize: '1 cup' }))
+  const storedServingSizes = async () =>
+    (await database.db.select().from(servingSizes)).map(({ id, userId, name }) => ({
+      id,
+      userId,
+      name,
+    }))
 
-    const sizes = await database.db.select().from(servingSizes)
-    expect(sizes.map((size) => size.name).sort()).toEqual(['1 cup', '1 serving'])
-    const idOf = (name: string) => sizes.find((size) => size.name === name)?.id
-    expect((await storedEntries()).map((stored) => stored.servingSizeId)).toEqual([
-      idOf('1 serving'),
-      idOf('1 serving'),
-      idOf('1 cup'),
+  const userIdOf = async (username: string) =>
+    (
+      await database.db.query.users.findFirst({
+        where: (table, { eq }) => eq(table.username, username),
+      })
+    )?.id
+
+  it("adds the serving size to the user's own and reuses it regardless of case", async () => {
+    await seedFoodEntry(database, entry())
+    await seedFoodEntry(database, entry({ name: 'Manzana', servingSize: '1 SERVING' }))
+    await seedFoodEntry(database, entry({ name: 'Leche', servingSize: '  1   cup ' }))
+
+    const anaId = await userIdOf('ana')
+    const sizes = await storedServingSizes()
+    expect(sizes.map(({ userId, name }) => ({ userId, name }))).toEqual([
+      { userId: anaId, name: '1 serving' },
+      { userId: anaId, name: '1 cup' },
     ])
+    expect((await storedEntries()).map((stored) => stored.servingSizeId)).toEqual([
+      sizes[0]?.id,
+      sizes[0]?.id,
+      sizes[1]?.id,
+    ])
+  })
+
+  it('gives each user their own serving size for the same text', async () => {
+    await seedUser(database, { username: 'bob', password: PASSWORD })
+
+    await seedFoodEntry(database, entry())
+    await seedFoodEntry(database, entry({ username: 'bob' }))
+
+    const sizes = await storedServingSizes()
+    expect(sizes.map(({ userId, name }) => ({ userId, name }))).toEqual([
+      { userId: await userIdOf('ana'), name: '1 serving' },
+      { userId: await userIdOf('bob'), name: '1 serving' },
+    ])
+  })
+
+  // The seed follows the same rules as the API, so it never stores a serving size the user could
+  // not have saved.
+  it.each([
+    ['a blank serving size', '   '],
+    ['a serving size that is too long', 'a'.repeat(MAX_SERVING_SIZE_LENGTH + 1)],
+  ])('rejects %s with the message of the API and stores nothing', async (_case, servingSize) => {
+    const apiError = servingSizeSchema.safeParse({ name: servingSize }).error?.issues[0]?.message
+    expect(apiError).toEqual(expect.any(String))
+
+    await expect(seedFoodEntry(database, entry({ servingSize }))).rejects.toThrow(apiError)
+    expect(await storedEntries()).toEqual([])
+    expect(await storedServingSizes()).toEqual([])
   })
 
   it('stores the entry as manual when no source is given', async () => {

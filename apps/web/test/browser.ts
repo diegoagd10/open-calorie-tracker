@@ -1,4 +1,4 @@
-import type { Browser, BrowserContextOptions, Locator } from 'playwright'
+import type { Browser, BrowserContextOptions, Locator, Page } from 'playwright'
 
 export const TIME_ZONE = 'America/New_York'
 
@@ -36,4 +36,20 @@ export const sameRow = async (a: Locator, b: Locator) => {
   const first = await box(a)
   const second = await box(b)
   return second.y < first.y + first.height && second.y + second.height > first.y
+}
+
+export const isHidden = (locator: Locator) => async () => !(await locator.isVisible())
+
+// Holds the page's requests to the routes matching the pattern until released, e.g. to look at a
+// form while its request is in flight. With a method, other requests go through at once.
+export const holdRequests = async (page: Page, pattern: string, method?: string) => {
+  let release = () => {}
+  const released = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  await page.route(pattern, async (route) => {
+    if (method === undefined || route.request().method() === method) await released
+    await route.continue()
+  })
+  return release
 }

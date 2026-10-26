@@ -2,7 +2,8 @@ import type { Page } from 'playwright'
 import { dayRange } from '../../api/src/daily-log/day'
 import type { Database } from '../../api/src/db/database'
 import { seedDailyGoals, seedFoodEntry, seedWaterEntry } from '../../api/src/db/seed'
-import { TIME_ZONE } from './browser'
+import { expect } from 'vite-plus/test'
+import { TIME_ZONE, eventually } from './browser'
 import { receivedRequests } from './fault-proxy'
 import { SEEDED } from './fixtures'
 
@@ -29,16 +30,37 @@ export const timeLabel = (instant: Date) =>
     .format(instant)
     .replaceAll(/\s/g, ' ')
 
-// The user's water entries as stored, oldest first.
-export const storedWaterEntries = async (database: Database, username: string) => {
+const userIdOf = async (database: Database, username: string) => {
   const user = await database.db.query.users.findFirst({
     where: (table, { eq }) => eq(table.username, username),
   })
   if (user === undefined) throw new Error(`No user named "${username}"`)
+  return user.id
+}
+
+// The user's water entries as stored, oldest first.
+export const storedWaterEntries = async (database: Database, username: string) => {
+  const userId = await userIdOf(database, username)
   return database.db.query.waterEntries.findMany({
-    where: (table, { eq }) => eq(table.userId, user.id),
+    where: (table, { eq }) => eq(table.userId, userId),
     orderBy: (table, { asc }) => asc(table.loggedAt),
   })
+}
+
+// The user's food entries as stored, oldest first.
+export const storedFoodEntries = async (database: Database, username: string) => {
+  const userId = await userIdOf(database, username)
+  return database.db.query.foodEntries.findMany({
+    where: (table, { eq }) => eq(table.userId, userId),
+    orderBy: (table, { asc }) => asc(table.loggedAt),
+  })
+}
+
+// Opens the home page on the real clock, unlike openHome, so entries the page creates get the API's
+// real time, and waits for the log.
+export const openLog = async (page: Page) => {
+  await page.goto(`${WEB_URL}/`)
+  await expect.poll(() => homePage(page).summary('Calories').isVisible(), eventually).toBe(true)
 }
 
 // Fixes the browser clock and opens the home page.
