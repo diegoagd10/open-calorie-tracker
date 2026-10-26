@@ -2,14 +2,26 @@
 
 import { GENERIC_ERROR_MESSAGE } from '@open-calorie-tracker/shared'
 import Link from 'next/link'
+import { useState } from 'react'
 import { Alert } from '@/components/alert'
 import { AppHeader } from '@/components/app-header'
-import { InfoIcon, KeyIcon, PlusIcon } from '@/components/icons'
+import { CheckIcon, KeyIcon, PlusIcon } from '@/components/icons'
 import { useLogOut } from '@/components/use-log-out'
+import { ChangePasswordDialog } from './change-password-dialog'
 import { DailyGoalsSection } from './daily-goals'
-import { DISABLED_BUTTON, INPUT, Section } from './section'
+import { DISABLED_BUTTON, INPUT, SECONDARY_BUTTON, Section } from './section'
 
+// The username is not loaded yet; the password can be changed from a dialog.
 function Profile() {
+  const [dialogOpen, setDialogOpen] = useState(false)
+  // Until the dialog opens again or the page reloads.
+  const [changed, setChanged] = useState(false)
+
+  const openDialog = () => {
+    setChanged(false)
+    setDialogOpen(true)
+  }
+
   return (
     <Section id="profile" title="Profile" description="Your username and password.">
       <div className="flex flex-col gap-1.5 p-4 sm:p-5">
@@ -21,12 +33,30 @@ function Profile() {
       <div className="mx-4 flex flex-col gap-3 border-t border-line py-4 sm:mx-5 sm:flex-row sm:items-center sm:justify-between sm:py-5">
         <div>
           <p className="text-sm font-medium">Password</p>
-          <p className="text-sm text-muted">Used to log in on this server.</p>
+          <output aria-live="polite" className="block text-sm text-muted">
+            {changed ? (
+              <span className="flex items-center gap-1.5 text-accent-text">
+                <CheckIcon className="size-4 shrink-0" />
+                Password changed.
+              </span>
+            ) : (
+              'Used to log in on this server.'
+            )}
+          </output>
         </div>
-        <button type="button" disabled className={DISABLED_BUTTON}>
+        <button type="button" onClick={openDialog} className={SECONDARY_BUTTON}>
           Change password
         </button>
       </div>
+      {dialogOpen && (
+        <ChangePasswordDialog
+          onClose={() => setDialogOpen(false)}
+          onChanged={() => {
+            setDialogOpen(false)
+            setChanged(true)
+          }}
+        />
+      )}
     </Section>
   )
 }
@@ -54,7 +84,7 @@ function ApiKeys() {
   )
 }
 
-// Where the profile, daily goals and API keys are managed. Only the daily goals can be changed yet.
+// Where the profile, daily goals and API keys are managed. API keys cannot be managed yet.
 export function Settings() {
   const logOut = useLogOut()
 
@@ -69,15 +99,7 @@ export function Settings() {
         </Link>
       </AppHeader>
       <main className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 py-6 sm:px-8 sm:py-8">
-        <div className="flex flex-col gap-3">
-          <h1 className="font-serif text-[40px] leading-none tracking-tight sm:text-5xl">
-            Settings
-          </h1>
-          <p className="flex items-center gap-2 text-sm text-muted">
-            <InfoIcon className="size-4 shrink-0" />
-            Changing these settings isn’t available yet.
-          </p>
-        </div>
+        <h1 className="font-serif text-[40px] leading-none tracking-tight sm:text-5xl">Settings</h1>
         {logOut.failed && <Alert>{GENERIC_ERROR_MESSAGE}</Alert>}
         <Profile />
         <DailyGoalsSection />

@@ -38,9 +38,13 @@ const passOn = async (upstream: Response) => {
 }
 
 // Relays a call the API authenticates with the session token. Without a session the page gets
-// 401 and the API is not called.
-export const relayWithSession = async (send: (token: string) => Promise<Response>) => {
+// 401 and the API is not called. `alsoForwarded` adds statuses a page explains on its own.
+export const relayWithSession = async (
+  send: (token: string) => Promise<Response>,
+  alsoForwarded: readonly number[] = [],
+) => {
   const token = await sessionToken()
   if (token === undefined) return status(401)
-  return relay(() => send(token), SESSION_FORWARDED_STATUSES, passOn)
+  const forwarded = new Set([...SESSION_FORWARDED_STATUSES, ...alsoForwarded])
+  return relay(() => send(token), forwarded, passOn)
 }

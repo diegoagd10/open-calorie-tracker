@@ -11,7 +11,7 @@ import {
 import { useState } from 'react'
 import { Alert } from '@/components/alert'
 import { GOALS } from '@/components/goals'
-import { INPUT, Section } from './section'
+import { INPUT, PRIMARY_BUTTON, Section } from './section'
 import { useDailyGoals } from './use-daily-goals'
 
 type GoalKey = keyof DailyGoals
@@ -26,9 +26,6 @@ const goalIn = (value: string) => {
   const goal = Number(value)
   return value === '' || goal < 1 ? undefined : goal
 }
-
-const BUTTON =
-  'flex h-10 w-full items-center justify-center gap-2 rounded-full bg-accent px-5 text-sm font-semibold text-on-accent transition hover:brightness-110 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:bg-disabled disabled:text-on-disabled disabled:hover:brightness-100 sm:w-auto'
 
 // The goals the Food Log measures each day against. Save sends only the goals that changed.
 export function DailyGoalsSection() {
@@ -125,7 +122,7 @@ export function DailyGoalsSection() {
         </div>
         <div className="flex items-center justify-end gap-3 border-t border-line p-4 sm:px-5">
           {saved && <p className="text-sm text-muted">Daily goals saved.</p>}
-          <button type="submit" disabled={!canSave} className={BUTTON}>
+          <button type="submit" disabled={!canSave} className={PRIMARY_BUTTON}>
             {saving ? 'Saving…' : 'Save'}
           </button>
         </div>

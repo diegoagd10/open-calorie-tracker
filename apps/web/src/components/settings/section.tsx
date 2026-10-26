@@ -3,6 +3,13 @@ import type { ReactNode } from 'react'
 export const INPUT =
   'h-11 w-full min-w-0 rounded-xl border border-line bg-bg px-3.5 text-fg-soft disabled:cursor-not-allowed'
 
+const BUTTON =
+  'flex h-10 w-full items-center justify-center gap-2 rounded-full px-5 text-sm font-semibold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed sm:w-auto'
+
+export const PRIMARY_BUTTON = `${BUTTON} bg-accent text-on-accent hover:brightness-110 disabled:bg-disabled disabled:text-on-disabled disabled:hover:brightness-100`
+
+export const SECONDARY_BUTTON = `${BUTTON} border border-line-strong bg-bg disabled:opacity-60`
+
 export const DISABLED_BUTTON =
   'flex h-10 w-full items-center justify-center gap-2 rounded-full bg-disabled px-5 text-sm font-semibold text-on-disabled sm:w-auto'
 

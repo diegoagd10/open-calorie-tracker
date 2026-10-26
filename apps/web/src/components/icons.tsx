@@ -194,3 +194,11 @@ export function MinusIcon(props: IconProps) {
     </OutlineIcon>
   )
 }
+
+export function CheckIcon(props: IconProps) {
+  return (
+    <OutlineIcon {...props}>
+      <path d="M5 12.5l4.5 4.5L19 7.5" />
+    </OutlineIcon>
+  )
+}
