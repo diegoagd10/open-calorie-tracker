@@ -171,31 +171,31 @@ export function AddFoodDialog({ total, goal, onClose, onAdded }: AddFoodDialogPr
               <span id={servingsLabelId} className="text-sm font-medium">
                 Servings
               </span>
-              <fieldset
-                aria-labelledby={servingsLabelId}
-                className="m-0 flex h-12 min-w-0 items-center rounded-full border border-line-strong bg-bg p-0"
-              >
-                <button
-                  type="button"
-                  aria-label="Fewer servings"
-                  disabled={pending || !canRemoveServing(servings)}
-                  onClick={() => setServings(removeServing(servings))}
-                  className={STEPPER}
-                >
-                  <MinusIcon className="size-[18px]" />
-                </button>
-                <span aria-live="polite" className="min-w-9 text-center font-serif text-[22px]">
-                  {formatNumber(servings)}
-                </span>
-                <button
-                  type="button"
-                  aria-label="More servings"
-                  disabled={pending || !canAddServing(servings)}
-                  onClick={() => setServings(addServing(servings))}
-                  className={STEPPER}
-                >
-                  <PlusIcon className="size-[18px]" />
-                </button>
+              {/* The fieldset only groups; it doesn't stretch its content, so the pill is a div. */}
+              <fieldset aria-labelledby={servingsLabelId} className="m-0 min-w-0 border-0 p-0">
+                <div className="flex h-12 items-center rounded-full border border-line-strong bg-bg">
+                  <button
+                    type="button"
+                    aria-label="Fewer servings"
+                    disabled={pending || !canRemoveServing(servings)}
+                    onClick={() => setServings(removeServing(servings))}
+                    className={STEPPER}
+                  >
+                    <MinusIcon className="size-[18px]" />
+                  </button>
+                  <span aria-live="polite" className="min-w-9 text-center font-serif text-[22px]">
+                    {formatNumber(servings)}
+                  </span>
+                  <button
+                    type="button"
+                    aria-label="More servings"
+                    disabled={pending || !canAddServing(servings)}
+                    onClick={() => setServings(addServing(servings))}
+                    className={STEPPER}
+                  >
+                    <PlusIcon className="size-[18px]" />
+                  </button>
+                </div>
               </fieldset>
             </div>
           }

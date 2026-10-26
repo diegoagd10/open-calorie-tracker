@@ -93,45 +93,44 @@ export function ServingSizeField({
         {aside}
       </div>
       {listShown && (
-        <fieldset
-          id={listId}
-          aria-label="Serving sizes"
-          className="m-0 flex max-h-60 min-w-0 flex-col gap-0.5 overflow-y-auto rounded-[14px] border border-line-strong bg-bg p-1.5"
-        >
-          <p className="px-2.5 pt-1.5 pb-1 text-xs text-muted">
-            {matches.length === 0 ? 'No saved serving size matches' : 'Matching serving sizes'}
-          </p>
-          {matches.map((servingSize) => {
-            const selected = servingSize.id === exact?.id
-            return (
+        // The fieldset only groups; it doesn't stretch or scroll its content well, so the box is a div.
+        <fieldset id={listId} aria-label="Serving sizes" className="m-0 min-w-0 border-0 p-0">
+          <div className="flex max-h-60 flex-col gap-0.5 overflow-y-auto rounded-[14px] border border-line-strong bg-bg p-1.5">
+            <p className="px-2.5 pt-1.5 pb-1 text-xs text-muted">
+              {matches.length === 0 ? 'No saved serving size matches' : 'Matching serving sizes'}
+            </p>
+            {matches.map((servingSize) => {
+              const selected = servingSize.id === exact?.id
+              return (
+                <button
+                  key={servingSize.id}
+                  type="button"
+                  onClick={() => pick(servingSize.name)}
+                  className={`flex min-h-11 items-center gap-2.5 rounded-[10px] px-2.5 text-left ${
+                    selected ? 'bg-food-soft' : ''
+                  }`}
+                >
+                  <span className="min-w-0 flex-1">{servingSize.name}</span>
+                  {selected && <CheckIcon label="Selected" className="size-[18px] text-accent" />}
+                </button>
+              )
+            })}
+            {exact === undefined && (
               <button
-                key={servingSize.id}
                 type="button"
-                onClick={() => pick(servingSize.name)}
-                className={`flex min-h-11 items-center gap-2.5 rounded-[10px] px-2.5 text-left ${
-                  selected ? 'bg-food-soft' : ''
-                }`}
+                onClick={() => pick(query)}
+                className="flex min-h-12 items-center gap-2.5 rounded-b-[10px] border-t border-line px-2.5 py-1 text-left text-accent-text"
               >
-                <span className="min-w-0 flex-1">{servingSize.name}</span>
-                {selected && <CheckIcon label="Selected" className="size-[18px] text-accent" />}
-              </button>
-            )
-          })}
-          {exact === undefined && (
-            <button
-              type="button"
-              onClick={() => pick(query)}
-              className="flex min-h-12 items-center gap-2.5 rounded-b-[10px] border-t border-line px-2.5 py-1 text-left text-accent-text"
-            >
-              <PlusIcon className="size-[18px] shrink-0" />
-              <span className="flex min-w-0 flex-1 flex-col">
-                <span className="font-semibold">Create “{query}”</span>
-                <span className="text-xs text-muted">
-                  Saved to your serving sizes when you add this food
+                <PlusIcon className="size-[18px] shrink-0" />
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span className="font-semibold">Create “{query}”</span>
+                  <span className="text-xs text-muted">
+                    Saved to your serving sizes when you add this food
+                  </span>
                 </span>
-              </span>
-            </button>
-          )}
+              </button>
+            )}
+          </div>
         </fieldset>
       )}
       {query !== '' && exact === undefined && !listShown && (
