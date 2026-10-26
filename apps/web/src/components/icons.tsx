@@ -130,26 +130,9 @@ export function InfoIcon({ className }: IconProps) {
   )
 }
 
-export function CheckIcon({ label, className }: IconProps) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={2}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={className}
-      {...a11y(label)}
-    >
-      <path d="M5 12.5l4.5 4.5L19 7.5" />
-    </svg>
-  )
-}
-
-// The outline icons below share one look: 24px grid, round 1.8px strokes, hidden from assistive
-// technology because a text label always sits next to them.
-function OutlineIcon({ className, children }: IconProps & { children: ReactNode }) {
+// The outline icons below share one look: 24px grid, round 1.8px strokes. They are hidden from
+// assistive technology unless given a label, since a text label usually sits next to them.
+function OutlineIcon({ label, className, children }: IconProps & { children: ReactNode }) {
   return (
     <svg
       viewBox="0 0 24 24"
@@ -159,7 +142,7 @@ function OutlineIcon({ className, children }: IconProps & { children: ReactNode 
       strokeLinecap="round"
       strokeLinejoin="round"
       className={className}
-      aria-hidden
+      {...a11y(label)}
     >
       {children}
     </svg>
@@ -213,6 +196,14 @@ export function MinusIcon(props: IconProps) {
   return (
     <OutlineIcon {...props}>
       <path d="M5 12h14" />
+    </OutlineIcon>
+  )
+}
+
+export function CheckIcon(props: IconProps) {
+  return (
+    <OutlineIcon {...props}>
+      <path d="M5 12.5l4.5 4.5L19 7.5" />
     </OutlineIcon>
   )
 }

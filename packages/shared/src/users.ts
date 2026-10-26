@@ -27,11 +27,13 @@ export const newUserSchema = z.object({
 
 export type NewUser = z.infer<typeof newUserSchema>
 
+export const PASSWORD_MISMATCH_MESSAGE = 'Passwords do not match'
+
 // Validated by the web form before calling the server, and again by the API.
 export const registerSchema = newUserSchema
   .extend({ confirmPassword: z.string() })
   .refine((input) => input.password === input.confirmPassword, {
-    message: 'Passwords do not match',
+    message: PASSWORD_MISMATCH_MESSAGE,
     path: ['confirmPassword'],
   })
 
