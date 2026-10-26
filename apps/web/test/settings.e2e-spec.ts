@@ -1,7 +1,10 @@
 import {
   DEFAULT_DAILY_GOALS,
   GENERIC_ERROR_MESSAGE,
+  INCORRECT_CURRENT_PASSWORD_MESSAGE,
   MAX_DAILY_GOAL,
+  PASSWORD_MAX_LENGTH,
+  PASSWORD_MIN_LENGTH,
 } from '@open-calorie-tracker/shared'
 import { type Browser, type BrowserContext, type Locator, type Page, chromium } from 'playwright'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vite-plus/test'
@@ -9,7 +12,7 @@ import type { Database } from '../../api/src/db/database'
 import { box, eventually, sameRow, textOf } from './browser'
 import { homePage, openHome, seedDailyGoals } from './daily-log'
 import { type Fault, clearFault, injectFault, receivedRequests } from './fault-proxy'
-import { INVALID_TOKENS, SEEDED, signAccessToken } from './fixtures'
+import { INVALID_TOKENS, SEEDED, SEED_USER, signAccessToken } from './fixtures'
 import { header } from './header'
 import { connectDatabase, sessionCookie, setSessionCookie, signedInPage } from './session'
 
@@ -20,6 +23,10 @@ const SETTINGS_URL = `${WEB_URL}/settings`
 const DAILY_GOALS_URL = `${WEB_URL}/api/daily-goals`
 
 const GOAL_ERROR = `Enter a number from 1 to ${MAX_DAILY_GOAL}`
+
+const SHORT_PASSWORD_ERROR = `Password must be at least ${PASSWORD_MIN_LENGTH} characters`
+const MISMATCH_ERROR = 'Passwords do not match'
+const SAME_PASSWORD_ERROR = 'New password must be different from the current password'
 
 const expiredToken = () => signAccessToken(Math.floor(Date.now() / 1000) - 60)
 
@@ -190,13 +197,15 @@ describe('Settings page (e2e)', () => {
   )
 
   describe('the sections', () => {
-    it('shows the notice under the title and the three sections in order', async () => {
+    it('shows the three sections in order, with no notice that changes are unavailable', async () => {
       await openSettings()
 
-      const notice = page
-        .getByRole('main')
-        .getByText('Changing these settings isn’t available yet.')
-      expect((await box(notice)).y).toBeGreaterThan((await box(settings.title())).y)
+      expect(
+        await page
+          .getByRole('main')
+          .getByText('Changing these settings isn’t available yet.')
+          .count(),
+      ).toBe(0)
       expect(await settings.sectionTitles().allTextContents()).toEqual([
         'Profile',
         'Daily goals',
@@ -207,7 +216,7 @@ describe('Settings page (e2e)', () => {
       }
     })
 
-    it('shows the profile with a disabled username and a disabled password button', async () => {
+    it('shows the profile with a disabled username and an enabled password button', async () => {
       await openSettings()
 
       const profile = settings.section('Profile')
@@ -217,7 +226,7 @@ describe('Settings page (e2e)', () => {
       expect(await usernameField.inputValue()).toBe('')
       expect(await profile.getByText('Password', { exact: true }).isVisible()).toBe(true)
       expect(await profile.getByText('Used to log in on this server.').isVisible()).toBe(true)
-      expect(await profile.getByRole('button', { name: 'Change password' }).isDisabled()).toBe(true)
+      expect(await profile.getByRole('button', { name: 'Change password' }).isEnabled()).toBe(true)
     })
 
     it('shows no API keys and a disabled Create API key button', async () => {
@@ -604,6 +613,399 @@ describe('Settings page (e2e)', () => {
         ]
 
         expect(statuses).toEqual([502, 502])
+      })
+    })
+  })
+
+  describe('changing the password', () => {
+    const PASSWORD_URL = `${WEB_URL}/api/password`
+    const CURRENT = SEED_USER.password
+    const NEW = 'new-password-1'
+
+    // The bodies of the page's PUT requests to the password route.
+    let passwordRequests: string[]
+
+    beforeEach(() => {
+      passwordRequests = []
+      page.on('request', (request) => {
+        if (request.url() === PASSWORD_URL && request.method() === 'PUT') {
+          passwordRequests.push(request.postData() ?? '')
+        }
+      })
+    })
+
+    const profile = () => settings.section('Profile')
+    const openButton = () => profile().getByRole('button', { name: 'Change password' })
+    const dialog = () => page.getByRole('dialog', { name: 'Change password' })
+    const field = (label: string) => dialog().getByLabel(label, { exact: true })
+    const current = () => field('Current password')
+    const next = () => field('New password')
+    const confirmation = () => field('Confirm new password')
+    const passwordFields = () => [current(), next(), confirmation()]
+    const submit = () => dialog().locator('button[type="submit"]')
+    const cancel = () => dialog().getByRole('button', { name: 'Cancel' })
+    const close = () => dialog().getByRole('button', { name: 'Close' })
+    const dialogAlert = () => dialog().getByRole('alert')
+    const usedToLogIn = () => profile().getByText('Used to log in on this server.')
+    const changed = () => profile().getByRole('status')
+
+    const openDialog = async () => {
+      await openSettings()
+      await openButton().click()
+      await expect.poll(() => dialog().isVisible(), eventually).toBe(true)
+    }
+
+    const fillPasswords = async (currentValue: string, newValue: string, confirmValue: string) => {
+      await current().fill(currentValue)
+      await next().fill(newValue)
+      await confirmation().fill(confirmValue)
+    }
+
+    const fieldValues = () => Promise.all(passwordFields().map((input) => input.inputValue()))
+
+    // Clicks outside the dialog, on its backdrop.
+    const clickBackdrop = () => page.mouse.click(5, 5)
+
+    // Holds the page's PUT requests to the password route until released.
+    const holdSaving = async () => {
+      let release = () => {}
+      const released = new Promise<void>((resolve) => {
+        release = resolve
+      })
+      await page.route(PASSWORD_URL, async (route) => {
+        await released
+        await route.continue()
+      })
+      return release
+    }
+
+    const changePassword = async () => {
+      await fillPasswords(CURRENT, NEW, NEW)
+      await submit().click()
+      await expect.poll(() => dialog().isVisible(), eventually).toBe(false)
+    }
+
+    describe('the dialog', () => {
+      it('opens with empty fields and a disabled Change password button', async () => {
+        await openDialog()
+
+        expect(
+          await dialog()
+            .getByText('Enter your current password, then choose a new one.')
+            .isVisible(),
+        ).toBe(true)
+        expect(await fieldValues()).toEqual(['', '', ''])
+        expect(await descriptionOf(next())).toBe(`At least ${PASSWORD_MIN_LENGTH} characters.`)
+        expect(await textOf(submit())).toBe('Change password')
+        expect(await submit().isDisabled()).toBe(true)
+        expect(await cancel().isVisible()).toBe(true)
+        expect(await close().isVisible()).toBe(true)
+      })
+
+      it('puts the focus on Current password', async () => {
+        await openDialog()
+
+        await expect
+          .poll(() => current().evaluate((input) => input === document.activeElement), eventually)
+          .toBe(true)
+      })
+
+      it.each([
+        ['Current password', 'current-password'],
+        ['New password', 'new-password'],
+        ['Confirm new password', 'new-password'],
+      ])('makes %s a password field with autocomplete %j', async (label, autocomplete) => {
+        await openDialog()
+
+        expect(await field(label).getAttribute('type')).toBe('password')
+        expect(await field(label).getAttribute('autocomplete')).toBe(autocomplete)
+      })
+
+      it.each([
+        ['clicking Cancel', () => cancel().click()],
+        ['clicking Close', () => close().click()],
+        ['pressing Escape', () => page.keyboard.press('Escape')],
+        ['clicking the backdrop', clickBackdrop],
+      ])('closes without sending anything on %s', async (_case, closeDialog) => {
+        await openDialog()
+        await fillPasswords(CURRENT, NEW, NEW)
+
+        await closeDialog()
+
+        await expect.poll(() => dialog().isVisible(), eventually).toBe(false)
+        expect(passwordRequests).toEqual([])
+      })
+
+      it('opens empty and without errors again after Cancel', async () => {
+        await openDialog()
+        await fillPasswords(CURRENT, 'short', 'short')
+        await submit().click()
+        await expect.poll(() => next().getAttribute('aria-invalid'), eventually).toBe('true')
+        await cancel().click()
+
+        await openButton().click()
+
+        expect(await fieldValues()).toEqual(['', '', ''])
+        expect(await next().getAttribute('aria-invalid')).not.toBe('true')
+        expect(await dialog().getByText(SHORT_PASSWORD_ERROR).count()).toBe(0)
+      })
+    })
+
+    describe('the form rules', () => {
+      it.each([
+        ['a', NEW, NEW, true],
+        ['a', 'short', 'short', true],
+        ['', NEW, NEW, false],
+        ['a', '', '', false],
+        ['a', NEW, '', false],
+        ['a', NEW, 'new-password-2', false],
+        ['a', NEW, `${NEW} `, false],
+      ])(
+        'with %j, %j and %j enables Change password: %s',
+        async (currentValue, newValue, confirmValue, enabled) => {
+          await openDialog()
+
+          await fillPasswords(currentValue, newValue, confirmValue)
+
+          expect(await submit().isEnabled()).toBe(enabled)
+        },
+      )
+
+      it.each([
+        ['typed', 'Current password'],
+        ['pasted', 'Current password'],
+        ['typed', 'New password'],
+        ['pasted', 'New password'],
+        ['typed', 'Confirm new password'],
+        ['pasted', 'Confirm new password'],
+      ])(`keeps the first ${PASSWORD_MAX_LENGTH} characters %s into %s`, async (action, label) => {
+        await openDialog()
+        const input = 'a'.repeat(PASSWORD_MAX_LENGTH + 1)
+
+        await field(label).focus()
+        if (action === 'typed') await field(label).pressSequentially(input)
+        else await page.keyboard.insertText(input)
+
+        expect(await field(label).inputValue()).toBe('a'.repeat(PASSWORD_MAX_LENGTH))
+      })
+
+      it(`rejects a new password shorter than ${PASSWORD_MIN_LENGTH} characters on submit`, async () => {
+        await openDialog()
+        await fillPasswords(CURRENT, 'short', 'short')
+
+        await submit().click()
+
+        expect(await next().getAttribute('aria-invalid')).toBe('true')
+        expect(await descriptionOf(next())).toContain(SHORT_PASSWORD_ERROR)
+        expect(passwordRequests).toEqual([])
+      })
+
+      it.each([
+        [NEW, 'new-password-2', true],
+        [NEW, 'new', true],
+        [NEW, NEW, false],
+        [NEW, '', false],
+        ['', NEW, false],
+      ])(
+        'with %j and %j shows the mismatch under Confirm new password: %s',
+        async (newValue, confirmValue, mismatch) => {
+          await openDialog()
+          await current().fill(CURRENT)
+
+          await next().fill(newValue)
+          await confirmation().fill(confirmValue)
+
+          expect((await confirmation().getAttribute('aria-invalid')) === 'true').toBe(mismatch)
+          expect(await dialog().getByText(MISMATCH_ERROR).count()).toBe(mismatch ? 1 : 0)
+          if (mismatch) {
+            expect(await descriptionOf(confirmation())).toContain(MISMATCH_ERROR)
+            expect(await submit().isDisabled()).toBe(true)
+          }
+        },
+      )
+
+      it('sends nothing when Enter is pressed with mismatched passwords', async () => {
+        await openDialog()
+        await fillPasswords(CURRENT, NEW, 'new-password-2')
+
+        await confirmation().press('Enter')
+
+        expect(await dialog().isVisible()).toBe(true)
+        expect(passwordRequests).toEqual([])
+      })
+
+      it('rejects a new password equal to the current one on submit', async () => {
+        await openDialog()
+        await fillPasswords(CURRENT, CURRENT, CURRENT)
+
+        await submit().click()
+
+        expect(await next().getAttribute('aria-invalid')).toBe('true')
+        expect(await descriptionOf(next())).toContain(SAME_PASSWORD_ERROR)
+        expect(passwordRequests).toEqual([])
+      })
+
+      it('clears the error of the field being edited', async () => {
+        await openDialog()
+        await fillPasswords(CURRENT, 'short', 'short')
+        await submit().click()
+        await expect.poll(() => next().getAttribute('aria-invalid'), eventually).toBe('true')
+
+        await next().press('x')
+
+        expect(await next().getAttribute('aria-invalid')).not.toBe('true')
+        expect(await dialog().getByText(SHORT_PASSWORD_ERROR).count()).toBe(0)
+      })
+    })
+
+    describe('submitting', () => {
+      it('sends the passwords, closes the dialog and confirms in the Profile', async () => {
+        await openDialog()
+
+        await changePassword()
+
+        expect(passwordRequests.map((body) => JSON.parse(body) as unknown)).toEqual([
+          { currentPassword: CURRENT, newPassword: NEW, confirmPassword: NEW },
+        ])
+        expect(await receivedRequests(PROXY_URL, username)).toContain('PUT /v1/settings/password')
+        expect(await textOf(changed())).toBe('Password changed.')
+        expect(await changed().getAttribute('aria-live')).toBe('polite')
+        expect(await usedToLogIn().isVisible()).toBe(false)
+        expect(page.url()).toBe(SETTINGS_URL)
+      })
+
+      it.each([
+        ['the dialog opens again', () => openButton().click()],
+        ['the page reloads', () => openSettings()],
+      ])('stops confirming the change once %s', async (_case, action) => {
+        await openDialog()
+        await changePassword()
+
+        await action()
+
+        await expect.poll(() => usedToLogIn().isVisible(), eventually).toBe(true)
+        expect(await profile().getByText('Password changed.').count()).toBe(0)
+      })
+
+      it('keeps the dialog open and marks Current password when it is wrong', async () => {
+        await openDialog()
+        await fillPasswords('wrong-password', NEW, NEW)
+
+        await submit().click()
+
+        await expect.poll(() => current().getAttribute('aria-invalid'), eventually).toBe('true')
+        expect(await descriptionOf(current())).toContain(INCORRECT_CURRENT_PASSWORD_MESSAGE)
+        expect(await dialog().isVisible()).toBe(true)
+        expect(await fieldValues()).toEqual(['wrong-password', NEW, NEW])
+      })
+
+      it('locks the dialog and shows Saving… while the password is saved', async () => {
+        await openDialog()
+        await fillPasswords(CURRENT, NEW, NEW)
+        const release = await holdSaving()
+
+        await submit().click()
+
+        await expect.poll(() => textOf(submit()), eventually).toBe('Saving…')
+        expect(await submit().isDisabled()).toBe(true)
+        for (const control of [...passwordFields(), cancel(), close()]) {
+          expect(await control.isDisabled()).toBe(true)
+        }
+        await page.keyboard.press('Escape')
+        await clickBackdrop()
+        expect(await dialog().isVisible()).toBe(true)
+        release()
+        await expect.poll(() => dialog().isVisible(), eventually).toBe(false)
+      })
+
+      it.each(API_FAILURES)(
+        'shows the generic error and keeps what was typed when the API %s',
+        async (_case, fault) => {
+          await openDialog()
+          await fillPasswords(CURRENT, NEW, NEW)
+          await injectFault(PROXY_URL, fault, username)
+
+          await submit().click()
+
+          await expect
+            .poll(() => dialogAlert().textContent(), eventually)
+            .toBe(GENERIC_ERROR_MESSAGE)
+          expect(await fieldValues()).toEqual([CURRENT, NEW, NEW])
+          for (const input of passwordFields()) {
+            expect(await input.isEnabled()).toBe(true)
+          }
+          expect(await submit().isEnabled()).toBe(true)
+        },
+      )
+
+      it('goes to the login page when the session expired before saving', async () => {
+        await openDialog()
+        await fillPasswords(CURRENT, NEW, NEW)
+        await setSessionCookie(context, await expiredToken())
+
+        await submit().click()
+
+        await page.waitForURL(`${WEB_URL}/login`)
+      })
+
+      it('shows the dialog as a bottom sheet and changes the password on a phone', async () => {
+        await page.setViewportSize({ width: 390, height: 844 })
+        await openDialog()
+
+        const sheet = await box(dialog())
+        expect(sheet.x).toBe(0)
+        expect(sheet.width).toBe(390)
+        expect(Math.round(sheet.y + sheet.height)).toBe(844)
+        await changePassword()
+        expect(await textOf(changed())).toBe('Password changed.')
+      })
+    })
+
+    describe('the /api/password route', () => {
+      // Calls the route the way the page does, with the session cookie unless it is null.
+      const send = (body: object, cookie: string | null = token) => {
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+        if (cookie !== null) headers['Cookie'] = `access_token=${cookie}`
+        return fetch(PASSWORD_URL, {
+          method: 'PUT',
+          headers,
+          body: JSON.stringify(body),
+          redirect: 'manual',
+        })
+      }
+
+      const CHANGE = { currentPassword: CURRENT, newPassword: NEW, confirmPassword: NEW }
+
+      it('forwards PUT to the API with the session token', async () => {
+        const response = await send(CHANGE)
+
+        expect(response.status).toBe(204)
+        expect(await receivedRequests(PROXY_URL, username)).toContain('PUT /v1/settings/password')
+      })
+
+      it('answers 401 without a session cookie and does not call the API', async () => {
+        const response = await send(CHANGE, null)
+
+        expect(response.status).toBe(401)
+        expect(await receivedRequests(PROXY_URL, username)).not.toContain(
+          'PUT /v1/settings/password',
+        )
+      })
+
+      it('forwards 400, 401 and 403 as they are', async () => {
+        const statuses = [
+          (await send({ ...CHANGE, confirmPassword: 'new-password-2' })).status,
+          (await send(CHANGE, await expiredToken())).status,
+          (await send({ ...CHANGE, currentPassword: 'wrong-password' })).status,
+        ]
+
+        expect(statuses).toEqual([400, 401, 403])
+      })
+
+      it.each(API_FAILURES)('answers 502 when the API %s', async (_case, fault) => {
+        await injectFault(PROXY_URL, fault, username)
+
+        expect((await send(CHANGE)).status).toBe(502)
       })
     })
   })
