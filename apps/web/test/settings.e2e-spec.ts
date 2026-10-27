@@ -14,13 +14,21 @@ import { homePage, openHome, seedDailyGoals } from './daily-log'
 import { type Fault, clearFault, injectFault, receivedRequests } from './fault-proxy'
 import { INVALID_TOKENS, SEEDED, SEED_USER, signAccessToken } from './fixtures'
 import { header } from './header'
-import { connectDatabase, sessionCookie, setSessionCookie, signedInPage } from './session'
+import {
+  connectDatabase,
+  sendToRoute,
+  sessionCookie,
+  setSessionCookie,
+  signedInPage,
+} from './session'
 
 const { proxyUrl: PROXY_URL, webUrl: WEB_URL } = SEEDED
 
 const SETTINGS_URL = `${WEB_URL}/settings`
 
 const DAILY_GOALS_URL = `${WEB_URL}/api/daily-goals`
+
+const PROFILE_URL = `${WEB_URL}/api/profile`
 
 const GOAL_ERROR = `Enter a number from 1 to ${MAX_DAILY_GOAL}`
 
@@ -59,6 +67,9 @@ const settingsPage = (page: Page) => ({
   save: () => page.getByRole('form', { name: 'Daily goals' }).getByRole('button'),
   // The section's Alert, apart from the role="alert" route announcer Next.js renders.
   goalsAlert: () => page.getByRole('region', { name: 'Daily goals' }).getByRole('alert'),
+  username: () => page.getByRole('region', { name: 'Profile' }).getByLabel('Username'),
+  // The section's Alert, apart from the role="alert" route announcer Next.js renders.
+  profileAlert: () => page.getByRole('region', { name: 'Profile' }).getByRole('alert'),
   goalsSaved: () =>
     page.getByRole('region', { name: 'Daily goals' }).getByText('Daily goals saved.'),
 })
@@ -216,17 +227,33 @@ describe('Settings page (e2e)', () => {
       }
     })
 
-    it('shows the profile with a disabled username and an enabled password button', async () => {
+    it('shows the profile with the username, not editable, and an enabled password button', async () => {
       await openSettings()
 
       const profile = settings.section('Profile')
       expect(await profile.getByText('Your username and password.').isVisible()).toBe(true)
-      const usernameField = profile.getByLabel('Username')
-      expect(await usernameField.isDisabled()).toBe(true)
-      expect(await usernameField.inputValue()).toBe('')
+      await expect.poll(() => settings.username().inputValue(), eventually).toBe(username)
+      expect(await settings.username().isDisabled()).toBe(true)
       expect(await profile.getByText('Password', { exact: true }).isVisible()).toBe(true)
       expect(await profile.getByText('Used to log in on this server.').isVisible()).toBe(true)
       expect(await profile.getByRole('button', { name: 'Change password' }).isEnabled()).toBe(true)
+    })
+
+    it('asks the web API only for the profile, the daily goals and the API keys', async () => {
+      const apiRequests: string[] = []
+      page.on('request', (request) => {
+        const { pathname } = new URL(request.url())
+        if (pathname.startsWith('/api/')) apiRequests.push(`${request.method()} ${pathname}`)
+      })
+
+      await page.goto(SETTINGS_URL, { waitUntil: 'networkidle' })
+
+      expect(await settings.title().isVisible()).toBe(true)
+      expect(apiRequests.sort()).toEqual([
+        'GET /api/api-keys',
+        'GET /api/daily-goals',
+        'GET /api/profile',
+      ])
     })
 
     it('shows no API keys and an enabled Create API key button', async () => {
@@ -245,6 +272,66 @@ describe('Settings page (e2e)', () => {
           .isVisible(),
       ).toBe(true)
       expect(await apiKeys.getByRole('button', { name: 'Create API key' }).isEnabled()).toBe(true)
+    })
+  })
+
+  describe('the username', () => {
+    const usernameIsEmptyAndDisabled = async () => {
+      expect(await settings.username().inputValue()).toBe('')
+      expect(await settings.username().isDisabled()).toBe(true)
+    }
+
+    it('shows the username field empty and disabled while it loads', async () => {
+      await injectFault(PROXY_URL, { delayMs: 3_000 }, username)
+
+      await page.goto(SETTINGS_URL)
+
+      await usernameIsEmptyAndDisabled()
+    })
+
+    it.each(API_FAILURES)(
+      'shows the generic error in the Profile and keeps the password button enabled when the API %s',
+      async (_case, fault) => {
+        await injectFault(PROXY_URL, fault, username)
+
+        await openSettings()
+
+        await expect
+          .poll(() => settings.profileAlert().textContent(), eventually)
+          .toBe(GENERIC_ERROR_MESSAGE)
+        await usernameIsEmptyAndDisabled()
+        expect(
+          await settings
+            .section('Profile')
+            .getByRole('button', { name: 'Change password' })
+            .isEnabled(),
+        ).toBe(true)
+      },
+    )
+
+    it('goes to the login page when the session expired before the username loads', async () => {
+      await page.route(PROFILE_URL, async (route) => {
+        await setSessionCookie(context, await expiredToken())
+        await route.fulfill({ status: 401 })
+      })
+
+      await page.goto(SETTINGS_URL)
+
+      await page.waitForURL(`${WEB_URL}/login`)
+    })
+
+    describe('the /api/profile route', () => {
+      it('forwards GET to the API with the session token', async () => {
+        const response = await sendToRoute(PROFILE_URL, 'GET', token)
+
+        expect(response.status).toBe(200)
+        expect(await response.json()).toEqual({ username })
+        expect(await receivedRequests(PROXY_URL, username)).toContain('GET /v1/settings/profile')
+      })
+
+      it('answers 401 without a session cookie', async () => {
+        expect((await sendToRoute(PROFILE_URL, 'GET', null)).status).toBe(401)
+      })
     })
   })
 
@@ -372,19 +459,6 @@ describe('Settings page (e2e)', () => {
         await page.goto(SETTINGS_URL)
 
         await page.waitForURL(`${WEB_URL}/login`)
-      })
-
-      it('asks the web API only for the daily goals and the API keys', async () => {
-        const apiRequests: string[] = []
-        page.on('request', (request) => {
-          const { pathname } = new URL(request.url())
-          if (pathname.startsWith('/api/')) apiRequests.push(`${request.method()} ${pathname}`)
-        })
-
-        await page.goto(SETTINGS_URL, { waitUntil: 'networkidle' })
-
-        expect(await settings.title().isVisible()).toBe(true)
-        expect(apiRequests.sort()).toEqual(['GET /api/api-keys', 'GET /api/daily-goals'])
       })
     })
 
