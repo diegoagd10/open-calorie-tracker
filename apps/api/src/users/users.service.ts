@@ -1,8 +1,14 @@
-import { ConflictException, ForbiddenException, Injectable } from '@nestjs/common'
+import {
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common'
 import {
   type ChangePasswordInput,
   INCORRECT_CURRENT_PASSWORD_MESSAGE,
   type NewUser,
+  type Profile,
 } from '@open-calorie-tracker/shared'
 import { eq, sql } from 'drizzle-orm'
 import { hashPassword, verifyPassword } from '../auth/password.js'
@@ -24,13 +30,24 @@ export class UsersService {
     })
   }
 
+  async findById(id: number): Promise<User | undefined> {
+    return this.database.db.query.users.findFirst({ where: eq(users.id, id) })
+  }
+
+  // A token can outlive its user, e.g. after a database reset, so a missing user is a 401.
+  async profileOf(id: number): Promise<Profile> {
+    const user = await this.findById(id)
+    if (user === undefined) throw new UnauthorizedException()
+    return { username: user.username }
+  }
+
   // Replaces the user's password once the current one proves it is them. Tokens already issued,
   // including the one making this request, stay valid until they expire.
   async changePassword(
     id: number,
     { currentPassword, newPassword }: ChangePasswordInput,
   ): Promise<void> {
-    const user = await this.database.db.query.users.findFirst({ where: eq(users.id, id) })
+    const user = await this.findById(id)
     if (user === undefined || !(await verifyPassword(currentPassword, user.passwordHash))) {
       throw new ForbiddenException(INCORRECT_CURRENT_PASSWORD_MESSAGE)
     }

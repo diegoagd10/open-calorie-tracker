@@ -11,9 +11,11 @@ import { ApiKeysSection } from './api-keys/api-keys-section'
 import { ChangePasswordDialog } from './change-password-dialog'
 import { DailyGoalsSection } from './daily-goals'
 import { INPUT, SECONDARY_BUTTON, Section } from './section'
+import { useProfile } from './use-profile'
 
-// The username is not loaded yet; the password can be changed from a dialog.
+// The username is shown but cannot be changed; the password can be changed from a dialog.
 function Profile() {
+  const { profile, failed } = useProfile()
   const [dialogOpen, setDialogOpen] = useState(false)
   // Until the dialog opens again or the page reloads.
   const [changed, setChanged] = useState(false)
@@ -25,11 +27,22 @@ function Profile() {
 
   return (
     <Section id="profile" title="Profile" description="Your username and password.">
+      {failed && (
+        <div className="px-4 pt-4 sm:px-5">
+          <Alert>{GENERIC_ERROR_MESSAGE}</Alert>
+        </div>
+      )}
       <div className="flex flex-col gap-1.5 p-4 sm:p-5">
         <label htmlFor="username" className="text-sm font-medium">
           Username
         </label>
-        <input id="username" type="text" disabled className={`${INPUT} sm:max-w-xs`} />
+        <input
+          id="username"
+          type="text"
+          disabled
+          value={profile?.username ?? ''}
+          className={`${INPUT} sm:max-w-xs`}
+        />
       </div>
       <div className="mx-4 flex flex-col gap-3 border-t border-line py-4 sm:mx-5 sm:flex-row sm:items-center sm:justify-between sm:py-5">
         <div>
