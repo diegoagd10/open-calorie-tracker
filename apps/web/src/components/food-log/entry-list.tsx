@@ -1,4 +1,4 @@
-import type { LogEntry, WaterLogEntry } from '@open-calorie-tracker/shared'
+import type { FoodLogEntry, LogEntry, WaterLogEntry } from '@open-calorie-tracker/shared'
 import { ChevronIcon, DropIcon, ForkKnifeIcon } from '@/components/icons'
 import { formatNumber, formatTime } from './format'
 
@@ -51,23 +51,29 @@ function EntryContent({ entry }: { entry: LogEntry }) {
   )
 }
 
-type EntryListProps = { entries: LogEntry[]; onOpenWater: (entry: WaterLogEntry) => void }
+type EntryListProps = {
+  entries: LogEntry[]
+  onOpenFood: (entry: FoodLogEntry) => void
+  onOpenWater: (entry: WaterLogEntry) => void
+}
 
-// Water entries open for editing; food entries cannot be changed yet.
-function Entry({ entry, onOpenWater }: { entry: LogEntry } & Pick<EntryListProps, 'onOpenWater'>) {
-  if (entry.type === 'food') {
-    return (
-      <li className={ROW}>
-        <EntryContent entry={entry} />
-      </li>
-    )
-  }
+// Every entry opens for editing.
+function Entry({
+  entry,
+  onOpenFood,
+  onOpenWater,
+}: { entry: LogEntry } & Pick<EntryListProps, 'onOpenFood' | 'onOpenWater'>) {
+  const time = formatTime(entry.loggedAt)
   return (
     <li>
       <button
         type="button"
-        aria-label={`Water, ${formatNumber(entry.amount)} fl oz, ${formatTime(entry.loggedAt)}`}
-        onClick={() => onOpenWater(entry)}
+        aria-label={
+          entry.type === 'food'
+            ? `${entry.name}, ${formatNumber(entry.calories)} kcal, ${time}`
+            : `Water, ${formatNumber(entry.amount)} fl oz, ${time}`
+        }
+        onClick={() => (entry.type === 'food' ? onOpenFood(entry) : onOpenWater(entry))}
         className={`${ROW} text-left`}
       >
         <EntryContent entry={entry} />
@@ -76,7 +82,7 @@ function Entry({ entry, onOpenWater }: { entry: LogEntry } & Pick<EntryListProps
   )
 }
 
-export function EntryList({ entries, onOpenWater }: EntryListProps) {
+export function EntryList({ entries, onOpenFood, onOpenWater }: EntryListProps) {
   if (entries.length === 0) {
     return (
       <div className="flex flex-col items-center gap-2 rounded-2xl border border-dashed border-line-strong px-6 py-10 text-center">
@@ -92,7 +98,12 @@ export function EntryList({ entries, onOpenWater }: EntryListProps) {
   return (
     <ul aria-label="Entries" className="flex flex-col gap-2">
       {entries.map((entry) => (
-        <Entry key={`${entry.type}-${entry.id}`} entry={entry} onOpenWater={onOpenWater} />
+        <Entry
+          key={`${entry.type}-${entry.id}`}
+          entry={entry}
+          onOpenFood={onOpenFood}
+          onOpenWater={onOpenWater}
+        />
       ))}
     </ul>
   )

@@ -26,3 +26,6 @@ export const saveServingSize = async (
 
 export const addFood = async (entry: FoodEntryInput): Promise<Outcome> =>
   (await sendRequest('POST', '/api/food-entries', entry)).outcome
+
+export const updateFood = async (id: number, entry: FoodEntryInput): Promise<Outcome> =>
+  (await sendRequest('PATCH', `/api/food-entries/${id}`, entry)).outcome

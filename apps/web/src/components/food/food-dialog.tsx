@@ -2,6 +2,7 @@
 
 import {
   type FoodEntryInput,
+  type FoodLogEntry,
   GENERIC_ERROR_MESSAGE,
   MAX_FOOD_NAME_LENGTH,
   type ServingSize,
@@ -16,7 +17,7 @@ import { ForkKnifeIcon, MinusIcon, PlusIcon } from '@/components/icons'
 import { Modal } from '@/components/modal'
 import type { Outcome } from '@/components/requests'
 import { useSubmission } from '@/components/use-submission'
-import { addFood, loadServingSizes, saveServingSize } from './food-requests'
+import { addFood, loadServingSizes, saveServingSize, updateFood } from './food-requests'
 import {
   NO_NUTRIENTS,
   NUTRIENT_FIELDS,
@@ -41,29 +42,56 @@ const INPUT_BOX =
 
 const STEPPER = 'flex h-full w-11 items-center justify-center disabled:opacity-40'
 
-type AddFoodDialogProps = {
-  // Today's calories so far and the daily goal, in kcal.
+type FoodDialogProps = {
+  // The entry to edit; without one the dialog adds a food.
+  entry?: FoodLogEntry
+  // Today's calories so far, including the entry, and the daily goal, in kcal.
   total: number
   goal: number
   onClose: () => void
-  onAdded: () => void
+  // Called once the food is saved, or the entry turned out to be gone.
+  onSaved: () => void
 }
 
-// Logs a food as its label prints it, per serving, times the servings eaten. Shows where the
-// entry would bring today's calories.
-export function AddFoodDialog({ total, goal, onClose, onAdded }: AddFoodDialogProps) {
+// "Add food" or "Save" until the form is complete, then the calories it saves.
+const submitLabel = (adding: boolean, complete: boolean, calories: number) => {
+  if (!complete) return adding ? 'Add food' : 'Save'
+  return `${adding ? 'Add' : 'Save'} ${formatNumber(calories)} kcal`
+}
+
+// A stored total, per serving again: 270 kcal over 1.5 servings is "180".
+const perServingText = (total: number | null, servings: number) =>
+  total === null ? '' : String(roundTenths(total / servings))
+
+// Logs a food as its label prints it, per serving, times the servings eaten, or edits a logged one.
+// Shows where the food would bring today's calories.
+export function FoodDialog({ entry, total, goal, onClose, onSaved }: FoodDialogProps) {
   const titleId = useId()
   const nameId = useId()
   const caloriesId = useId()
   const servingsLabelId = useId()
-  const [name, setName] = useState('')
-  const [servingSize, setServingSize] = useState('')
+  // What the entry holds, per serving, as the form shows it.
+  const [initial] = useState(() =>
+    entry === undefined
+      ? { name: '', servingSize: '', servings: 1, calories: '', nutrients: NO_NUTRIENTS }
+      : {
+          name: entry.name,
+          servingSize: entry.servingSize,
+          servings: entry.quantity,
+          calories: perServingText(entry.calories, entry.quantity),
+          nutrients: Object.fromEntries(
+            NUTRIENT_FIELDS.map(({ key }) => [key, perServingText(entry[key], entry.quantity)]),
+          ) as NutrientValues,
+        },
+  )
+  const [name, setName] = useState(initial.name)
+  const [servingSize, setServingSize] = useState(initial.servingSize)
   const [servingSizes, setServingSizes] = useState<ServingSize[]>([])
   const [listOpen, setListOpen] = useState(false)
-  const [servings, setServings] = useState(1)
-  const [calories, setCalories] = useState('')
-  const [nutrients, setNutrients] = useState<NutrientValues>(NO_NUTRIENTS)
-  const { pending, failed, submit } = useSubmission(onAdded)
+  const [servings, setServings] = useState(initial.servings)
+  const [calories, setCalories] = useState(initial.calories)
+  const [nutrients, setNutrients] = useState<NutrientValues>(initial.nutrients)
+  const { pending, failed, submit } = useSubmission(onSaved)
 
   useEffect(() => {
     let current = true
@@ -77,10 +105,23 @@ export function AddFoodDialog({ total, goal, onClose, onAdded }: AddFoodDialogPr
 
   const perServing = perServingValue(calories)
   const entryCalories = roundTenths((perServing ?? 0) * servings)
-  const after = roundTenths(total + entryCalories)
+  // Today without the entry being edited, which the new calories replace.
+  const others = roundTenths(total - (entry?.calories ?? 0))
+  const after = roundTenths(others + entryCalories)
   const over = after > goal
   const complete =
     name.trim() !== '' && normalizeServingSize(servingSize) !== '' && perServing !== undefined
+  // Whether the form says what the entry already holds, ignoring spaces around the text and the
+  // case of the serving size.
+  const unchanged =
+    entry !== undefined &&
+    name.trim() === initial.name &&
+    normalizeServingSize(servingSize).toLowerCase() === initial.servingSize.toLowerCase() &&
+    servings === initial.servings &&
+    perServing === perServingValue(initial.calories) &&
+    NUTRIENT_FIELDS.every(
+      ({ key }) => perServingValue(nutrients[key]) === perServingValue(initial.nutrients[key]),
+    )
 
   const close = () => !pending && onClose()
 
@@ -93,7 +134,7 @@ export function AddFoodDialog({ total, goal, onClose, onAdded }: AddFoodDialogPr
       chosen = saved.servingSize
       setServingSizes((current) => [...current, saved.servingSize as ServingSize])
     }
-    const entry: FoodEntryInput = {
+    const input: FoodEntryInput = {
       name: name.trim(),
       servingSizeId: chosen.id,
       quantity: servings,
@@ -101,9 +142,9 @@ export function AddFoodDialog({ total, goal, onClose, onAdded }: AddFoodDialogPr
     }
     for (const { key } of NUTRIENT_FIELDS) {
       const value = perServingValue(nutrients[key])
-      if (value !== undefined) entry[key] = value
+      if (value !== undefined) input[key] = value
     }
-    return addFood(entry)
+    return entry === undefined ? addFood(input) : updateFood(entry.id, input)
   }
 
   return (
@@ -112,13 +153,20 @@ export function AddFoodDialog({ total, goal, onClose, onAdded }: AddFoodDialogPr
         className="flex flex-col gap-5"
         onSubmit={(event) => {
           event.preventDefault()
-          if (complete) void submit(save)
+          if (!complete) return
+          // Nothing changed, so there is nothing to send.
+          if (unchanged) onClose()
+          else void submit(save)
         }}
       >
         <DialogHeader
           titleId={titleId}
-          title="Add food"
-          subtitle={`${formatNumber(total)} of ${formatNumber(goal)} kcal today · ${goalStatus(total, goal)}`}
+          title={entry === undefined ? 'Add food' : 'Edit food'}
+          subtitle={
+            entry === undefined
+              ? `${formatNumber(total)} of ${formatNumber(goal)} kcal today · ${goalStatus(total, goal)}`
+              : entry.name
+          }
           icon={
             <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-food-soft text-accent-text">
               <ForkKnifeIcon className="size-6" />
@@ -129,7 +177,7 @@ export function AddFoodDialog({ total, goal, onClose, onAdded }: AddFoodDialogPr
         />
         <div className="flex flex-col gap-2">
           <GoalBar
-            from={total}
+            from={others}
             to={after}
             goal={goal}
             fill="var(--accent)"
@@ -232,8 +280,8 @@ export function AddFoodDialog({ total, goal, onClose, onAdded }: AddFoodDialogPr
             Cancel
           </button>
           <button type="submit" disabled={pending || !complete} className={PRIMARY_BUTTON}>
-            <PlusIcon className="size-5" />
-            {complete ? `Add ${formatNumber(entryCalories)} kcal` : 'Add food'}
+            {entry === undefined && <PlusIcon className="size-5" />}
+            {submitLabel(entry === undefined, complete, entryCalories)}
           </button>
         </div>
       </form>

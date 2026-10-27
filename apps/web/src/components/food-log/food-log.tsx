@@ -4,11 +4,15 @@ import Link from 'next/link'
 import { useRef, useState } from 'react'
 import { Alert } from '@/components/alert'
 import { AppHeader } from '@/components/app-header'
-import { AddFoodDialog } from '@/components/food/add-food-dialog'
+import { FoodDialog } from '@/components/food/food-dialog'
 import { DropIcon, GearIcon, PlusIcon } from '@/components/icons'
 import { useLogOut } from '@/components/use-log-out'
 import { useWaterDialogs } from '@/components/water/use-water-dialogs'
-import { DEFAULT_DAILY_GOALS, GENERIC_ERROR_MESSAGE } from '@open-calorie-tracker/shared'
+import {
+  DEFAULT_DAILY_GOALS,
+  type FoodLogEntry,
+  GENERIC_ERROR_MESSAGE,
+} from '@open-calorie-tracker/shared'
 import { EntryList } from './entry-list'
 import { formatLongDay, parseDay } from './format'
 import { Summary, WaterSummary } from './summary'
@@ -62,7 +66,8 @@ export function FoodLog() {
     goal: log?.goals.water ?? DEFAULT_DAILY_GOALS.water,
     onChanged: () => void reload(),
   })
-  const [addingFood, setAddingFood] = useState(false)
+  // Adding a food, or editing an entry.
+  const [foodDialog, setFoodDialog] = useState<{ entry?: FoodLogEntry }>()
 
   return (
     <div className="flex min-h-screen flex-col bg-bg">
@@ -106,11 +111,17 @@ export function FoodLog() {
                   </h2>
                   <p className="text-sm text-muted">{formatLongDay(parseDay(today.date))}</p>
                 </div>
-                {log !== undefined && <EntryList entries={log.entries} onOpenWater={water.edit} />}
+                {log !== undefined && (
+                  <EntryList
+                    entries={log.entries}
+                    onOpenFood={(entry) => setFoodDialog({ entry })}
+                    onOpenWater={water.edit}
+                  />
+                )}
               </section>
             )}
             {log !== undefined && (
-              <AddButtons onAddWater={water.add} onAddFood={() => setAddingFood(true)} />
+              <AddButtons onAddWater={water.add} onAddFood={() => setFoodDialog({})} />
             )}
           </div>
         </main>
@@ -121,13 +132,14 @@ export function FoodLog() {
         )}
       </div>
       {water.dialogs}
-      {addingFood && (
-        <AddFoodDialog
+      {foodDialog !== undefined && (
+        <FoodDialog
+          {...(foodDialog.entry === undefined ? {} : { entry: foodDialog.entry })}
           total={log?.totals.calories ?? 0}
           goal={log?.goals.calories ?? DEFAULT_DAILY_GOALS.calories}
-          onClose={() => setAddingFood(false)}
-          onAdded={() => {
-            setAddingFood(false)
+          onClose={() => setFoodDialog(undefined)}
+          onSaved={() => {
+            setFoodDialog(undefined)
             void reload()
           }}
         />
