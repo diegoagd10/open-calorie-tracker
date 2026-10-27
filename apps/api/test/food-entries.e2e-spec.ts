@@ -24,7 +24,7 @@ const todayInNewYork = () =>
 
 type DailyLog = { entries: FoodLogEntry[]; totals: Record<string, number> }
 
-describe('POST /v1/food-entries (e2e)', () => {
+describe('food entries (e2e)', () => {
   let app: TestApp
   let database: Database
   let token: string
@@ -54,11 +54,16 @@ describe('POST /v1/food-entries (e2e)', () => {
   }
 
   // Sends diego's token unless the test passes another one, or null for none.
-  const create = (body: object, bearer?: string | null) =>
-    withBearer(
-      request(app.getHttpServer()).post('/v1/food-entries').send(body),
-      bearer === undefined ? token : bearer,
-    )
+  type Bearer = string | null | undefined
+
+  const withToken = (pending: request.Test, bearer: Bearer) =>
+    withBearer(pending, bearer === undefined ? token : bearer)
+
+  const create = (body: object, bearer?: Bearer) =>
+    withToken(request(app.getHttpServer()).post('/v1/food-entries').send(body), bearer)
+
+  const update = (id: number | string, body: object, bearer?: Bearer) =>
+    withToken(request(app.getHttpServer()).patch(`/v1/food-entries/${id}`).send(body), bearer)
 
   const dailyLog = async () => {
     const response = await withBearer(
@@ -140,8 +145,52 @@ describe('POST /v1/food-entries (e2e)', () => {
     expect(totals).toEqual(expect.objectContaining({ calories: 0, protein: 0, foodEntries: 1 }))
   })
 
+  describe('PATCH /v1/food-entries/:id', () => {
+    it('replaces the entry with 200, multiplied by the servings, keeping its time and source', async () => {
+      const created = (await create(greekYogurt())).body as FoodLogEntry
+
+      const response = await update(created.id, {
+        name: 'Skyr',
+        servingSizeId,
+        quantity: 2,
+        calories: 100,
+        protein: 10,
+      })
+
+      expect(response.status).toBe(200)
+      const entry = response.body as FoodLogEntry
+      expect(entry).toEqual({
+        id: created.id,
+        type: 'food',
+        loggedAt: created.loggedAt,
+        name: 'Skyr',
+        source: 'manual',
+        servingSize: '1 cup (245 g)',
+        quantity: 2,
+        calories: 200,
+        protein: 20,
+        carbohydrate: null,
+        fat: null,
+        fiber: null,
+        sugar: null,
+        sodium: null,
+      })
+      expect((await dailyLog()).entries).toEqual([entry])
+    })
+
+    it("moves the entry to another of the user's serving sizes", async () => {
+      const created = (await create(greekYogurt())).body as FoodLogEntry
+      const bowl = await createServingSize('1 bowl', token)
+
+      const response = await update(created.id, { ...greekYogurt(), servingSizeId: bowl })
+
+      expect(response.status).toBe(200)
+      expect((response.body as FoodLogEntry).servingSize).toBe('1 bowl')
+    })
+  })
+
   describe('validation', () => {
-    it.each([
+    const INVALID_CHANGES = [
       ['an empty name', { name: '' }],
       ['a name that is too long', { name: 'a'.repeat(MAX_FOOD_NAME_LENGTH + 1) }],
       ['a missing serving size', { servingSizeId: undefined }],
@@ -153,33 +202,97 @@ describe('POST /v1/food-entries (e2e)', () => {
       ['more calories than the maximum', { calories: MAX_PER_SERVING + 1 }],
       ['a nutrient with two decimals', { protein: 12.55 }],
       ['an unknown key', { source: 'manual' }],
-    ])('rejects %s with 400 and stores nothing', async (_case, change) => {
-      const response = await create({ ...greekYogurt(), ...change })
+    ] as const
+
+    // Another user's serving size, created with their token.
+    const theirServingSize = async () =>
+      createServingSize('1 burrito', await accessTokenFor(app, OTHER_USERNAME, PASSWORD))
+
+    it.each(INVALID_CHANGES)(
+      'rejects creating %s with 400 and stores nothing',
+      async (_case, change) => {
+        const response = await create({ ...greekYogurt(), ...change })
+
+        expect(response.status).toBe(400)
+        expect(await storedEntries()).toEqual([])
+      },
+    )
+
+    it("rejects creating with another user's serving size with 400 and stores nothing", async () => {
+      const response = await create({ ...greekYogurt(), servingSizeId: await theirServingSize() })
 
       expect(response.status).toBe(400)
       expect(await storedEntries()).toEqual([])
     })
 
-    it("rejects another user's serving size with 400 and stores nothing", async () => {
-      const theirs = await createServingSize(
-        '1 burrito',
-        await accessTokenFor(app, OTHER_USERNAME, PASSWORD),
-      )
+    it.each(INVALID_CHANGES)(
+      'rejects changing to %s with 400 and changes nothing',
+      async (_case, change) => {
+        const { id } = (await create(greekYogurt())).body as FoodLogEntry
+        const stored = await storedEntries()
 
-      const response = await create({ ...greekYogurt(), servingSizeId: theirs })
+        const response = await update(id, { ...greekYogurt(), ...change })
+
+        expect(response.status).toBe(400)
+        expect(await storedEntries()).toEqual(stored)
+      },
+    )
+
+    it("rejects changing to another user's serving size with 400 and changes nothing", async () => {
+      const { id } = (await create(greekYogurt())).body as FoodLogEntry
+      const stored = await storedEntries()
+
+      const response = await update(id, {
+        ...greekYogurt(),
+        servingSizeId: await theirServingSize(),
+      })
 
       expect(response.status).toBe(400)
-      expect(await storedEntries()).toEqual([])
+      expect(await storedEntries()).toEqual(stored)
+    })
+  })
+
+  describe("other users' entries and unknown ids", () => {
+    it("answers PATCH on another user's entry with 404 and changes nothing", async () => {
+      const theirToken = await accessTokenFor(app, OTHER_USERNAME, PASSWORD)
+      const theirs = await createServingSize('1 cup (245 g)', theirToken)
+      const { id } = (await create({ ...greekYogurt(), servingSizeId: theirs }, theirToken))
+        .body as FoodLogEntry
+      const stored = await storedEntries()
+
+      const response = await update(id, greekYogurt())
+
+      expect(response.status).toBe(404)
+      expect(await storedEntries()).toEqual(stored)
+    })
+
+    it('answers PATCH on an id that does not exist with 404', async () => {
+      expect((await update(99_999, greekYogurt())).status).toBe(404)
+    })
+
+    it('answers PATCH on an id that is not a number with 400', async () => {
+      expect((await update('abc', greekYogurt())).status).toBe(400)
     })
   })
 
   describe('authentication', () => {
-    it('rejects a request without a token with 401', async () => {
-      expect((await create(greekYogurt(), null)).status).toBe(401)
+    const requests = [
+      ['POST', (bearer?: Bearer) => create(greekYogurt(), bearer)],
+      ['PATCH', (bearer?: Bearer) => update(1, greekYogurt(), bearer)],
+    ] as const
+
+    it.each(requests)('rejects %s without a token with 401', async (_method, send) => {
+      expect((await send(null)).status).toBe(401)
     })
 
-    it.each(INVALID_TOKENS)('rejects %s with 401', async (_case, invalid) => {
-      expect((await create(greekYogurt(), await invalid())).status).toBe(401)
+    it.each(
+      requests.flatMap(([method, send]) =>
+        INVALID_TOKENS.map(
+          ([invalidCase, invalid]) => [method, invalidCase, send, invalid] as const,
+        ),
+      ),
+    )('rejects %s with %s with 401', async (_method, _case, send, invalid) => {
+      expect((await send(await invalid())).status).toBe(401)
     })
   })
 })

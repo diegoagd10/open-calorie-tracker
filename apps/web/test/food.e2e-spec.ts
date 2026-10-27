@@ -25,7 +25,9 @@ import {
   openLog,
   seedFoodEntry,
   storedFoodEntries,
+  timeLabel,
 } from './daily-log'
+import { deleteFoodEntry } from './database'
 import { clearFault, injectFault, receivedRequests } from './fault-proxy'
 import { SEEDED, signAccessToken } from './fixtures'
 import { connectDatabase, createUser, sendToRoute, setSessionCookie, signedInPage } from './session'
@@ -40,6 +42,7 @@ const GOAL = DEFAULT_DAILY_GOALS.calories
 // Seeded entries sit a minute into the real today, older than the ones the page creates; see
 // minutesIntoToday.
 const FIRST = minutesIntoToday(1)
+const SECOND = minutesIntoToday(2)
 
 // Long before today, so the entries that give a user serving sizes add nothing to today's log.
 const LONG_AGO = newYorkTime('2026-01-01T12:00:00')
@@ -71,7 +74,7 @@ const GREEK_YOGURT: Food = {
   nutrients: { Protein: '17', Carbohydrate: '20', Fat: '4', Fiber: '0', Sugar: '18', Sodium: '85' },
 }
 
-describe('Add food (e2e)', () => {
+describe('Food (e2e)', () => {
   let browser: Browser
   let database: Database
   let context: BrowserContext
@@ -125,6 +128,26 @@ describe('Add food (e2e)', () => {
       calories,
     })
 
+  // Greek yogurt with honey, 1.5 servings, stored as the totals: 180 kcal per serving.
+  const seedYogurt = () =>
+    seedFoodEntry(database, {
+      username,
+      loggedAt: SECOND,
+      name: 'Greek yogurt with honey',
+      servingSize: '1 cup (245 g)',
+      quantity: 1.5,
+      calories: 270,
+      protein: 25.5,
+      carbohydrate: 30,
+      fat: 6,
+      fiber: null,
+      sugar: 27,
+      sodium: 127.5,
+    })
+
+  // The id of the user's newest entry, the yogurt wherever it is seeded.
+  const yogurtId = async () => (await storedFoodEntries(database, username)).at(-1)?.id ?? 0
+
   // Gives the user serving sizes, from entries logged long ago.
   const seedServingSizes = async (names: string[], owner = username) => {
     for (const servingSize of names) {
@@ -141,7 +164,11 @@ describe('Add food (e2e)', () => {
 
   const main = () => page.getByRole('main')
   const addFoodButton = () => main().getByRole('button', { name: 'Add food', exact: true })
-  const dialog = () => page.getByRole('dialog', { name: 'Add food' })
+  // Whichever food dialog is open; there is only ever one.
+  const dialog = () => page.getByRole('dialog', { name: /^(Add|Edit) food$/ })
+  const addDialog = () => page.getByRole('dialog', { name: 'Add food' })
+  const editDialog = () => page.getByRole('dialog', { name: 'Edit food' })
+  const entryButton = (name = 'Greek yogurt with honey') => home.entry(name).getByRole('button')
   const button = (name: string) => dialog().getByRole('button', { name, exact: true })
   const foodField = () => dialog().getByRole('textbox', { name: 'Food', exact: true })
   const servingField = () => dialog().getByRole('combobox', { name: 'Serving size' })
@@ -161,8 +188,10 @@ describe('Add food (e2e)', () => {
     servingOptions().filter({ hasText: new RegExp(`^${name.replaceAll(/[()]/g, '\\$&')}$`) })
   const createOption = (name: string) =>
     servingList().getByRole('button', { name: `Create “${name}”` })
-  // "Add food" while the form is incomplete, "Add 270 kcal" once it is complete.
-  const submit = () => dialog().getByRole('button', { name: /^Add (food|[\d,.]+ kcal)$/ })
+  // "Add food" or "Save" while the form is incomplete, "Add 270 kcal" or "Save 270 kcal" once it
+  // is complete.
+  const submit = () =>
+    dialog().getByRole('button', { name: /^(Add (food|[\d,.]+ kcal)|Save( [\d,.]+ kcal)?)$/ })
 
   const dialogText = () => textOf(dialog())
   const optionNames = async () =>
@@ -173,11 +202,20 @@ describe('Add food (e2e)', () => {
 
   const requestsTo = (method: string, path: string) =>
     foodRequests.filter((request) => request === `${method} ${path}`)
+  // The page's requests that change the log, e.g. "PATCH /api/food-entries/7".
+  const changes = () => foodRequests.filter((request) => !request.startsWith('GET '))
+  const patches = () => foodRequests.filter((request) => request.startsWith('PATCH '))
 
   const openDialog = async () => {
     await openLog(page)
     await addFoodButton().click()
-    await expect.poll(() => dialog().isVisible(), eventually).toBe(true)
+    await expect.poll(() => addDialog().isVisible(), eventually).toBe(true)
+  }
+
+  const openEditDialog = async (name?: string) => {
+    await openLog(page)
+    await entryButton(name).click()
+    await expect.poll(() => editDialog().isVisible(), eventually).toBe(true)
   }
 
   const setServings = async (target: number) => {
@@ -732,6 +770,263 @@ describe('Add food (e2e)', () => {
     })
   })
 
+  describe('editing food', () => {
+    const YOGURT_ROW = `${timeLabel(SECOND)} Greek yogurt with honey Manual 1 cup (245 g) × 1.5 270 kcal`
+    const BREAKFAST_ROW = `${timeLabel(FIRST)} Breakfast Manual 1 plate × 1 500 kcal`
+
+    const save = async () => {
+      await submit().click()
+      await expect.poll(isHidden(editDialog()), eventually).toBe(true)
+    }
+
+    beforeEach(async () => {
+      await seedCalories(500)
+      await seedYogurt()
+    })
+
+    it('opens a food entry in the Edit food dialog, with its name as the subtitle', async () => {
+      await openEditDialog()
+
+      expect(await dialogText()).toContain('Greek yogurt with honey')
+      expect(await dialogText()).not.toContain('logged at')
+      for (const name of ['Close', 'Cancel']) {
+        expect(await button(name).isVisible()).toBe(true)
+      }
+      expect(await textOf(submit())).toBe('Save 270 kcal')
+    })
+
+    it('opens the form per serving, as the label prints it', async () => {
+      await openEditDialog()
+
+      expect(await foodField().inputValue()).toBe('Greek yogurt with honey')
+      expect(await servingField().inputValue()).toBe('1 cup (245 g)')
+      expect(await textOf(servings())).toBe('1.5')
+      expect(await caloriesField().inputValue()).toBe('180')
+      expect(await nutrientsToggle().getAttribute('aria-expanded')).toBe('false')
+      expect(await textOf(nutrientsToggle())).toContain('5 of 6 added')
+      await nutrientsToggle().click()
+      const shown = {
+        Protein: '17',
+        Carbohydrate: '20',
+        Fat: '4',
+        Fiber: '',
+        Sugar: '18',
+        Sodium: '85',
+      }
+      for (const [label, value] of Object.entries(shown)) {
+        expect(await nutrientField(label as NutrientLabel).inputValue()).toBe(value)
+      }
+    })
+
+    it('makes the food row a button named after the entry, which keeps its look', async () => {
+      await openLog(page)
+
+      expect(await entryTexts()).toEqual([YOGURT_ROW, BREAKFAST_ROW])
+      const row = page.getByRole('button', {
+        name: `Greek yogurt with honey, 270 kcal, ${timeLabel(SECOND)}`,
+        exact: true,
+      })
+      await row.focus()
+      await page.keyboard.press('Enter')
+
+      await expect.poll(() => editDialog().isVisible(), eventually).toBe(true)
+    })
+
+    it("previews today's calories with the entry's new calories in place of its old ones", async () => {
+      await openEditDialog()
+      expect(await dialogText()).toContain('With 270 kcal: 770 / 1,600 kcal')
+
+      await caloriesField().fill('200')
+
+      expect(await dialogText()).toContain('With 300 kcal: 800 / 1,600 kcal')
+      expect(await textOf(submit())).toBe('Save 300 kcal')
+    })
+
+    it('warns in the danger color when the change goes over the goal', async () => {
+      await openEditDialog()
+
+      await caloriesField().fill('800')
+
+      const preview = dialog().getByText('With 1,200 kcal: 1,700 / 1,600 kcal · 100 over')
+      expect(await preview.isVisible()).toBe(true)
+      expect(await preview.evaluate((element) => getComputedStyle(element).color)).toBe(
+        await themeColor('--danger-text'),
+      )
+    })
+
+    it.each([
+      ['Food', () => foodField()],
+      ['Serving size', () => servingField()],
+      ['Calories per serving', () => caloriesField()],
+    ])('disables Save and sends nothing on Enter when %s is cleared', async (_field, field) => {
+      await openEditDialog()
+
+      await field().clear()
+      await field().press('Enter')
+
+      expect(await textOf(submit())).toBe('Save')
+      expect(await submit().isDisabled()).toBe(true)
+      expect(changes()).toEqual([])
+      expect(await editDialog().isVisible()).toBe(true)
+    })
+
+    it('applies the same form rules as adding', async () => {
+      await openEditDialog()
+
+      await foodField().clear()
+      await page.keyboard.insertText('a'.repeat(MAX_FOOD_NAME_LENGTH + 20))
+      expect(await foodField().inputValue()).toBe('a'.repeat(MAX_FOOD_NAME_LENGTH))
+
+      await servingField().clear()
+      await page.keyboard.insertText('b'.repeat(MAX_SERVING_SIZE_LENGTH + 20))
+      expect(await servingField().inputValue()).toBe('b'.repeat(MAX_SERVING_SIZE_LENGTH))
+
+      await caloriesField().clear()
+      await caloriesField().pressSequentially('1a2.55')
+      expect(await caloriesField().inputValue()).toBe('12.5')
+
+      await setServings(MAX_SERVINGS)
+      expect(await button('More servings').isDisabled()).toBe(true)
+      await setServings(MIN_SERVINGS)
+      expect(await button('Fewer servings').isDisabled()).toBe(true)
+    })
+
+    it("lists the user's serving sizes, marks an exact match and offers to create one", async () => {
+      await openEditDialog()
+
+      await servingField().fill('cup')
+      await expect.poll(optionNames, eventually).toEqual(['1 cup (245 g)'])
+      expect(await createOption('cup').isVisible()).toBe(true)
+
+      await servingField().fill('1 CUP (245 G)')
+      expect(
+        await servingOption('1 cup (245 g)').getByRole('img', { name: 'Selected' }).count(),
+      ).toBe(1)
+      expect(await createOption('1 CUP (245 G)').count()).toBe(0)
+    })
+
+    it('saves the changes and keeps the time and the position of the entry', async () => {
+      await openEditDialog()
+
+      await foodField().fill('Skyr')
+      await setServings(2)
+      await caloriesField().fill('100')
+      expect(await textOf(submit())).toBe('Save 200 kcal')
+      await save()
+
+      const expected = [
+        `${timeLabel(SECOND)} Skyr Manual 1 cup (245 g) × 2 200 kcal`,
+        BREAKFAST_ROW,
+      ]
+      await expect.poll(entryTexts, eventually).toEqual(expected)
+      expect(await summaryText('Calories')).toContain('700 / 1,600 kcal')
+      await openLog(page)
+      await expect.poll(entryTexts, eventually).toEqual(expected)
+      expect(changes()).toEqual([`PATCH /api/food-entries/${await yogurtId()}`])
+    })
+
+    it('stores the nutrients multiplied by the servings', async () => {
+      await openEditDialog()
+
+      await setServings(2)
+      await save()
+
+      await expect
+        .poll(async () => (await storedFoodEntries(database, username)).at(-1), eventually)
+        .toEqual(
+          expect.objectContaining({
+            quantity: 2,
+            calories: 360,
+            protein: 34,
+            carbohydrate: 40,
+            fat: 8,
+            fiber: null,
+            sugar: 36,
+            sodium: 170,
+          }),
+        )
+    })
+
+    it('stores a cleared nutrient as no data and a filled one multiplied', async () => {
+      await openEditDialog()
+
+      await nutrientsToggle().click()
+      await nutrientField('Protein').clear()
+      await nutrientField('Fiber').fill('3')
+      await save()
+
+      await expect
+        .poll(async () => (await storedFoodEntries(database, username)).at(-1), eventually)
+        .toEqual(expect.objectContaining({ protein: null, fiber: 4.5 }))
+      await expect
+        .poll(() => summaryText('Protein'), eventually)
+        .toContain(`0 / ${DEFAULT_DAILY_GOALS.protein} g`)
+    })
+
+    it('saves a new serving size first, then the entry', async () => {
+      await openEditDialog()
+
+      await servingField().fill('1 bowl')
+      await createOption('1 bowl').click()
+      await save()
+
+      await expect
+        .poll(entryTexts, eventually)
+        .toContain(`${timeLabel(SECOND)} Greek yogurt with honey Manual 1 bowl × 1.5 270 kcal`)
+      expect(changes()).toEqual([
+        'POST /api/serving-sizes',
+        `PATCH /api/food-entries/${await yogurtId()}`,
+      ])
+      const response = await sendToRoute(SERVING_SIZES_URL, 'GET', token)
+      const names = ((await response.json()) as { name: string }[]).map((size) => size.name)
+      expect(names).toContain('1 bowl')
+    })
+
+    it('reuses a serving size typed in another case without saving it again', async () => {
+      await openEditDialog()
+
+      await servingField().fill('1 CUP (245 G)')
+      await caloriesField().fill('150')
+      await save()
+
+      await expect
+        .poll(entryTexts, eventually)
+        .toContain(
+          `${timeLabel(SECOND)} Greek yogurt with honey Manual 1 cup (245 g) × 1.5 225 kcal`,
+        )
+      expect(requestsTo('POST', '/api/serving-sizes')).toEqual([])
+    })
+
+    it('sends nothing when nothing changed', async () => {
+      await openEditDialog()
+
+      await save()
+
+      expect(patches()).toEqual([])
+      expect(await entryTexts()).toEqual([YOGURT_ROW, BREAKFAST_ROW])
+    })
+
+    it('sends nothing when only spaces around the name were added', async () => {
+      await openEditDialog()
+
+      await foodField().fill('  Greek yogurt with honey  ')
+      await save()
+
+      expect(patches()).toEqual([])
+    })
+
+    it('keeps the entry as it was when cancelled', async () => {
+      await openEditDialog()
+
+      await caloriesField().fill('999')
+      await button('Cancel').click()
+
+      await expect.poll(isHidden(editDialog()), eventually).toBe(true)
+      expect(await entryTexts()).toEqual([YOGURT_ROW, BREAKFAST_ROW])
+      expect(patches()).toEqual([])
+    })
+  })
+
   describe('the /api/food-entries and /api/serving-sizes routes', () => {
     const send = (url: string, method: string, body?: object, cookie: string | null = token) =>
       sendToRoute(url, method, cookie, body)
@@ -776,14 +1071,34 @@ describe('Add food (e2e)', () => {
       expect(await receivedRequests(PROXY_URL, username)).toContain('POST /v1/food-entries')
     })
 
+    it('forwards PATCH /api/food-entries/:id to the API with the session token', async () => {
+      await seedYogurt()
+      const id = await yogurtId()
+      const { id: servingSizeId } = await createServingSize('1 cup (245 g)')
+
+      const response = await send(`${FOOD_ENTRIES_URL}/${id}`, 'PATCH', {
+        name: 'Skyr',
+        servingSizeId,
+        quantity: 1,
+        calories: 100,
+      })
+
+      expect(response.status).toBe(200)
+      expect(await response.json()).toEqual(
+        expect.objectContaining({ id, type: 'food', name: 'Skyr', calories: 100 }),
+      )
+      expect(await receivedRequests(PROXY_URL, username)).toContain(`PATCH /v1/food-entries/${id}`)
+    })
+
     it('answers every route without a session cookie with 401', async () => {
       const statuses = [
         (await send(SERVING_SIZES_URL, 'POST', { name: '1 bowl' }, null)).status,
         (await send(SERVING_SIZES_URL, 'GET', undefined, null)).status,
         (await send(FOOD_ENTRIES_URL, 'POST', { name: 'Oatmeal' }, null)).status,
+        (await send(`${FOOD_ENTRIES_URL}/1`, 'PATCH', { name: 'Oatmeal' }, null)).status,
       ]
 
-      expect(statuses).toEqual([401, 401, 401])
+      expect(statuses).toEqual([401, 401, 401, 401])
       expect(await storedFoodEntries(database, username)).toEqual([])
     })
 
@@ -797,21 +1112,26 @@ describe('Add food (e2e)', () => {
         (await send(SERVING_SIZES_URL, 'POST', { name: '1 bowl' })).status,
         (await send(SERVING_SIZES_URL, 'GET')).status,
         (await send(FOOD_ENTRIES_URL, 'POST', { name: 'Oatmeal' })).status,
+        (await send(`${FOOD_ENTRIES_URL}/1`, 'PATCH', { name: 'Oatmeal' })).status,
       ]
 
-      expect(statuses).toEqual([502, 502, 502])
+      expect(statuses).toEqual([502, 502, 502, 502])
     })
 
-    it('forwards 400 and 401 as they are', async () => {
+    it('forwards 400, 401 and 404 as they are', async () => {
       const expired = await signAccessToken(Math.floor(Date.now() / 1000) - 60)
+      const { id: servingSizeId } = await createServingSize('1 bowl')
+      const oatmeal = { name: 'Oatmeal', servingSizeId, quantity: 1, calories: 150 }
 
       const statuses = [
         (await send(SERVING_SIZES_URL, 'POST', { name: '' })).status,
         (await send(FOOD_ENTRIES_URL, 'POST', { name: '' })).status,
+        (await send(`${FOOD_ENTRIES_URL}/1`, 'PATCH', { name: '' })).status,
         (await send(SERVING_SIZES_URL, 'GET', undefined, expired)).status,
+        (await send(`${FOOD_ENTRIES_URL}/99999`, 'PATCH', oatmeal)).status,
       ]
 
-      expect(statuses).toEqual([400, 400, 401])
+      expect(statuses).toEqual([400, 400, 400, 401, 404])
     })
   })
 
@@ -842,80 +1162,153 @@ describe('Add food (e2e)', () => {
       await expect.poll(entryTexts, eventually).toHaveLength(1)
     })
 
-    it('sends a single request of each kind when Add is double-clicked', async () => {
-      await openDialog()
-      await fillForm(NEW_BOWL)
-      const release = await holdRequests(page, SERVING_SIZES_URL, 'POST')
+    // Saving a food with the new serving size "1 bowl", by adding one or by editing the yogurt.
+    const SAVES = [
+      [
+        'adding',
+        'POST',
+        async () => {
+          await openDialog()
+          await fillForm(NEW_BOWL)
+        },
+      ],
+      [
+        'editing',
+        'PATCH',
+        async () => {
+          await seedYogurt()
+          await openEditDialog()
+          await servingField().fill('1 bowl')
+          await caloriesField().click()
+        },
+      ],
+    ] as const
 
-      await submit().dblclick()
-      release()
+    // The requests that add or change a food entry.
+    const entryRequests = (method: string) =>
+      foodRequests.filter((request) => request.startsWith(`${method} /api/food-entries`))
 
-      await expect.poll(isHidden(dialog()), eventually).toBe(true)
-      expect(requestsTo('POST', '/api/serving-sizes')).toHaveLength(1)
-      expect(requestsTo('POST', '/api/food-entries')).toHaveLength(1)
-    })
+    it.each(SAVES)(
+      'sends a single request of each kind when the submit button is double-clicked while %s',
+      async (_case, method, prepare) => {
+        await prepare()
+        const release = await holdRequests(page, SERVING_SIZES_URL, 'POST')
 
-    it('disables the buttons and ignores Escape while saving', async () => {
-      await openDialog()
-      await fillForm({ ...NEW_BOWL, servingSize: '1 plate' })
-      const release = await holdRequests(page, '**/api/**', 'POST')
+        await submit().dblclick()
+        release()
 
-      await submit().click()
+        await expect.poll(isHidden(dialog()), eventually).toBe(true)
+        expect(requestsTo('POST', '/api/serving-sizes')).toHaveLength(1)
+        expect(entryRequests(method)).toHaveLength(1)
+      },
+    )
 
-      for (const name of ['Cancel', 'Close']) {
-        expect(await button(name).isDisabled()).toBe(true)
-      }
-      expect(await submit().isDisabled()).toBe(true)
-      await page.keyboard.press('Escape')
-      expect(await dialog().isVisible()).toBe(true)
-      release()
-      await expect.poll(isHidden(dialog()), eventually).toBe(true)
-    })
+    it.each(SAVES)(
+      'disables the buttons and ignores Escape while %s',
+      async (_case, _method, prepare) => {
+        await prepare()
+        const release = await holdRequests(page, '**/api/**', 'POST')
 
-    it('goes to the login page when the session expired before adding', async () => {
-      await openDialog()
-      await fillForm(NEW_BOWL)
-      await setSessionCookie(context, await signAccessToken(Math.floor(Date.now() / 1000) - 60))
+        await submit().click()
 
-      await submit().click()
-
-      await page.waitForURL(`${WEB_URL}/login`)
-    })
-
-    it('does not send the food when saving the new serving size fails', async () => {
-      await page.route(SERVING_SIZES_URL, (route) =>
-        route.request().method() === 'POST' ? route.fulfill({ status: 500 }) : route.continue(),
-      )
-      await openDialog()
-      await fillForm(NEW_BOWL)
-
-      await submit().click()
-
-      await expect.poll(alertText, eventually).toBe(GENERIC_ERROR_MESSAGE)
-      expect(requestsTo('POST', '/api/food-entries')).toEqual([])
-    })
-
-    it('does not save the serving size twice when the food fails and is retried', async () => {
-      let failures = 1
-      await page.route(FOOD_ENTRIES_URL, async (route) => {
-        if (failures > 0) {
-          failures -= 1
-          await route.fulfill({ status: 500 })
-        } else {
-          await route.continue()
+        for (const name of ['Cancel', 'Close']) {
+          expect(await button(name).isDisabled()).toBe(true)
         }
-      })
-      await openDialog()
-      await fillForm(NEW_BOWL)
+        expect(await submit().isDisabled()).toBe(true)
+        await page.keyboard.press('Escape')
+        expect(await dialog().isVisible()).toBe(true)
+        release()
+        await expect.poll(isHidden(dialog()), eventually).toBe(true)
+      },
+    )
+
+    it.each(SAVES)(
+      'goes to the login page when the session expired before %s',
+      async (_case, _method, prepare) => {
+        await prepare()
+        await setSessionCookie(context, await signAccessToken(Math.floor(Date.now() / 1000) - 60))
+
+        await submit().click()
+
+        await page.waitForURL(`${WEB_URL}/login`)
+      },
+    )
+
+    it.each(SAVES)(
+      'does not send the food when saving the new serving size fails while %s',
+      async (_case, method, prepare) => {
+        await page.route(SERVING_SIZES_URL, (route) =>
+          route.request().method() === 'POST' ? route.fulfill({ status: 500 }) : route.continue(),
+        )
+        await prepare()
+
+        await submit().click()
+
+        await expect.poll(alertText, eventually).toBe(GENERIC_ERROR_MESSAGE)
+        expect(entryRequests(method)).toEqual([])
+      },
+    )
+
+    it.each(SAVES)(
+      'does not save the serving size twice when the food fails and is retried while %s',
+      async (_case, _method, prepare) => {
+        let failures = 1
+        await page.route(`${FOOD_ENTRIES_URL}**`, async (route) => {
+          if (failures > 0) {
+            failures -= 1
+            await route.fulfill({ status: 500 })
+          } else {
+            await route.continue()
+          }
+        })
+        await prepare()
+
+        await submit().click()
+        await expect.poll(alertText, eventually).toBe(GENERIC_ERROR_MESSAGE)
+        await submit().click()
+
+        await expect.poll(entryTexts, eventually).toEqual([expect.stringContaining('1 bowl × 1')])
+        const response = await sendToRoute(SERVING_SIZES_URL, 'GET', token)
+        const names = ((await response.json()) as { name: string }[]).map((size) => size.name)
+        expect(names.filter((name) => name === '1 bowl')).toHaveLength(1)
+      },
+    )
+
+    it('keeps the Edit food dialog open with what was typed when saving fails, and lets the user retry', async () => {
+      await seedYogurt()
+      await page.route(`${FOOD_ENTRIES_URL}/*`, (route) => route.fulfill({ status: 500 }))
+      await openEditDialog()
+      await caloriesField().fill('200')
 
       await submit().click()
+
       await expect.poll(alertText, eventually).toBe(GENERIC_ERROR_MESSAGE)
+      expect(await foodField().inputValue()).toBe('Greek yogurt with honey')
+      expect(await textOf(servings())).toBe('1.5')
+      expect(await caloriesField().inputValue()).toBe('200')
+      expect(await entryTexts()).toEqual([expect.stringContaining('270 kcal')])
+
+      await page.unroute(`${FOOD_ENTRIES_URL}/*`)
       await submit().click()
 
-      await expect.poll(entryTexts, eventually).toEqual([expect.stringContaining('1 bowl × 1')])
-      const response = await sendToRoute(SERVING_SIZES_URL, 'GET', token)
-      const names = ((await response.json()) as { name: string }[]).map((size) => size.name)
-      expect(names).toEqual(['1 bowl'])
+      await expect.poll(isHidden(editDialog()), eventually).toBe(true)
+      await expect.poll(entryTexts, eventually).toEqual([expect.stringContaining('300 kcal')])
+    })
+
+    it('drops an entry deleted elsewhere without an error when saving it', async () => {
+      await seedCalories(500)
+      await seedYogurt()
+      await openEditDialog()
+      await deleteFoodEntry(SEEDED, await yogurtId())
+      await caloriesField().fill('200')
+
+      await submit().click()
+
+      await expect.poll(isHidden(editDialog()), eventually).toBe(true)
+      await expect.poll(entryTexts, eventually).toEqual([expect.stringContaining('Breakfast')])
+      expect(await page.getByRole('alert').filter({ hasText: GENERIC_ERROR_MESSAGE }).count()).toBe(
+        0,
+      )
     })
   })
 
@@ -942,11 +1335,33 @@ describe('Add food (e2e)', () => {
       }
     })
 
-    it('opens centered on a wide screen', async () => {
+    it('opens Edit food as a bottom sheet with a decimal keypad on a phone', async () => {
+      await reopenWith(MOBILE)
+      await seedYogurt()
+      await openLog(page)
+
+      await entryButton().tap()
+
+      await expect.poll(() => editDialog().isVisible(), eventually).toBe(true)
+      const sheet = await box(editDialog())
+      expect(Math.abs(sheet.y + sheet.height - MOBILE.viewport.height)).toBeLessThanOrEqual(1)
+      expect(await caloriesField().getAttribute('inputmode')).toBe('decimal')
+    })
+
+    it.each([
+      ['Add food', () => openDialog()],
+      [
+        'Edit food',
+        async () => {
+          await seedYogurt()
+          await openEditDialog()
+        },
+      ],
+    ])('opens %s centered on a wide screen', async (_name, open) => {
       const viewport = { width: 1280, height: 860 }
       await reopenWith({ viewport })
 
-      await openDialog()
+      await open()
 
       const centered = await box(dialog())
       expect(Math.abs(centered.x + centered.width / 2 - viewport.width / 2)).toBeLessThanOrEqual(1)
