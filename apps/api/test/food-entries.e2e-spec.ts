@@ -65,6 +65,9 @@ describe('food entries (e2e)', () => {
   const update = (id: number | string, body: object, bearer?: Bearer) =>
     withToken(request(app.getHttpServer()).patch(`/v1/food-entries/${id}`).send(body), bearer)
 
+  const remove = (id: number | string, bearer?: Bearer) =>
+    withToken(request(app.getHttpServer()).delete(`/v1/food-entries/${id}`), bearer)
+
   const dailyLog = async () => {
     const response = await withBearer(
       request(app.getHttpServer())
@@ -187,6 +190,81 @@ describe('food entries (e2e)', () => {
       expect(response.status).toBe(200)
       expect((response.body as FoodLogEntry).servingSize).toBe('1 bowl')
     })
+  })
+
+  describe('DELETE /v1/food-entries/:id', () => {
+    it('C1 — deletes her own entry with 204 and an empty body', async () => {
+      const coffee = (
+        await create({ name: 'Black coffee', servingSizeId, quantity: 1, calories: 2 })
+      ).body as FoodLogEntry
+      const { id } = (await create(greekYogurt())).body as FoodLogEntry
+
+      const response = await remove(id)
+
+      expect(response.status).toBe(204)
+      expect(response.text).toBe('')
+      expect((await dailyLog()).entries).toEqual([coffee])
+    })
+
+    // The id to delete, from an entry diego cannot delete.
+    const MISSING_ENTRIES = [
+      [
+        'an entry belonging to another user',
+        async () => {
+          const theirToken = await accessTokenFor(app, OTHER_USERNAME, PASSWORD)
+          const theirs = await createServingSize('1 cup (245 g)', theirToken)
+          return (
+            (await create({ ...greekYogurt(), servingSizeId: theirs }, theirToken))
+              .body as FoodLogEntry
+          ).id
+        },
+      ],
+      ['an id that does not exist', async () => 99_999],
+      [
+        'an entry already deleted',
+        async () => {
+          const { id } = (await create(greekYogurt())).body as FoodLogEntry
+          expect((await remove(id)).status).toBe(204)
+          return id
+        },
+      ],
+    ] as const
+
+    it.each(MISSING_ENTRIES)(
+      'C2 — answers %s with 404 and deletes nothing',
+      async (_case, missingId) => {
+        const id = await missingId()
+        await create(greekYogurt())
+        const stored = await storedEntries()
+
+        const response = await remove(id)
+
+        expect(response.status).toBe(404)
+        expect(await storedEntries()).toEqual(stored)
+      },
+    )
+
+    it('C3 — answers an id that is not a number with 400', async () => {
+      expect((await remove('abc')).status).toBe(400)
+    })
+
+    const MISSING_OR_INVALID_TOKENS: (readonly [string, () => Promise<string | null>])[] = [
+      ['no token', () => Promise.resolve(null)],
+      ...INVALID_TOKENS,
+    ]
+
+    it.each(MISSING_OR_INVALID_TOKENS)(
+      'C4 — answers with %s with 401 and keeps the entry',
+      async (_case, bearer) => {
+        const { id } = (await create(greekYogurt())).body as FoodLogEntry
+        const stored = await storedEntries()
+
+        const response = await remove(id, await bearer())
+
+        expect(response.status).toBe(401)
+        expect(await storedEntries()).toEqual(stored)
+      },
+    )
   })
 
   describe('validation', () => {

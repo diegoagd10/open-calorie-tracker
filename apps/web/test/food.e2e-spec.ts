@@ -24,6 +24,7 @@ import {
   newYorkTime,
   openLog,
   seedFoodEntry,
+  seedWaterEntry,
   storedFoodEntries,
   timeLabel,
 } from './daily-log'
@@ -43,6 +44,11 @@ const GOAL = DEFAULT_DAILY_GOALS.calories
 // minutesIntoToday.
 const FIRST = minutesIntoToday(1)
 const SECOND = minutesIntoToday(2)
+const THIRD = minutesIntoToday(3)
+
+// The rows of the seeded yogurt and breakfast, newest first as the log lists them.
+const YOGURT_ROW = `${timeLabel(SECOND)} Greek yogurt with honey Manual 1 cup (245 g) × 1.5 270 kcal`
+const BREAKFAST_ROW = `${timeLabel(FIRST)} Breakfast Manual 1 plate × 1 500 kcal`
 
 // Long before today, so the entries that give a user serving sizes add nothing to today's log.
 const LONG_AGO = newYorkTime('2026-01-01T12:00:00')
@@ -193,6 +199,11 @@ describe('Food (e2e)', () => {
   const submit = () =>
     dialog().getByRole('button', { name: /^(Add (food|[\d,.]+ kcal)|Save( [\d,.]+ kcal)?)$/ })
 
+  // The confirmation that opens over Edit food before an entry is deleted.
+  const confirmation = () => page.getByRole('alertdialog')
+  const confirmDelete = () => confirmation().getByRole('button', { name: /^Delete [\d,.]+ kcal$/ })
+  const keepIt = () => confirmation().getByRole('button', { name: 'Keep it', exact: true })
+
   const dialogText = () => textOf(dialog())
   const optionNames = async () =>
     (await servingOptions().allInnerTexts()).map((text) => text.replaceAll(/\s+/g, ' ').trim())
@@ -216,6 +227,12 @@ describe('Food (e2e)', () => {
     await openLog(page)
     await entryButton(name).click()
     await expect.poll(() => editDialog().isVisible(), eventually).toBe(true)
+  }
+
+  const openConfirmation = async () => {
+    await openEditDialog()
+    await button('Delete').click()
+    await expect.poll(() => confirmation().isVisible(), eventually).toBe(true)
   }
 
   const setServings = async (target: number) => {
@@ -771,9 +788,6 @@ describe('Food (e2e)', () => {
   })
 
   describe('editing food', () => {
-    const YOGURT_ROW = `${timeLabel(SECOND)} Greek yogurt with honey Manual 1 cup (245 g) × 1.5 270 kcal`
-    const BREAKFAST_ROW = `${timeLabel(FIRST)} Breakfast Manual 1 plate × 1 500 kcal`
-
     const save = async () => {
       await submit().click()
       await expect.poll(isHidden(editDialog()), eventually).toBe(true)
@@ -1027,6 +1041,209 @@ describe('Food (e2e)', () => {
     })
   })
 
+  describe('deleting food', () => {
+    beforeEach(async () => {
+      await seedCalories(500)
+      await seedYogurt()
+    })
+
+    // Whether the element, or one around it, crosses its text out.
+    const isStruck = (locator: ReturnType<typeof confirmation>) =>
+      locator.evaluate((element) => {
+        for (let node: Element | null = element; node !== null; node = node.parentElement) {
+          if (getComputedStyle(node).textDecorationLine.includes('line-through')) return true
+        }
+        return false
+      })
+
+    // The summary of every nutrient the yogurt has, with nothing logged.
+    const EMPTY_NUTRIENT_SUMMARIES = (
+      ['Protein', 'Carbohydrate', 'Fat', 'Sugar', 'Sodium'] as const
+    ).map((label) => {
+      const unit = NUTRIENTS.find((nutrient) => nutrient.label === label)?.unit
+      const goal = DEFAULT_DAILY_GOALS[label.toLowerCase() as Lowercase<typeof label>]
+      return [label, `0 / ${goal.toLocaleString('en-US')} ${unit}`] as const
+    })
+
+    it('A1 — offers Delete in Edit food, left of Cancel', async () => {
+      await openEditDialog()
+
+      expect(await button('Delete').isVisible()).toBe(true)
+      expect(await button('Delete').locator('svg').count()).toBe(1)
+      const deleteBox = await box(button('Delete'))
+      expect(deleteBox.x + deleteBox.width).toBeLessThanOrEqual((await box(button('Cancel'))).x)
+    })
+
+    it('A2 — offers no Delete in Add food', async () => {
+      await openDialog()
+
+      expect(await button('Delete').count()).toBe(0)
+    })
+
+    it('A3 — asks for confirmation, showing the stored entry and the new total', async () => {
+      await openConfirmation()
+
+      expect(await page.getByRole('alertdialog', { name: 'Delete this food?' }).isVisible()).toBe(
+        true,
+      )
+      expect(await editDialog().isVisible()).toBe(true)
+      const text = await textOf(confirmation())
+      expect(text).toContain('It comes off today’s total. This can’t be undone.')
+      expect(text).toContain(
+        `Greek yogurt with honey ${timeLabel(SECOND)} 1 cup (245 g) × 1.5 270 kcal`,
+      )
+      expect(
+        await isStruck(
+          confirmation()
+            .getByText(/^270\b/)
+            .first(),
+        ),
+      ).toBe(true)
+      expect(text).toContain('Today’s calories 770 → 500 / 1,600 kcal')
+      expect(await keepIt().isVisible()).toBe(true)
+      expect(await textOf(confirmDelete())).toBe('Delete 270 kcal')
+    })
+
+    it('A4 — shows the stored entry, not the unsaved changes', async () => {
+      await openEditDialog()
+      await caloriesField().fill('200')
+
+      await button('Delete').click()
+
+      await expect.poll(() => confirmation().isVisible(), eventually).toBe(true)
+      const text = await textOf(confirmation())
+      expect(text).toContain('1 cup (245 g) × 1.5 270 kcal')
+      expect(text).toContain('Today’s calories 770 → 500 / 1,600 kcal')
+      expect(await textOf(confirmDelete())).toBe('Delete 270 kcal')
+    })
+
+    it('B1 — deletes the food once confirmed and updates the totals', async () => {
+      const id = await yogurtId()
+      await openConfirmation()
+
+      await confirmDelete().click()
+
+      await expect.poll(isHidden(confirmation()), eventually).toBe(true)
+      expect(await editDialog().isVisible()).toBe(false)
+      await expect.poll(entryTexts, eventually).toEqual([BREAKFAST_ROW])
+      expect(await summaryText('Calories')).toContain('500 / 1,600 kcal')
+      for (const [label, summary] of EMPTY_NUTRIENT_SUMMARIES) {
+        expect(await summaryText(label)).toContain(summary)
+      }
+      expect(changes()).toEqual([`DELETE /api/food-entries/${id}`])
+      await openLog(page)
+      await expect.poll(entryTexts, eventually).toEqual([BREAKFAST_ROW])
+    })
+
+    it('B2 — goes back to Edit food with the unsaved changes when the entry is kept', async () => {
+      await openEditDialog()
+      await caloriesField().fill('200')
+      await button('Delete').click()
+      await expect.poll(() => confirmation().isVisible(), eventually).toBe(true)
+
+      await keepIt().click()
+
+      await expect.poll(isHidden(confirmation()), eventually).toBe(true)
+      expect(await editDialog().isVisible()).toBe(true)
+      expect(await caloriesField().inputValue()).toBe('200')
+      expect(changes()).toEqual([])
+    })
+
+    it('B3 — keeps the entry on Escape and goes back to Edit food', async () => {
+      await openConfirmation()
+
+      await page.keyboard.press('Escape')
+
+      await expect.poll(isHidden(confirmation()), eventually).toBe(true)
+      expect(await editDialog().isVisible()).toBe(true)
+      expect(changes()).toEqual([])
+    })
+
+    it('B4 — shows the empty state after deleting the last entry', async () => {
+      const [breakfast] = await storedFoodEntries(database, username)
+      await deleteFoodEntry(SEEDED, breakfast?.id ?? 0)
+      await openConfirmation()
+
+      await confirmDelete().click()
+
+      await expect
+        .poll(() => textOf(home.dailyLog()), eventually)
+        .toContain('No entries for this day')
+      expect(await summaryText('Calories')).toContain('0 / 1,600 kcal')
+    })
+
+    it('B5 — keeps the water logged the same day', async () => {
+      await seedWaterEntry(database, { username, loggedAt: THIRD, amount: 16 })
+      await openConfirmation()
+
+      await confirmDelete().click()
+
+      await expect
+        .poll(entryTexts, eventually)
+        .toEqual([`${timeLabel(THIRD)} Water 16 fl oz`, BREAKFAST_ROW])
+      expect(await summaryText('Water')).toContain(`16 fl oz / ${DEFAULT_DAILY_GOALS.water} fl oz`)
+    })
+
+    it('E1 — keeps the entry when deleting fails, and lets the user retry', async () => {
+      await page.route(`${FOOD_ENTRIES_URL}/*`, (route) => route.fulfill({ status: 500 }))
+      await openConfirmation()
+
+      await confirmDelete().click()
+
+      await expect
+        .poll(() => confirmation().getByRole('alert').textContent(), eventually)
+        .toBe(GENERIC_ERROR_MESSAGE)
+      expect(await keepIt().isEnabled()).toBe(true)
+      expect(await confirmDelete().isEnabled()).toBe(true)
+      expect(await entryTexts()).toEqual([YOGURT_ROW, BREAKFAST_ROW])
+
+      await page.unroute(`${FOOD_ENTRIES_URL}/*`)
+      await confirmDelete().click()
+
+      await expect.poll(isHidden(confirmation()), eventually).toBe(true)
+      await expect.poll(entryTexts, eventually).toEqual([BREAKFAST_ROW])
+    })
+
+    it('E2 — sends a single request when Delete is double-clicked', async () => {
+      const id = await yogurtId()
+      await openConfirmation()
+      const release = await holdRequests(page, `${FOOD_ENTRIES_URL}/*`, 'DELETE')
+
+      await confirmDelete().dblclick()
+
+      for (const confirmationButton of await confirmation().getByRole('button').all()) {
+        expect(await confirmationButton.isDisabled()).toBe(true)
+      }
+      release()
+      await expect.poll(isHidden(confirmation()), eventually).toBe(true)
+      expect(requestsTo('DELETE', `/api/food-entries/${id}`)).toHaveLength(1)
+    })
+
+    it('E3 — drops an entry deleted elsewhere without an error', async () => {
+      const id = await yogurtId()
+      await openConfirmation()
+      await deleteFoodEntry(SEEDED, id)
+
+      await confirmDelete().click()
+
+      await expect.poll(isHidden(confirmation()), eventually).toBe(true)
+      expect(await editDialog().isVisible()).toBe(false)
+      await expect.poll(entryTexts, eventually).toEqual([BREAKFAST_ROW])
+      expect(await page.getByRole('alert').filter({ hasText: GENERIC_ERROR_MESSAGE }).count()).toBe(
+        0,
+      )
+    })
+
+    it('E4 — goes to the login page when the session expired before deleting', async () => {
+      await openConfirmation()
+      await setSessionCookie(context, await signAccessToken(Math.floor(Date.now() / 1000) - 60))
+
+      await confirmDelete().click()
+
+      await page.waitForURL(`${WEB_URL}/login`)
+    })
+  })
+
   describe('the /api/food-entries and /api/serving-sizes routes', () => {
     const send = (url: string, method: string, body?: object, cookie: string | null = token) =>
       sendToRoute(url, method, cookie, body)
@@ -1088,6 +1305,28 @@ describe('Food (e2e)', () => {
         expect.objectContaining({ id, type: 'food', name: 'Skyr', calories: 100 }),
       )
       expect(await receivedRequests(PROXY_URL, username)).toContain(`PATCH /v1/food-entries/${id}`)
+    })
+
+    it('D1 — forwards DELETE /api/food-entries/:id to the API with the session token', async () => {
+      await seedYogurt()
+      const id = await yogurtId()
+
+      const response = await send(`${FOOD_ENTRIES_URL}/${id}`, 'DELETE')
+
+      expect(response.status).toBe(204)
+      expect(await storedFoodEntries(database, username)).toEqual([])
+      expect(await receivedRequests(PROXY_URL, username)).toContain(`DELETE /v1/food-entries/${id}`)
+    })
+
+    it('D2 — forwards 401 and 404 on DELETE as they are', async () => {
+      const expired = await signAccessToken(Math.floor(Date.now() / 1000) - 60)
+
+      const statuses = [
+        (await send(`${FOOD_ENTRIES_URL}/1`, 'DELETE', undefined, expired)).status,
+        (await send(`${FOOD_ENTRIES_URL}/99999`, 'DELETE')).status,
+      ]
+
+      expect(statuses).toEqual([401, 404])
     })
 
     it('answers every route without a session cookie with 401', async () => {
@@ -1346,6 +1585,20 @@ describe('Food (e2e)', () => {
       const sheet = await box(editDialog())
       expect(Math.abs(sheet.y + sheet.height - MOBILE.viewport.height)).toBeLessThanOrEqual(1)
       expect(await caloriesField().getAttribute('inputmode')).toBe('decimal')
+    })
+
+    it('F1 — opens the delete confirmation as a bottom sheet on a phone', async () => {
+      await reopenWith(MOBILE)
+      await seedYogurt()
+      await openLog(page)
+      await entryButton().tap()
+      await expect.poll(() => editDialog().isVisible(), eventually).toBe(true)
+
+      await button('Delete').tap()
+
+      await expect.poll(() => confirmation().isVisible(), eventually).toBe(true)
+      const sheet = await box(confirmation())
+      expect(Math.abs(sheet.y + sheet.height - MOBILE.viewport.height)).toBeLessThanOrEqual(1)
     })
 
     it.each([
