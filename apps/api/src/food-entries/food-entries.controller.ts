@@ -1,4 +1,14 @@
-import { Body, Controller, Param, ParseIntPipe, Patch, Post, UseGuards } from '@nestjs/common'
+import {
+  Body,
+  Controller,
+  Delete,
+  HttpCode,
+  Param,
+  ParseIntPipe,
+  Patch,
+  Post,
+  UseGuards,
+} from '@nestjs/common'
 import { type FoodEntryInput, foodEntrySchema } from '@open-calorie-tracker/shared'
 import { AccessTokenGuard, UserId } from '../auth/access-token.guard.js'
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js'
@@ -23,5 +33,11 @@ export class FoodEntriesController {
     @Body(body) input: FoodEntryInput,
   ) {
     return this.foodEntries.update(userId, id, input)
+  }
+
+  @Delete(':id')
+  @HttpCode(204)
+  remove(@UserId() userId: number, @Param('id', ParseIntPipe) id: number) {
+    return this.foodEntries.remove(userId, id)
   }
 }

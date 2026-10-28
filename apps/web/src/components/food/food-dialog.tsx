@@ -13,7 +13,7 @@ import { useEffect, useId, useState } from 'react'
 import { Alert } from '@/components/alert'
 import { BUTTON, DialogHeader, GoalBar, SECONDARY_BUTTON } from '@/components/dialog-parts'
 import { formatNumber } from '@/components/food-log/format'
-import { ForkKnifeIcon, MinusIcon, PlusIcon } from '@/components/icons'
+import { ForkKnifeIcon, MinusIcon, PlusIcon, TrashIcon } from '@/components/icons'
 import { Modal } from '@/components/modal'
 import type { Outcome } from '@/components/requests'
 import { useSubmission } from '@/components/use-submission'
@@ -51,6 +51,8 @@ type FoodDialogProps = {
   onClose: () => void
   // Called once the food is saved, or the entry turned out to be gone.
   onSaved: () => void
+  // Asks to delete the entry; only an entry being edited offers it.
+  onDelete?: () => void
 }
 
 // "Add food" or "Save" until the form is complete, then the calories it saves.
@@ -65,7 +67,7 @@ const perServingText = (total: number | null, servings: number) =>
 
 // Logs a food as its label prints it, per serving, times the servings eaten, or edits a logged one.
 // Shows where the food would bring today's calories.
-export function FoodDialog({ entry, total, goal, onClose, onSaved }: FoodDialogProps) {
+export function FoodDialog({ entry, total, goal, onClose, onSaved, onDelete }: FoodDialogProps) {
   const titleId = useId()
   const nameId = useId()
   const caloriesId = useId()
@@ -275,7 +277,20 @@ export function FoodDialog({ entry, total, goal, onClose, onSaved }: FoodDialogP
         </div>
         <NutrientsSection values={nutrients} onChange={setNutrients} disabled={pending} />
         {failed && <Alert>{GENERIC_ERROR_MESSAGE}</Alert>}
-        <div className="grid grid-cols-[auto_1fr] gap-2">
+        <div
+          className={`grid items-center gap-2 ${onDelete === undefined ? 'grid-cols-[auto_1fr]' : 'grid-cols-[auto_auto_1fr]'}`}
+        >
+          {onDelete !== undefined && (
+            <button
+              type="button"
+              disabled={pending}
+              onClick={onDelete}
+              className="flex h-12 items-center gap-2 px-1 font-semibold text-danger-text disabled:opacity-60"
+            >
+              <TrashIcon className="size-5" />
+              Delete
+            </button>
+          )}
           <button type="button" disabled={pending} onClick={close} className={SECONDARY_BUTTON}>
             Cancel
           </button>

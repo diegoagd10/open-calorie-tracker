@@ -29,3 +29,6 @@ export const addFood = async (entry: FoodEntryInput): Promise<Outcome> =>
 
 export const updateFood = async (id: number, entry: FoodEntryInput): Promise<Outcome> =>
   (await sendRequest('PATCH', `/api/food-entries/${id}`, entry)).outcome
+
+export const deleteFood = async (id: number): Promise<Outcome> =>
+  (await sendRequest('DELETE', `/api/food-entries/${id}`)).outcome

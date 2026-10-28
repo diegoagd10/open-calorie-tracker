@@ -92,4 +92,12 @@ export class FoodEntriesService {
       .get()
     return toFoodLogEntry({ ...entry, servingSize, source: source?.name ?? 'manual' })
   }
+
+  async remove(userId: number, id: number): Promise<void> {
+    const deleted = await this.database.db
+      .delete(foodEntries)
+      .where(ownedBy(userId, id))
+      .returning({ id: foodEntries.id })
+    if (deleted.length === 0) throw new NotFoundException()
+  }
 }

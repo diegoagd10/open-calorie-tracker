@@ -1057,13 +1057,13 @@ describe('Food (e2e)', () => {
       })
 
     // The summary of every nutrient the yogurt has, with nothing logged.
-    const EMPTY_NUTRIENT_SUMMARIES = (
-      ['Protein', 'Carbohydrate', 'Fat', 'Sugar', 'Sodium'] as const
-    ).map((label) => {
-      const unit = NUTRIENTS.find((nutrient) => nutrient.label === label)?.unit
-      const goal = DEFAULT_DAILY_GOALS[label.toLowerCase() as Lowercase<typeof label>]
-      return [label, `0 / ${goal.toLocaleString('en-US')} ${unit}`] as const
-    })
+    const EMPTY_NUTRIENT_SUMMARIES = [
+      ['Protein', `0 / ${DEFAULT_DAILY_GOALS.protein} g`],
+      ['Carbohydrate', `0 / ${DEFAULT_DAILY_GOALS.carbohydrate} g`],
+      ['Fat', `0 / ${DEFAULT_DAILY_GOALS.fat} g`],
+      ['Sugar max', `0 / ${DEFAULT_DAILY_GOALS.sugar} g`],
+      ['Sodium max', `0 / ${DEFAULT_DAILY_GOALS.sodium.toLocaleString('en-US')} mg`],
+    ] as const
 
     it('A1 — offers Delete in Edit food, left of Cancel', async () => {
       await openEditDialog()

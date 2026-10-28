@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useRef, useState } from 'react'
 import { Alert } from '@/components/alert'
 import { AppHeader } from '@/components/app-header'
+import { DeleteFoodDialog } from '@/components/food/delete-food-dialog'
 import { FoodDialog } from '@/components/food/food-dialog'
 import { DropIcon, GearIcon, PlusIcon } from '@/components/icons'
 import { useLogOut } from '@/components/use-log-out'
@@ -66,8 +67,16 @@ export function FoodLog() {
     goal: log?.goals.water ?? DEFAULT_DAILY_GOALS.water,
     onChanged: () => void reload(),
   })
-  // Adding a food, or editing an entry.
-  const [foodDialog, setFoodDialog] = useState<{ entry?: FoodLogEntry }>()
+  // Adding a food, or editing an entry and maybe confirming its deletion.
+  const [foodDialog, setFoodDialog] = useState<{ entry?: FoodLogEntry; deleting?: boolean }>()
+  const calories = {
+    total: log?.totals.calories ?? 0,
+    goal: log?.goals.calories ?? DEFAULT_DAILY_GOALS.calories,
+  }
+  const foodChanged = () => {
+    setFoodDialog(undefined)
+    void reload()
+  }
 
   return (
     <div className="flex min-h-screen flex-col bg-bg">
@@ -134,14 +143,23 @@ export function FoodLog() {
       {water.dialogs}
       {foodDialog !== undefined && (
         <FoodDialog
-          {...(foodDialog.entry === undefined ? {} : { entry: foodDialog.entry })}
-          total={log?.totals.calories ?? 0}
-          goal={log?.goals.calories ?? DEFAULT_DAILY_GOALS.calories}
+          {...(foodDialog.entry === undefined
+            ? {}
+            : {
+                entry: foodDialog.entry,
+                onDelete: () => setFoodDialog({ ...foodDialog, deleting: true }),
+              })}
+          {...calories}
           onClose={() => setFoodDialog(undefined)}
-          onSaved={() => {
-            setFoodDialog(undefined)
-            void reload()
-          }}
+          onSaved={foodChanged}
+        />
+      )}
+      {foodDialog?.entry !== undefined && foodDialog.deleting === true && (
+        <DeleteFoodDialog
+          entry={foodDialog.entry}
+          {...calories}
+          onKeep={() => setFoodDialog({ ...foodDialog, deleting: false })}
+          onDeleted={foodChanged}
         />
       )}
     </div>
