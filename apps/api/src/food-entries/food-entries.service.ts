@@ -1,5 +1,9 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common'
-import type { FoodEntryInput, FoodLogEntry } from '@open-calorie-tracker/shared'
+import type {
+  CreateFoodEntryInput,
+  FoodEntryInput,
+  FoodLogEntry,
+} from '@open-calorie-tracker/shared'
 import { and, eq, sql } from 'drizzle-orm'
 import { Database } from '../db/database.js'
 import { type FoodEntry, type FoodSource, foodEntries, foodSources } from '../db/schema.js'
@@ -64,12 +68,17 @@ export class FoodEntriesService {
     return { values, servingSize: servingSize.name }
   }
 
-  // Logged now, as manual: the client cannot choose either.
-  async create(userId: number, input: FoodEntryInput): Promise<FoodLogEntry> {
+  // Logged at the selected instant (or now), always as manual.
+  async create(userId: number, input: CreateFoodEntryInput): Promise<FoodLogEntry> {
     const { values, servingSize } = await this.valuesOf(userId, input)
     const entry = await this.database.db
       .insert(foodEntries)
-      .values({ ...values, userId, loggedAt: new Date(), sourceId: sourceIdOf('manual') })
+      .values({
+        ...values,
+        userId,
+        loggedAt: input.loggedAt === undefined ? new Date() : new Date(input.loggedAt),
+        sourceId: sourceIdOf('manual'),
+      })
       .returning()
       .get()
     return toFoodLogEntry({ ...entry, servingSize, source: 'manual' })

@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vite-plus/test'
-import { MAX_WATER_AMOUNT, filterWaterAmountInput, waterEntrySchema } from './water'
+import {
+  MAX_WATER_AMOUNT,
+  createWaterEntrySchema,
+  filterWaterAmountInput,
+  waterEntrySchema,
+} from './water'
 
 describe('waterEntrySchema', () => {
   it.each([0.1, 12.5, 16, MAX_WATER_AMOUNT])('accepts %s fl oz', (amount) => {
@@ -16,6 +21,23 @@ describe('waterEntrySchema', () => {
   ])('rejects %s', (_case, body) => {
     expect(waterEntrySchema.safeParse(body).success).toBe(false)
   })
+})
+
+describe('createWaterEntrySchema', () => {
+  it('accepts omission without adding a timestamp', () => {
+    expect(createWaterEntrySchema.parse({ amount: 16 })).toEqual({ amount: 16 })
+  })
+
+  it.each(['2020-01-02T01:30:00.123Z', '2020-01-01T20:30:00-05:00'])(
+    'accepts an explicit instant %s only for creation',
+    (loggedAt) => {
+      expect(createWaterEntrySchema.parse({ amount: 16, loggedAt })).toEqual({
+        amount: 16,
+        loggedAt,
+      })
+      expect(waterEntrySchema.parse({ amount: 16, loggedAt })).toEqual({ amount: 16 })
+    },
+  )
 })
 
 // What the amount field shows when its value would change from `previous` to `next`, whether the

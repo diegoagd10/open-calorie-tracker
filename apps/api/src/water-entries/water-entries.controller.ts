@@ -9,7 +9,12 @@ import {
   Post,
   UseGuards,
 } from '@nestjs/common'
-import { type WaterEntryInput, waterEntrySchema } from '@open-calorie-tracker/shared'
+import {
+  type CreateWaterEntryInput,
+  type WaterEntryInput,
+  createWaterEntrySchema,
+  waterEntrySchema,
+} from '@open-calorie-tracker/shared'
 import { AccessTokenGuard, UserId } from '../auth/access-token.guard.js'
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js'
 import { WaterEntriesService } from './water-entries.service.js'
@@ -22,7 +27,10 @@ export class WaterEntriesController {
   constructor(private readonly waterEntries: WaterEntriesService) {}
 
   @Post()
-  create(@UserId() userId: number, @Body(body) input: WaterEntryInput) {
+  create(
+    @UserId() userId: number,
+    @Body(new ZodValidationPipe(createWaterEntrySchema)) input: CreateWaterEntryInput,
+  ) {
     return this.waterEntries.create(userId, input)
   }
 

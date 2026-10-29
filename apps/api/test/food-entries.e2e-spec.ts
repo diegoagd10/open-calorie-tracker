@@ -68,11 +68,9 @@ describe('food entries (e2e)', () => {
   const remove = (id: number | string, bearer?: Bearer) =>
     withToken(request(app.getHttpServer()).delete(`/v1/food-entries/${id}`), bearer)
 
-  const dailyLog = async () => {
+  const dailyLog = async (date = todayInNewYork()) => {
     const response = await withBearer(
-      request(app.getHttpServer())
-        .get('/v1/daily-log')
-        .query({ date: todayInNewYork(), timeZone: TIME_ZONE }),
+      request(app.getHttpServer()).get('/v1/daily-log').query({ date, timeZone: TIME_ZONE }),
       token,
     )
     expect(response.status).toBe(200)
@@ -123,6 +121,74 @@ describe('food entries (e2e)', () => {
     expect(Date.parse(entry.loggedAt)).toBeLessThanOrEqual(after)
     expect((await dailyLog()).entries).toEqual([entry])
   })
+
+  it('creates on the selected historical day and edits without moving it', async () => {
+    const response = await create({ ...greekYogurt(), loggedAt: '2020-01-01T20:30:00-05:00' })
+
+    expect(response.status).toBe(201)
+    const created = response.body as FoodLogEntry
+    expect(created.loggedAt).toBe('2020-01-02T01:30:00.000Z')
+    const historical = await dailyLog('2020-01-01')
+    expect(historical.entries).toEqual([created])
+    expect(historical.totals).toEqual(expect.objectContaining({ calories: 270, foodEntries: 1 }))
+    expect((await dailyLog('2020-01-02')).entries).toEqual([])
+    expect((await dailyLog()).entries).toEqual([])
+
+    const edited = await update(created.id, { ...greekYogurt(), quantity: 2 })
+    expect(edited.status).toBe(200)
+    expect(edited.body).toEqual({
+      ...created,
+      quantity: 2,
+      calories: 360,
+      protein: 34,
+      carbohydrate: 40,
+      fat: 8,
+      fiber: 0,
+      sugar: 36,
+      sodium: 170,
+    })
+    expect((await dailyLog('2020-01-01')).entries).toEqual([edited.body])
+
+    const rejected = await update(created.id, {
+      ...greekYogurt(),
+      loggedAt: '2020-01-03T12:00:00Z',
+    })
+    expect(rejected.status).toBe(400)
+    expect(rejected.body).toEqual({
+      statusCode: 400,
+      error: 'Bad Request',
+      message: ['Unrecognized key: "loggedAt"'],
+    })
+    expect((await dailyLog('2020-01-01')).entries).toEqual([edited.body])
+    expect((await dailyLog('2020-01-03')).entries).toEqual([])
+  })
+
+  it.each([
+    'not-a-date',
+    '2020-02-30T12:00:00Z',
+    '2020-01-01',
+    '2020-01-01T12:00:00',
+    '',
+    null,
+    123,
+  ])(
+    'rejects invalid creation timestamp %j without changing the log or consuming an id',
+    async (loggedAt) => {
+      const first = (await create(greekYogurt())).body as FoodLogEntry
+      const before = await dailyLog()
+      const response = await create({ ...greekYogurt(), loggedAt })
+      expect(response.status).toBe(400)
+      expect(response.body).toEqual({
+        statusCode: 400,
+        error: 'Bad Request',
+        message: [expect.any(String)],
+      })
+      expect(await dailyLog()).toEqual(before)
+      const next = await create(greekYogurt())
+      expect(next.status).toBe(201)
+      expect((next.body as FoodLogEntry).id).toBe(first.id + 1)
+    },
+  )
 
   it('stores omitted nutrients as no data and accepts 0 kcal', async () => {
     const response = await create({

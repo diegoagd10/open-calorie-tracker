@@ -78,6 +78,56 @@ describe('water entries (e2e)', () => {
     return entry.id
   }
 
+  it('creates on the selected historical day and edits without moving it', async () => {
+    const response = await create({ amount: 16, loggedAt: '2020-01-01T20:30:00-05:00' })
+    expect(response.status).toBe(201)
+    const created = response.body as WaterEntry
+    expect(created.id).toEqual(expect.any(Number))
+    expect(created).toEqual({
+      id: created.id,
+      type: 'water',
+      amount: 16,
+      loggedAt: '2020-01-02T01:30:00.000Z',
+    })
+    expect(await dailyLogEntries('2020-01-01')).toEqual([created])
+    expect(await dailyLogEntries('2020-01-02')).toEqual([])
+    expect(await dailyLogEntries(todayInNewYork())).toEqual([])
+
+    // PATCH retains its existing behavior: extra keys are ignored, not persisted.
+    const edited = await update(created.id, { amount: 20.5, loggedAt: '2020-01-03T12:00:00Z' })
+    expect(edited.status).toBe(200)
+    expect(edited.body).toEqual({ ...created, amount: 20.5 })
+    expect(await dailyLogEntries('2020-01-01')).toEqual([edited.body])
+    expect(await dailyLogEntries('2020-01-03')).toEqual([])
+  })
+
+  it.each([
+    'not-a-date',
+    '2020-02-30T12:00:00Z',
+    '2020-01-01',
+    '2020-01-01T12:00:00',
+    '',
+    null,
+    123,
+  ])(
+    'rejects invalid creation timestamp %j without changing the log or consuming an id',
+    async (loggedAt) => {
+      const first = (await create({ amount: 16 })).body as WaterEntry
+      const before = await dailyLogEntries(todayInNewYork())
+      const response = await create({ amount: 8, loggedAt })
+      expect(response.status).toBe(400)
+      expect(response.body).toEqual({
+        statusCode: 400,
+        error: 'Bad Request',
+        message: [expect.any(String)],
+      })
+      expect(await dailyLogEntries(todayInNewYork())).toEqual(before)
+      const next = await create({ amount: 16 })
+      expect(next.status).toBe(201)
+      expect((next.body as WaterEntry).id).toBe(first.id + 1)
+    },
+  )
+
   describe('POST /v1/water-entries', () => {
     it('creates an entry at the current time with 201', async () => {
       const before = Date.now()

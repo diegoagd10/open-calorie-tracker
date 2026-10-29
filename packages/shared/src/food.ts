@@ -25,7 +25,7 @@ const perServing = z
 // A nutrient is left out when the label doesn't say.
 const nutrient = perServing.optional()
 
-// The body of POST /v1/food-entries, per serving. Validated by the web form before calling the
+// Editable food fields, per serving. Validated by the web form before calling the
 // server, and again by the API, which multiplies by the servings.
 export const foodEntrySchema = z.strictObject({
   name: z
@@ -52,6 +52,14 @@ export const foodEntrySchema = z.strictObject({
 })
 
 export type FoodEntryInput = z.infer<typeof foodEntrySchema>
+
+// POST accepts a selected-day instant with a timezone; omission uses the server clock.
+// PATCH uses foodEntrySchema so an entry cannot be moved to another day.
+export const createFoodEntrySchema = foodEntrySchema.extend({
+  loggedAt: z.iso.datetime({ offset: true }).optional(),
+})
+
+export type CreateFoodEntryInput = z.infer<typeof createFoodEntrySchema>
 
 // Trims a serving size and leaves single spaces inside it, keeping its case: "  1   cup " → "1 cup".
 export const normalizeServingSize = (name: string) => name.trim().replaceAll(/\s+/g, ' ')

@@ -6,6 +6,7 @@ import {
   MAX_SERVINGS,
   MIN_SERVINGS,
   SERVINGS_STEP,
+  createFoodEntrySchema,
   filterPerServingInput,
   foodEntrySchema,
   servingSizeSchema,
@@ -88,6 +89,26 @@ describe('foodEntrySchema', () => {
   )('rejects %s of %s', (nutrient, value) => {
     expect(foodEntrySchema.safeParse({ ...GREEK_YOGURT, [nutrient]: value }).success).toBe(false)
   })
+})
+
+describe('createFoodEntrySchema', () => {
+  it('keeps existing normalization when the timestamp is omitted', () => {
+    expect(createFoodEntrySchema.parse({ ...GREEK_YOGURT, name: '  Yogurt  ' })).toEqual({
+      ...GREEK_YOGURT,
+      name: 'Yogurt',
+    })
+  })
+
+  it.each(['2020-01-02T01:30:00.123Z', '2020-01-01T20:30:00-05:00'])(
+    'accepts an explicit instant %s only for creation',
+    (loggedAt) => {
+      expect(createFoodEntrySchema.parse({ ...GREEK_YOGURT, loggedAt })).toEqual({
+        ...GREEK_YOGURT,
+        loggedAt,
+      })
+      expect(foodEntrySchema.safeParse({ ...GREEK_YOGURT, loggedAt }).success).toBe(false)
+    },
+  )
 })
 
 describe('servingSizeSchema', () => {

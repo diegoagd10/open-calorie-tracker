@@ -9,7 +9,12 @@ import {
   Post,
   UseGuards,
 } from '@nestjs/common'
-import { type FoodEntryInput, foodEntrySchema } from '@open-calorie-tracker/shared'
+import {
+  type CreateFoodEntryInput,
+  type FoodEntryInput,
+  createFoodEntrySchema,
+  foodEntrySchema,
+} from '@open-calorie-tracker/shared'
 import { AccessTokenGuard, UserId } from '../auth/access-token.guard.js'
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js'
 import { FoodEntriesService } from './food-entries.service.js'
@@ -22,7 +27,10 @@ export class FoodEntriesController {
   constructor(private readonly foodEntries: FoodEntriesService) {}
 
   @Post()
-  create(@UserId() userId: number, @Body(body) input: FoodEntryInput) {
+  create(
+    @UserId() userId: number,
+    @Body(new ZodValidationPipe(createFoodEntrySchema)) input: CreateFoodEntryInput,
+  ) {
     return this.foodEntries.create(userId, input)
   }
 

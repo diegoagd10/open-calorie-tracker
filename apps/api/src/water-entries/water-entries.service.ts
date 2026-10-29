@@ -1,5 +1,9 @@
 import { Injectable, NotFoundException } from '@nestjs/common'
-import type { WaterEntryInput, WaterLogEntry } from '@open-calorie-tracker/shared'
+import type {
+  CreateWaterEntryInput,
+  WaterEntryInput,
+  WaterLogEntry,
+} from '@open-calorie-tracker/shared'
 import { and, eq } from 'drizzle-orm'
 import { Database } from '../db/database.js'
 import { type WaterEntry, waterEntries } from '../db/schema.js'
@@ -19,11 +23,18 @@ const ownedBy = (userId: number, id: number) =>
 export class WaterEntriesService {
   constructor(private readonly database: Database) {}
 
-  // Logged now: the client cannot choose the time.
-  async create(userId: number, { amount }: WaterEntryInput): Promise<WaterLogEntry> {
+  // Logged at the selected instant, defaulting to now for existing clients.
+  async create(
+    userId: number,
+    { amount, loggedAt }: CreateWaterEntryInput,
+  ): Promise<WaterLogEntry> {
     const entry = await this.database.db
       .insert(waterEntries)
-      .values({ userId, loggedAt: new Date(), amount })
+      .values({
+        userId,
+        loggedAt: loggedAt === undefined ? new Date() : new Date(loggedAt),
+        amount,
+      })
       .returning()
       .get()
     return toWaterLogEntry(entry)

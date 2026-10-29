@@ -13,7 +13,7 @@ export const WATER_PRESETS = [
   { name: 'Gallon', amount: MAX_WATER_AMOUNT },
 ] as const
 
-// The body of POST /v1/water-entries and PATCH /v1/water-entries/:id. Validated by the web form
+// Editable water fields (PATCH /v1/water-entries/:id). Validated by the web form
 // before calling the server, and again by the API.
 export const waterEntrySchema = z.object({
   amount: z
@@ -24,6 +24,14 @@ export const waterEntrySchema = z.object({
 })
 
 export type WaterEntryInput = z.infer<typeof waterEntrySchema>
+
+// POST accepts a selected-day instant with a timezone; omission uses the server clock.
+// PATCH retains waterEntrySchema, which ignores extra keys and never changes the time.
+export const createWaterEntrySchema = waterEntrySchema.extend({
+  loggedAt: z.iso.datetime({ offset: true }).optional(),
+})
+
+export type CreateWaterEntryInput = z.infer<typeof createWaterEntrySchema>
 
 // What the amount field shows when its value would change from `previous` to `next`, by typing or
 // by pasting: only digits and one decimal point, at most one decimal, and nothing over the maximum,
