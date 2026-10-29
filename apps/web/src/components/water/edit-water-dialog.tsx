@@ -17,6 +17,7 @@ import { addAmounts, loggableAmount, waterName } from './water-amount'
 import { updateWater } from './water-requests'
 
 type EditWaterDialogProps = {
+  isToday: boolean
   entry: WaterLogEntry
   // Today's water so far, in fl oz, including this entry.
   total: number
@@ -28,6 +29,7 @@ type EditWaterDialogProps = {
 
 // Changes the amount of an entry; it keeps its time. One tap on a preset saves it.
 export function EditWaterDialog({
+  isToday,
   entry,
   total,
   onClose,
@@ -73,7 +75,7 @@ export function EditWaterDialog({
             {...(amount === undefined
               ? {}
               : {
-                  note: `Was ${formatNumber(entry.amount)} · today ${formatNumber(total)} → ${formatNumber(
+                  note: `Was ${formatNumber(entry.amount)} · ${isToday ? 'today ' : ''}${formatNumber(total)} → ${formatNumber(
                     addAmounts(total, amount - entry.amount),
                   )} fl oz`,
                 })}

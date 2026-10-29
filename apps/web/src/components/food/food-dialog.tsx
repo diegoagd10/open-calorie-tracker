@@ -13,6 +13,7 @@ import { useEffect, useId, useState } from 'react'
 import { Alert } from '@/components/alert'
 import { BUTTON, DialogHeader, GoalBar, SECONDARY_BUTTON } from '@/components/dialog-parts'
 import { formatNumber } from '@/components/food-log/format'
+import { loggedAtOnDay } from '@/components/food-log/selected-day'
 import { ForkKnifeIcon, MinusIcon, PlusIcon, TrashIcon } from '@/components/icons'
 import { Modal } from '@/components/modal'
 import type { Outcome } from '@/components/requests'
@@ -43,6 +44,8 @@ const INPUT_BOX =
 const STEPPER = 'flex h-full w-11 items-center justify-center disabled:opacity-40'
 
 type FoodDialogProps = {
+  day: string | undefined
+  isToday: boolean
   // The entry to edit; without one the dialog adds a food.
   entry?: FoodLogEntry
   // Today's calories so far, including the entry, and the daily goal, in kcal.
@@ -67,7 +70,16 @@ const perServingText = (total: number | null, servings: number) =>
 
 // Logs a food as its label prints it, per serving, times the servings eaten, or edits a logged one.
 // Shows where the food would bring today's calories.
-export function FoodDialog({ entry, total, goal, onClose, onSaved, onDelete }: FoodDialogProps) {
+export function FoodDialog({
+  day,
+  isToday,
+  entry,
+  total,
+  goal,
+  onClose,
+  onSaved,
+  onDelete,
+}: FoodDialogProps) {
   const titleId = useId()
   const nameId = useId()
   const caloriesId = useId()
@@ -146,7 +158,9 @@ export function FoodDialog({ entry, total, goal, onClose, onSaved, onDelete }: F
       const value = perServingValue(nutrients[key])
       if (value !== undefined) input[key] = value
     }
-    return entry === undefined ? addFood(input) : updateFood(entry.id, input)
+    return entry === undefined
+      ? addFood({ ...input, ...(day === undefined ? {} : { loggedAt: loggedAtOnDay(day) }) })
+      : updateFood(entry.id, input)
   }
 
   return (
@@ -166,7 +180,7 @@ export function FoodDialog({ entry, total, goal, onClose, onSaved, onDelete }: F
           title={entry === undefined ? 'Add food' : 'Edit food'}
           subtitle={
             entry === undefined
-              ? `${formatNumber(total)} of ${formatNumber(goal)} kcal today · ${goalStatus(total, goal)}`
+              ? `${formatNumber(total)} of ${formatNumber(goal)} kcal${isToday ? ' today' : ''} · ${goalStatus(total, goal)}`
               : entry.name
           }
           icon={

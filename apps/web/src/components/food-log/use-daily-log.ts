@@ -1,5 +1,5 @@
 import type { DailyLog } from '@open-calorie-tracker/shared'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Today } from './use-today'
 
 type LoadResult = { log: DailyLog } | 'unauthorized' | 'failed'
@@ -21,6 +21,7 @@ const requestDailyLog = async ({ date, timeZone }: Today): Promise<LoadResult> =
 export const useDailyLog = (today: Today | null) => {
   const [log, setLog] = useState<DailyLog>()
   const [failed, setFailed] = useState(false)
+  const generation = useRef(0)
 
   const date = today?.date
   const timeZone = today?.timeZone
@@ -37,18 +38,22 @@ export const useDailyLog = (today: Today | null) => {
 
   useEffect(() => {
     if (date === undefined || timeZone === undefined) return
-    let current = true
+    const requests = generation
+    const request = ++requests.current
     void requestDailyLog({ date, timeZone }).then((result) => {
-      if (current) apply(result)
+      if (request === requests.current) apply(result)
     })
     return () => {
-      current = false
+      // Invalidates initial loads AND reloads, including stale errors and redirects.
+      requests.current++
     }
   }, [date, timeZone, apply])
 
   const reload = useCallback(async () => {
     if (date === undefined || timeZone === undefined) return
-    apply(await requestDailyLog({ date, timeZone }))
+    const request = ++generation.current
+    const result = await requestDailyLog({ date, timeZone })
+    if (request === generation.current) apply(result)
   }, [date, timeZone, apply])
 
   return { log, failed, reload }

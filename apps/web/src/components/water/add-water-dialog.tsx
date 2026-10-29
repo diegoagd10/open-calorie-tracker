@@ -4,6 +4,7 @@ import { GENERIC_ERROR_MESSAGE, WATER_PRESETS } from '@open-calorie-tracker/shar
 import { useId, useState } from 'react'
 import { Alert } from '@/components/alert'
 import { formatNumber } from '@/components/food-log/format'
+import { loggedAtOnDay } from '@/components/food-log/selected-day'
 import { DropIcon } from '@/components/icons'
 import { Modal } from '@/components/modal'
 import { DialogHeader, GoalBar, SECONDARY_BUTTON } from '@/components/dialog-parts'
@@ -13,6 +14,8 @@ import { addAmounts, loggableAmount } from './water-amount'
 import { addWater } from './water-requests'
 
 type AddWaterDialogProps = {
+  day: string | undefined
+  isToday: boolean
   // Today's water so far and the daily goal, in fl oz.
   total: number
   goal: number
@@ -22,13 +25,26 @@ type AddWaterDialogProps = {
 
 // One tap on a preset logs it; the field takes any other amount the shared rules allow. Each
 // choice shows where it would bring today's water.
-export function AddWaterDialog({ total, goal, onClose, onAdded }: AddWaterDialogProps) {
+export function AddWaterDialog({
+  day,
+  isToday,
+  total,
+  goal,
+  onClose,
+  onAdded,
+}: AddWaterDialogProps) {
   const titleId = useId()
   const [value, setValue] = useState('')
   const { pending, failed, submit } = useSubmission(onAdded)
   const amount = loggableAmount(value)
   const close = () => !pending && onClose()
-  const log = (newAmount: number) => void submit(() => addWater(newAmount))
+  const log = (newAmount: number) =>
+    void submit(() =>
+      addWater({
+        amount: newAmount,
+        ...(day === undefined ? {} : { loggedAt: loggedAtOnDay(day) }),
+      }),
+    )
 
   const toGo = total >= goal ? 'goal reached' : `${formatNumber(addAmounts(goal, -total))} to go`
 
@@ -44,7 +60,7 @@ export function AddWaterDialog({ total, goal, onClose, onAdded }: AddWaterDialog
         <DialogHeader
           titleId={titleId}
           title="Add water"
-          subtitle={`${formatNumber(total)} of ${formatNumber(goal)} fl oz today · ${toGo}`}
+          subtitle={`${formatNumber(total)} of ${formatNumber(goal)} fl oz${isToday ? ' today' : ''} · ${toGo}`}
           onClose={close}
           disabled={pending}
         />
@@ -87,7 +103,10 @@ export function AddWaterDialog({ total, goal, onClose, onAdded }: AddWaterDialog
                   {after >= goal ? (
                     <span className="text-xs text-accent-text">Goal reached</span>
                   ) : (
-                    <span className="text-xs text-muted">→ {formatNumber(after)} today</span>
+                    <span className="text-xs text-muted">
+                      → {formatNumber(after)}
+                      {isToday ? ' today' : ''}
+                    </span>
                   )}
                 </button>
               )

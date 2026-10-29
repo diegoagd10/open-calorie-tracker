@@ -13,6 +13,7 @@ import { addAmounts, waterName } from './water-amount'
 import { deleteWater } from './water-requests'
 
 type DeleteWaterDialogProps = {
+  isToday: boolean
   entry: WaterLogEntry
   // Today's water so far, including this entry, and the daily goal, in fl oz.
   total: number
@@ -25,6 +26,7 @@ type DeleteWaterDialogProps = {
 
 // Asks before deleting an entry, showing what it takes off today's water.
 export function DeleteWaterDialog({
+  isToday,
   entry,
   total,
   goal,
@@ -41,7 +43,7 @@ export function DeleteWaterDialog({
       <DialogHeader
         titleId={titleId}
         title={`Delete this ${name === 'Water' ? 'water entry' : name.toLowerCase()}?`}
-        subtitle="It comes off today’s total. This can’t be undone."
+        subtitle={`It comes off ${isToday ? 'today’s' : 'the'} total. This can’t be undone.`}
       />
       <div className="flex items-center gap-3 rounded-2xl border border-danger-line bg-danger-soft p-3">
         <WaterIcon name={name} />
@@ -56,7 +58,7 @@ export function DeleteWaterDialog({
       </div>
       <div className="flex flex-col gap-2">
         <div className="flex items-baseline justify-between gap-2 text-sm">
-          <p className="text-muted">Today’s water</p>
+          <p className="text-muted">{isToday ? 'Today’s water' : 'Water'}</p>
           <p className="text-muted">
             {formatNumber(total)} →{' '}
             <span className="font-semibold text-fg">{formatNumber(after)}</span> /{' '}

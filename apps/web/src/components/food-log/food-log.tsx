@@ -19,7 +19,7 @@ import { formatLongDay, parseDay } from './format'
 import { Summary, WaterSummary } from './summary'
 import { useDailyLog } from './use-daily-log'
 import { usePullToRefresh } from './use-pull-to-refresh'
-import { useToday } from './use-today'
+import { type Today, useToday } from './use-today'
 import { WeekStrip } from './week-strip'
 
 function Loader() {
@@ -54,15 +54,52 @@ function AddButtons({ onAddWater, onAddFood }: { onAddWater: () => void; onAddFo
   )
 }
 
-// Today's food log: entries, calorie and nutrient totals and water, for the browser's day and
-// time zone. On touch screens, pulling down from the top reloads it.
+// Each visit owns its requests, totals, refresh gesture and dialogs. Switching dates unmounts
+// that identity, even when returning to a date whose earlier reload has not finished yet.
 export function FoodLog() {
   const today = useToday()
-  const { log, failed, reload } = useDailyLog(today)
+  const [selected, setSelected] = useState<string>()
+  const logOut = useLogOut()
+  const day = today === null ? null : { ...today, date: selected ?? today.date }
+  return (
+    <div className="flex min-h-screen flex-col bg-bg">
+      <AppHeader logOut={logOut}>
+        <Link
+          href="/settings"
+          aria-label="Settings"
+          className="flex size-9 items-center justify-center rounded-full border border-line bg-surface text-fg-soft"
+        >
+          <GearIcon className="size-[18px]" />
+        </Link>
+      </AppHeader>
+      <DayLog
+        key={`${day?.date} ${day?.timeZone}`}
+        day={day}
+        isToday={day?.date === today?.date}
+        onSelect={setSelected}
+        logOutFailed={logOut.failed}
+      />
+    </div>
+  )
+}
+
+function DayLog({
+  day,
+  isToday,
+  onSelect,
+  logOutFailed,
+}: {
+  day: Today | null
+  isToday: boolean
+  onSelect: (date: string) => void
+  logOutFailed: boolean
+}) {
+  const { log, failed, reload } = useDailyLog(day)
   const content = useRef<HTMLDivElement>(null)
   const { showLoader } = usePullToRefresh(content, reload)
-  const logOut = useLogOut()
   const water = useWaterDialogs({
+    day: day?.date,
+    isToday,
     total: log?.totals.water ?? 0,
     goal: log?.goals.water ?? DEFAULT_DAILY_GOALS.water,
     onChanged: () => void reload(),
@@ -79,17 +116,8 @@ export function FoodLog() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-bg">
+    <>
       {showLoader && <Loader />}
-      <AppHeader logOut={logOut}>
-        <Link
-          href="/settings"
-          aria-label="Settings"
-          className="flex size-9 items-center justify-center rounded-full border border-line bg-surface text-fg-soft"
-        >
-          <GearIcon className="size-[18px]" />
-        </Link>
-      </AppHeader>
       <div
         ref={content}
         className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 px-4 pt-6 sm:px-8 sm:pt-8"
@@ -98,8 +126,8 @@ export function FoodLog() {
           <h1 className="font-serif text-[40px] leading-none tracking-tight sm:text-5xl">
             Food Log
           </h1>
-          {today !== null && <WeekStrip date={today.date} />}
-          {(failed || logOut.failed) && <Alert>{GENERIC_ERROR_MESSAGE}</Alert>}
+          {day !== null && <WeekStrip date={day.date} onSelect={onSelect} />}
+          {(failed || logOutFailed) && <Alert>{GENERIC_ERROR_MESSAGE}</Alert>}
           {/* Small screens stack the totals above the log; wide ones put them beside it. */}
           <div className="flex flex-col gap-6 lg:grid lg:grid-cols-[minmax(0,1fr)_24rem] lg:items-start">
             {log !== undefined && (
@@ -109,7 +137,7 @@ export function FoodLog() {
               </div>
             )}
             {/* The server cannot know the browser's day, so the section waits for it. */}
-            {today !== null && (
+            {day !== null && (
               <section
                 aria-labelledby="daily-log-heading"
                 className="flex min-w-0 flex-col gap-3 lg:col-start-1 lg:row-span-2 lg:row-start-1"
@@ -118,7 +146,7 @@ export function FoodLog() {
                   <h2 id="daily-log-heading" className="text-lg font-semibold">
                     Daily log
                   </h2>
-                  <p className="text-sm text-muted">{formatLongDay(parseDay(today.date))}</p>
+                  <p className="text-sm text-muted">{formatLongDay(parseDay(day.date))}</p>
                 </div>
                 {log !== undefined && (
                   <EntryList
@@ -134,15 +162,17 @@ export function FoodLog() {
             )}
           </div>
         </main>
-        {today !== null && (
+        {day !== null && (
           <footer className="mt-auto border-t border-line py-4 text-xs text-muted">
-            Food Log date {today.date} · Time zone {today.timeZone}
+            Food Log date {day.date} · Time zone {day.timeZone}
           </footer>
         )}
       </div>
       {water.dialogs}
       {foodDialog !== undefined && (
         <FoodDialog
+          day={day?.date}
+          isToday={isToday}
           {...(foodDialog.entry === undefined
             ? {}
             : {
@@ -156,12 +186,13 @@ export function FoodLog() {
       )}
       {foodDialog?.entry !== undefined && foodDialog.deleting === true && (
         <DeleteFoodDialog
+          isToday={isToday}
           entry={foodDialog.entry}
           {...calories}
           onKeep={() => setFoodDialog({ ...foodDialog, deleting: false })}
           onDeleted={foodChanged}
         />
       )}
-    </div>
+    </>
   )
 }

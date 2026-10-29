@@ -1,4 +1,8 @@
-import type { FoodEntryInput, ServingSize } from '@open-calorie-tracker/shared'
+import type {
+  CreateFoodEntryInput,
+  FoodEntryInput,
+  ServingSize,
+} from '@open-calorie-tracker/shared'
 import { type Outcome, sendRequest } from '@/components/requests'
 
 // The user's serving sizes, or none when they cannot be loaded: a serving size can still be typed.
@@ -24,7 +28,7 @@ export const saveServingSize = async (
   }
 }
 
-export const addFood = async (entry: FoodEntryInput): Promise<Outcome> =>
+export const addFood = async (entry: CreateFoodEntryInput): Promise<Outcome> =>
   (await sendRequest('POST', '/api/food-entries', entry)).outcome
 
 export const updateFood = async (id: number, entry: FoodEntryInput): Promise<Outcome> =>

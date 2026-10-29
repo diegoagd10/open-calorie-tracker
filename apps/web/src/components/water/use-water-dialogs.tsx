@@ -10,6 +10,8 @@ import { EditWaterDialog } from './edit-water-dialog'
 type OpenDialog = { mode: 'add' } | { mode: 'edit'; entry: WaterLogEntry; deleting: boolean }
 
 type WaterDialogsOptions = {
+  day: string | undefined
+  isToday: boolean
   // Today's water so far and the daily goal, in fl oz, which the dialogs measure changes against.
   total: number
   goal: number
@@ -19,7 +21,7 @@ type WaterDialogsOptions = {
 
 // The water dialogs a page can open. `dialogs` renders whichever is open; once the log changes
 // they close and `onChanged` runs.
-export const useWaterDialogs = ({ total, goal, onChanged }: WaterDialogsOptions) => {
+export const useWaterDialogs = ({ day, isToday, total, goal, onChanged }: WaterDialogsOptions) => {
   const [open, setOpen] = useState<OpenDialog>()
 
   const close = () => setOpen(undefined)
@@ -31,11 +33,19 @@ export const useWaterDialogs = ({ total, goal, onChanged }: WaterDialogsOptions)
   const dialogs = (
     <>
       {open?.mode === 'add' && (
-        <AddWaterDialog total={total} goal={goal} onClose={close} onAdded={changed} />
+        <AddWaterDialog
+          day={day}
+          isToday={isToday}
+          total={total}
+          goal={goal}
+          onClose={close}
+          onAdded={changed}
+        />
       )}
       {open?.mode === 'edit' && (
         <>
           <EditWaterDialog
+            isToday={isToday}
             entry={open.entry}
             total={total}
             onClose={close}
@@ -44,6 +54,7 @@ export const useWaterDialogs = ({ total, goal, onChanged }: WaterDialogsOptions)
           />
           {open.deleting && (
             <DeleteWaterDialog
+              isToday={isToday}
               entry={open.entry}
               total={total}
               goal={goal}

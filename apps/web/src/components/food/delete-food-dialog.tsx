@@ -12,6 +12,7 @@ import { deleteFood } from './food-requests'
 import { roundTenths } from './servings'
 
 type DeleteFoodDialogProps = {
+  isToday: boolean
   // The entry as stored, whatever its Edit food form holds.
   entry: FoodLogEntry
   // Today's calories so far, including this entry, and the daily goal, in kcal.
@@ -24,7 +25,14 @@ type DeleteFoodDialogProps = {
 }
 
 // Asks before deleting a food, showing what it takes off today's calories.
-export function DeleteFoodDialog({ entry, total, goal, onKeep, onDeleted }: DeleteFoodDialogProps) {
+export function DeleteFoodDialog({
+  isToday,
+  entry,
+  total,
+  goal,
+  onKeep,
+  onDeleted,
+}: DeleteFoodDialogProps) {
   const titleId = useId()
   const { pending, failed, submit } = useSubmission(onDeleted)
   const after = roundTenths(total - entry.calories)
@@ -34,7 +42,7 @@ export function DeleteFoodDialog({ entry, total, goal, onKeep, onDeleted }: Dele
       <DialogHeader
         titleId={titleId}
         title="Delete this food?"
-        subtitle="It comes off today’s total. This can’t be undone."
+        subtitle={`It comes off ${isToday ? 'today’s' : 'the'} total. This can’t be undone.`}
       />
       <div className="flex items-center gap-3 rounded-2xl border border-danger-line bg-danger-soft p-3">
         <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-food-soft text-accent-text">
@@ -54,7 +62,7 @@ export function DeleteFoodDialog({ entry, total, goal, onKeep, onDeleted }: Dele
       </div>
       <div className="flex flex-col gap-2">
         <div className="flex items-baseline justify-between gap-2 text-sm">
-          <p className="text-muted">Today’s calories</p>
+          <p className="text-muted">{isToday ? 'Today’s calories' : 'Calories'}</p>
           <p className="text-muted">
             {formatNumber(total)} →{' '}
             <span className="font-semibold text-fg">{formatNumber(after)}</span> /{' '}
