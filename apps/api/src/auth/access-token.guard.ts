@@ -6,20 +6,20 @@ import {
   createParamDecorator,
 } from '@nestjs/common'
 import type { Request } from 'express'
-import { TokenService } from './token.service.js'
+import { AuthService } from './auth.service.js'
 
 type AuthenticatedRequest = Request & { userId?: number }
 
 // Lets a request through only with a valid "Authorization: Bearer <access token>" header.
 @Injectable()
 export class AccessTokenGuard implements CanActivate {
-  constructor(private readonly tokens: TokenService) {}
+  constructor(private readonly auth: AuthService) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<AuthenticatedRequest>()
     const [scheme, token] = request.headers.authorization?.split(' ') ?? []
     const userId =
-      scheme === 'Bearer' && token ? await this.tokens.verifyAccessToken(token) : undefined
+      scheme === 'Bearer' && token ? await this.auth.verifyAccessToken(token) : undefined
     if (userId === undefined) throw new UnauthorizedException()
 
     request.userId = userId

@@ -1,17 +1,7 @@
-import {
-  ConflictException,
-  ForbiddenException,
-  Injectable,
-  UnauthorizedException,
-} from '@nestjs/common'
-import {
-  type ChangePasswordInput,
-  INCORRECT_CURRENT_PASSWORD_MESSAGE,
-  type NewUser,
-  type Profile,
-} from '@open-calorie-tracker/shared'
+import { ConflictException, Injectable, UnauthorizedException } from '@nestjs/common'
+import { type NewUser, type Profile } from '@open-calorie-tracker/shared'
 import { eq, sql } from 'drizzle-orm'
-import { hashPassword, verifyPassword } from '../auth/password.js'
+import { hashPassword } from '../auth/password.js'
 import { Database } from '../db/database.js'
 import { type User, users } from '../db/schema.js'
 
@@ -41,18 +31,8 @@ export class UsersService {
     return { username: user.username }
   }
 
-  // Replaces the user's password once the current one proves it is them. Tokens already issued,
-  // including the one making this request, stay valid until they expire.
-  async changePassword(
-    id: number,
-    { currentPassword, newPassword }: ChangePasswordInput,
-  ): Promise<void> {
-    const user = await this.findById(id)
-    if (user === undefined || !(await verifyPassword(currentPassword, user.passwordHash))) {
-      throw new ForbiddenException(INCORRECT_CURRENT_PASSWORD_MESSAGE)
-    }
-
-    const passwordHash = await hashPassword(newPassword)
+  async setPassword(id: number, password: string): Promise<void> {
+    const passwordHash = await hashPassword(password)
     await this.database.db.update(users).set({ passwordHash }).where(eq(users.id, id))
   }
 

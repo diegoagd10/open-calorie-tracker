@@ -1,13 +1,25 @@
-import { HttpException, HttpStatus, Injectable, UnauthorizedException } from '@nestjs/common'
 import {
+  ForbiddenException,
+  HttpException,
+  HttpStatus,
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common'
+import {
+  ACCESS_TOKEN_TTL_SECONDS,
   ACCOUNT_LOCK_DURATION_SECONDS,
+  type ChangePasswordInput,
+  INCORRECT_CURRENT_PASSWORD_MESSAGE,
   type LoginInput,
   type LoginResponse,
   MAX_FAILED_ATTEMPTS,
+  type RegisterInput,
 } from '@open-calorie-tracker/shared'
+import { SignJWT, jwtVerify } from 'jose'
+import { randomUUID } from 'node:crypto'
+import { AppConfig } from '../config/config.js'
 import { UsersService, normalizeUsername } from '../users/users.service.js'
 import { hashPassword, verifyPassword } from './password.js'
-import { TokenService } from './token.service.js'
 
 type Attempts = { failures: number; lockedUntil: number | undefined }
 
@@ -24,7 +36,7 @@ export class AuthService {
 
   constructor(
     private readonly users: UsersService,
-    private readonly tokens: TokenService,
+    private readonly config: AppConfig,
   ) {}
 
   async login({ username, password }: LoginInput, ip: string): Promise<LoginResponse> {
@@ -40,7 +52,57 @@ export class AuthService {
     }
 
     this.attempts.delete(attemptsKey)
-    return { accessToken: await this.tokens.issueAccessToken(user.id) }
+    return { accessToken: await this.issueAccessToken(user.id) }
+  }
+
+  // Registering also logs the new user in.
+  async register(input: RegisterInput): Promise<LoginResponse> {
+    const userId = await this.users.register(input)
+    return { accessToken: await this.issueAccessToken(userId) }
+  }
+
+  // Replaces the user's password once the current one proves it is them. Tokens already issued,
+  // including the one making this request, stay valid until they expire.
+  async changePassword(
+    userId: number,
+    { currentPassword, newPassword }: ChangePasswordInput,
+  ): Promise<void> {
+    const user = await this.users.findById(userId)
+    if (user === undefined || !(await verifyPassword(currentPassword, user.passwordHash))) {
+      throw new ForbiddenException(INCORRECT_CURRENT_PASSWORD_MESSAGE)
+    }
+
+    await this.users.setPassword(userId, newPassword)
+  }
+
+  // Returns the user id of a valid, unexpired token signed by this API, or undefined.
+  async verifyAccessToken(token: string): Promise<number | undefined> {
+    const { secret, issuer, audience } = this.config.jwt
+    try {
+      const { payload } = await jwtVerify(token, secret, {
+        issuer,
+        audience,
+        algorithms: ['HS256'],
+      })
+      return Number(payload.sub)
+    } catch {
+      return undefined
+    }
+  }
+
+  private issueAccessToken(userId: number): Promise<string> {
+    const { secret, issuer, audience } = this.config.jwt
+    const issuedAt = Math.floor(Date.now() / 1000)
+
+    return new SignJWT()
+      .setProtectedHeader({ alg: 'HS256', typ: 'JWT' })
+      .setIssuer(issuer)
+      .setAudience(audience)
+      .setSubject(String(userId))
+      .setJti(randomUUID())
+      .setIssuedAt(issuedAt)
+      .setExpirationTime(issuedAt + ACCESS_TOKEN_TTL_SECONDS)
+      .sign(secret)
   }
 
   private isLocked(attemptsKey: string): boolean {
