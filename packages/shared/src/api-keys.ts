@@ -63,3 +63,36 @@ const comparableName = (name: string) =>
 
 // Whether two of a user's keys would share a name.
 export const sameApiKeyName = (a: string, b: string) => comparableName(a) === comparableName(b)
+
+// What a token exchanged from an API key lets a third-party app do. Every key gets all of them,
+// in this order.
+export const API_SCOPES = [
+  'daily-log:read',
+  'food-entries:write',
+  'water-entries:write',
+  'serving-sizes:read',
+  'serving-sizes:write',
+] as const
+
+export type ApiScope = (typeof API_SCOPES)[number]
+
+// A token exchanged from an API key has no refresh: the app exchanges the key again.
+export const API_ACCESS_TOKEN_TTL_SECONDS = 10 * 60
+
+// The API answers it with 401 to any key it does not accept, without saying why.
+export const INVALID_API_KEY_MESSAGE = 'Invalid API key'
+
+// The API answers it with 403 when a token's scopes do not cover the endpoint.
+export const INSUFFICIENT_SCOPE_MESSAGE = 'Insufficient scope'
+
+// The body of POST /v1/token. Any string is accepted, so a malformed key answers like an unknown one.
+export const apiTokenRequestSchema = z.strictObject({ apiKey: z.string() })
+
+export type ApiTokenRequest = z.infer<typeof apiTokenRequestSchema>
+
+export type ApiTokenResponse = {
+  accessToken: string
+  tokenType: 'Bearer'
+  expiresIn: number
+  scopes: ApiScope[]
+}

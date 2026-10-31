@@ -1,11 +1,12 @@
-import { ConflictException, NotFoundException } from '@nestjs/common'
+import { ConflictException, NotFoundException, UnauthorizedException } from '@nestjs/common'
 import {
   API_KEY_NAME_TAKEN_ERROR,
   type ApiKey,
   type ApiKeyCreateInput,
+  INVALID_API_KEY_MESSAGE,
   apiKeyExpiresAt,
 } from '@open-calorie-tracker/shared'
-import { and, desc, eq } from 'drizzle-orm'
+import { and, desc, eq, gt, isNull, or } from 'drizzle-orm'
 import { createCipheriv, createDecipheriv, createHash, randomBytes, randomInt } from 'node:crypto'
 import type { Database } from '../../db/database.js'
 import { apiKeys } from '../../db/schema.js'
@@ -124,5 +125,23 @@ export class ApiKeysService {
       .where(and(eq(apiKeys.id, id), eq(apiKeys.userId, userId)))
       .returning({ id: apiKeys.id })
     if (removed.length === 0) throw new NotFoundException()
+  }
+
+  // Records that a third-party app used the key and returns its owner. Throws
+  // UnauthorizedException, without saying why, when the key is unknown, revoked or expired; a key
+  // expires at its expiresAt.
+  async registerUse(key: string, now = new Date()): Promise<number> {
+    const [used] = await this.database.db
+      .update(apiKeys)
+      .set({ lastUsedAt: now })
+      .where(
+        and(
+          eq(apiKeys.keyHash, hashOf(key)),
+          or(isNull(apiKeys.expiresAt), gt(apiKeys.expiresAt, now)),
+        ),
+      )
+      .returning({ userId: apiKeys.userId })
+    if (used === undefined) throw new UnauthorizedException(INVALID_API_KEY_MESSAGE)
+    return used.userId
   }
 }

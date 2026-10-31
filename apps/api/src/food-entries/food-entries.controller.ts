@@ -15,7 +15,7 @@ import {
   createFoodEntrySchema,
   foodEntrySchema,
 } from '@open-calorie-tracker/shared'
-import { AccessTokenGuard, UserId } from '../auth/access-token.guard.js'
+import { AccessTokenGuard, RequiresScope, UserId } from '../auth/access-token.guard.js'
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js'
 import { FoodEntriesService } from './food-entries.service.js'
 
@@ -23,6 +23,7 @@ const body = new ZodValidationPipe(foodEntrySchema)
 
 @Controller('v1/food-entries')
 @UseGuards(AccessTokenGuard)
+@RequiresScope('food-entries:write')
 export class FoodEntriesController {
   constructor(private readonly foodEntries: FoodEntriesService) {}
 

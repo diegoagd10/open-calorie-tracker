@@ -8,6 +8,10 @@ import {
 import {
   ACCESS_TOKEN_TTL_SECONDS,
   ACCOUNT_LOCK_DURATION_SECONDS,
+  API_ACCESS_TOKEN_TTL_SECONDS,
+  API_SCOPES,
+  type ApiScope,
+  type ApiTokenResponse,
   type ChangePasswordInput,
   INCORRECT_CURRENT_PASSWORD_MESSAGE,
   type LoginInput,
@@ -22,6 +26,10 @@ import { UsersService, normalizeUsername } from '../users/users.service.js'
 import { hashPassword, verifyPassword } from './password.js'
 
 type Attempts = { failures: number; lockedUntil: number | undefined }
+
+// Who a valid token is for. A token exchanged from an API key carries its scopes; a login token
+// has none and reaches every endpoint.
+export type TokenSubject = { userId: number; scopes: string[] | undefined }
 
 // Compared against when the username does not exist, so both cases take the same time.
 const dummyHash = hashPassword('dummy-password-for-timing')
@@ -75,8 +83,19 @@ export class AuthService {
     await this.users.setPassword(userId, newPassword)
   }
 
-  // Returns the user id of a valid, unexpired token signed by this API, or undefined.
-  async verifyAccessToken(token: string): Promise<number | undefined> {
+  // The token a third-party app gets for the owner of an API key the caller already accepted.
+  async issueApiToken(userId: number): Promise<ApiTokenResponse> {
+    const scopes = [...API_SCOPES]
+    return {
+      accessToken: await this.issueAccessToken(userId, scopes),
+      tokenType: 'Bearer',
+      expiresIn: API_ACCESS_TOKEN_TTL_SECONDS,
+      scopes,
+    }
+  }
+
+  // Returns who a valid, unexpired token signed by this API is for, or undefined.
+  async verifyAccessToken(token: string): Promise<TokenSubject | undefined> {
     const { secret, issuer, audience } = this.config.jwt
     try {
       const { payload } = await jwtVerify(token, secret, {
@@ -84,24 +103,30 @@ export class AuthService {
         audience,
         algorithms: ['HS256'],
       })
-      return Number(payload.sub)
+      const { scope } = payload
+      return {
+        userId: Number(payload.sub),
+        scopes: typeof scope === 'string' ? scope.split(' ') : undefined,
+      }
     } catch {
       return undefined
     }
   }
 
-  private issueAccessToken(userId: number): Promise<string> {
+  // Without scopes, a login token; with them, a shorter-lived token for a third-party app.
+  private issueAccessToken(userId: number, scopes?: ApiScope[]): Promise<string> {
     const { secret, issuer, audience } = this.config.jwt
     const issuedAt = Math.floor(Date.now() / 1000)
+    const ttl = scopes === undefined ? ACCESS_TOKEN_TTL_SECONDS : API_ACCESS_TOKEN_TTL_SECONDS
 
-    return new SignJWT()
+    return new SignJWT(scopes === undefined ? {} : { scope: scopes.join(' ') })
       .setProtectedHeader({ alg: 'HS256', typ: 'JWT' })
       .setIssuer(issuer)
       .setAudience(audience)
       .setSubject(String(userId))
       .setJti(randomUUID())
       .setIssuedAt(issuedAt)
-      .setExpirationTime(issuedAt + ACCESS_TOKEN_TTL_SECONDS)
+      .setExpirationTime(issuedAt + ttl)
       .sign(secret)
   }
 

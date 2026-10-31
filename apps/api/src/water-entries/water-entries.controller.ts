@@ -15,7 +15,7 @@ import {
   createWaterEntrySchema,
   waterEntrySchema,
 } from '@open-calorie-tracker/shared'
-import { AccessTokenGuard, UserId } from '../auth/access-token.guard.js'
+import { AccessTokenGuard, RequiresScope, UserId } from '../auth/access-token.guard.js'
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js'
 import { WaterEntriesService } from './water-entries.service.js'
 
@@ -23,6 +23,7 @@ const body = new ZodValidationPipe(waterEntrySchema)
 
 @Controller('v1/water-entries')
 @UseGuards(AccessTokenGuard)
+@RequiresScope('water-entries:write')
 export class WaterEntriesController {
   constructor(private readonly waterEntries: WaterEntriesService) {}
 

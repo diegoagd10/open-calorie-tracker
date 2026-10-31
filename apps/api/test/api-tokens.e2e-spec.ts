@@ -477,7 +477,8 @@ describe('API tokens (e2e)', () => {
     })
 
     it("F2 — another user's entries answer like missing ones", async () => {
-      const { foodId, waterId, servingSizeId } = await seedEntries(OTHER_USERNAME)
+      const { foodId, waterId } = await seedEntries(OTHER_USERNAME)
+      const { servingSizeId } = await seedEntries(USERNAME)
       const anaToken = await accessTokenFor(app, OTHER_USERNAME, PASSWORD)
       const before = await dailyLog(anaToken)
       const token = await tokenFor()
