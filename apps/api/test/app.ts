@@ -32,21 +32,28 @@ export const accessTokenFor = async (app: TestApp, username: string, password: s
   return (response.body as { accessToken: string }).accessToken
 }
 
-const signToken = (secret: string, expiresAt: number) =>
-  new SignJWT()
+const now = () => Math.floor(Date.now() / 1000)
+
+// Signs a token like the API does, for user 1 and valid for 10 minutes unless told otherwise. A
+// `scope` gives it the space-separated scopes of a token exchanged from an API key.
+export const signAccessToken = ({
+  secret = TEST_ENV.JWT_SECRET,
+  subject = '1',
+  expiresAt = now() + 600,
+  scope,
+}: { secret?: string; subject?: string; expiresAt?: number; scope?: string } = {}) =>
+  new SignJWT(scope === undefined ? {} : { scope })
     .setProtectedHeader({ alg: 'HS256', typ: 'JWT' })
     .setIssuer(TEST_ENV.JWT_ISSUER)
     .setAudience(TEST_ENV.JWT_AUDIENCE)
-    .setSubject('1')
+    .setSubject(subject)
     .setIssuedAt(expiresAt - 60)
     .setExpirationTime(expiresAt)
     .sign(new TextEncoder().encode(secret))
 
-const now = () => Math.floor(Date.now() / 1000)
-
 // Bearer tokens every guarded endpoint must reject with 401.
 export const INVALID_TOKENS = [
   ['a malformed token', () => Promise.resolve('not-a-jwt')],
-  ['an expired token', () => signToken(TEST_ENV.JWT_SECRET, now() - 60)],
-  ['a token signed with another secret', () => signToken('x'.repeat(42), now() + 600)],
+  ['an expired token', () => signAccessToken({ expiresAt: now() - 60 })],
+  ['a token signed with another secret', () => signAccessToken({ secret: 'x'.repeat(42) })],
 ] as const
