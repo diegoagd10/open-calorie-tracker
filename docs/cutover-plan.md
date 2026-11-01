@@ -69,21 +69,23 @@ import replaces that account's entries with the old app's.
 
 ## 3. Cutover (about 2 minutes of downtime)
 
-- [ ] **3.1 Pick the time** (You). Say when.
-- [ ] **3.2 Rollback point** (Claude). Tag the old image and copy svc-02 `~/open-calorie`.
-- [ ] **3.3 Stop the old app and run the final import** (Claude). Stop the old app on svc-02, then
+- [x] **3.1 Pick the time** (You). Say when.
+- [x] **3.2 Rollback point** (Claude). Tag the old image and copy svc-02 `~/open-calorie`.
+- [x] **3.3 Stop the old app and run the final import** (Claude). Stop the old app on svc-02, then
       import into your account on svc-01. Counts match.
-- [ ] **3.4 Public hostnames** (You). In Cloudflare Zero Trust, go to Tunnels. Move
+- [x] **3.4 Public hostnames** (You). In Cloudflare Zero Trust, go to Tunnels. Move
       `calorie.dagdappshub.com` from svc-02's tunnel to svc-01's tunnel, pointing at
       `http://127.0.0.1:<web port>`. Then add `calorie-api.dagdappshub.com` to svc-01's tunnel,
-      pointing at `http://127.0.0.1:<API port>`.
-- [ ] **3.5 Verify publicly** (Both). Check a probe request in the logs of each service, sign in,
+      pointing at `http://127.0.0.1:<API port>`. Done by renaming the staging hostname
+      `calorie-next.dagdappshub.com` to `calorie.dagdappshub.com`.
+- [x] **3.5 Verify publicly** (Both). Check a probe request in the logs of each service, sign in,
       and look at a past day and the water history.
-- [ ] **3.6 Muse** (You). Create a new API key in Settings and set Muse's connector to
+- [x] **3.6 Muse** (You). Create a new API key in Settings and set Muse's connector to
       `https://calorie-api.dagdappshub.com/v1/mcp` with that key. Done when Muse reads today's
       log.
-- [ ] **3.7 LAN route** (Claude). Rename the Traefik route to `calorie.local.dagdappshub.com`.
-- [ ] **3.8 Commit the stack** (Claude). Commit in `~/stacks` on svc-01, using the deployed
+- [x] **3.7 LAN route** (You decided). Not needed: the app is reached only through the tunnel, so
+      the Traefik route was removed and the web app is published only on `127.0.0.1:3010`.
+- [x] **3.8 Commit the stack** (Claude). Commit in `~/stacks` on svc-01, using the deployed
       commit hash in the message.
 
 Rollback: stop the new stack, point `calorie.dagdappshub.com` back at svc-02 (`127.0.0.1:3001`),
@@ -91,6 +93,6 @@ remove `calorie-api.dagdappshub.com` and start the old stack. Its data was never
 
 ## 4. Cleanup (about 2 weeks after cutover)
 
-- [ ] **4.1 Remove the old stack** (You run the commands Claude provides). Archive svc-02
-      `~/open-calorie` as a backup, then remove the old container, image and
-      `~/stacks/calorie` on svc-02.
+- [x] **4.1 Remove the old stack** (You approved, Claude ran). Removed the old container, its
+      images, `~/open-calorie` (13 GB, mostly the old food catalog) and `~/stacks/calorie` on svc-02.
+      Its SQLite database stays archived in svc-02 `~/open-calorie-rollback-20261101`.
