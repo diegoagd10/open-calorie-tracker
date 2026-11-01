@@ -6,7 +6,8 @@ check. Tick a box when its "done when" holds.
 Decisions: the stack is plain `docker compose` in `~/stacks` (no Portainer) on **svc-01**. The web
 app is public at `https://calorie.dagdappshub.com` and the API at
 `https://calorie-api.dagdappshub.com`, where Muse reaches MCP at `/v1/mcp`. The old app stays in
-charge of the data until the cutover, and every import replaces the new database's contents.
+charge of the data until the cutover. You register your account in the new app first, and every
+import replaces that account's entries with the old app's.
 
 ## 0. GitHub repo
 
@@ -22,21 +23,20 @@ charge of the data until the cutover, and every import replaces the new database
 
 - [x] **1.1 Health check** (Claude). `GET /v1/health` answers 200 once the database responds.
 - [x] **1.2 MCP on the API's own URL** (You decided). No forwarding through the web app: the
-      API is published on its own hostname (1.5 and 3.4), and Muse moves to it (3.6).
+      API is published on its own hostname (1.6 and 3.4), and Muse moves to it (3.6).
 - [ ] **1.3 Legacy import command** (Claude). `node dist/import-legacy <old database file>`
-      reads the old SQLite file and replaces all data in the new database in one transaction. It
-      refuses a database that already has data unless given `--replace`. It moves the user (with
-      their password hash converted to the new format), food entries and the serving sizes they
-      use, water entries and daily goals.
+      reads the old SQLite file and loads its user's food entries, the serving sizes they use,
+      water entries and daily goals into the account that already exists, replacing that
+      account's, in one transaction. Users and passwords are never touched.
 
       Tests cover each conversion: units, entries whose servings aren't in steps of 0.5, and
       missing nutrients.
 
 - [ ] **1.4 Login rate limiting** (Claude). Limit failed logins per IP and username, since the
       API is public. Needed before the cutover.
-- [ ] **1.5 Docker images** (Claude). A Dockerfile for the API and one for the web app (Next.js
+- [x] **1.5 Docker images** (Claude). One `Dockerfile` with an `api` and a `web` target (Next.js
       standalone output), plus `.dockerignore`.
-- [ ] **1.6 Compose file** (Claude). Defines the `api` and `web` services and a data bind mount.
+- [x] **1.6 Compose file** (Claude). Defines the `api` and `web` services and a data bind mount.
       Health checks use 1.1. Both are published on `127.0.0.1`, with ports set by variables. Done
       when `docker compose config -q` passes.
 - [ ] **1.7 Deployment docs** (Claude). A README section listing the environment variables, how
@@ -55,11 +55,13 @@ charge of the data until the cutover, and every import replaces the new database
       gets the login page and one to the API port gets 200 from `/v1/health`.
 - [ ] **2.4 Private HTTPS route** (Claude). Add `calorie-next.local.dagdappshub.com` to svc-01's
       Traefik config. Done when it answers with `ssl_verify=0`.
-- [ ] **2.5 Rehearsal import** (Claude). Take a hot copy of the prod database on svc-02 (SQLite
-      backup) and import it. Done when the row counts match the old database: 1 user,
+- [ ] **2.5 Register** (You). Create your account at `https://calorie-next.local.dagdappshub.com`
+      before anything else reaches the stack.
+- [ ] **2.6 Rehearsal import** (Claude). Take a hot copy of the prod database on svc-02 (SQLite
+      backup) and import it into your account. Done when the counts match the old database:
       278 food, 192 water, 1 goal.
-- [ ] **2.6 Check the data** (You). Sign in with your current password. Compare 3–4 days' totals
-      with the old app. Edit an entry, then log and delete one. Re-run 2.5 whenever you want
+- [ ] **2.7 Check the data** (You). Sign in. Compare 3–4 days' totals
+      with the old app. Edit an entry, then log and delete one. Re-run 2.6 whenever you want
       fresh data.
 
 ## 3. Cutover (about 2 minutes of downtime)
@@ -67,7 +69,7 @@ charge of the data until the cutover, and every import replaces the new database
 - [ ] **3.1 Pick the time** (You). Say when.
 - [ ] **3.2 Rollback point** (Claude). Tag the old image and copy svc-02 `~/open-calorie`.
 - [ ] **3.3 Stop the old app and run the final import** (Claude). Stop the old app on svc-02, then
-      import into svc-01 with `--replace`. Counts match.
+      import into your account on svc-01. Counts match.
 - [ ] **3.4 Public hostnames** (You). In Cloudflare Zero Trust, go to Tunnels. Move
       `calorie.dagdappshub.com` from svc-02's tunnel to svc-01's tunnel, pointing at
       `http://127.0.0.1:<web port>`. Then add `calorie-api.dagdappshub.com` to svc-01's tunnel,
