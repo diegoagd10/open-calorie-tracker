@@ -20,7 +20,7 @@ until the cutover, and every import replaces the new database's contents.
 ## 1. Code (this repo, test-first)
 
 - [x] **1.1 Health check** (Claude). `GET /v1/health` answers 200 once the database responds.
-- [ ] **1.2 MCP route** (Claude). The web app forwards `POST /api/mcp` to the API's `/v1/mcp`,
+- [x] **1.2 MCP route** (Claude). The web app forwards `POST /api/mcp` to the API's `/v1/mcp`,
       passing the `Authorization` header through. Done when an MCP client using an `oct_live_` key
       can list the tools through the web port.
 - [ ] **1.3 Legacy import command** (Claude). Reads the old SQLite file and replaces all data in
