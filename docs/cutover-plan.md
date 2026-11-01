@@ -24,7 +24,7 @@ import replaces that account's entries with the old app's.
 - [x] **1.1 Health check** (Claude). `GET /v1/health` answers 200 once the database responds.
 - [x] **1.2 MCP on the API's own URL** (You decided). No forwarding through the web app: the
       API is published on its own hostname (1.6 and 3.4), and Muse moves to it (3.6).
-- [ ] **1.3 Legacy import command** (Claude). `node dist/import-legacy <old database file>`
+- [x] **1.3 Legacy import command** (Claude). `node dist/import-legacy <old database file>`
       reads the old SQLite file and loads its user's food entries, the serving sizes they use,
       water entries and daily goals into the account that already exists, replacing that
       account's, in one transaction. Users and passwords are never touched.
