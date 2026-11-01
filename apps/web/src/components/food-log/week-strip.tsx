@@ -137,12 +137,12 @@ type WeekProps = {
   onSelect: (date: string) => void
 }
 
-// Back to today, shown only away from it, and the previous and next weeks.
+// Back to today, shown only away from it, and, on wide screens, the previous and next weeks.
 export function WeekControls({ date, today, onSelect }: WeekProps) {
   const arrow =
-    'flex size-9 items-center justify-center rounded-full border border-line bg-surface text-fg-soft sm:size-10'
+    'flex size-10 items-center justify-center rounded-full border border-line bg-surface text-fg-soft'
   return (
-    <div className="flex items-center gap-1.5 sm:gap-2">
+    <div className="flex items-center gap-2">
       {date !== today && (
         <button
           type="button"
@@ -153,22 +153,25 @@ export function WeekControls({ date, today, onSelect }: WeekProps) {
           Today
         </button>
       )}
-      <button
-        type="button"
-        aria-label="Previous week"
-        onClick={() => onSelect(shiftDay(date, -7))}
-        className={arrow}
-      >
-        <ChevronIcon direction="left" className="size-[18px]" />
-      </button>
-      <button
-        type="button"
-        aria-label="Next week"
-        onClick={() => onSelect(shiftDay(date, 7))}
-        className={arrow}
-      >
-        <ChevronIcon direction="right" className="size-[18px]" />
-      </button>
+      {/* Phones turn the week with a swipe instead. */}
+      <div className="hidden items-center gap-2 sm:flex">
+        <button
+          type="button"
+          aria-label="Previous week"
+          onClick={() => onSelect(shiftDay(date, -7))}
+          className={arrow}
+        >
+          <ChevronIcon direction="left" className="size-[18px]" />
+        </button>
+        <button
+          type="button"
+          aria-label="Next week"
+          onClick={() => onSelect(shiftDay(date, 7))}
+          className={arrow}
+        >
+          <ChevronIcon direction="right" className="size-[18px]" />
+        </button>
+      </div>
     </div>
   )
 }
