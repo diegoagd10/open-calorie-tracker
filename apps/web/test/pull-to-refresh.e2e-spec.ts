@@ -2,7 +2,7 @@ import { GENERIC_ERROR_MESSAGE } from '@open-calorie-tracker/shared'
 import { type Browser, type BrowserContext, type Locator, type Page, chromium } from 'playwright'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vite-plus/test'
 import type { Database } from '../../api/src/db/database'
-import { MOBILE, eventually, openPage, textOf } from './browser'
+import { MOBILE, box, eventually, openPage, textOf } from './browser'
 import {
   dailyLogRequests,
   finger,
@@ -14,6 +14,7 @@ import {
 } from './daily-log'
 import { clearFault, clearReceivedRequests, injectFault } from './fault-proxy'
 import { SEEDED } from './fixtures'
+import { header } from './header'
 import { connectDatabase, createUser, logIn } from './session'
 
 const { proxyUrl: PROXY_URL } = SEEDED
@@ -133,6 +134,57 @@ describe('Pull to refresh (e2e)', () => {
       expect(await home.loader().count()).toBe(0)
       expect(await dailyLogRequests(username)).toEqual([])
       expect(await home.entry('Manzana').count()).toBe(0)
+    })
+
+    it('moves the screen no more than 100 px however far the finger goes', async () => {
+      const titleTop = await topOf(home.title())
+
+      const touch = await finger(page)
+      await touch.down()
+      await touch.drag(600)
+
+      expect(await topOf(home.title())).toBeLessThanOrEqual(titleTop + 100)
+      await touch.up()
+    })
+
+    it('shows the loader in the gap between the header and the Food Log', async () => {
+      const touch = await finger(page)
+      await touch.down()
+      await touch.drag(120)
+      await home.loader().waitFor()
+
+      const loader = await box(home.loader())
+      const banner = await box(header(page).banner())
+      expect(loader.y).toBeGreaterThanOrEqual(banner.y + banner.height)
+      expect(loader.y + loader.height).toBeLessThanOrEqual(await topOf(home.title()))
+      await touch.up()
+    })
+
+    // Phones can swallow the release, e.g. an app opened from the iOS home screen.
+    it('reloads when the finger stops past 80 px and its release never arrives', async () => {
+      await logFood('Manzana', 95, '2026-10-24T10:58:00')
+      const titleTop = await topOf(home.title())
+
+      const touch = await finger(page)
+      await touch.down()
+      await touch.drag(120)
+
+      await waitForEntry('Manzana')
+      await home.loader().waitFor({ state: 'hidden' })
+      await expect.poll(() => topOf(home.title()), eventually).toBe(titleTop)
+    })
+
+    it('springs back without reloading when the finger stops before 80 px and its release never arrives', async () => {
+      await clearReceivedRequests(PROXY_URL, username)
+      const titleTop = await topOf(home.title())
+
+      const touch = await finger(page)
+      await touch.down()
+      await touch.drag(60)
+
+      await expect.poll(() => topOf(home.title()), eventually).toBe(titleTop)
+      expect(await home.loader().count()).toBe(0)
+      expect(await dailyLogRequests(username)).toEqual([])
     })
 
     it('shows an error and keeps the entries on screen when the reload fails', async () => {
