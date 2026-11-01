@@ -21,11 +21,15 @@ const dayFormat = (options: Intl.DateTimeFormatOptions) =>
 
 const longDay = dayFormat({ weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
 const shortWeekday = dayFormat({ weekday: 'short' })
+const shortDay = dayFormat({ month: 'short', day: 'numeric' })
 
 // "Saturday, October 24, 2026".
 export const formatLongDay = (day: Date) => longDay.format(day)
 
 export const formatShortWeekday = (day: Date) => shortWeekday.format(day)
+
+// "Oct 24".
+export const formatShortDay = (day: Date) => shortDay.format(day)
 
 // Monday to Sunday of the week the day is in.
 export const weekOf = (day: Date) => {

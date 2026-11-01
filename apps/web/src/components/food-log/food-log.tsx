@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useRef, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { Alert } from '@/components/alert'
 import { AppHeader } from '@/components/app-header'
 import { DeleteFoodDialog } from '@/components/food/delete-food-dialog'
@@ -17,10 +17,11 @@ import {
 import { EntryList } from './entry-list'
 import { formatLongDay, parseDay } from './format'
 import { Summary, WaterSummary } from './summary'
+import { type WeekSummaries, useDailySummaries } from './use-daily-summaries'
 import { useDailyLog } from './use-daily-log'
 import { usePullToRefresh } from './use-pull-to-refresh'
 import { type Today, useToday } from './use-today'
-import { WeekStrip } from './week-strip'
+import { WeekControls, WeekStrip, weekLabel } from './week-strip'
 
 function Loader() {
   return (
@@ -61,6 +62,7 @@ export function FoodLog() {
   const [selected, setSelected] = useState<string>()
   const logOut = useLogOut()
   const day = today === null ? null : { ...today, date: selected ?? today.date }
+  const week = useDailySummaries(day)
   return (
     <div className="flex min-h-screen flex-col bg-bg">
       <AppHeader logOut={logOut}>
@@ -75,8 +77,10 @@ export function FoodLog() {
       <DayLog
         key={`${day?.date} ${day?.timeZone}`}
         day={day}
-        isToday={day?.date === today?.date}
+        today={today?.date}
+        summaries={week.summaries}
         onSelect={setSelected}
+        onWeekChanged={week.reload}
         logOutFailed={logOut.failed}
       />
     </div>
@@ -85,16 +89,27 @@ export function FoodLog() {
 
 function DayLog({
   day,
-  isToday,
+  today,
+  summaries,
   onSelect,
+  onWeekChanged,
   logOutFailed,
 }: {
   day: Today | null
-  isToday: boolean
+  today: string | undefined
+  summaries: WeekSummaries | undefined
   onSelect: (date: string) => void
+  onWeekChanged: () => Promise<void>
   logOutFailed: boolean
 }) {
-  const { log, failed, reload } = useDailyLog(day)
+  const isToday = day?.date === today
+  const dailyLog = useDailyLog(day)
+  const { log, failed } = dailyLog
+  // A change to the day also changes its progress in the week strip.
+  const reloadDay = dailyLog.reload
+  const reload = useCallback(async () => {
+    await Promise.all([reloadDay(), onWeekChanged()])
+  }, [reloadDay, onWeekChanged])
   const content = useRef<HTMLDivElement>(null)
   const { showLoader } = usePullToRefresh(content, reload)
   const water = useWaterDialogs({
@@ -123,10 +138,22 @@ function DayLog({
         className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 px-4 pt-6 sm:px-8 sm:pt-8"
       >
         <main className="flex flex-col gap-6">
-          <h1 className="font-serif text-[40px] leading-none tracking-tight sm:text-5xl">
-            Food Log
-          </h1>
-          {day !== null && <WeekStrip date={day.date} onSelect={onSelect} />}
+          <div className="flex flex-wrap items-end justify-between gap-2 sm:gap-4">
+            <div className="flex flex-col gap-1.5 sm:gap-2">
+              <h1 className="font-serif text-[40px] leading-none tracking-tight sm:text-5xl">
+                Food Log
+              </h1>
+              {day !== null && today !== undefined && (
+                <p className="text-[13px] text-muted sm:text-sm">{weekLabel(day.date, today)}</p>
+              )}
+            </div>
+            {day !== null && today !== undefined && (
+              <WeekControls date={day.date} today={today} onSelect={onSelect} />
+            )}
+          </div>
+          {day !== null && today !== undefined && (
+            <WeekStrip date={day.date} today={today} summaries={summaries} onSelect={onSelect} />
+          )}
           {(failed || logOutFailed) && <Alert>{GENERIC_ERROR_MESSAGE}</Alert>}
           {/* Small screens stack the totals above the log; wide ones put them beside it. */}
           <div className="flex flex-col gap-6 lg:grid lg:grid-cols-[minmax(0,1fr)_24rem] lg:items-start">
