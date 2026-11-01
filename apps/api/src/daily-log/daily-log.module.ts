@@ -8,5 +8,7 @@ import { DailyLogService } from './daily-log.service.js'
   imports: [AuthModule, DailyGoalsModule],
   controllers: [DailyLogController],
   providers: [DailyLogService],
+  // The MCP server reads the daily log.
+  exports: [DailyLogService],
 })
 export class DailyLogModule {}

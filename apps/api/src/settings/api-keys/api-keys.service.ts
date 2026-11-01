@@ -11,13 +11,14 @@ import { createCipheriv, createDecipheriv, createHash, randomBytes, randomInt } 
 import type { Database } from '../../db/database.js'
 import { apiKeys } from '../../db/schema.js'
 
-const KEY_PREFIX = 'oct_live_'
+// Tells an API key apart from an access token.
+export const API_KEY_PREFIX = 'oct_live_'
 const KEY_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
 const KEY_RANDOM_LENGTH = 32
 
 // "oct_live_" + 32 random letters and digits.
 const generateKey = () =>
-  KEY_PREFIX +
+  API_KEY_PREFIX +
   Array.from(
     { length: KEY_RANDOM_LENGTH },
     () => KEY_ALPHABET[randomInt(KEY_ALPHABET.length)],
@@ -25,8 +26,8 @@ const generateKey = () =>
 
 // Enough to tell keys apart without revealing them.
 const previewOf = (key: string) => {
-  const random = key.slice(KEY_PREFIX.length)
-  return `${KEY_PREFIX}${random.slice(0, 4)}…${random.slice(-4)}`
+  const random = key.slice(API_KEY_PREFIX.length)
+  return `${API_KEY_PREFIX}${random.slice(0, 4)}…${random.slice(-4)}`
 }
 
 // Finds a key by its value without decrypting every stored key.

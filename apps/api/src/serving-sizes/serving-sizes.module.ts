@@ -7,7 +7,7 @@ import { ServingSizesService } from './serving-sizes.service.js'
   imports: [AuthModule],
   controllers: [ServingSizesController],
   providers: [ServingSizesService],
-  // Food entries point to the user's serving sizes.
+  // Food entries point to the user's serving sizes, and the MCP server lists and creates them.
   exports: [ServingSizesService],
 })
 export class ServingSizesModule {}

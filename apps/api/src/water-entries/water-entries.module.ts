@@ -7,5 +7,7 @@ import { WaterEntriesService } from './water-entries.service.js'
   imports: [AuthModule],
   controllers: [WaterEntriesController],
   providers: [WaterEntriesService],
+  // The MCP server logs water.
+  exports: [WaterEntriesService],
 })
 export class WaterEntriesModule {}

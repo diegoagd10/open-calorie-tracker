@@ -14,10 +14,12 @@ const parseDate = (date: string) => {
   return { year, month, day }
 }
 
-// Rejects dates that do not exist, like 2026-02-30, which Date.UTC would roll over.
+// Rejects dates that do not exist, like 2026-02-30, which Date.UTC would roll over. Zod runs it
+// even when the format is wrong, which makes an invalid Date.
 const isCalendarDate = (date: string) => {
   const { year, month, day } = parseDate(date)
-  return new Date(Date.UTC(year, month - 1, day)).toISOString().startsWith(date)
+  const parsed = new Date(Date.UTC(year, month - 1, day))
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().startsWith(date)
 }
 
 export const dayQuerySchema = z.object({
