@@ -5,6 +5,7 @@
   color-scheme: dark;
   --bg: #13120f;
   --surface: #1c1b18;
+  --surface-selected: #262520;
   --line: #2e2c28;
   --line-strong: #3a3833;
   --fg: #ece8e1;
@@ -38,6 +39,7 @@
     color-scheme: light;
     --bg: #f6f4ef;
     --surface: #ffffff;
+    --surface-selected: #f1efe8;
     --line: #e3dfd5;
     --line-strong: #cfc9bc;
     --fg: #1c1b18;
@@ -70,6 +72,7 @@
 @theme inline {
   --color-bg: var(--bg);
   --color-surface: var(--surface);
+  --color-surface-selected: var(--surface-selected);
   --color-line: var(--line);
   --color-line-strong: var(--line-strong);
   --color-fg: var(--fg);

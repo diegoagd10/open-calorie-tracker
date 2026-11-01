@@ -1,4 +1,4 @@
-// Response of GET /v1/daily-log, read by the web app, and the goals it reports.
+// Responses of GET /v1/daily-log and /v1/daily-summaries, read by the web app, and their goals.
 
 export type Nutrient = 'protein' | 'carbohydrate' | 'fat' | 'fiber' | 'sugar' | 'sodium'
 
@@ -43,4 +43,20 @@ export type DailyLog = {
   totals: DailyTotals
   // Newest first.
   entries: LogEntry[]
+}
+
+// The longest range GET /v1/daily-summaries answers, in days.
+export const DAILY_SUMMARIES_MAX_DAYS = 31
+
+export type DaySummary = { date: string; calories: number; foodEntries: number }
+
+// Response of GET /v1/daily-summaries: how each day of a range went, for the Food Log's week strip.
+export type DailySummaries = {
+  // YYYY-MM-DD in timeZone, both included.
+  from: string
+  to: string
+  timeZone: string
+  goals: DailyGoals
+  // One per day, oldest first.
+  days: DaySummary[]
 }

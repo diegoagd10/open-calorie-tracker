@@ -10,6 +10,7 @@ import {
   pullToRefresh,
   seedFoodEntry,
   seedWaterEntry,
+  swipe,
 } from './daily-log'
 import { connectDatabase, signedInPage } from './session'
 import { SEEDED } from './fixtures'
@@ -54,6 +55,11 @@ describe('Selected-day log (e2e)', () => {
 
   const select = async (date: string) => {
     await home.week().getByRole('button', { name: date, exact: true }).click()
+    await expect.poll(() => textOf(home.footer()), eventually).toContain(`date ${date}`)
+  }
+  // Phones turn the week with a swipe: to the left for the next one.
+  const turnWeek = async (direction: 'next' | 'previous', date: string) => {
+    await swipe(page, home.week(), direction === 'next' ? -150 : 150)
     await expect.poll(() => textOf(home.footer()), eventually).toContain(`date ${date}`)
   }
   const total = async (name: string, value: string) => {
@@ -117,13 +123,25 @@ describe('Selected-day log (e2e)', () => {
     expect(await home.week().locator('[aria-current="date"]').getAttribute('aria-label')).toBe(
       '2026-10-23',
     )
-    await page.getByRole('button', { name: 'Next week', exact: true }).click()
+    await turnWeek('next', '2026-10-30')
     await select('2026-11-01')
-    await page.getByRole('button', { name: 'Previous week', exact: true }).click()
+    await turnWeek('previous', '2026-10-25')
     await select('2026-10-24')
     await total('Calories', '100')
-    for (let week = 0; week < 10; week++) {
-      await page.getByRole('button', { name: 'Next week', exact: true }).click()
+    // Ten weeks later, the same weekday.
+    for (const date of [
+      '2026-10-31',
+      '2026-11-07',
+      '2026-11-14',
+      '2026-11-21',
+      '2026-11-28',
+      '2026-12-05',
+      '2026-12-12',
+      '2026-12-19',
+      '2026-12-26',
+      '2027-01-02',
+    ]) {
+      await turnWeek('next', date)
     }
     await select('2027-01-01')
     await total('Calories', '0')

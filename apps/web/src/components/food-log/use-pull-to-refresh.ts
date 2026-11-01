@@ -7,6 +7,8 @@ const RESISTANCE = 0.5
 // Where the screen rests while reloading, leaving room for the loader.
 const REFRESHING_OFFSET_PX = 56
 const SETTLE_TRANSITION = 'transform 200ms ease-out'
+// How far the finger moves before the gesture counts as sideways, like a swipe through the weeks.
+const AXIS_LOCK_PX = 6
 
 // Pull to refresh for touch screens: dragging down from the top of the page moves `content` with
 // the finger, and releasing past the threshold calls `onRefresh`. Mouse drags are ignored.
@@ -24,6 +26,8 @@ export const usePullToRefresh = (
 
   useEffect(() => {
     let startY: number | undefined
+    let startX = 0
+    let locked = false
     let distance = 0
     let busy = false
 
@@ -39,12 +43,26 @@ export const usePullToRefresh = (
       const touch = event.touches[0]
       if (busy || window.scrollY > 0 || event.touches.length !== 1 || touch === undefined) return
       startY = touch.clientY
+      startX = touch.clientX
+      locked = false
       distance = 0
     }
 
     const onTouchMove = (event: TouchEvent) => {
       const touch = event.touches[0]
       if (startY === undefined || touch === undefined) return
+      const across = Math.abs(touch.clientX - startX)
+      const down = Math.abs(touch.clientY - startY)
+      if (!locked && Math.max(across, down) > AXIS_LOCK_PX) {
+        locked = true
+        // A sideways gesture is not a pull.
+        if (across > down) {
+          startY = undefined
+          setArmed(false)
+          moveContent(0, true)
+          return
+        }
+      }
       distance = Math.max(0, touch.clientY - startY)
       // Moving up scrolls the page as usual.
       if (distance === 0) return

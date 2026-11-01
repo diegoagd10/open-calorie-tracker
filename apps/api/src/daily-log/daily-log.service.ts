@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common'
 import {
   type DailyLog,
+  type DailySummaries,
   type DailyTotals,
   type LogEntry,
   type Nutrient,
@@ -17,7 +18,7 @@ import {
 import { type StoredFood, toFoodLogEntry } from '../food-entries/food-entries.service.js'
 import { toWaterLogEntry } from '../water-entries/water-entries.service.js'
 import { DailyGoalsService } from '../settings/daily-goals/daily-goals.service.js'
-import { type DayQuery, dayRange } from './day.js'
+import { type DayQuery, type RangeQuery, datesBetween, dayRange } from './day.js'
 
 const NUTRIENTS: Nutrient[] = ['protein', 'carbohydrate', 'fat', 'fiber', 'sugar', 'sodium']
 
@@ -80,5 +81,43 @@ export class DailyLogService {
     entries.sort((a, b) => b.loggedAt.localeCompare(a.loggedAt))
 
     return { ...day, goals, totals: totalsOf(food, water), entries }
+  }
+
+  // Each day's calories, from the user's food entries between the first and the last midnight.
+  async dailySummaries(userId: number, range: RangeQuery): Promise<DailySummaries> {
+    const days = datesBetween(range.from, range.to).map((date) => ({
+      date,
+      end: dayRange({ date, timeZone: range.timeZone }).end,
+      calories: [] as number[],
+    }))
+    const start = dayRange({ date: range.from, timeZone: range.timeZone }).start
+    const [food, goals] = await Promise.all([
+      this.database.db
+        .select({ calories: foodEntries.calories, loggedAt: foodEntries.loggedAt })
+        .from(foodEntries)
+        .where(
+          and(
+            eq(foodEntries.userId, userId),
+            gte(foodEntries.loggedAt, start),
+            lt(foodEntries.loggedAt, days.at(-1)?.end ?? start),
+          ),
+        ),
+      this.dailyGoals.goalsOf(userId),
+    ])
+
+    // Days are in order, so an entry belongs to the first one ending after it.
+    for (const entry of food) {
+      days.find((day) => entry.loggedAt < day.end)?.calories.push(entry.calories)
+    }
+
+    return {
+      ...range,
+      goals,
+      days: days.map((day) => ({
+        date: day.date,
+        calories: sum(day.calories),
+        foodEntries: day.calories.length,
+      })),
+    }
   }
 }

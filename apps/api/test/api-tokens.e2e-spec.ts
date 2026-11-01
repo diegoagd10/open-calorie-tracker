@@ -227,6 +227,18 @@ describe('API tokens (e2e)', () => {
       ['GET', '/v1/daily-log', 200, (bearer) => getDailyLog(bearer)],
       [
         'GET',
+        '/v1/daily-summaries',
+        200,
+        (bearer) =>
+          withBearer(
+            http()
+              .get('/v1/daily-summaries')
+              .query({ from: '2026-10-26', to: '2026-11-01', timeZone: 'America/New_York' }),
+            bearer,
+          ),
+      ],
+      [
+        'GET',
         '/v1/food-entries/:id',
         200,
         (bearer) => withBearer(http().get(`/v1/food-entries/${ids.foodId}`), bearer),
@@ -305,6 +317,7 @@ describe('API tokens (e2e)', () => {
       ['serving-sizes:read', 'POST', '/v1/serving-sizes'],
       ['serving-sizes:write', 'GET', '/v1/serving-sizes'],
       ['food-entries:write', 'GET', '/v1/daily-log'],
+      ['food-entries:read', 'GET', '/v1/daily-summaries'],
       ['food-entries:write', 'GET', '/v1/food-entries/:id'],
       ['water-entries:write', 'GET', '/v1/water-entries/:id'],
       ['daily-log:read', 'GET', '/v1/food-entries/:id'],
