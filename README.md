@@ -76,17 +76,3 @@ before exposing the web app. Back up by stopping the stack and copying `DATA_PAT
 To update, replace the source with the new commit (keeping `.env` and
 `docker-compose.override.yml`) and run `docker compose up -d --build`; migrations run on startup.
 Tag the running images first to be able to go back.
-
-### Importing open-calory-tracker's data
-
-`db:import-legacy` loads the food, water and daily goals of the old app's only user into this
-app's only account, replacing that account's entries, serving sizes and goals in one batch. Users
-and passwords are never touched, so register first. Quantities the forms can't take (0.5 to 20
-servings in steps of 0.5) become 1 serving of what was eaten, e.g. "11.4 g".
-
-Copy a backup of the old database into `DATA_PATH`, then:
-
-```bash
-docker compose exec api node dist/import-legacy /app/data/legacy.sqlite            # empty account
-docker compose exec api node dist/import-legacy /app/data/legacy.sqlite --replace  # run again
-```

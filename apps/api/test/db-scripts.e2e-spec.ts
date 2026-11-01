@@ -6,9 +6,6 @@ import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vite-plus/test'
 import { Database } from '../src/db/database.js'
-import { waterEntries } from '../src/db/schema.js'
-import { seedWaterEntry } from '../src/db/seed.js'
-import { LegacyDatabase } from './legacy/legacy-database.js'
 
 const apiDir = fileURLToPath(new URL('..', import.meta.url))
 
@@ -58,12 +55,9 @@ describe('database scripts (e2e)', () => {
     await rm(dataDir, { recursive: true, force: true })
   })
 
-  // Runs what the db:seed, db:reset and db:import-legacy scripts run after building.
-  const run = (
-    script: 'seed' | 'reset' | 'import-legacy',
-    env: Record<string, string> = {},
-    args: string[] = [],
-  ) => exec(['node', `${BUILD_DIR}/${script}`, ...args], { DATABASE_URL: databaseUrl, ...env })
+  // Runs what the db:seed and db:reset scripts run after building.
+  const run = (script: 'seed' | 'reset', env: Record<string, string> = {}) =>
+    exec(['node', `${BUILD_DIR}/${script}`], { DATABASE_URL: databaseUrl, ...env })
 
   const stderrOf = (failure: unknown) =>
     String((failure as { stderr?: unknown } | undefined)?.stderr)
@@ -98,76 +92,6 @@ describe('database scripts (e2e)', () => {
 
       expect(stderrOf(failure)).toContain('Refusing to reset a production database')
       expect(await storedUsernames()).toEqual(['ana'])
-    })
-  })
-
-  describe('db:import-legacy', () => {
-    let legacy: LegacyDatabase
-
-    // An account in the new app, and a user of the old one who drank 12.5 fl oz.
-    beforeEach(async () => {
-      await seed('ana')
-      legacy = await LegacyDatabase.create()
-      const userId = await legacy.addUser('ana')
-      await legacy.addWater(userId, { logDate: '2026-10-26T13:00:00.000Z', ounces: '12.5' })
-    })
-
-    afterEach(async () => {
-      await legacy.remove()
-    })
-
-    const importLegacy = (...options: string[]) =>
-      run('import-legacy', {}, [legacy.path, ...options])
-
-    const withDatabase = async <T>(use: (database: Database) => Promise<T>) => {
-      const database = await Database.connect(databaseUrl)
-      try {
-        return await use(database)
-      } finally {
-        database.close()
-      }
-    }
-
-    const storedWaterAmounts = () =>
-      withDatabase(async (database) =>
-        (await database.db.select().from(waterEntries)).map((entry) => entry.amount),
-      )
-
-    const logWater = (amount: number) =>
-      withDatabase((database) =>
-        seedWaterEntry(database, { username: 'ana', loggedAt: new Date(), amount }),
-      )
-
-    it('imports into the account and reports what it imported', async () => {
-      const { stdout } = await importLegacy()
-
-      expect(stdout).toContain('Imported food entries: 0, water entries: 1, daily goals: 0')
-      expect(await storedWaterAmounts()).toEqual([12.5])
-    })
-
-    it('refuses an account that already has entries', async () => {
-      await logWater(8)
-
-      const failure: unknown = await importLegacy().catch((error: unknown) => error)
-
-      expect(stderrOf(failure)).toContain(
-        'The account already has entries; pass --replace to replace them',
-      )
-      expect(await storedWaterAmounts()).toEqual([8])
-    })
-
-    it("replaces the account's entries with --replace", async () => {
-      await logWater(8)
-
-      await importLegacy('--replace')
-
-      expect(await storedWaterAmounts()).toEqual([12.5])
-    })
-
-    it('refuses to run without the old database', async () => {
-      const failure: unknown = await run('import-legacy').catch((error: unknown) => error)
-
-      expect(stderrOf(failure)).toContain('Usage: db:import-legacy <old database file> [--replace]')
     })
   })
 })
