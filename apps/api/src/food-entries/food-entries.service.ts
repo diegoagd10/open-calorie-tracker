@@ -1,12 +1,19 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common'
 import type {
   CreateFoodEntryInput,
+  EditableFoodEntry,
   FoodEntryInput,
   FoodLogEntry,
 } from '@open-calorie-tracker/shared'
 import { and, eq, sql } from 'drizzle-orm'
 import { Database } from '../db/database.js'
-import { type FoodEntry, type FoodSource, foodEntries, foodSources } from '../db/schema.js'
+import {
+  type FoodEntry,
+  type FoodSource,
+  foodEntries,
+  foodSources,
+  servingSizes,
+} from '../db/schema.js'
 import { ServingSizesService } from '../serving-sizes/serving-sizes.service.js'
 
 // A food entry with the names of its serving size and source.
@@ -51,8 +58,8 @@ export class FoodEntriesService {
     const servingSize = await this.servingSizes.find(userId, servingSizeId)
     if (servingSize === undefined) throw new BadRequestException(['Unknown serving size'])
 
-    const times = (value: number | undefined) =>
-      value === undefined ? null : round(value * quantity)
+    const times = (value: number | null | undefined) =>
+      value === undefined || value === null ? null : round(value * quantity)
     const values = {
       name,
       servingSizeId,
@@ -66,6 +73,37 @@ export class FoodEntriesService {
       sodium: times(nutrients.sodium),
     }
     return { values, servingSize: servingSize.name }
+  }
+
+  // The entry per serving, as PATCH takes it back. Totals of entries made through the API divide
+  // back exactly; rounding to one decimal, as PATCH accepts, drops the floating point noise.
+  async find(userId: number, id: number): Promise<EditableFoodEntry> {
+    const entry = await this.database.db
+      .select({ entry: foodEntries, servingSize: servingSizes.name })
+      .from(foodEntries)
+      .innerJoin(servingSizes, eq(foodEntries.servingSizeId, servingSizes.id))
+      .where(ownedBy(userId, id))
+      .get()
+    if (entry === undefined) throw new NotFoundException()
+
+    const { quantity, loggedAt } = entry.entry
+    const perServing = (value: number) => Math.round((value / quantity) * 10) / 10
+    const nutrient = (value: number | null) => (value === null ? null : perServing(value))
+    return {
+      id,
+      loggedAt: loggedAt.toISOString(),
+      name: entry.entry.name,
+      servingSizeId: entry.entry.servingSizeId,
+      servingSize: entry.servingSize,
+      quantity,
+      calories: perServing(entry.entry.calories),
+      protein: nutrient(entry.entry.protein),
+      carbohydrate: nutrient(entry.entry.carbohydrate),
+      fat: nutrient(entry.entry.fat),
+      fiber: nutrient(entry.entry.fiber),
+      sugar: nutrient(entry.entry.sugar),
+      sodium: nutrient(entry.entry.sodium),
+    }
   }
 
   // Logged at the selected instant (or now), always as manual.

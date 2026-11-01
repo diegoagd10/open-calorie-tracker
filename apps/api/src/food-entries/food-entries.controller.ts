@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Delete,
+  Get,
   HttpCode,
   Param,
   ParseIntPipe,
@@ -13,13 +14,13 @@ import {
   type CreateFoodEntryInput,
   type FoodEntryInput,
   createFoodEntrySchema,
-  foodEntrySchema,
+  updateFoodEntrySchema,
 } from '@open-calorie-tracker/shared'
 import { AccessTokenGuard, RequiresScope, UserId } from '../auth/access-token.guard.js'
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js'
 import { FoodEntriesService } from './food-entries.service.js'
 
-const body = new ZodValidationPipe(foodEntrySchema)
+const body = new ZodValidationPipe(updateFoodEntrySchema)
 
 @Controller('v1/food-entries')
 @UseGuards(AccessTokenGuard)
@@ -33,6 +34,12 @@ export class FoodEntriesController {
     @Body(new ZodValidationPipe(createFoodEntrySchema)) input: CreateFoodEntryInput,
   ) {
     return this.foodEntries.create(userId, input)
+  }
+
+  @Get(':id')
+  @RequiresScope('food-entries:read')
+  find(@UserId() userId: number, @Param('id', ParseIntPipe) id: number) {
+    return this.foodEntries.find(userId, id)
   }
 
   @Patch(':id')

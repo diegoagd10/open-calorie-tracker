@@ -23,6 +23,17 @@ const ownedBy = (userId: number, id: number) =>
 export class WaterEntriesService {
   constructor(private readonly database: Database) {}
 
+  // The entry as PATCH takes it back, which ignores the id and the time.
+  async find(userId: number, id: number): Promise<Omit<WaterLogEntry, 'type'>> {
+    const entry = await this.database.db
+      .select()
+      .from(waterEntries)
+      .where(ownedBy(userId, id))
+      .get()
+    if (entry === undefined) throw new NotFoundException()
+    return { id, loggedAt: entry.loggedAt.toISOString(), amount: entry.amount }
+  }
+
   // Logged at the selected instant, defaulting to now for existing clients.
   async create(
     userId: number,

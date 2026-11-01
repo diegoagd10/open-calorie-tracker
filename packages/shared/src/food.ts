@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import type { Nutrient } from './daily-log'
 import { filterDecimalInput, hasAtMostOneDecimal } from './decimal'
 
 // Food entries are entered per serving, as the label prints them: calories in kcal, sodium in mg,
@@ -22,8 +23,8 @@ const perServing = z
   .max(MAX_PER_SERVING, `Must be at most ${MAX_PER_SERVING}`)
   .refine(hasAtMostOneDecimal, 'Can have one decimal')
 
-// A nutrient is left out when the label doesn't say.
-const nutrient = perServing.optional()
+// A nutrient is left out, or null, when the label doesn't say.
+const nutrient = perServing.nullish()
 
 // Editable food fields, per serving. Validated by the web form before calling the
 // server, and again by the API, which multiplies by the servings.
@@ -54,12 +55,33 @@ export const foodEntrySchema = z.strictObject({
 export type FoodEntryInput = z.infer<typeof foodEntrySchema>
 
 // POST accepts a selected-day instant with a timezone; omission uses the server clock.
-// PATCH uses foodEntrySchema so an entry cannot be moved to another day.
+// PATCH ignores loggedAt (updateFoodEntrySchema), so an entry cannot be moved to another day.
 export const createFoodEntrySchema = foodEntrySchema.extend({
   loggedAt: z.iso.datetime({ offset: true }).optional(),
 })
 
 export type CreateFoodEntryInput = z.infer<typeof createFoodEntrySchema>
+
+// GET /v1/food-entries/:id answers an entry per serving, as PATCH takes it back.
+export type EditableFoodEntry = {
+  id: number
+  loggedAt: string
+  name: string
+  servingSizeId: number
+  servingSize: string
+  quantity: number
+  calories: number
+} & Record<Nutrient, number | null>
+
+// The body of PATCH /v1/food-entries/:id. It ignores the fields of an EditableFoodEntry that PATCH
+// does not change, so a client can send back what it read; any other unknown key is rejected.
+export const updateFoodEntrySchema = foodEntrySchema
+  .extend({
+    id: z.unknown().optional(),
+    loggedAt: z.unknown().optional(),
+    servingSize: z.unknown().optional(),
+  })
+  .transform(({ id: _id, loggedAt: _loggedAt, servingSize: _servingSize, ...input }) => input)
 
 // Trims a serving size and leaves single spaces inside it, keeping its case: "  1   cup " → "1 cup".
 export const normalizeServingSize = (name: string) => name.trim().replaceAll(/\s+/g, ' ')

@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Delete,
+  Get,
   HttpCode,
   Param,
   ParseIntPipe,
@@ -33,6 +34,12 @@ export class WaterEntriesController {
     @Body(new ZodValidationPipe(createWaterEntrySchema)) input: CreateWaterEntryInput,
   ) {
     return this.waterEntries.create(userId, input)
+  }
+
+  @Get(':id')
+  @RequiresScope('water-entries:read')
+  find(@UserId() userId: number, @Param('id', ParseIntPipe) id: number) {
+    return this.waterEntries.find(userId, id)
   }
 
   @Patch(':id')

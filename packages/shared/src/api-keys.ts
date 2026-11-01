@@ -68,7 +68,9 @@ export const sameApiKeyName = (a: string, b: string) => comparableName(a) === co
 // in this order.
 export const API_SCOPES = [
   'daily-log:read',
+  'food-entries:read',
   'food-entries:write',
+  'water-entries:read',
   'water-entries:write',
   'serving-sizes:read',
   'serving-sizes:write',
