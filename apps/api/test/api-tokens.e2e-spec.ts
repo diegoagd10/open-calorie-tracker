@@ -4,19 +4,19 @@ import {
   INSUFFICIENT_SCOPE_MESSAGE,
   INVALID_API_KEY_MESSAGE,
 } from '@open-calorie-tracker/shared'
-import { eq } from 'drizzle-orm'
 import { decodeJwt, jwtVerify } from 'jose'
 import request from 'supertest'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 import { Database } from '../src/db/database.js'
-import { foodEntries, users, waterEntries } from '../src/db/schema.js'
-import { seedApiKey, seedFoodEntry, seedUser, seedWaterEntry } from '../src/db/seed.js'
+import { seedApiKey, seedUser } from '../src/db/seed.js'
 import {
   TEST_ENV,
   type TestApp,
   accessTokenFor,
   createTestApp,
+  seedEntries,
   signAccessToken,
+  userIdOf,
   withBearer,
 } from './app.js'
 
@@ -106,40 +106,6 @@ describe('API tokens (e2e)', () => {
     expect(response.status).toBe(204)
   }
 
-  const userIdOf = async (username: string) => {
-    const [user] = await database.db
-      .select({ id: users.id })
-      .from(users)
-      .where(eq(users.username, username))
-    if (user === undefined) throw new Error(`No user named "${username}"`)
-    return user.id
-  }
-
-  // Seeds a food and a water entry on DATE and returns their ids and the food's serving size.
-  const seedEntries = async (username: string) => {
-    const loggedAt = new Date('2026-10-26T13:00:00Z')
-    await seedFoodEntry(database, {
-      username,
-      loggedAt,
-      name: 'Oatmeal',
-      servingSize: '1 cup',
-      quantity: 1,
-      calories: 150,
-    })
-    await seedWaterEntry(database, { username, loggedAt, amount: 16 })
-    const userId = await userIdOf(username)
-    const [food] = await database.db
-      .select()
-      .from(foodEntries)
-      .where(eq(foodEntries.userId, userId))
-    const [water] = await database.db
-      .select()
-      .from(waterEntries)
-      .where(eq(waterEntries.userId, userId))
-    if (food === undefined || water === undefined) throw new Error('The entries were not seeded')
-    return { foodId: food.id, waterId: water.id, servingSizeId: food.servingSizeId }
-  }
-
   describe('A — exchanging a key', () => {
     it('A1 — a valid key is exchanged for a 10-minute access token', async () => {
       const response = await exchange({ apiKey: zapier.key })
@@ -159,7 +125,7 @@ describe('API tokens (e2e)', () => {
       const { payload } = await jwtVerify(token, new TextEncoder().encode(TEST_ENV.JWT_SECRET))
 
       const login = decodeJwt(loginToken)
-      expect(payload.sub).toBe(String(await userIdOf(USERNAME)))
+      expect(payload.sub).toBe(String(await userIdOf(database, USERNAME)))
       expect(payload['scope']).toBe(
         'daily-log:read food-entries:read food-entries:write water-entries:read water-entries:write serving-sizes:read serving-sizes:write',
       )
@@ -247,7 +213,7 @@ describe('API tokens (e2e)', () => {
     let ids: Awaited<ReturnType<typeof seedEntries>>
 
     beforeEach(async () => {
-      ids = await seedEntries(USERNAME)
+      ids = await seedEntries(database, USERNAME)
     })
 
     const apple = () => ({
@@ -345,7 +311,10 @@ describe('API tokens (e2e)', () => {
       ['food-entries:read', 'PATCH', '/v1/food-entries/:id'],
       ['water-entries:read', 'DELETE', '/v1/water-entries/:id'],
     ])('C2 — a token with only %s gets 403 on %s %s', async (scope, method, path) => {
-      const token = await signAccessToken({ subject: String(await userIdOf(USERNAME)), scope })
+      const token = await signAccessToken({
+        subject: String(await userIdOf(database, USERNAME)),
+        scope,
+      })
 
       const response = await endpoint(method, path)(token)
 
@@ -474,7 +443,7 @@ describe('API tokens (e2e)', () => {
 
   describe('F — ownership', () => {
     it("F1 — entries created with a key belong to the key's owner", async () => {
-      const { servingSizeId } = await seedEntries(USERNAME)
+      const { servingSizeId } = await seedEntries(database, USERNAME)
       const token = await tokenFor()
 
       const response = await withBearer(
@@ -496,8 +465,8 @@ describe('API tokens (e2e)', () => {
     })
 
     it("F2 — another user's entries answer like missing ones", async () => {
-      const { foodId, waterId } = await seedEntries(OTHER_USERNAME)
-      const { servingSizeId } = await seedEntries(USERNAME)
+      const { foodId, waterId } = await seedEntries(database, OTHER_USERNAME)
+      const { servingSizeId } = await seedEntries(database, USERNAME)
       const anaToken = await accessTokenFor(app, OTHER_USERNAME, PASSWORD)
       const before = await dailyLog(anaToken)
       const token = await tokenFor()

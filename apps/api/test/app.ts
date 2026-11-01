@@ -1,6 +1,10 @@
+import { eq } from 'drizzle-orm'
 import { SignJWT } from 'jose'
 import request from 'supertest'
 import { createApp } from '../src/app.js'
+import type { Database } from '../src/db/database.js'
+import { foodEntries, users, waterEntries } from '../src/db/schema.js'
+import { seedFoodEntry, seedWaterEntry } from '../src/db/seed.js'
 
 // The only place the e2e tests configure the API, so a new variable is added here once.
 export const TEST_ENV = {
@@ -57,3 +61,35 @@ export const INVALID_TOKENS = [
   ['an expired token', () => signAccessToken({ expiresAt: now() - 60 })],
   ['a token signed with another secret', () => signAccessToken({ secret: 'x'.repeat(42) })],
 ] as const
+
+export const userIdOf = async (database: Database, username: string) => {
+  const [user] = await database.db
+    .select({ id: users.id })
+    .from(users)
+    .where(eq(users.username, username))
+  if (user === undefined) throw new Error(`No user named "${username}"`)
+  return user.id
+}
+
+// Seeds a food ("Oatmeal", 1 × "1 cup", 150 kcal) and a water entry (16 fl oz) at
+// 2026-10-26T13:00:00Z and returns their ids and the food's serving size.
+export const seedEntries = async (database: Database, username: string) => {
+  const loggedAt = new Date('2026-10-26T13:00:00Z')
+  await seedFoodEntry(database, {
+    username,
+    loggedAt,
+    name: 'Oatmeal',
+    servingSize: '1 cup',
+    quantity: 1,
+    calories: 150,
+  })
+  await seedWaterEntry(database, { username, loggedAt, amount: 16 })
+  const userId = await userIdOf(database, username)
+  const [food] = await database.db.select().from(foodEntries).where(eq(foodEntries.userId, userId))
+  const [water] = await database.db
+    .select()
+    .from(waterEntries)
+    .where(eq(waterEntries.userId, userId))
+  if (food === undefined || water === undefined) throw new Error('The entries were not seeded')
+  return { foodId: food.id, waterId: water.id, servingSizeId: food.servingSizeId }
+}
