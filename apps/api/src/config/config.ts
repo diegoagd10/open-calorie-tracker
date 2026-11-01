@@ -8,6 +8,9 @@ const envSchema = z.object({
   TRUST_PROXY: z.string().optional(),
   // Encrypts the API keys the database stores, so they can be shown again but not read from it.
   API_KEY_SECRET: z.string().min(32),
+  // Open Food Facts asks every app to name itself and a contact, e.g. "App/1.0 (https://…)".
+  OPEN_FOOD_FACTS_USER_AGENT: z.string().min(1),
+  OPEN_FOOD_FACTS_URL: z.url().default('https://world.openfoodfacts.org'),
 })
 
 // Express "trust proxy" setting: a hop count, a boolean or a list of trusted addresses.
@@ -24,6 +27,7 @@ export class AppConfig {
     readonly jwt: { secret: Uint8Array; issuer: string; audience: string },
     readonly trustProxy: boolean | number | string,
     readonly apiKeySecret: string,
+    readonly openFoodFacts: { url: string; userAgent: string },
   ) {}
 
   static fromEnv(env: NodeJS.ProcessEnv = process.env): AppConfig {
@@ -38,6 +42,7 @@ export class AppConfig {
       },
       parseTrustProxy(parsed.TRUST_PROXY),
       parsed.API_KEY_SECRET,
+      { url: parsed.OPEN_FOOD_FACTS_URL, userAgent: parsed.OPEN_FOOD_FACTS_USER_AGENT },
     )
   }
 }

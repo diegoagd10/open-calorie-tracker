@@ -73,6 +73,17 @@ export type EditableFoodEntry = {
   calories: number
 } & Record<Nutrient, number | null>
 
+// GET /v1/products/:barcode answers a product of Open Food Facts as a food per serving, as
+// log_food takes it, or per "100 g" when Open Food Facts has no serving. What it does not know is
+// null.
+export type Product = {
+  barcode: string
+  name: string | null
+  brand: string | null
+  servingSize: string
+  calories: number | null
+} & Record<Nutrient, number | null>
+
 // The body of PATCH /v1/food-entries/:id. It ignores the fields of an EditableFoodEntry that PATCH
 // does not change, so a client can send back what it read; any other unknown key is rejected.
 export const updateFoodEntrySchema = foodEntrySchema

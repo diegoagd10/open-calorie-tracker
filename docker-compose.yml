@@ -13,6 +13,8 @@ services:
       JWT_ISSUER: ${JWT_ISSUER:-open-calorie-tracker-api}
       JWT_AUDIENCE: ${JWT_AUDIENCE:-open-calorie-tracker-web}
       API_KEY_SECRET: ${API_KEY_SECRET:?Set API_KEY_SECRET to a random string of at least 32 characters}
+      # Open Food Facts asks every app to name itself and a contact.
+      OPEN_FOOD_FACTS_USER_AGENT: ${OPEN_FOOD_FACTS_USER_AGENT:?Set OPEN_FOOD_FACTS_USER_AGENT to "AppName/Version (contact URL or email)"}
       # Trusts the client IP that the web app, cloudflared or Traefik forwards on private networks.
       TRUST_PROXY: ${TRUST_PROXY:-loopback, uniquelocal}
     volumes:
