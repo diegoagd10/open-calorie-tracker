@@ -45,18 +45,19 @@ import replaces that account's entries with the old app's.
 
 ## 2. Staging on svc-01 (old app keeps running)
 
-- [ ] **2.1 Capacity and ports** (Claude). Check RAM, disk and free ports on svc-01, and record
-      the chosen web and API ports here.
-- [ ] **2.2 Create the stack** (Claude). Create `~/stacks/calorie` on svc-01 from a commit of
+- [x] **2.1 Capacity and ports** (Claude). Check RAM, disk and free ports on svc-01, and record
+      the chosen web and API ports here: web `127.0.0.1:3010`, API `127.0.0.1:3011`.
+- [x] **2.2 Create the stack** (Claude). Create `~/stacks/calorie` on svc-01 from a commit of
       `main` (copied with `git archive` and `rsync`; the server doesn't need GitHub access), with
       an override file and `.env` (`chmod 600`) holding newly generated `JWT_SECRET` and
       `API_KEY_SECRET` values. The stack is not exposed publicly.
-- [ ] **2.3 Start** (Claude). Done when both services are healthy, a local `curl` to the web port
+- [x] **2.3 Start** (Claude). Done when both services are healthy, a local `curl` to the web port
       gets the login page and one to the API port gets 200 from `/v1/health`.
-- [ ] **2.4 Private HTTPS route** (Claude). Add `calorie-next.local.dagdappshub.com` to svc-01's
+- [x] **2.4 Private HTTPS route** (Claude). Add `calorie-next.local.dagdappshub.com` to svc-01's
       Traefik config. Done when it answers with `ssl_verify=0`.
-- [ ] **2.5 Register** (You). Create your account at `https://calorie-next.local.dagdappshub.com`
-      before anything else reaches the stack.
+- [x] **2.5 Register** (You). Create your account at `https://calorie-next.local.dagdappshub.com`
+      before anything else reaches the stack. You also added the temporary public hostname
+      `calorie-next.dagdappshub.com` → `http://127.0.0.1:3010` to svc-01's tunnel.
 - [ ] **2.6 Rehearsal import** (Claude). Take a hot copy of the prod database on svc-02 (SQLite
       backup) and import it into your account. Done when the counts match the old database:
       278 food, 192 water, 1 goal.
