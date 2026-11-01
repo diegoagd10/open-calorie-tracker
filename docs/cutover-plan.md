@@ -19,7 +19,7 @@ until the cutover, and every import replaces the new database's contents.
 
 ## 1. Code (this repo, test-first)
 
-- [ ] **1.1 Health check** (Claude). `GET /v1/health` answers 200 once the database responds.
+- [x] **1.1 Health check** (Claude). `GET /v1/health` answers 200 once the database responds.
 - [ ] **1.2 MCP route** (Claude). The web app forwards `POST /api/mcp` to the API's `/v1/mcp`,
       passing the `Authorization` header through. Done when an MCP client using an `oct_live_` key
       can list the tools through the web port.
