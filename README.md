@@ -48,3 +48,27 @@ WEB_TEST_BASE_PORT=4100 pnpm --filter web exec vp test run
 
 Lint and format settings live in the root `vite.config.ts`; test settings live in each package's
 `vite.config.ts`.
+
+## Deployment
+
+`docker-compose.yml` runs the API and the web app from the `Dockerfile` (targets `api` and `web`),
+each published on the host's loopback for a tunnel or reverse proxy in front. The API runs its
+migrations on startup and keeps its SQLite database in `DATA_PATH`. Put the variables in a `.env`
+beside the compose file (`chmod 600`):
+
+| Variable                         |                                                                                         |
+| -------------------------------- | --------------------------------------------------------------------------------------- |
+| `JWT_SECRET`                     | Required. Random, at least 32 characters (`openssl rand -hex 32`).                      |
+| `API_KEY_SECRET`                 | Required. Random, at least 32 characters. Changing it makes stored API keys unreadable. |
+| `DATA_PATH`                      | Required. Host folder for the database, writable by UID 1000.                           |
+| `WEB_HOST_PORT`, `API_HOST_PORT` | Host ports, 3010 and 3011 by default.                                                   |
+| `WEB_BIND`, `API_BIND`           | Host addresses, `127.0.0.1` by default.                                                 |
+| `TRUST_PROXY`                    | Express "trust proxy", `loopback, uniquelocal` by default.                              |
+
+```bash
+docker compose up -d --build
+docker compose ps   # both services healthy
+```
+
+A new database sends every visitor to `/register` until the first account exists, so register
+before exposing the web app. Back up by stopping the stack and copying `DATA_PATH`.

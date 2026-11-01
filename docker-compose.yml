@@ -1,0 +1,39 @@
+# Production stack: the API and the web app, each published only on the host's loopback for a
+# tunnel or reverse proxy in front. Server-specific settings (stack name, other ports or bind
+# addresses) go in docker-compose.override.yml; secrets in .env beside this file.
+services:
+  api:
+    build:
+      context: .
+      target: api
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: file:/app/data/sqlite.db
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET to a random string of at least 32 characters}
+      JWT_ISSUER: ${JWT_ISSUER:-open-calorie-tracker-api}
+      JWT_AUDIENCE: ${JWT_AUDIENCE:-open-calorie-tracker-web}
+      API_KEY_SECRET: ${API_KEY_SECRET:?Set API_KEY_SECRET to a random string of at least 32 characters}
+      # Trusts the client IP that the web app, cloudflared or Traefik forwards on private networks.
+      TRUST_PROXY: ${TRUST_PROXY:-loopback, uniquelocal}
+    volumes:
+      - type: bind
+        source: ${DATA_PATH:?Set DATA_PATH to the host folder for the SQLite database}
+        target: /app/data
+    ports:
+      - ${API_BIND:-127.0.0.1}:${API_HOST_PORT:-3011}:3001
+
+  web:
+    build:
+      context: .
+      target: web
+    restart: unless-stopped
+    environment:
+      API_URL: http://api:3001
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_ISSUER: ${JWT_ISSUER:-open-calorie-tracker-api}
+      JWT_AUDIENCE: ${JWT_AUDIENCE:-open-calorie-tracker-web}
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - ${WEB_BIND:-127.0.0.1}:${WEB_HOST_PORT:-3010}:3000
