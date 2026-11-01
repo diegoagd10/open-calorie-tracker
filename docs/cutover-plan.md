@@ -83,9 +83,8 @@ import replaces that account's entries with the old app's.
 - [x] **3.6 Muse** (You). Create a new API key in Settings and set Muse's connector to
       `https://calorie-api.dagdappshub.com/v1/mcp` with that key. Done when Muse reads today's
       log.
-- [ ] **3.7 LAN route** (Claude). Rename the Traefik route to `calorie.local.dagdappshub.com`.
-      Let's Encrypt's DNS-01 check timed out twice for that name on 2026-11-01, so the route stays
-      on `calorie-next.local.dagdappshub.com` (valid certificate) until a later retry.
+- [x] **3.7 LAN route** (You decided). Not needed: the app is reached only through the tunnel, so
+      the Traefik route was removed and the web app is published only on `127.0.0.1:3010`.
 - [x] **3.8 Commit the stack** (Claude). Commit in `~/stacks` on svc-01, using the deployed
       commit hash in the message.
 
@@ -94,6 +93,6 @@ remove `calorie-api.dagdappshub.com` and start the old stack. Its data was never
 
 ## 4. Cleanup (about 2 weeks after cutover)
 
-- [ ] **4.1 Remove the old stack** (from 2026-11-15) (You run the commands Claude provides). Archive svc-02
-      `~/open-calorie` as a backup, then remove the old container, image and
-      `~/stacks/calorie` on svc-02.
+- [x] **4.1 Remove the old stack** (You approved, Claude ran). Removed the old container, its
+      images, `~/open-calorie` (13 GB, mostly the old food catalog) and `~/stacks/calorie` on svc-02.
+      Its SQLite database stays archived in svc-02 `~/open-calorie-rollback-20261101`.
