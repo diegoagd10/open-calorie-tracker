@@ -73,6 +73,10 @@ docker compose ps   # both services healthy
 A new database sends every visitor to `/register` until the first account exists, so register
 before exposing the web app. Back up by stopping the stack and copying `DATA_PATH`.
 
+To update, replace the source with the new commit (keeping `.env` and
+`docker-compose.override.yml`) and run `docker compose up -d --build`; migrations run on startup.
+Tag the running images first to be able to go back.
+
 ### Importing open-calory-tracker's data
 
 `db:import-legacy` loads the food, water and daily goals of the old app's only user into this

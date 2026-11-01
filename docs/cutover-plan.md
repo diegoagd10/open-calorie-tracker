@@ -17,7 +17,7 @@ import replaces that account's entries with the old app's.
       pushed it to the new public `diegoagd10/open-calorie-tracker` (`origin`).
 - [x] **0.3 Local checkouts** (Claude). `~/Projects/open-calorie-tracker` now pushes to the
       legacy repo.
-- [ ] **0.4 Branches on GitHub** (Claude). Push each task's branch and open a PR to `main`.
+- [x] **0.4 Branches on GitHub** (Claude). Push each task's branch and open a PR to `main`.
 
 ## 1. Code (this repo, test-first)
 
@@ -32,14 +32,16 @@ import replaces that account's entries with the old app's.
       Tests cover each conversion: units, entries whose servings aren't in steps of 0.5, and
       missing nutrients.
 
-- [ ] **1.4 Login rate limiting** (Claude). Limit failed logins per IP and username, since the
-      API is public. Needed before the cutover.
+- [x] **1.4 Login rate limiting** (Claude). Limit failed logins per IP and username, since the
+      API is public. Needed before the cutover. Already in `AuthService`: 5 failures lock that
+      (IP, username) for 15 minutes. Verified on staging that the API sees each client's real IP
+      and that a forged `X-Forwarded-For` has no effect.
 - [x] **1.5 Docker images** (Claude). One `Dockerfile` with an `api` and a `web` target (Next.js
       standalone output), plus `.dockerignore`.
 - [x] **1.6 Compose file** (Claude). Defines the `api` and `web` services and a data bind mount.
       Health checks use 1.1. Both are published on `127.0.0.1`, with ports set by variables. Done
       when `docker compose config -q` passes.
-- [ ] **1.7 Deployment docs** (Claude). A README section listing the environment variables, how
+- [x] **1.7 Deployment docs** (Claude). A README section listing the environment variables, how
       to import, how to update and how to back up.
 - [ ] **1.8 Review and merge** (You). Review the PRs on GitHub; the work is merged into `main`.
 
@@ -58,10 +60,10 @@ import replaces that account's entries with the old app's.
 - [x] **2.5 Register** (You). Create your account at `https://calorie-next.local.dagdappshub.com`
       before anything else reaches the stack. You also added the temporary public hostname
       `calorie-next.dagdappshub.com` → `http://127.0.0.1:3010` to svc-01's tunnel.
-- [ ] **2.6 Rehearsal import** (Claude). Take a hot copy of the prod database on svc-02 (SQLite
+- [x] **2.6 Rehearsal import** (Claude). Take a hot copy of the prod database on svc-02 (SQLite
       backup) and import it into your account. Done when the counts match the old database:
       278 food, 192 water, 1 goal.
-- [ ] **2.7 Check the data** (You). Sign in. Compare 3–4 days' totals
+- [x] **2.7 Check the data** (You). Sign in. Compare 3–4 days' totals
       with the old app. Edit an entry, then log and delete one. Re-run 2.6 whenever you want
       fresh data.
 
