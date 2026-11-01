@@ -32,6 +32,7 @@ import {
   type OpenFoodFactsProduct,
   answeringWith,
   fakeOpenFoodFacts,
+  json,
   nutellaWith,
   requestsOf,
 } from './open-food-facts.js'
@@ -322,6 +323,17 @@ describe('products (e2e)', () => {
 
     it('D3 — a product Open Food Facts does not have answers 404', async () => {
       const response = await get('12345670')
+
+      expect(response.status).toBe(404)
+      expect((response.body as { message: unknown }).message).toBe(PRODUCT_NOT_FOUND_MESSAGE)
+    })
+
+    it('D3b — a barcode Open Food Facts answers with status 0 answers 404', async () => {
+      fetch.mockResolvedValue(
+        json({ code: '00000000', status: 0, status_verbose: 'no code or invalid code' }, 200),
+      )
+
+      const response = await get('00000000')
 
       expect(response.status).toBe(404)
       expect((response.body as { message: unknown }).message).toBe(PRODUCT_NOT_FOUND_MESSAGE)

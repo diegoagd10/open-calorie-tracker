@@ -64,7 +64,8 @@ export const nutellaWith = (
   nutriments: defined({ ...NUTELLA.nutriments, ...nutriments }),
 })
 
-const json = (body: object, status: number) =>
+// A JSON answer of Open Food Facts.
+export const json = (body: object, status: number) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
 
 // Answers like Open Food Facts for the products given by barcode, and 404 for any other.

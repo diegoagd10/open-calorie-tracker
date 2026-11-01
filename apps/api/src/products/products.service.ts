@@ -16,7 +16,7 @@ import { AppConfig } from '../config/config.js'
 // What GET /v1/products/:barcode and get_product take: EAN-8, UPC-A, EAN-13 or GTIN-14, without
 // the spaces around it.
 export const barcodeSchema = z
-  .string()
+  .string({ error: INVALID_BARCODE_MESSAGE })
   .trim()
   .regex(/^\d{8,14}$/, INVALID_BARCODE_MESSAGE)
 
@@ -41,18 +41,21 @@ const NUTRIENTS: Record<Nutrient, [name: string, factor: number]> = {
 // A field Open Food Facts leaves out or answers with something else counts as missing.
 const text = z.string().optional().catch(undefined)
 
+// Open Food Facts answers a code it deems invalid with 200 and no product.
 const answerSchema = z.object({
-  product: z.object({
-    product_name: text,
-    product_name_en: text,
-    generic_name: text,
-    brands: text,
-    serving_size: text,
-    nutriments: z.record(z.string(), z.unknown()).catch({}),
-  }),
+  product: z
+    .object({
+      product_name: text,
+      product_name_en: text,
+      generic_name: text,
+      brands: text,
+      serving_size: text,
+      nutriments: z.record(z.string(), z.unknown()).catch({}),
+    })
+    .optional(),
 })
 
-type OpenFoodFactsProduct = z.output<typeof answerSchema>['product']
+type OpenFoodFactsProduct = NonNullable<z.output<typeof answerSchema>['product']>
 
 // One decimal, or null for a value the app would not accept.
 const valueOf = (value: unknown, factor = 1): number | null => {
@@ -125,6 +128,7 @@ export class ProductsService {
 
     const parsed = answerSchema.safeParse(answer)
     if (!parsed.success) throw new BadGatewayException(GENERIC_ERROR_MESSAGE)
+    if (parsed.data.product === undefined) throw new NotFoundException(PRODUCT_NOT_FOUND_MESSAGE)
     return translate(barcode, parsed.data.product)
   }
 }

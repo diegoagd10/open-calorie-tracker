@@ -667,6 +667,14 @@ describe('MCP (e2e)', () => {
       expect(await failed('get_product', { barcode })).toBe(message())
     })
 
+    it.each([{}, { barcode: null }, { barcode: Number(NUTELLA_BARCODE) }])(
+      'F3 — get_product with %j comes back as an invalid barcode',
+      async (args) => {
+        expect(await failed('get_product', args)).toBe(INVALID_BARCODE_MESSAGE)
+        expect(fetch).not.toHaveBeenCalled()
+      },
+    )
+
     it('F4 — a token without "products:read" neither lists nor runs get_product', async () => {
       const token = await scopedToken(
         API_SCOPES.filter((scope) => scope !== 'products:read').join(' '),
