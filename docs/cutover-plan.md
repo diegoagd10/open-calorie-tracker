@@ -1,0 +1,85 @@
+# Cutover plan: replace open-calory-tracker with this project
+
+Owner: **Claude** does it, **You** do it (or approve it), **Both** means Claude prepares and you
+check. Tick a box when its "done when" holds.
+
+Decisions: the stack is plain `docker compose` in `~/stacks` (no Portainer) on **svc-01**. Muse
+reaches MCP at `https://calorie.dagdappshub.com/api/mcp`. The old app stays in charge of the data
+until the cutover, and every import replaces the new database's contents.
+
+## 0. GitHub repo
+
+- [x] **0.1 Archive the old repo** (You approved, Claude ran). Renamed it to
+      `diegoagd10/open-calorie-tracker-legacy` and archived it (read-only).
+- [x] **0.2 Publish this repo** (You approved, Claude ran). Renamed local `master` to `main` and
+      pushed it to the new public `diegoagd10/open-calorie-tracker` (`origin`).
+- [x] **0.3 Local checkouts** (Claude). `~/Projects/open-calorie-tracker` now pushes to the
+      legacy repo.
+- [ ] **0.4 Branches on GitHub** (Claude). Push each task's branch and open a PR to `main`.
+
+## 1. Code (this repo, test-first)
+
+- [ ] **1.1 Health check** (Claude). `GET /v1/health` answers 200 once the database responds.
+- [ ] **1.2 MCP route** (Claude). The web app forwards `POST /api/mcp` to the API's `/v1/mcp`,
+      passing the `Authorization` header through. Done when an MCP client using an `oct_live_` key
+      can list the tools through the web port.
+- [ ] **1.3 Legacy import command** (Claude). Reads the old SQLite file and replaces all data in
+      the new database in one transaction. It moves: - the user and their password hash, converted to the new format; - food entries and the serving sizes they use; - water entries; - daily goals.
+
+      Tests cover each conversion: units, entries whose servings aren't in steps of 0.5, and
+      missing nutrients.
+
+- [ ] **1.4 Docker images** (Claude). A Dockerfile for the API and one for the web app (Next.js
+      standalone output), plus `.dockerignore`.
+- [ ] **1.5 Compose file** (Claude). Defines the `api` and `web` services and a data bind mount.
+      Health checks use 1.1. Only `web` is published, with ports set by variables. Done when
+      `docker compose config -q` passes.
+- [ ] **1.6 Deployment docs** (Claude). A README section listing the environment variables, how
+      to import, how to update and how to back up.
+- [ ] **1.7 Review and merge** (You). Review the PRs on GitHub; the work is merged into `main`.
+
+## 2. Staging on svc-01 (old app keeps running)
+
+- [ ] **2.1 Capacity and ports** (Claude). Check RAM, disk and free ports on svc-01, and record
+      the chosen web port here.
+- [ ] **2.2 Create the stack** (Claude). Create `~/stacks/calorie` on svc-01 from a commit of
+      `main` (copied with `git archive` and `rsync`; the server doesn't need GitHub access), with an override file and `.env` (`chmod 600`) holding newly generated
+      `JWT_SECRET` and `API_KEY_SECRET` values. The stack is not exposed publicly.
+- [ ] **2.3 Start** (Claude). Done when both services are healthy and a local `curl` to the web
+      port gets the login page.
+- [ ] **2.4 Private HTTPS route** (Claude). Add `calorie-next.local.dagdappshub.com` to svc-01's
+      Traefik config. Done when it answers with `ssl_verify=0`.
+- [ ] **2.5 Rehearsal import** (Claude). Take a hot copy of the prod database on svc-02 (SQLite
+      backup) and import it. Done when the row counts match the old database: 1 user,
+      278 food, 192 water, 1 goal.
+- [ ] **2.6 Check the data** (You). Sign in with your current password. Compare 3–4 days' totals
+      with the old app. Edit an entry, then log and delete one. Re-run 2.5 whenever you want
+      fresh data.
+
+## 3. Cutover (about 2 minutes of downtime)
+
+- [ ] **3.1 Pick the time** (You). Say when.
+- [ ] **3.2 Rollback point** (Claude). Tag the old image and copy svc-02 `~/open-calorie`.
+- [ ] **3.3 Stop the old app and run the final import** (Claude). Stop the old app on svc-02, then
+      import into svc-01. Counts match.
+- [ ] **3.4 Move the public hostname** (You). In Cloudflare Zero Trust, go to Tunnels, remove
+      `calorie.dagdappshub.com` from svc-02's tunnel and add it to svc-01's tunnel pointing at
+      `http://127.0.0.1:<web port>`.
+- [ ] **3.5 Verify publicly** (Both). Check a probe request in the logs, sign in, and look at a
+      past day and the water history.
+- [ ] **3.6 Muse** (You). Create a new API key in Settings and set Muse's connector to
+      `/api/mcp` with that key. Done when Muse reads today's log.
+- [ ] **3.7 LAN route** (Claude). Rename the Traefik route to `calorie.local.dagdappshub.com`.
+- [ ] **3.8 Commit the stack** (Claude). Commit in `~/stacks` on svc-01, using the deployed
+      commit hash in the message.
+
+Rollback: stop the new stack, point the hostname back at svc-02 (`127.0.0.1:3001`) and start the
+old stack. Its data was never modified.
+
+## 4. Cleanup (about 2 weeks after cutover)
+
+- [ ] **4.1 Remove the old stack** (You run the commands Claude provides). Archive svc-02
+      `~/open-calorie` as a backup, then remove the old container, image and
+      `~/stacks/calorie` on svc-02.
+- [ ] **4.2 Login rate limiting** (Claude). Follow-up feature: limit failed logins per IP and
+      username.
