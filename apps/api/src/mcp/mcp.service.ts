@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common'
+import { BadGatewayException, Injectable, NotFoundException } from '@nestjs/common'
 import { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import {
   CallToolRequestSchema,
@@ -10,7 +10,9 @@ import {
 import {
   type ApiScope,
   ENTRY_NOT_FOUND_MESSAGE,
+  GENERIC_ERROR_MESSAGE,
   INSUFFICIENT_SCOPE_MESSAGE,
+  PRODUCT_NOT_FOUND_MESSAGE,
   createFoodEntrySchema,
   createWaterEntrySchema,
   foodEntrySchema,
@@ -22,6 +24,7 @@ import type { TokenSubject } from '../auth/auth.service.js'
 import { DailyLogService } from '../daily-log/daily-log.service.js'
 import { dayQuerySchema } from '../daily-log/day.js'
 import { FoodEntriesService } from '../food-entries/food-entries.service.js'
+import { ProductsService, barcodeSchema } from '../products/products.service.js'
 import { ServingSizesService } from '../serving-sizes/serving-sizes.service.js'
 import { WaterEntriesService } from '../water-entries/water-entries.service.js'
 
@@ -34,6 +37,8 @@ type Tool = {
   scopes: ApiScope[]
   input: z.ZodType
   run: (userId: number, input: never) => Promise<object>
+  // What the tool answers when what it looks for is missing.
+  notFound?: string
 }
 
 const tool = <S extends z.ZodType>(definition: {
@@ -42,6 +47,7 @@ const tool = <S extends z.ZodType>(definition: {
   scopes: ApiScope[]
   input: S
   run: (userId: number, input: z.output<S>) => Promise<object>
+  notFound?: string
 }): Tool => definition
 
 const entryId = z.number().int().positive()
@@ -75,6 +81,7 @@ export class McpService {
     foodEntries: FoodEntriesService,
     waterEntries: WaterEntriesService,
     servingSizes: ServingSizesService,
+    products: ProductsService,
   ) {
     const servingSizeIdOf = async (userId: number, name: string) =>
       (await servingSizes.findOrCreate(userId, { name })).servingSize.id
@@ -177,6 +184,14 @@ export class McpService {
         input: servingSizeSchema,
         run: async (userId, input) => (await servingSizes.findOrCreate(userId, input)).servingSize,
       }),
+      tool({
+        name: 'get_product',
+        description: `Looks up a packaged food by its barcode in Open Food Facts. Its calories and nutrients come per serving as log_food takes them, or per "100 g" when Open Food Facts has no serving, and are null when it does not know them. ${UNITS}`,
+        scopes: ['products:read'],
+        input: z.strictObject({ barcode: barcodeSchema }),
+        run: (_userId, { barcode }) => products.find(barcode),
+        notFound: PRODUCT_NOT_FOUND_MESSAGE,
+      }),
     ]
   }
 
@@ -211,7 +226,10 @@ export class McpService {
       try {
         return textOf(await tool.run(userId, parsed.data as never))
       } catch (error) {
-        if (error instanceof NotFoundException) return errorOf(ENTRY_NOT_FOUND_MESSAGE)
+        if (error instanceof NotFoundException) {
+          return errorOf(tool.notFound ?? ENTRY_NOT_FOUND_MESSAGE)
+        }
+        if (error instanceof BadGatewayException) return errorOf(GENERIC_ERROR_MESSAGE)
         throw error
       }
     })

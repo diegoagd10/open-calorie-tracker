@@ -15,12 +15,19 @@ export const TEST_ENV = {
   JWT_AUDIENCE: 'open-calorie-tracker-web',
   TRUST_PROXY: 'loopback',
   API_KEY_SECRET: 'test-api-key-secret-that-is-long-enough',
+  OPEN_FOOD_FACTS_USER_AGENT: 'OpenCalorieTracker/test (https://example.test)',
+  // Never reached: test/open-food-facts.ts fakes fetch.
+  OPEN_FOOD_FACTS_URL: 'https://off.test',
 }
 
 export type TestApp = Awaited<ReturnType<typeof createApp>>
 
-export const createTestApp = async (): Promise<TestApp> => {
+// Starts the API with TEST_ENV, where `unset` leaves variables out.
+export const createTestApp = async ({
+  unset = [],
+}: { unset?: (keyof typeof TEST_ENV)[] } = {}): Promise<TestApp> => {
   Object.assign(process.env, TEST_ENV)
+  for (const name of unset) delete process.env[name]
   const app = await createApp()
   await app.init()
   return app

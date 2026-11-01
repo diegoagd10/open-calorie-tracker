@@ -67,6 +67,7 @@ const startEnvironment = async (environment: Environment) => {
       DATABASE_URL: databaseUrl,
       TRUST_PROXY: 'loopback',
       API_KEY_SECRET,
+      OPEN_FOOD_FACTS_USER_AGENT: 'OpenCalorieTracker/web-test (https://example.test)',
       ...jwtEnv,
     }),
     start(['pnpm', 'exec', 'next', 'start', '--port', port(environment.webUrl)], webDir, {

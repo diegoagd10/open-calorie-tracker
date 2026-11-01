@@ -56,14 +56,15 @@ each published on the host's loopback for a tunnel or reverse proxy in front. Th
 migrations on startup and keeps its SQLite database in `DATA_PATH`. Put the variables in a `.env`
 beside the compose file (`chmod 600`):
 
-| Variable                         |                                                                                         |
-| -------------------------------- | --------------------------------------------------------------------------------------- |
-| `JWT_SECRET`                     | Required. Random, at least 32 characters (`openssl rand -hex 32`).                      |
-| `API_KEY_SECRET`                 | Required. Random, at least 32 characters. Changing it makes stored API keys unreadable. |
-| `DATA_PATH`                      | Required. Host folder for the database, writable by UID 1000.                           |
-| `WEB_HOST_PORT`, `API_HOST_PORT` | Host ports, 3010 and 3011 by default.                                                   |
-| `WEB_BIND`, `API_BIND`           | Host addresses, `127.0.0.1` by default.                                                 |
-| `TRUST_PROXY`                    | Express "trust proxy", `loopback, uniquelocal` by default.                              |
+| Variable                         |                                                                                                                                                 |
+| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `JWT_SECRET`                     | Required. Random, at least 32 characters (`openssl rand -hex 32`).                                                                              |
+| `API_KEY_SECRET`                 | Required. Random, at least 32 characters. Changing it makes stored API keys unreadable.                                                         |
+| `OPEN_FOOD_FACTS_USER_AGENT`     | Required. Names the app and a contact to Open Food Facts, e.g. `OpenCalorieTracker/0.0.1 (https://github.com/diegoagd10/open-calorie-tracker)`. |
+| `DATA_PATH`                      | Required. Host folder for the database, writable by UID 1000.                                                                                   |
+| `WEB_HOST_PORT`, `API_HOST_PORT` | Host ports, 3010 and 3011 by default.                                                                                                           |
+| `WEB_BIND`, `API_BIND`           | Host addresses, `127.0.0.1` by default.                                                                                                         |
+| `TRUST_PROXY`                    | Express "trust proxy", `loopback, uniquelocal` by default.                                                                                      |
 
 ```bash
 docker compose up -d --build

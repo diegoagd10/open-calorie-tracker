@@ -74,6 +74,7 @@ export const API_SCOPES = [
   'water-entries:write',
   'serving-sizes:read',
   'serving-sizes:write',
+  'products:read',
 ] as const
 
 export type ApiScope = (typeof API_SCOPES)[number]
