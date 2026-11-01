@@ -54,6 +54,9 @@ describe('water entries (e2e)', () => {
   const remove = (id: number | string, bearer?: Bearer) =>
     withToken(request(app.getHttpServer()).delete(`/v1/water-entries/${id}`), bearer)
 
+  const get = (id: number | string, bearer?: Bearer) =>
+    withToken(request(app.getHttpServer()).get(`/v1/water-entries/${id}`), bearer)
+
   const dailyLogEntries = async (date: string) => {
     const response = await withToken(
       request(app.getHttpServer()).get('/v1/daily-log').query({ date, timeZone: TIME_ZONE }),
@@ -173,6 +176,28 @@ describe('water entries (e2e)', () => {
     })
   })
 
+  describe('GET /v1/water-entries/:id', () => {
+    it('B1 — answers the entry with its id, time and amount', async () => {
+      const id = await seedEntry()
+
+      const response = await get(id)
+
+      expect(response.status).toBe(200)
+      expect(response.body).toStrictEqual({ id, loggedAt: '2026-10-24T13:00:00.000Z', amount: 16 })
+    })
+
+    it('B2 — the body read, sent back to PATCH, leaves the entry as it was', async () => {
+      const id = await seedEntry()
+      const read = (await get(id)).body as object
+
+      const response = await update(id, read)
+
+      expect(response.status).toBe(200)
+      expect((await get(id)).body).toEqual(read)
+      expect(await storedEntries(USERNAME)).toEqual([{ id, loggedAt: NINE_AM, amount: 16 }])
+    })
+  })
+
   describe('DELETE /v1/water-entries/:id', () => {
     it('removes the entry with 204', async () => {
       const id = await seedEntry()
@@ -215,6 +240,7 @@ describe('water entries (e2e)', () => {
     const requests = [
       ['PATCH', (id: number | string) => update(id, { amount: 8 })],
       ['DELETE', (id: number | string) => remove(id)],
+      ['GET', (id: number | string) => get(id)],
     ] as const
 
     it.each(requests)("answers %s on another user's entry with 404", async (_method, send) => {
@@ -243,6 +269,7 @@ describe('water entries (e2e)', () => {
       ['POST', (bearer?: Bearer) => create({ amount: 8 }, bearer)],
       ['PATCH', (bearer?: Bearer) => update(1, { amount: 8 }, bearer)],
       ['DELETE', (bearer?: Bearer) => remove(1, bearer)],
+      ['GET', (bearer?: Bearer) => get(1, bearer)],
     ] as const
 
     it.each(requests)('rejects %s without a token with 401', async (_method, send) => {

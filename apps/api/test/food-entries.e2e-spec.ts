@@ -68,6 +68,9 @@ describe('food entries (e2e)', () => {
   const remove = (id: number | string, bearer?: Bearer) =>
     withToken(request(app.getHttpServer()).delete(`/v1/food-entries/${id}`), bearer)
 
+  const get = (id: number | string, bearer?: Bearer) =>
+    withToken(request(app.getHttpServer()).get(`/v1/food-entries/${id}`), bearer)
+
   const dailyLog = async (date = todayInNewYork()) => {
     const response = await withBearer(
       request(app.getHttpServer()).get('/v1/daily-log').query({ date, timeZone: TIME_ZONE }),
@@ -78,6 +81,15 @@ describe('food entries (e2e)', () => {
   }
 
   const storedEntries = () => database.db.select().from(foodEntries)
+
+  // The id of an entry ana logged with her own serving size.
+  const theirEntryId = async () => {
+    const theirToken = await accessTokenFor(app, OTHER_USERNAME, PASSWORD)
+    const theirs = await createServingSize('1 cup (245 g)', theirToken)
+    return (
+      (await create({ ...greekYogurt(), servingSizeId: theirs }, theirToken)).body as FoodLogEntry
+    ).id
+  }
 
   // Per serving, as the label prints it.
   const greekYogurt = () => ({
@@ -148,19 +160,6 @@ describe('food entries (e2e)', () => {
       sodium: 170,
     })
     expect((await dailyLog('2020-01-01')).entries).toEqual([edited.body])
-
-    const rejected = await update(created.id, {
-      ...greekYogurt(),
-      loggedAt: '2020-01-03T12:00:00Z',
-    })
-    expect(rejected.status).toBe(400)
-    expect(rejected.body).toEqual({
-      statusCode: 400,
-      error: 'Bad Request',
-      message: ['Unrecognized key: "loggedAt"'],
-    })
-    expect((await dailyLog('2020-01-01')).entries).toEqual([edited.body])
-    expect((await dailyLog('2020-01-03')).entries).toEqual([])
   })
 
   it.each([
@@ -258,6 +257,146 @@ describe('food entries (e2e)', () => {
     })
   })
 
+  describe('GET /v1/food-entries/:id', () => {
+    // Per serving, as the label prints it, with no data for fat.
+    const apple = () => ({
+      name: 'Apple',
+      servingSizeId,
+      quantity: 1.5,
+      calories: 95,
+      protein: 0.5,
+      carbohydrate: 25,
+      fiber: 4.4,
+      sugar: 19,
+      sodium: 2,
+    })
+
+    const createApple = async () => {
+      const response = await create({ ...apple(), loggedAt: '2026-10-31T13:05:00Z' })
+      expect(response.status).toBe(201)
+      return (response.body as FoodLogEntry).id
+    }
+
+    it('A1 — answers the entry per serving, as PATCH takes it', async () => {
+      const id = await createApple()
+
+      const response = await get(id)
+
+      expect(response.status).toBe(200)
+      expect(response.body).toStrictEqual({
+        id,
+        loggedAt: '2026-10-31T13:05:00.000Z',
+        name: 'Apple',
+        servingSizeId,
+        servingSize: '1 cup (245 g)',
+        quantity: 1.5,
+        calories: 95,
+        protein: 0.5,
+        carbohydrate: 25,
+        fat: null,
+        fiber: 4.4,
+        sugar: 19,
+        sodium: 2,
+      })
+    })
+
+    it('A2 — the body read, sent back to PATCH, leaves the entry as it was', async () => {
+      const id = await createApple()
+      const read = (await get(id)).body as object
+      const logged = await dailyLog('2026-10-31')
+
+      const response = await update(id, read)
+
+      expect(response.status).toBe(200)
+      expect((await get(id)).body).toEqual(read)
+      expect(await dailyLog('2026-10-31')).toEqual(logged)
+    })
+
+    it.each([
+      [1.5, 0.3],
+      [0.5, 0.1],
+      [20, 9999],
+    ])(
+      'A3 — %s servings of %s g protein answer it per serving, without floating point noise',
+      async (quantity, protein) => {
+        const { id } = (await create({ ...greekYogurt(), quantity, protein })).body as FoodLogEntry
+
+        expect((await get(id)).body).toEqual(expect.objectContaining({ protein }))
+      },
+    )
+
+    it('A4 — an entry with 0 kcal and no nutrients answers 0 and nulls', async () => {
+      const { id } = (
+        await create({ name: 'Water with lemon', servingSizeId, quantity: 1, calories: 0 })
+      ).body as FoodLogEntry
+
+      expect((await get(id)).body).toEqual(
+        expect.objectContaining({
+          calories: 0,
+          protein: null,
+          carbohydrate: null,
+          fat: null,
+          fiber: null,
+          sugar: null,
+          sodium: null,
+        }),
+      )
+    })
+
+    it('A5 — PATCH ignores the id, time and serving size name it is sent', async () => {
+      const id = await createApple()
+      const read = (await get(id)).body as object
+
+      const response = await update(id, {
+        ...read,
+        name: 'Green apple',
+        id: id + 1,
+        loggedAt: '2020-01-03T12:00:00Z',
+        servingSize: '1 bowl',
+      })
+
+      expect(response.status).toBe(200)
+      expect((await get(id)).body).toEqual({ ...read, name: 'Green apple' })
+      expect((await dailyLog('2020-01-03')).entries).toEqual([])
+    })
+  })
+
+  describe('null nutrients', () => {
+    const NUTRIENTS = ['protein', 'carbohydrate', 'fat', 'fiber', 'sugar', 'sodium'] as const
+
+    it.each(NUTRIENTS)('C1 — PATCH with null %s stores it as no data', async (nutrient) => {
+      const { id } = (await create(greekYogurt())).body as FoodLogEntry
+
+      const response = await update(id, { ...greekYogurt(), [nutrient]: null })
+
+      expect(response.status).toBe(200)
+      expect((response.body as FoodLogEntry)[nutrient]).toBeNull()
+      expect((await get(id)).body).toEqual(expect.objectContaining({ [nutrient]: null }))
+      const [logged] = (await dailyLog()).entries
+      expect(logged?.[nutrient]).toBeNull()
+    })
+
+    it('C2 — POST accepts null nutrients too', async () => {
+      const response = await create({ ...greekYogurt(), fat: null })
+
+      expect(response.status).toBe(201)
+      expect((response.body as FoodLogEntry).fat).toBeNull()
+    })
+
+    it.each(['calories', 'name', 'servingSizeId', 'quantity'])(
+      'C3 — PATCH with null %s is rejected with 400 and changes nothing',
+      async (field) => {
+        const { id } = (await create(greekYogurt())).body as FoodLogEntry
+        const stored = await storedEntries()
+
+        const response = await update(id, { ...greekYogurt(), [field]: null })
+
+        expect(response.status).toBe(400)
+        expect(await storedEntries()).toEqual(stored)
+      },
+    )
+  })
+
   describe('DELETE /v1/food-entries/:id', () => {
     it('C1 — deletes her own entry with 204 and an empty body', async () => {
       const coffee = (
@@ -274,17 +413,7 @@ describe('food entries (e2e)', () => {
 
     // The id to delete, from an entry diego cannot delete.
     const MISSING_ENTRIES = [
-      [
-        'an entry belonging to another user',
-        async () => {
-          const theirToken = await accessTokenFor(app, OTHER_USERNAME, PASSWORD)
-          const theirs = await createServingSize('1 cup (245 g)', theirToken)
-          return (
-            (await create({ ...greekYogurt(), servingSizeId: theirs }, theirToken))
-              .body as FoodLogEntry
-          ).id
-        },
-      ],
+      ['an entry belonging to another user', theirEntryId],
       ['an id that does not exist', async () => 99_999],
       [
         'an entry already deleted',
@@ -417,12 +546,23 @@ describe('food entries (e2e)', () => {
     it('answers PATCH on an id that is not a number with 400', async () => {
       expect((await update('abc', greekYogurt())).status).toBe(400)
     })
+
+    const UNREADABLE_IDS: [string, number, () => Promise<number | string>][] = [
+      ["another user's entry", 404, theirEntryId],
+      ['an id that does not exist', 404, () => Promise.resolve(99_999)],
+      ['an id that is not a number', 400, () => Promise.resolve('abc')],
+    ]
+
+    it.each(UNREADABLE_IDS)('D1 — answers GET on %s with %i', async (_case, status, idOf) => {
+      expect((await get(await idOf())).status).toBe(status)
+    })
   })
 
   describe('authentication', () => {
     const requests = [
       ['POST', (bearer?: Bearer) => create(greekYogurt(), bearer)],
       ['PATCH', (bearer?: Bearer) => update(1, greekYogurt(), bearer)],
+      ['GET', (bearer?: Bearer) => get(1, bearer)],
     ] as const
 
     it.each(requests)('rejects %s without a token with 401', async (_method, send) => {

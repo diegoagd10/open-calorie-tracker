@@ -34,7 +34,9 @@ const TIME_ZONE = 'America/New_York'
 // Every key's token carries these, in this order.
 const SCOPES = [
   'daily-log:read',
+  'food-entries:read',
   'food-entries:write',
+  'water-entries:read',
   'water-entries:write',
   'serving-sizes:read',
   'serving-sizes:write',
@@ -159,7 +161,7 @@ describe('API tokens (e2e)', () => {
       const login = decodeJwt(loginToken)
       expect(payload.sub).toBe(String(await userIdOf(USERNAME)))
       expect(payload['scope']).toBe(
-        'daily-log:read food-entries:write water-entries:write serving-sizes:read serving-sizes:write',
+        'daily-log:read food-entries:read food-entries:write water-entries:read water-entries:write serving-sizes:read serving-sizes:write',
       )
       expect(payload.iat).toBe(NOW.getTime() / 1000)
       expect(payload.exp).toBe(NOW.getTime() / 1000 + 600)
@@ -258,6 +260,18 @@ describe('API tokens (e2e)', () => {
     const ENDPOINTS: [string, string, number, (bearer: string) => request.Test][] = [
       ['GET', '/v1/daily-log', 200, (bearer) => getDailyLog(bearer)],
       [
+        'GET',
+        '/v1/food-entries/:id',
+        200,
+        (bearer) => withBearer(http().get(`/v1/food-entries/${ids.foodId}`), bearer),
+      ],
+      [
+        'GET',
+        '/v1/water-entries/:id',
+        200,
+        (bearer) => withBearer(http().get(`/v1/water-entries/${ids.waterId}`), bearer),
+      ],
+      [
         'POST',
         '/v1/food-entries',
         201,
@@ -325,6 +339,11 @@ describe('API tokens (e2e)', () => {
       ['serving-sizes:read', 'POST', '/v1/serving-sizes'],
       ['serving-sizes:write', 'GET', '/v1/serving-sizes'],
       ['food-entries:write', 'GET', '/v1/daily-log'],
+      ['food-entries:write', 'GET', '/v1/food-entries/:id'],
+      ['water-entries:write', 'GET', '/v1/water-entries/:id'],
+      ['daily-log:read', 'GET', '/v1/food-entries/:id'],
+      ['food-entries:read', 'PATCH', '/v1/food-entries/:id'],
+      ['water-entries:read', 'DELETE', '/v1/water-entries/:id'],
     ])('C2 — a token with only %s gets 403 on %s %s', async (scope, method, path) => {
       const token = await signAccessToken({ subject: String(await userIdOf(USERNAME)), scope })
 
@@ -485,13 +504,15 @@ describe('API tokens (e2e)', () => {
       const apple = { name: 'Apple', servingSizeId, quantity: 1, calories: 95 }
 
       const responses = [
+        await withBearer(http().get(`/v1/food-entries/${foodId}`), token),
+        await withBearer(http().get(`/v1/water-entries/${waterId}`), token),
         await withBearer(http().patch(`/v1/food-entries/${foodId}`).send(apple), token),
         await withBearer(http().delete(`/v1/food-entries/${foodId}`), token),
         await withBearer(http().patch(`/v1/water-entries/${waterId}`).send({ amount: 8 }), token),
         await withBearer(http().delete(`/v1/water-entries/${waterId}`), token),
       ]
 
-      expect(responses.map((response) => response.status)).toEqual([404, 404, 404, 404])
+      expect(responses.map((response) => response.status)).toEqual([404, 404, 404, 404, 404, 404])
       expect(await dailyLog(anaToken)).toEqual(before)
     })
   })
