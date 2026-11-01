@@ -1,4 +1,4 @@
-import type { Page } from 'playwright'
+import type { Locator, Page } from 'playwright'
 import { dayRange } from '../../api/src/daily-log/day'
 import type { Database } from '../../api/src/db/database'
 import { seedDailyGoals, seedFoodEntry, seedWaterEntry } from '../../api/src/db/seed'
@@ -78,6 +78,8 @@ export const homePage = (page: Page) => ({
   title: () => page.getByRole('heading', { level: 1, name: 'Food Log' }),
   dailyLog: () => page.getByRole('region', { name: 'Daily log' }),
   week: () => page.getByRole('list', { name: 'Week' }),
+  day: (date: string) =>
+    page.getByRole('list', { name: 'Week' }).getByRole('button', { name: date, exact: true }),
   weekDays: () => page.getByRole('list', { name: 'Week' }).getByRole('listitem'),
   entries: () => page.getByRole('list', { name: 'Entries' }).getByRole('listitem'),
   entry: (name: string) =>
@@ -94,7 +96,7 @@ export const homePage = (page: Page) => ({
 // Playwright only offers taps.
 export const finger = async (page: Page) => {
   const cdp = await page.context().newCDPSession(page)
-  const x = 195
+  let x = 195
   let y = 0
   const touch = (
     type: 'touchStart' | 'touchMove' | 'touchEnd',
@@ -102,13 +104,21 @@ export const finger = async (page: Page) => {
   ) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: points })
 
   return {
-    down: async (startY = 200) => {
+    down: async (startY = 200, startX = 195) => {
       y = startY
+      x = startX
       await touch('touchStart', [{ x, y }])
     },
     drag: async (distance: number, steps = 10) => {
       for (let step = 0; step < steps; step++) {
         y += distance / steps
+        await touch('touchMove', [{ x, y }])
+      }
+    },
+    // Sideways, positive to the right.
+    slide: async (distance: number, steps = 10) => {
+      for (let step = 0; step < steps; step++) {
+        x += distance / steps
         await touch('touchMove', [{ x, y }])
       }
     },
@@ -120,5 +130,15 @@ export const pullToRefresh = async (page: Page, distance = 120) => {
   const touch = await finger(page)
   await touch.down()
   await touch.drag(distance)
+  await touch.up()
+}
+
+// Slides a finger sideways across the middle of the element.
+export const swipe = async (page: Page, locator: Locator, distance: number) => {
+  const bounds = await locator.boundingBox()
+  if (bounds === null) throw new Error('The element is hidden')
+  const touch = await finger(page)
+  await touch.down(bounds.y + bounds.height / 2, bounds.x + bounds.width / 2)
+  await touch.slide(distance)
   await touch.up()
 }
