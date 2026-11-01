@@ -40,6 +40,7 @@ const SCOPES = [
   'water-entries:write',
   'serving-sizes:read',
   'serving-sizes:write',
+  'products:read',
 ]
 
 type TokenResponse = { accessToken: string; tokenType: string; expiresIn: number; scopes: string[] }
@@ -127,7 +128,7 @@ describe('API tokens (e2e)', () => {
       const login = decodeJwt(loginToken)
       expect(payload.sub).toBe(String(await userIdOf(database, USERNAME)))
       expect(payload['scope']).toBe(
-        'daily-log:read food-entries:read food-entries:write water-entries:read water-entries:write serving-sizes:read serving-sizes:write',
+        'daily-log:read food-entries:read food-entries:write water-entries:read water-entries:write serving-sizes:read serving-sizes:write products:read',
       )
       expect(payload.iat).toBe(NOW.getTime() / 1000)
       expect(payload.exp).toBe(NOW.getTime() / 1000 + 600)

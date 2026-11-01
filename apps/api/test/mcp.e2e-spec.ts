@@ -1,14 +1,18 @@
 import {
+  API_SCOPES,
   type ApiKey,
   type ApiKeyExpiresIn,
   type DailyLog,
   DEFAULT_DAILY_GOALS,
   ENTRY_NOT_FOUND_MESSAGE,
+  GENERIC_ERROR_MESSAGE,
   INSUFFICIENT_SCOPE_MESSAGE,
   INVALID_API_KEY_MESSAGE,
+  INVALID_BARCODE_MESSAGE,
   MAX_FOOD_NAME_LENGTH,
   MAX_PER_SERVING,
   MAX_WATER_AMOUNT,
+  PRODUCT_NOT_FOUND_MESSAGE,
   type ServingSize,
   foodEntrySchema,
   servingSizeSchema,
@@ -31,6 +35,12 @@ import {
   userIdOf,
   withBearer,
 } from './app.js'
+import {
+  type FakeFetch,
+  NUTELLA_BARCODE,
+  NUTELLA_PRODUCT,
+  fakeOpenFoodFacts,
+} from './open-food-facts.js'
 
 const USERNAME = 'diego'
 const OTHER_USERNAME = 'ana'
@@ -58,6 +68,7 @@ const TOOLS = [
   'delete_water_entry',
   'list_serving_sizes',
   'create_serving_size',
+  'get_product',
 ]
 
 type Tool = { name: string; description?: string; inputSchema: { type: string } }
@@ -604,6 +615,68 @@ describe('MCP (e2e)', () => {
       expect(await failed(tool, args(ids))).toBe(ENTRY_NOT_FOUND_MESSAGE)
 
       expect(await dailyLog(DATE, anaToken)).toEqual(before)
+    })
+  })
+
+  describe('get_product', () => {
+    let fetch: FakeFetch
+
+    beforeEach(() => {
+      fetch = fakeOpenFoodFacts()
+    })
+
+    afterEach(() => {
+      vi.restoreAllMocks()
+    })
+
+    it('F1 — get_product is listed last, for tokens with "products:read"', async () => {
+      const { tools } = resultOf<{ tools: Tool[] }>(await rpc('tools/list'))
+
+      const tool = tools.at(-1) as Tool & {
+        inputSchema: { properties?: Record<string, { type?: string }>; required?: string[] }
+      }
+      expect(tool.name).toBe('get_product')
+      expect(tool.inputSchema.properties?.['barcode']?.type).toBe('string')
+      expect(tool.inputSchema.required).toEqual(['barcode'])
+      expect(tool.description).toContain('log_food')
+      expect(tool.description).toContain('null')
+      expect(await toolNames(await scopedToken('products:read'))).toEqual(['get_product'])
+    })
+
+    it('F2 — get_product answers the same model as the API', async () => {
+      expect(await succeeded('get_product', { barcode: NUTELLA_BARCODE })).toEqual(NUTELLA_PRODUCT)
+    })
+
+    it.each<[string, () => void, string, () => string]>([
+      ['an invalid barcode', () => undefined, '1234567', () => INVALID_BARCODE_MESSAGE],
+      [
+        'a product Open Food Facts does not have',
+        () => undefined,
+        '12345670',
+        () => PRODUCT_NOT_FOUND_MESSAGE,
+      ],
+      [
+        'Open Food Facts answering 500',
+        () => fetch.mockResolvedValue(new Response('', { status: 500 })),
+        NUTELLA_BARCODE,
+        () => GENERIC_ERROR_MESSAGE,
+      ],
+    ])('F3 — %s comes back as a tool error', async (_case, arrange, barcode, message) => {
+      arrange()
+
+      expect(await failed('get_product', { barcode })).toBe(message())
+    })
+
+    it('F4 — a token without "products:read" neither lists nor runs get_product', async () => {
+      const token = await scopedToken(
+        API_SCOPES.filter((scope) => scope !== 'products:read').join(' '),
+      )
+
+      expect(await toolNames(token)).not.toContain('get_product')
+      expect(await failed('get_product', { barcode: NUTELLA_BARCODE }, token)).toBe(
+        INSUFFICIENT_SCOPE_MESSAGE,
+      )
+      expect(fetch).not.toHaveBeenCalled()
     })
   })
 })
