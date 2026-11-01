@@ -23,9 +23,10 @@ import { usePullToRefresh } from './use-pull-to-refresh'
 import { type Today, useToday } from './use-today'
 import { WeekControls, WeekStrip, weekLabel } from './week-strip'
 
+// Sits in the gap the pull opens under the header.
 function Loader() {
   return (
-    <output aria-label="Reloading" className="fixed inset-x-0 top-3 z-10 flex justify-center">
+    <output aria-label="Reloading" className="absolute inset-x-0 top-3 z-10 flex justify-center">
       <span className="size-8 animate-spin rounded-full border-[3px] border-line-strong border-t-accent" />
     </output>
   )
@@ -132,68 +133,70 @@ function DayLog({
 
   return (
     <>
-      {showLoader && <Loader />}
-      <div
-        ref={content}
-        className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 px-4 pt-6 sm:px-8 sm:pt-8"
-      >
-        <main className="flex flex-col gap-6">
-          <div className="flex flex-wrap items-end justify-between gap-2 sm:gap-4">
-            <div className="flex flex-col gap-1.5 sm:gap-2">
-              <h1 className="font-serif text-[40px] leading-none tracking-tight sm:text-5xl">
-                Food Log
-              </h1>
+      <div className="relative flex flex-1 flex-col">
+        {showLoader && <Loader />}
+        <div
+          ref={content}
+          className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 px-4 pt-6 sm:px-8 sm:pt-8"
+        >
+          <main className="flex flex-col gap-6">
+            <div className="flex flex-wrap items-end justify-between gap-2 sm:gap-4">
+              <div className="flex flex-col gap-1.5 sm:gap-2">
+                <h1 className="font-serif text-[40px] leading-none tracking-tight sm:text-5xl">
+                  Food Log
+                </h1>
+                {day !== null && today !== undefined && (
+                  <p className="text-[13px] text-muted sm:text-sm">{weekLabel(day.date, today)}</p>
+                )}
+              </div>
               {day !== null && today !== undefined && (
-                <p className="text-[13px] text-muted sm:text-sm">{weekLabel(day.date, today)}</p>
+                <WeekControls date={day.date} today={today} onSelect={onSelect} />
               )}
             </div>
             {day !== null && today !== undefined && (
-              <WeekControls date={day.date} today={today} onSelect={onSelect} />
+              <WeekStrip date={day.date} today={today} summaries={summaries} onSelect={onSelect} />
             )}
-          </div>
-          {day !== null && today !== undefined && (
-            <WeekStrip date={day.date} today={today} summaries={summaries} onSelect={onSelect} />
-          )}
-          {(failed || logOutFailed) && <Alert>{GENERIC_ERROR_MESSAGE}</Alert>}
-          {/* Small screens stack the totals above the log; wide ones put them beside it. */}
-          <div className="flex flex-col gap-6 lg:grid lg:grid-cols-[minmax(0,1fr)_24rem] lg:items-start">
-            {log !== undefined && (
-              <div className="flex flex-col gap-4 lg:col-start-2 lg:row-start-1">
-                <Summary goals={log.goals} totals={log.totals} />
-                <WaterSummary goals={log.goals} totals={log.totals} />
-              </div>
-            )}
-            {/* The server cannot know the browser's day, so the section waits for it. */}
-            {day !== null && (
-              <section
-                aria-labelledby="daily-log-heading"
-                className="flex min-w-0 flex-col gap-3 lg:col-start-1 lg:row-span-2 lg:row-start-1"
-              >
-                <div className="flex items-baseline justify-between gap-4">
-                  <h2 id="daily-log-heading" className="text-lg font-semibold">
-                    Daily log
-                  </h2>
-                  <p className="text-sm text-muted">{formatLongDay(parseDay(day.date))}</p>
+            {(failed || logOutFailed) && <Alert>{GENERIC_ERROR_MESSAGE}</Alert>}
+            {/* Small screens stack the totals above the log; wide ones put them beside it. */}
+            <div className="flex flex-col gap-6 lg:grid lg:grid-cols-[minmax(0,1fr)_24rem] lg:items-start">
+              {log !== undefined && (
+                <div className="flex flex-col gap-4 lg:col-start-2 lg:row-start-1">
+                  <Summary goals={log.goals} totals={log.totals} />
+                  <WaterSummary goals={log.goals} totals={log.totals} />
                 </div>
-                {log !== undefined && (
-                  <EntryList
-                    entries={log.entries}
-                    onOpenFood={(entry) => setFoodDialog({ entry })}
-                    onOpenWater={water.edit}
-                  />
-                )}
-              </section>
-            )}
-            {log !== undefined && (
-              <AddButtons onAddWater={water.add} onAddFood={() => setFoodDialog({})} />
-            )}
-          </div>
-        </main>
-        {day !== null && (
-          <footer className="mt-auto border-t border-line py-4 text-xs text-muted">
-            Food Log date {day.date} · Time zone {day.timeZone}
-          </footer>
-        )}
+              )}
+              {/* The server cannot know the browser's day, so the section waits for it. */}
+              {day !== null && (
+                <section
+                  aria-labelledby="daily-log-heading"
+                  className="flex min-w-0 flex-col gap-3 lg:col-start-1 lg:row-span-2 lg:row-start-1"
+                >
+                  <div className="flex items-baseline justify-between gap-4">
+                    <h2 id="daily-log-heading" className="text-lg font-semibold">
+                      Daily log
+                    </h2>
+                    <p className="text-sm text-muted">{formatLongDay(parseDay(day.date))}</p>
+                  </div>
+                  {log !== undefined && (
+                    <EntryList
+                      entries={log.entries}
+                      onOpenFood={(entry) => setFoodDialog({ entry })}
+                      onOpenWater={water.edit}
+                    />
+                  )}
+                </section>
+              )}
+              {log !== undefined && (
+                <AddButtons onAddWater={water.add} onAddFood={() => setFoodDialog({})} />
+              )}
+            </div>
+          </main>
+          {day !== null && (
+            <footer className="mt-auto border-t border-line py-4 text-xs text-muted">
+              Food Log date {day.date} · Time zone {day.timeZone}
+            </footer>
+          )}
+        </div>
       </div>
       {water.dialogs}
       {foodDialog !== undefined && (
