@@ -15,7 +15,6 @@
     "start:prod": "node dist/main",
     "db:seed": "nest build && node dist/seed",
     "db:reset": "nest build && node dist/reset",
-    "db:import-legacy": "node dist/import-legacy",
     "test:watch": "vp test"
   },
   "dependencies": {

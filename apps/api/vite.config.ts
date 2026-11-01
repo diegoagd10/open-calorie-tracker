@@ -24,15 +24,9 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       include: ['src/**/*.ts'],
-      // seed.ts, reset.ts and import-legacy.ts are CLI scripts, not part of the API, tested by
-      // running their build; config only reads env vars.
-      exclude: [
-        'src/**/*.spec.ts',
-        'src/seed.ts',
-        'src/reset.ts',
-        'src/import-legacy.ts',
-        'src/config/**',
-      ],
+      // seed.ts and reset.ts are CLI scripts, not part of the API, tested by running their build;
+      // config only reads env vars.
+      exclude: ['src/**/*.spec.ts', 'src/seed.ts', 'src/reset.ts', 'src/config/**'],
       // Fails `test:cov` when statement coverage drops below this.
       thresholds: { statements: 95 },
     },
