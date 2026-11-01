@@ -104,6 +104,11 @@
   --font-mono: var(--font-geist-mono);
 }
 
+/* The Food Log pulls to refresh itself, so the page does not bounce or reload on overscroll. */
+html {
+  overscroll-behavior-y: none;
+}
+
 body {
   background: var(--bg);
   color: var(--fg);

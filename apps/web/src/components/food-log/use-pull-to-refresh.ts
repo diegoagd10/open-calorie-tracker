@@ -6,9 +6,22 @@ export const PULL_THRESHOLD_PX = 80
 const RESISTANCE = 0.5
 // Where the screen rests while reloading, leaving room for the loader.
 const REFRESHING_OFFSET_PX = 56
+// Past the resting place the screen stretches ever less, and never further than this.
+const MAX_OFFSET_PX = 96
+// Phones can swallow the release, e.g. an app opened from the iOS home screen, so a finger that
+// stops moving this long counts as released rather than leaving the screen pulled down.
+const IDLE_RELEASE_MS = 1_000
 const SETTLE_TRANSITION = 'transform 200ms ease-out'
 // How far the finger moves before the gesture counts as sideways, like a swipe through the weeks.
 const AXIS_LOCK_PX = 6
+
+// How far the screen moves for how far the finger has: with it at first, then ever less.
+const offsetOf = (distance: number) => {
+  const offset = distance * RESISTANCE
+  if (offset <= REFRESHING_OFFSET_PX) return offset
+  const room = MAX_OFFSET_PX - REFRESHING_OFFSET_PX
+  return REFRESHING_OFFSET_PX + room * (1 - Math.exp(-(offset - REFRESHING_OFFSET_PX) / room))
+}
 
 // Pull to refresh for touch screens: dragging down from the top of the page moves `content` with
 // the finger, and releasing past the threshold calls `onRefresh`. Mouse drags are ignored.
@@ -30,6 +43,7 @@ export const usePullToRefresh = (
     let locked = false
     let distance = 0
     let busy = false
+    let idle: ReturnType<typeof setTimeout> | undefined
 
     // Set directly on the element, so the screen follows the finger without waiting for React.
     const moveContent = (offset: number, animate: boolean) => {
@@ -67,11 +81,14 @@ export const usePullToRefresh = (
       // Moving up scrolls the page as usual.
       if (distance === 0) return
       event.preventDefault()
-      moveContent(distance * RESISTANCE, false)
+      moveContent(offsetOf(distance), false)
       setArmed(distance >= PULL_THRESHOLD_PX)
+      clearTimeout(idle)
+      idle = setTimeout(() => void onTouchEnd(), IDLE_RELEASE_MS)
     }
 
     const onTouchEnd = async () => {
+      clearTimeout(idle)
       if (startY === undefined) return
       startY = undefined
       if (distance < PULL_THRESHOLD_PX) {
@@ -106,6 +123,7 @@ export const usePullToRefresh = (
     window.addEventListener('touchend', handleTouchEnd)
     window.addEventListener('touchcancel', handleTouchCancel)
     return () => {
+      clearTimeout(idle)
       window.removeEventListener('touchstart', onTouchStart)
       window.removeEventListener('touchmove', onTouchMove)
       window.removeEventListener('touchend', handleTouchEnd)
