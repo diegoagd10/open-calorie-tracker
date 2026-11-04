@@ -920,7 +920,10 @@ describe('Food (e2e)', () => {
     })
 
     it('saves the changes and keeps the time and the position of the entry', async () => {
+      // Saving before the user's serving sizes arrive looks this one up with a POST instead.
+      const servingSizesLoaded = page.waitForResponse(SERVING_SIZES_URL)
       await openEditDialog()
+      await servingSizesLoaded
 
       await foodField().fill('Skyr')
       await setServings(2)
