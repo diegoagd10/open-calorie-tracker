@@ -1,0 +1,23 @@
+# Dependabot opens the pull requests; security fixes ignore this schedule and arrive as soon as
+# an advisory is published. The root entry covers the whole pnpm workspace.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
