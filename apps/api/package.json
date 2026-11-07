@@ -36,7 +36,7 @@
     "@nestjs/schematics": "^12.0.12",
     "@nestjs/testing": "^12.3.2",
     "@types/express": "^5.0.0",
-    "@types/node": "^24.0.0",
+    "@types/node": "^26.6.6",
     "@types/supertest": "^7.0.0",
     "drizzle-kit": "^0.31.11",
     "source-map-support": "^0.5.21",
