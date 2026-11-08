@@ -56,3 +56,13 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter web exec playwright install --with-deps chromium
       - run: pnpm --filter web exec vp test run
+
+  docker:
+    name: Docker build
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target: [api, web]
+    steps:
+      - uses: actions/checkout@v7
+      - run: docker build --target ${{ matrix.target }} .

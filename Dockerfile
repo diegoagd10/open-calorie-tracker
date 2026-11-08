@@ -2,8 +2,9 @@
 FROM node:26-bookworm-slim AS base
 ENV PNPM_HOME=/pnpm COREPACK_HOME=/corepack NEXT_TELEMETRY_DISABLED=1
 ENV PATH=$PNPM_HOME:$PATH
-# The pnpm version comes from package.json's packageManager.
-RUN corepack enable
+# The pnpm version comes from package.json's packageManager. Node 25+ no longer bundles
+# corepack, so install it from npm first.
+RUN npm install -g corepack@0.36.0 && corepack enable
 WORKDIR /repo
 
 FROM base AS build
