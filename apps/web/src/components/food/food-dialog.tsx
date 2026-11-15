@@ -101,6 +101,7 @@ export function FoodDialog({
   const [name, setName] = useState(initial.name)
   const [servingSize, setServingSize] = useState(initial.servingSize)
   const [servingSizes, setServingSizes] = useState<ServingSize[]>([])
+  const [servingSizesLoaded, setServingSizesLoaded] = useState(false)
   const [listOpen, setListOpen] = useState(false)
   const [servings, setServings] = useState(initial.servings)
   const [calories, setCalories] = useState(initial.calories)
@@ -110,7 +111,9 @@ export function FoodDialog({
   useEffect(() => {
     let current = true
     void loadServingSizes().then((loaded) => {
-      if (current) setServingSizes(loaded)
+      if (!current) return
+      setServingSizes(loaded)
+      setServingSizesLoaded(true)
     })
     return () => {
       current = false
@@ -141,7 +144,10 @@ export function FoodDialog({
 
   // Saves a new serving size first; once saved it is the user's, so a retry reuses it.
   const save = async (): Promise<Outcome> => {
-    let chosen = findServingSize(servingSizes, servingSize)
+    // Saved before the user's serving sizes arrived: look them up first, so one they already
+    // have is reused instead of saved again.
+    const known = servingSizesLoaded ? servingSizes : await loadServingSizes()
+    let chosen = findServingSize(known, servingSize)
     if (chosen === undefined) {
       const saved = await saveServingSize(normalizeServingSize(servingSize))
       if (saved.servingSize === undefined) return saved.outcome

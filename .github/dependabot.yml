@@ -1,11 +1,14 @@
 # Dependabot opens the pull requests; security fixes ignore this schedule and arrive as soon as
-# an advisory is published. The root entry covers the whole pnpm workspace.
+# an advisory is published. The root entry covers the whole pnpm workspace. Updates run at noon in
+# New York, far from the midnight the web tests' "today" turns over at.
 version: 2
 updates:
   - package-ecosystem: npm
     directory: /
     schedule:
       interval: weekly
+      time: '12:00'
+      timezone: America/New_York
     groups:
       minor-and-patch:
         update-types:
@@ -16,8 +19,12 @@ updates:
     directory: /
     schedule:
       interval: weekly
+      time: '12:00'
+      timezone: America/New_York
 
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
+      time: '12:00'
+      timezone: America/New_York
