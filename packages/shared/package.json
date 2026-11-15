@@ -22,7 +22,7 @@
   },
   "devDependencies": {
     "@vitest/coverage-v8": "catalog:",
-    "typescript": "^6.0.2",
+    "typescript": "^6.0.3",
     "vite-plus": "catalog:"
   }
 }
