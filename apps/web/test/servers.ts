@@ -3,6 +3,7 @@ import { mkdir, rm } from 'node:fs/promises'
 import type { Server } from 'node:http'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
+import { TIME_ZONE } from './browser'
 import { startFaultProxy } from './fault-proxy'
 import {
   API_KEY_SECRET,
@@ -13,6 +14,34 @@ import {
   SEEDED,
   TEST_DATA_DIR,
 } from './fixtures'
+
+// Tests that seed entries through the API work on the real today in New York (see
+// minutesIntoToday), so a run that crosses midnight there, or starts in its first minutes, sees
+// its seeded entries on the wrong day. Such a run waits until 12:05 AM.
+const MIDNIGHT_GUARD = { before: 10, after: 5 }
+
+const waitOutMidnight = async () => {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: TIME_ZONE,
+    hourCycle: 'h23',
+    hour: 'numeric',
+    minute: 'numeric',
+    second: 'numeric',
+  }).formatToParts(new Date())
+  const part = (type: string) => Number(parts.find((p) => p.type === type)?.value)
+  const seconds = part('hour') * 3600 + part('minute') * 60 + part('second')
+  const untilAfter = MIDNIGHT_GUARD.after * 60 - seconds
+  const untilDayEnd = 24 * 3600 - seconds
+  const wait =
+    untilAfter > 0
+      ? untilAfter
+      : untilDayEnd <= MIDNIGHT_GUARD.before * 60
+        ? untilDayEnd + MIDNIGHT_GUARD.after * 60
+        : 0
+  if (wait === 0) return
+  console.log(`Waiting ${Math.ceil(wait / 60)} min for midnight in ${TIME_ZONE} to pass`)
+  await new Promise((resolve) => setTimeout(resolve, wait * 1000))
+}
 
 const apiDir = fileURLToPath(new URL('../../api', import.meta.url))
 const webDir = fileURLToPath(new URL('..', import.meta.url))
@@ -83,6 +112,8 @@ const startEnvironment = async (environment: Environment) => {
 // build made by `db:seed`, and Next.js locks its build directory while `next dev` runs, so both
 // web servers serve a single production build instead.
 export default async function setup() {
+  await waitOutMidnight()
+
   await rm(TEST_DATA_DIR, { recursive: true, force: true })
   await mkdir(TEST_DATA_DIR, { recursive: true })
 
