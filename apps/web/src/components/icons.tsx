@@ -112,6 +112,24 @@ export function GearIcon({ className }: IconProps) {
   )
 }
 
+export function TrendDownIcon({ className }: IconProps) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.8}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden
+    >
+      <path d="M3 7l6 6 4-4 8 8" />
+      <path d="M15 17h6v-6" />
+    </svg>
+  )
+}
+
 export function KeyIcon({ className }: IconProps) {
   return (
     <svg

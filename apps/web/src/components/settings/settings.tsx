@@ -1,15 +1,15 @@
 'use client'
 
 import { GENERIC_ERROR_MESSAGE } from '@open-calorie-tracker/shared'
-import Link from 'next/link'
 import { useState } from 'react'
 import { Alert } from '@/components/alert'
-import { AppHeader } from '@/components/app-header'
+import { AppHeader, FoodLogLink, WeightLink } from '@/components/app-header'
 import { CheckIcon } from '@/components/icons'
 import { useLogOut } from '@/components/use-log-out'
 import { ApiKeysSection } from './api-keys/api-keys-section'
 import { ChangePasswordDialog } from './change-password-dialog'
 import { DailyGoalsSection } from './daily-goals'
+import { WeightGoalSection } from './weight-goal'
 import { INPUT, SECONDARY_BUTTON, Section } from './section'
 import { useProfile } from './use-profile'
 
@@ -75,25 +75,22 @@ function Profile() {
   )
 }
 
-// Where the profile, daily goals and API keys are managed.
+// Where the profile, daily goals, weight goal and API keys are managed.
 export function Settings() {
   const logOut = useLogOut()
 
   return (
     <div className="flex min-h-screen flex-col bg-bg">
       <AppHeader logOut={logOut}>
-        <Link
-          href="/"
-          className="flex h-9 items-center px-1.5 text-sm font-semibold whitespace-nowrap sm:px-3"
-        >
-          Food Log
-        </Link>
+        <FoodLogLink />
+        <WeightLink />
       </AppHeader>
       <main className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 py-6 sm:px-8 sm:py-8">
         <h1 className="font-serif text-[40px] leading-none tracking-tight sm:text-5xl">Settings</h1>
         {logOut.failed && <Alert>{GENERIC_ERROR_MESSAGE}</Alert>}
         <Profile />
         <DailyGoalsSection />
+        <WeightGoalSection />
         <ApiKeysSection />
       </main>
     </div>

@@ -1,12 +1,11 @@
 'use client'
 
-import Link from 'next/link'
 import { useCallback, useRef, useState } from 'react'
 import { Alert } from '@/components/alert'
-import { AppHeader } from '@/components/app-header'
+import { AppHeader, SettingsLink, WeightLink } from '@/components/app-header'
 import { DeleteFoodDialog } from '@/components/food/delete-food-dialog'
 import { FoodDialog } from '@/components/food/food-dialog'
-import { DropIcon, GearIcon, PlusIcon } from '@/components/icons'
+import { DropIcon, PlusIcon } from '@/components/icons'
 import { useLogOut } from '@/components/use-log-out'
 import { useWaterDialogs } from '@/components/water/use-water-dialogs'
 import {
@@ -67,13 +66,8 @@ export function FoodLog() {
   return (
     <div className="flex min-h-screen flex-col bg-bg">
       <AppHeader logOut={logOut}>
-        <Link
-          href="/settings"
-          aria-label="Settings"
-          className="flex size-9 items-center justify-center rounded-full border border-line bg-surface text-fg-soft"
-        >
-          <GearIcon className="size-[18px]" />
-        </Link>
+        <WeightLink />
+        <SettingsLink />
       </AppHeader>
       <DayLog
         key={`${day?.date} ${day?.timeZone}`}

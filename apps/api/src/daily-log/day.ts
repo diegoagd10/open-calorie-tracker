@@ -23,13 +23,17 @@ const isCalendarDate = (date: string) => {
   return !Number.isNaN(parsed.getTime()) && parsed.toISOString().startsWith(date)
 }
 
-const calendarDate = (name: string) =>
+export const calendarDate = (name: string) =>
   z
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/, `${name} must be YYYY-MM-DD`)
     .refine(isCalendarDate, `${name} does not exist`)
 
-const timeZone = z.string().refine(isTimeZone, 'timeZone must be an IANA time zone')
+export const timeZone = z.string().refine(isTimeZone, 'timeZone must be an IANA time zone')
+
+// Today's date, YYYY-MM-DD, in a valid time zone.
+export const todayIn = (timeZone: string) =>
+  new Intl.DateTimeFormat('en-CA', { timeZone }).format(new Date())
 
 export const dayQuerySchema = z.object({ date: calendarDate('date'), timeZone })
 

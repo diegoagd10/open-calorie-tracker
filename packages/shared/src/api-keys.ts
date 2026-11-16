@@ -72,6 +72,8 @@ export const API_SCOPES = [
   'food-entries:write',
   'water-entries:read',
   'water-entries:write',
+  'weight-entries:read',
+  'weight-entries:write',
   'serving-sizes:read',
   'serving-sizes:write',
   'products:read',

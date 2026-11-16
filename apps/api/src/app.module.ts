@@ -10,6 +10,7 @@ import { ProductsModule } from './products/products.module.js'
 import { ServingSizesModule } from './serving-sizes/serving-sizes.module.js'
 import { SettingsModule } from './settings/settings.module.js'
 import { WaterEntriesModule } from './water-entries/water-entries.module.js'
+import { WeightEntriesModule } from './weight-entries/weight-entries.module.js'
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { WaterEntriesModule } from './water-entries/water-entries.module.js'
     AuthModule,
     DailyLogModule,
     WaterEntriesModule,
+    WeightEntriesModule,
     ServingSizesModule,
     FoodEntriesModule,
     ProductsModule,

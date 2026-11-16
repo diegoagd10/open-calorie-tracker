@@ -1,8 +1,9 @@
 const SIZES = {
+  // In a crowded header the name is cut short instead of pushing the links off screen.
   small: {
-    layout: 'flex-row gap-2.5',
-    mark: 'size-8 rounded-[10px] text-[13px]',
-    name: 'text-fg-soft',
+    layout: 'min-w-0 flex-row gap-2.5',
+    mark: 'size-8 shrink-0 rounded-[10px] text-[13px]',
+    name: 'min-w-0 truncate text-fg-soft',
   },
   large: {
     layout: 'flex-col gap-3',
