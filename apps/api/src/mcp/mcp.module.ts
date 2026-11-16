@@ -6,6 +6,7 @@ import { ProductsModule } from '../products/products.module.js'
 import { ServingSizesModule } from '../serving-sizes/serving-sizes.module.js'
 import { ApiKeysModule } from '../settings/api-keys/api-keys.module.js'
 import { WaterEntriesModule } from '../water-entries/water-entries.module.js'
+import { WeightEntriesModule } from '../weight-entries/weight-entries.module.js'
 import { McpController } from './mcp.controller.js'
 import { McpService } from './mcp.service.js'
 
@@ -16,6 +17,7 @@ import { McpService } from './mcp.service.js'
     DailyLogModule,
     FoodEntriesModule,
     WaterEntriesModule,
+    WeightEntriesModule,
     ServingSizesModule,
     ProductsModule,
   ],

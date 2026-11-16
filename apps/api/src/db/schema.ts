@@ -125,3 +125,29 @@ export const apiKeys = sqliteTable(
     index('api_keys_user_created_at').on(table.userId, table.createdAt),
   ],
 )
+
+// One weigh-in per user and calendar day (YYYY-MM-DD in their time zone), in pounds. Logging the
+// same day again replaces it.
+export const weightEntries = sqliteTable(
+  'weight_entries',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    userId: integer('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    date: text('date').notNull(),
+    weight: real('weight').notNull(),
+  },
+  (table) => [uniqueIndex('weight_entries_user_date_unique').on(table.userId, table.date)],
+)
+
+// One row per user who set a weight goal, in pounds. The goal starts on startDate, the day the
+// starting weight was last changed.
+export const weightGoals = sqliteTable('weight_goals', {
+  userId: integer('user_id')
+    .primaryKey()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  startWeight: real('start_weight').notNull(),
+  goalWeight: real('goal_weight').notNull(),
+  startDate: text('start_date').notNull(),
+})

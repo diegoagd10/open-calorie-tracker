@@ -14,6 +14,7 @@ import { homePage, openHome, seedDailyGoals } from './daily-log'
 import { type Fault, clearFault, injectFault, receivedRequests } from './fault-proxy'
 import { INVALID_TOKENS, SEEDED, SEED_USER, signAccessToken } from './fixtures'
 import { header } from './header'
+import { dateIn, saveWeightGoal, weightGoal } from './weight'
 import {
   connectDatabase,
   sendToRoute,
@@ -220,9 +221,10 @@ describe('Settings page (e2e)', () => {
       expect(await settings.sectionTitles().allTextContents()).toEqual([
         'Profile',
         'Daily goals',
+        'Weight goal',
         'API keys',
       ])
-      for (const name of ['Profile', 'Daily goals', 'API keys']) {
+      for (const name of ['Profile', 'Daily goals', 'Weight goal', 'API keys']) {
         expect(await settings.section(name).isVisible()).toBe(true)
       }
     })
@@ -253,6 +255,7 @@ describe('Settings page (e2e)', () => {
         'GET /api/api-keys',
         'GET /api/daily-goals',
         'GET /api/profile',
+        'GET /api/weight-goal',
       ])
     })
 
@@ -695,6 +698,139 @@ describe('Settings page (e2e)', () => {
 
         expect(statuses).toEqual([502, 502])
       })
+    })
+  })
+
+  describe('weight goal', () => {
+    const RANGE_ERROR = 'Enter a weight from 50 to 999 lb'
+    const ORDER_ERROR = 'Goal weight must be less than starting weight'
+
+    const region = () => settings.section('Weight goal')
+    const form = () => page.getByRole('form', { name: 'Weight goal' })
+    const startWeight = () => form().getByRole('textbox', { name: 'Starting weight', exact: true })
+    const goalWeight = () => form().getByRole('textbox', { name: 'Goal weight', exact: true })
+    const save = () => form().getByRole('button', { name: 'Save' })
+    const saved = () => region().getByText('Weight goal saved.')
+
+    // Opens Settings and waits until the section can be edited.
+    const openWeightGoal = async () => {
+      await openSettings()
+      await expect.poll(() => startWeight().isEnabled(), eventually).toBe(true)
+    }
+
+    const saveGoal = async () => {
+      await save().click()
+      await expect.poll(() => saved().isVisible(), eventually).toBe(true)
+    }
+
+    it('U32 — without a goal, both fields are empty and Save is disabled', async () => {
+      await openWeightGoal()
+
+      expect(await startWeight().inputValue()).toBe('')
+      expect(await goalWeight().inputValue()).toBe('')
+      expect(await save().isDisabled()).toBe(true)
+    })
+
+    it("U33 — saves the goal, starting today in the browser's time zone", async () => {
+      await openWeightGoal()
+      await startWeight().fill('180')
+      await goalWeight().fill('150')
+
+      await saveGoal()
+
+      expect(await weightGoal(token)).toEqual({
+        startWeight: 180,
+        goalWeight: 150,
+        startDate: dateIn(),
+      })
+      await openWeightGoal()
+      await expect.poll(() => startWeight().inputValue(), eventually).toBe('180')
+      expect(await goalWeight().inputValue()).toBe('150')
+    })
+
+    it.each([
+      ['the starting weight', startWeight],
+      ['the goal weight', goalWeight],
+    ])('U34 — with only %s, Save is disabled', async (_case, field) => {
+      await openWeightGoal()
+
+      await field().fill('170')
+
+      expect(await save().isDisabled()).toBe(true)
+    })
+
+    it('U35 — a goal not under the starting weight shows an error and cannot be saved', async () => {
+      await openWeightGoal()
+
+      await startWeight().fill('150')
+      await goalWeight().fill('150')
+
+      await expect.poll(() => region().getByText(ORDER_ERROR).isVisible(), eventually).toBe(true)
+      expect(await save().isDisabled()).toBe(true)
+    })
+
+    it.each([
+      ['a starting weight under 50', startWeight, '49.9'],
+      ['a goal weight under 50', goalWeight, '49.9'],
+    ])('U36 — %s shows the range error and cannot be saved', async (_case, field, value) => {
+      await openWeightGoal()
+
+      await field().fill(value)
+
+      await expect.poll(() => region().getByText(RANGE_ERROR).isVisible(), eventually).toBe(true)
+      expect(await save().isDisabled()).toBe(true)
+    })
+
+    it('U37 — changing only the goal weight keeps the start date', async () => {
+      await saveWeightGoal(token, 180, 150, dateIn(10))
+      await openWeightGoal()
+      await expect.poll(() => goalWeight().inputValue(), eventually).toBe('150')
+
+      await goalWeight().fill('155')
+      await saveGoal()
+
+      expect(await weightGoal(token)).toEqual({
+        startWeight: 180,
+        goalWeight: 155,
+        startDate: dateIn(10),
+      })
+    })
+
+    it('U38 — changing the starting weight starts the goal today', async () => {
+      await saveWeightGoal(token, 180, 150, dateIn(10))
+      await openWeightGoal()
+      await expect.poll(() => startWeight().inputValue(), eventually).toBe('180')
+
+      await startWeight().fill('178')
+      await saveGoal()
+
+      expect(await weightGoal(token)).toEqual({
+        startWeight: 178,
+        goalWeight: 150,
+        startDate: dateIn(),
+      })
+    })
+
+    it('U39 — a saved goal can be changed but not removed', async () => {
+      await saveWeightGoal(token, 180, 150)
+
+      await openWeightGoal()
+      await expect.poll(() => startWeight().inputValue(), eventually).toBe('180')
+
+      expect(await region().getByRole('button').allTextContents()).toEqual(['Save'])
+    })
+
+    it('U40 — a failed save shows the generic error', async () => {
+      await openWeightGoal()
+      await startWeight().fill('180')
+      await goalWeight().fill('150')
+      await injectFault(PROXY_URL, { status: 500 }, username)
+
+      await save().click()
+
+      await expect.poll(() => region().getByRole('alert').isVisible(), eventually).toBe(true)
+      expect(await textOf(region().getByRole('alert'))).toBe(GENERIC_ERROR_MESSAGE)
+      expect(await saved().isVisible()).toBe(false)
     })
   })
 

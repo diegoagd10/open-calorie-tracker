@@ -27,6 +27,11 @@ import { FoodEntriesService } from '../food-entries/food-entries.service.js'
 import { ProductsService, barcodeSchema } from '../products/products.service.js'
 import { ServingSizesService } from '../serving-sizes/serving-sizes.service.js'
 import { WaterEntriesService } from '../water-entries/water-entries.service.js'
+import {
+  WeightEntriesService,
+  logWeightSchema,
+  weightHistoryQuerySchema,
+} from '../weight-entries/weight-entries.service.js'
 
 // A tool runs for the user the request authenticated, with input its schema already parsed. It
 // answers a JSON object, which becomes the tool's structured result.
@@ -80,6 +85,7 @@ export class McpService {
     dailyLog: DailyLogService,
     foodEntries: FoodEntriesService,
     waterEntries: WaterEntriesService,
+    weightEntries: WeightEntriesService,
     servingSizes: ServingSizesService,
     products: ProductsService,
   ) {
@@ -168,6 +174,22 @@ export class McpService {
           await waterEntries.remove(userId, id)
           return { id, deleted: true }
         },
+      }),
+      tool({
+        name: 'log_weight',
+        description:
+          "Logs the user's weight in pounds, with at most one decimal, for a calendar day (YYYY-MM-DD) in their time zone: today when date is left out, or any past day. A day has one weight; logging it again replaces it.",
+        scopes: ['weight-entries:write'],
+        input: logWeightSchema,
+        run: (userId, input) => weightEntries.log(userId, input),
+      }),
+      tool({
+        name: 'get_weight_history',
+        description:
+          "The user's weigh-ins in pounds from one calendar day to another (YYYY-MM-DD, both included, every day when left out), oldest first, each with its 7-day trend; their weight goal, or null; and the figures the Weight page shows: current weight, pounds lost and to go, and progress from 0 to 100, null when they need a weigh-in or a goal the user does not have.",
+        scopes: ['weight-entries:read'],
+        input: weightHistoryQuerySchema,
+        run: (userId, query) => weightEntries.history(userId, query),
       }),
       tool({
         name: 'list_serving_sizes',

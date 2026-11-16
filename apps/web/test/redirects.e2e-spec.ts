@@ -52,6 +52,12 @@ describe('Redirects once the account exists (e2e)', () => {
       expect(page.url()).toBe(`${WEB_URL}/login`)
     })
 
+    it('U1 — sends /weight to /login', async () => {
+      await page.goto(`${WEB_URL}/weight`)
+
+      expect(page.url()).toBe(`${WEB_URL}/login`)
+    })
+
     it('sends / to /login when the session cookie is not a valid token', async () => {
       await setAccessToken('not-a-token')
 

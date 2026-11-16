@@ -66,6 +66,8 @@ const TOOLS = [
   'get_water_entry',
   'update_water_entry',
   'delete_water_entry',
+  'log_weight',
+  'get_weight_history',
   'list_serving_sizes',
   'create_serving_size',
   'get_product',
@@ -615,6 +617,153 @@ describe('MCP (e2e)', () => {
       expect(await failed(tool, args(ids))).toBe(ENTRY_NOT_FOUND_MESSAGE)
 
       expect(await dailyLog(DATE, anaToken)).toEqual(before)
+    })
+  })
+
+  describe('weight', () => {
+    type WeightHistory = { entries: { date: string; weight: number; trend: number }[] } & Record<
+      string,
+      unknown
+    >
+
+    const weightHistory = async (bearer = loginToken) =>
+      (await restBody(http().get('/v1/weight-history'), bearer)) as WeightHistory
+
+    const restLogWeight = async (weight: number, date: string, bearer = loginToken) => {
+      const response = await withBearer(
+        http().post('/v1/weight-entries').send({ weight, date, timeZone: TIME_ZONE }),
+        bearer,
+      )
+      expect(response.status).toBe(200)
+    }
+
+    it('M1 — a token with weight-entries:read sees get_weight_history and not log_weight', async () => {
+      expect(await toolNames(await scopedToken('weight-entries:read'))).toEqual([
+        'get_weight_history',
+      ])
+    })
+
+    it('M2 — a token with weight-entries:write sees log_weight', async () => {
+      expect(await toolNames(await scopedToken('weight-entries:write'))).toEqual(['log_weight'])
+    })
+
+    it('M3 — no tool changes the weight goal or deletes a weight', async () => {
+      const names = await toolNames(await scopedToken(API_SCOPES.join(' ')))
+
+      expect(names.filter((name) => name.includes('weight'))).toEqual([
+        'log_weight',
+        'get_weight_history',
+      ])
+    })
+
+    it("M4 — log_weight without a date logs today's weight in the given time zone", async () => {
+      expect(await succeeded('log_weight', { weight: 179.4, timeZone: TIME_ZONE })).toEqual({
+        date: DATE,
+        weight: 179.4,
+      })
+      expect((await weightHistory()).entries).toEqual([{ date: DATE, weight: 179.4, trend: 179.4 }])
+    })
+
+    it("M5 — log_weight again the same day replaces today's weight", async () => {
+      await succeeded('log_weight', { weight: 179.4, timeZone: TIME_ZONE })
+
+      await succeeded('log_weight', { weight: 178.6, timeZone: TIME_ZONE })
+
+      expect((await weightHistory()).entries).toEqual([{ date: DATE, weight: 178.6, trend: 178.6 }])
+    })
+
+    it('M6 — log_weight logs the weight of a past day', async () => {
+      expect(
+        await succeeded('log_weight', { weight: 175, date: '2026-10-23', timeZone: TIME_ZONE }),
+      ).toEqual({ date: '2026-10-23', weight: 175 })
+
+      expect((await weightHistory()).entries).toEqual([
+        { date: '2026-10-23', weight: 175, trend: 175 },
+      ])
+    })
+
+    it("M7 — log_weight on a past day already logged replaces that day's weight", async () => {
+      await restLogWeight(175, '2026-10-23')
+
+      await succeeded('log_weight', { weight: 174.5, date: '2026-10-23', timeZone: TIME_ZONE })
+
+      expect((await weightHistory()).entries).toEqual([
+        { date: '2026-10-23', weight: 174.5, trend: 174.5 },
+      ])
+    })
+
+    it('M8 — log_weight on tomorrow is a tool error and logs nothing', async () => {
+      await failed('log_weight', { weight: 179.4, date: '2026-10-27', timeZone: TIME_ZONE })
+
+      expect((await weightHistory()).entries).toEqual([])
+    })
+
+    it.each([
+      ['a weight under 50', 49.9],
+      ['a weight over 999', 1000],
+      ['a weight with two decimals', 179.45],
+    ])('M9 — %s is a tool error and logs nothing', async (_case, weight) => {
+      await failed('log_weight', { weight, timeZone: TIME_ZONE })
+
+      expect((await weightHistory()).entries).toEqual([])
+    })
+
+    it('M10 — get_weight_history answers what the page shows, as GET /v1/weight-history does', async () => {
+      const response = await withBearer(
+        http()
+          .put('/v1/settings/weight-goal')
+          .send({ startWeight: 180, goalWeight: 150, date: '2026-09-01' }),
+        loginToken,
+      )
+      expect(response.status).toBe(200)
+      await restLogWeight(175, '2026-10-01')
+      await restLogWeight(170.8, DATE)
+
+      const history = await succeeded('get_weight_history', {})
+
+      expect(history).toEqual(await weightHistory())
+      expect(history).toEqual({
+        entries: [
+          { date: '2026-10-01', weight: 175, trend: 175 },
+          { date: DATE, weight: 170.8, trend: 170.8 },
+        ],
+        goal: { startWeight: 180, goalWeight: 150, startDate: '2026-09-01' },
+        stats: { current: 170.8, lost: 9.2, toGo: 20.8, progress: 31 },
+      })
+    })
+
+    it('M11 — get_weight_history answers the weights of a range, with their trend', async () => {
+      await restLogWeight(180, '2026-10-06')
+      await restLogWeight(178, '2026-10-16')
+      await restLogWeight(176, '2026-10-20')
+
+      const history = (await succeeded('get_weight_history', {
+        from: '2026-10-16',
+        to: DATE,
+      })) as WeightHistory
+
+      expect(history.entries).toEqual([
+        { date: '2026-10-16', weight: 178, trend: 178 },
+        { date: '2026-10-20', weight: 176, trend: 177 },
+      ])
+    })
+
+    it('M12 — without a goal, get_weight_history answers no goal and no figures that need one', async () => {
+      await restLogWeight(179.4, DATE)
+
+      const history = await succeeded('get_weight_history', {})
+
+      expect(history['goal']).toBeNull()
+      expect(history['stats']).toEqual({ current: 179.4, lost: null, toGo: null, progress: null })
+    })
+
+    it("M13 — ana's weights never show in diego's history", async () => {
+      const anaToken = await accessTokenFor(app, OTHER_USERNAME, PASSWORD)
+      await restLogWeight(140, DATE, anaToken)
+
+      const history = (await succeeded('get_weight_history', {})) as WeightHistory
+
+      expect(history.entries).toEqual([])
     })
   })
 

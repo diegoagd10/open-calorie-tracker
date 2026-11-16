@@ -9,6 +9,7 @@ export const header = (page: Page) => {
     navigation: () => banner.getByRole('navigation', { name: 'Main' }),
     foodLog: () => banner.getByRole('link', { name: 'Food Log' }),
     settings: () => banner.getByRole('link', { name: 'Settings' }),
+    weight: () => banner.getByRole('link', { name: 'Weight' }),
     logOut: () => banner.getByRole('button', { name: 'Log out' }),
   }
 }
