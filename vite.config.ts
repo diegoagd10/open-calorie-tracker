@@ -31,6 +31,18 @@ export default defineConfig({
         },
       },
       {
+        // Plain JavaScript run with node, so every value is `any` to the type-aware rules.
+        files: ['.claude/skills/**/*.mjs'],
+        env: { node: true },
+        rules: {
+          'typescript/no-unsafe-argument': 'off',
+          'typescript/no-unsafe-assignment': 'off',
+          'typescript/no-unsafe-call': 'off',
+          'typescript/no-unsafe-member-access': 'off',
+          'typescript/no-unsafe-return': 'off',
+        },
+      },
+      {
         files: ['apps/web/**'],
         plugins: ['react', 'jsx-a11y', 'nextjs'],
         env: { browser: true },
