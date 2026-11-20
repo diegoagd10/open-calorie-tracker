@@ -2,7 +2,14 @@ import { defineConfig } from 'vite-plus'
 
 export default defineConfig({
   lint: {
-    ignorePatterns: ['**/dist/**', '**/dist-test/**', '**/.next/**', '**/next-env.d.ts'],
+    ignorePatterns: [
+      '**/dist/**',
+      '**/dist-test/**',
+      '**/.next/**',
+      '**/.next-ocal/**',
+      '**/next-env.d.ts',
+      '**/artifacts/**',
+    ],
     plugins: ['typescript', 'unicorn', 'oxc', 'import'],
     options: {
       typeAware: true,

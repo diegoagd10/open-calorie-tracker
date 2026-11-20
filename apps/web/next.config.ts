@@ -6,6 +6,9 @@ const nextConfig: NextConfig = {
   // NEXT_STANDALONE (`next start` refuses it). Traced from the workspace root, so packages/shared
   // comes along.
   ...(process.env['NEXT_STANDALONE'] === '1' ? { output: 'standalone' as const } : {}),
+  // The verification harness serves this directory so `next build` for the Playwright suite can
+  // keep using `.next` while that server is still running.
+  ...(process.env['NEXT_DIST_DIR'] ? { distDir: process.env['NEXT_DIST_DIR'] } : {}),
   outputFileTracingRoot: fileURLToPath(new URL('../..', import.meta.url)),
   // Hides the Next.js badge shown in the corner during development.
   devIndicators: false,

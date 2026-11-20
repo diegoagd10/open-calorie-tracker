@@ -1,0 +1,1560 @@
+#!/usr/bin/env node
+// Isolated local verification for Open Calorie Tracker.
+// stdout is one JSON object. Progress is on stderr. Secrets stay in the environment.
+
+import { createHash } from 'node:crypto'
+import * as nodeCrypto from 'node:crypto'
+import { spawn, spawnSync } from 'node:child_process'
+import { createRequire } from 'node:module'
+import { createConnection, createServer } from 'node:net'
+import {
+  closeSync,
+  existsSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  readdirSync,
+  readlinkSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
+import { tmpdir } from 'node:os'
+import { dirname, join, resolve, sep } from 'node:path'
+import { fileURLToPath, pathToFileURL } from 'node:url'
+
+const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
+const apiDir = join(repoRoot, 'apps/api')
+const webDir = join(repoRoot, 'apps/web')
+const distDirName = '.next-ocal'
+const evidenceDir = resolve(
+  process.env['OCAL_EVIDENCE_DIR'] || join(repoRoot, 'artifacts/verify'),
+)
+
+const DEFAULT_WEB_PORT = 3410
+const DEFAULT_API_PORT = 3411
+const DEFAULT_JWT_SECRET = 'change-me-to-a-long-random-secret'
+const DEFAULT_API_KEY_SECRET = 'change-me-to-another-long-random-secret'
+const DEFAULT_USER_AGENT =
+  'OpenCalorieTracker/0.0.1 (https://github.com/diegoagd10/open-calorie-tracker)'
+const DEFAULT_SEED_USERNAME = 'demo'
+const DEFAULT_SEED_PASSWORD = 'demo-password'
+
+const HELP = `ocal — verify Open Calorie Tracker without a person in the loop
+
+Starts an isolated API and web app, checks that this run owns them, drives the
+UI, calls the HTTP API, reads the database, and runs the unit and Playwright
+suites. stdout is one JSON object. Progress lines go to stderr.
+
+Usage
+  ./scripts/verify/ocal <command> [flags]
+  ./scripts/verify/ocal --help
+
+Commands
+  up        Build, migrate, seed, and start the API and web app. Waits until
+            login (or registration) renders and, when seeded, the seed user
+            can sign in.
+  doctor    Read-only. Processes are alive, build matches this checkout, ports
+            are owned by this run, and auth works.
+  seed      Create or update the seed user in this run's database.
+  call      Request one API path. --auth sends the seed user's access token.
+  logs      Tail the API and web logs of this run.
+  db        Run one SELECT against this run's SQLite file.
+  test      Unit tests plus the Playwright regression.
+  down      Stop the processes this run started and delete its data directory.
+  browser   Drive the web UI with Playwright (ARIA roles).
+
+Browser
+  ./scripts/verify/ocal browser open /login
+  ./scripts/verify/ocal browser fill --role textbox --name Username --value demo
+  ./scripts/verify/ocal browser click --role button --name "Log in" --wait-role heading --wait-name "Food Log"
+  ./scripts/verify/ocal browser wait --role button --name "Add food"
+  ./scripts/verify/ocal browser text --role button --name "Log in"
+  ./scripts/verify/ocal browser snapshot --aria --path artifacts/verify/log-food/list.aria.txt
+  ./scripts/verify/ocal browser screenshot --path artifacts/verify/log-food/list.png
+  ./scripts/verify/ocal browser reset
+
+  The first browser command starts one Chromium for this run. Later commands
+  continue on that page, so text typed in one command is still there for the
+  next. browser reset and down close it.
+
+  --within-role and --within-name limit the search to one landmark, for example
+  --within-role dialog --within-name "Add food".
+  --exact requires the full accessible name. Without it, the name is a substring.
+  --wait-role and --wait-name wait after a click. --state hidden waits until a
+  match disappears. --timeout <ms> defaults to 15000.
+
+Other examples
+  ./scripts/verify/ocal up
+  ./scripts/verify/ocal doctor
+  ./scripts/verify/ocal call GET /v1/health
+  ./scripts/verify/ocal call GET /v1/settings/profile --auth
+  ./scripts/verify/ocal db --sql "SELECT name, calories FROM food_entries"
+  ./scripts/verify/ocal logs api --lines 80
+  ./scripts/verify/ocal test
+  ./scripts/verify/ocal down --dry-run
+  ./scripts/verify/ocal down
+
+Flags
+  --help      Show this text.
+  --dry-run   Print the plan for up, down, seed, call, test, browser reset,
+              and browser click, fill, press, and open. Do not change anything.
+              doctor, logs, db, screenshot, snapshot, wait, and text stay
+              read-only and still run.
+
+Environment
+  Secrets are read from the environment only. Unset or empty values use these
+  local test defaults (the same placeholders as apps/api/.env.example). Do not
+  point them at a production secret.
+
+  JWT_SECRET                     ${DEFAULT_JWT_SECRET}
+  JWT_ISSUER                     open-calorie-tracker-api
+  JWT_AUDIENCE                   open-calorie-tracker-web
+  API_KEY_SECRET                 ${DEFAULT_API_KEY_SECRET}
+  OPEN_FOOD_FACTS_USER_AGENT     ${DEFAULT_USER_AGENT}
+  SEED_USER_USERNAME             ${DEFAULT_SEED_USERNAME}
+  SEED_USER_PASSWORD             ${DEFAULT_SEED_PASSWORD}
+  OCAL_WEB_PORT                  ${DEFAULT_WEB_PORT}
+  OCAL_API_PORT                  ${DEFAULT_API_PORT}
+  OCAL_RUN_DIR                   /tmp/ocal-verify-<web port>
+  OCAL_EVIDENCE_DIR              artifacts/verify
+  OCAL_SKIP_SEED                 unset. Set to 1 to start with no user, so
+                                 /register stays open.
+
+  The API database is always <run dir>/data/sqlite.db. An inherited
+  DATABASE_URL is ignored so this run cannot open the development database.
+  down deletes the run directory and never deletes the evidence directory.
+  Two runs need different OCAL_WEB_PORT, OCAL_API_PORT, and OCAL_RUN_DIR.
+
+  docker compose is the production stack. It sets NODE_ENV=production, and
+  db:seed refuses to run then, so this tool starts the same Node processes the
+  Playwright harness uses instead of compose.
+
+  Node.js 26 is required. The API hashes passwords with node:crypto argon2,
+  which this checkout's Dockerfile (node:26) provides. Older Node builds fail
+  at seed with "does not provide an export named argon2".
+
+Exit codes
+  0  the JSON on stdout has "ok": true
+  1  the JSON on stdout has "ok": false and a "next" step
+`
+
+class Stop extends Error {}
+
+let writeJson = (value) => {
+  process.stdout.write(`${JSON.stringify(value, null, 2)}\n`)
+}
+
+const emit = (value) => {
+  writeJson(value)
+}
+
+const fail = (error, next, extra = {}) => {
+  emit({ ok: false, error, next, ...extra })
+  process.exitCode = 1
+  throw new Stop()
+}
+
+const note = (message) => {
+  process.stderr.write(`${message}\n`)
+}
+
+const envOr = (name, fallback) => {
+  const value = process.env[name]
+  return value === undefined || value === '' ? fallback : value
+}
+
+const flag = (flags, name) => flags[name] !== undefined
+
+const parseArgs = (argv) => {
+  const positional = []
+  const flags = {}
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index]
+    if (arg === '--') {
+      positional.push(...argv.slice(index + 1))
+      break
+    }
+    if (!arg.startsWith('--')) {
+      positional.push(arg)
+      continue
+    }
+    const key = arg.slice(2)
+    const next = argv[index + 1]
+    const value = next === undefined || next.startsWith('--') ? true : next
+    if (value !== true) index += 1
+    if (flags[key] === undefined) flags[key] = value
+    else if (Array.isArray(flags[key])) flags[key].push(value)
+    else flags[key] = [flags[key], value]
+  }
+  return { positional, flags }
+}
+
+const requirePort = (label, raw) => {
+  const port = Number(raw)
+  if (!Number.isInteger(port) || port < 1024 || port > 65535) {
+    fail(
+      `${label} must be an integer from 1024 to 65535.`,
+      `Set ${label} to a free port in that range. The defaults are OCAL_WEB_PORT=${DEFAULT_WEB_PORT} and OCAL_API_PORT=${DEFAULT_API_PORT}.`,
+    )
+  }
+  return port
+}
+
+const requireSecret = (name, value) => {
+  if (value.length < 32) {
+    fail(
+      `${name} must be at least 32 characters.`,
+      `Unset ${name} to use the local test default, or set it to a string of at least 32 characters.`,
+    )
+  }
+}
+
+const config = () => {
+  const webPort = requirePort('OCAL_WEB_PORT', envOr('OCAL_WEB_PORT', String(DEFAULT_WEB_PORT)))
+  const apiPort = requirePort('OCAL_API_PORT', envOr('OCAL_API_PORT', String(DEFAULT_API_PORT)))
+  if (webPort === apiPort) {
+    fail(
+      'OCAL_WEB_PORT and OCAL_API_PORT are the same.',
+      'Give the web app and the API different ports. The defaults are 3410 and 3411.',
+    )
+  }
+  const runDir = resolve(envOr('OCAL_RUN_DIR', join(tmpdir(), `ocal-verify-${webPort}`)))
+  assertSafeRunDir(runDir)
+  if (evidenceDir === runDir || evidenceDir.startsWith(`${runDir}${sep}`)) {
+    fail(
+      'OCAL_EVIDENCE_DIR is inside the run directory.',
+      'Keep evidence at artifacts/verify (the default) or another path down does not delete.',
+    )
+  }
+  const jwtSecret = envOr('JWT_SECRET', DEFAULT_JWT_SECRET)
+  const apiKeySecret = envOr('API_KEY_SECRET', DEFAULT_API_KEY_SECRET)
+  requireSecret('JWT_SECRET', jwtSecret)
+  requireSecret('API_KEY_SECRET', apiKeySecret)
+  const skipSeed = envOr('OCAL_SKIP_SEED', '') === '1' || envOr('OCAL_SKIP_SEED', '') === 'true'
+  return {
+    webPort,
+    apiPort,
+    webUrl: `http://127.0.0.1:${webPort}`,
+    apiUrl: `http://127.0.0.1:${apiPort}`,
+    runDir,
+    dataDir: join(runDir, 'data'),
+    logDir: join(runDir, 'logs'),
+    databasePath: join(runDir, 'data', 'sqlite.db'),
+    skipSeed,
+    seedUsername: envOr('SEED_USER_USERNAME', DEFAULT_SEED_USERNAME),
+    seedPassword: envOr('SEED_USER_PASSWORD', DEFAULT_SEED_PASSWORD),
+    seedPasswordSource:
+      process.env['SEED_USER_PASSWORD'] === undefined || process.env['SEED_USER_PASSWORD'] === ''
+        ? 'default'
+        : 'SEED_USER_PASSWORD',
+    jwtSecret,
+    jwtIssuer: envOr('JWT_ISSUER', 'open-calorie-tracker-api'),
+    jwtAudience: envOr('JWT_AUDIENCE', 'open-calorie-tracker-web'),
+    apiKeySecret,
+    userAgent: envOr('OPEN_FOOD_FACTS_USER_AGENT', DEFAULT_USER_AGENT),
+    usingDefaultJwt: process.env['JWT_SECRET'] === undefined || process.env['JWT_SECRET'] === '',
+  }
+}
+
+const assertSafeRunDir = (runDir) => {
+  if (runDir === repoRoot || runDir.startsWith(`${repoRoot}${sep}`)) {
+    fail(
+      'OCAL_RUN_DIR must be outside the checkout.',
+      'Unset OCAL_RUN_DIR or set it to a directory under /tmp, for example /tmp/ocal-verify-3410.',
+    )
+  }
+  const parts = runDir.split(sep).filter(Boolean)
+  if (parts.length < 2) {
+    fail(
+      'Refusing to use a run directory that close to the filesystem root.',
+      'Set OCAL_RUN_DIR to a dedicated directory such as /tmp/ocal-verify-3410.',
+    )
+  }
+}
+
+const runFile = (cfg) => join(cfg.runDir, 'run.json')
+
+const readRun = (cfg) => {
+  const path = runFile(cfg)
+  if (!existsSync(path)) {
+    fail(
+      `No run is recorded at ${cfg.runDir}.`,
+      'Start one with `./scripts/verify/ocal up` from the checkout. Set OCAL_RUN_DIR if this is not the run you started.',
+    )
+  }
+  return JSON.parse(readFileSync(path, 'utf8'))
+}
+
+const writeRun = (cfg, run) => {
+  mkdirSync(cfg.runDir, { recursive: true })
+  writeFileSync(runFile(cfg), `${JSON.stringify(run, null, 2)}\n`)
+}
+
+const publicRun = (run) => ({
+  webUrl: run.webUrl,
+  apiUrl: run.apiUrl,
+  runDir: run.runDir,
+  dataDir: run.dataDir,
+  databasePath: run.databasePath,
+  evidenceDir,
+  gitSha: run.gitSha,
+  skipSeed: run.skipSeed,
+  seedUsername: run.seedUsername,
+  pids: run.pids,
+})
+
+const git = (args) =>
+  spawnSync('git', args, { cwd: repoRoot, encoding: 'utf8' }).stdout.trim()
+
+const sha256 = (path) => createHash('sha256').update(readFileSync(path)).digest('hex')
+
+const snapshotTree = () => ({
+  gitSha: git(['rev-parse', 'HEAD']),
+  dirty: git(['status', '--porcelain']),
+})
+
+const alive = (pid) => Number.isInteger(pid) && pid > 1 && existsSync(`/proc/${pid}`)
+
+const ancestors = (pid) => {
+  const seen = new Set()
+  let current = pid
+  while (Number.isInteger(current) && current > 1 && !seen.has(current)) {
+    seen.add(current)
+    let stat
+    try {
+      stat = readFileSync(`/proc/${current}/stat`, 'utf8')
+    } catch {
+      break
+    }
+    const match = stat.match(/\)\s+\S+\s+(\d+)/)
+    current = match ? Number(match[1]) : 0
+  }
+  return seen
+}
+
+const listeningPids = (port) => {
+  const hex = port.toString(16).toUpperCase().padStart(4, '0')
+  const inodes = new Set()
+  for (const file of ['/proc/net/tcp', '/proc/net/tcp6']) {
+    if (!existsSync(file)) continue
+    for (const line of readFileSync(file, 'utf8').trim().split('\n').slice(1)) {
+      const parts = line.trim().split(/\s+/)
+      const localPort = parts[1]?.split(':').at(-1)?.toUpperCase()
+      if (parts[3] === '0A' && localPort === hex) inodes.add(parts[9])
+    }
+  }
+  if (inodes.size === 0) return []
+  const pids = []
+  for (const entry of readdirSync('/proc')) {
+    if (!/^\d+$/.test(entry)) continue
+    let fds
+    try {
+      fds = readdirSync(`/proc/${entry}/fd`)
+    } catch {
+      continue
+    }
+    for (const fd of fds) {
+      try {
+        const target = readlinkSync(`/proc/${entry}/fd/${fd}`)
+        const match = /^socket:\[(\d+)\]$/.exec(target)
+        if (match && inodes.has(match[1])) pids.push(Number(entry))
+      } catch {
+        // The fd can vanish while we read it.
+      }
+    }
+  }
+  return [...new Set(pids)]
+}
+
+const ownsPort = (pid, port) => {
+  const listeners = listeningPids(port)
+  return listeners.some((listener) => listener === pid || ancestors(listener).has(pid))
+}
+
+const tail = (path, lines) => {
+  if (!existsSync(path)) return ''
+  return readFileSync(path, 'utf8').split('\n').slice(-lines).join('\n').trim()
+}
+
+let foreground = null
+
+const runForeground = (command, args, { cwd = repoRoot, env = process.env, logPath } = {}) =>
+  new Promise((resolvePromise) => {
+    mkdirSync(dirname(logPath), { recursive: true })
+    const log = openSync(logPath, 'w')
+    const child = spawn(command, args, { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] })
+    foreground = child
+    const chunks = []
+    const capture = (chunk) => {
+      chunks.push(chunk)
+      writeFileSync(log, chunk, { flag: 'a' })
+    }
+    child.stdout.on('data', capture)
+    child.stderr.on('data', capture)
+    child.on('close', (code) => {
+      foreground = null
+      closeSync(log)
+      const output = Buffer.concat(chunks).toString('utf8')
+      resolvePromise({ code: code ?? 1, output, logPath })
+    })
+  })
+
+const stopForeground = () => {
+  if (foreground === null || foreground.exitCode !== null) return
+  try {
+    process.kill(-foreground.pid, 'SIGTERM')
+  } catch {
+    try {
+      foreground.kill('SIGTERM')
+    } catch {
+      // Already gone.
+    }
+  }
+}
+
+const startService = (service, command, args, cwd, env, logDir) => {
+  mkdirSync(logDir, { recursive: true })
+  const logPath = join(logDir, `${service}.log`)
+  const log = openSync(logPath, 'a')
+  const child = spawn(command, args, {
+    cwd,
+    env,
+    detached: true,
+    stdio: ['ignore', log, log],
+  })
+  child.unref()
+  closeSync(log)
+  if (!Number.isInteger(child.pid)) {
+    fail(`Failed to start ${service}.`, `Read ${logPath}, then run ./scripts/verify/ocal up again.`)
+  }
+  return child.pid
+}
+
+const killPid = (pid) => {
+  if (!alive(pid)) return 'dead'
+  try {
+    process.kill(-pid, 'SIGTERM')
+  } catch {
+    try {
+      process.kill(pid, 'SIGTERM')
+    } catch {
+      return 'dead'
+    }
+  }
+  const deadline = Date.now() + 5000
+  while (Date.now() < deadline && alive(pid)) {
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100)
+  }
+  if (!alive(pid)) return 'stopped'
+  try {
+    process.kill(-pid, 'SIGKILL')
+  } catch {
+    try {
+      process.kill(pid, 'SIGKILL')
+    } catch {
+      return 'dead'
+    }
+  }
+  return alive(pid) ? 'still-running' : 'killed'
+}
+
+const baseEnv = (overrides) => {
+  const env = { ...process.env }
+  delete env.DATABASE_URL
+  return { ...env, ...overrides }
+}
+
+const serviceEnv = (cfg) =>
+  baseEnv({
+    PORT: String(cfg.apiPort),
+    DATABASE_URL: `file:${cfg.databasePath}`,
+    JWT_SECRET: cfg.jwtSecret,
+    JWT_ISSUER: cfg.jwtIssuer,
+    JWT_AUDIENCE: cfg.jwtAudience,
+    API_KEY_SECRET: cfg.apiKeySecret,
+    OPEN_FOOD_FACTS_USER_AGENT: cfg.userAgent,
+    TRUST_PROXY: 'loopback',
+    SEED_USER_USERNAME: cfg.seedUsername,
+    SEED_USER_PASSWORD: cfg.seedPassword,
+  })
+
+const sleep = (ms) => new Promise((resolvePromise) => setTimeout(resolvePromise, ms))
+
+const fetchJson = async (url, init) => {
+  const response = await fetch(url, init)
+  const text = await response.text()
+  let body
+  try {
+    body = text === '' ? null : JSON.parse(text)
+  } catch {
+    body = text
+  }
+  return { status: response.status, body }
+}
+
+const loginSeed = async (cfg) => {
+  const result = await fetchJson(`${cfg.apiUrl}/v1/login`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ username: cfg.seedUsername, password: cfg.seedPassword }),
+  })
+  if (result.status !== 200 || typeof result.body?.accessToken !== 'string') {
+    fail(
+      `Login as "${cfg.seedUsername}" failed with status ${result.status}.`,
+      'Check SEED_USER_USERNAME and SEED_USER_PASSWORD. They must be the values used at `ocal up`. Then run `./scripts/verify/ocal seed` or `./scripts/verify/ocal down` and `./scripts/verify/ocal up`.',
+      { status: result.status, body: result.body },
+    )
+  }
+  return result.body.accessToken
+}
+
+const plan = (cfg) => ({
+  webUrl: cfg.webUrl,
+  apiUrl: cfg.apiUrl,
+  webPort: cfg.webPort,
+  apiPort: cfg.apiPort,
+  runDir: cfg.runDir,
+  dataDir: cfg.dataDir,
+  logDir: cfg.logDir,
+  databasePath: cfg.databasePath,
+  evidenceDir,
+  skipSeed: cfg.skipSeed,
+  seedUsername: cfg.skipSeed ? null : cfg.seedUsername,
+  seedPasswordSource: cfg.skipSeed ? null : cfg.seedPasswordSource,
+  distDir: distDirName,
+  secrets: [
+    'JWT_SECRET',
+    'JWT_ISSUER',
+    'JWT_AUDIENCE',
+    'API_KEY_SECRET',
+    'OPEN_FOOD_FACTS_USER_AGENT',
+    'SEED_USER_USERNAME',
+    'SEED_USER_PASSWORD',
+  ],
+})
+
+const requirePnpm = () => {
+  const found = spawnSync('pnpm', ['--version'], { encoding: 'utf8' })
+  if (found.status !== 0) {
+    fail(
+      'pnpm is not on PATH.',
+      'Install dependencies with `corepack enable && pnpm install` from the checkout, then run `./scripts/verify/ocal up` again.',
+    )
+  }
+}
+
+const requireInstall = () => {
+  if (!existsSync(join(repoRoot, 'node_modules')) || !existsSync(join(webDir, 'node_modules/next'))) {
+    fail(
+      'Dependencies are not installed.',
+      'Run `pnpm install` from the checkout, then `pnpm --filter web exec playwright install chromium`, then `./scripts/verify/ocal up`.',
+    )
+  }
+}
+
+const build = async (cfg, name, args) => {
+  note(`building ${name}`)
+  const result = await runForeground('pnpm', args, {
+    logPath: join(cfg.logDir, `build-${name}.log`),
+  })
+  if (result.code !== 0) {
+    fail(
+      `The ${name} build failed.`,
+      'Read the log tail, fix the build, then run `./scripts/verify/ocal up` again. Nothing was left running.',
+      { log: result.logPath, tail: result.output.split('\n').slice(-40).join('\n') },
+    )
+  }
+}
+
+const pageMarker = (cfg) => (cfg.skipSeed ? 'Create account' : 'Log in')
+
+const assertRendered = async (cfg) => {
+  const { chromium } = await loadPlaywright()
+  const browser = await chromium.launch()
+  try {
+    const page = await browser.newPage({ viewport: { width: 1280, height: 900 } })
+    const path = cfg.skipSeed ? '/register' : '/login'
+    await page.goto(`${cfg.webUrl}${path}`, { waitUntil: 'domcontentloaded' })
+    await page.getByRole('heading', { name: pageMarker(cfg) }).waitFor({ timeout: 20000 })
+    await page.getByText('Open Calorie Tracker').waitFor({ timeout: 5000 })
+  } finally {
+    await browser.close()
+  }
+}
+
+const waitUntilUsable = async (cfg) => {
+  const deadline = Date.now() + 90000
+  let last = 'no response yet'
+  while (Date.now() < deadline) {
+    if (!alive(cfg.pids.api) || !alive(cfg.pids.web)) {
+      fail(
+        'A server exited before it became usable.',
+        'The log tails are in this JSON. Fix the cause and run `./scripts/verify/ocal up` again. This attempt was stopped and its data directory was removed.',
+        {
+          apiAlive: alive(cfg.pids.api),
+          webAlive: alive(cfg.pids.web),
+          apiLog: tail(join(cfg.logDir, 'api.log'), 40),
+          webLog: tail(join(cfg.logDir, 'web.log'), 40),
+        },
+      )
+    }
+    try {
+      const health = await fetchJson(`${cfg.apiUrl}/v1/health`)
+      const setup = await fetchJson(`${cfg.apiUrl}/v1/setup`)
+      const page = await fetch(`${cfg.webUrl}${cfg.skipSeed ? '/register' : '/login'}`)
+      const html = await page.text()
+      const healthOk = health.status === 200 && health.body?.status === 'ok'
+      const setupOk = setup.status === 200 && setup.body?.needsSetup === cfg.skipSeed
+      const pageOk = page.status === 200 && html.includes(pageMarker(cfg))
+      if (healthOk && setupOk && pageOk) {
+        await assertRendered(cfg)
+        if (cfg.skipSeed) {
+          return { health: health.body, setup: setup.body, page: pageMarker(cfg), auth: null }
+        }
+        const login = await fetchJson(`${cfg.apiUrl}/v1/login`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ username: cfg.seedUsername, password: cfg.seedPassword }),
+        })
+        const token = login.body?.accessToken
+        const profile =
+          login.status === 200 && typeof token === 'string'
+            ? await fetchJson(`${cfg.apiUrl}/v1/settings/profile`, {
+                headers: { authorization: `Bearer ${token}` },
+              })
+            : { status: login.status, body: login.body }
+        if (profile.status === 200 && profile.body?.username === cfg.seedUsername.toLowerCase()) {
+          return {
+            health: health.body,
+            setup: setup.body,
+            page: pageMarker(cfg),
+            auth: { username: profile.body.username },
+          }
+        }
+        last = `login ${login.status}, profile ${profile.status}`
+      } else {
+        last = `health ${health.status}, setup ${setup.status}, page ${page.status}`
+      }
+    } catch (error) {
+      if (error instanceof Stop) throw error
+      last = error instanceof Error ? error.message : String(error)
+    }
+    await sleep(500)
+  }
+  fail(
+    `The stack did not become usable within 90s (${last}).`,
+    'The log tails are in this JSON. Fix the cause and run `./scripts/verify/ocal up` again. This attempt was stopped and its data directory was removed.',
+    {
+      apiLog: tail(join(cfg.logDir, 'api.log'), 40),
+      webLog: tail(join(cfg.logDir, 'web.log'), 40),
+    },
+  )
+}
+
+const occupied = (port) => {
+  const pids = listeningPids(port)
+  if (pids.length === 0) return
+  fail(
+    `Port ${port} is already in use by pid ${pids.join(', ')}.`,
+    'Choose a free OCAL_WEB_PORT and OCAL_API_PORT, and a matching OCAL_RUN_DIR. Do not stop a process by name; it may belong to another run.',
+  )
+}
+
+const up = async (cfg, dryRun) => {
+  requirePnpm()
+  requireInstall()
+  if (existsSync(runFile(cfg))) {
+    fail(
+      `A run is already recorded at ${cfg.runDir}.`,
+      'Run `./scripts/verify/ocal down` before starting another one on these ports. For a second stack, set OCAL_WEB_PORT, OCAL_API_PORT, and OCAL_RUN_DIR.',
+    )
+  }
+  occupied(cfg.webPort)
+  occupied(cfg.apiPort)
+  if (dryRun) {
+    emit({ ok: true, dryRun: true, would: 'build, migrate, seed, and start', ...plan(cfg) })
+    return
+  }
+  mkdirSync(cfg.dataDir, { recursive: true })
+  mkdirSync(cfg.logDir, { recursive: true })
+  const tree = snapshotTree()
+  await build(cfg, 'shared', ['--filter', '@open-calorie-tracker/shared', 'build'])
+  await build(cfg, 'api', ['--filter', 'api', 'build'])
+  if (!cfg.skipSeed) {
+    note('seeding')
+    const seeded = await runForeground(process.execPath, ['dist/seed.js'], {
+      cwd: apiDir,
+      env: { ...serviceEnv(cfg), NODE_ENV: 'development' },
+      logPath: join(cfg.logDir, 'seed.log'),
+    })
+    if (seeded.code !== 0) {
+      rmSync(cfg.runDir, { recursive: true, force: true })
+      fail(
+        'Seeding failed.',
+        'The database was removed. Fix SEED_USER_USERNAME and SEED_USER_PASSWORD (the password must be at least 8 letters or numbers), then run `./scripts/verify/ocal up` again.',
+        { tail: seeded.output.split('\n').slice(-30).join('\n') },
+      )
+    }
+  }
+  note('starting api')
+  const apiPid = startService(
+    'api',
+    process.execPath,
+    ['dist/main.js'],
+    apiDir,
+    serviceEnv(cfg),
+    cfg.logDir,
+  )
+  note('building web')
+  const webBuild = await runForeground('pnpm', ['--filter', 'web', 'exec', 'next', 'build'], {
+    env: baseEnv({ NEXT_DIST_DIR: distDirName, NEXT_TELEMETRY_DISABLED: '1' }),
+    logPath: join(cfg.logDir, 'build-web.log'),
+  }).catch(async (error) => {
+    killPid(apiPid)
+    throw error
+  })
+  if (webBuild.code !== 0) {
+    killPid(apiPid)
+    rmSync(cfg.runDir, { recursive: true, force: true })
+    fail(
+      'The web build failed.',
+      'Read the log tail, fix the build, then run `./scripts/verify/ocal up` again. The API was stopped.',
+      { tail: webBuild.output.split('\n').slice(-40).join('\n') },
+    )
+  }
+  const buildIdPath = join(webDir, distDirName, 'BUILD_ID')
+  if (!existsSync(buildIdPath) || !existsSync(join(apiDir, 'dist/main.js'))) {
+    killPid(apiPid)
+    rmSync(cfg.runDir, { recursive: true, force: true })
+    fail(
+      'The build did not produce dist/main.js and a Next BUILD_ID.',
+      'Run `pnpm --filter api build` and `NEXT_DIST_DIR=.next-ocal pnpm --filter web exec next build` by hand to see the error, then `./scripts/verify/ocal up`.',
+    )
+  }
+  note('starting web')
+  const webPid = startService(
+    'web',
+    process.execPath,
+    [
+      join(webDir, 'node_modules/next/dist/bin/next'),
+      'start',
+      '--port',
+      String(cfg.webPort),
+      '--hostname',
+      '127.0.0.1',
+    ],
+    webDir,
+    baseEnv({
+      PORT: String(cfg.webPort),
+      API_URL: cfg.apiUrl,
+      JWT_SECRET: cfg.jwtSecret,
+      JWT_ISSUER: cfg.jwtIssuer,
+      JWT_AUDIENCE: cfg.jwtAudience,
+      NEXT_DIST_DIR: distDirName,
+      NEXT_TELEMETRY_DISABLED: '1',
+      NODE_ENV: 'production',
+    }),
+    cfg.logDir,
+  )
+  const run = {
+    ...plan(cfg),
+    ...tree,
+    apiMainSha256: sha256(join(apiDir, 'dist/main.js')),
+    webBuildId: readFileSync(buildIdPath, 'utf8').trim(),
+    startedAt: new Date().toISOString(),
+    pids: { api: apiPid, web: webPid },
+  }
+  writeRun(cfg, run)
+  try {
+    const ready = await waitUntilUsable({ ...cfg, pids: run.pids })
+    emit({ ok: true, ready, ...publicRun(run) })
+  } catch (error) {
+    if (error instanceof Stop) {
+      killPid(apiPid)
+      killPid(webPid)
+      rmSync(cfg.runDir, { recursive: true, force: true })
+    }
+    throw error
+  }
+}
+
+const down = (cfg, dryRun) => {
+  if (!existsSync(runFile(cfg))) {
+    if (dryRun) {
+      emit({
+        ok: true,
+        dryRun: true,
+        would: 'do nothing',
+        runDir: cfg.runDir,
+        keep: evidenceDir,
+      })
+      return
+    }
+    fail(
+      `No run is recorded at ${cfg.runDir}.`,
+      'Nothing was stopped. If something is still listening, it was not started by ocal. Set OCAL_RUN_DIR to the run you want to stop.',
+    )
+  }
+  const run = readRun(cfg)
+  const daemonPid = existsSync(browserPaths(run).pid)
+    ? JSON.parse(readFileSync(browserPaths(run).pid, 'utf8')).pid
+    : null
+  const actions = ['api', 'web'].map((service) => ({
+    service,
+    pid: run.pids?.[service] ?? null,
+    alive: alive(run.pids?.[service]),
+  }))
+  actions.push({ service: 'browser', pid: daemonPid, alive: alive(daemonPid) })
+  if (dryRun) {
+    emit({
+      ok: true,
+      dryRun: true,
+      wouldStop: actions,
+      wouldRemove: cfg.runDir,
+      keep: evidenceDir,
+    })
+    return
+  }
+  const stopped = actions.map((action) => ({
+    ...action,
+    result: action.pid === null ? 'missing' : killPid(action.pid),
+  }))
+  const stuck = stopped.filter((action) => action.result === 'still-running')
+  if (stuck.length > 0) {
+    fail(
+      `Could not stop pid ${stuck.map((action) => action.pid).join(', ')}.`,
+      'Those pids are the ones recorded for this run. Inspect them in /proc and stop those pids only, then run `./scripts/verify/ocal down` again. The evidence directory was not touched.',
+      { stopped, keep: evidenceDir },
+    )
+  }
+  rmSync(cfg.runDir, { recursive: true, force: true })
+  emit({ ok: true, stopped, removed: cfg.runDir, keep: evidenceDir })
+}
+
+const buildMatches = (run) => {
+  const apiMain = join(apiDir, 'dist/main.js')
+  const buildIdPath = join(webDir, distDirName, 'BUILD_ID')
+  const tree = snapshotTree()
+  const problems = []
+  if (!existsSync(apiMain) || sha256(apiMain) !== run.apiMainSha256) {
+    problems.push('apps/api/dist/main.js')
+  }
+  if (!existsSync(buildIdPath) || readFileSync(buildIdPath, 'utf8').trim() !== run.webBuildId) {
+    problems.push(`apps/web/${distDirName}/BUILD_ID`)
+  }
+  if (tree.gitSha !== run.gitSha || tree.dirty !== run.dirty) {
+    problems.push('git checkout')
+  }
+  return { ok: problems.length === 0, problems, gitSha: tree.gitSha }
+}
+
+const doctor = async (cfg) => {
+  const run = readRun(cfg)
+  const processes = {}
+  for (const [service, port] of [
+    ['api', run.apiPort],
+    ['web', run.webPort],
+  ]) {
+    const pid = run.pids?.[service]
+    const cwd = alive(pid) ? readlinkSync(`/proc/${pid}/cwd`) : null
+    processes[service] = {
+      pid,
+      alive: alive(pid),
+      cwd,
+      ownsPort: alive(pid) && ownsPort(pid, port),
+      port,
+    }
+  }
+  const build = buildMatches(run)
+  let health = null
+  let auth = null
+  let page = null
+  const errors = []
+  if (!processes.api.alive || !processes.web.alive) {
+    errors.push('A recorded process is not running.')
+  }
+  if (processes.api.alive && !processes.api.ownsPort) {
+    errors.push(`Nothing this run started is listening on ${run.apiUrl}.`)
+  }
+  if (processes.web.alive && !processes.web.ownsPort) {
+    errors.push(`Nothing this run started is listening on ${run.webUrl}.`)
+  }
+  if (!build.ok) errors.push(`The checkout no longer matches this run (${build.problems.join(', ')}).`)
+  if (errors.length === 0) {
+    health = await fetchJson(`${run.apiUrl}/v1/health`)
+    if (health.status !== 200 || health.body?.status !== 'ok') {
+      errors.push(`GET /v1/health returned ${health.status}.`)
+    }
+    const path = run.skipSeed ? '/register' : '/login'
+    const response = await fetch(`${run.webUrl}${path}`)
+    const html = await response.text()
+    page = { path, status: response.status, rendered: html.includes(pageMarker(run)) }
+    if (response.status !== 200 || !page.rendered) {
+      errors.push(`${path} did not render ${pageMarker(run)}.`)
+    }
+    if (!run.skipSeed) {
+      try {
+        const token = await loginSeed({ ...cfg, apiUrl: run.apiUrl, seedUsername: run.seedUsername })
+        const profile = await fetchJson(`${run.apiUrl}/v1/settings/profile`, {
+          headers: { authorization: `Bearer ${token}` },
+        })
+        auth = {
+          valid: profile.status === 200 && profile.body?.username === run.seedUsername.toLowerCase(),
+          username: profile.body?.username ?? null,
+        }
+        if (!auth.valid) errors.push('The seed user could not open /v1/settings/profile.')
+      } catch (error) {
+        if (error instanceof Stop) throw error
+        errors.push(error instanceof Error ? error.message : String(error))
+      }
+    }
+  }
+  const body = {
+    ok: errors.length === 0,
+    ...publicRun(run),
+    processes,
+    build,
+    health: health?.body ?? null,
+    page,
+    auth,
+    errors,
+  }
+  if (errors.length > 0) {
+    fail(
+      errors.join(' '),
+      'Run `./scripts/verify/ocal logs` if a process is unhealthy. Run `./scripts/verify/ocal down` and then `./scripts/verify/ocal up` so this checkout is the one that is serving.',
+      body,
+    )
+  }
+  emit(body)
+}
+
+const seed = async (cfg, dryRun) => {
+  const run = readRun(cfg)
+  if (dryRun) {
+    emit({
+      ok: true,
+      dryRun: true,
+      would: 'upsert the seed user',
+      databasePath: run.databasePath,
+      seedUsername: cfg.seedUsername,
+      seedPasswordSource: cfg.seedPasswordSource,
+    })
+    return
+  }
+  if (!existsSync(join(apiDir, 'dist/seed.js'))) {
+    fail(
+      'apps/api/dist/seed.js is missing.',
+      'Run `./scripts/verify/ocal up` so the API is built, then `./scripts/verify/ocal seed`.',
+    )
+  }
+  const result = await runForeground(process.execPath, ['dist/seed.js'], {
+    cwd: apiDir,
+    env: {
+      ...serviceEnv({ ...cfg, databasePath: run.databasePath, apiPort: run.apiPort }),
+      NODE_ENV: 'development',
+    },
+    logPath: join(run.logDir, 'seed.log'),
+  })
+  if (result.code !== 0) {
+    fail(
+      'Seeding failed.',
+      'Use a username of letters and numbers and a password of at least 8 characters, then run `./scripts/verify/ocal seed` again.',
+      { tail: result.output.split('\n').slice(-30).join('\n') },
+    )
+  }
+  emit({
+    ok: true,
+    databasePath: run.databasePath,
+    seedUsername: cfg.seedUsername,
+    output: result.output.trim(),
+  })
+}
+
+const call = async (cfg, positional, flags, dryRun) => {
+  const run = readRun(cfg)
+  const method = String(positional[0] ?? '').toUpperCase()
+  const path = positional[1]
+  if (!['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD'].includes(method) || typeof path !== 'string') {
+    fail(
+      'call needs an HTTP method and a path.',
+      'Example: `./scripts/verify/ocal call GET /v1/health` or `./scripts/verify/ocal call GET /v1/settings/profile --auth`.',
+    )
+  }
+  if (!path.startsWith('/') || path.startsWith('//')) {
+    fail(
+      'The path must start with a single /.',
+      'Pass an API path such as /v1/daily-log?date=2026-11-20&timeZone=America/New_York. The host is this run\'s API.',
+    )
+  }
+  const url = `${run.apiUrl}${path}`
+  const headers = { accept: 'application/json' }
+  if (flag(flags, 'body')) {
+    try {
+      JSON.parse(String(flags.body))
+    } catch {
+      fail(
+        '--body is not JSON.',
+        'Pass a JSON object, for example --body \'{"username":"demo","password":"demo-password"}\'.',
+      )
+    }
+    headers['content-type'] = 'application/json'
+  }
+  const request = { method, url, auth: flag(flags, 'auth'), body: flag(flags, 'body') ? flags.body : undefined }
+  if (dryRun) {
+    emit({ ok: true, dryRun: true, wouldSend: request })
+    return
+  }
+  if (flag(flags, 'auth')) {
+    if (run.skipSeed) {
+      fail(
+        'This run has no seed user to authenticate as.',
+        'Start with seeding (unset OCAL_SKIP_SEED) or pass --body with credentials you registered.',
+      )
+    }
+    const token = await loginSeed({ ...cfg, apiUrl: run.apiUrl, seedUsername: run.seedUsername })
+    headers.authorization = `Bearer ${token}`
+  }
+  const result = await fetchJson(url, { method, headers, body: request.body })
+  const ok = result.status >= 200 && result.status < 300
+  emit({ ok, ...result, url, method })
+  if (!ok) process.exitCode = 1
+}
+
+const logs = (cfg, positional, flags) => {
+  const run = readRun(cfg)
+  const lines = flags.lines === undefined ? 120 : Number(flags.lines)
+  if (!Number.isInteger(lines) || lines < 1) {
+    fail('--lines must be a positive integer.', 'Example: `./scripts/verify/ocal logs api --lines 80`.')
+  }
+  const requested = positional[0] === undefined ? ['api', 'web'] : [positional[0]]
+  if (requested.some((service) => service !== 'api' && service !== 'web')) {
+    fail(
+      'logs accepts api, web, or no service.',
+      'Example: `./scripts/verify/ocal logs` or `./scripts/verify/ocal logs web --lines 80`.',
+    )
+  }
+  const body = {}
+  for (const service of requested) {
+    body[service] = tail(join(run.logDir, `${service}.log`), lines)
+  }
+  emit({ ok: true, lines, logs: body })
+}
+
+const db = (cfg, flags) => {
+  const run = readRun(cfg)
+  const sql = flags.sql
+  if (typeof sql !== 'string' || sql.trim() === '') {
+    fail(
+      'db needs --sql.',
+      'Example: `./scripts/verify/ocal db --sql "SELECT name, calories FROM food_entries"`.',
+    )
+  }
+  const statement = sql.trim().replace(/;+\s*$/, '')
+  if (!/^select\b/i.test(statement) || statement.includes(';')) {
+    fail(
+      'db only runs a single SELECT.',
+      'Pass one SELECT. down deletes the database; this command does not modify it.',
+    )
+  }
+  const require = createRequire(join(apiDir, 'package.json'))
+  const { createClient } = require('@libsql/client')
+  const client = createClient({ url: `file:${run.databasePath}`, intMode: 'number' })
+  return client
+    .execute(statement)
+    .then((result) => {
+      client.close()
+      emit({
+        ok: true,
+        databasePath: run.databasePath,
+        columns: result.columns,
+        rows: result.rows,
+      })
+    })
+    .catch((error) => {
+      client.close()
+      fail(
+        error instanceof Error ? error.message : String(error),
+        'Check the table names in apps/api/src/db/schema.ts. food_entries, water_entries, weight_entries, and daily_goals are the user-facing ones.',
+      )
+    })
+}
+
+const summaryLines = (output) =>
+  output
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => /^(Test Files|Tests|Duration)\b/.test(line))
+
+const testSteps = [
+  {
+    name: 'shared',
+    args: ['--filter', '@open-calorie-tracker/shared', 'test'],
+  },
+  {
+    name: 'api',
+    args: ['--filter', 'api', 'exec', 'vp', 'test', 'run'],
+  },
+  {
+    name: 'web',
+    args: ['--filter', 'web', 'exec', 'vp', 'test', 'run'],
+  },
+]
+
+const test = async (dryRun) => {
+  requirePnpm()
+  requireInstall()
+  if (dryRun) {
+    emit({
+      ok: true,
+      dryRun: true,
+      wouldRun: testSteps.map((step) => `pnpm ${step.args.join(' ')}`),
+      evidenceDir: join(evidenceDir, 'test'),
+    })
+    return
+  }
+  const dir = join(evidenceDir, 'test')
+  mkdirSync(dir, { recursive: true })
+  const steps = []
+  for (const step of testSteps) {
+    note(`testing ${step.name}`)
+    const logPath = join(dir, `${step.name}.log`)
+    const result = await runForeground('pnpm', step.args, { logPath })
+    const recorded = {
+      name: step.name,
+      command: `pnpm ${step.args.join(' ')}`,
+      exitCode: result.code,
+      summary: summaryLines(result.output),
+      log: logPath,
+      ...(result.code === 0 ? {} : { tail: result.output.split('\n').slice(-50).join('\n') }),
+    }
+    steps.push(recorded)
+    if (result.code !== 0) {
+      const hint = result.output.includes("Executable doesn't exist")
+        ? 'Run `pnpm --filter web exec playwright install chromium`, then `./scripts/verify/ocal test`.'
+        : 'Open the log path in this JSON. Fix the failure, then run `./scripts/verify/ocal test` again. The running stack, if any, was left as it is.'
+      writeFileSync(join(dir, 'result.json'), `${JSON.stringify({ ok: false, steps }, null, 2)}\n`)
+      fail(`${step.name} tests failed.`, hint, { steps })
+    }
+  }
+  const body = { ok: true, steps }
+  writeFileSync(join(dir, 'result.json'), `${JSON.stringify(body, null, 2)}\n`)
+  emit(body)
+}
+
+const loadPlaywright = async () => {
+  const file = join(webDir, 'node_modules/playwright/index.mjs')
+  if (!existsSync(file)) {
+    fail(
+      'Playwright is not installed in apps/web.',
+      'Run `pnpm install` and `pnpm --filter web exec playwright install chromium` from the checkout.',
+    )
+  }
+  return import(pathToFileURL(file).href)
+}
+
+const browserPaths = (run) => ({
+  dir: join(run.runDir, 'browser'),
+  storage: join(run.runDir, 'browser', 'storage-state.json'),
+  page: join(run.runDir, 'browser', 'page.json'),
+  socket: join(run.runDir, 'browser', 'daemon.sock'),
+  pid: join(run.runDir, 'browser', 'daemon.json'),
+  log: join(run.runDir, 'browser', 'daemon.log'),
+})
+
+const browserLocator = (page, flags, prefix) => {
+  const roleKey = prefix === '' ? 'role' : `${prefix}role`
+  const nameKey = prefix === '' ? 'name' : `${prefix}name`
+  const exactKey = prefix === '' ? 'exact' : `${prefix}exact`
+  const textKey = prefix === '' ? 'text' : `${prefix}text`
+  if (flag(flags, textKey)) return page.getByText(String(flags[textKey]), { exact: flag(flags, exactKey) })
+  if (!flag(flags, roleKey)) {
+    fail(
+      'This browser command needs --role or --text.',
+      'Example: `./scripts/verify/ocal browser click --role button --name "Add food"`.',
+    )
+  }
+  const options = {}
+  if (flag(flags, nameKey)) options.name = String(flags[nameKey])
+  if (flag(flags, exactKey)) options.exact = true
+  return page.getByRole(String(flags[roleKey]), options)
+}
+
+const scoped = (page, flags) => {
+  if (!flag(flags, 'within-role') && !flag(flags, 'within-text')) return page
+  return browserLocator(page, {
+    role: flags['within-role'],
+    name: flags['within-name'],
+    exact: flags['within-exact'],
+    text: flags['within-text'],
+  }, '')
+}
+
+const describeTarget = (flags) => {
+  if (flag(flags, 'text')) return `text "${flags.text}"`
+  const name = flag(flags, 'name') ? ` name "${flags.name}"` : ''
+  return `role ${flags.role ?? '(missing)'}${name}`
+}
+
+const socketUp = (socketPath) =>
+  new Promise((resolvePromise) => {
+    const socket = createConnection(socketPath)
+    const done = (up) => {
+      socket.removeAllListeners()
+      socket.destroy()
+      resolvePromise(up)
+    }
+    socket.once('connect', () => done(true))
+    socket.once('error', () => done(false))
+  })
+
+const stopBrowserDaemon = (run) => {
+  const paths = browserPaths(run)
+  if (!existsSync(paths.pid)) return null
+  const { pid } = JSON.parse(readFileSync(paths.pid, 'utf8'))
+  return { pid, result: Number.isInteger(pid) ? killPid(pid) : 'missing' }
+}
+
+const ensureBrowserDaemon = async (cfg, run) => {
+  const paths = browserPaths(run)
+  if (await socketUp(paths.socket)) return
+  mkdirSync(paths.dir, { recursive: true })
+  rmSync(paths.socket, { force: true })
+  const log = openSync(paths.log, 'a')
+  const child = spawn(process.execPath, [fileURLToPath(import.meta.url), 'browser-daemon'], {
+    cwd: repoRoot,
+    env: process.env,
+    detached: true,
+    stdio: ['ignore', log, log],
+  })
+  child.unref()
+  closeSync(log)
+  writeFileSync(paths.pid, `${JSON.stringify({ pid: child.pid })}\n`)
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    if (await socketUp(paths.socket)) return
+    if (!alive(child.pid)) break
+    await sleep(100)
+  }
+  fail(
+    'The browser process exited before it accepted commands.',
+    `Read ${paths.log}. Install Chromium with \`pnpm --filter web exec playwright install chromium\` if it is missing, then retry the browser command.`,
+  )
+}
+
+const browserRequest = async (cfg, payload) => {
+  const run = readRun(cfg)
+  await ensureBrowserDaemon(cfg, run)
+  const paths = browserPaths(run)
+  const response = await new Promise((resolvePromise, reject) => {
+    const socket = createConnection(paths.socket)
+    let buf = ''
+    socket.on('data', (chunk) => {
+      buf += chunk.toString('utf8')
+      const newline = buf.indexOf('\n')
+      if (newline === -1) return
+      try {
+        resolvePromise(JSON.parse(buf.slice(0, newline)))
+      } catch (error) {
+        reject(error)
+      }
+      socket.end()
+    })
+    socket.on('error', reject)
+    socket.on('connect', () => socket.write(`${JSON.stringify(payload)}\n`))
+  }).catch((error) => {
+    fail(
+      `The browser process did not answer (${error instanceof Error ? error.message : String(error)}).`,
+      'Run `./scripts/verify/ocal browser reset` and retry the command. `down` also closes that process.',
+    )
+  })
+  emit(response)
+  if (response?.ok !== true) process.exitCode = 1
+}
+
+const saveBrowser = async (context, page, paths) => {
+  mkdirSync(paths.dir, { recursive: true })
+  await context.storageState({ path: paths.storage })
+  writeFileSync(paths.page, `${JSON.stringify({ url: page.url() })}\n`)
+}
+
+const browserDaemon = async (cfg) => {
+  const run = readRun(cfg)
+  const paths = browserPaths(run)
+  mkdirSync(paths.dir, { recursive: true })
+  const { chromium } = await loadPlaywright()
+  const browser = await chromium.launch()
+  const context = await browser.newContext({
+    viewport: { width: 1280, height: 900 },
+    colorScheme: 'light',
+    ...(existsSync(paths.storage) ? { storageState: paths.storage } : {}),
+  })
+  const page = await context.newPage()
+  page.setDefaultTimeout(15000)
+  if (existsSync(paths.page)) {
+    const saved = JSON.parse(readFileSync(paths.page, 'utf8'))
+    if (typeof saved.url === 'string' && saved.url !== 'about:blank') {
+      await page.goto(saved.url, { waitUntil: 'domcontentloaded' }).catch(() => {})
+    }
+  }
+  rmSync(paths.socket, { force: true })
+  let chain = Promise.resolve()
+  const answer = (socket, value) => {
+    if (!socket.writableEnded) socket.end(`${JSON.stringify(value)}\n`)
+  }
+  const server = createServer((socket) => {
+    let buf = ''
+    socket.on('data', (chunk) => {
+      buf += chunk.toString('utf8')
+      const newline = buf.indexOf('\n')
+      if (newline === -1) return
+      const line = buf.slice(0, newline)
+      buf = buf.slice(newline + 1)
+      chain = chain.then(async () => {
+        const stdout = writeJson
+        let sent = false
+        writeJson = (value) => {
+          sent = true
+          answer(socket, value)
+        }
+        try {
+          const request = JSON.parse(line)
+          const timeout = request.flags?.timeout === undefined ? 15000 : Number(request.flags.timeout)
+          page.setDefaultTimeout(Number.isInteger(timeout) && timeout > 0 ? timeout : 15000)
+          await runBrowserAction(page, run, request.action, request.args ?? [], request.flags ?? {})
+        } catch (error) {
+          if (!sent) {
+            const message = error instanceof Error ? error.message : String(error)
+            answer(socket, {
+              ok: false,
+              error: message,
+              next: 'Retry the browser command. If the page is stuck, run `./scripts/verify/ocal browser reset`.',
+            })
+          }
+        } finally {
+          writeJson = stdout
+          await saveBrowser(context, page, paths).catch(() => {})
+        }
+      })
+    })
+  })
+  await new Promise((resolvePromise, reject) => {
+    server.once('error', reject)
+    server.listen(paths.socket, () => resolvePromise())
+  })
+  await new Promise(() => {})
+}
+
+const requireOne = async (locator, flags) => {
+  const count = await locator.count()
+  if (count !== 1) {
+    fail(
+      `${count} elements matched ${describeTarget(flags)}.`,
+      'Add --exact, a longer --name, or --within-role and --within-name so one element matches. Prefer a role and accessible name over a CSS selector.',
+    )
+  }
+}
+
+const browser = async (cfg, positional, flags, dryRun) => {
+  const action = positional[0]
+  const mutating = ['open', 'click', 'fill', 'press', 'reset'].includes(action)
+  if (dryRun && mutating) {
+    emit({ ok: true, dryRun: true, would: action, args: positional.slice(1), flags })
+    return
+  }
+  if (action === 'reset') {
+    const run = readRun(cfg)
+    const daemon = stopBrowserDaemon(run)
+    rmSync(browserPaths(run).dir, { recursive: true, force: true })
+    emit({ ok: true, reset: true, runDir: run.runDir, daemon })
+    return
+  }
+  const timeout = flags.timeout === undefined ? 15000 : Number(flags.timeout)
+  if (!Number.isInteger(timeout) || timeout < 1) {
+    fail('--timeout must be a positive number of milliseconds.', 'Example: `--timeout 20000`.')
+  }
+  await browserRequest(cfg, { action, args: positional.slice(1), flags })
+}
+
+const runBrowserAction = async (page, run, action, positional, flags) => {
+    if (action === 'open') {
+      const target = positional[0]
+      if (typeof target !== 'string') {
+        fail(
+          'browser open needs a path.',
+          'Example: `./scripts/verify/ocal browser open /login`.',
+        )
+      }
+      const url = target.startsWith('http') ? target : `${run.webUrl}${target.startsWith('/') ? '' : '/'}${target}`
+      let parsed
+      try {
+        parsed = new URL(url)
+      } catch {
+        fail('That URL is not valid.', 'Pass a path such as /login or /weight.')
+      }
+      if (parsed.origin !== run.webUrl) {
+        fail(
+          `Refusing to open ${parsed.origin}.`,
+          `This run serves ${run.webUrl}. Pass a path on that origin, for example /login.`,
+        )
+      }
+      await page.goto(url, { waitUntil: 'domcontentloaded' })
+      emit({ ok: true, url: page.url() })
+      return
+    }
+    if (action === 'url') {
+      if (page.url() === 'about:blank') {
+        fail('No browser page has been opened.', 'Run `./scripts/verify/ocal browser open /login` first.')
+      }
+      emit({ ok: true, url: page.url() })
+      return
+    }
+    if (action === 'snapshot') {
+      if (!flag(flags, 'aria')) {
+        fail(
+          'browser snapshot needs --aria.',
+          'Example: `./scripts/verify/ocal browser snapshot --aria --path artifacts/verify/log-food/list.aria.txt`.',
+        )
+      }
+      const snapshot = await page.ariaSnapshot()
+      if (flag(flags, 'path')) {
+        const path = resolve(repoRoot, String(flags.path))
+        mkdirSync(dirname(path), { recursive: true })
+        writeFileSync(path, snapshot)
+      }
+      emit({ ok: true, url: page.url(), path: flags.path ?? null, snapshot })
+      return
+    }
+    if (action === 'screenshot') {
+      if (!flag(flags, 'path')) {
+        fail(
+          'browser screenshot needs --path.',
+          'Example: `./scripts/verify/ocal browser screenshot --path artifacts/verify/log-food/list.png`.',
+        )
+      }
+      const path = resolve(repoRoot, String(flags.path))
+      mkdirSync(dirname(path), { recursive: true })
+      await page.screenshot({ path, fullPage: true })
+      emit({ ok: true, url: page.url(), path })
+      return
+    }
+    const root = scoped(page, flags)
+    const locator = browserLocator(root, flags, '')
+    if (action === 'wait') {
+      await locator.waitFor({ state: flags.state === undefined ? 'visible' : String(flags.state) })
+      emit({ ok: true, url: page.url(), state: flags.state ?? 'visible', target: describeTarget(flags) })
+      return
+    }
+    if (action === 'click' || action === 'fill' || action === 'press' || action === 'text') {
+      await requireOne(locator, flags)
+    }
+    if (action === 'click') {
+      await locator.click()
+      if (flag(flags, 'wait-role') || flag(flags, 'wait-text')) {
+        const waitRoot = flag(flags, 'wait-within-role') || flag(flags, 'wait-within-text')
+          ? browserLocator(page, {
+              role: flags['wait-within-role'],
+              name: flags['wait-within-name'],
+              exact: flags['wait-within-exact'],
+              text: flags['wait-within-text'],
+            }, '')
+          : page
+        await browserLocator(waitRoot, {
+          role: flags['wait-role'],
+          name: flags['wait-name'],
+          exact: flags['wait-exact'],
+          text: flags['wait-text'],
+        }, '').waitFor()
+      }
+      emit({ ok: true, url: page.url(), clicked: describeTarget(flags) })
+      return
+    }
+    if (action === 'fill') {
+      if (!flag(flags, 'value')) {
+        fail('browser fill needs --value.', 'Example: `--role textbox --name Food --value Oatmeal`.')
+      }
+      await locator.fill(String(flags.value))
+      emit({ ok: true, url: page.url(), filled: describeTarget(flags) })
+      return
+    }
+    if (action === 'press') {
+      if (!flag(flags, 'key')) {
+        fail('browser press needs --key.', 'Example: `--key Enter`.')
+      }
+      await locator.press(String(flags.key))
+      emit({ ok: true, url: page.url(), pressed: flags.key })
+      return
+    }
+    if (action === 'text') {
+      let value = null
+      try {
+        value = await locator.inputValue()
+      } catch {
+        value = null
+      }
+      const text = (value ?? (await locator.textContent()) ?? '').trim()
+      const disabled = await locator.isDisabled().catch(() => false)
+      emit({ ok: true, url: page.url(), text, value, disabled, target: describeTarget(flags) })
+      return
+    }
+    fail(
+      `Unknown browser command "${action ?? ''}".`,
+      'Use open, click, fill, press, wait, text, snapshot, screenshot, url, or reset. Run `./scripts/verify/ocal --help`.',
+    )
+}
+
+const main = async () => {
+  if (typeof nodeCrypto.argon2 !== 'function') {
+    fail(
+      `Node.js 26 is required because the API imports argon2 from node:crypto. This process is ${process.version}.`,
+      'Install Node 26 (the Dockerfile uses node:26) and run `./scripts/verify/ocal` with that `node` first on PATH.',
+    )
+  }
+  process.chdir(repoRoot)
+  if (!existsSync(join(repoRoot, 'pnpm-workspace.yaml'))) {
+    fail(
+      `No pnpm workspace at ${repoRoot}.`,
+      'Run ./scripts/verify/ocal from a checkout of open-calorie-tracker.',
+    )
+  }
+  const { positional, flags } = parseArgs(process.argv.slice(2))
+  if (flag(flags, 'help') || positional.length === 0 || positional[0] === 'help') {
+    process.stdout.write(HELP)
+    return
+  }
+  const [command, ...rest] = positional
+  const dryRun = flag(flags, 'dry-run')
+  const cfg = config()
+  if (command === 'up') return up(cfg, dryRun)
+  if (command === 'down') return down(cfg, dryRun)
+  if (command === 'doctor') return doctor(cfg)
+  if (command === 'seed') return seed(cfg, dryRun)
+  if (command === 'call') return call(cfg, rest, flags, dryRun)
+  if (command === 'logs') return logs(cfg, rest, flags)
+  if (command === 'db') return db(cfg, flags)
+  if (command === 'test') return test(dryRun)
+  if (command === 'browser') return browser(cfg, rest, flags, dryRun)
+  if (command === 'browser-daemon') return browserDaemon(cfg)
+  fail(
+    `Unknown command "${command}".`,
+    'Run `./scripts/verify/ocal --help` for up, doctor, seed, call, logs, db, test, down, and browser.',
+  )
+}
+
+process.on('SIGINT', () => {
+  stopForeground()
+  process.exit(130)
+})
+process.on('SIGTERM', () => {
+  stopForeground()
+  process.exit(143)
+})
+
+await main().catch((error) => {
+  if (error instanceof Stop) return
+  emit({
+    ok: false,
+    error: error instanceof Error ? error.message : String(error),
+    next: 'Run `./scripts/verify/ocal --help` and retry the command. If a stack is half-started, run `./scripts/verify/ocal down`.',
+  })
+  process.exitCode = 1
+})

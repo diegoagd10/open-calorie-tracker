@@ -9,3 +9,4 @@ coverage
 *.tsbuildinfo
 *.db
 *.db-journal
+artifacts/
