@@ -1,0 +1,71 @@
+$ control-oct.ts snapshot
+{"ok": false, "error": "no instance runs on base port 3300", "next": "Run up --base-port 3300"}
+# exit 1
+
+$ control-oct.ts up
+{"ok": true, "status": "started", "webUrl": "http://localhost:3300", "apiUrl": "http://localhost:3301", "cdpUrl": "http://127.0.0.1:3302", "evidenceDir": "/tmp/oct-verify-3300-evidence"}
+# exit 0
+
+$ control-oct.ts doctor
+{"ok": true, "basePort": 3300, "checks": "process:api=ok port:api=ok process:web=ok port:web=ok process:browser=ok port:browser=ok api=ok web=ok login=ok browser=ok"}
+# exit 0
+
+$ control-oct.ts goto /
+{"ok": false, "error": "goto / redirected to /login: the browser has no session", "next": "Run login --base-port 3300, as the seed user or with --username and --password"}
+# exit 1
+
+$ control-oct.ts api GET /v1/settings/profile
+{"ok": false, "error": "the browser has no session", "next": "Run login --base-port 3300, as the seed user or with --username and --password"}
+# exit 1
+
+$ control-oct.ts login
+{"ok": true, "username": "ana", "settled": true, "url": "http://localhost:3300/", "title": "Open Calorie Tracker"}
+# exit 0
+
+$ control-oct.ts snapshot
+{"ok": true, "url": "http://localhost:3300/", "title": "Open Calorie Tracker", "timeZone": "America/New_York", "locale": "en-US", "aria": ["  - heading \"Food Log\" [level=1]", "  - group \"Water\":", "    - paragraph: 0 fl oz / 64 fl oz", "  - button \"Add water\"", "- contentinfo: Food Log date 2026-11-20 · Time zone America/New_York", "... trimmed"]}
+# exit 0
+
+$ control-oct.ts screenshot
+{"ok": true, "path": "/tmp/oct-verify-3300-evidence/2026-11-20T22-09-31.125Z.png", "mobile": false, "viewport": {"width": 1280, "height": 720, "deviceScaleFactor": 1}, "url": "http://localhost:3300/", "title": "Open Calorie Tracker"}
+# exit 0
+
+$ control-oct.ts click button "Add water"
+{"ok": true, "clicked": "button \"Add water\"", "settled": true, "url": "http://localhost:3300/", "title": "Open Calorie Tracker"}
+# exit 0
+
+$ control-oct.ts type textbox "Amount (fl oz)" 12
+{"ok": true, "typed": "12", "into": "textbox \"Amount (fl oz)\"", "settled": true, "url": "http://localhost:3300/", "title": "Open Calorie Tracker"}
+# exit 0
+
+$ control-oct.ts screenshot
+{"ok": true, "path": "/tmp/oct-verify-3300-evidence/2026-11-20T22-09-32.917Z.png", "mobile": false, "viewport": {"width": 1280, "height": 720, "deviceScaleFactor": 1}, "url": "http://localhost:3300/", "title": "Open Calorie Tracker"}
+# exit 0
+
+$ control-oct.ts press Enter
+{"ok": true, "pressed": "Enter", "settled": true, "url": "http://localhost:3300/", "title": "Open Calorie Tracker"}
+# exit 0
+
+$ control-oct.ts screenshot
+{"ok": true, "path": "/tmp/oct-verify-3300-evidence/2026-11-20T22-09-34.033Z.png", "mobile": false, "viewport": {"width": 1280, "height": 720, "deviceScaleFactor": 1}, "url": "http://localhost:3300/", "title": "Open Calorie Tracker"}
+# exit 0
+
+$ control-oct.ts snapshot
+{"ok": true, "url": "http://localhost:3300/", "title": "Open Calorie Tracker", "timeZone": "America/New_York", "locale": "en-US", "aria": ["  - heading \"Food Log\" [level=1]", "  - group \"Water\":", "    - paragraph: 12 fl oz / 64 fl oz", "    - list \"Entries\":", "        - button \"Water, 12 fl oz, 5:09 PM\":", "  - button \"Add water\"", "- contentinfo: Food Log date 2026-11-20 · Time zone America/New_York", "... trimmed"]}
+# exit 0
+
+$ control-oct.ts api GET "/v1/daily-log?date=2026-11-20&timeZone=America/New_York"
+{"ok": true, "request": "GET /v1/daily-log?date=2026-11-20&timeZone=America/New_York", "status": 200, "body": {"date": "2026-11-20", "timeZone": "America/New_York", "totals.water": 12, "entries": [{"id": 1, "type": "water", "loggedAt": "2026-11-20T22:09:33.196Z", "amount": 12}]}}
+# exit 0
+
+$ control-oct.ts screenshot --mobile
+{"ok": true, "path": "/tmp/oct-verify-3300-evidence/2026-11-20T22-09-34.784Z-mobile.png", "mobile": true, "viewport": {"width": 390, "height": 844, "deviceScaleFactor": 3}, "url": "http://localhost:3300/", "title": "Open Calorie Tracker"}
+# exit 0
+
+$ control-oct.ts click button "Add drink"
+{"ok": false, "error": "no button \"Add drink\" on http://localhost:3300/", "next": "Pick one of the candidates, by its role and name", "candidates": ["button \"Log out\"", "button \"Previous week\"", "button \"Next week\"", "button \"2026-11-16\": Mon 16", "button \"2026-11-17\": Tue 17", "button \"2026-11-18\": Wed 18", "button \"2026-11-19\": Thu 19", "button \"2026-11-20\": Fri 20", "button \"2026-11-21\": Sat 21", "button \"2026-11-22\": Sun 22", "button \"Water, 12 fl oz, 5:09 PM\"", "button \"Add water\"", "button \"Add food\""]}
+# exit 1
+
+$ control-oct.ts down
+{"ok": true, "dryRun": false, "basePort": 3300, "stopped": ["api", "web", "browser"], "removed": ["/tmp/oct-verify-3300"], "kept": "/tmp/oct-verify-3300-evidence"}
+# exit 0
