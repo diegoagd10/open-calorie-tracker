@@ -2,30 +2,30 @@
 import { execFile, spawn } from 'node:child_process'
 import { existsSync, openSync, readFileSync, readdirSync } from 'node:fs'
 import { mkdir, rm } from 'node:fs/promises'
-import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { parseArgs, promisify } from 'node:util'
-import type * as Playwright from 'playwright'
+import { promisify } from 'node:util'
+import { TIME_ZONE } from '../../../apps/web/test/browser.ts'
+import { api, click, goto, login, playwright, press, screenshot, snapshot, type } from './drive.ts'
 import {
   COMMANDS,
   Failure,
   field,
   isCommandName,
   newState,
-  parseInstance,
+  parseRequest,
   parseState,
   readState,
   writeState,
 } from './model.ts'
 import type {
   Check,
-  CommandName,
   Instance,
   ProcessIdentity,
   ProcessName,
   ProcessRecord,
+  Request,
   State,
 } from './model.ts'
 
@@ -273,10 +273,7 @@ const up = async (instance: Instance) => {
   if (!existsSync(join(webDir, 'node_modules/next'))) {
     throw new Failure('dependencies are not installed', `Run pnpm install in ${repo}`)
   }
-  const requireFromWeb: (id: 'playwright') => typeof Playwright = createRequire(
-    join(webDir, 'package.json'),
-  )
-  const { chromium } = requireFromWeb('playwright')
+  const { chromium } = playwright(repo)
   if (!existsSync(chromium.executablePath())) {
     throw new Failure(
       `Chromium is missing at ${chromium.executablePath()}`,
@@ -354,12 +351,14 @@ const up = async (instance: Instance) => {
           `--remote-debugging-port=${ports.cdp}`,
           '--remote-debugging-address=127.0.0.1',
           `--user-data-dir=${join(dataDir, 'chromium-profile')}`,
+          '--lang=en-US',
+          '--hide-scrollbars',
           '--no-first-run',
           '--no-default-browser-check',
           'about:blank',
         ],
         repo,
-        {},
+        { TZ: TIME_ZONE },
         ports.cdp,
         logsDir,
       ),
@@ -418,18 +417,31 @@ const down = async (instance: Instance, dryRun: boolean) => {
   }
 }
 
-const parseFlags = (command: CommandName, args: string[]) => {
-  try {
-    return parseArgs({
-      args,
-      options: {
-        'base-port': { type: 'string' },
-        help: { type: 'boolean' },
-        ...(command === 'down' ? { 'dry-run': { type: 'boolean' } } : {}),
-      },
-    }).values
-  } catch (error) {
-    throw new Failure(messageOf(error), `See ${COMMANDS[command].usage}`)
+const handle = (request: Request) => {
+  const { instance } = request
+  switch (request.command) {
+    case 'up':
+      return up(instance)
+    case 'doctor':
+      return doctor(instance)
+    case 'down':
+      return down(instance, request.dryRun)
+    case 'login':
+      return login(instance, repo, request)
+    case 'goto':
+      return goto(instance, repo, request.path)
+    case 'snapshot':
+      return snapshot(instance, repo)
+    case 'click':
+      return click(instance, repo, request.target)
+    case 'type':
+      return type(instance, repo, request.target, request.text)
+    case 'press':
+      return press(instance, repo, request.key)
+    case 'screenshot':
+      return screenshot(instance, repo, request.path, request.mobile)
+    case 'api':
+      return api(instance, repo, request.method, request.path, request.body)
   }
 }
 
@@ -444,15 +456,9 @@ const main = async (): Promise<void> => {
       `Use one of: ${Object.keys(COMMANDS).join(', ')}`,
     )
   }
-  const values = parseFlags(command, rest)
-  if (values.help) return print({ ok: true, ...COMMANDS[command] })
-  const instance = parseInstance(values['base-port'])
-  const result =
-    command === 'up'
-      ? await up(instance)
-      : command === 'doctor'
-        ? await doctor(instance)
-        : await down(instance, values['dry-run'] === true)
+  const request = parseRequest(command, rest)
+  if (request === undefined) return print({ ok: true, ...COMMANDS[command] })
+  const result = await handle(request)
   print(result)
   if (!result.ok) process.exitCode = 1
 }
@@ -462,6 +468,7 @@ main().catch((error: unknown) => {
     ok: false,
     error: messageOf(error),
     next: error instanceof Failure ? error.next : 'Rerun with --help for usage',
+    ...(error instanceof Failure ? error.details : {}),
   })
   process.exitCode = 1
 })
