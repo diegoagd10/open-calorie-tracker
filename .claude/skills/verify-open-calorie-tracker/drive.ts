@@ -133,37 +133,57 @@ const actionFailure = (error: unknown, state: State): Failure =>
 const describe = async (locator: Locator): Promise<string> =>
   (await locator.ariaSnapshot()).split('\n')[0]?.replace(/^- /, '').replace(/:$/, '') ?? ''
 
-// The role and name of every node in the page's aria snapshot, for hints.
-const nodes = async (page: Page): Promise<{ role: string; line: string; name: string }[]> =>
-  (await page.locator('body').ariaSnapshot()).split('\n').flatMap((raw) => {
+// Where click and type look. A modal dialog leaves the page behind it inert, so while one is open
+// that is the last one opened, which the app renders after the dialog it opened from.
+const scope = async (page: Page): Promise<{ root: Locator; dialog: string | undefined }> => {
+  const modals = page.locator(':modal')
+  if ((await modals.count()) === 0) return { root: page.locator('body'), dialog: undefined }
+  const root = modals.last()
+  return { root, dialog: await describe(root) }
+}
+
+// The role and name of every node in the scope's aria snapshot, for hints.
+const nodes = async (root: Locator): Promise<{ role: string; line: string; name: string }[]> =>
+  (await root.ariaSnapshot()).split('\n').flatMap((raw) => {
     const match = /^\s*- (\w+)(?: "((?:[^"\\]|\\.)*)")?/.exec(raw)
     if (match?.[1] === undefined) return []
     const line = raw.trim().replace(/^- /, '').replace(/:$/, '')
     return [{ role: match[1], line, name: match[2] ?? '' }]
   })
 
-// The one element with the role and the exact name, else the one whose name contains it.
-const find = async (page: Page, { role, name }: Target): Promise<Locator> => {
-  const exact = page.getByRole(role, { name, exact: true })
-  const loose = page.getByRole(role, { name })
+// The elements with the role and the exact name, else those whose name contains it. Without nth,
+// there must be exactly one; with it, the nth of them.
+const find = async (page: Page, { role, name, nth }: Target): Promise<Locator> => {
+  const { root, dialog } = await scope(page)
+  const exact = root.getByRole(role, { name, exact: true })
+  const loose = root.getByRole(role, { name })
   const matches = (await exact.count()) > 0 ? exact : loose
   const count = await matches.count()
-  if (count === 1) return matches
+  if (nth === undefined ? count === 1 : nth < count) return matches.nth(nth ?? 0)
   const label = `${role} "${name}"`
-  if (count > 1) {
+  if (count > 0) {
     const all = await matches.all()
     throw new Failure(
-      `${count} elements match ${label}`,
-      'Pass the full name of one candidate. A name matches by substring only when no name is exact',
+      nth === undefined
+        ? `${count} elements match ${label}`
+        : `--nth ${nth} is out of range: ${count} elements match ${label}`,
+      'Pass the full name of one candidate, or --nth I for the I-th candidate, from 0. A name matches by substring only when no name is exact',
       { candidates: await Promise.all(all.slice(0, MAX_CANDIDATES).map(describe)) },
     )
   }
   const lower = name.toLowerCase()
-  const nearby = (await nodes(page))
+  const nearby = (await nodes(root))
     .filter(
       (node) => node.role === role || (lower !== '' && node.name.toLowerCase().includes(lower)),
     )
     .map((node) => node.line)
+  if (dialog !== undefined) {
+    throw new Failure(
+      `no ${label} in the open ${dialog}`,
+      'The page behind an open dialog cannot be used. Pick a candidate, or close the dialog first',
+      { candidates: nearby.slice(0, MAX_CANDIDATES) },
+    )
+  }
   throw new Failure(
     `no ${label} on ${page.url()}`,
     nearby.length > 0
