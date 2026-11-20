@@ -44,7 +44,7 @@ pnpm --filter web exec playwright install chromium
 
 ## State file
 
-`up` writes `/tmp/oct-verify-<N>/state.json` and prints the same state. The script uses `os.tmpdir()`, so `$TMPDIR` moves every path under `/tmp` in this skill. Read the state file to find the instance. Its shape is the `State` typedef in `model.mjs`, and `readState(basePort)` there loads it:
+`up` writes `/tmp/oct-verify-<N>/state.json` and prints the same state. The script uses `os.tmpdir()`, so `$TMPDIR` moves every path under `/tmp` in this skill. Read the state file to find the instance. Its shape is the `State` typedef in `model.mjs`, and `readState(instance)` there loads it. `instanceAt(N)` in the same file derives every port, URL and path from the base port:
 
 ```json
 {

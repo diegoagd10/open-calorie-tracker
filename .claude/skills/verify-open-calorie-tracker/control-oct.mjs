@@ -7,15 +7,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parseArgs, promisify } from 'node:util'
-import {
-  COMMANDS,
-  Failure,
-  newState,
-  parseBasePort,
-  paths,
-  readState,
-  writeState,
-} from './model.mjs'
+import { COMMANDS, Failure, newState, parseInstance, readState, writeState } from './model.mjs'
 
 const repo = dirname(fileURLToPath(new URL('../../../package.json', import.meta.url)))
 const apiDir = join(repo, 'apps/api')
@@ -59,9 +51,9 @@ const listeners = async (port) => {
   return [...stdout.matchAll(/pid=(\d+)/g)].map((match) => Number(match[1]))
 }
 
-const portsInUse = async (basePort) => {
+const portsInUse = async (instance) => {
   const used = []
-  for (const port of [basePort, basePort + 1, basePort + 2]) {
+  for (const port of Object.values(instance.ports)) {
     const output = await promisify(execFile)('ss', ['-ltnH', `sport = :${port}`])
     if (output.stdout.trim() !== '') used.push({ port, pids: await listeners(port) })
   }
@@ -197,18 +189,19 @@ const waitUntil = async (url, proc) => {
   throw new Error(`${url} did not answer within ${READY_TIMEOUT_MS}ms; see ${proc.log}`)
 }
 
-const otherInstances = (basePort) =>
+const otherInstances = (instance) =>
   readdirSync(tmpdir())
-    .filter((name) => /^oct-verify-\d+$/.test(name) && name !== `oct-verify-${basePort}`)
+    .filter((name) => /^oct-verify-\d+$/.test(name))
     .map((name) => join(tmpdir(), name, 'state.json'))
+    .filter((file) => file !== instance.stateFile)
     .filter((file) => existsSync(file))
     .map((file) => JSON.parse(readFileSync(file, 'utf8')))
     .filter((state) => state.repo === repo)
 
-const up = async (basePort) => {
-  const { dataDir, evidenceDir } = paths(basePort)
+const up = async (instance) => {
+  const { basePort, ports, urls, dataDir, evidenceDir } = instance
   let replaced
-  const previous = await readState(basePort)
+  const previous = await readState(instance)
   if (previous !== undefined && previous.repo !== repo) {
     throw new Failure(
       `base port ${basePort} belongs to an instance of ${previous.repo}`,
@@ -222,7 +215,7 @@ const up = async (basePort) => {
     await stop(previous, false)
   }
 
-  const sibling = otherInstances(basePort)[0]
+  const sibling = otherInstances(instance)[0]
   if (sibling !== undefined) {
     throw new Failure(
       `this checkout already runs an instance on base port ${sibling.basePort}, and both would share apps/web/.next and apps/api/dist`,
@@ -239,7 +232,7 @@ const up = async (basePort) => {
       'Run pnpm --filter web exec playwright install chromium',
     )
   }
-  const busy = await portsInUse(basePort)
+  const busy = await portsInUse(instance)
   if (busy.length > 0) {
     const held = busy.map((b) => `${b.port} (pid ${b.pids.join(', ') || 'unknown'})`).join(', ')
     throw new Failure(
@@ -272,8 +265,7 @@ const up = async (basePort) => {
     run(['pnpm', 'exec', 'next', 'build'], webDir, {}, buildLog),
   ])
 
-  const state = newState({
-    basePort,
+  const state = newState(instance, {
     repo,
     seedUser: SEED_USER,
     processes: {
@@ -282,25 +274,25 @@ const up = async (basePort) => {
         ['pnpm', 'start:prod'],
         apiDir,
         {
-          PORT: String(basePort + 1),
+          PORT: String(ports.api),
           DATABASE_URL: databaseUrl,
           TRUST_PROXY: 'loopback',
           API_KEY_SECRET,
           OPEN_FOOD_FACTS_USER_AGENT: 'OpenCalorieTracker/verify (https://example.test)',
           ...jwtEnv,
         },
-        basePort + 1,
+        ports.api,
         logsDir,
       ),
       web: start(
         'web',
-        ['pnpm', 'exec', 'next', 'start', '--port', String(basePort)],
+        ['pnpm', 'exec', 'next', 'start', '--port', String(ports.web)],
         webDir,
         {
-          API_URL: `http://localhost:${basePort + 1}`,
+          API_URL: urls.api,
           ...jwtEnv,
         },
-        basePort,
+        ports.web,
         logsDir,
       ),
       browser: start(
@@ -308,7 +300,7 @@ const up = async (basePort) => {
         [
           chromium.executablePath(),
           '--headless=new',
-          `--remote-debugging-port=${basePort + 2}`,
+          `--remote-debugging-port=${ports.cdp}`,
           '--remote-debugging-address=127.0.0.1',
           `--user-data-dir=${join(dataDir, 'chromium-profile')}`,
           '--no-first-run',
@@ -317,7 +309,7 @@ const up = async (basePort) => {
         ],
         repo,
         {},
-        basePort + 2,
+        ports.cdp,
         logsDir,
       ),
     },
@@ -334,7 +326,7 @@ const up = async (basePort) => {
     expect(failed.length === 0, `doctor failed after start: ${JSON.stringify(failed)}`)
   } catch (error) {
     await stop(state, false)
-    await rm(paths(basePort).stateFile, { force: true })
+    await rm(instance.stateFile, { force: true })
     throw new Failure(
       `up failed, so it stopped what it started: ${error.message}`,
       `Read the logs in ${logsDir}, fix the cause, then rerun up`,
@@ -343,13 +335,14 @@ const up = async (basePort) => {
   return { ok: true, status: 'started', ...(replaced ? { replaced } : {}), ...state }
 }
 
-const doctor = async (basePort) => {
-  const state = await readState(basePort)
+const doctor = async (instance) => {
+  const { basePort, stateFile } = instance
+  const state = await readState(instance)
   if (state === undefined) {
     return {
       ok: false,
       basePort,
-      checks: [{ name: 'state', ok: false, detail: `no ${paths(basePort).stateFile}` }],
+      checks: [{ name: 'state', ok: false, detail: `no ${stateFile}` }],
       next: `Run up --base-port ${basePort}`,
     }
   }
@@ -358,9 +351,9 @@ const doctor = async (basePort) => {
   return { ok: failed === undefined, basePort, checks, ...(failed ? { next: failed.next } : {}) }
 }
 
-const down = async (basePort, dryRun) => {
-  const { dataDir, evidenceDir } = paths(basePort)
-  const state = await readState(basePort)
+const down = async (instance, dryRun) => {
+  const { basePort, dataDir, evidenceDir } = instance
+  const state = await readState(instance)
   const sessions = state === undefined ? [] : await stop(state, dryRun)
   const removed = existsSync(dataDir) ? [dataDir] : []
   if (!dryRun) await rm(dataDir, { recursive: true, force: true })
@@ -399,13 +392,13 @@ const main = async () => {
     throw new Failure(error.message, `See ${COMMANDS[command].usage}`)
   }
   if (values.help) return print({ ok: true, ...COMMANDS[command] })
-  const basePort = parseBasePort(values['base-port'])
+  const instance = parseInstance(values['base-port'])
   const result =
     command === 'up'
-      ? await up(basePort)
+      ? await up(instance)
       : command === 'doctor'
-        ? await doctor(basePort)
-        : await down(basePort, values['dry-run'] === true)
+        ? await doctor(instance)
+        : await down(instance, values['dry-run'] === true)
   print(result)
   if (!result.ok) process.exitCode = 1
 }

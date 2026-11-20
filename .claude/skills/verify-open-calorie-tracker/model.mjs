@@ -6,7 +6,17 @@ import { join } from 'node:path'
  * @typedef {'up' | 'doctor' | 'down'} CommandName
  * @typedef {{ usage: string, summary: string }} Command
  *
- * @typedef {{ dataDir: string, stateFile: string, evidenceDir: string }} Paths
+ * Everything one --base-port N decides. An instance takes three consecutive ports.
+ * @typedef {{ web: number, api: number, cdp: number }} Ports
+ * @typedef {{ web: string, api: string, cdp: string }} Urls
+ * @typedef {{
+ *   basePort: number,
+ *   ports: Ports,
+ *   urls: Urls,
+ *   dataDir: string,
+ *   stateFile: string,
+ *   evidenceDir: string,
+ * }} Instance
  *
  * A session id plus the start time of its leader, so a reused id is never mistaken for ours.
  * @typedef {{ sid: number, startTime: string | undefined }} ProcessIdentity
@@ -31,6 +41,9 @@ import { join } from 'node:path'
  */
 
 export const DEFAULT_BASE_PORT = 3300
+const PORT_OFFSETS = { web: 0, api: 1, cdp: 2 }
+const MIN_BASE_PORT = 1024
+const MAX_BASE_PORT = 65_535 - Math.max(...Object.values(PORT_OFFSETS))
 
 /** @type {Record<CommandName, Command>} */
 export const COMMANDS = {
@@ -59,50 +72,55 @@ export class Failure extends Error {
   }
 }
 
-/** @returns {number} */
-export const parseBasePort = (value) => {
-  if (value === undefined) return DEFAULT_BASE_PORT
-  const port = Number(value)
-  if (!Number.isInteger(port) || port < 1024 || port > 65_533) {
-    throw new Failure(
-      `--base-port must be an integer from 1024 to 65533, got "${value}"`,
-      'Pass --base-port 3300, or omit it',
-    )
-  }
-  return port
-}
-
-/** @returns {Paths} */
-export const paths = (basePort) => {
+/** @returns {Instance} */
+export const instanceAt = (basePort) => {
+  const port = (name) => basePort + PORT_OFFSETS[name]
   const dataDir = join(tmpdir(), `oct-verify-${basePort}`)
   return {
+    basePort,
+    ports: { web: port('web'), api: port('api'), cdp: port('cdp') },
+    urls: {
+      web: `http://localhost:${port('web')}`,
+      api: `http://localhost:${port('api')}`,
+      cdp: `http://127.0.0.1:${port('cdp')}`,
+    },
     dataDir,
     stateFile: join(dataDir, 'state.json'),
     evidenceDir: join(tmpdir(), `oct-verify-${basePort}-evidence`),
   }
 }
 
-/** @returns {State} */
-export const newState = ({ basePort, repo, seedUser, processes }) => {
-  const { dataDir, evidenceDir } = paths(basePort)
-  return {
-    basePort,
-    repo,
-    dataDir,
-    evidenceDir,
-    webUrl: `http://localhost:${basePort}`,
-    apiUrl: `http://localhost:${basePort + 1}`,
-    cdpUrl: `http://127.0.0.1:${basePort + 2}`,
-    seedUser,
-    startedAt: new Date().toISOString(),
-    processes,
+/** Parses the --base-port flag. @returns {Instance} */
+export const parseInstance = (value) => {
+  if (value === undefined) return instanceAt(DEFAULT_BASE_PORT)
+  const basePort = Number(value)
+  if (!Number.isInteger(basePort) || basePort < MIN_BASE_PORT || basePort > MAX_BASE_PORT) {
+    throw new Failure(
+      `--base-port must be an integer from ${MIN_BASE_PORT} to ${MAX_BASE_PORT}, got "${value}"`,
+      `Pass --base-port ${DEFAULT_BASE_PORT}, or omit it`,
+    )
   }
+  return instanceAt(basePort)
 }
 
-/** @returns {Promise<State | undefined>} */
-export const readState = async (basePort) => {
+/** @param {Instance} instance @returns {State} */
+export const newState = (instance, { repo, seedUser, processes }) => ({
+  basePort: instance.basePort,
+  repo,
+  dataDir: instance.dataDir,
+  evidenceDir: instance.evidenceDir,
+  webUrl: instance.urls.web,
+  apiUrl: instance.urls.api,
+  cdpUrl: instance.urls.cdp,
+  seedUser,
+  startedAt: new Date().toISOString(),
+  processes,
+})
+
+/** @param {Instance} instance @returns {Promise<State | undefined>} */
+export const readState = async (instance) => {
   try {
-    return JSON.parse(await readFile(paths(basePort).stateFile, 'utf8'))
+    return JSON.parse(await readFile(instance.stateFile, 'utf8'))
   } catch {
     return undefined
   }
@@ -110,7 +128,7 @@ export const readState = async (basePort) => {
 
 /** @param {State} state */
 export const writeState = async (state) => {
-  const { stateFile } = paths(state.basePort)
+  const { stateFile } = instanceAt(state.basePort)
   await writeFile(`${stateFile}.tmp`, JSON.stringify(state, null, 2))
   await rename(`${stateFile}.tmp`, stateFile)
 }
