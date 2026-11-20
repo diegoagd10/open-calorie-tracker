@@ -5,7 +5,7 @@ description: Start, check and stop an isolated, seeded copy of open-calorie-trac
 
 # Verify open-calorie-tracker
 
-`control-oct.mjs` runs one isolated instance per base port `N`. Every command prints JSON on stdout and exits 1 on failure. A failure carries `error` and a `next` field that says what to do.
+`control-oct.ts` runs one isolated instance per base port `N`. Every command prints JSON on stdout and exits 1 on failure. A failure carries `error` and a `next` field that says what to do.
 
 | Port    | Process                                             |
 | ------- | --------------------------------------------------- |
@@ -20,7 +20,7 @@ The default `N` is 3300. It avoids `pnpm dev:web` and `pnpm dev:api` (3000, 3001
 Run this from the repo root:
 
 ```bash
-.claude/skills/verify-open-calorie-tracker/control-oct.mjs up [--base-port N]
+.claude/skills/verify-open-calorie-tracker/control-oct.ts up [--base-port N]
 ```
 
 `up` took 7 seconds in one measured run with no earlier build. It does these steps:
@@ -44,7 +44,7 @@ pnpm --filter web exec playwright install chromium
 
 ## State file
 
-`up` writes `/tmp/oct-verify-<N>/state.json` and prints the same state. The script uses `os.tmpdir()`, so `$TMPDIR` moves every path under `/tmp` in this skill. Read the state file to find the instance. Its shape is the `State` typedef in `model.mjs`, and `readState(instance)` there loads it. `instanceAt(N)` in the same file derives every port, URL and path from the base port:
+`up` writes `/tmp/oct-verify-<N>/state.json` and prints the same state. The script uses `os.tmpdir()`, so `$TMPDIR` moves every path under `/tmp` in this skill. Read the state file to find the instance. Its shape is the `State` type in `model.ts`, and `readState(instance)` there loads and validates it. `instanceAt(N)` in the same file derives every port, URL and path from the base port:
 
 ```json
 {
@@ -89,14 +89,14 @@ pnpm --filter web exec playwright install chromium
 Run doctor first whenever anything looks off. It changes nothing.
 
 ```bash
-.claude/skills/verify-open-calorie-tracker/control-oct.mjs doctor [--base-port N]
+.claude/skills/verify-open-calorie-tracker/control-oct.ts doctor [--base-port N]
 ```
 
 It returns `checks`, a list of `{ name, ok, detail?, next? }`, plus a top-level `next` from the first failed check:
 
 | Check                                           | Passes when                                                     |
 | ----------------------------------------------- | --------------------------------------------------------------- |
-| `state`                                         | The state file exists. Reported only when it is missing.        |
+| `state`                                         | A valid state file exists. Reported only when it does not.      |
 | `process:api`, `process:web`, `process:browser` | The session still has a live process.                           |
 | `port:api`, `port:web`, `port:browser`          | Every pid that `ss -ltnp` shows on the port is in that session. |
 | `api`                                           | `GET /v1/setup` answers 200 with `needsSetup: false`.           |
@@ -109,7 +109,7 @@ For most failures, `next` tells you to run `up` again, which replaces the broken
 ## Cleanup
 
 ```bash
-.claude/skills/verify-open-calorie-tracker/control-oct.mjs down [--base-port N] [--dry-run]
+.claude/skills/verify-open-calorie-tracker/control-oct.ts down [--base-port N] [--dry-run]
 ```
 
 `down` sends SIGTERM to every process in the three recorded sessions, waits up to 10 seconds, and sends SIGKILL to what is left. It never kills by process name. Then it removes the data dir. `--dry-run` reports `wouldStop` and `wouldRemove` and changes nothing.
@@ -118,8 +118,9 @@ For most failures, `next` tells you to run `up` again, which replaces the broken
 
 ## Helpers
 
-- `control-oct.mjs --help` lists the commands. `control-oct.mjs <command> --help` shows one command.
-- `model.mjs` holds the data shapes (state file, process records, check results, command registry) and the helpers that build, read and write them. `control-oct.mjs` holds the process and HTTP work.
+- `control-oct.ts --help` lists the commands. `control-oct.ts <command> --help` shows one command.
+- `model.ts` holds the data shapes (state file, process records, check results, command registry) and the helpers that build, read and write them. `control-oct.ts` holds the process and HTTP work.
+- `tsconfig.json` and `package.json` in this folder exist so that `pnpm check` type-checks the skill. The `.ts` files run directly with Node's type stripping, with no build step.
 - The script needs Linux. It reads `/proc` and runs `ss`.
 - It resolves `playwright` from `apps/web` with `createRequire`, because pnpm installs it only there. The repo root has no dependency on it.
 - Attach to the running browser with Playwright from `apps/web`. `browser.close()` on a CDP connection disconnects and leaves Chromium running:

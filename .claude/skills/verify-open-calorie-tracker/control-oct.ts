@@ -7,19 +7,46 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parseArgs, promisify } from 'node:util'
-import { COMMANDS, Failure, newState, parseInstance, readState, writeState } from './model.mjs'
+import type * as Playwright from 'playwright'
+import {
+  COMMANDS,
+  Failure,
+  field,
+  isCommandName,
+  newState,
+  parseInstance,
+  parseState,
+  readState,
+  writeState,
+} from './model.ts'
+import type {
+  Check,
+  CommandName,
+  Instance,
+  ProcessIdentity,
+  ProcessName,
+  ProcessRecord,
+  State,
+} from './model.ts'
 
 const repo = dirname(fileURLToPath(new URL('../../../package.json', import.meta.url)))
 const apiDir = join(repo, 'apps/api')
 const webDir = join(repo, 'apps/web')
 const READY_TIMEOUT_MS = 60_000
 
-const print = (value) => console.log(JSON.stringify(value, null, 2))
+type Argv = [string, ...string[]]
+type Session = { name: string; sid: number; pids: number[] }
+
+const print = (value: unknown): void => console.log(JSON.stringify(value, null, 2))
+
+const messageOf = (error: unknown): string =>
+  error instanceof Error ? error.message : String(error)
 
 // /proc/<pid>/stat fields after the command name: state, ppid, pgrp, session, ... starttime.
-const procStat = (pid) => {
+const procStat = (pid: number): ProcessIdentity | undefined => {
   try {
-    const fields = readFileSync(`/proc/${pid}/stat`, 'utf8').split(') ')[1].split(' ')
+    const fields = readFileSync(`/proc/${pid}/stat`, 'utf8').split(') ')[1]?.split(' ')
+    if (fields === undefined) return undefined
     return { sid: Number(fields[3]), startTime: fields[19] }
   } catch {
     return undefined
@@ -29,7 +56,7 @@ const procStat = (pid) => {
 // Each process up starts leads its own session, and pnpm moves scripts into process groups of
 // their own, so the session, not the group, holds everything one start owns. A session id is not
 // reused while any member lives; a live leader with another start time means the id was reused.
-const members = ({ sid, startTime }) => {
+const members = ({ sid, startTime }: ProcessIdentity): number[] => {
   const leader = procStat(sid)
   if (leader !== undefined && leader.startTime !== startTime) return []
   return readdirSync('/proc')
@@ -38,7 +65,7 @@ const members = ({ sid, startTime }) => {
     .filter((pid) => procStat(pid)?.sid === sid)
 }
 
-const signal = (pids, name) => {
+const signal = (pids: number[], name: NodeJS.Signals): void => {
   for (const pid of pids) {
     try {
       process.kill(pid, name)
@@ -46,13 +73,13 @@ const signal = (pids, name) => {
   }
 }
 
-const listeners = async (port) => {
+const listeners = async (port: number): Promise<number[]> => {
   const { stdout } = await promisify(execFile)('ss', ['-ltnpH', `sport = :${port}`])
   return [...stdout.matchAll(/pid=(\d+)/g)].map((match) => Number(match[1]))
 }
 
-const portsInUse = async (instance) => {
-  const used = []
+const portsInUse = async (instance: Instance): Promise<{ port: number; pids: number[] }[]> => {
+  const used: { port: number; pids: number[] }[] = []
   for (const port of Object.values(instance.ports)) {
     const output = await promisify(execFile)('ss', ['-ltnH', `sport = :${port}`])
     if (output.stdout.trim() !== '') used.push({ port, pids: await listeners(port) })
@@ -60,25 +87,30 @@ const portsInUse = async (instance) => {
   return used
 }
 
-const fetchWithin = (url, init = {}) => fetch(url, { ...init, signal: AbortSignal.timeout(5_000) })
+const fetchWithin = (url: string, init: RequestInit = {}): Promise<Response> =>
+  fetch(url, { ...init, signal: AbortSignal.timeout(5_000) })
 
-const check = async (name, next, probe) => {
+const check = async (
+  name: string,
+  next: string,
+  probe: () => Promise<string | void> | string | void,
+): Promise<Check> => {
   try {
     const detail = await probe()
     return { name, ok: true, ...(detail === undefined ? {} : { detail }) }
   } catch (error) {
-    return { name, ok: false, detail: error.message, next }
+    return { name, ok: false, detail: messageOf(error), next }
   }
 }
 
-const expect = (condition, message) => {
+const expect = (condition: boolean, message: string): void => {
   if (!condition) throw new Error(message)
 }
 
-const diagnose = async (state) => {
+const diagnose = async (state: State): Promise<Check[]> => {
   const { basePort } = state
   const restart = `Run up --base-port ${basePort}, which replaces a broken instance`
-  const checks = []
+  const checks: Check[] = []
   for (const [name, proc] of Object.entries(state.processes)) {
     checks.push(
       await check(`process:${name}`, `Read ${proc.log}, then: ${restart}`, () =>
@@ -101,8 +133,8 @@ const diagnose = async (state) => {
     await check('api', `Read ${state.processes.api.log}, then: ${restart}`, async () => {
       const response = await fetchWithin(`${state.apiUrl}/v1/setup`)
       expect(response.ok, `GET /v1/setup answered ${response.status}`)
-      const body = await response.json()
-      expect(body.needsSetup === false, 'the API has no users, so the seed did not run')
+      const needsSetup = field(await response.json(), 'needsSetup')
+      expect(needsSetup === false, 'the API has no users, so the seed did not run')
     }),
     await check('web', `Read ${state.processes.web.log}, then: ${restart}`, async () => {
       const response = await fetchWithin(`${state.webUrl}/login`)
@@ -115,26 +147,27 @@ const diagnose = async (state) => {
         body: JSON.stringify(state.seedUser),
       })
       expect(response.ok, `POST /v1/login answered ${response.status}`)
-      const body = await response.json()
-      expect(typeof body.accessToken === 'string', 'the login response has no accessToken')
+      const accessToken = field(await response.json(), 'accessToken')
+      expect(typeof accessToken === 'string', 'the login response has no accessToken')
     }),
     await check('browser', `Read ${state.processes.browser.log}, then: ${restart}`, async () => {
       const response = await fetchWithin(`${state.cdpUrl}/json/version`)
       expect(response.ok, `GET /json/version answered ${response.status}`)
-      return (await response.json()).Browser
+      const browser = field(await response.json(), 'Browser')
+      return typeof browser === 'string' ? browser : undefined
     }),
   )
   return checks
 }
 
-const stop = async (state, dryRun) => {
+const stop = async (state: State, dryRun: boolean): Promise<Session[]> => {
   const sessions = Object.entries(state.processes).map(([name, proc]) => ({
     name,
     sid: proc.sid,
     pids: members(proc),
   }))
   if (!dryRun) {
-    const remaining = () => sessions.flatMap(({ name }) => members(state.processes[name]))
+    const remaining = () => Object.values(state.processes).flatMap((proc) => members(proc))
     signal(remaining(), 'SIGTERM')
     const deadline = Date.now() + 10_000
     while (remaining().length > 0 && Date.now() < deadline) await sleep(200)
@@ -143,9 +176,14 @@ const stop = async (state, dryRun) => {
   return sessions.filter((session) => session.pids.length > 0)
 }
 
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
 
-const run = async (command, cwd, env, log) => {
+const run = async (
+  command: Argv,
+  cwd: string,
+  env: Record<string, string>,
+  log: string,
+): Promise<void> => {
   const [bin, ...args] = command
   const out = openSync(log, 'a')
   const child = spawn(bin, args, {
@@ -153,7 +191,7 @@ const run = async (command, cwd, env, log) => {
     env: { ...process.env, ...env },
     stdio: ['ignore', out, out],
   })
-  const code = await new Promise((resolve) => child.on('exit', resolve))
+  const code = await new Promise<number | null>((resolve) => child.on('exit', resolve))
   if (code !== 0) {
     const tail = readFileSync(log, 'utf8').trim().split('\n').slice(-15).join('\n')
     throw new Failure(
@@ -163,7 +201,14 @@ const run = async (command, cwd, env, log) => {
   }
 }
 
-const start = (name, command, cwd, env, port, logsDir) => {
+const start = (
+  name: ProcessName,
+  command: Argv,
+  cwd: string,
+  env: Record<string, string>,
+  port: number,
+  logsDir: string,
+): ProcessRecord => {
   const [bin, ...args] = command
   const log = join(logsDir, `${name}.log`)
   const out = openSync(log, 'a')
@@ -174,10 +219,13 @@ const start = (name, command, cwd, env, port, logsDir) => {
     stdio: ['ignore', out, out],
   })
   child.unref()
+  if (child.pid === undefined) {
+    throw new Failure(`${command.join(' ')} did not start`, `Read ${log}, then rerun up`)
+  }
   return { sid: child.pid, startTime: procStat(child.pid)?.startTime, port, log }
 }
 
-const waitUntil = async (url, proc) => {
+const waitUntil = async (url: string, proc: ProcessRecord): Promise<void> => {
   const deadline = Date.now() + READY_TIMEOUT_MS
   while (Date.now() < deadline) {
     expect(members(proc).length > 0, `the process for ${url} exited; see ${proc.log}`)
@@ -189,18 +237,18 @@ const waitUntil = async (url, proc) => {
   throw new Error(`${url} did not answer within ${READY_TIMEOUT_MS}ms; see ${proc.log}`)
 }
 
-const otherInstances = (instance) =>
+const otherInstances = (instance: Instance): State[] =>
   readdirSync(tmpdir())
     .filter((name) => /^oct-verify-\d+$/.test(name))
     .map((name) => join(tmpdir(), name, 'state.json'))
     .filter((file) => file !== instance.stateFile)
     .filter((file) => existsSync(file))
-    .map((file) => JSON.parse(readFileSync(file, 'utf8')))
+    .flatMap((file) => parseState(readFileSync(file, 'utf8')) ?? [])
     .filter((state) => state.repo === repo)
 
-const up = async (instance) => {
+const up = async (instance: Instance) => {
   const { basePort, ports, urls, dataDir, evidenceDir } = instance
-  let replaced
+  let replaced: { stale: true; failed: string[] } | undefined
   const previous = await readState(instance)
   if (previous !== undefined && previous.repo !== repo) {
     throw new Failure(
@@ -225,7 +273,10 @@ const up = async (instance) => {
   if (!existsSync(join(webDir, 'node_modules/next'))) {
     throw new Failure('dependencies are not installed', `Run pnpm install in ${repo}`)
   }
-  const { chromium } = createRequire(join(webDir, 'package.json'))('playwright')
+  const requireFromWeb: (id: 'playwright') => typeof Playwright = createRequire(
+    join(webDir, 'package.json'),
+  )
+  const { chromium } = requireFromWeb('playwright')
   if (!existsSync(chromium.executablePath())) {
     throw new Failure(
       `Chromium is missing at ${chromium.executablePath()}`,
@@ -241,7 +292,7 @@ const up = async (instance) => {
     )
   }
 
-  const { SEED_USER, JWT, API_KEY_SECRET } = await import(join(webDir, 'test/fixtures.ts'))
+  const { SEED_USER, JWT, API_KEY_SECRET } = await import('../../../apps/web/test/fixtures.ts')
   const logsDir = join(dataDir, 'logs')
   await rm(dataDir, { recursive: true, force: true })
   await mkdir(logsDir, { recursive: true })
@@ -328,14 +379,14 @@ const up = async (instance) => {
     await stop(state, false)
     await rm(instance.stateFile, { force: true })
     throw new Failure(
-      `up failed, so it stopped what it started: ${error.message}`,
+      `up failed, so it stopped what it started: ${messageOf(error)}`,
       `Read the logs in ${logsDir}, fix the cause, then rerun up`,
     )
   }
   return { ok: true, status: 'started', ...(replaced ? { replaced } : {}), ...state }
 }
 
-const doctor = async (instance) => {
+const doctor = async (instance: Instance) => {
   const { basePort, stateFile } = instance
   const state = await readState(instance)
   if (state === undefined) {
@@ -351,7 +402,7 @@ const doctor = async (instance) => {
   return { ok: failed === undefined, basePort, checks, ...(failed ? { next: failed.next } : {}) }
 }
 
-const down = async (instance, dryRun) => {
+const down = async (instance: Instance, dryRun: boolean) => {
   const { basePort, dataDir, evidenceDir } = instance
   const state = await readState(instance)
   const sessions = state === undefined ? [] : await stop(state, dryRun)
@@ -367,30 +418,33 @@ const down = async (instance, dryRun) => {
   }
 }
 
-const main = async () => {
-  const [command, ...rest] = process.argv.slice(2)
-  if (command === undefined || command === '--help') {
-    return print({ ok: true, usage: 'control-oct.mjs <command> [--help]', commands: COMMANDS })
-  }
-  if (!(command in COMMANDS)) {
-    throw new Failure(
-      `unknown command "${command}"`,
-      `Use one of: ${Object.keys(COMMANDS).join(', ')}`,
-    )
-  }
-  let values
+const parseFlags = (command: CommandName, args: string[]) => {
   try {
-    ;({ values } = parseArgs({
-      args: rest,
+    return parseArgs({
+      args,
       options: {
         'base-port': { type: 'string' },
         help: { type: 'boolean' },
         ...(command === 'down' ? { 'dry-run': { type: 'boolean' } } : {}),
       },
-    }))
+    }).values
   } catch (error) {
-    throw new Failure(error.message, `See ${COMMANDS[command].usage}`)
+    throw new Failure(messageOf(error), `See ${COMMANDS[command].usage}`)
   }
+}
+
+const main = async (): Promise<void> => {
+  const [command, ...rest] = process.argv.slice(2)
+  if (command === undefined || command === '--help') {
+    return print({ ok: true, usage: 'control-oct.ts <command> [--help]', commands: COMMANDS })
+  }
+  if (!isCommandName(command)) {
+    throw new Failure(
+      `unknown command "${command}"`,
+      `Use one of: ${Object.keys(COMMANDS).join(', ')}`,
+    )
+  }
+  const values = parseFlags(command, rest)
   if (values.help) return print({ ok: true, ...COMMANDS[command] })
   const instance = parseInstance(values['base-port'])
   const result =
@@ -403,7 +457,11 @@ const main = async () => {
   if (!result.ok) process.exitCode = 1
 }
 
-main().catch((error) => {
-  print({ ok: false, error: error.message, next: error.next ?? 'Rerun with --help for usage' })
+main().catch((error: unknown) => {
+  print({
+    ok: false,
+    error: messageOf(error),
+    next: error instanceof Failure ? error.next : 'Rerun with --help for usage',
+  })
   process.exitCode = 1
 })
