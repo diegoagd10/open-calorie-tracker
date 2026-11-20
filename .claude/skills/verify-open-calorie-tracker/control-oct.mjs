@@ -1,80 +1,28 @@
 #!/usr/bin/env -S node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON
 import { execFile, spawn } from 'node:child_process'
 import { existsSync, openSync, readFileSync, readdirSync } from 'node:fs'
-import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { mkdir, rm } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parseArgs, promisify } from 'node:util'
+import {
+  COMMANDS,
+  Failure,
+  newState,
+  parseBasePort,
+  paths,
+  readState,
+  writeState,
+} from './model.mjs'
 
 const repo = dirname(fileURLToPath(new URL('../../../package.json', import.meta.url)))
 const apiDir = join(repo, 'apps/api')
 const webDir = join(repo, 'apps/web')
-const DEFAULT_BASE_PORT = 3300
 const READY_TIMEOUT_MS = 60_000
 
-const COMMANDS = {
-  up: {
-    usage: 'control-oct.mjs up [--base-port N]',
-    summary:
-      'Builds the app, starts a seeded API, the web app and a headless Chromium on N, N+1 and N+2, and waits until they are usable. Reports and exits 0 when already up and healthy.',
-  },
-  doctor: {
-    usage: 'control-oct.mjs doctor [--base-port N]',
-    summary:
-      'Read-only. Checks the processes, port ownership, API, web app, seed user login and CDP endpoint of the instance on N.',
-  },
-  down: {
-    usage: 'control-oct.mjs down [--base-port N] [--dry-run]',
-    summary:
-      'Stops every process in the sessions that up started on N and removes its data dir. Keeps the evidence dir. --dry-run lists what it would do.',
-  },
-}
-
-const paths = (basePort) => {
-  const dataDir = join(tmpdir(), `oct-verify-${basePort}`)
-  return {
-    dataDir,
-    stateFile: join(dataDir, 'state.json'),
-    evidenceDir: join(tmpdir(), `oct-verify-${basePort}-evidence`),
-  }
-}
-
-class Failure extends Error {
-  constructor(message, next) {
-    super(message)
-    this.next = next
-  }
-}
-
 const print = (value) => console.log(JSON.stringify(value, null, 2))
-
-const parseBasePort = (value) => {
-  if (value === undefined) return DEFAULT_BASE_PORT
-  const port = Number(value)
-  if (!Number.isInteger(port) || port < 1024 || port > 65_533) {
-    throw new Failure(
-      `--base-port must be an integer from 1024 to 65533, got "${value}"`,
-      'Pass --base-port 3300, or omit it',
-    )
-  }
-  return port
-}
-
-const readState = async (basePort) => {
-  try {
-    return JSON.parse(await readFile(paths(basePort).stateFile, 'utf8'))
-  } catch {
-    return undefined
-  }
-}
-
-const writeState = async (state) => {
-  const { stateFile } = paths(state.basePort)
-  await writeFile(`${stateFile}.tmp`, JSON.stringify(state, null, 2))
-  await rename(`${stateFile}.tmp`, stateFile)
-}
 
 // /proc/<pid>/stat fields after the command name: state, ppid, pgrp, session, ... starttime.
 const procStat = (pid) => {
@@ -324,16 +272,10 @@ const up = async (basePort) => {
     run(['pnpm', 'exec', 'next', 'build'], webDir, {}, buildLog),
   ])
 
-  const state = {
+  const state = newState({
     basePort,
     repo,
-    dataDir,
-    evidenceDir,
-    webUrl: `http://localhost:${basePort}`,
-    apiUrl: `http://localhost:${basePort + 1}`,
-    cdpUrl: `http://127.0.0.1:${basePort + 2}`,
     seedUser: SEED_USER,
-    startedAt: new Date().toISOString(),
     processes: {
       api: start(
         'api',
@@ -379,7 +321,7 @@ const up = async (basePort) => {
         logsDir,
       ),
     },
-  }
+  })
   await writeState(state)
 
   try {

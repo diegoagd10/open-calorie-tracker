@@ -44,7 +44,7 @@ pnpm --filter web exec playwright install chromium
 
 ## State file
 
-`up` writes `/tmp/oct-verify-<N>/state.json` and prints the same state. The script uses `os.tmpdir()`, so `$TMPDIR` moves every path under `/tmp` in this skill. Read the state file to find the instance:
+`up` writes `/tmp/oct-verify-<N>/state.json` and prints the same state. The script uses `os.tmpdir()`, so `$TMPDIR` moves every path under `/tmp` in this skill. Read the state file to find the instance. Its shape is the `State` typedef in `model.mjs`, and `readState(basePort)` there loads it:
 
 ```json
 {
@@ -119,6 +119,7 @@ For most failures, `next` tells you to run `up` again, which replaces the broken
 ## Helpers
 
 - `control-oct.mjs --help` lists the commands. `control-oct.mjs <command> --help` shows one command.
+- `model.mjs` holds the data shapes (state file, process records, check results, command registry) and the helpers that build, read and write them. `control-oct.mjs` holds the process and HTTP work.
 - The script needs Linux. It reads `/proc` and runs `ss`.
 - It resolves `playwright` from `apps/web` with `createRequire`, because pnpm installs it only there. The repo root has no dependency on it.
 - Attach to the running browser with Playwright from `apps/web`. `browser.close()` on a CDP connection disconnects and leaves Chromium running:
