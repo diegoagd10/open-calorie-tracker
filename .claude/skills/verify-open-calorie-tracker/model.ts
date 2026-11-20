@@ -1,9 +1,51 @@
 import { readFile, rename, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { parseArgs } from 'node:util'
+import { type AriaRole, isAriaRole } from './roles.ts'
 
-export type CommandName = 'up' | 'doctor' | 'down'
-export type Command = { usage: string; summary: string }
+export const FLAGS = {
+  'base-port': { type: 'string' },
+  help: { type: 'boolean' },
+  'dry-run': { type: 'boolean' },
+  username: { type: 'string' },
+  password: { type: 'string' },
+  mobile: { type: 'boolean' },
+  body: { type: 'string' },
+} as const
+export type Flag = keyof typeof FLAGS
+
+export type CommandName =
+  | 'up'
+  | 'doctor'
+  | 'down'
+  | 'login'
+  | 'goto'
+  | 'snapshot'
+  | 'click'
+  | 'type'
+  | 'press'
+  | 'screenshot'
+  | 'api'
+// Every command also takes --base-port and --help.
+export type Command = { usage: string; summary: string; flags?: readonly Flag[] }
+
+// An element found by its ARIA role and accessible name, as getByRole finds it.
+export type Target = { role: AriaRole; name: string }
+export const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const
+export type Method = (typeof METHODS)[number]
+
+export type Request = { instance: Instance } & (
+  | { command: 'up' | 'doctor' | 'snapshot' }
+  | { command: 'down'; dryRun: boolean }
+  | { command: 'login'; username: string | undefined; password: string | undefined }
+  | { command: 'goto'; path: string }
+  | { command: 'click'; target: Target }
+  | { command: 'type'; target: Target; text: string }
+  | { command: 'press'; key: string }
+  | { command: 'screenshot'; path: string | undefined; mobile: boolean }
+  | { command: 'api'; method: Method; path: string; body: unknown }
+)
 
 // Everything one --base-port N decides. An instance takes three consecutive ports.
 export type Ports = { web: number; api: number; cdp: number }
@@ -58,6 +100,50 @@ export const COMMANDS: Record<CommandName, Command> = {
     usage: 'control-oct.ts down [--base-port N] [--dry-run]',
     summary:
       'Stops every process in the sessions that up started on N and removes its data dir. Keeps the evidence dir. --dry-run lists what it would do.',
+    flags: ['dry-run'],
+  },
+  login: {
+    usage: 'control-oct.ts login [--username U] [--password P] [--base-port N]',
+    summary:
+      'Clears the cookies and logs in through the /login form, as the seed user by default. Ends on the home page.',
+    flags: ['username', 'password'],
+  },
+  goto: {
+    usage: 'control-oct.ts goto <path> [--base-port N]',
+    summary:
+      'Opens a path of the web app, such as /settings, and waits until the network is quiet. Fails when it lands on /login without a session.',
+  },
+  snapshot: {
+    usage: 'control-oct.ts snapshot [--base-port N]',
+    summary:
+      "Prints the page's URL, title, time zone, locale and accessibility tree, one line per node, as role and accessible name.",
+  },
+  click: {
+    usage: 'control-oct.ts click <role> <name> [--base-port N]',
+    summary:
+      'Clicks the one element with this ARIA role and accessible name: an exact name first, else the one name that contains it. Lists candidates when none or several match.',
+  },
+  type: {
+    usage: 'control-oct.ts type <role> <name> <text> [--base-port N]',
+    summary:
+      "Replaces the value of the field with this role and name with text, like Playwright's fill. Finds the field the way click does.",
+  },
+  press: {
+    usage: 'control-oct.ts press <key> [--base-port N]',
+    summary:
+      'Presses a key on the focused element, by Playwright key name: Enter, Escape, Tab, ArrowDown, Control+A.',
+  },
+  screenshot: {
+    usage: 'control-oct.ts screenshot [path] [--mobile] [--base-port N]',
+    summary:
+      'Saves a PNG of the viewport, by default as <timestamp>.png in the evidence dir. --mobile shoots it at the phone size of the web tests, 390x844 at 3x with touch, then restores the page.',
+    flags: ['mobile'],
+  },
+  api: {
+    usage: 'control-oct.ts api <METHOD> <path> [--body JSON] [--base-port N]',
+    summary:
+      "Calls the API with the browser's session token, as the user login logged in, and prints the status and the parsed body. Exits 0 whatever the status.",
+    flags: ['body'],
   },
 }
 
@@ -66,10 +152,13 @@ export const isCommandName = (value: string): value is CommandName => Object.has
 export class Failure extends Error {
   // What the agent should do instead.
   next: string
+  // Extra fields for the output, such as the candidates for a target that was not found.
+  details: Record<string, unknown>
 
-  constructor(message: string, next: string) {
+  constructor(message: string, next: string, details: Record<string, unknown> = {}) {
     super(message)
     this.next = next
+    this.details = details
   }
 }
 
@@ -187,4 +276,105 @@ export const writeState = async (state: State): Promise<void> => {
   const { stateFile } = instanceAt(state.basePort)
   await writeFile(`${stateFile}.tmp`, JSON.stringify(state, null, 2))
   await rename(`${stateFile}.tmp`, stateFile)
+}
+
+const usage = (command: CommandName) => `See ${COMMANDS[command].usage}`
+
+const parseTarget = (command: CommandName, role: string, name: string): Target => {
+  if (!isAriaRole(role)) {
+    throw new Failure(
+      `"${role}" is not an ARIA role`,
+      'Run snapshot: each line starts with a role, such as button, textbox, link, heading or dialog',
+    )
+  }
+  if (name === '') throw new Failure(`${command} needs a non-empty <name>`, usage(command))
+  return { role, name }
+}
+
+const parsePath = (command: CommandName, path: string): string => {
+  if (!path.startsWith('/') || path.startsWith('//')) {
+    throw new Failure(`<path> must start with one /, got "${path}"`, usage(command))
+  }
+  return path
+}
+
+const parseMethod = (value: string): Method => {
+  const method = METHODS.find((m) => m === value.toUpperCase())
+  if (method === undefined) {
+    throw new Failure(`unknown method "${value}"`, `Use one of: ${METHODS.join(', ')}`)
+  }
+  return method
+}
+
+const parseBody = (value: string | undefined): unknown => {
+  if (value === undefined) return undefined
+  try {
+    return JSON.parse(value)
+  } catch (error) {
+    throw new Failure(
+      `--body is not JSON: ${error instanceof Error ? error.message : String(error)}`,
+      `Quote it for the shell, e.g. --body '{"amount": 8}'`,
+    )
+  }
+}
+
+// Parses the arguments after the command name. Returns undefined for --help.
+export const parseRequest = (command: CommandName, args: string[]): Request | undefined => {
+  let parsed
+  try {
+    parsed = parseArgs({ args, options: FLAGS, allowPositionals: true })
+  } catch (error) {
+    throw new Failure(error instanceof Error ? error.message : String(error), usage(command))
+  }
+  const { values, positionals } = parsed
+  if (values.help) return undefined
+  const allowed = new Set<string>(['base-port', 'help', ...(COMMANDS[command].flags ?? [])])
+  const foreign = Object.keys(values).filter((flag) => !allowed.has(flag))
+  if (foreign.length > 0) {
+    throw new Failure(`${command} does not take --${foreign.join(', --')}`, usage(command))
+  }
+  const instance = parseInstance(values['base-port'])
+  const wrongArity = () =>
+    new Failure(`wrong arguments: ${JSON.stringify(positionals)}`, usage(command))
+  const [first, second, third, ...extra] = positionals
+  const none = first === undefined
+  switch (command) {
+    case 'up':
+    case 'doctor':
+    case 'snapshot':
+      if (!none) throw wrongArity()
+      return { instance, command }
+    case 'down':
+      if (!none) throw wrongArity()
+      return { instance, command, dryRun: values['dry-run'] === true }
+    case 'login':
+      if (!none) throw wrongArity()
+      return { instance, command, username: values.username, password: values.password }
+    case 'goto':
+      if (first === undefined || second !== undefined) throw wrongArity()
+      return { instance, command, path: parsePath(command, first) }
+    case 'click':
+      if (first === undefined || second === undefined || third !== undefined) throw wrongArity()
+      return { instance, command, target: parseTarget(command, first, second) }
+    case 'type':
+      if (first === undefined || second === undefined || third === undefined || extra.length > 0) {
+        throw wrongArity()
+      }
+      return { instance, command, target: parseTarget(command, first, second), text: third }
+    case 'press':
+      if (first === undefined || second !== undefined) throw wrongArity()
+      return { instance, command, key: first }
+    case 'screenshot':
+      if (second !== undefined) throw wrongArity()
+      return { instance, command, path: first, mobile: values.mobile === true }
+    case 'api':
+      if (first === undefined || second === undefined || third !== undefined) throw wrongArity()
+      return {
+        instance,
+        command,
+        method: parseMethod(first),
+        path: parsePath(command, second),
+        body: parseBody(values.body),
+      }
+  }
 }
