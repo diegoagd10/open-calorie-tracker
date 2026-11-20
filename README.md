@@ -26,7 +26,7 @@ pnpm --filter @open-calorie-tracker/shared dev   # only when editing packages/sh
 ## Code quality ([Vite+](https://viteplus.dev))
 
 ```bash
-pnpm check      # format + lint + type check
+pnpm check      # TypeScript-only rule + format + lint + type check
 pnpm check:fix  # same, auto-fixing format and lint issues
 pnpm lint       # vp lint (Oxlint)
 pnpm fmt        # vp fmt (Oxfmt)
