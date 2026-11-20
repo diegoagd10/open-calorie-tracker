@@ -12,6 +12,7 @@ export const FLAGS = {
   password: { type: 'string' },
   mobile: { type: 'boolean' },
   body: { type: 'string' },
+  nth: { type: 'string' },
 } as const
 export type Flag = keyof typeof FLAGS
 
@@ -30,8 +31,9 @@ export type CommandName =
 // Every command also takes --base-port and --help.
 export type Command = { usage: string; summary: string; flags?: readonly Flag[] }
 
-// An element found by its ARIA role and accessible name, as getByRole finds it.
-export type Target = { role: AriaRole; name: string }
+// An element found by its ARIA role and accessible name, as getByRole finds it. nth picks one of
+// several matches, from 0 in page order.
+export type Target = { role: AriaRole; name: string; nth: number | undefined }
 export const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const
 export type Method = (typeof METHODS)[number]
 
@@ -119,14 +121,16 @@ export const COMMANDS: Record<CommandName, Command> = {
       "Prints the page's URL, title, time zone, locale and accessibility tree, one line per node, as role and accessible name.",
   },
   click: {
-    usage: 'control-oct.ts click <role> <name> [--base-port N]',
+    usage: 'control-oct.ts click <role> <name> [--nth I] [--base-port N]',
     summary:
-      'Clicks the one element with this ARIA role and accessible name: an exact name first, else the one name that contains it. Lists candidates when none or several match.',
+      'Clicks the one element with this ARIA role and accessible name: an exact name first, else the one name that contains it. Lists candidates when none or several match. --nth I clicks the I-th of several matches, from 0 in page order.',
+    flags: ['nth'],
   },
   type: {
-    usage: 'control-oct.ts type <role> <name> <text> [--base-port N]',
+    usage: 'control-oct.ts type <role> <name> <text> [--nth I] [--base-port N]',
     summary:
-      "Replaces the value of the field with this role and name with text, like Playwright's fill. Finds the field the way click does.",
+      "Replaces the value of the field with this role and name with text, like Playwright's fill. Finds the field the way click does, --nth included.",
+    flags: ['nth'],
   },
   press: {
     usage: 'control-oct.ts press <key> [--base-port N]',
@@ -280,7 +284,21 @@ export const writeState = async (state: State): Promise<void> => {
 
 const usage = (command: CommandName) => `See ${COMMANDS[command].usage}`
 
-const parseTarget = (command: CommandName, role: string, name: string): Target => {
+const parseNth = (command: CommandName, value: string | undefined): number | undefined => {
+  if (value === undefined) return undefined
+  const nth = Number(value)
+  if (!/^\d+$/.test(value) || !Number.isSafeInteger(nth)) {
+    throw new Failure(`--nth must be an integer from 0, got "${value}"`, usage(command))
+  }
+  return nth
+}
+
+const parseTarget = (
+  command: CommandName,
+  role: string,
+  name: string,
+  nth: string | undefined,
+): Target => {
   if (!isAriaRole(role)) {
     throw new Failure(
       `"${role}" is not an ARIA role`,
@@ -288,7 +306,7 @@ const parseTarget = (command: CommandName, role: string, name: string): Target =
     )
   }
   if (name === '') throw new Failure(`${command} needs a non-empty <name>`, usage(command))
-  return { role, name }
+  return { role, name, nth: parseNth(command, nth) }
 }
 
 const parsePath = (command: CommandName, path: string): string => {
@@ -355,12 +373,17 @@ export const parseRequest = (command: CommandName, args: string[]): Request | un
       return { instance, command, path: parsePath(command, first) }
     case 'click':
       if (first === undefined || second === undefined || third !== undefined) throw wrongArity()
-      return { instance, command, target: parseTarget(command, first, second) }
+      return { instance, command, target: parseTarget(command, first, second, values.nth) }
     case 'type':
       if (first === undefined || second === undefined || third === undefined || extra.length > 0) {
         throw wrongArity()
       }
-      return { instance, command, target: parseTarget(command, first, second), text: third }
+      return {
+        instance,
+        command,
+        target: parseTarget(command, first, second, values.nth),
+        text: third,
+      }
     case 'press':
       if (first === undefined || second !== undefined) throw wrongArity()
       return { instance, command, key: first }

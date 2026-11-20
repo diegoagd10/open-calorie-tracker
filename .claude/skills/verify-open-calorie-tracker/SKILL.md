@@ -117,8 +117,8 @@ The drive commands act on one page, the first tab of Chromium's default context.
 | `login [--username U] [--password P]` | Clears the cookies and logs in through the `/login` form. The default is the seed user. Ends on `/`. |
 | `goto <path>`                         | Opens a path of the web app. Fails when it lands on `/login` and the browser has no session.         |
 | `snapshot`                            | Prints `url`, `title`, `timeZone`, `locale` and `aria`, the accessibility tree, one line per node.   |
-| `click <role> <name>`                 | Clicks the element with this ARIA role and accessible name.                                          |
-| `type <role> <name> <text>`           | Replaces the value of the field with `text`, like Playwright's `fill`.                               |
+| `click <role> <name> [--nth I]`       | Clicks the element with this ARIA role and accessible name.                                          |
+| `type <role> <name> <text> [--nth I]` | Replaces the value of the field with `text`, like Playwright's `fill`.                               |
 | `press <key>`                         | Presses a key on the focused element: `Enter`, `Escape`, `Tab`, `ArrowDown`, `Control+A`.            |
 | `screenshot [path] [--mobile]`        | Saves a PNG of the viewport. The default path is `<evidenceDir>/<timestamp>.png`.                    |
 | `api <METHOD> <path> [--body JSON]`   | Calls the API as the logged-in user and prints `status` and the parsed `body`.                       |
@@ -140,16 +140,20 @@ $C screenshot --mobile
 
 ### Targets
 
-Read the role and the name from a `snapshot` line. `- button "Add water"` is `click button "Add water"`. An open modal dialog hides the rest of the page, so only the dialog's elements match. A name matches exactly first, then case-insensitively as a substring, and the command acts only when one element matches. `click button "Glass"` clicks `button "Glass 8 fl oz → 8 today"`. When no element or several elements match, the command fails with `candidates`:
+Read the role and the name from a `snapshot` line. `- button "Add water"` is `click button "Add water"`. A name matches exactly first, then case-insensitively as a substring, and the command acts only when one element matches. `click button "Glass"` clicks `button "Glass 8 fl oz → 8 today"`. When no element or several elements match, the command fails with `candidates`:
 
 ```json
 {
   "ok": false,
   "error": "2 elements match button \"week\"",
-  "next": "Pass the full name of one candidate. A name matches by substring only when no name is exact",
+  "next": "Pass the full name of one candidate, or --nth I for the I-th candidate, from 0. A name matches by substring only when no name is exact",
   "candidates": ["button \"Previous week\"", "button \"Next week\""]
 }
 ```
+
+When several elements share the exact name, `--nth I` picks the I-th candidate, from 0 in page order. On `/weight` without a weight goal, the header and the notice both have `link "Settings"`, and `click link "Settings" --nth 1` clicks the notice's link.
+
+A modal dialog leaves the page behind it inert. While one is open, `click` and `type` look only inside the last dialog opened, and a miss fails with `no <target> in the open dialog "<name>"`. `snapshot` still prints the whole page. In the Change password dialog, `click button "Change password"` clicks the dialog's submit button, not the button in Profile that opened it.
 
 Selectors that the web tests use: `button "Log in"` on `/login`, `button "Add water"`, `button "Add food"`, `dialog "Add water"`, `textbox "Amount (fl oz)"`, `link "Weight"`, `link "Settings"` and `button "Log out"`.
 
@@ -164,6 +168,10 @@ Selectors that the web tests use: `button "Log in"` on `/login`, `button "Add wa
 - `GET /v1/daily-log?date=YYYY-MM-DD&timeZone=America/New_York` lists the day's food and water entries, totals and goals.
 - `GET /v1/settings/profile`, `GET /v1/settings/daily-goals` and `GET /v1/settings/weight-goal` read the settings.
 - `POST /v1/water-entries --body '{"amount": 8}'` writes through the API. Use it for setup only. A proof writes through the UI.
+
+## Feature map
+
+Before you verify a feature, read [`features/README.md`](features/README.md) and follow the file for that feature. Each file lists the feature's entry points and a block of commands, run on a fresh `up`, that ends in a screenshot and an `api` read that prove it works. When a change adds, renames or removes a route, label or flow, update its file in the same change and run its block again. `/pstack:maintain-verification-skill` checks the map against the app.
 
 ## Evidence
 
