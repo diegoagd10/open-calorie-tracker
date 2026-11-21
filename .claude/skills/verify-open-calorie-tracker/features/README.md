@@ -5,13 +5,14 @@ This directory is the maintained source for verifying the user-facing behavior o
 ## Baseline preconditions
 
 - Run every block from the repo root.
-- Start each feature from its own instance. Run `control-oct.ts down`, then `control-oct.ts up`. `up` takes about 5 seconds once the builds exist.
-- The instance runs on base port 3300. Its seed user is `ana` with the password `correct-horse-battery-staple`, and it has no entries, goals beyond the defaults, serving sizes, or API keys.
+- Set `OCT_URL` to the instance's web URL and export it, or leave it unset for `http://localhost:3000`. Every block then drives that instance unchanged, whether `up` or `up --docker` started it.
+- Start each feature from its own instance. Run `control-oct.ts down`, then `control-oct.ts up` (add `--docker` for the production images). A local `up` takes about 5 seconds once the builds exist, and `up --docker` about 40 seconds with a warm Docker build cache.
+- The instance Its seed user is `ana` with the password `correct-horse-battery-staple`, and it has no entries, goals beyond the defaults, serving sizes, or API keys.
 - `doctor` must pass before a block starts.
 
 ## Driving conventions
 
-- Every block sets `C` to the script and `E` to the evidence dir, `/tmp/oct-verify-3300-evidence`.
+- Every block sets `C` to the script. `screenshot <name>.png` writes into the evidence dir, `/tmp/oct-verify-<port>-evidence`, which `doctor` prints as `evidenceDir`.
 - Every block sets `TODAY` to the date in America/New_York, the time zone of the instance's Chromium. Compute other days from it the same way.
 - Run a block as written, line by line, in one shell. A line that ends in `# exits 1` is a check that must fail.
 - Read each target from a `snapshot` line, as `<role> "<name>"`. Log entries are named with their time, such as `button "Water, 16 fl oz, 5:06 PM"`, so target them by the part before the time.

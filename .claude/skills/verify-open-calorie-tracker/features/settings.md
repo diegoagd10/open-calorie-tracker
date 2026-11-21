@@ -24,7 +24,6 @@ Preconditions:
 
 ```bash
 C=.claude/skills/verify-open-calorie-tracker/control-oct.ts
-E=/tmp/oct-verify-3300-evidence
 TODAY=$(TZ=America/New_York date +%F)
 $C login
 $C click link "Settings"                # url /settings; textbox "Username" [disabled]: ana
@@ -38,18 +37,18 @@ $C click radio "30 days"
 $C click button "Create key"            # dialog "Key created": textbox "Your API key" holds the full key
 $C click button "Done"                  # list "API keys": "Shortcuts New", "Never used"
 KEY=$($C api GET /v1/settings/api-keys | node -e 'let s = ""; process.stdin.on("data", (d) => (s += d)).on("end", () => console.log(JSON.parse(s).body[0].key))')
-curl -s -X POST http://localhost:3301/v1/token -H 'Content-Type: application/json' -d "{\"apiKey\": \"$KEY\"}" -o /dev/null -w '%{http_code}\n'   # 200: an app traded the key for a token
+$C api POST /v1/token --body "{\"apiKey\": \"$KEY\"}"   # status 200: an app traded the key for a token
 $C goto /settings
 $C snapshot                             # "Created today · Last used just now · Expires <date>"
 $C click button "Revoke"
 $C click button "Revoke key"            # "No API keys yet"
-curl -s -X POST http://localhost:3301/v1/token -H 'Content-Type: application/json' -d "{\"apiKey\": \"$KEY\"}" -o /dev/null -w '%{http_code}\n'   # 401: the revoked key is refused
+$C api POST /v1/token --body "{\"apiKey\": \"$KEY\"}"   # status 401: the revoked key is refused
 $C click button "Change password"
 $C type textbox "Current password" correct-horse-battery-staple
 $C type textbox "New password" battery-horse-staple-2
 $C type textbox "Confirm new password" battery-horse-staple-2
 $C click button "Change password"       # the dialog closes; Profile has status "Password changed."
-$C screenshot $E/settings.png
+$C screenshot settings.png
 $C login                                # exits 1: login as ana failed: Invalid username or password
 $C login --password battery-horse-staple-2
 $C snapshot                             # Food Log: Water "0 fl oz / 80 fl oz"

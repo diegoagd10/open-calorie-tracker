@@ -27,14 +27,14 @@ const liveState = async (instance: Instance, repo: string): Promise<State> => {
   const state = await readState(instance)
   if (state === undefined) {
     throw new Failure(
-      `no instance runs on base port ${instance.basePort}`,
-      `Run up --base-port ${instance.basePort}`,
+      `no instance runs for ${instance.urls.web}`,
+      `Run up --url ${instance.urls.web}, or up --docker --url ${instance.urls.web}`,
     )
   }
   if (state.repo !== repo) {
     throw new Failure(
-      `base port ${instance.basePort} runs ${state.repo}, not this checkout`,
-      `Drive it from ${state.repo}, or run up here with another --base-port`,
+      `${instance.urls.web} runs ${state.repo}, not this checkout`,
+      `Drive it from ${state.repo}, or run up here with another --url`,
     )
   }
   return state
@@ -57,7 +57,7 @@ const withPage = async <T>(
   } catch (error) {
     throw new Failure(
       `cannot attach to Chromium at ${state.cdpUrl}: ${messageOf(error).split('\n')[0]}`,
-      `Run doctor --base-port ${state.basePort}`,
+      `Run doctor --url ${state.webUrl}`,
     )
   }
   try {
@@ -112,7 +112,7 @@ const sessionToken = async (page: Page, state: State): Promise<string | undefine
 const noSession = (state: State) =>
   new Failure(
     'the browser has no session',
-    `Run login --base-port ${state.basePort}, as the seed user or with --username and --password`,
+    `Run login --url ${state.webUrl}, as the seed user or with --username and --password`,
   )
 
 // oxlint-disable-next-line local/no-comments
@@ -122,7 +122,7 @@ const actionFailure = (error: unknown, state: State): Failure =>
     ? error
     : new Failure(
         messageOf(error).split('\n')[0] ?? 'the action failed',
-        `Run snapshot --base-port ${state.basePort} to see the page`,
+        `Run snapshot --url ${state.webUrl} to see the page`,
       )
 
 const describe = async (locator: Locator): Promise<string> =>
@@ -280,7 +280,7 @@ export const screenshot = (
 ) =>
   withPage(instance, repo, async (page, state) => {
     const stamp = new Date().toISOString().replaceAll(':', '-')
-    const file = resolve(path ?? join(state.evidenceDir, `${stamp}${mobile ? '-mobile' : ''}.png`))
+    const file = resolve(state.evidenceDir, path ?? `${stamp}${mobile ? '-mobile' : ''}.png`)
     await mkdir(dirname(file), { recursive: true })
     const cdp = await page.context().newCDPSession(page)
     try {

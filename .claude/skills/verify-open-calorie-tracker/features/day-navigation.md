@@ -23,7 +23,6 @@ Preconditions:
 
 ```bash
 C=.claude/skills/verify-open-calorie-tracker/control-oct.ts
-E=/tmp/oct-verify-3300-evidence
 TODAY=$(TZ=America/New_York date +%F)
 WEEK_AGO=$(TZ=America/New_York date -d '-7 days' +%F)
 LAST_MONDAY=$(TZ=America/New_York date -d "-$(( $(TZ=America/New_York date +%u) + 6 )) days" +%F)
@@ -39,7 +38,7 @@ $C type textbox "Calories per serving" 120
 $C click button "Add 120 kcal"
 $C snapshot                             # Calories 120 / 1,600 kcal, Water 16 fl oz / 64 fl oz, Entries "Toast, 120 kcal" and "Water, 16 fl oz"
 $C press Home                           # scrolls back to the week strip
-$C screenshot $E/day-navigation.png
+$C screenshot day-navigation.png
 $C click button "Today"                 # "· This week"; contentinfo "Food Log date $TODAY"; "No entries for this day"
 $C click button "Next week"             # "· Next week"; the footer names today's weekday a week ahead
 $C click button "Today"                 # contentinfo "Food Log date $TODAY" again

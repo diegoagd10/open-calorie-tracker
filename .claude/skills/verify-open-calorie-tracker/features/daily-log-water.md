@@ -23,7 +23,6 @@ Preconditions:
 
 ```bash
 C=.claude/skills/verify-open-calorie-tracker/control-oct.ts
-E=/tmp/oct-verify-3300-evidence
 TODAY=$(TZ=America/New_York date +%F)
 $C login
 $C click button "Add water"
@@ -41,7 +40,7 @@ $C click button "Delete"
 $C click button "Delete 8 fl oz"        # both dialogs close
 $C snapshot                             # Water 16 fl oz / 64 fl oz; Entries has only "Water, 16 fl oz"
 $C api GET "/v1/daily-log?date=$TODAY&timeZone=America/New_York"   # one entry {type: water, amount: 16}, totals.water 16
-$C screenshot $E/daily-log-water.png
+$C screenshot daily-log-water.png
 ```
 
 End state that proves it works:
