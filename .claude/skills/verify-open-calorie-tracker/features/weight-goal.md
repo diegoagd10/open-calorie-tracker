@@ -26,13 +26,12 @@ Preconditions:
 
 ```bash
 C=.claude/skills/verify-open-calorie-tracker/control-oct.ts
-E=/tmp/oct-verify-3300-evidence
 TODAY=$(TZ=America/New_York date +%F)
 WEEK_AGO=$(TZ=America/New_York date -d '-7 days' +%F)
 $C login
 $C click link "Weight"                  # url /weight
 $C snapshot                             # the notice "Set your starting and goal weight in Settings", tiles "—", "No weigh-ins yet"
-$C screenshot $E/weight-goal-before.png
+$C screenshot weight-goal-before.png
 $C click link "Settings" --nth 1        # the notice's link, after the header's: url /settings#weight-goal-heading
 $C type textbox "Starting weight" 180
 $C type textbox "Goal weight" 165
@@ -43,8 +42,8 @@ $C click link "Weight"
 $C type textbox "Today's weight" 176.4
 $C click button "Save"
 $C snapshot                             # "Saved today", Current 176.4 lb, Lost 3.6 lb, To go 11.4 lb, Progress 24%
-$C screenshot $E/weight-goal-after.png
-$C screenshot $E/weight-goal-after-mobile.png --mobile
+$C screenshot weight-goal-after.png
+$C screenshot weight-goal-after-mobile.png --mobile
 $C type textbox "Today's weight" 175.2
 $C click button "Save"
 $C api GET /v1/weight-history           # one entry for $TODAY, weight 175.2: the second save replaced the first
@@ -56,7 +55,7 @@ $C type textbox "Today's weight" 164
 $C click button "Save"
 $C snapshot                             # "Goal reached", To go 0 lb, Progress 100%
 $C api GET /v1/weight-history           # entries $WEEK_AGO 181 and $TODAY 164, goal 180 to 165, stats.progress 100
-$C screenshot $E/weight-goal-reached.png
+$C screenshot weight-goal-reached.png
 ```
 
 End state that proves it works:

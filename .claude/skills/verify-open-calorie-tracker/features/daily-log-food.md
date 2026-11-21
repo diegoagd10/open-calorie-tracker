@@ -26,7 +26,6 @@ Preconditions:
 
 ```bash
 C=.claude/skills/verify-open-calorie-tracker/control-oct.ts
-E=/tmp/oct-verify-3300-evidence
 TODAY=$(TZ=America/New_York date +%F)
 $C login
 $C click button "Add food"
@@ -54,7 +53,7 @@ $C click button "Delete 105 kcal"
 $C snapshot                             # Calories 150 / 1,600 kcal, Protein 12 / 120 g; Entries has only "Greek yogurt, 150 kcal" with "cup × 1"
 $C api GET "/v1/daily-log?date=$TODAY&timeZone=America/New_York"   # one entry: Greek yogurt, servingSize cup, quantity 1, calories 150, protein 12
 $C api GET /v1/serving-sizes            # [{name: cup}]
-$C screenshot $E/daily-log-food.png
+$C screenshot daily-log-food.png
 ```
 
 End state that proves it works:

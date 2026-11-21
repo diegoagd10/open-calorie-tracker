@@ -5,7 +5,8 @@ import { parseArgs } from 'node:util'
 import { type AriaRole, isAriaRole } from './roles.ts'
 
 export const FLAGS = {
-  'base-port': { type: 'string' },
+  url: { type: 'string' },
+  docker: { type: 'boolean' },
   help: { type: 'boolean' },
   'dry-run': { type: 'boolean' },
   username: { type: 'string' },
@@ -20,6 +21,7 @@ export type CommandName =
   | 'up'
   | 'doctor'
   | 'down'
+  | 'reset'
   | 'login'
   | 'goto'
   | 'snapshot'
@@ -35,7 +37,8 @@ export const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const
 export type Method = (typeof METHODS)[number]
 
 export type Request = { instance: Instance } & (
-  | { command: 'up' | 'doctor' | 'snapshot' }
+  | { command: 'up'; docker: boolean }
+  | { command: 'doctor' | 'reset' | 'snapshot' }
   | { command: 'down'; dryRun: boolean }
   | { command: 'login'; username: string | undefined; password: string | undefined }
   | { command: 'goto'; path: string }
@@ -49,7 +52,8 @@ export type Request = { instance: Instance } & (
 export type Ports = { web: number; api: number; cdp: number }
 export type Urls = { web: string; api: string; cdp: string }
 export type Instance = {
-  basePort: number
+  webPort: number
+  project: string
   ports: Ports
   urls: Urls
   dataDir: string
@@ -60,9 +64,11 @@ export type Instance = {
 export type ProcessIdentity = { sid: number; startTime: string | undefined }
 export type ProcessRecord = ProcessIdentity & { port: number; log: string }
 export type ProcessName = 'api' | 'web' | 'browser'
+export type App = 'local' | 'docker'
+export const APPS: readonly App[] = ['local', 'docker']
 
 export type State = {
-  basePort: number
+  app: App
   repo: string
   dataDir: string
   evidenceDir: string
@@ -71,74 +77,80 @@ export type State = {
   cdpUrl: string
   seedUser: { username: string; password: string }
   startedAt: string
-  processes: Record<ProcessName, ProcessRecord>
+  processes: Partial<Record<ProcessName, ProcessRecord>>
 }
 
 export type Check = { name: string; ok: boolean; detail?: string; next?: string }
 
-export const DEFAULT_BASE_PORT = 3300
+export const DEFAULT_URL = 'http://localhost:3000'
 const PORT_OFFSETS: Ports = { web: 0, api: 1, cdp: 2 }
-const MIN_BASE_PORT = 1024
-const MAX_BASE_PORT = 65_535 - Math.max(...Object.values(PORT_OFFSETS))
+const MIN_PORT = 1024
+const MAX_PORT = 65_535 - Math.max(...Object.values(PORT_OFFSETS))
 
 export const COMMANDS: Record<CommandName, Command> = {
   up: {
-    usage: 'control-oct.ts up [--base-port N]',
+    usage: 'control-oct.ts up [--docker] [--url URL]',
     summary:
-      'Builds the app, starts a seeded API, the web app and a headless Chromium on N, N+1 and N+2, and waits until they are usable. Reports and exits 0 when already up and healthy.',
+      "Builds the app, starts a seeded API, the web app and a headless Chromium on the URL's port P, P+1 and P+2, and waits until they are usable. --docker runs the API and the web app from the production images instead of this checkout. Reports and exits 0 when already up and healthy.",
+    flags: ['docker'],
   },
   doctor: {
-    usage: 'control-oct.ts doctor [--base-port N]',
+    usage: 'control-oct.ts doctor [--url URL]',
     summary:
-      'Read-only. Checks the processes, port ownership, API, web app, seed user login and CDP endpoint of the instance on N.',
+      'Read-only. Checks the processes or containers, port ownership, API, web app, seed user login and CDP endpoint of the instance on URL.',
   },
   down: {
-    usage: 'control-oct.ts down [--base-port N] [--dry-run]',
+    usage: 'control-oct.ts down [--url URL] [--dry-run]',
     summary:
-      'Stops every process in the sessions that up started on N and removes its data dir. Keeps the evidence dir. --dry-run lists what it would do.',
+      'Stops every process and container that up started for URL and removes its data dir and volumes. Keeps the evidence dir. --dry-run lists what it would do.',
     flags: ['dry-run'],
   },
+  reset: {
+    usage: 'control-oct.ts reset [--url URL]',
+    summary:
+      "Deletes every user of the instance, and with them every entry, goal and key, with the API's db:reset script. Setup for the first-account flow.",
+  },
   login: {
-    usage: 'control-oct.ts login [--username U] [--password P] [--base-port N]',
+    usage: 'control-oct.ts login [--username U] [--password P] [--url URL]',
     summary:
       'Clears the cookies and logs in through the /login form, as the seed user by default. Ends on the home page.',
     flags: ['username', 'password'],
   },
   goto: {
-    usage: 'control-oct.ts goto <path> [--base-port N]',
+    usage: 'control-oct.ts goto <path> [--url URL]',
     summary:
       'Opens a path of the web app, such as /settings, and waits until the network is quiet. Fails when it lands on /login without a session.',
   },
   snapshot: {
-    usage: 'control-oct.ts snapshot [--base-port N]',
+    usage: 'control-oct.ts snapshot [--url URL]',
     summary:
       "Prints the page's URL, title, time zone, locale and accessibility tree, one line per node, as role and accessible name.",
   },
   click: {
-    usage: 'control-oct.ts click <role> <name> [--nth I] [--base-port N]',
+    usage: 'control-oct.ts click <role> <name> [--nth I] [--url URL]',
     summary:
       'Clicks the one element with this ARIA role and accessible name: an exact name first, else the one name that contains it. Lists candidates when none or several match. --nth I clicks the I-th of several matches, from 0 in page order.',
     flags: ['nth'],
   },
   type: {
-    usage: 'control-oct.ts type <role> <name> <text> [--nth I] [--base-port N]',
+    usage: 'control-oct.ts type <role> <name> <text> [--nth I] [--url URL]',
     summary:
       "Replaces the value of the field with this role and name with text, like Playwright's fill. Finds the field the way click does, --nth included.",
     flags: ['nth'],
   },
   press: {
-    usage: 'control-oct.ts press <key> [--base-port N]',
+    usage: 'control-oct.ts press <key> [--url URL]',
     summary:
       'Presses a key on the focused element, by Playwright key name: Enter, Escape, Tab, ArrowDown, Control+A.',
   },
   screenshot: {
-    usage: 'control-oct.ts screenshot [path] [--mobile] [--base-port N]',
+    usage: 'control-oct.ts screenshot [path] [--mobile] [--url URL]',
     summary:
-      'Saves a PNG of the viewport, by default as <timestamp>.png in the evidence dir. --mobile shoots it at the phone size of the web tests, 390x844 at 3x with touch, then restores the page.',
+      'Saves a PNG of the viewport, by default as <timestamp>.png in the evidence dir. A relative path is relative to the evidence dir. --mobile shoots it at the phone size of the web tests, 390x844 at 3x with touch, then restores the page.',
     flags: ['mobile'],
   },
   api: {
-    usage: 'control-oct.ts api <METHOD> <path> [--body JSON] [--base-port N]',
+    usage: 'control-oct.ts api <METHOD> <path> [--body JSON] [--url URL]',
     summary:
       "Calls the API with the browser's session token, as the user login logged in, and prints the status and the parsed body. Exits 0 whatever the status.",
     flags: ['body'],
@@ -158,11 +170,12 @@ export class Failure extends Error {
   }
 }
 
-export const instanceAt = (basePort: number): Instance => {
-  const port = (name: keyof Ports) => basePort + PORT_OFFSETS[name]
-  const dataDir = join(tmpdir(), `oct-verify-${basePort}`)
+export const instanceAt = (webPort: number): Instance => {
+  const port = (name: keyof Ports) => webPort + PORT_OFFSETS[name]
+  const dataDir = join(tmpdir(), `oct-verify-${webPort}`)
   return {
-    basePort,
+    webPort,
+    project: `oct-verify-${webPort}`,
     ports: { web: port('web'), api: port('api'), cdp: port('cdp') },
     urls: {
       web: `http://localhost:${port('web')}`,
@@ -171,27 +184,38 @@ export const instanceAt = (basePort: number): Instance => {
     },
     dataDir,
     stateFile: join(dataDir, 'state.json'),
-    evidenceDir: join(tmpdir(), `oct-verify-${basePort}-evidence`),
+    evidenceDir: join(tmpdir(), `oct-verify-${webPort}-evidence`),
   }
 }
 
-export const parseInstance = (value: string | undefined): Instance => {
-  if (value === undefined) return instanceAt(DEFAULT_BASE_PORT)
-  const basePort = Number(value)
-  if (!Number.isInteger(basePort) || basePort < MIN_BASE_PORT || basePort > MAX_BASE_PORT) {
-    throw new Failure(
-      `--base-port must be an integer from ${MIN_BASE_PORT} to ${MAX_BASE_PORT}, got "${value}"`,
-      `Pass --base-port ${DEFAULT_BASE_PORT}, or omit it`,
+export const parseInstance = (value: string): Instance => {
+  const bad = (why: string) =>
+    new Failure(
+      `the app URL "${value}" ${why}`,
+      `Pass --url or set OCT_URL to http://localhost:<port>, a port from ${MIN_PORT} to ${MAX_PORT}; the default is ${DEFAULT_URL}`,
     )
+  let url
+  try {
+    url = new URL(value)
+  } catch {
+    throw bad('is not a URL')
   }
-  return instanceAt(basePort)
+  if (url.protocol !== 'http:' || !['localhost', '127.0.0.1'].includes(url.hostname)) {
+    throw bad('is not on http://localhost')
+  }
+  if (url.pathname !== '/' || url.search !== '' || url.hash !== '') throw bad('has a path')
+  const webPort = Number(url.port)
+  if (url.port === '' || webPort < MIN_PORT || webPort > MAX_PORT) {
+    throw bad(`needs a port from ${MIN_PORT} to ${MAX_PORT}`)
+  }
+  return instanceAt(webPort)
 }
 
 export const newState = (
   instance: Instance,
-  { repo, seedUser, processes }: Pick<State, 'repo' | 'seedUser' | 'processes'>,
+  { app, repo, seedUser, processes }: Pick<State, 'app' | 'repo' | 'seedUser' | 'processes'>,
 ): State => ({
-  basePort: instance.basePort,
+  app,
   repo,
   dataDir: instance.dataDir,
   evidenceDir: instance.evidenceDir,
@@ -217,7 +241,10 @@ const string = (value: unknown) => (typeof value === 'string' ? value : invalid(
 const integer = (value: unknown) =>
   typeof value === 'number' && Number.isInteger(value) ? value : invalid()
 
-const processRecord = (value: unknown): ProcessRecord => {
+const app = (value: unknown) => APPS.find((a) => a === value) ?? invalid()
+
+const processRecord = (value: unknown): ProcessRecord | undefined => {
+  if (value === undefined) return undefined
   const { sid, startTime, port, log } = object(value)
   return {
     sid: integer(sid),
@@ -230,7 +257,7 @@ const processRecord = (value: unknown): ProcessRecord => {
 export const parseState = (text: string): State | undefined => {
   try {
     const {
-      basePort,
+      app: kind,
       repo,
       dataDir,
       evidenceDir,
@@ -243,8 +270,13 @@ export const parseState = (text: string): State | undefined => {
     } = object(JSON.parse(text))
     const { username, password } = object(seedUser)
     const { api, web, browser } = object(processes)
+    const records = {
+      api: processRecord(api),
+      web: processRecord(web),
+      browser: processRecord(browser),
+    }
     return {
-      basePort: integer(basePort),
+      app: app(kind),
       repo: string(repo),
       dataDir: string(dataDir),
       evidenceDir: string(evidenceDir),
@@ -253,11 +285,7 @@ export const parseState = (text: string): State | undefined => {
       cdpUrl: string(cdpUrl),
       seedUser: { username: string(username), password: string(password) },
       startedAt: string(startedAt),
-      processes: {
-        api: processRecord(api),
-        web: processRecord(web),
-        browser: processRecord(browser),
-      },
+      processes: Object.fromEntries(Object.entries(records).filter(([, r]) => r !== undefined)),
     }
   } catch {
     return undefined
@@ -268,7 +296,7 @@ export const readState = (instance: Instance): Promise<State | undefined> =>
   readFile(instance.stateFile, 'utf8').then(parseState, () => undefined)
 
 export const writeState = async (state: State): Promise<void> => {
-  const { stateFile } = instanceAt(state.basePort)
+  const stateFile = join(state.dataDir, 'state.json')
   await writeFile(`${stateFile}.tmp`, JSON.stringify(state, null, 2))
   await rename(`${stateFile}.tmp`, stateFile)
 }
@@ -336,19 +364,22 @@ export const parseRequest = (command: CommandName, args: string[]): Request | un
   }
   const { values, positionals } = parsed
   if (values.help) return undefined
-  const allowed = new Set<string>(['base-port', 'help', ...(COMMANDS[command].flags ?? [])])
+  const allowed = new Set<string>(['url', 'help', ...(COMMANDS[command].flags ?? [])])
   const foreign = Object.keys(values).filter((flag) => !allowed.has(flag))
   if (foreign.length > 0) {
     throw new Failure(`${command} does not take --${foreign.join(', --')}`, usage(command))
   }
-  const instance = parseInstance(values['base-port'])
+  const instance = parseInstance(values.url ?? process.env['OCT_URL'] ?? DEFAULT_URL)
   const wrongArity = () =>
     new Failure(`wrong arguments: ${JSON.stringify(positionals)}`, usage(command))
   const [first, second, third, ...extra] = positionals
   const none = first === undefined
   switch (command) {
     case 'up':
+      if (!none) throw wrongArity()
+      return { instance, command, docker: values.docker === true }
     case 'doctor':
+    case 'reset':
     case 'snapshot':
       if (!none) throw wrongArity()
       return { instance, command }

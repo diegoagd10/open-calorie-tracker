@@ -21,11 +21,9 @@ The server has one account. Until it exists, every page leads to `/register`, wh
 Preconditions:
 
 - A fresh `up`. The browser has no session, and the account `ana` exists.
-- `apps/api/dist` exists, which `up` builds.
 
 ```bash
 C=.claude/skills/verify-open-calorie-tracker/control-oct.ts
-E=/tmp/oct-verify-3300-evidence
 $C goto /register                       # exits 1: the account exists, so /register redirected to /login, and the browser has no session
 $C type textbox "Username" ana
 $C type textbox "Password" wrong-password
@@ -36,14 +34,14 @@ $C click button "Log in"                # url /, heading "Food Log"
 $C api GET /v1/settings/profile         # 200 {username: ana}
 $C click button "Log out"               # url /login
 $C goto /                               # exits 1: redirected to /login, the browser has no session
-(cd apps/api && DATABASE_URL=file:/tmp/oct-verify-3300/db.sqlite node dist/reset.js)   # setup: "Deleted every user"
+$C reset                                # setup: "Deleted every user"
 $C goto /                               # url /register, form "Create account"
 $C type textbox "Username" ana
 $C type textbox "Password" correct-horse-battery-staple
 $C type textbox "Confirm password" correct-horse-battery-staple
 $C click button "Create account"        # url /, heading "Food Log"
 $C api GET /v1/settings/profile         # 200 {username: ana}, the account the form created
-$C screenshot $E/auth.png
+$C screenshot auth.png
 $C doctor                               # every check passes again
 ```
 
@@ -56,7 +54,7 @@ End state that proves it works:
 
 ## Gotchas
 
-- `control-oct.ts` always seeds `ana`, so it cannot start an instance without an account. The block empties it with `apps/api/dist/reset.js`, the script behind `pnpm --filter api db:reset`. That script deletes every user and with them every entry, goal, and key. It refuses to run with `NODE_ENV=production`.
+- `control-oct.ts` always seeds `ana`, so it cannot start an instance without an account. The block empties it with `control-oct.ts reset`, which runs `dist/reset.js`, the script behind `pnpm --filter api db:reset`: in `apps/api` for a local instance, and in the `seed` service of `docker-compose.verify.yml` for a `--docker` one. That script deletes every user and with them every entry, goal, and key. It refuses to run with `NODE_ENV=production`, so it never runs in the `api` container itself.
 - Register `ana` with the seed password. Another account makes the `login` check of `doctor` fail, and `login` without flags fails too. Run `up` again to get the seed user back.
 - Five wrong passwords lock the account for 15 minutes, and the alert then says the account is locked. The block uses one. Run `up` again to reseed after a lockout.
 - The `login` command clears the cookies and fills the same form. Drive the form by hand, as here, when the form is what you verify.

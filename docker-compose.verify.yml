@@ -1,0 +1,27 @@
+# Verification overlay for docker-compose.yml: the same production images, plus a one-off seed
+# service that runs the API's seed script outside NODE_ENV=production. The api and web services
+# keep NODE_ENV=production. Run it through
+# `.claude/skills/verify-open-calorie-tracker/control-oct.ts up --docker`, which sets every variable.
+services:
+  api:
+    healthcheck:
+      start_period: 30s
+      start_interval: 1s
+  web:
+    healthcheck:
+      start_period: 30s
+      start_interval: 1s
+  seed:
+    image: ${COMPOSE_PROJECT_NAME:?Set COMPOSE_PROJECT_NAME}-api
+    pull_policy: never
+    profiles: [seed]
+    environment:
+      NODE_ENV: verification
+      DATABASE_URL: file:/app/data/sqlite.db
+      SEED_USER_USERNAME: ${SEED_USER_USERNAME:?Set SEED_USER_USERNAME}
+      SEED_USER_PASSWORD: ${SEED_USER_PASSWORD:?Set SEED_USER_PASSWORD}
+    volumes:
+      - type: bind
+        source: ${DATA_PATH}
+        target: /app/data
+    command: ['node', 'dist/seed']

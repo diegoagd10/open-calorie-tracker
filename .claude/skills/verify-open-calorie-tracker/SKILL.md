@@ -1,82 +1,95 @@
 ---
 name: verify-open-calorie-tracker
-description: Start, check, drive and stop an isolated, seeded copy of open-calorie-tracker (NestJS API, Next.js web app and a headless Chromium with a CDP endpoint) to verify a change in the real app. Use to prove a feature works through the web UI, to check its side effects through the API, to capture screenshots as evidence, and whenever a verification instance looks broken.
+description: Start, check, drive and stop an isolated, seeded copy of open-calorie-tracker (NestJS API, Next.js web app and a headless Chromium with a CDP endpoint), from this checkout or from the production Docker images, to verify a change or a dependency bump (Dependabot PRs) in the real app. Use to prove a feature works through the web UI, to check its side effects through the API, to capture screenshots as evidence, and whenever a verification instance looks broken.
 ---
 
 # Verify open-calorie-tracker
 
-`control-oct.ts` runs one isolated instance per base port `N`. Every command prints JSON on stdout and exits 1 on failure. A failure carries `error` and a `next` field that says what to do.
+`control-oct.ts` runs one isolated instance per app URL. Every command takes `--url URL`, or reads `OCT_URL` when the flag is absent, and the default is `http://localhost:3000`. The URL must be `http://localhost:<P>`. Every command prints JSON on stdout and exits 1 on failure. A failure carries `error` and a `next` field that says what to do.
 
 | Port    | Process                                             |
 | ------- | --------------------------------------------------- |
-| `N`     | Web app, `next start` on a production build         |
-| `N + 1` | API, `pnpm start:prod` on a fresh SQLite database   |
-| `N + 2` | Headless Chromium, CDP endpoint on `127.0.0.1` only |
+| `P`     | Web app on a production build                       |
+| `P + 1` | API on a fresh SQLite database                      |
+| `P + 2` | Headless Chromium, CDP endpoint on `127.0.0.1` only |
+
+The app runs one of two ways, and every drive command and feature block works the same on both:
+
+| `up`          | API and web app                                                                                                                                                                                                                                  |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `up`          | `pnpm start:prod` and `next start` from this checkout                                                                                                                                                                                            |
+| `up --docker` | The `api` and `web` targets of the `Dockerfile` (Node 26, `NODE_ENV=production`), run by `docker-compose.yml` plus `docker-compose.verify.yml` as the Compose project `oct-verify-<P>`, published on `127.0.0.1` only. Use it for Dependabot PRs |
 
 Chromium runs with `TZ=America/New_York` and `--lang=en-US`, the time zone and locale that `openPage` in `apps/web/test/browser.ts` gives the web tests.
 
-The default `N` is 3300. It avoids `pnpm dev:web` and `pnpm dev:api` (3000, 3001) and the web tests (3100–3102, 3200–3202).
+The default `P` is 3000, the port of `pnpm dev:web`, so stop `pnpm dev:web` and `pnpm dev:api` first or pick another URL. Avoid the web tests' ports (3100–3102, 3200–3202) and the production stack's (3010, 3011).
 
 ## Launch
 
 Run this from the repo root:
 
 ```bash
-.claude/skills/verify-open-calorie-tracker/control-oct.ts up [--base-port N]
+.claude/skills/verify-open-calorie-tracker/control-oct.ts up [--docker] [--url URL]
 ```
 
-`up` took 7 seconds in one measured run with no earlier build. It does these steps:
+A local `up` took 7 seconds in one measured run with no earlier build. `up --docker` took 39 seconds with a warm Docker build cache, including the image build. It does these steps:
 
-1. If a state file for `N` exists and every doctor check passes, it prints `"status": "already-up"` and exits 0.
-2. If the state file exists but a check fails, it stops that instance and starts over. The output then has `replaced.failed` with the failed check names.
-3. It refuses when the ports are held by processes it did not start, when this checkout already runs an instance on another base port, or when dependencies or Chromium are missing.
-4. It wipes the data dir and builds `packages/shared`, then runs `pnpm db:seed` (which builds the API and migrates the database) and `next build` in parallel.
-5. It starts the API, the web app and Chromium, writes the state file, and waits until `GET /v1/setup`, `GET /login` and `GET /json/version` answer 200. Then it runs the doctor checks.
+1. If a state file for `P` exists, it was started the same way (`--docker` or not), and every doctor check passes, it prints `"status": "already-up"` and exits 0.
+2. If the state file exists but a check fails or the way differs, it stops that instance and starts over. The output then has `replaced.failed` with the failed check names, or `app` when the way differs.
+3. It refuses when the ports are held by processes it did not start, when dependencies or Chromium are missing, when Docker is not usable (`--docker`), or when this checkout already runs a local instance on another URL (local only).
+4. It wipes the data dir. Then the app starts:
+   - Local: it builds `packages/shared`, then runs `pnpm db:seed` (which builds the API and migrates the database) and `next build` in parallel, and starts the API and the web app.
+   - `--docker`: it runs `docker compose down -v` for the project, then `docker compose up -d --build --wait`, which builds both images and waits for their healthchecks, then `docker compose run --rm -T seed`. The SQLite database lives in `<dataDir>/db`, bind-mounted as `DATA_PATH`.
+5. It starts Chromium, writes the state file, and waits until `GET /v1/setup`, `GET /login` and `GET /json/version` answer 200. Then it runs the doctor checks.
 
 `up` prints `"status": "started"` and the state when the instance is usable. When a step fails, `up` stops what it started and points at the logs.
 
-The seed user is `ana` with the password `correct-horse-battery-staple`, the same as in `apps/web/test/fixtures.ts`. The script imports the seed user, the JWT settings and `API_KEY_SECRET` from that file.
+The seed user is `ana` with the password `correct-horse-battery-staple`, the same as in `apps/web/test/fixtures.ts`. The script imports the seed user from that file. A local `up` also takes the JWT settings and `API_KEY_SECRET` from it.
 
-Prerequisites, from the repo README:
+`up --docker` passes every setting to Compose through the environment and writes none to disk. `JWT_SECRET` and `API_KEY_SECRET` come from your environment when set, else from 32 fresh random bytes on each start. `OPEN_FOOD_FACTS_USER_AGENT` comes from your environment when set. The `api` and `web` containers keep `NODE_ENV=production`, so `dist/seed` and `dist/reset` refuse to run in them. The `seed` service of `docker-compose.verify.yml` runs the same `api` image with `NODE_ENV=verification` and only runs the seed and reset scripts. The overlay also probes the healthchecks every second while the containers start, which changes nothing in production.
+
+Prerequisites, from the repo README. `--docker` also needs Docker with the Compose plugin, usable by your user:
 
 ```bash
 pnpm install
 pnpm --filter web exec playwright install chromium
 ```
 
+To verify a PR, Dependabot's included, check out its branch in a worktree and run `up --docker` there. The images build from that checkout, so they carry the PR's lockfile.
+
 ## State file
 
-`up` writes `/tmp/oct-verify-<N>/state.json` and prints the same state. The script uses `os.tmpdir()`, so `$TMPDIR` moves every path under `/tmp` in this skill. Read the state file to find the instance. Its shape is the `State` type in `model.ts`, and `readState(instance)` there loads and validates it. `instanceAt(N)` in the same file derives every port, URL and path from the base port:
+`up` writes `/tmp/oct-verify-<P>/state.json` and prints the same state. The script uses `os.tmpdir()`, so `$TMPDIR` moves every path under `/tmp` in this skill. Read the state file to find the instance. Its shape is the `State` type in `model.ts`, and `readState(instance)` there loads and validates it. `parseInstance(url)` in the same file derives every port, URL and path from the web URL:
 
 ```json
 {
-  "basePort": 3300,
+  "app": "local",
   "repo": "/abs/path/to/checkout",
-  "dataDir": "/tmp/oct-verify-3300",
-  "evidenceDir": "/tmp/oct-verify-3300-evidence",
-  "webUrl": "http://localhost:3300",
-  "apiUrl": "http://localhost:3301",
-  "cdpUrl": "http://127.0.0.1:3302",
+  "dataDir": "/tmp/oct-verify-3000",
+  "evidenceDir": "/tmp/oct-verify-3000-evidence",
+  "webUrl": "http://localhost:3000",
+  "apiUrl": "http://localhost:3001",
+  "cdpUrl": "http://127.0.0.1:3002",
   "seedUser": { "username": "ana", "password": "correct-horse-battery-staple" },
   "startedAt": "2026-11-20T20:39:42.817Z",
   "processes": {
     "api": {
       "sid": 143942,
       "startTime": "2443784",
-      "port": 3301,
-      "log": "/tmp/oct-verify-3300/logs/api.log"
+      "port": 3001,
+      "log": "/tmp/oct-verify-3000/logs/api.log"
     },
     "web": {
       "sid": 143944,
       "startTime": "2443784",
-      "port": 3300,
-      "log": "/tmp/oct-verify-3300/logs/web.log"
+      "port": 3000,
+      "log": "/tmp/oct-verify-3000/logs/web.log"
     },
     "browser": {
       "sid": 143945,
       "startTime": "2443784",
-      "port": 3302,
-      "log": "/tmp/oct-verify-3300/logs/browser.log"
+      "port": 3002,
+      "log": "/tmp/oct-verify-3000/logs/browser.log"
     }
   }
 }
@@ -84,27 +97,29 @@ pnpm --filter web exec playwright install chromium
 
 - `sid` is the session id. Each process starts as the leader of a new session. pnpm moves each script into a process group of its own, so the session is the unit that holds everything one start owns.
 - `startTime` is the leader's start time from `/proc/<sid>/stat`. A live leader with another start time means the id was reused, and the tool treats the session as gone.
-- The data dir also holds `db.sqlite`, `chromium-profile/` and `logs/` (`build.log`, `seed.log`, `api.log`, `web.log`, `browser.log`).
+- A `--docker` state has `"app": "docker"` and only the `browser` process. The containers belong to the Compose project `oct-verify-<P>`.
+- The data dir also holds `db.sqlite` (local) or `db/sqlite.db` (`--docker`), `chromium-profile/` and `logs/` (`build.log`, `seed.log`, `api.log`, `web.log`, `browser.log` locally; `docker.log`, `seed.log`, `browser.log` with `--docker`). Container logs come from `docker compose -p oct-verify-<P> logs api web`.
 
 ## Doctor
 
 Run doctor first whenever anything looks off. It changes nothing.
 
 ```bash
-.claude/skills/verify-open-calorie-tracker/control-oct.ts doctor [--base-port N]
+.claude/skills/verify-open-calorie-tracker/control-oct.ts doctor [--url URL]
 ```
 
-It returns `checks`, a list of `{ name, ok, detail?, next? }`, plus a top-level `next` from the first failed check:
+It returns `app`, `webUrl`, `apiUrl`, `evidenceDir` and `checks`, a list of `{ name, ok, detail?, next? }`, plus a top-level `next` from the first failed check. A check runs only for the processes the instance has:
 
-| Check                                           | Passes when                                                     |
-| ----------------------------------------------- | --------------------------------------------------------------- |
-| `state`                                         | A valid state file exists. Reported only when it does not.      |
-| `process:api`, `process:web`, `process:browser` | The session still has a live process.                           |
-| `port:api`, `port:web`, `port:browser`          | Every pid that `ss -ltnp` shows on the port is in that session. |
-| `api`                                           | `GET /v1/setup` answers 200 with `needsSetup: false`.           |
-| `web`                                           | `GET /login` answers 200.                                       |
-| `login`                                         | `POST /v1/login` with the seed user returns an `accessToken`.   |
-| `browser`                                       | `GET /json/version` on the CDP endpoint answers 200.            |
+| Check                                           | Passes when                                                          |
+| ----------------------------------------------- | -------------------------------------------------------------------- |
+| `state`                                         | A valid state file exists. Reported only when it does not.           |
+| `containers`                                    | `--docker` only: the `api` and `web` containers run and are healthy. |
+| `process:api`, `process:web`, `process:browser` | The session still has a live process.                                |
+| `port:api`, `port:web`, `port:browser`          | Every pid that `ss -ltnp` shows on the port is in that session.      |
+| `api`                                           | `GET /v1/setup` answers 200 with `needsSetup: false`.                |
+| `web`                                           | `GET /login` answers 200.                                            |
+| `login`                                         | `POST /v1/login` with the seed user returns an `accessToken`.        |
+| `browser`                                       | `GET /json/version` on the CDP endpoint answers 200.                 |
 
 For most failures, `next` tells you to run `up` again, which replaces the broken instance. Read the named log first, because `up` wipes the data dir.
 
@@ -112,18 +127,19 @@ For most failures, `next` tells you to run `up` again, which replaces the broken
 
 The drive commands act on one page, the first tab of Chromium's default context. Chromium owns that tab, so it keeps its URL, open dialogs, scroll position and cookies between commands. Each command attaches over CDP, sizes the tab to 1280x720 (the desktop viewport of the web tests), acts, and disconnects. Only one agent drives an instance at a time, because two agents would share the tab.
 
-| Command                               | What it does                                                                                         |
-| ------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| `login [--username U] [--password P]` | Clears the cookies and logs in through the `/login` form. The default is the seed user. Ends on `/`. |
-| `goto <path>`                         | Opens a path of the web app. Fails when it lands on `/login` and the browser has no session.         |
-| `snapshot`                            | Prints `url`, `title`, `timeZone`, `locale` and `aria`, the accessibility tree, one line per node.   |
-| `click <role> <name> [--nth I]`       | Clicks the element with this ARIA role and accessible name.                                          |
-| `type <role> <name> <text> [--nth I]` | Replaces the value of the field with `text`, like Playwright's `fill`.                               |
-| `press <key>`                         | Presses a key on the focused element: `Enter`, `Escape`, `Tab`, `ArrowDown`, `Control+A`.            |
-| `screenshot [path] [--mobile]`        | Saves a PNG of the viewport. The default path is `<evidenceDir>/<timestamp>.png`.                    |
-| `api <METHOD> <path> [--body JSON]`   | Calls the API as the logged-in user and prints `status` and the parsed `body`.                       |
+| Command                               | What it does                                                                                                                          |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `login [--username U] [--password P]` | Clears the cookies and logs in through the `/login` form. The default is the seed user. Ends on `/`.                                  |
+| `goto <path>`                         | Opens a path of the web app. Fails when it lands on `/login` and the browser has no session.                                          |
+| `snapshot`                            | Prints `url`, `title`, `timeZone`, `locale` and `aria`, the accessibility tree, one line per node.                                    |
+| `click <role> <name> [--nth I]`       | Clicks the element with this ARIA role and accessible name.                                                                           |
+| `type <role> <name> <text> [--nth I]` | Replaces the value of the field with `text`, like Playwright's `fill`.                                                                |
+| `press <key>`                         | Presses a key on the focused element: `Enter`, `Escape`, `Tab`, `ArrowDown`, `Control+A`.                                             |
+| `screenshot [path] [--mobile]`        | Saves a PNG of the viewport. The default path is `<evidenceDir>/<timestamp>.png`, and a relative path is relative to `<evidenceDir>`. |
+| `api <METHOD> <path> [--body JSON]`   | Calls the API as the logged-in user and prints `status` and the parsed `body`.                                                        |
+| `reset`                               | Setup only. Deletes every user with the API's `dist/reset` script, for the first-account flow.                                        |
 
-Each command takes `--base-port N` and `--help`. `goto`, `click`, `type`, `press` and `login` wait until no request has been in flight for 500 ms, for up to 10 seconds, and report `settled: false` when the page never goes quiet.
+Each command takes `--url URL` and `--help`. `goto`, `click`, `type`, `press` and `login` wait until no request has been in flight for 500 ms, for up to 10 seconds, and report `settled: false` when the page never goes quiet.
 
 This journey logs water through the UI and checks the row in the API. Run it from the repo root after `up`:
 
@@ -137,6 +153,8 @@ $C snapshot      # the Entries list shows button "Water, 12 fl oz, 5:06 PM"
 $C api GET "/v1/daily-log?date=$(TZ=America/New_York date +%F)&timeZone=America/New_York"
 $C screenshot --mobile
 ```
+
+Run the same lines after `up --docker` to check the production images. With another URL, `export OCT_URL=http://localhost:3400` once and run them unchanged.
 
 ### Targets
 
@@ -183,17 +201,17 @@ A proof meets these standards:
 - Shoot the screens a phone user sees with `screenshot --mobile` when the change touches layout.
 - Keep the JSON output of each command as the transcript.
 
-Screenshots go to `/tmp/oct-verify-<N>-evidence/` by default. `down` keeps that directory.
+Screenshots go to `/tmp/oct-verify-<P>-evidence/` by default. `/tmp` does not survive a reboot on most Linux setups, so copy the evidence elsewhere to keep it. `down` keeps that directory.
 
 ## Cleanup
 
 ```bash
-.claude/skills/verify-open-calorie-tracker/control-oct.ts down [--base-port N] [--dry-run]
+.claude/skills/verify-open-calorie-tracker/control-oct.ts down [--url URL] [--dry-run]
 ```
 
-`down` sends SIGTERM to every process in the three recorded sessions, waits up to 10 seconds, and sends SIGKILL to what is left. It never kills by process name. Then it removes the data dir. `--dry-run` reports `wouldStop` and `wouldRemove` and changes nothing.
+`down` sends SIGTERM to every process in the recorded sessions, waits up to 10 seconds, and sends SIGKILL to what is left. It never kills by process name. When the Compose project `oct-verify-<P>` has containers, it runs `docker compose down -v --remove-orphans` for that project alone and reports `removedContainers`. Then it removes the data dir, the SQLite database of a `--docker` instance included. `--dry-run` reports `wouldStop` and `wouldRemove` and changes nothing.
 
-`down` keeps the evidence dir, `/tmp/oct-verify-<N>-evidence`, and reports it as `kept`. Put screenshots and response bodies there. `down` is safe to run twice.
+`down` keeps the evidence dir, `/tmp/oct-verify-<P>-evidence`, and reports it as `kept`. Put screenshots and response bodies there. `down` is safe to run twice.
 
 ## Helpers
 
@@ -212,7 +230,9 @@ const page = browser.contexts()[0].pages()[0]
 
 ## Gotchas
 
-- One instance per checkout. Instances share `apps/web/.next` and `apps/api/dist`, so `up` refuses a second base port in the same checkout. Use another worktree for a second instance.
+- One local instance per checkout. Local instances share `apps/web/.next` and `apps/api/dist`, so `up` refuses a second local URL in the same checkout. Use another worktree, or `--docker`, whose images build in Docker and share nothing with the checkout.
+- `up --docker` builds from the files in the checkout, including uncommitted changes, minus what `.dockerignore` drops. A failed build or healthcheck reports `docker.log` and the `docker compose logs` command to run.
+- `docker-compose.verify.yml` only adds to `docker-compose.yml`. Run it through `control-oct.ts`, which sets the variables both files need. `docker compose up` alone, without `-f`, still starts production and never reads the overlay.
 - Five wrong passwords lock an account for 15 minutes (`MAX_FAILED_ATTEMPTS` in `packages/shared/src/auth.ts`). Run `up` again to reseed when you lock the seed user.
 - An instance that an older `control-oct.ts` started reports `already-up` but runs Chromium without the time zone flags. Check `timeZone` in `snapshot`, and run `down`, then `up`, when it is not `America/New_York`.
 - `next build` writes `apps/web/.next`. Stop `pnpm dev:web` before `up`, because `next dev` locks that directory. Do not run the web tests in this checkout while an instance is up. Their `next build` rewrites the build that `next start` serves.
