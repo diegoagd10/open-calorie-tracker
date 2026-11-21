@@ -1,7 +1,6 @@
 import { type RegisterInput, setupStatusSchema } from '@open-calorie-tracker/shared'
 import { get, post } from './http'
 
-// Whether the app still has no account. Undefined when the API cannot tell.
 export const fetchNeedsSetup = async (): Promise<boolean | undefined> => {
   try {
     const response = await get('/v1/setup')

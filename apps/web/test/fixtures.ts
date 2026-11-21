@@ -5,13 +5,10 @@ import { join } from 'node:path'
 export type Environment = {
   webUrl: string
   apiUrl: string
-  // Next.js talks to the API through the fault proxy.
   proxyUrl: string
   databasePath: string
 }
 
-// Override with WEB_TEST_BASE_PORT to run alongside another checkout's tests. The seeded
-// environment uses the base port and the next two; the empty one starts 100 ports higher.
 const DEFAULT_BASE_PORT = 3100
 
 const basePortFromEnv = (value: string | undefined): number => {
@@ -25,7 +22,6 @@ const basePortFromEnv = (value: string | undefined): number => {
 
 const BASE_PORT = basePortFromEnv(process.env['WEB_TEST_BASE_PORT'])
 
-// Per base port, so two runs on different ports never share a database.
 export const TEST_DATA_DIR = join(tmpdir(), `open-calorie-tracker-web-test-${BASE_PORT}`)
 
 const environment = (name: string, basePort: number): Environment => ({
@@ -35,10 +31,8 @@ const environment = (name: string, basePort: number): Environment => ({
   databasePath: join(TEST_DATA_DIR, `${name}.sqlite`),
 })
 
-// Already has the seed user: for logging in and the redirects to /login.
 export const SEEDED = environment('seeded', BASE_PORT)
 
-// Starts with no users: for registering and the redirects to /register.
 export const EMPTY = environment('empty', BASE_PORT + 100)
 
 export const SEED_USER = {
@@ -52,10 +46,8 @@ export const JWT = {
   audience: 'open-calorie-tracker-web',
 }
 
-// Encrypts the API keys the API stores. The tests seed keys with it too.
 export const API_KEY_SECRET = 'web-test-api-key-secret-that-is-long-enough'
 
-// A token signed like the API's, for user 1, that expires at the given Unix time.
 export const signAccessToken = (expiresAt: number) =>
   new SignJWT({})
     .setProtectedHeader({ alg: 'HS256', typ: 'JWT' })
@@ -66,7 +58,6 @@ export const signAccessToken = (expiresAt: number) =>
     .setExpirationTime(expiresAt)
     .sign(new TextEncoder().encode(JWT.secret))
 
-// Session cookie values the web app must treat as no session.
 export const INVALID_TOKENS = [
   ['is not a valid token', () => Promise.resolve('not-a-token')],
   ['has expired', () => signAccessToken(Math.floor(Date.now() / 1000) - 60)],

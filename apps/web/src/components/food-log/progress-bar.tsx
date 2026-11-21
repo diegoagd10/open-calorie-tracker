@@ -7,14 +7,11 @@ type ProgressBarProps = {
   label: string
   value: number
   goal: number
-  // CSS color of the filled part while under the goal.
   color: string
-  // Whether going over the goal turns the bar red. Water past its goal is not a warning.
   warnOverGoal?: boolean
   className?: string
 }
 
-// Fills up to the goal; past it the bar stays full and, unless told otherwise, turns red.
 export function ProgressBar({
   label,
   value,
@@ -29,7 +26,6 @@ export function ProgressBar({
   return (
     <progress
       aria-label={label}
-      // Mirrored as ARIA attributes, which keep the real total even past the goal.
       aria-valuenow={rounded}
       aria-valuemin={0}
       aria-valuemax={goal}

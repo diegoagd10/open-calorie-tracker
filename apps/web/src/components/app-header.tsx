@@ -7,7 +7,6 @@ import type { useLogOut } from '@/components/use-log-out'
 const ICON_LINK =
   'flex size-9 shrink-0 items-center justify-center rounded-full border border-line bg-surface text-fg-soft aria-[current=page]:bg-surface-selected aria-[current=page]:text-fg'
 
-// The header's icon links, named for screen readers. `current` marks the page being shown.
 export function FoodLogLink() {
   return (
     <Link href="/" aria-label="Food Log" className={ICON_LINK}>
@@ -38,12 +37,10 @@ export function SettingsLink() {
 }
 
 type AppHeaderProps = {
-  // The links to the other pages, shown before Log out.
   children: ReactNode
   logOut: ReturnType<typeof useLogOut>
 }
 
-// The header of every page that needs a session.
 export function AppHeader({ children, logOut }: AppHeaderProps) {
   return (
     <header className="border-b border-line">

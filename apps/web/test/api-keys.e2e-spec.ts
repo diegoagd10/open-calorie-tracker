@@ -28,7 +28,6 @@ const SETTINGS_URL = `${WEB_URL}/settings`
 
 const API_KEYS_URL = `${WEB_URL}/api/api-keys`
 
-// "Now" in the browser: Monday 2026-10-26, 10:00 AM in New York (UTC-4 on that day).
 const NOW = new Date('2026-10-26T10:00:00-04:00')
 
 const MINUTE = 60_000
@@ -46,7 +45,6 @@ const CLIPBOARD: BrowserContextOptions = { permissions: ['clipboard-read', 'clip
 
 const expiredToken = () => signAccessToken(Math.floor(Date.now() / 1000) - 60)
 
-// How the page shows a date, e.g. "Jan 24, 2027".
 const dateLabel = (instant: Date) =>
   new Intl.DateTimeFormat('en-US', {
     month: 'short',
@@ -55,7 +53,6 @@ const dateLabel = (instant: Date) =>
     timeZone: TIME_ZONE,
   }).format(instant)
 
-// "oct_live_" + the first 4 and the last 4 characters of the random part.
 const previewOf = (key: string) => {
   const random = key.slice('oct_live_'.length)
   return `oct_live_${random.slice(0, 4)}…${random.slice(-4)}`
@@ -72,6 +69,7 @@ const apiKeysSection = (page: Page) => {
     section: () => section,
     heading: () => section.getByRole('heading', { level: 2, name: 'API keys' }),
     create: () => section.getByRole('button', { name: 'Create API key' }),
+    // oxlint-disable-next-line local/no-comments
     // The section's Alert, apart from the role="alert" route announcer Next.js renders.
     alert: () => section.getByRole('alert'),
     empty: () => section.getByText('No API keys yet'),
@@ -109,7 +107,6 @@ describe('API keys (e2e)', () => {
   let username: string
   let token: string
   let keys: ReturnType<typeof apiKeysSection>
-  // The page's requests to the API keys routes, e.g. "POST /api/api-keys".
   let keyRequests: string[]
 
   beforeAll(async () => {
@@ -122,7 +119,6 @@ describe('API keys (e2e)', () => {
     await browser.close()
   })
 
-  // A fresh page with a new user, who can use the clipboard unless the test takes it away.
   const startAs = async (options: BrowserContextOptions = {}) => {
     ;({ context, page, username, token } = await signedInPage(browser, database, {
       ...CLIPBOARD,
@@ -155,7 +151,6 @@ describe('API keys (e2e)', () => {
     owner = username,
   ) => seedApiKey(database, { username: owner, expiresIn: '90d', ...entry }, API_KEY_SECRET)
 
-  // Seeds a key that expires at the given instant.
   const seedKeyExpiringAt = (name: string, expiresAt: Date) =>
     seedKey({ name, expiresIn: '30d', createdAt: new Date(expiresAt.getTime() - 30 * DAY) })
 
@@ -166,8 +161,6 @@ describe('API keys (e2e)', () => {
     lastUsedAt: ago(2 * HOUR),
   } as const
 
-  // Opens Settings and waits for the keys to load. With the browser clock fixed at NOW unless the
-  // test needs the real one, e.g. to show keys the page creates, which get the API's real time.
   const openKeys = async ({ fixedClock = true } = {}) => {
     if (fixedClock) await page.clock.setFixedTime(NOW)
     await page.goto(SETTINGS_URL)
@@ -180,7 +173,6 @@ describe('API keys (e2e)', () => {
     await expect.poll(() => keys.createDialog().isVisible(), eventually).toBe(true)
   }
 
-  // Creates a key through the page and waits for the Key created dialog. Uses the real clock.
   const createKey = async (name: string, expiry = '90 days') => {
     await openCreateDialog({ fixedClock: false })
     await keys.nameField().fill(name)
@@ -197,7 +189,6 @@ describe('API keys (e2e)', () => {
 
   const isHidden = (locator: Locator) => async () => !(await locator.isVisible())
 
-  // Which of the given names each listed key starts with, in the order they are listed.
   const itemNames = async (...names: string[]) =>
     (await keys.items().allInnerTexts()).map((text) => {
       const normalized = text.replaceAll(/\s+/g, ' ').trim()
@@ -208,7 +199,6 @@ describe('API keys (e2e)', () => {
 
   const clipboard = () => page.evaluate(() => navigator.clipboard.readText())
 
-  // The keys as the web API answers them to this user.
   const storedKeys = async () => {
     const response = await fetch(API_KEYS_URL, { headers: { Cookie: `access_token=${token}` } })
     expect(response.status).toBe(200)
@@ -218,7 +208,6 @@ describe('API keys (e2e)', () => {
   const requestsTo = (method: string) =>
     keyRequests.filter((request) => request.startsWith(`${method} `))
 
-  // Holds the page's requests with this method to the API keys routes until released.
   const holdRequests = async (method: string) => {
     let release = () => {}
     const released = new Promise<void>((resolve) => {
@@ -890,7 +879,6 @@ describe('API keys (e2e)', () => {
   })
 
   describe('on a phone', () => {
-    // Replaces the desktop page with a phone one, for a new user.
     beforeEach(async () => {
       await context.close()
       await startAs(MOBILE)
@@ -930,7 +918,6 @@ describe('API keys (e2e)', () => {
   })
 
   describe('the /api/api-keys routes', () => {
-    // Calls the route the way the page does, with the session cookie unless it is null.
     const send = (method: string, path = '', body?: object, cookie: string | null = token) => {
       const headers: Record<string, string> = {}
       const init: RequestInit = { method, headers, redirect: 'manual' }

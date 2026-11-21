@@ -8,7 +8,6 @@ import { FoodEntriesService } from './food-entries.service.js'
   imports: [AuthModule, ServingSizesModule],
   controllers: [FoodEntriesController],
   providers: [FoodEntriesService],
-  // The MCP server logs food.
   exports: [FoodEntriesService],
 })
 export class FoodEntriesModule {}

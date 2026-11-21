@@ -35,8 +35,6 @@ describe('seedUser', () => {
     expect(await storedUsernames()).toEqual(['ana'])
   })
 
-  // The seed follows the same rules as registration, so it never creates an account that
-  // could not have been registered.
   it.each([
     ['an underscore', 'ana_1'],
     ['a space', 'ana 1'],
@@ -127,8 +125,6 @@ describe('seedFoodEntry', () => {
     ])
   })
 
-  // The seed follows the same rules as the API, so it never stores a serving size the user could
-  // not have saved.
   it.each([
     ['a blank serving size', '   '],
     ['a serving size that is too long', 'a'.repeat(MAX_SERVING_SIZE_LENGTH + 1)],
@@ -175,7 +171,6 @@ describe('seedDailyGoals', () => {
     database.close()
   })
 
-  // The seed follows the same rules as the API, so it never stores goals the user could not save.
   it('rejects a goal the app would reject', async () => {
     await expect(seedDailyGoals(database, { username: 'ana', calories: 0 })).rejects.toThrow(
       `Enter a number from 1 to ${MAX_DAILY_GOAL}`,
@@ -197,18 +192,12 @@ describe('seedApiKey', () => {
   })
 
   const seedKey = (name: string, expiresIn: string, username = 'ana') =>
-    seedApiKey(
-      database,
-      // The seed is called from scripts too, so it must reject values the types would stop.
-      { username, name, expiresIn: expiresIn as '90d' },
-      TEST_ENV.API_KEY_SECRET,
-    )
+    seedApiKey(database, { username, name, expiresIn: expiresIn as '90d' }, TEST_ENV.API_KEY_SECRET)
 
   const storedKeyCount = async () =>
     (await database.db.all<{ count: number }>(sql`SELECT COUNT(*) AS count FROM api_keys`))[0]
       ?.count
 
-  // The seed follows the same rules as the API, so it never stores a key the user could not create.
   it.each([
     [
       `a name over ${API_KEY_NAME_MAX_LENGTH} characters`,

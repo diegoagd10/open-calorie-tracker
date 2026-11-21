@@ -5,9 +5,9 @@ import { migrate } from 'drizzle-orm/libsql/migrator'
 import { fileURLToPath } from 'node:url'
 import * as schema from './schema.js'
 
-// Resolves to apps/api/drizzle from both src/db (tests) and dist/db (build).
 const migrationsFolder = fileURLToPath(new URL('../../drizzle', import.meta.url))
 
+// oxlint-disable-next-line local/no-comments
 // How long a write waits for another connection's lock, e.g. a seed script's, before failing with
 // SQLITE_BUSY. Without it, it fails immediately.
 const BUSY_TIMEOUT_MS = 5_000

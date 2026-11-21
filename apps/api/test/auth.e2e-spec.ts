@@ -13,7 +13,6 @@ import { seedUser } from '../src/db/seed.js'
 import { TEST_ENV, type TestApp, createTestApp } from './app.js'
 
 const USERNAME = 'ana'
-// The seeded user is the only row in a fresh in-memory database.
 const SEED_USER_ID = '1'
 const PASSWORD = 'correct-horse-battery-staple'
 
@@ -205,7 +204,6 @@ describe('POST /v1/login (e2e)', () => {
     describe('lock expiry', () => {
       const lockDurationMs = ACCOUNT_LOCK_DURATION_SECONDS * 1000
 
-      // Only Date is faked, so the HTTP server, the database and Argon2 keep working normally.
       const lockAt = async (ip: string) => {
         vi.useFakeTimers({ toFake: ['Date'] })
         const lockedAt = Date.now()

@@ -11,7 +11,6 @@ export const NUTRIENT_FIELDS: { key: Nutrient; label: string; unit: string; colo
   { key: 'sodium', label: 'Sodium', unit: 'mg', color: 'var(--sodium)' },
 ]
 
-// What each nutrient field holds; empty when the label doesn't say.
 export type NutrientValues = Record<Nutrient, string>
 
 export const NO_NUTRIENTS: NutrientValues = {
@@ -29,8 +28,6 @@ type NutrientsSectionProps = {
   disabled: boolean
 }
 
-// Optional nutrients per serving, collapsed until the user opens them. They keep their values
-// while collapsed.
 export function NutrientsSection({ values, onChange, disabled }: NutrientsSectionProps) {
   const [open, setOpen] = useState(false)
   const contentId = useId()

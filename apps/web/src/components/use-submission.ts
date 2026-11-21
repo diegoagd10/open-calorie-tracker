@@ -1,9 +1,6 @@
 import { useRef, useState } from 'react'
 import type { Outcome } from './requests'
 
-// Runs one request at a time. A second click before the buttons re-render is ignored, so a double
-// click sends a single request. Done when the request saved or the record is gone; a failure shows
-// the generic error and lets the user try again.
 export const useSubmission = (onDone: () => void) => {
   const [pending, setPending] = useState(false)
   const [failed, setFailed] = useState(false)
@@ -15,7 +12,6 @@ export const useSubmission = (onDone: () => void) => {
     setPending(true)
     setFailed(false)
     const outcome = await request()
-    // The page is leaving for the login page.
     if (outcome === 'unauthorized') return
     if (outcome === 'failed') {
       running.current = false

@@ -26,7 +26,6 @@ describe('Login page (e2e)', () => {
   })
 
   beforeEach(async () => {
-    // A fresh context per test, so no cookies leak between tests.
     page = await (await browser.newContext()).newPage()
     page.setDefaultTimeout(5_000)
     postRequests = []
@@ -58,6 +57,7 @@ describe('Login page (e2e)', () => {
     ])
   }
 
+  // oxlint-disable-next-line local/no-comments
   // Scoped to the form because Next.js renders its own role="alert" route announcer.
   const alertText = () =>
     page.getByRole('form', { name: 'Log in' }).getByRole('alert').textContent()
@@ -89,7 +89,6 @@ describe('Login page (e2e)', () => {
       ['an empty password', SEED_USER.username, ''],
     ])('keeps the login button disabled with %s', async (_case, username, password) => {
       await fill(username, password)
-      // Enter would submit the form if the disabled button did not block it.
       await passwordField().press('Enter')
 
       expect(await submitButton().isDisabled()).toBe(true)

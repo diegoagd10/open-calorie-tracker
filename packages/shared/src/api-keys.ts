@@ -2,16 +2,12 @@ import { z } from 'zod'
 
 export const API_KEY_NAME_MAX_LENGTH = 50
 
-// How long a new key lasts. "1y" lands on the same date next year.
 export const API_KEY_EXPIRES_IN = ['30d', '90d', '1y', 'never'] as const
 
 export type ApiKeyExpiresIn = (typeof API_KEY_EXPIRES_IN)[number]
 
-// The API answers it with 409, and the dialog shows it under the name while typing.
 export const API_KEY_NAME_TAKEN_ERROR = 'A key with this name already exists.'
 
-// The body of POST /v1/settings/api-keys. Validated by the dialog before calling the server, and
-// again by the API.
 export const apiKeyCreateSchema = z.strictObject({
   name: z
     .string()
@@ -23,14 +19,10 @@ export const apiKeyCreateSchema = z.strictObject({
 
 export type ApiKeyCreateInput = z.infer<typeof apiKeyCreateSchema>
 
-// A key as the API answers it, with the full key so it can be copied anytime. Instants are ISO
-// strings; lastUsedAt is null until the key is used, expiresAt is null for a key that never
-// expires.
 export type ApiKey = {
   id: number
   name: string
   key: string
-  // "oct_live_" + the first 4 and the last 4 characters of the random part.
   preview: string
   createdAt: string
   lastUsedAt: string | null
@@ -39,7 +31,6 @@ export type ApiKey = {
 
 const DAY_MS = 24 * 60 * 60 * 1000
 
-// When a key created at `createdAt` expires, or null when it never does.
 export const apiKeyExpiresAt = (expiresIn: ApiKeyExpiresIn, createdAt: Date): Date | null => {
   switch (expiresIn) {
     case '30d':
@@ -56,16 +47,14 @@ export const apiKeyExpiresAt = (expiresIn: ApiKeyExpiresIn, createdAt: Date): Da
   }
 }
 
+// oxlint-disable-next-line local/no-comments
 // Ignores the spaces around a name and the case of ASCII letters, like SQLite's NOCASE, which the
 // API's unique index uses.
 const comparableName = (name: string) =>
   name.trim().replaceAll(/[A-Z]/g, (letter) => letter.toLowerCase())
 
-// Whether two of a user's keys would share a name.
 export const sameApiKeyName = (a: string, b: string) => comparableName(a) === comparableName(b)
 
-// What a token exchanged from an API key lets a third-party app do. Every key gets all of them,
-// in this order.
 export const API_SCOPES = [
   'daily-log:read',
   'food-entries:read',
@@ -81,16 +70,12 @@ export const API_SCOPES = [
 
 export type ApiScope = (typeof API_SCOPES)[number]
 
-// A token exchanged from an API key has no refresh: the app exchanges the key again.
 export const API_ACCESS_TOKEN_TTL_SECONDS = 10 * 60
 
-// The API answers it with 401 to any key it does not accept, without saying why.
 export const INVALID_API_KEY_MESSAGE = 'Invalid API key'
 
-// The API answers it with 403 when a token's scopes do not cover the endpoint.
 export const INSUFFICIENT_SCOPE_MESSAGE = 'Insufficient scope'
 
-// The body of POST /v1/token. Any string is accepted, so a malformed key answers like an unknown one.
 export const apiTokenRequestSchema = z.strictObject({ apiKey: z.string() })
 
 export type ApiTokenRequest = z.infer<typeof apiTokenRequestSchema>

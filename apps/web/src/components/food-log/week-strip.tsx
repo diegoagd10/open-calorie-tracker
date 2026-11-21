@@ -4,11 +4,8 @@ import { formatNumber, formatShortDay, formatShortWeekday, parseDay, weekOf } fr
 import { shiftDay } from './selected-day'
 import type { WeekSummaries } from './use-daily-summaries'
 
-// From this share of the calorie goal up to all of it, a day is on target.
 const ON_TARGET = 0.9
-// How far a finger has to travel sideways before the strip turns to the next week.
 const SWIPE_PX = 60
-// How far a finger moves before the gesture counts as sideways or as a scroll.
 const AXIS_LOCK_PX = 6
 const SLIDE_MS = 260
 const SLIDE_TRANSITION = `transform ${SLIDE_MS}ms cubic-bezier(0.2, 0.8, 0.2, 1)`
@@ -19,7 +16,6 @@ const mondayOf = (date: string) => isoDay(weekOf(parseDay(date))[0] ?? parseDay(
 
 const RELATIVE_WEEKS: Record<number, string> = { [-1]: 'Last week', 0: 'This week', 1: 'Next week' }
 
-// "Oct 19 – Oct 25 · This week".
 export const weekLabel = (date: string, today: string) => {
   const week = weekOf(parseDay(date))
   const [monday, sunday] = [week[0], week[6]]
@@ -36,7 +32,6 @@ type Status = 'under' | 'on' | 'over' | 'none' | 'future'
 
 type Progress = { status: Status; description: string; ratio: number }
 
-// How a day went against the calorie goal, or undefined while its summary loads.
 const progressOf = (
   date: string,
   today: string,
@@ -56,8 +51,6 @@ const progressOf = (
   }
 }
 
-// Fills clockwise from the top with what the day's food adds up to; red past the goal, and a
-// dashed track when nothing was logged.
 function Ring({ progress }: { progress: Progress | undefined }) {
   const circle = { cx: 24, cy: 24, r: 20, fill: 'none', strokeWidth: 4, pathLength: 100 }
   return (
@@ -100,6 +93,7 @@ function Day({ day, selected, today, summaries, onSelect }: DayProps) {
       type="button"
       aria-label={date}
       aria-current={selected ? 'date' : undefined}
+      // oxlint-disable-next-line local/no-comments
       // A global attribute since ARIA 1.3, which the rule predates.
       // oxlint-disable-next-line jsx-a11y/role-supports-aria-props
       aria-description={description === '' ? undefined : description}
@@ -131,13 +125,11 @@ function Day({ day, selected, today, summaries, onSelect }: DayProps) {
 }
 
 type WeekProps = {
-  // The selected day, YYYY-MM-DD.
   date: string
   today: string
   onSelect: (date: string) => void
 }
 
-// Back to today, shown only away from it, and, on wide screens, the previous and next weeks.
 export function WeekControls({ date, today, onSelect }: WeekProps) {
   const arrow =
     'flex size-10 items-center justify-center rounded-full border border-line bg-surface text-fg-soft'
@@ -153,7 +145,6 @@ export function WeekControls({ date, today, onSelect }: WeekProps) {
           Today
         </button>
       )}
-      {/* Phones turn the week with a swipe instead. */}
       <div className="hidden items-center gap-2 sm:flex">
         <button
           type="button"
@@ -178,8 +169,6 @@ export function WeekControls({ date, today, onSelect }: WeekProps) {
 
 type Gesture = { x: number; y: number; dx: number; width: number; axis?: 'x' | 'y' }
 
-// The viewed week, each day with how it went. On touch screens a sideways swipe drags the
-// neighbouring week into view and, past SWIPE_PX, selects the same weekday in it.
 export function WeekStrip({
   date,
   today,
@@ -194,6 +183,7 @@ export function WeekStrip({
 
   useEffect(() => () => clearTimeout(turn.current), [])
 
+  // oxlint-disable-next-line local/no-comments
   // Not passive, so a sideways swipe stops the browser from scrolling: it would otherwise treat the
   // next tap as stopping that scroll rather than as a click.
   useEffect(() => {
@@ -228,7 +218,6 @@ export function WeekStrip({
     const current = gesture.current
     gesture.current = undefined
     if (current?.axis !== 'x') return
-    // A finger moving left brings in the next week; moving right, the previous one.
     const weeks = current.dx < -SWIPE_PX ? 1 : current.dx > SWIPE_PX ? -1 : 0
     setOffset({ px: -weeks * current.width, animate: true })
     if (weeks !== 0) {

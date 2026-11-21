@@ -33,16 +33,12 @@ import {
   weightHistoryQuerySchema,
 } from '../weight-entries/weight-entries.service.js'
 
-// A tool runs for the user the request authenticated, with input its schema already parsed. It
-// answers a JSON object, which becomes the tool's structured result.
 type Tool = {
   name: string
   description: string
-  // The scopes a token needs for the tool to be listed and called.
   scopes: ApiScope[]
   input: z.ZodType
   run: (userId: number, input: never) => Promise<object>
-  // What the tool answers when what it looks for is missing.
   notFound?: string
 }
 
@@ -57,8 +53,6 @@ const tool = <S extends z.ZodType>(definition: {
 
 const entryId = z.number().int().positive()
 
-// What log_food and update_food_entry take: a food per serving with its serving size by name, which
-// is found or added like POST /v1/serving-sizes does.
 const foodFields = foodEntrySchema
   .omit({ servingSizeId: true })
   .extend({ servingSize: servingSizeSchema.shape.name })
@@ -76,7 +70,6 @@ const errorOf = (message: string): CallToolResult => ({
   isError: true,
 })
 
-// The MCP server AI assistants reach at /v1/mcp. Every tool calls the same services as the REST API.
 @Injectable()
 export class McpService {
   private readonly tools: Tool[]
@@ -124,7 +117,6 @@ export class McpService {
         scopes: ['food-entries:write', 'serving-sizes:write'],
         input: foodFields.extend({ id: entryId }),
         run: async (userId, { id, servingSize, ...input }) => {
-          // Fails before adding the serving size when the entry is not the user's.
           await foodEntries.find(userId, id)
           return foodEntries.update(userId, id, {
             ...input,
@@ -217,7 +209,6 @@ export class McpService {
     ]
   }
 
-  // A server for one request, which lists and runs the tools the subject's scopes cover.
   serverFor({ userId, scopes = [] }: TokenSubject): Server {
     const allowed = (tool: Tool) => tool.scopes.every((scope) => scopes.includes(scope))
     const server = new Server(

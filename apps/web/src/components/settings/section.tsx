@@ -14,12 +14,10 @@ type SectionProps = {
   id: string
   title: string
   description: string
-  // Sits right of the title, e.g. a button that adds to the section.
   action?: ReactNode
   children: ReactNode
 }
 
-// On small screens the title sits above the card; on wide ones it heads the card.
 export function Section({ id, title, description, action, children }: SectionProps) {
   return (
     <section

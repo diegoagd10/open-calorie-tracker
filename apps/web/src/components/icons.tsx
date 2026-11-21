@@ -1,5 +1,3 @@
-// Small inline icons, so the page needs no icon library.
-
 import type { ReactNode } from 'react'
 
 type IconProps = { label?: string; className?: string }
@@ -165,8 +163,6 @@ export function InfoIcon({ className }: IconProps) {
   )
 }
 
-// The outline icons below share one look: 24px grid, round 1.8px strokes. They are hidden from
-// assistive technology unless given a label, since a text label usually sits next to them.
 function OutlineIcon({ label, className, children }: IconProps & { children: ReactNode }) {
   return (
     <svg

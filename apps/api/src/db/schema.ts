@@ -9,8 +9,6 @@ export const users = sqliteTable('users', {
 
 export type User = typeof users.$inferSelect
 
-// Each user's serving sizes; their food entries point to them. A user has each name once,
-// regardless of case.
 export const servingSizes = sqliteTable(
   'serving_sizes',
   {
@@ -30,7 +28,6 @@ export const servingSizes = sqliteTable(
 
 export type ServingSize = typeof servingSizes.$inferSelect
 
-// Where food entries come from. The migration adds every source the app knows.
 export const foodSources = sqliteTable('food_sources', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   name: text('name', { enum: ['manual'] })
@@ -40,7 +37,6 @@ export const foodSources = sqliteTable('food_sources', {
 
 export type FoodSource = (typeof foodSources.$inferSelect)['name']
 
-// Nutrients are nullable: an entry may not have data for every one of them.
 export const foodEntries = sqliteTable(
   'food_entries',
   {
@@ -70,7 +66,6 @@ export const foodEntries = sqliteTable(
 
 export type FoodEntry = typeof foodEntries.$inferSelect
 
-// Amount in US fluid ounces.
 export const waterEntries = sqliteTable(
   'water_entries',
   {
@@ -86,7 +81,6 @@ export const waterEntries = sqliteTable(
 
 export type WaterEntry = typeof waterEntries.$inferSelect
 
-// One row per user who changed a goal; a user without one has the default goals.
 export const dailyGoals = sqliteTable('daily_goals', {
   userId: integer('user_id')
     .primaryKey()
@@ -101,9 +95,6 @@ export const dailyGoals = sqliteTable('daily_goals', {
   water: integer('water').notNull(),
 })
 
-// Keys a user creates for other apps. The key is stored encrypted, so Settings can show it again,
-// and hashed, to find a key by its value without decrypting every one. A user has each name once,
-// regardless of case.
 export const apiKeys = sqliteTable(
   'api_keys',
   {
@@ -117,7 +108,6 @@ export const apiKeys = sqliteTable(
     preview: text('preview').notNull(),
     createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
     lastUsedAt: integer('last_used_at', { mode: 'timestamp_ms' }),
-    // Null for a key that never expires.
     expiresAt: integer('expires_at', { mode: 'timestamp_ms' }),
   },
   (table) => [
@@ -126,8 +116,6 @@ export const apiKeys = sqliteTable(
   ],
 )
 
-// One weigh-in per user and calendar day (YYYY-MM-DD in their time zone), in pounds. Logging the
-// same day again replaces it.
 export const weightEntries = sqliteTable(
   'weight_entries',
   {
@@ -141,8 +129,6 @@ export const weightEntries = sqliteTable(
   (table) => [uniqueIndex('weight_entries_user_date_unique').on(table.userId, table.date)],
 )
 
-// One row per user who set a weight goal, in pounds. The goal starts on startDate, the day the
-// starting weight was last changed.
 export const weightGoals = sqliteTable('weight_goals', {
   userId: integer('user_id')
     .primaryKey()

@@ -8,8 +8,6 @@ const requestLogOut = async () => {
   }
 }
 
-// Deletes the session and leaves for /login. Replacing the history entry keeps the Back button
-// from bringing the Food Log back. A failed request leaves the page as it was.
 export const useLogOut = () => {
   const [pending, setPending] = useState(false)
   const [failed, setFailed] = useState(false)

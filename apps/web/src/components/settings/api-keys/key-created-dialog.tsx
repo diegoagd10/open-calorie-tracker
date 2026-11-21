@@ -10,7 +10,6 @@ import { CopyButton } from './copy-button'
 import { formatDate } from './format'
 import { useCopy } from './use-copy'
 
-// Shows the key just created, with how to send it. Done, Escape and a click outside all close it.
 export function KeyCreatedDialog({ apiKey, onDone }: { apiKey: ApiKey; onDone: () => void }) {
   const titleId = useId()
   const keyFieldId = useId()

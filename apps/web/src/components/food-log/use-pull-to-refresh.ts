@@ -1,21 +1,16 @@
 import { type RefObject, useEffect, useRef, useState } from 'react'
 
-// How far the finger has to move down before releasing reloads.
 export const PULL_THRESHOLD_PX = 80
-// The screen moves less than the finger, so pulling feels like stretching.
 const RESISTANCE = 0.5
-// Where the screen rests while reloading, leaving room for the loader.
 const REFRESHING_OFFSET_PX = 56
-// Past the resting place the screen stretches ever less, and never further than this.
 const MAX_OFFSET_PX = 96
+// oxlint-disable-next-line local/no-comments
 // Phones can swallow the release, e.g. an app opened from the iOS home screen, so a finger that
 // stops moving this long counts as released rather than leaving the screen pulled down.
 const IDLE_RELEASE_MS = 1_000
 const SETTLE_TRANSITION = 'transform 200ms ease-out'
-// How far the finger moves before the gesture counts as sideways, like a swipe through the weeks.
 const AXIS_LOCK_PX = 6
 
-// How far the screen moves for how far the finger has: with it at first, then ever less.
 const offsetOf = (distance: number) => {
   const offset = distance * RESISTANCE
   if (offset <= REFRESHING_OFFSET_PX) return offset
@@ -23,8 +18,6 @@ const offsetOf = (distance: number) => {
   return REFRESHING_OFFSET_PX + room * (1 - Math.exp(-(offset - REFRESHING_OFFSET_PX) / room))
 }
 
-// Pull to refresh for touch screens: dragging down from the top of the page moves `content` with
-// the finger, and releasing past the threshold calls `onRefresh`. Mouse drags are ignored.
 export const usePullToRefresh = (
   content: RefObject<HTMLElement | null>,
   onRefresh: () => Promise<void>,
@@ -45,7 +38,6 @@ export const usePullToRefresh = (
     let busy = false
     let idle: ReturnType<typeof setTimeout> | undefined
 
-    // Set directly on the element, so the screen follows the finger without waiting for React.
     const moveContent = (offset: number, animate: boolean) => {
       const element = content.current
       if (element === null) return
@@ -69,7 +61,6 @@ export const usePullToRefresh = (
       const down = Math.abs(touch.clientY - startY)
       if (!locked && Math.max(across, down) > AXIS_LOCK_PX) {
         locked = true
-        // A sideways gesture is not a pull.
         if (across > down) {
           startY = undefined
           setArmed(false)
@@ -78,7 +69,6 @@ export const usePullToRefresh = (
         }
       }
       distance = Math.max(0, touch.clientY - startY)
-      // Moving up scrolls the page as usual.
       if (distance === 0) return
       event.preventDefault()
       moveContent(offsetOf(distance), false)
@@ -111,13 +101,13 @@ export const usePullToRefresh = (
     }
 
     const handleTouchEnd = () => void onTouchEnd()
-    // A cancelled gesture (e.g. the browser took over) never reloads.
     const handleTouchCancel = () => {
       distance = 0
       void onTouchEnd()
     }
 
     window.addEventListener('touchstart', onTouchStart, { passive: true })
+    // oxlint-disable-next-line local/no-comments
     // Not passive, so the browser does not scroll or overscroll while pulling.
     window.addEventListener('touchmove', onTouchMove, { passive: false })
     window.addEventListener('touchend', handleTouchEnd)
@@ -131,6 +121,5 @@ export const usePullToRefresh = (
     }
   }, [content])
 
-  // The loader shows once the pull would reload, and while reloading.
   return { showLoader: armed || refreshing }
 }

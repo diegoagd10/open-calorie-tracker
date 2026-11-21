@@ -42,6 +42,7 @@ const print = (value: unknown): void => console.log(JSON.stringify(value, null, 
 const messageOf = (error: unknown): string =>
   error instanceof Error ? error.message : String(error)
 
+// oxlint-disable-next-line local/no-comments
 // /proc/<pid>/stat fields after the command name: state, ppid, pgrp, session, ... starttime.
 const procStat = (pid: number): ProcessIdentity | undefined => {
   try {
@@ -53,6 +54,7 @@ const procStat = (pid: number): ProcessIdentity | undefined => {
   }
 }
 
+// oxlint-disable-next-line local/no-comments
 // Each process up starts leads its own session, and pnpm moves scripts into process groups of
 // their own, so the session, not the group, holds everything one start owns. A session id is not
 // reused while any member lives; a live leader with another start time means the id was reused.

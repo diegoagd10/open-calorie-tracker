@@ -46,30 +46,22 @@ const STEPPER = 'flex h-full w-11 items-center justify-center disabled:opacity-4
 type FoodDialogProps = {
   day: string | undefined
   isToday: boolean
-  // The entry to edit; without one the dialog adds a food.
   entry?: FoodLogEntry
-  // Today's calories so far, including the entry, and the daily goal, in kcal.
   total: number
   goal: number
   onClose: () => void
-  // Called once the food is saved, or the entry turned out to be gone.
   onSaved: () => void
-  // Asks to delete the entry; only an entry being edited offers it.
   onDelete?: () => void
 }
 
-// "Add food" or "Save" until the form is complete, then the calories it saves.
 const submitLabel = (adding: boolean, complete: boolean, calories: number) => {
   if (!complete) return adding ? 'Add food' : 'Save'
   return `${adding ? 'Add' : 'Save'} ${formatNumber(calories)} kcal`
 }
 
-// A stored total, per serving again: 270 kcal over 1.5 servings is "180".
 const perServingText = (total: number | null, servings: number) =>
   total === null ? '' : String(roundTenths(total / servings))
 
-// Logs a food as its label prints it, per serving, times the servings eaten, or edits a logged one.
-// Shows where the food would bring today's calories.
 export function FoodDialog({
   day,
   isToday,
@@ -84,7 +76,6 @@ export function FoodDialog({
   const nameId = useId()
   const caloriesId = useId()
   const servingsLabelId = useId()
-  // What the entry holds, per serving, as the form shows it.
   const [initial] = useState(() =>
     entry === undefined
       ? { name: '', servingSize: '', servings: 1, calories: '', nutrients: NO_NUTRIENTS }
@@ -122,14 +113,11 @@ export function FoodDialog({
 
   const perServing = perServingValue(calories)
   const entryCalories = roundTenths((perServing ?? 0) * servings)
-  // Today without the entry being edited, which the new calories replace.
   const others = roundTenths(total - (entry?.calories ?? 0))
   const after = roundTenths(others + entryCalories)
   const over = after > goal
   const complete =
     name.trim() !== '' && normalizeServingSize(servingSize) !== '' && perServing !== undefined
-  // Whether the form says what the entry already holds, ignoring spaces around the text and the
-  // case of the serving size.
   const unchanged =
     entry !== undefined &&
     name.trim() === initial.name &&
@@ -142,10 +130,7 @@ export function FoodDialog({
 
   const close = () => !pending && onClose()
 
-  // Saves a new serving size first; once saved it is the user's, so a retry reuses it.
   const save = async (): Promise<Outcome> => {
-    // Saved before the user's serving sizes arrived: look them up first, so one they already
-    // have is reused instead of saved again.
     const known = servingSizesLoaded ? servingSizes : await loadServingSizes()
     let chosen = findServingSize(known, servingSize)
     if (chosen === undefined) {
@@ -176,7 +161,6 @@ export function FoodDialog({
         onSubmit={(event) => {
           event.preventDefault()
           if (!complete) return
-          // Nothing changed, so there is nothing to send.
           if (unchanged) onClose()
           else void submit(save)
         }}
@@ -241,6 +225,7 @@ export function FoodDialog({
               <span id={servingsLabelId} className="text-sm font-medium">
                 Servings
               </span>
+              {/* oxlint-disable-next-line local/no-comments */}
               {/* The fieldset only groups; it doesn't stretch its content, so the pill is a div. */}
               <fieldset aria-labelledby={servingsLabelId} className="m-0 min-w-0 border-0 p-0">
                 <div className="flex h-12 items-center rounded-full border border-line-strong bg-bg">

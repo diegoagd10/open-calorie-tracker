@@ -28,11 +28,8 @@ export type CommandName =
   | 'press'
   | 'screenshot'
   | 'api'
-// Every command also takes --base-port and --help.
 export type Command = { usage: string; summary: string; flags?: readonly Flag[] }
 
-// An element found by its ARIA role and accessible name, as getByRole finds it. nth picks one of
-// several matches, from 0 in page order.
 export type Target = { role: AriaRole; name: string; nth: number | undefined }
 export const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const
 export type Method = (typeof METHODS)[number]
@@ -49,7 +46,6 @@ export type Request = { instance: Instance } & (
   | { command: 'api'; method: Method; path: string; body: unknown }
 )
 
-// Everything one --base-port N decides. An instance takes three consecutive ports.
 export type Ports = { web: number; api: number; cdp: number }
 export type Urls = { web: string; api: string; cdp: string }
 export type Instance = {
@@ -61,12 +57,10 @@ export type Instance = {
   evidenceDir: string
 }
 
-// A session id plus the start time of its leader, so a reused id is never mistaken for ours.
 export type ProcessIdentity = { sid: number; startTime: string | undefined }
 export type ProcessRecord = ProcessIdentity & { port: number; log: string }
 export type ProcessName = 'api' | 'web' | 'browser'
 
-// The contents of state.json, written by up and read by doctor and down.
 export type State = {
   basePort: number
   repo: string
@@ -154,9 +148,7 @@ export const COMMANDS: Record<CommandName, Command> = {
 export const isCommandName = (value: string): value is CommandName => Object.hasOwn(COMMANDS, value)
 
 export class Failure extends Error {
-  // What the agent should do instead.
   next: string
-  // Extra fields for the output, such as the candidates for a target that was not found.
   details: Record<string, unknown>
 
   constructor(message: string, next: string, details: Record<string, unknown> = {}) {
@@ -183,7 +175,6 @@ export const instanceAt = (basePort: number): Instance => {
   }
 }
 
-// Parses the --base-port flag.
 export const parseInstance = (value: string | undefined): Instance => {
   if (value === undefined) return instanceAt(DEFAULT_BASE_PORT)
   const basePort = Number(value)
@@ -336,7 +327,6 @@ const parseBody = (value: string | undefined): unknown => {
   }
 }
 
-// Parses the arguments after the command name. Returns undefined for --help.
 export const parseRequest = (command: CommandName, args: string[]): Request | undefined => {
   let parsed
   try {

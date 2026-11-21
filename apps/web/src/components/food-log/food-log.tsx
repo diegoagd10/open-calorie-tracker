@@ -22,7 +22,6 @@ import { usePullToRefresh } from './use-pull-to-refresh'
 import { type Today, useToday } from './use-today'
 import { WeekControls, WeekStrip, weekLabel } from './week-strip'
 
-// Sits in the gap the pull opens under the header.
 function Loader() {
   return (
     <output aria-label="Reloading" className="absolute inset-x-0 top-3 z-10 flex justify-center">
@@ -31,7 +30,6 @@ function Loader() {
   )
 }
 
-// On small screens the buttons stay at the bottom of the screen while the log scrolls.
 function AddButtons({ onAddWater, onAddFood }: { onAddWater: () => void; onAddFood: () => void }) {
   return (
     <div className="sticky bottom-0 -mx-4 grid grid-cols-2 gap-3 border-t border-line bg-bg px-4 pt-3 pb-[max(1.5rem,env(safe-area-inset-bottom))] sm:-mx-8 sm:px-8 lg:static lg:col-start-2 lg:row-start-2 lg:mx-0 lg:border-0 lg:bg-transparent lg:p-0">
@@ -55,8 +53,6 @@ function AddButtons({ onAddWater, onAddFood }: { onAddWater: () => void; onAddFo
   )
 }
 
-// Each visit owns its requests, totals, refresh gesture and dialogs. Switching dates unmounts
-// that identity, even when returning to a date whose earlier reload has not finished yet.
 export function FoodLog() {
   const today = useToday()
   const [selected, setSelected] = useState<string>()
@@ -100,7 +96,6 @@ function DayLog({
   const isToday = day?.date === today
   const dailyLog = useDailyLog(day)
   const { log, failed } = dailyLog
-  // A change to the day also changes its progress in the week strip.
   const reloadDay = dailyLog.reload
   const reload = useCallback(async () => {
     await Promise.all([reloadDay(), onWeekChanged()])
@@ -114,7 +109,6 @@ function DayLog({
     goal: log?.goals.water ?? DEFAULT_DAILY_GOALS.water,
     onChanged: () => void reload(),
   })
-  // Adding a food, or editing an entry and maybe confirming its deletion.
   const [foodDialog, setFoodDialog] = useState<{ entry?: FoodLogEntry; deleting?: boolean }>()
   const calories = {
     total: log?.totals.calories ?? 0,
@@ -151,7 +145,6 @@ function DayLog({
               <WeekStrip date={day.date} today={today} summaries={summaries} onSelect={onSelect} />
             )}
             {(failed || logOutFailed) && <Alert>{GENERIC_ERROR_MESSAGE}</Alert>}
-            {/* Small screens stack the totals above the log; wide ones put them beside it. */}
             <div className="flex flex-col gap-6 lg:grid lg:grid-cols-[minmax(0,1fr)_24rem] lg:items-start">
               {log !== undefined && (
                 <div className="flex flex-col gap-4 lg:col-start-2 lg:row-start-1">
@@ -159,7 +152,6 @@ function DayLog({
                   <WaterSummary goals={log.goals} totals={log.totals} />
                 </div>
               )}
-              {/* The server cannot know the browser's day, so the section waits for it. */}
               {day !== null && (
                 <section
                   aria-labelledby="daily-log-heading"

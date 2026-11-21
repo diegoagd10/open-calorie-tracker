@@ -12,7 +12,6 @@ const geistMono = Geist_Mono({
   subsets: ['latin'],
 })
 
-// Titles and figures.
 const newsreader = Newsreader({
   variable: '--font-newsreader',
   subsets: ['latin'],

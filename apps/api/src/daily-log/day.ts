@@ -15,6 +15,7 @@ const parseDate = (date: string) => {
   return { year, month, day }
 }
 
+// oxlint-disable-next-line local/no-comments
 // Rejects dates that do not exist, like 2026-02-30, which Date.UTC would roll over. Zod runs it
 // even when the format is wrong, which makes an invalid Date.
 const isCalendarDate = (date: string) => {
@@ -31,7 +32,6 @@ export const calendarDate = (name: string) =>
 
 export const timeZone = z.string().refine(isTimeZone, 'timeZone must be an IANA time zone')
 
-// Today's date, YYYY-MM-DD, in a valid time zone.
 export const todayIn = (timeZone: string) =>
   new Intl.DateTimeFormat('en-CA', { timeZone }).format(new Date())
 
@@ -39,7 +39,6 @@ export const dayQuerySchema = z.object({ date: calendarDate('date'), timeZone })
 
 export type DayQuery = z.infer<typeof dayQuerySchema>
 
-// The calendar days from one date to another, both included.
 export const datesBetween = (from: string, to: string) => {
   const start = parseDate(from)
   const dates: string[] = []
@@ -62,7 +61,6 @@ export const rangeQuerySchema = z
 
 export type RangeQuery = z.infer<typeof rangeQuerySchema>
 
-// How far ahead of UTC the wall clock in timeZone is at the given instant, in milliseconds.
 const utcOffset = (instant: number, timeZone: string) => {
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone,
@@ -87,15 +85,12 @@ const utcOffset = (instant: number, timeZone: string) => {
   return wallClock - (instant - (instant % 1000))
 }
 
-// The instant the wall clock in timeZone shows midnight on the given day.
 const midnight = (year: number, month: number, day: number, timeZone: string) => {
   const wallClock = Date.UTC(year, month - 1, day)
   const guess = wallClock - utcOffset(wallClock, timeZone)
-  // Corrects the guess when the offset at midnight differs from the one a few hours away.
   return wallClock - utcOffset(guess, timeZone)
 }
 
-// The [start, end) instants of a calendar day in a time zone.
 export const dayRange = ({ date, timeZone }: DayQuery) => {
   const { year, month, day } = parseDate(date)
   return {

@@ -1,5 +1,6 @@
 import type { DailyGoals, DailyGoalsUpdate } from '@open-calorie-tracker/shared'
 import { useEffect, useRef, useState } from 'react'
+import { logInAgain } from '../requests'
 
 const DAILY_GOALS_URL = '/api/daily-goals'
 
@@ -16,11 +17,6 @@ const request = async (init?: RequestInit): Promise<Result> => {
   }
 }
 
-// The session expired: a full navigation lets the proxy clear it and show the login page.
-const logInAgain = () => window.location.assign('/login')
-
-// Loads the user's goals and saves changes to them, one save at a time. `goals` is undefined until
-// they load, and stays so when loading fails.
 export const useDailyGoals = () => {
   const [goals, setGoals] = useState<DailyGoals>()
   const [failed, setFailed] = useState(false)
@@ -40,7 +36,6 @@ export const useDailyGoals = () => {
     }
   }, [])
 
-  // Resolves to the saved goals, or undefined when saving failed.
   const save = async (changes: DailyGoalsUpdate): Promise<DailyGoals | undefined> => {
     if (running.current) return undefined
     running.current = true

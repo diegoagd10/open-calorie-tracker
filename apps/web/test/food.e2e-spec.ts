@@ -40,17 +40,13 @@ const SERVING_SIZES_URL = `${WEB_URL}/api/serving-sizes`
 
 const GOAL = DEFAULT_DAILY_GOALS.calories
 
-// Seeded entries sit a minute into the real today, older than the ones the page creates; see
-// minutesIntoToday.
 const FIRST = minutesIntoToday(1)
 const SECOND = minutesIntoToday(2)
 const THIRD = minutesIntoToday(3)
 
-// The rows of the seeded yogurt and breakfast, newest first as the log lists them.
 const YOGURT_ROW = `${timeLabel(SECOND)} Greek yogurt with honey Manual 1 cup (245 g) × 1.5 270 kcal`
 const BREAKFAST_ROW = `${timeLabel(FIRST)} Breakfast Manual 1 plate × 1 500 kcal`
 
-// Long before today, so the entries that give a user serving sizes add nothing to today's log.
 const LONG_AGO = newYorkTime('2026-01-01T12:00:00')
 
 const NUTRIENTS = [
@@ -88,7 +84,6 @@ describe('Food (e2e)', () => {
   let username: string
   let token: string
   let home: ReturnType<typeof homePage>
-  // The page's requests to the food and serving size routes, e.g. "POST /api/food-entries".
   let foodRequests: string[]
 
   beforeAll(async () => {
@@ -101,7 +96,6 @@ describe('Food (e2e)', () => {
     await browser.close()
   })
 
-  // A fresh page with a new user, who starts with no entries and no serving sizes.
   const openNewPage = async (options: BrowserContextOptions = {}) => {
     ;({ context, page, username, token } = await signedInPage(browser, database, options))
     home = homePage(page)
@@ -123,7 +117,6 @@ describe('Food (e2e)', () => {
     await context.close()
   })
 
-  // Today's calories so far, as one entry.
   const seedCalories = (calories: number) =>
     seedFoodEntry(database, {
       username,
@@ -134,7 +127,6 @@ describe('Food (e2e)', () => {
       calories,
     })
 
-  // Greek yogurt with honey, 1.5 servings, stored as the totals: 180 kcal per serving.
   const seedYogurt = () =>
     seedFoodEntry(database, {
       username,
@@ -151,10 +143,8 @@ describe('Food (e2e)', () => {
       sodium: 127.5,
     })
 
-  // The id of the user's newest entry, the yogurt wherever it is seeded.
   const yogurtId = async () => (await storedFoodEntries(database, username)).at(-1)?.id ?? 0
 
-  // Gives the user serving sizes, from entries logged long ago.
   const seedServingSizes = async (names: string[], owner = username) => {
     for (const servingSize of names) {
       await seedFoodEntry(database, {
@@ -170,7 +160,6 @@ describe('Food (e2e)', () => {
 
   const main = () => page.getByRole('main')
   const addFoodButton = () => main().getByRole('button', { name: 'Add food', exact: true })
-  // Whichever food dialog is open; there is only ever one.
   const dialog = () => page.getByRole('dialog', { name: /^(Add|Edit) food$/ })
   const addDialog = () => page.getByRole('dialog', { name: 'Add food' })
   const editDialog = () => page.getByRole('dialog', { name: 'Edit food' })
@@ -194,12 +183,9 @@ describe('Food (e2e)', () => {
     servingOptions().filter({ hasText: new RegExp(`^${name.replaceAll(/[()]/g, '\\$&')}$`) })
   const createOption = (name: string) =>
     servingList().getByRole('button', { name: `Create “${name}”` })
-  // "Add food" or "Save" while the form is incomplete, "Add 270 kcal" or "Save 270 kcal" once it
-  // is complete.
   const submit = () =>
     dialog().getByRole('button', { name: /^(Add (food|[\d,.]+ kcal)|Save( [\d,.]+ kcal)?)$/ })
 
-  // The confirmation that opens over Edit food before an entry is deleted.
   const confirmation = () => page.getByRole('alertdialog')
   const confirmDelete = () => confirmation().getByRole('button', { name: /^Delete [\d,.]+ kcal$/ })
   const keepIt = () => confirmation().getByRole('button', { name: 'Keep it', exact: true })
@@ -213,7 +199,6 @@ describe('Food (e2e)', () => {
 
   const requestsTo = (method: string, path: string) =>
     foodRequests.filter((request) => request === `${method} ${path}`)
-  // The page's requests that change the log, e.g. "PATCH /api/food-entries/7".
   const changes = () => foodRequests.filter((request) => !request.startsWith('GET '))
   const patches = () => foodRequests.filter((request) => request.startsWith('PATCH '))
 
@@ -243,7 +228,6 @@ describe('Food (e2e)', () => {
     }
   }
 
-  // Fills the form; a click on the calories field closes the serving size list.
   const fillForm = async ({
     name,
     servingSize,
@@ -270,7 +254,6 @@ describe('Food (e2e)', () => {
     await expect.poll(isHidden(dialog()), eventually).toBe(true)
   }
 
-  // The color a CSS variable of the theme resolves to, as computed styles report it.
   const themeColor = (variable: string) =>
     page.evaluate((name) => {
       const probe = document.createElement('span')
@@ -920,7 +903,6 @@ describe('Food (e2e)', () => {
     })
 
     it('saves the changes and keeps the time and the position of the entry', async () => {
-      // Saving before the user's serving sizes arrive looks this one up with a POST instead.
       const servingSizesLoaded = page.waitForResponse(SERVING_SIZES_URL)
       await openEditDialog()
       await servingSizesLoaded
@@ -1050,7 +1032,6 @@ describe('Food (e2e)', () => {
       await seedYogurt()
     })
 
-    // Whether the element, or one around it, crosses its text out.
     const isStruck = (locator: ReturnType<typeof confirmation>) =>
       locator.evaluate((element) => {
         for (let node: Element | null = element; node !== null; node = node.parentElement) {
@@ -1059,7 +1040,6 @@ describe('Food (e2e)', () => {
         return false
       })
 
-    // The summary of every nutrient the yogurt has, with nothing logged.
     const EMPTY_NUTRIENT_SUMMARIES = [
       ['Protein', `0 / ${DEFAULT_DAILY_GOALS.protein} g`],
       ['Carbohydrate', `0 / ${DEFAULT_DAILY_GOALS.carbohydrate} g`],
@@ -1404,7 +1384,6 @@ describe('Food (e2e)', () => {
       await expect.poll(entryTexts, eventually).toHaveLength(1)
     })
 
-    // Saving a food with the new serving size "1 bowl", by adding one or by editing the yogurt.
     const SAVES = [
       [
         'adding',
@@ -1426,7 +1405,6 @@ describe('Food (e2e)', () => {
       ],
     ] as const
 
-    // The requests that add or change a food entry.
     const entryRequests = (method: string) =>
       foodRequests.filter((request) => request.startsWith(`${method} /api/food-entries`))
 
@@ -1555,7 +1533,6 @@ describe('Food (e2e)', () => {
   })
 
   describe('screens and themes', () => {
-    // Replaces the desktop page with one for the given screen, for a new user.
     const reopenWith = async (options: BrowserContextOptions) => {
       await context.close()
       await openNewPage(options)

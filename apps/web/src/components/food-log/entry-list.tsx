@@ -57,7 +57,6 @@ type EntryListProps = {
   onOpenWater: (entry: WaterLogEntry) => void
 }
 
-// Every entry opens for editing.
 function Entry({
   entry,
   onOpenFood,

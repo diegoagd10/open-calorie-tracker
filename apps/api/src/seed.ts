@@ -10,7 +10,6 @@ const envSchema = z.object({
   SEED_USER_PASSWORD: z.string().min(1),
 })
 
-// Variables already set in the environment take precedence over the file.
 if (existsSync('.env')) process.loadEnvFile('.env')
 
 const env = envSchema.parse(process.env)

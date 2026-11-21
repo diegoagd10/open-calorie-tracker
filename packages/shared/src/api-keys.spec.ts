@@ -59,7 +59,6 @@ describe('apiKeyExpiresAt', () => {
   })
 })
 
-// Two keys of one user cannot share a name, whatever the casing or the spaces around it.
 describe('sameApiKeyName', () => {
   it.each([
     ['Home Assistant', 'Home Assistant'],

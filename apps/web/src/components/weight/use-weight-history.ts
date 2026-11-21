@@ -1,6 +1,7 @@
 import type { WeightHistory } from '@open-calorie-tracker/shared'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { sendRequest } from '@/components/requests'
+import { logInAgain } from '../requests'
 
 type LoadResult = { history: WeightHistory } | 'unauthorized' | 'failed'
 
@@ -15,8 +16,6 @@ const requestHistory = async (): Promise<LoadResult> => {
   }
 }
 
-// Loads every weigh-in with the goal, and logs today's weight, one save at a time. `history` is
-// undefined until it loads, and a failed reload keeps the one already shown.
 export const useWeightHistory = () => {
   const [history, setHistory] = useState<WeightHistory>()
   const [failed, setFailed] = useState(false)
@@ -24,8 +23,7 @@ export const useWeightHistory = () => {
   const running = useRef(false)
 
   const apply = useCallback((result: LoadResult) => {
-    // The session expired: a full navigation lets the proxy clear it and show the login page.
-    if (result === 'unauthorized') window.location.assign('/login')
+    if (result === 'unauthorized') logInAgain()
     else if (result === 'failed') setFailed(true)
     else setHistory(result.history)
   }, [])
@@ -40,8 +38,6 @@ export const useWeightHistory = () => {
     }
   }, [apply])
 
-  // Logs the weight for today in the time zone and reloads the history. Resolves to whether it
-  // was saved.
   const log = async (weight: number, timeZone: string) => {
     if (running.current) return false
     running.current = true

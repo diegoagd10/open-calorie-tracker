@@ -31,7 +31,6 @@ const at = (msFromNow: number) => new Date(NOW.getTime() + msFromNow)
 const DATE = '2026-10-26'
 const TIME_ZONE = 'America/New_York'
 
-// Every key's token carries these, in this order.
 const SCOPES = [
   'daily-log:read',
   'food-entries:read',
@@ -51,9 +50,7 @@ type DailyLog = { entries: { type: string; name?: string }[] }
 describe('API tokens (e2e)', () => {
   let app: TestApp
   let database: Database
-  // diego's login token, for what the third-party app does not do.
   let loginToken: string
-  // diego's "Zapier" key, which never expires.
   let zapier: ApiKey
 
   beforeEach(async () => {
@@ -82,7 +79,6 @@ describe('API tokens (e2e)', () => {
     return body === undefined ? pending : pending.send(body)
   }
 
-  // Exchanges the key and returns the access token.
   const tokenFor = async (apiKey = zapier.key) => {
     const response = await exchange({ apiKey })
     expect(response.status).toBe(200)
@@ -211,7 +207,6 @@ describe('API tokens (e2e)', () => {
     })
   })
 
-  // What a key's token can and cannot do. Each endpoint sends a valid request with the given token.
   describe('C, D — scopes', () => {
     let ids: Awaited<ReturnType<typeof seedEntries>>
 
@@ -338,7 +333,6 @@ describe('API tokens (e2e)', () => {
       expect((response.body as { message: unknown }).message).toBe(INSUFFICIENT_SCOPE_MESSAGE)
     })
 
-    // Settings, which a key's token never reaches.
     const SETTINGS: [string, string, (bearer: string) => request.Test][] = [
       [
         'GET',
@@ -390,7 +384,6 @@ describe('API tokens (e2e)', () => {
       ],
     ]
 
-    // What the settings requests could change.
     const settingsOfDiego = async () => ({
       keys: await keys(),
       goals: (await withBearer(http().get('/v1/settings/daily-goals'), loginToken)).body as unknown,

@@ -42,7 +42,6 @@ const PASSWORD = 'correct-horse-battery-staple'
 
 const FIELDS = 'code,product_name,product_name_en,generic_name,brands,serving_size,nutriments'
 
-// A barcode NUTELLA's variants are looked up with.
 const BARCODE = '12345670'
 
 const NUTRIENTS = ['protein', 'carbohydrate', 'fat', 'fiber', 'sugar', 'sodium'] as const
@@ -51,7 +50,6 @@ describe('products (e2e)', () => {
   let app: TestApp
   let database: Database
   let fetch: FakeFetch
-  // A token exchanged from diego's "Zapier" key, and its scopes.
   let token: string
   let scopes: string[]
 
@@ -84,7 +82,6 @@ describe('products (e2e)', () => {
   const get = (barcode: string, bearer: string | null = token) =>
     withBearer(http().get(`/v1/products/${barcode}`), bearer)
 
-  // Looks up `barcode`, which Open Food Facts has as `product`, and returns the answer.
   const lookUp = async (product: OpenFoodFactsProduct, barcode = BARCODE) => {
     fetch.mockImplementation(answeringWith({ [barcode]: product }))
     const response = await get(barcode)
@@ -339,7 +336,6 @@ describe('products (e2e)', () => {
       expect((response.body as { message: unknown }).message).toBe(PRODUCT_NOT_FOUND_MESSAGE)
     })
 
-    // Waits on the request's abort signal, so only the API's timeout ends it.
     const hanging = (input: string | URL | Request, init?: RequestInit) => {
       const signal = input instanceof Request ? input.signal : init?.signal
       return new Promise<Response>((_resolve, reject) => {

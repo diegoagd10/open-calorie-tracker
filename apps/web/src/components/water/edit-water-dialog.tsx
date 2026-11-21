@@ -19,15 +19,12 @@ import { updateWater } from './water-requests'
 type EditWaterDialogProps = {
   isToday: boolean
   entry: WaterLogEntry
-  // Today's water so far, in fl oz, including this entry.
   total: number
   onClose: () => void
-  // Called once the entry changed, or turned out to be gone.
   onChanged: () => void
   onDelete: () => void
 }
 
-// Changes the amount of an entry; it keeps its time. One tap on a preset saves it.
 export function EditWaterDialog({
   isToday,
   entry,
@@ -44,7 +41,6 @@ export function EditWaterDialog({
   const close = () => !pending && onClose()
 
   const save = (newAmount: number) => {
-    // Nothing changed, so there is nothing to send.
     if (newAmount === entry.amount) onClose()
     else void submit(() => updateWater(entry.id, newAmount))
   }

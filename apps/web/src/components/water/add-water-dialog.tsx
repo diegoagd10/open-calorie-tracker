@@ -16,15 +16,12 @@ import { addWater } from './water-requests'
 type AddWaterDialogProps = {
   day: string | undefined
   isToday: boolean
-  // Today's water so far and the daily goal, in fl oz.
   total: number
   goal: number
   onClose: () => void
   onAdded: () => void
 }
 
-// One tap on a preset logs it; the field takes any other amount the shared rules allow. Each
-// choice shows where it would bring today's water.
 export function AddWaterDialog({
   day,
   isToday,

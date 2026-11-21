@@ -17,9 +17,6 @@ const requestSummaries = async (range: { from: string; to: string; timeZone: str
   }
 }
 
-// How each day went in the viewed week and the ones beside it, which a swipe brings into view.
-// The days already loaded stay while another week loads. A failure keeps them too: the daily log
-// reports errors, and a session that expired.
 export const useDailySummaries = (day: Today | null) => {
   const [summaries, setSummaries] = useState<WeekSummaries>()
   const generation = useRef(0)

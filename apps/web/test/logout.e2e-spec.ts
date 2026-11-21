@@ -44,7 +44,6 @@ describe('Log out (e2e)', () => {
     await context.close()
   })
 
-  // The log loads in the browser, so once it shows the page is interactive.
   const openLoadedHome = async () => {
     await openHome(page)
     await expect.poll(() => home.summary('Calories').isVisible(), eventually).toBe(true)
@@ -58,7 +57,6 @@ describe('Log out (e2e)', () => {
 
   const loginForm = () => page.getByRole('form', { name: 'Log in' })
 
-  // The cookie the response sets for the session, as lowercase attributes after its value.
   const sessionSetCookie = (response: Response) => {
     const header = response.headers
       .getSetCookie()

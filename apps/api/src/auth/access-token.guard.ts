@@ -13,12 +13,8 @@ import { AuthService } from './auth.service.js'
 
 type AuthenticatedRequest = Request & { userId?: number }
 
-// The scope a token exchanged from an API key needs to reach a controller or handler, the handler's
-// winning. Without one, only login tokens get through.
 export const RequiresScope = Reflector.createDecorator<ApiScope>()
 
-// Lets a request through only with a valid "Authorization: Bearer <access token>" header, and a
-// token with scopes only where it has the one the endpoint requires.
 @Injectable()
 export class AccessTokenGuard implements CanActivate {
   constructor(
@@ -48,7 +44,6 @@ export class AccessTokenGuard implements CanActivate {
   }
 }
 
-// The id of the user the AccessTokenGuard authenticated.
 export const UserId = createParamDecorator(
   (_data: unknown, context: ExecutionContext) =>
     context.switchToHttp().getRequest<AuthenticatedRequest>().userId,

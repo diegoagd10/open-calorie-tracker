@@ -6,9 +6,7 @@ import type { Database } from '../src/db/database.js'
 import { foodEntries, users, waterEntries } from '../src/db/schema.js'
 import { seedFoodEntry, seedWaterEntry } from '../src/db/seed.js'
 
-// The only place the e2e tests configure the API, so a new variable is added here once.
 export const TEST_ENV = {
-  // A fresh in-memory database per app, so every test starts with no users.
   DATABASE_URL: ':memory:',
   JWT_SECRET: 'test-secret-that-is-long-enough-for-hs256',
   JWT_ISSUER: 'open-calorie-tracker-api',
@@ -16,13 +14,11 @@ export const TEST_ENV = {
   TRUST_PROXY: 'loopback',
   API_KEY_SECRET: 'test-api-key-secret-that-is-long-enough',
   OPEN_FOOD_FACTS_USER_AGENT: 'OpenCalorieTracker/test (https://example.test)',
-  // Never reached: test/open-food-facts.ts fakes fetch.
   OPEN_FOOD_FACTS_URL: 'https://off.test',
 }
 
 export type TestApp = Awaited<ReturnType<typeof createApp>>
 
-// Starts the API with TEST_ENV, where `unset` leaves variables out.
 export const createTestApp = async ({
   unset = [],
 }: { unset?: (keyof typeof TEST_ENV)[] } = {}): Promise<TestApp> => {
@@ -33,11 +29,9 @@ export const createTestApp = async ({
   return app
 }
 
-// Sends the request with the bearer token, or with no Authorization header when it is null.
 export const withBearer = (pending: request.Test, token: string | null) =>
   token === null ? pending : pending.set('Authorization', `Bearer ${token}`)
 
-// Logs in through the API and returns the access token.
 export const accessTokenFor = async (app: TestApp, username: string, password: string) => {
   const response = await request(app.getHttpServer()).post('/v1/login').send({ username, password })
   return (response.body as { accessToken: string }).accessToken
@@ -45,8 +39,6 @@ export const accessTokenFor = async (app: TestApp, username: string, password: s
 
 const now = () => Math.floor(Date.now() / 1000)
 
-// Signs a token like the API does, for user 1 and valid for 10 minutes unless told otherwise. A
-// `scope` gives it the space-separated scopes of a token exchanged from an API key.
 export const signAccessToken = ({
   secret = TEST_ENV.JWT_SECRET,
   subject = '1',
@@ -62,7 +54,6 @@ export const signAccessToken = ({
     .setExpirationTime(expiresAt)
     .sign(new TextEncoder().encode(secret))
 
-// Bearer tokens every guarded endpoint must reject with 401.
 export const INVALID_TOKENS = [
   ['a malformed token', () => Promise.resolve('not-a-jwt')],
   ['an expired token', () => signAccessToken({ expiresAt: now() - 60 })],
@@ -78,8 +69,6 @@ export const userIdOf = async (database: Database, username: string) => {
   return user.id
 }
 
-// Seeds a food ("Oatmeal", 1 × "1 cup", 150 kcal) and a water entry (16 fl oz) at
-// 2026-10-26T13:00:00Z and returns their ids and the food's serving size.
 export const seedEntries = async (database: Database, username: string) => {
   const loggedAt = new Date('2026-10-26T13:00:00Z')
   await seedFoodEntry(database, {

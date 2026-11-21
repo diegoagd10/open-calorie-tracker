@@ -6,7 +6,6 @@ import { PasswordModule } from './password/password.module.js'
 import { ProfileModule } from './profile/profile.module.js'
 import { WeightGoalModule } from './weight-goal/weight-goal.module.js'
 
-// What the Settings page manages. Each setting is a submodule served under /v1/settings/<name>.
 @Module({
   imports: [
     ProfileModule,

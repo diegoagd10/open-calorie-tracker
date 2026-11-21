@@ -13,7 +13,6 @@ import {
 } from './daily-log'
 import { connectDatabase, signedInPage } from './session'
 
-// The week of NOW, Saturday 2026-10-24.
 const WEEK = [
   '2026-10-19',
   '2026-10-20',
@@ -78,10 +77,8 @@ describe('Week strip (e2e)', () => {
     it('shows how each day went against the calorie goal', async () => {
       await logFood('2026-10-19T08:00:00', 600)
       await logFood('2026-10-19T13:00:00', 400)
-      // 90% of the goal is on target.
       await logFood('2026-10-20T13:00:00', 1800)
       await logFood('2026-10-21T13:00:00', 2400)
-      // Water alone is nothing logged.
       await seedWaterEntry(database, {
         username,
         loggedAt: newYorkTime('2026-10-23T10:00:00'),

@@ -31,12 +31,10 @@ type AmountFieldProps = {
   value: string
   onChange: (value: string) => void
   disabled: boolean
-  // Shown under the field, e.g. the limits or what the change does to the total.
   note?: ReactNode
   size?: 'regular' | 'large'
 }
 
-// The amount in fl oz, with − and + buttons. Typing and pasting follow the shared rules.
 export function AmountField({
   value,
   onChange,

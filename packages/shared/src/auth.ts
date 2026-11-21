@@ -3,15 +3,11 @@ import { z } from 'zod'
 export const USERNAME_MAX_LENGTH = 32
 export const PASSWORD_MAX_LENGTH = 128
 
-// Failed logins per (IP, username) before the API locks that pair out.
 export const MAX_FAILED_ATTEMPTS = 5
 export const ACCOUNT_LOCK_DURATION_SECONDS = 15 * 60
 
-// How long a login lasts. The session cookie expires with the token and is not renewed, so the
-// user logs in again once it runs out.
 export const ACCESS_TOKEN_TTL_SECONDS = 30 * 24 * 60 * 60
 
-// Validated by the web form before calling the server, and again by the API.
 export const loginSchema = z.object({
   username: z
     .string()

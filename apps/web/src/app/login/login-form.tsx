@@ -35,7 +35,6 @@ export function LoginForm() {
   const [formError, setFormError] = useState<string | undefined>()
   const [pending, setPending] = useState(false)
 
-  // Required fields are enforced by the disabled button; the schema still checks the lengths.
   const canSubmit = values.username !== '' && values.password !== '' && !pending
 
   const handleChange = (name: FieldName, value: string) => {

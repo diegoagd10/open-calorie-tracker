@@ -2,7 +2,6 @@ import { Controller, Get, ServiceUnavailableException } from '@nestjs/common'
 import { sql } from 'drizzle-orm'
 import { Database } from '../db/database.js'
 
-// For container health checks: no token, and healthy only while the database answers.
 @Controller('v1/health')
 export class HealthController {
   constructor(private readonly database: Database) {}

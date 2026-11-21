@@ -13,12 +13,10 @@ const PASSWORD = 'correct-horse-battery-staple'
 
 const TIME_ZONE = 'America/New_York'
 
-// New York is on daylight saving time (UTC-4) on 2026-10-24.
 const NINE_AM = new Date('2026-10-24T09:00:00-04:00')
 
 type WaterEntry = { id: number; type: 'water'; loggedAt: string; amount: number }
 
-// The API stamps new entries with its own clock, so the day they land on is the real today.
 const todayInNewYork = () =>
   new Intl.DateTimeFormat('en-CA', { timeZone: TIME_ZONE }).format(new Date())
 
@@ -39,7 +37,6 @@ describe('water entries (e2e)', () => {
     await app.close()
   })
 
-  // Sends diego's token unless the test passes another one, or null for none.
   type Bearer = string | null | undefined
 
   const withToken = (pending: request.Test, bearer: Bearer) =>
@@ -73,7 +70,6 @@ describe('water entries (e2e)', () => {
       .innerJoin(users, eq(waterEntries.userId, users.id))
       .where(eq(users.username, username))
 
-  // Seeds a 16 fl oz entry at 9:00 AM and returns its id.
   const seedEntry = async (username = USERNAME) => {
     await seedWaterEntry(database, { username, loggedAt: NINE_AM, amount: 16 })
     const [entry] = await storedEntries(username)
@@ -96,7 +92,6 @@ describe('water entries (e2e)', () => {
     expect(await dailyLogEntries('2020-01-02')).toEqual([])
     expect(await dailyLogEntries(todayInNewYork())).toEqual([])
 
-    // PATCH retains its existing behavior: extra keys are ignored, not persisted.
     const edited = await update(created.id, { amount: 20.5, loggedAt: '2020-01-03T12:00:00Z' })
     expect(edited.status).toBe(200)
     expect(edited.body).toEqual({ ...created, amount: 20.5 })

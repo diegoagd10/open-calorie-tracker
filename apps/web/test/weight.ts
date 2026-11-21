@@ -14,22 +14,17 @@ export type WeightHistory = {
 
 export type WeightGoal = { startWeight: number; goalWeight: number; startDate: string }
 
-// The API's clock cannot be fixed from here, so weights are seeded on days counted back from the
-// real today in the time zone.
 export const dateIn = (daysAgo = 0, timeZone = TIME_ZONE) => {
   const today = new Intl.DateTimeFormat('en-CA', { timeZone }).format(new Date())
   const [year = 0, month = 0, day = 0] = today.split('-').map(Number)
   return new Date(Date.UTC(year, month - 1, day - daysAgo)).toISOString().slice(0, 10)
 }
 
-// How the Weight page shows a date, e.g. "Oct 23".
 export const shortDate = (date: string) =>
   new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }).format(
     new Date(`${date}T00:00:00Z`),
   )
 
-// Calls the API through the fault proxy with the user's token, for states the test sets up or
-// checks behind the page's back.
 const callApi = async (token: string, method: string, path: string, body?: object) => {
   const headers: Record<string, string> = { Authorization: `Bearer ${token}` }
   const init: RequestInit = { method, headers }
@@ -85,8 +80,10 @@ export const weightPage = (page: Page) => {
       main.getByText('Set your starting and goal weight in Settings to see your progress.'),
     noGoalSettingsLink: () => main.getByRole('link', { name: 'Settings' }),
     goalReached: () => main.getByText('Goal reached'),
+    // oxlint-disable-next-line local/no-comments
     // The page's Alert, scoped to <main> because Next.js renders its own role="alert" route announcer.
     alert: () => main.getByRole('alert'),
+    // oxlint-disable-next-line local/no-comments
     // canvas-confetti draws on a canvas it adds to the body.
     confetti: () => page.locator('body > canvas'),
   }

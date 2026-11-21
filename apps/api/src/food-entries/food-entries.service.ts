@@ -16,7 +16,6 @@ import {
 } from '../db/schema.js'
 import { ServingSizesService } from '../serving-sizes/serving-sizes.service.js'
 
-// A food entry with the names of its serving size and source.
 export type StoredFood = FoodEntry & { servingSize: string; source: FoodSource }
 
 export const toFoodLogEntry = ({
@@ -31,15 +30,12 @@ export const toFoodLogEntry = ({
   loggedAt: loggedAt.toISOString(),
 })
 
-// The id of a source by name. The migration adds every source, so the lookup always finds one.
 export const sourceIdOf = (source: FoodSource) =>
   sql<number>`(SELECT ${foodSources.id} FROM ${foodSources} WHERE ${foodSources.name} = ${source})`
 
-// Another user's entry answers like a missing one, so ids reveal nothing about other users.
 const ownedBy = (userId: number, id: number) =>
   and(eq(foodEntries.id, id), eq(foodEntries.userId, userId))
 
-// Rounds away floating point noise, e.g. 1.5 × 0.3 = 0.44999999999999996.
 const round = (value: number) => Math.round(value * 100) / 100
 
 @Injectable()
@@ -49,8 +45,6 @@ export class FoodEntriesService {
     private readonly servingSizes: ServingSizesService,
   ) {}
 
-  // The columns an input sets, once it is checked to use one of the user's serving sizes. The input
-  // is per serving and the entry stores what all its servings add up to.
   private async valuesOf(
     userId: number,
     { name, servingSizeId, quantity, calories, ...nutrients }: FoodEntryInput,
@@ -75,8 +69,6 @@ export class FoodEntriesService {
     return { values, servingSize: servingSize.name }
   }
 
-  // The entry per serving, as PATCH takes it back. Totals of entries made through the API divide
-  // back exactly; rounding to one decimal, as PATCH accepts, drops the floating point noise.
   async find(userId: number, id: number): Promise<EditableFoodEntry> {
     const entry = await this.database.db
       .select({ entry: foodEntries, servingSize: servingSizes.name })
@@ -106,7 +98,6 @@ export class FoodEntriesService {
     }
   }
 
-  // Logged at the selected instant (or now), always as manual.
   async create(userId: number, input: CreateFoodEntryInput): Promise<FoodLogEntry> {
     const { values, servingSize } = await this.valuesOf(userId, input)
     const entry = await this.database.db
@@ -122,7 +113,6 @@ export class FoodEntriesService {
     return toFoodLogEntry({ ...entry, servingSize, source: 'manual' })
   }
 
-  // Replaces what the user entered; the entry keeps its time and source.
   async update(userId: number, id: number, input: FoodEntryInput): Promise<FoodLogEntry> {
     const { values, servingSize } = await this.valuesOf(userId, input)
     const entry = await this.database.db

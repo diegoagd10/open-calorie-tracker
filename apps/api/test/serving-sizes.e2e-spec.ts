@@ -27,7 +27,6 @@ describe('serving sizes (e2e)', () => {
     await app.close()
   })
 
-  // Sends diego's token unless the test passes another one, or null for none.
   type Bearer = string | null | undefined
 
   const withToken = (pending: request.Test, bearer: Bearer) =>

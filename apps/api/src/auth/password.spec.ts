@@ -3,7 +3,6 @@ import { hashPassword, verifyPassword } from './password.js'
 
 const PASSWORD = 'correct-horse-battery-staple'
 
-// A valid hash split into its parts, to build malformed variants of it.
 const [, , version, parameters, salt, key] = (await hashPassword(PASSWORD)).split('$')
 const phc = (...parts: (string | undefined)[]) => ['', ...parts].join('$')
 

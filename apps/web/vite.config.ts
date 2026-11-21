@@ -2,7 +2,6 @@ import { defineConfig } from 'vite-plus'
 
 export default defineConfig({
   run: {
-    // Tests import the compiled packages/shared, so rebuild it first.
     tasks: {
       test: {
         command: 'vp test run',
@@ -15,6 +14,7 @@ export default defineConfig({
     include: ['test/**/*.e2e-spec.ts'],
     passWithNoTests: true,
     globalSetup: ['./test/servers.ts'],
+    // oxlint-disable-next-line local/no-comments
     // The first request to `next dev` compiles the page.
     testTimeout: 30_000,
     hookTimeout: 60_000,

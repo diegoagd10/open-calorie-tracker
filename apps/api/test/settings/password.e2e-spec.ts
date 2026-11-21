@@ -44,7 +44,6 @@ describe('settings: password (e2e)', () => {
     await app.close()
   })
 
-  // Sends diego's token unless the test passes another one, or null for none.
   const change = (body?: object, bearer: string | null = token) => {
     const pending = withBearer(request(app.getHttpServer()).put('/v1/settings/password'), bearer)
     return body === undefined ? pending : pending.send(body)

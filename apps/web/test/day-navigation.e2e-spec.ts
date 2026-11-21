@@ -15,7 +15,6 @@ import {
 import { connectDatabase, signedInPage } from './session'
 import { SEEDED } from './fixtures'
 
-// All observations go through the browser or the public daily-log API, not database storage.
 describe('Selected-day log (e2e)', () => {
   let browser: Browser
   let database: Database
@@ -57,7 +56,6 @@ describe('Selected-day log (e2e)', () => {
     await home.week().getByRole('button', { name: date, exact: true }).click()
     await expect.poll(() => textOf(home.footer()), eventually).toContain(`date ${date}`)
   }
-  // Phones turn the week with a swipe: to the left for the next one.
   const turnWeek = async (direction: 'next' | 'previous', date: string) => {
     await swipe(page, home.week(), direction === 'next' ? -150 : 150)
     await expect.poll(() => textOf(home.footer()), eventually).toContain(`date ${date}`)
@@ -81,7 +79,6 @@ describe('Selected-day log (e2e)', () => {
   }
 
   it('keeps the initial header connected while resolving the browser day', async () => {
-    // Observe from document parsing, before hydration can replace the server-rendered header.
     await page.addInitScript(() => {
       let initialHeader: HTMLElement | null = null
       new MutationObserver(() => {
@@ -128,7 +125,6 @@ describe('Selected-day log (e2e)', () => {
     await turnWeek('previous', '2026-10-25')
     await select('2026-10-24')
     await total('Calories', '100')
-    // Ten weeks later, the same weekday.
     for (const date of [
       '2026-10-31',
       '2026-11-07',
@@ -217,7 +213,6 @@ describe('Selected-day log (e2e)', () => {
     expect(today.totals.water).toBe(8)
   })
 
-  // Hold a response after it has captured its payload, rather than merely delaying the request.
   const holdLog = async (date: string, status?: number) => {
     let release = () => {}
     let arrived = () => {}
@@ -264,7 +259,6 @@ describe('Selected-day log (e2e)', () => {
       const old = await holdLog('2026-10-23', status)
       await select('2026-10-23')
       await old.ready
-      // An unloaded day must never expose the previous day's entries or add buttons.
       expect(await home.entry('Today food').count()).toBe(0)
       expect(
         await page.getByRole('main').getByRole('button', { name: 'Add food', exact: true }).count(),

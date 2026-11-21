@@ -10,8 +10,6 @@ const dayNumber = (date: string) => parseDay(date).getTime() / (24 * 60 * 60 * 1
 
 type WeightChartProps = { entries: WeightHistory['entries']; goal: WeightGoal | null }
 
-// The weigh-ins as points, their 7-day trend as a line and, with a goal, its starting and goal
-// weights as dashed lines. The dates span the weigh-ins shown, not the whole period.
 export function WeightChart({ entries, goal }: WeightChartProps) {
   const weights = entries.flatMap(({ weight, trend }) => [weight, trend])
   if (goal !== null) weights.push(goal.startWeight, goal.goalWeight)
@@ -23,7 +21,6 @@ export function WeightChart({ entries, goal }: WeightChartProps) {
 
   const x = (date: string) => {
     const plotWidth = WIDTH - PADDING.left - PADDING.right
-    // A single day sits in the middle.
     const share = span === 0 ? 0.5 : (dayNumber(date) - dayNumber(first)) / span
     return PADDING.left + plotWidth * share
   }
@@ -47,6 +44,7 @@ export function WeightChart({ entries, goal }: WeightChartProps) {
   )
 
   return (
+    // oxlint-disable-next-line local/no-comments
     // One image for screen readers; an <img> cannot hold a drawn SVG and its HTML date labels.
     // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role
     <div role="img" aria-label="Weight chart" className="flex flex-col gap-1">

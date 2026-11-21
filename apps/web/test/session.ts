@@ -4,17 +4,14 @@ import { seedUser } from '../../api/src/db/seed'
 import { openPage } from './browser'
 import { SEEDED, SEED_USER } from './fixtures'
 
-// These tests add their own users to the environment that already has an account.
 const { databasePath, proxyUrl: PROXY_URL, webUrl: WEB_URL } = SEEDED
 
 const PASSWORD = SEED_USER.password
 
-// The tests write to the same database the API reads.
 export const connectDatabase = () => Database.connect(`file:${databasePath}`)
 
 let users = 0
 
-// A fresh user per test, so every test starts with an empty log.
 export const createUser = async (database: Database) => {
   users += 1
   const username = `diego${Date.now()}${users}`
@@ -34,8 +31,6 @@ export const setSessionCookie = (context: BrowserContext, token: string) =>
     },
   ])
 
-// Logs in through the fault proxy, which then knows the token belongs to this user, and stores the
-// session cookie the same way the login page does. Returns the token.
 export const logIn = async (context: BrowserContext, username: string) => {
   const response = await fetch(`${PROXY_URL}/v1/login`, {
     method: 'POST',
@@ -50,7 +45,6 @@ export const logIn = async (context: BrowserContext, username: string) => {
 export const sessionCookie = async (context: BrowserContext) =>
   (await context.cookies()).find((cookie) => cookie.name === 'access_token')
 
-// A fresh page with a new user already logged in.
 export const signedInPage = async (
   browser: Browser,
   database: Database,
@@ -62,7 +56,6 @@ export const signedInPage = async (
   return { context, page, username, token }
 }
 
-// Calls a Next.js route the way the page does, with the session cookie unless it is null.
 export const sendToRoute = (url: string, method: string, cookie: string | null, body?: object) => {
   const headers: Record<string, string> = {}
   const init: RequestInit = { method, headers, redirect: 'manual' }

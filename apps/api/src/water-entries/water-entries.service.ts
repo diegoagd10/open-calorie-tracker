@@ -15,7 +15,6 @@ export const toWaterLogEntry = ({ id, loggedAt, amount }: WaterEntry): WaterLogE
   amount,
 })
 
-// Another user's entry answers like a missing one, so ids reveal nothing about other users.
 const ownedBy = (userId: number, id: number) =>
   and(eq(waterEntries.id, id), eq(waterEntries.userId, userId))
 
@@ -23,7 +22,6 @@ const ownedBy = (userId: number, id: number) =>
 export class WaterEntriesService {
   constructor(private readonly database: Database) {}
 
-  // The entry as PATCH takes it back, which ignores the id and the time.
   async find(userId: number, id: number): Promise<Omit<WaterLogEntry, 'type'>> {
     const entry = await this.database.db
       .select()
@@ -34,7 +32,6 @@ export class WaterEntriesService {
     return { id, loggedAt: entry.loggedAt.toISOString(), amount: entry.amount }
   }
 
-  // Logged at the selected instant, defaulting to now for existing clients.
   async create(
     userId: number,
     { amount, loggedAt }: CreateWaterEntryInput,
@@ -51,7 +48,6 @@ export class WaterEntriesService {
     return toWaterLogEntry(entry)
   }
 
-  // Changes the amount only; the entry keeps its time.
   async update(userId: number, id: number, { amount }: WaterEntryInput): Promise<WaterLogEntry> {
     const entry = await this.database.db
       .update(waterEntries)

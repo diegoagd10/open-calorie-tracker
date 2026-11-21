@@ -5,7 +5,6 @@ import { hashPassword } from '../auth/password.js'
 import { Database } from '../db/database.js'
 import { type User, users } from '../db/schema.js'
 
-// Usernames are stored and looked up in lowercase, so they match regardless of case.
 export const normalizeUsername = (username: string) => username.toLowerCase()
 
 const userExists = () => new ConflictException('An account already exists')
@@ -24,7 +23,6 @@ export class UsersService {
     return this.database.db.query.users.findFirst({ where: eq(users.id, id) })
   }
 
-  // A token can outlive its user, e.g. after a database reset, so a missing user is a 401.
   async profileOf(id: number): Promise<Profile> {
     const user = await this.findById(id)
     if (user === undefined) throw new UnauthorizedException()
@@ -40,15 +38,12 @@ export class UsersService {
     return (await this.database.db.query.users.findFirst({ columns: { id: true } })) !== undefined
   }
 
-  // The app has a single user, created on first run. Returns the new user's id.
   async register({ username, password }: NewUser): Promise<number> {
-    // Skips the slow hash when the answer is already known.
     if (await this.hasAny()) throw userExists()
 
     const passwordHash = await hashPassword(password)
-    // Inserts only while there is no user, in a single statement so two concurrent
-    // registrations cannot both succeed. Bare column names: SQLite rejects table-qualified ones
-    // in INSERT and RETURNING.
+    // oxlint-disable-next-line local/no-comments
+    // Bare column names: SQLite rejects table-qualified ones in INSERT and RETURNING.
     const column = (name: string) => sql.identifier(name)
     const [created] = await this.database.db.all<{ id: number }>(sql`
       INSERT INTO ${users} (${column(users.username.name)}, ${column(users.passwordHash.name)})

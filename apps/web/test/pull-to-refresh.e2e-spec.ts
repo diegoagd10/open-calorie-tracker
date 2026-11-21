@@ -19,7 +19,6 @@ import { connectDatabase, createUser, logIn } from './session'
 
 const { proxyUrl: PROXY_URL } = SEEDED
 
-// Long enough to make sure a reload that should not happen did not.
 const QUIET_PERIOD_MS = 1_000
 
 describe('Pull to refresh (e2e)', () => {
@@ -85,14 +84,12 @@ describe('Pull to refresh (e2e)', () => {
       await logFood('Manzana', 95, '2026-10-24T10:58:00')
       const titleTop = await topOf(home.title())
       const weekTop = await topOf(home.week())
-      // Slow the reload down so the loader can be observed.
       await injectFault(PROXY_URL, { delayMs: 1_000 }, username)
 
       const touch = await finger(page)
       await touch.down()
       await touch.drag(120)
 
-      // The whole screen, week strip included, follows the finger.
       expect(await topOf(home.title())).toBeGreaterThan(titleTop)
       expect(await topOf(home.week())).toBeGreaterThan(weekTop)
       await home.loader().waitFor()
@@ -160,7 +157,6 @@ describe('Pull to refresh (e2e)', () => {
       await touch.up()
     })
 
-    // Phones can swallow the release, e.g. an app opened from the iOS home screen.
     it('reloads when the finger stops past 80 px and its release never arrives', async () => {
       await logFood('Manzana', 95, '2026-10-24T10:58:00')
       const titleTop = await topOf(home.title())

@@ -19,6 +19,7 @@ import { Modal } from '@/components/modal'
 import { PRIMARY_BUTTON, SECONDARY_BUTTON } from '../section'
 import { formatDate } from './format'
 import { API_KEYS_URL } from './use-api-keys'
+import { logInAgain } from '../../requests'
 
 const EXPIRY_CHOICES: { value: ApiKeyExpiresIn; label: string }[] = [
   { value: '30d', label: '30 days' },
@@ -53,30 +54,23 @@ const expiryNote = (expiresIn: ApiKeyExpiresIn, from: Date) => {
 }
 
 type CreateApiKeyDialogProps = {
-  // The user's keys, whose names a new key cannot take.
   keys: readonly ApiKey[]
   onClose: () => void
   onCreated: (key: ApiKey) => void
 }
 
-// Asks for a name and how long the key lasts. A name the user already has is flagged while typing,
-// and again by the API in case another tab took it meanwhile.
 export function CreateApiKeyDialog({ keys, onClose, onCreated }: CreateApiKeyDialogProps) {
   const titleId = useId()
   const expiresLabelId = useId()
   const nameField = useRef<HTMLInputElement>(null)
   const [name, setName] = useState('')
   const [expiresIn, setExpiresIn] = useState(DEFAULT_EXPIRY)
-  // The note says when a key created now would expire.
   const [openedAt] = useState(() => new Date())
-  // The API found the name taken; cleared once the name changes.
   const [takenElsewhere, setTakenElsewhere] = useState(false)
   const [failed, setFailed] = useState(false)
   const [pending, setPending] = useState(false)
-  // A second click before the button re-renders disabled is ignored.
   const running = useRef(false)
 
-  // The Modal's effect has opened the dialog by now, which moved the focus to its first button.
   useEffect(() => nameField.current?.focus(), [])
 
   const taken = takenElsewhere || keys.some((key) => sameApiKeyName(key.name, name))
@@ -93,8 +87,7 @@ export function CreateApiKeyDialog({ keys, onClose, onCreated }: CreateApiKeyDia
     setFailed(false)
     const outcome = await sendCreate(input.data)
     if (outcome === 'unauthorized') {
-      // The session expired: a full navigation lets the proxy clear it and show the login page.
-      window.location.assign('/login')
+      logInAgain()
       return
     }
     if (typeof outcome === 'object') {
@@ -151,7 +144,6 @@ export function CreateApiKeyDialog({ keys, onClose, onCreated }: CreateApiKeyDia
               <button
                 key={value}
                 type="button"
-                // Pills that behave as radio buttons; native radios would need hidden inputs.
                 // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role
                 role="radio"
                 aria-checked={value === expiresIn}

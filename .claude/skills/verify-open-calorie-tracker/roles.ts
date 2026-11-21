@@ -2,7 +2,6 @@ import type { Page } from 'playwright'
 
 export type AriaRole = Parameters<Page['getByRole']>[0]
 
-// Every role getByRole accepts. The type keeps it in sync with Playwright, both ways.
 const ROLES = {
   alert: true,
   alertdialog: true,

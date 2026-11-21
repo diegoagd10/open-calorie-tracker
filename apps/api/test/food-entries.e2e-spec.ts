@@ -18,7 +18,6 @@ const PASSWORD = 'correct-horse-battery-staple'
 
 const TIME_ZONE = 'America/New_York'
 
-// The API stamps new entries with its own clock, so the day they land on is the real today.
 const todayInNewYork = () =>
   new Intl.DateTimeFormat('en-CA', { timeZone: TIME_ZONE }).format(new Date())
 
@@ -28,7 +27,6 @@ describe('food entries (e2e)', () => {
   let app: TestApp
   let database: Database
   let token: string
-  // diego's "1 cup (245 g)".
   let servingSizeId: number
 
   beforeEach(async () => {
@@ -53,7 +51,6 @@ describe('food entries (e2e)', () => {
     return (response.body as { id: number }).id
   }
 
-  // Sends diego's token unless the test passes another one, or null for none.
   type Bearer = string | null | undefined
 
   const withToken = (pending: request.Test, bearer: Bearer) =>
@@ -82,7 +79,6 @@ describe('food entries (e2e)', () => {
 
   const storedEntries = () => database.db.select().from(foodEntries)
 
-  // The id of an entry ana logged with her own serving size.
   const theirEntryId = async () => {
     const theirToken = await accessTokenFor(app, OTHER_USERNAME, PASSWORD)
     const theirs = await createServingSize('1 cup (245 g)', theirToken)
@@ -91,7 +87,6 @@ describe('food entries (e2e)', () => {
     ).id
   }
 
-  // Per serving, as the label prints it.
   const greekYogurt = () => ({
     name: 'Greek yogurt with honey',
     servingSizeId,
@@ -258,7 +253,6 @@ describe('food entries (e2e)', () => {
   })
 
   describe('GET /v1/food-entries/:id', () => {
-    // Per serving, as the label prints it, with no data for fat.
     const apple = () => ({
       name: 'Apple',
       servingSizeId,
@@ -411,7 +405,6 @@ describe('food entries (e2e)', () => {
       expect((await dailyLog()).entries).toEqual([coffee])
     })
 
-    // The id to delete, from an entry diego cannot delete.
     const MISSING_ENTRIES = [
       ['an entry belonging to another user', theirEntryId],
       ['an id that does not exist', async () => 99_999],
@@ -477,7 +470,6 @@ describe('food entries (e2e)', () => {
       ['an unknown key', { source: 'manual' }],
     ] as const
 
-    // Another user's serving size, created with their token.
     const theirServingSize = async () =>
       createServingSize('1 burrito', await accessTokenFor(app, OTHER_USERNAME, PASSWORD))
 

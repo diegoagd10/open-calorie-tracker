@@ -1,11 +1,7 @@
-// Responses of GET /v1/daily-log and /v1/daily-summaries, read by the web app, and their goals.
-
 export type Nutrient = 'protein' | 'carbohydrate' | 'fat' | 'fiber' | 'sugar' | 'sodium'
 
-// Calories in kcal, sodium in mg, water in US fl oz, every other nutrient in g.
 export type DailyGoals = Record<'calories' | Nutrient | 'water', number>
 
-// The goals of a user who never changed them.
 export const DEFAULT_DAILY_GOALS: DailyGoals = {
   calories: 1600,
   protein: 120,
@@ -19,7 +15,6 @@ export const DEFAULT_DAILY_GOALS: DailyGoals = {
 
 export type DailyTotals = DailyGoals & { foodEntries: number }
 
-// A nutrient is null when the entry has no data for it.
 export type FoodLogEntry = {
   id: number
   type: 'food'
@@ -36,27 +31,21 @@ export type WaterLogEntry = { id: number; type: 'water'; loggedAt: string; amoun
 export type LogEntry = FoodLogEntry | WaterLogEntry
 
 export type DailyLog = {
-  // YYYY-MM-DD in timeZone.
   date: string
   timeZone: string
   goals: DailyGoals
   totals: DailyTotals
-  // Newest first.
   entries: LogEntry[]
 }
 
-// The longest range GET /v1/daily-summaries answers, in days.
 export const DAILY_SUMMARIES_MAX_DAYS = 31
 
 export type DaySummary = { date: string; calories: number; foodEntries: number }
 
-// Response of GET /v1/daily-summaries: how each day of a range went, for the Food Log's week strip.
 export type DailySummaries = {
-  // YYYY-MM-DD in timeZone, both included.
   from: string
   to: string
   timeZone: string
   goals: DailyGoals
-  // One per day, oldest first.
   days: DaySummary[]
 }

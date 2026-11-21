@@ -1,6 +1,7 @@
 import type { DailyLog } from '@open-calorie-tracker/shared'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Today } from './use-today'
+import { logInAgain } from '../requests'
 
 type LoadResult = { log: DailyLog } | 'unauthorized' | 'failed'
 
@@ -17,7 +18,6 @@ const requestDailyLog = async ({ date, timeZone }: Today): Promise<LoadResult> =
   }
 }
 
-// Loads the log of the given day. A failed reload keeps the log that was already shown.
 export const useDailyLog = (today: Today | null) => {
   const [log, setLog] = useState<DailyLog>()
   const [failed, setFailed] = useState(false)
@@ -27,9 +27,8 @@ export const useDailyLog = (today: Today | null) => {
   const timeZone = today?.timeZone
 
   const apply = useCallback((result: LoadResult) => {
-    // The session expired: a full navigation lets the proxy clear it and show the login page.
     if (result === 'unauthorized') {
-      window.location.assign('/login')
+      logInAgain()
       return
     }
     setFailed(result === 'failed')
@@ -44,7 +43,6 @@ export const useDailyLog = (today: Today | null) => {
       if (request === requests.current) apply(result)
     })
     return () => {
-      // Invalidates initial loads AND reloads, including stale errors and redirects.
       requests.current++
     }
   }, [date, timeZone, apply])

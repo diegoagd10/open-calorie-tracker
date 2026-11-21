@@ -66,16 +66,17 @@ const settingsPage = (page: Page) => ({
       .getByRole('textbox', { name: label, exact: true }),
   goalFields: () => page.getByRole('form', { name: 'Daily goals' }).getByRole('textbox'),
   save: () => page.getByRole('form', { name: 'Daily goals' }).getByRole('button'),
+  // oxlint-disable-next-line local/no-comments
   // The section's Alert, apart from the role="alert" route announcer Next.js renders.
   goalsAlert: () => page.getByRole('region', { name: 'Daily goals' }).getByRole('alert'),
   username: () => page.getByRole('region', { name: 'Profile' }).getByLabel('Username'),
+  // oxlint-disable-next-line local/no-comments
   // The section's Alert, apart from the role="alert" route announcer Next.js renders.
   profileAlert: () => page.getByRole('region', { name: 'Profile' }).getByRole('alert'),
   goalsSaved: () =>
     page.getByRole('region', { name: 'Daily goals' }).getByText('Daily goals saved.'),
 })
 
-// The text of the elements the field's aria-describedby points to.
 const descriptionOf = (field: Locator) =>
   field.evaluate((element) =>
     (element.getAttribute('aria-describedby') ?? '')
@@ -339,7 +340,6 @@ describe('Settings page (e2e)', () => {
   })
 
   describe('daily goals', () => {
-    // The page's requests to the daily goals route, e.g. "PATCH {"calories":2000}".
     let goalsRequests: string[]
 
     beforeEach(() => {
@@ -351,7 +351,6 @@ describe('Settings page (e2e)', () => {
       })
     })
 
-    // Opens Settings and waits for the goals to load.
     const openGoals = async () => {
       await openSettings()
       await expect.poll(() => settings.goal('Calories').isEnabled(), eventually).toBe(true)
@@ -368,7 +367,6 @@ describe('Settings page (e2e)', () => {
       expect(await settings.save().isDisabled()).toBe(true)
     }
 
-    // The section shows the generic error above the fields.
     const showsGenericErrorAboveFields = async () => {
       await expect
         .poll(() => settings.goalsAlert().textContent(), eventually)
@@ -382,7 +380,6 @@ describe('Settings page (e2e)', () => {
       await expect.poll(() => settings.goalsSaved().isVisible(), eventually).toBe(true)
     }
 
-    // Holds the page's PATCH requests to the daily goals route until released.
     const holdSaving = async () => {
       let release = () => {}
       const released = new Promise<void>((resolve) => {
@@ -637,7 +634,6 @@ describe('Settings page (e2e)', () => {
     })
 
     describe('the /api/daily-goals route', () => {
-      // Calls the route the way the page does, with the session cookie unless it is null.
       const send = (method: string, body?: object, cookie: string | null = token) => {
         const headers: Record<string, string> = {}
         const init: RequestInit = { method, headers, redirect: 'manual' }
@@ -712,7 +708,6 @@ describe('Settings page (e2e)', () => {
     const save = () => form().getByRole('button', { name: 'Save' })
     const saved = () => region().getByText('Weight goal saved.')
 
-    // Opens Settings and waits until the section can be edited.
     const openWeightGoal = async () => {
       await openSettings()
       await expect.poll(() => startWeight().isEnabled(), eventually).toBe(true)
@@ -839,7 +834,6 @@ describe('Settings page (e2e)', () => {
     const CURRENT = SEED_USER.password
     const NEW = 'new-password-1'
 
-    // The bodies of the page's PUT requests to the password route.
     let passwordRequests: string[]
 
     beforeEach(() => {
@@ -880,10 +874,8 @@ describe('Settings page (e2e)', () => {
 
     const fieldValues = () => Promise.all(passwordFields().map((input) => input.inputValue()))
 
-    // Clicks outside the dialog, on its backdrop.
     const clickBackdrop = () => page.mouse.click(5, 5)
 
-    // Holds the page's PUT requests to the password route until released.
     const holdSaving = async () => {
       let release = () => {}
       const released = new Promise<void>((resolve) => {
@@ -1179,7 +1171,6 @@ describe('Settings page (e2e)', () => {
     })
 
     describe('the /api/password route', () => {
-      // Calls the route the way the page does, with the session cookie unless it is null.
       const send = (body: object, cookie: string | null = token) => {
         const headers: Record<string, string> = { 'Content-Type': 'application/json' }
         if (cookie !== null) headers['Cookie'] = `access_token=${cookie}`

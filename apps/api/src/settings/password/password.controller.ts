@@ -4,7 +4,6 @@ import { AccessTokenGuard, UserId } from '../../auth/access-token.guard.js'
 import { AuthService } from '../../auth/auth.service.js'
 import { ZodValidationPipe } from '../../common/zod-validation.pipe.js'
 
-// Served under /v1/settings/password; see SettingsModule.
 @Controller()
 @UseGuards(AccessTokenGuard)
 export class PasswordController {

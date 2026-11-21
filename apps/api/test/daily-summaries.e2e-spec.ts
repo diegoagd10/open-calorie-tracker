@@ -9,7 +9,6 @@ const USERNAME = 'diego'
 const OTHER_USERNAME = 'ana'
 const PASSWORD = 'correct-horse-battery-staple'
 
-// Monday to Sunday. New York leaves daylight saving time (UTC-4 → UTC-5) on Sunday 2026-11-01.
 const WEEK = { from: '2026-10-26', to: '2026-11-01', timeZone: 'America/New_York' }
 
 const newYorkTime = (localDateTime: string, offset = '-04:00') =>
@@ -163,7 +162,6 @@ describe('GET /v1/daily-summaries (e2e)', () => {
       ['2026-10-25T23:59:59', '-04:00'],
       ['2026-10-26T00:00:00', '-04:00'],
       ['2026-10-31T23:59:59', '-04:00'],
-      // The last day is 25 hours long.
       ['2026-11-01T23:30:00', '-05:00'],
       ['2026-11-02T00:00:00', '-05:00'],
     ] as const) {
@@ -173,8 +171,6 @@ describe('GET /v1/daily-summaries (e2e)', () => {
     const summary = await summaries()
 
     expect(summary.days.map((summary) => summary.foodEntries)).toEqual([1, 0, 0, 0, 0, 1, 1])
-    // In Tokyo, the first two fall on 2026-10-26, the third on 2026-11-01 and the last two after
-    // the range.
     const tokyo = await summaries({ ...WEEK, timeZone: 'Asia/Tokyo' })
     expect(tokyo.days.map((summary) => summary.foodEntries)).toEqual([2, 0, 0, 0, 0, 0, 1])
   })

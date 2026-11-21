@@ -1,5 +1,4 @@
 const SIZES = {
-  // In a crowded header the name is cut short instead of pushing the links off screen.
   small: {
     layout: 'min-w-0 flex-row gap-2.5',
     mark: 'size-8 shrink-0 rounded-[10px] text-[13px]',
@@ -12,7 +11,6 @@ const SIZES = {
   },
 }
 
-// The app's mark followed by its name, shown on every page.
 export function Logo({ size }: { size: keyof typeof SIZES }) {
   const { layout, mark, name } = SIZES[size]
 

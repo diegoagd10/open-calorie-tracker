@@ -11,13 +11,11 @@ const ACTION_TIMEOUT_MS = 5_000
 const QUIET_MS = 500
 const SETTLE_TIMEOUT_MS = 10_000
 const MAX_CANDIDATES = 15
-// Playwright's default viewport, which the desktop web tests run in.
 const DESKTOP = { width: 1280, height: 720 }
 
 const messageOf = (error: unknown): string =>
   error instanceof Error ? error.message : String(error)
 
-// pnpm installs playwright only in apps/web, so it resolves from there.
 export const playwright = (repo: string): typeof Playwright => {
   const requireFromWeb: (id: 'playwright') => typeof Playwright = createRequire(
     join(repo, 'apps/web/package.json'),
@@ -42,10 +40,9 @@ const liveState = async (instance: Instance, repo: string): Promise<State> => {
   return state
 }
 
-// The page every drive command shares: the first tab of Chromium's default context, sized to DESKTOP.
-// Chromium owns it, so it outlives each command's CDP connection, with its URL, open dialogs and
-// cookies. Headless Chromium draws no browser UI but still takes its height out of --window-size, so
-// the contents get sized instead.
+// oxlint-disable-next-line local/no-comments
+// Headless Chromium draws no browser UI but still takes its height out of --window-size, so the
+// contents get sized instead.
 const withPage = async <T>(
   instance: Instance,
   repo: string,
@@ -78,8 +75,6 @@ const withPage = async <T>(
   }
 }
 
-// Runs the action, then waits until no request has been in flight for QUIET_MS. Returns whether the
-// page went quiet within SETTLE_TIMEOUT_MS; a page that polls never does.
 const settled = async (page: Page, action: () => Promise<unknown>): Promise<boolean> => {
   let inFlight = 0
   let quietSince = Date.now()
@@ -120,6 +115,7 @@ const noSession = (state: State) =>
     `Run login --base-port ${state.basePort}, as the seed user or with --username and --password`,
   )
 
+// oxlint-disable-next-line local/no-comments
 // Playwright's errors carry a call log after the first line.
 const actionFailure = (error: unknown, state: State): Failure =>
   error instanceof Failure
@@ -129,12 +125,9 @@ const actionFailure = (error: unknown, state: State): Failure =>
         `Run snapshot --base-port ${state.basePort} to see the page`,
       )
 
-// The first line of an element's aria snapshot, such as: button "Add water"
 const describe = async (locator: Locator): Promise<string> =>
   (await locator.ariaSnapshot()).split('\n')[0]?.replace(/^- /, '').replace(/:$/, '') ?? ''
 
-// Where click and type look. A modal dialog leaves the page behind it inert, so while one is open
-// that is the last one opened, which the app renders after the dialog it opened from.
 const scope = async (page: Page): Promise<{ root: Locator; dialog: string | undefined }> => {
   const modals = page.locator(':modal')
   if ((await modals.count()) === 0) return { root: page.locator('body'), dialog: undefined }
@@ -142,7 +135,6 @@ const scope = async (page: Page): Promise<{ root: Locator; dialog: string | unde
   return { root, dialog: await describe(root) }
 }
 
-// The role and name of every node in the scope's aria snapshot, for hints.
 const nodes = async (root: Locator): Promise<{ role: string; line: string; name: string }[]> =>
   (await root.ariaSnapshot()).split('\n').flatMap((raw) => {
     const match = /^\s*- (\w+)(?: "((?:[^"\\]|\\.)*)")?/.exec(raw)
@@ -151,8 +143,6 @@ const nodes = async (root: Locator): Promise<{ role: string; line: string; name:
     return [{ role: match[1], line, name: match[2] ?? '' }]
   })
 
-// The elements with the role and the exact name, else those whose name contains it. Without nth,
-// there must be exactly one; with it, the nth of them.
 const find = async (page: Page, { role, name, nth }: Target): Promise<Locator> => {
   const { root, dialog } = await scope(page)
   const exact = root.getByRole(role, { name, exact: true })
@@ -279,9 +269,9 @@ export const press = (instance: Instance, repo: string, key: string) =>
     }
   })
 
+// oxlint-disable-next-line local/no-comments
 // Captures through CDP rather than page.screenshot, which scales the PNG down to CSS pixels on a
-// context without a Playwright viewport. --mobile applies the web tests' MOBILE emulation on the live
-// page for this capture only, so open dialogs and scroll position stay.
+// context without a Playwright viewport.
 export const screenshot = (
   instance: Instance,
   repo: string,
