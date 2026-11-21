@@ -33,11 +33,9 @@ const weightIn = (value: string) => {
   return value === '' || !parsed.success ? undefined : parsed.data
 }
 
-// The weight the Weight page measures progress against, from a starting weight down to a goal.
 export function WeightGoalSection() {
   const { goal, failed, saving, save } = useWeightGoal()
   const today = useToday()
-  // What the user typed, over the saved goal. Empty until the goal loads.
   const [edits, setEdits] = useState<Partial<Values>>({})
   const [saved, setSaved] = useState(false)
 

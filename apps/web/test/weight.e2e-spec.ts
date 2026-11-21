@@ -27,7 +27,6 @@ import {
 
 const { proxyUrl: PROXY_URL, webUrl: WEB_URL } = SEEDED
 
-// Long enough for canvas-confetti to have added its canvas, were it going to.
 const CONFETTI_WAIT_MS = 1_000
 
 describe('Weight page (e2e)', () => {
@@ -50,7 +49,6 @@ describe('Weight page (e2e)', () => {
     await browser.close()
   })
 
-  // A new user in a page with the given browser options.
   const signIn = async (options: BrowserContextOptions = {}) => {
     ;({ context, page, username, token } = await signedInPage(browser, database, options))
     weight = weightPage(page)
@@ -66,7 +64,6 @@ describe('Weight page (e2e)', () => {
     await context.close()
   })
 
-  // Starts over with another user in a page with the given browser options.
   const reopen = async (options: BrowserContextOptions) => {
     await context.close()
     await signIn(options)
@@ -76,7 +73,6 @@ describe('Weight page (e2e)', () => {
 
   const tileText = (name: Parameters<typeof weight.tile>[0]) => textOf(weight.tile(name))
 
-  // Saves the value and waits until the page says today's weight is saved.
   const saveWeight = async (value: string) => {
     await weight.field().fill(value)
     await weight.save().click()

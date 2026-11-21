@@ -6,12 +6,10 @@ import {
 import { type ReactNode, useId } from 'react'
 import { CheckIcon, ChevronIcon, PlusIcon } from '@/components/icons'
 
-// How many of the user's serving sizes the list shows at once.
 const MAX_MATCHES = 5
 
 const lower = (text: string) => normalizeServingSize(text).toLowerCase()
 
-// The user's serving size the text names regardless of case, if any.
 export const findServingSize = (servingSizes: ServingSize[], text: string) =>
   servingSizes.find((servingSize) => lower(servingSize.name) === lower(text))
 
@@ -22,16 +20,12 @@ type ServingSizeFieldProps = {
   value: string
   onChange: (value: string) => void
   servingSizes: ServingSize[]
-  // Whether the list may show; it only does once something is typed.
   open: boolean
   onOpenChange: (open: boolean) => void
   disabled: boolean
-  // Shown next to the field, e.g. the servings.
   aside: ReactNode
 }
 
-// A combobox over the user's serving sizes: typing filters them and offers to create the text
-// typed, which is saved when the food is added.
 export function ServingSizeField({
   value,
   onChange,
@@ -93,6 +87,7 @@ export function ServingSizeField({
         {aside}
       </div>
       {listShown && (
+        // oxlint-disable-next-line local/no-comments
         // The fieldset only groups; it doesn't stretch or scroll its content well, so the box is a div.
         <fieldset id={listId} aria-label="Serving sizes" className="m-0 min-w-0 border-0 p-0">
           <div className="flex max-h-60 flex-col gap-0.5 overflow-y-auto rounded-[14px] border border-line-strong bg-bg p-1.5">

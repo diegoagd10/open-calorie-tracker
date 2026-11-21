@@ -33,10 +33,8 @@ const { proxyUrl: PROXY_URL, webUrl: WEB_URL } = SEEDED
 
 const WATER_ENTRIES_URL = `${WEB_URL}/api/water-entries`
 
-// "<total> fl oz / <goal> fl oz", as the Water summary shows it.
 const ofGoal = (total: number) => `${total} fl oz / ${DEFAULT_DAILY_GOALS.water} fl oz`
 
-// Seeded entries sit a few minutes into the real today; see minutesIntoToday.
 const FIRST = minutesIntoToday(1)
 const SECOND = minutesIntoToday(2)
 
@@ -48,7 +46,6 @@ describe('Water (e2e)', () => {
   let username: string
   let token: string
   let home: ReturnType<typeof homePage>
-  // The page's requests to the water routes, e.g. "POST /api/water-entries".
   let waterRequests: string[]
 
   beforeAll(async () => {
@@ -88,7 +85,6 @@ describe('Water (e2e)', () => {
   const preset = (dialog: Locator, name: string) => dialog.getByRole('button', { name })
   const button = (dialog: Locator, name: string) =>
     dialog.getByRole('button', { name, exact: true })
-  // "Add" or "Save" while there is no amount to log, "Add 12 fl oz" once there is.
   const submitButton = (dialog: Locator, verb: 'Add' | 'Save') =>
     dialog.getByRole('button', { name: new RegExp(`^${verb}( [\\d.]+ fl oz)?$`) })
   const addSubmit = () => submitButton(addDialog(), 'Add')
@@ -125,7 +121,6 @@ describe('Water (e2e)', () => {
   const requestsTo = (method: string) =>
     waterRequests.filter((request) => request.startsWith(`${method} `))
 
-  // Holds the page's requests to the water routes until released.
   const holdWaterRequests = () => holdRequests(page, '**/api/water-entries**')
 
   describe('the water dialog', () => {
@@ -800,7 +795,6 @@ describe('Water (e2e)', () => {
   })
 
   describe('on a phone', () => {
-    // Replaces the desktop page with a phone one, for a new user.
     beforeEach(async () => {
       await context.close()
       ;({ context, page, username, token } = await signedInPage(browser, database, MOBILE))

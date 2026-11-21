@@ -1,7 +1,5 @@
 import type { ApiKey } from '@open-calorie-tracker/shared'
 
-// How the API keys section shows dates, in the browser's time zone. `now` is a timestamp.
-
 const MINUTE = 60_000
 const HOUR = 60 * MINUTE
 const DAY = 24 * HOUR
@@ -12,7 +10,6 @@ const dateFormat = new Intl.DateTimeFormat('en-US', {
   year: 'numeric',
 })
 
-// "Jan 24, 2027".
 export const formatDate = (instant: string | Date) => dateFormat.format(new Date(instant))
 
 const localDay = (instant: number) => new Date(instant).toDateString()
@@ -27,7 +24,6 @@ const isYesterday = (instant: number, now: number) => {
 
 const plural = (count: number, unit: string) => `${count} ${unit}${count === 1 ? '' : 's'}`
 
-// A key past its expiry instant no longer works.
 export const isExpired = (key: ApiKey, now: number) =>
   key.expiresAt !== null && Date.parse(key.expiresAt) <= now
 
@@ -36,7 +32,6 @@ export const createdLabel = (key: ApiKey, now: number) => {
   return isToday(createdAt, now) ? 'Created today' : `Created ${formatDate(key.createdAt)}`
 }
 
-// "Last used 2 hours ago" within a day, then "yesterday", then the date.
 export const lastUsedLabel = (key: ApiKey, now: number) => {
   if (key.lastUsedAt === null) return 'Never used'
   const lastUsedAt = Date.parse(key.lastUsedAt)

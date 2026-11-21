@@ -40,8 +40,6 @@ describe('createWaterEntrySchema', () => {
   )
 })
 
-// What the amount field shows when its value would change from `previous` to `next`, whether the
-// change comes from typing or from pasting.
 describe('filterWaterAmountInput', () => {
   it.each([
     ['12.5', '', '12.5'],

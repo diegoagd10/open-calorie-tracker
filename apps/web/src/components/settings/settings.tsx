@@ -13,11 +13,9 @@ import { WeightGoalSection } from './weight-goal'
 import { INPUT, SECONDARY_BUTTON, Section } from './section'
 import { useProfile } from './use-profile'
 
-// The username is shown but cannot be changed; the password can be changed from a dialog.
 function Profile() {
   const { profile, failed } = useProfile()
   const [dialogOpen, setDialogOpen] = useState(false)
-  // Until the dialog opens again or the page reloads.
   const [changed, setChanged] = useState(false)
 
   const openDialog = () => {
@@ -75,7 +73,6 @@ function Profile() {
   )
 }
 
-// Where the profile, daily goals, weight goal and API keys are managed.
 export function Settings() {
   const logOut = useLogOut()
 

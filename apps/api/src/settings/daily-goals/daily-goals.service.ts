@@ -20,7 +20,6 @@ export class DailyGoalsService {
     return stored ?? DEFAULT_DAILY_GOALS
   }
 
-  // Changes the given goals and keeps the others. A user's first change starts from the defaults.
   async update(userId: number, changes: DailyGoalsUpdate): Promise<DailyGoals> {
     if (Object.keys(changes).length === 0) return this.goalsOf(userId)
 

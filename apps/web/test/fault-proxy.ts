@@ -6,7 +6,6 @@ import {
   request,
 } from 'node:http'
 
-// A status fault answers a JSON error body unless the test gives the raw body to send.
 export type Fault = { status: number; body?: string } | { delayMs: number } | 'connection-reset'
 
 const EVERYONE = Symbol('everyone')
@@ -26,17 +25,8 @@ const usernameIn = (body: Buffer): string | undefined => {
   }
 }
 
-// Sits between Next.js and the real API. It forwards everything untouched unless a test asks it
-// to fail or to answer slowly through the control endpoints, so tests can exercise backend
-// failures without mocks. It also records the requests it receives, e.g. "GET /v1/daily-log?...".
-//
-// A fault can belong to one user, so spec files running in parallel do not affect each other, or
-// to everyone. Recorded requests always belong to a user. A request belongs to the user named in
-// its body (login) or to the user its bearer token was issued to, which the proxy learns from the
-// logins it forwards.
 export const startFaultProxy = async (port: number, targetUrl: string): Promise<Server> => {
   const target = new URL(targetUrl)
-  // Keyed by user; EVERYONE holds the fault that applies to all requests.
   const faults = new Map<string | typeof EVERYONE, Fault>()
   const requests = new Map<string, string[]>()
   const tokenOwners = new Map<string, string>()
@@ -105,7 +95,6 @@ export const startFaultProxy = async (port: number, targetUrl: string): Promise<
             upstreamRes.pipe(res)
             return
           }
-          // Remembers who the token belongs to before passing the login response on.
           void readBody(upstreamRes).then((responseBody) => {
             const { accessToken } = JSON.parse(responseBody.toString()) as { accessToken: string }
             tokenOwners.set(accessToken, user)
@@ -129,8 +118,6 @@ export const startFaultProxy = async (port: number, targetUrl: string): Promise<
 const controlUrl = (proxyUrl: string, kind: 'faults' | 'requests', user?: string) =>
   `${proxyUrl}/__${kind}${user === undefined ? '' : `/${encodeURIComponent(user)}`}`
 
-// Makes every request of this user, or of everyone without a user, fail or answer slowly until
-// cleared.
 export const injectFault = (proxyUrl: string, fault: Fault, user?: string) =>
   fetch(controlUrl(proxyUrl, 'faults', user), { method: 'PUT', body: JSON.stringify(fault) })
 

@@ -27,8 +27,6 @@ const parseOrThrow = <T>(
   return result.data
 }
 
-// Development and test data only: the API itself never seeds users or entries. Users follow the
-// same rules as registration, so it never creates a user that could not have been registered.
 export const seedUser = async (database: Database, user: SeedUser) => {
   const parsed = parseOrThrow(newUserSchema.safeParse(user))
 
@@ -42,7 +40,6 @@ export const seedUser = async (database: Database, user: SeedUser) => {
 
 type ForUser<T> = Omit<T, 'id' | 'userId'> & { username: string }
 
-// Takes the serving size as text and the source by name, as the API returns them.
 export type SeedFoodEntry = ForUser<
   Omit<typeof foodEntries.$inferInsert, 'servingSizeId' | 'sourceId'>
 > & { servingSize: string; source?: FoodSource }
@@ -56,8 +53,6 @@ const userIdOf = async (database: Database, username: string) => {
   return user.id
 }
 
-// The serving size follows the same rules as the API and is added to the user's, or reused when
-// they already have it regardless of case.
 export const seedFoodEntry = async (
   database: Database,
   { username, servingSize, source = 'manual', ...entry }: SeedFoodEntry,
@@ -85,7 +80,6 @@ export const seedWaterEntry = async (
     .values({ ...entry, userId: await userIdOf(database, username) })
 }
 
-// Follows the same rules as the API, so it never stores goals the user could not have saved.
 export const seedDailyGoals = async (
   database: Database,
   { username, ...goals }: DailyGoalsUpdate & { username: string },
@@ -96,14 +90,10 @@ export const seedDailyGoals = async (
 
 export type SeedApiKey = ApiKeyCreateInput & {
   username: string
-  // When the key was created, now unless given; it expires counting from then.
   createdAt?: Date
   lastUsedAt?: Date | null
 }
 
-// Follows the same rules as the API, so it never stores a key the user could not have created.
-// Encrypts the key with the API's API_KEY_SECRET, so the API can show it. Returns the key as the
-// API answers it.
 export const seedApiKey = async (
   database: Database,
   { username, createdAt, lastUsedAt = null, ...input }: SeedApiKey,

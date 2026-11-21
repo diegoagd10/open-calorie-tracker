@@ -5,7 +5,6 @@ import type {
 } from '@open-calorie-tracker/shared'
 import { type Outcome, sendRequest } from '@/components/requests'
 
-// The user's serving sizes, or none when they cannot be loaded: a serving size can still be typed.
 export const loadServingSizes = async (): Promise<ServingSize[]> => {
   try {
     const response = await fetch('/api/serving-sizes')
@@ -15,7 +14,6 @@ export const loadServingSizes = async (): Promise<ServingSize[]> => {
   }
 }
 
-// Adds a serving size to the user's, or finds the one they already have regardless of case.
 export const saveServingSize = async (
   name: string,
 ): Promise<{ outcome: Outcome; servingSize?: ServingSize }> => {

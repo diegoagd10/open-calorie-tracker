@@ -7,7 +7,6 @@ import { WeightGoalService } from './weight-goal.service.js'
   imports: [AuthModule],
   controllers: [WeightGoalController],
   providers: [WeightGoalService],
-  // The weight history measures the weigh-ins against the goal.
   exports: [WeightGoalService],
 })
 export class WeightGoalModule {}

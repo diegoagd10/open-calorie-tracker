@@ -16,7 +16,6 @@ export class ServingSizesController {
     return this.servingSizes.list(userId)
   }
 
-  // 201 with a new serving size, 200 with the one the user already had.
   @Post()
   @RequiresScope('serving-sizes:write')
   async create(

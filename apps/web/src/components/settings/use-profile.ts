@@ -1,5 +1,6 @@
 import type { Profile } from '@open-calorie-tracker/shared'
 import { useEffect, useState } from 'react'
+import { logInAgain } from '../requests'
 
 const PROFILE_URL = '/api/profile'
 
@@ -16,8 +17,6 @@ const request = async (): Promise<Result> => {
   }
 }
 
-// Loads the logged-in user's profile. `profile` is undefined until it loads, and stays so when
-// loading fails.
 export const useProfile = () => {
   const [profile, setProfile] = useState<Profile>()
   const [failed, setFailed] = useState(false)
@@ -26,8 +25,7 @@ export const useProfile = () => {
     let current = true
     void request().then((result) => {
       if (!current) return
-      // The session expired: a full navigation lets the proxy clear it and show the login page.
-      if (result === 'unauthorized') window.location.assign('/login')
+      if (result === 'unauthorized') logInAgain()
       else if (result === 'failed') setFailed(true)
       else setProfile(result.profile)
     })

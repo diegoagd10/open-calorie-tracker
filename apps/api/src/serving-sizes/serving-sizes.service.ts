@@ -12,7 +12,6 @@ const sameNameAs = (name: string) => sql`${servingSizes.name} = ${name} COLLATE 
 export class ServingSizesService {
   constructor(private readonly database: Database) {}
 
-  // Alphabetically, regardless of case.
   list(userId: number): Promise<ServingSize[]> {
     return this.database.db
       .select(columns)
@@ -21,8 +20,6 @@ export class ServingSizesService {
       .orderBy(sql`${servingSizes.name} COLLATE NOCASE`, asc(servingSizes.name))
   }
 
-  // The user's serving size with this name regardless of case, added when they have none. The
-  // name is already normalized by servingSizeSchema.
   async findOrCreate(
     userId: number,
     { name }: ServingSizeInput,
@@ -40,12 +37,10 @@ export class ServingSizesService {
       .from(servingSizes)
       .where(and(eq(servingSizes.userId, userId), sameNameAs(name)))
       .get()
-    // The insert only conflicts with an existing serving size of the user.
     if (existing === undefined) throw new Error(`Serving size "${name}" is missing`)
     return { servingSize: existing, created: false }
   }
 
-  // Another user's serving size answers like a missing one.
   find(userId: number, id: number): Promise<ServingSize | undefined> {
     return this.database.db
       .select(columns)

@@ -8,7 +8,6 @@ import { WeightEntriesService } from './weight-entries.service.js'
   imports: [AuthModule, WeightGoalModule],
   controllers: [WeightEntriesController],
   providers: [WeightEntriesService],
-  // The MCP server logs and reads weights.
   exports: [WeightEntriesService],
 })
 export class WeightEntriesModule {}

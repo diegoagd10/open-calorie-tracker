@@ -4,7 +4,6 @@ import { ChevronIcon } from '@/components/icons'
 import { formatNumber } from './format'
 import { ProgressBar } from './progress-bar'
 
-// A fieldset is the native group element; these hold figures, not form controls.
 const GROUP = 'm-0 min-w-0 border-0'
 
 const foodEntriesLabel = (count: number) => {

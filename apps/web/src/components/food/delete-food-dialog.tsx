@@ -13,18 +13,13 @@ import { roundTenths } from './servings'
 
 type DeleteFoodDialogProps = {
   isToday: boolean
-  // The entry as stored, whatever its Edit food form holds.
   entry: FoodLogEntry
-  // Today's calories so far, including this entry, and the daily goal, in kcal.
   total: number
   goal: number
-  // Goes back to editing the entry.
   onKeep: () => void
-  // Called once the entry is deleted, or turned out to be gone.
   onDeleted: () => void
 }
 
-// Asks before deleting a food, showing what it takes off today's calories.
 export function DeleteFoodDialog({
   isToday,
   entry,

@@ -137,8 +137,6 @@ describe('servingSizeSchema', () => {
   })
 })
 
-// What the calories and nutrient fields show when their value would change from `previous` to
-// `next`, whether the change comes from typing or from pasting.
 describe('filterPerServingInput', () => {
   it.each([
     ['180', '', '180'],

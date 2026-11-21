@@ -29,14 +29,12 @@ describe('settings: weight goal (e2e)', () => {
     await app.close()
   })
 
-  // Sends diego's token unless the test passes another one.
   const read = (bearer = token) =>
     withBearer(request(app.getHttpServer()).get('/v1/settings/weight-goal'), bearer)
 
   const save = (body: object, bearer = token) =>
     withBearer(request(app.getHttpServer()).put('/v1/settings/weight-goal').send(body), bearer)
 
-  // The goal as GET answers it: the JSON value, null included.
   const goal = async (bearer = token) => {
     const response = await read(bearer)
     expect(response.status).toBe(200)

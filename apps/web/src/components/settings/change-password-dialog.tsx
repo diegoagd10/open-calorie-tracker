@@ -16,6 +16,7 @@ import { Modal } from '@/components/modal'
 import { DialogHeader } from '@/components/dialog-parts'
 import { type FieldErrors, fieldErrorsFrom, passwordInput } from '@/lib/form'
 import { PRIMARY_BUTTON, SECONDARY_BUTTON } from './section'
+import { logInAgain } from '../requests'
 
 type FieldName = keyof ChangePasswordInput
 
@@ -46,8 +47,6 @@ type ChangePasswordDialogProps = {
   onChanged: () => void
 }
 
-// Asks for the current password and a new one typed twice. The submit button waits until the two
-// new passwords match; the other rules are checked on submit, and again by the API.
 export function ChangePasswordDialog({ onClose, onChanged }: ChangePasswordDialogProps) {
   const titleId = useId()
   const currentField = useRef<HTMLInputElement>(null)
@@ -55,10 +54,8 @@ export function ChangePasswordDialog({ onClose, onChanged }: ChangePasswordDialo
   const [fieldErrors, setFieldErrors] = useState<FieldErrors<FieldName>>({})
   const [failed, setFailed] = useState(false)
   const [pending, setPending] = useState(false)
-  // A second click before the button re-renders disabled is ignored.
   const running = useRef(false)
 
-  // The Modal's effect has opened the dialog by now, which moved the focus to its first button.
   useEffect(() => currentField.current?.focus(), [])
 
   const { newPassword, confirmPassword } = values
@@ -91,8 +88,7 @@ export function ChangePasswordDialog({ onClose, onChanged }: ChangePasswordDialo
       return
     }
     if (outcome === 'unauthorized') {
-      // The session expired: a full navigation lets the proxy clear it and show the login page.
-      window.location.assign('/login')
+      logInAgain()
       return
     }
     running.current = false

@@ -26,7 +26,6 @@ export class AuthController {
     return this.auth.login(body, ip)
   }
 
-  // Registering also logs the new user in, so it answers like a login.
   @Post('register')
   register(
     @Body(new ZodValidationPipe(registerSchema)) body: RegisterInput,
@@ -34,7 +33,6 @@ export class AuthController {
     return this.auth.register(body)
   }
 
-  // Where a third-party app exchanges one of the user's API keys for a short-lived access token.
   @Post('token')
   @HttpCode(HttpStatus.OK)
   async token(

@@ -13,20 +13,18 @@ import {
 import { z } from 'zod'
 import { AppConfig } from '../config/config.js'
 
-// What GET /v1/products/:barcode and get_product take: EAN-8, UPC-A, EAN-13 or GTIN-14, without
-// the spaces around it.
 export const barcodeSchema = z
   .string({ error: INVALID_BARCODE_MESSAGE })
   .trim()
   .regex(/^\d{8,14}$/, INVALID_BARCODE_MESSAGE)
 
-// How long Open Food Facts has to answer.
 const TIMEOUT_MS = 5000
 
 const KJ_PER_KCAL = 4.184
 
 const FIELDS = 'code,product_name,product_name_en,generic_name,brands,serving_size,nutriments'
 
+// oxlint-disable-next-line local/no-comments
 // Each nutrient's name in Open Food Facts, and what turns its value into the app's unit: Open Food
 // Facts has every nutrient in g, the app has sodium in mg.
 const NUTRIENTS: Record<Nutrient, [name: string, factor: number]> = {
@@ -38,9 +36,9 @@ const NUTRIENTS: Record<Nutrient, [name: string, factor: number]> = {
   sodium: ['sodium', 1000],
 }
 
-// A field Open Food Facts leaves out or answers with something else counts as missing.
 const text = z.string().optional().catch(undefined)
 
+// oxlint-disable-next-line local/no-comments
 // Open Food Facts answers a code it deems invalid with 200 and no product.
 const answerSchema = z.object({
   product: z
@@ -57,7 +55,6 @@ const answerSchema = z.object({
 
 type OpenFoodFactsProduct = NonNullable<z.output<typeof answerSchema>['product']>
 
-// One decimal, or null for a value the app would not accept.
 const valueOf = (value: unknown, factor = 1): number | null => {
   if (typeof value !== 'number') return null
   const rounded = Math.round(value * factor * 10) / 10
@@ -67,8 +64,6 @@ const valueOf = (value: unknown, factor = 1): number | null => {
 const firstFilled = (...values: (string | undefined)[]) =>
   values.map((value) => value?.trim()).find((value) => value !== undefined && value !== '')
 
-// Per serving when the product has a serving size the app accepts and its calories, otherwise per
-// 100 g.
 const translate = (barcode: string, product: OpenFoodFactsProduct): Product => {
   const { nutriments } = product
   const caloriesPer = (basis: string) =>
@@ -103,13 +98,10 @@ const translate = (barcode: string, product: OpenFoodFactsProduct): Product => {
   }
 }
 
-// Looks products up in Open Food Facts, which the API only reads.
 @Injectable()
 export class ProductsService {
   constructor(private readonly config: AppConfig) {}
 
-  // The product with this barcode, which barcodeSchema already validated. Answers 404 when Open
-  // Food Facts does not have it, and 502 when it fails.
   async find(barcode: string): Promise<Product> {
     const { url, userAgent } = this.config.openFoodFacts
     let answer: unknown

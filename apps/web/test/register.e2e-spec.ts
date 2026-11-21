@@ -31,11 +31,8 @@ describe('Register page (e2e)', () => {
   })
 
   beforeEach(async () => {
-    // Every test starts before the account exists.
     await deleteAllUsers(EMPTY)
 
-    // A fresh context per test, so no cookies leak between tests. Each test also gets its own
-    // client IP, because the API keeps its failed login counts in memory across tests.
     testNumber++
     const context = await browser.newContext({
       extraHTTPHeaders: { 'X-Forwarded-For': `198.51.100.${testNumber}` },
@@ -73,6 +70,7 @@ describe('Register page (e2e)', () => {
     ])
   }
 
+  // oxlint-disable-next-line local/no-comments
   // Scoped to the form because Next.js renders its own role="alert" route announcer.
   const alert = () => page.getByRole('form', { name: 'Create account' }).getByRole('alert')
 
@@ -132,7 +130,6 @@ describe('Register page (e2e)', () => {
       ['an empty password confirmation', USERNAME, PASSWORD, ''],
     ])('keeps the button disabled with %s', async (_case, username, password, confirmPassword) => {
       await fill(username, password, confirmPassword)
-      // Enter would submit the form if the disabled button did not block it.
       await confirmPasswordField().press('Enter')
 
       expect(await submitButton().isDisabled()).toBe(true)
@@ -209,7 +206,6 @@ describe('Register page (e2e)', () => {
   })
 
   it('disables the button while the account is being created', async () => {
-    // Holds the request so the test can look at the form while it is in flight.
     let release = () => {}
     const released = new Promise<void>((resolve) => {
       release = resolve

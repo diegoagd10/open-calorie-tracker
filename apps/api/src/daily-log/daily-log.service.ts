@@ -22,7 +22,6 @@ import { type DayQuery, type RangeQuery, datesBetween, dayRange } from './day.js
 
 const NUTRIENTS: Nutrient[] = ['protein', 'carbohydrate', 'fat', 'fiber', 'sugar', 'sodium']
 
-// Rounds away floating point noise, e.g. 10 + 6.9 = 16.900000000000002.
 const round = (value: number) => Math.round(value * 100) / 100
 
 const sum = (values: (number | null)[]) =>
@@ -77,13 +76,11 @@ export class DailyLogService {
     ])
 
     const entries: LogEntry[] = [...food.map(toFoodLogEntry), ...water.map(toWaterLogEntry)]
-    // ISO 8601 UTC strings sort chronologically.
     entries.sort((a, b) => b.loggedAt.localeCompare(a.loggedAt))
 
     return { ...day, goals, totals: totalsOf(food, water), entries }
   }
 
-  // Each day's calories, from the user's food entries between the first and the last midnight.
   async dailySummaries(userId: number, range: RangeQuery): Promise<DailySummaries> {
     const days = datesBetween(range.from, range.to).map((date) => ({
       date,
@@ -105,7 +102,6 @@ export class DailyLogService {
       this.dailyGoals.goalsOf(userId),
     ])
 
-    // Days are in order, so an entry belongs to the first one ending after it.
     for (const entry of food) {
       days.find((day) => entry.loggedAt < day.end)?.calories.push(entry.calories)
     }

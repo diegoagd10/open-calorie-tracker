@@ -55,7 +55,6 @@ const TIME_ZONE = 'America/New_York'
 
 const PROTOCOL_VERSION = '2025-06-18'
 
-// Every tool, in the order tools/list answers them.
 const TOOLS = [
   'get_daily_log',
   'log_food',
@@ -81,7 +80,6 @@ type ToolResult = {
 }
 type RpcResponse<T> = { jsonrpc: '2.0'; id: number; result?: T; error?: unknown }
 
-// The messages a shared schema gives for an invalid value.
 const messagesOf = (schema: ZodType, value: unknown) => {
   const parsed = schema.safeParse(value)
   if (parsed.success) throw new Error(`${JSON.stringify(value)} is valid`)
@@ -91,9 +89,7 @@ const messagesOf = (schema: ZodType, value: unknown) => {
 describe('MCP (e2e)', () => {
   let app: TestApp
   let database: Database
-  // diego's login token, for what the assistant does not do.
   let loginToken: string
-  // diego's "Zapier" key, which never expires.
   let zapier: ApiKey
 
   beforeEach(async () => {
@@ -117,8 +113,6 @@ describe('MCP (e2e)', () => {
   const seedKey = (key: { name: string; expiresIn: ApiKeyExpiresIn; createdAt?: Date }) =>
     seedApiKey(database, { username: USERNAME, ...key }, TEST_ENV.API_KEY_SECRET)
 
-  // Sends one JSON-RPC request to /v1/mcp with diego's key unless told otherwise, or null for no
-  // Authorization header.
   const rpc = (method: string, params: object = {}, bearer: string | null = zapier.key) =>
     withBearer(
       http()
@@ -154,7 +148,6 @@ describe('MCP (e2e)', () => {
   const call = async (name: string, args: object, bearer: string = zapier.key) =>
     resultOf<ToolResult>(await rpc('tools/call', { name, arguments: args }, bearer))
 
-  // The structured result of a tool that succeeded, which its text content repeats as JSON.
   const succeeded = async (name: string, args: object, bearer?: string) => {
     const result = await call(name, args, bearer)
     expect(result.isError ?? false).toBe(false)
@@ -164,7 +157,6 @@ describe('MCP (e2e)', () => {
     return result.structuredContent as Record<string, unknown>
   }
 
-  // The text of a tool that failed.
   const failed = async (name: string, args: object, bearer?: string) => {
     const result = await call(name, args, bearer)
     expect(result.isError).toBe(true)
@@ -199,7 +191,6 @@ describe('MCP (e2e)', () => {
   const scopedToken = async (scope: string) =>
     signAccessToken({ subject: String(await userIdOf(database, USERNAME)), scope })
 
-  // Valid log_food arguments.
   const OATMEAL = { name: 'Oatmeal', servingSize: '1 cup', quantity: 2, calories: 150, protein: 5 }
 
   describe('A — connecting', () => {

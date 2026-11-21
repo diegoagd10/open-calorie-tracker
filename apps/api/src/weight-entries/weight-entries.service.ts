@@ -13,6 +13,7 @@ import { Database } from '../db/database.js'
 import { weightEntries } from '../db/schema.js'
 import { WeightGoalService } from '../settings/weight-goal/weight-goal.service.js'
 
+// oxlint-disable-next-line local/no-comments
 // Zod also runs object refinements when a field failed, so an invalid time zone gets here.
 const isNotFuture = ({ date, timeZone }: { date?: string | undefined; timeZone: string }) => {
   if (date === undefined) return true
@@ -23,16 +24,12 @@ const isNotFuture = ({ date, timeZone }: { date?: string | undefined; timeZone: 
   }
 }
 
-// The body of POST /v1/weight-entries and the input of log_weight: the day defaults to today in
-// the time zone, and can be any day up to today.
 export const logWeightSchema = z
   .strictObject({ weight: weightSchema, date: calendarDate('date').optional(), timeZone })
   .refine(isNotFuture, { message: 'date must not be in the future', path: ['date'] })
 
 export type LogWeightInput = z.infer<typeof logWeightSchema>
 
-// The query of GET /v1/weight-history and the input of get_weight_history. Without from or to,
-// the range is open on that side.
 export const weightHistoryQuerySchema = z
   .strictObject({ from: calendarDate('from').optional(), to: calendarDate('to').optional() })
   .refine(
@@ -50,7 +47,6 @@ const dayNumber = (date: string) => Date.parse(`${date}T00:00:00Z`) / DAY_MS
 
 const roundToTenth = (value: number) => Math.round(value * 10) / 10
 
-// Each entry with the average of the entries of the TREND_DAYS calendar days up to it.
 const withTrend = (entries: WeightEntry[]) => {
   let first = 0
   let sum = 0
@@ -85,7 +81,6 @@ export class WeightEntriesService {
     private readonly weightGoal: WeightGoalService,
   ) {}
 
-  // Logs the weight of the day, replacing the one already logged that day.
   async log(userId: number, { weight, date, timeZone }: LogWeightInput): Promise<WeightEntry> {
     const entry = { date: date ?? todayIn(timeZone), weight }
     await this.database.db
@@ -95,7 +90,6 @@ export class WeightEntriesService {
     return entry
   }
 
-  // The figures always come from the last weigh-in, whatever the range.
   async history(userId: number, { from, to }: WeightHistoryQuery): Promise<WeightHistory> {
     const entries = await this.database.db
       .select({ date: weightEntries.date, weight: weightEntries.weight })

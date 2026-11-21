@@ -15,7 +15,6 @@ import { AccessTokenGuard, UserId } from '../../auth/access-token.guard.js'
 import { ZodValidationPipe } from '../../common/zod-validation.pipe.js'
 import { ApiKeysService } from './api-keys.service.js'
 
-// Served under /v1/settings/api-keys; see SettingsModule.
 @Controller()
 @UseGuards(AccessTokenGuard)
 export class ApiKeysController {

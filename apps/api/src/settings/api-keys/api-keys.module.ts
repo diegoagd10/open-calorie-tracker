@@ -6,7 +6,6 @@ import { ApiKeysController } from './api-keys.controller.js'
 import { ApiKeysService } from './api-keys.service.js'
 
 @Module({
-  // AuthModule exchanges keys for access tokens, and this module guards its routes with AuthModule.
   imports: [forwardRef(() => AuthModule)],
   controllers: [ApiKeysController],
   providers: [
@@ -17,7 +16,6 @@ import { ApiKeysService } from './api-keys.service.js'
         new ApiKeysService(database, config.apiKeySecret),
     },
   ],
-  // AuthController exchanges keys for access tokens at POST /v1/token.
   exports: [ApiKeysService],
 })
 export class ApiKeysModule {}

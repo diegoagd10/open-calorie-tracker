@@ -16,7 +16,6 @@ const USERNAME = 'diego'
 const OTHER_USERNAME = 'ana'
 const PASSWORD = 'correct-horse-battery-staple'
 
-// 10:00 AM on Monday 2026-10-26 in New York, already 2026-10-27 in Kiritimati (UTC+14).
 const NOW = new Date('2026-10-26T14:00:00Z')
 const TODAY = '2026-10-26'
 const TIME_ZONE = 'America/New_York'
@@ -56,7 +55,6 @@ describe('weight entries (e2e)', () => {
 
   const http = () => request(app.getHttpServer())
 
-  // Sends diego's token unless the test passes another one, or null for none.
   const logWeight = (body: object, bearer: string | null = token) =>
     withBearer(http().post('/v1/weight-entries').send(body), bearer)
 
@@ -69,7 +67,6 @@ describe('weight entries (e2e)', () => {
     return response.body as WeightHistory
   }
 
-  // Logs the weight and expects it to be stored.
   const logged = async (weight: number, date?: string, bearer: string | null = token) => {
     const response = await logWeight(
       date === undefined ? { weight, timeZone: TIME_ZONE } : { weight, date, timeZone: TIME_ZONE },
@@ -242,7 +239,6 @@ describe('weight entries (e2e)', () => {
       expect((await history()).entries).toEqual([
         { date: '2026-10-01', weight: 180, trend: 180 },
         { date: '2026-10-04', weight: 178, trend: 179 },
-        // 2026-10-03 to 2026-10-09: 178 and 176.
         { date: '2026-10-09', weight: 176, trend: 177 },
       ])
     })
@@ -257,7 +253,6 @@ describe('weight entries (e2e)', () => {
       const { entries } = await history({ from: '2026-10-10', to: '2026-10-20' })
 
       expect(entries).toEqual([
-        // 2026-10-04 to 2026-10-10: 180 and 170.
         { date: '2026-10-10', weight: 170, trend: 175 },
         { date: '2026-10-20', weight: 168, trend: 168 },
       ])

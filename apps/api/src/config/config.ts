@@ -6,13 +6,14 @@ const envSchema = z.object({
   JWT_ISSUER: z.string().min(1),
   JWT_AUDIENCE: z.string().min(1),
   TRUST_PROXY: z.string().optional(),
-  // Encrypts the API keys the database stores, so they can be shown again but not read from it.
   API_KEY_SECRET: z.string().min(32),
+  // oxlint-disable-next-line local/no-comments
   // Open Food Facts asks every app to name itself and a contact, e.g. "App/1.0 (https://…)".
   OPEN_FOOD_FACTS_USER_AGENT: z.string().min(1),
   OPEN_FOOD_FACTS_URL: z.url().default('https://world.openfoodfacts.org'),
 })
 
+// oxlint-disable-next-line local/no-comments
 // Express "trust proxy" setting: a hop count, a boolean or a list of trusted addresses.
 const parseTrustProxy = (value: string | undefined): boolean | number | string => {
   if (value === undefined || value === 'false') return false

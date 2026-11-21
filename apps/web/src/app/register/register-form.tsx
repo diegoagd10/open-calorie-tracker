@@ -49,7 +49,6 @@ export function RegisterForm() {
   const [formError, setFormError] = useState<ReactNode>()
   const [pending, setPending] = useState(false)
 
-  // Required fields are enforced by the disabled button; the schema checks everything else.
   const canSubmit = FIELDS.every((name) => values[name] !== '') && !pending
 
   const handleChange = (name: FieldName, value: string) => {

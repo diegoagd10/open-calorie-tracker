@@ -15,9 +15,6 @@ import {
   TEST_DATA_DIR,
 } from './fixtures'
 
-// Tests that seed entries through the API work on the real today in New York (see
-// minutesIntoToday), so a run that crosses midnight there, or starts in its first minutes, sees
-// its seeded entries on the wrong day. Such a run waits until 12:05 AM.
 const MIDNIGHT_GUARD = { before: 10, after: 5 }
 
 const waitOutMidnight = async () => {
@@ -86,8 +83,6 @@ const jwtEnv = {
   JWT_AUDIENCE: JWT.audience,
 }
 
-// Starts the real API (on its own file database, because it runs in its own process), the fault
-// proxy and the built Next.js app for one environment.
 const startEnvironment = async (environment: Environment) => {
   const databaseUrl = `file:${environment.databasePath}`
   const servers = [
@@ -108,9 +103,9 @@ const startEnvironment = async (environment: Environment) => {
   return { servers, proxy }
 }
 
-// Starts two environments: one with the seed user and one without any user. Both APIs run the
-// build made by `db:seed`, and Next.js locks its build directory while `next dev` runs, so both
-// web servers serve a single production build instead.
+// oxlint-disable-next-line local/no-comments
+// Next.js locks its build directory while `next dev` runs, so both web servers serve a single
+// production build instead.
 export default async function setup() {
   await waitOutMidnight()
 

@@ -36,7 +36,6 @@ const weightIn = (value: string) => {
 
 const pounds = (value: number | null) => (value === null ? '—' : `${formatNumber(value)} lb`)
 
-// The weigh-ins of the last `days` days up to today, both included, or every one.
 const inPeriod = (entries: WeightHistory['entries'], today: string, { days }: Period) => {
   if (days === undefined) return entries
   const since = parseDay(today)
@@ -63,13 +62,10 @@ function Empty({ title, children }: { title: string; children: string }) {
   )
 }
 
-// Logs today's weight, and shows the progress towards the weight goal and a chart of the
-// weigh-ins. Only today's weight can be logged here; past days come from the API.
 export function Weight() {
   const logOut = useLogOut()
   const today = useToday()
   const { history, failed, saving, log } = useWeightHistory()
-  // What the user typed, over the last weigh-in.
   const [typed, setTyped] = useState<string>()
   const [period, setPeriod] = useState<Period>(PERIODS[1])
 
@@ -91,7 +87,6 @@ export function Weight() {
     if (!canSave) return
     const previous = last?.weight ?? goal?.startWeight
     if (!(await log(weight, today.timeZone))) return
-    // Only when this weigh-in crosses the goal, not on every one under it.
     if (goal !== null && previous !== undefined && previous > goal.goalWeight) {
       if (weight <= goal.goalWeight) {
         void confetti({
@@ -209,7 +204,6 @@ export function Weight() {
                       <button
                         key={option.name}
                         type="button"
-                        // Pills that behave as radio buttons; native radios would need hidden inputs.
                         // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role
                         role="radio"
                         aria-checked={option === period}

@@ -1,7 +1,6 @@
 import type { Product } from '@open-calorie-tracker/shared'
 import { vi } from 'vite-plus/test'
 
-// A product as Open Food Facts' API v2 answers it, with the fields the API asks for.
 export type OpenFoodFactsProduct = {
   code?: string | undefined
   product_name?: string | undefined
@@ -14,7 +13,6 @@ export type OpenFoodFactsProduct = {
 
 export const NUTELLA_BARCODE = '3017620422003'
 
-// The Background's product: per serving and per 100 g, with no fiber.
 export const NUTELLA: OpenFoodFactsProduct = {
   code: NUTELLA_BARCODE,
   product_name: 'Nutella',
@@ -36,7 +34,6 @@ export const NUTELLA: OpenFoodFactsProduct = {
   },
 }
 
-// NUTELLA in the app's model.
 export const NUTELLA_PRODUCT: Product = {
   barcode: NUTELLA_BARCODE,
   name: 'Nutella',
@@ -54,8 +51,6 @@ export const NUTELLA_PRODUCT: Product = {
 const defined = (object: object) =>
   Object.fromEntries(Object.entries(object).filter(([, value]) => value !== undefined))
 
-// NUTELLA with some fields replaced and its nutriments merged with `nutriments`, where undefined
-// leaves a field out.
 export const nutellaWith = (
   fields: Omit<OpenFoodFactsProduct, 'nutriments'>,
   nutriments: Record<string, unknown> = {},
@@ -64,11 +59,9 @@ export const nutellaWith = (
   nutriments: defined({ ...NUTELLA.nutriments, ...nutriments }),
 })
 
-// A JSON answer of Open Food Facts.
 export const json = (body: object, status: number) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
 
-// Answers like Open Food Facts for the products given by barcode, and 404 for any other.
 export const answeringWith =
   (products: Record<string, OpenFoodFactsProduct>) =>
   (input: string | URL | Request): Promise<Response> => {
@@ -82,14 +75,11 @@ export const answeringWith =
     )
   }
 
-// Replaces fetch, which the API only uses to reach Open Food Facts, with one that has NUTELLA. A
-// test changes what it answers with mockImplementation(answeringWith(…)) or any other fake.
 export const fakeOpenFoodFacts = () =>
   vi.spyOn(globalThis, 'fetch').mockImplementation(answeringWith({ [NUTELLA_BARCODE]: NUTELLA }))
 
 export type FakeFetch = ReturnType<typeof fakeOpenFoodFacts>
 
-// The URL and the User-Agent header of each request made through the fake.
 export const requestsOf = (fetch: FakeFetch) =>
   fetch.mock.calls.map(([input, init]) => {
     const request = input instanceof Request ? input : new Request(input, init)

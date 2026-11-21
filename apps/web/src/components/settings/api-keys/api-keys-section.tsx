@@ -56,7 +56,6 @@ type KeyItemProps = {
   onDelete: () => void
 }
 
-// A key that still works can be copied or revoked; an expired one can only be deleted.
 function KeyItem({
   apiKey,
   now,
@@ -69,8 +68,6 @@ function KeyItem({
   onDelete,
 }: KeyItemProps) {
   const expired = isExpired(apiKey, now)
-  // Phones leave out when the key was created, to keep the line short. An expired key no longer
-  // works, so when it was last used no longer matters.
   const details = [
     ...(wide ? [createdLabel(apiKey, now)] : []),
     ...(expired ? [] : [lastUsedLabel(apiKey, now)]),
@@ -121,11 +118,9 @@ function KeyItem({
   )
 }
 
-// The user's API keys: create them, copy them whenever needed, and revoke them.
 export function ApiKeysSection() {
   const { keys, loadedAt: now, failed, add, drop } = useApiKeys()
   const [dialog, setDialog] = useState<Dialog>()
-  // Keys created since the page loaded.
   const [newIds, setNewIds] = useState<ReadonlySet<number>>(new Set())
   const [deleting, setDeleting] = useState<number>()
   const [deleteFailed, setDeleteFailed] = useState(false)
@@ -135,7 +130,6 @@ export function ApiKeysSection() {
   const openCreate = () => setDialog({ kind: 'create' })
   const closeDialog = () => setDialog(undefined)
 
-  // Expired keys are deleted at once, since no app can use them anymore.
   const deleteExpired = async (apiKey: ApiKey) => {
     if (deleting !== undefined) return
     setDeleting(apiKey.id)
@@ -165,7 +159,6 @@ export function ApiKeysSection() {
         </div>
       )}
       {keys === undefined ? (
-        // Loading, or loading failed.
         <div className="p-4 sm:p-5">
           <CreateButton disabled onClick={openCreate} />
         </div>

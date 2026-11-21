@@ -14,7 +14,6 @@ import {
 export class WeightEntriesController {
   constructor(private readonly weightEntries: WeightEntriesService) {}
 
-  // 200 whether it adds the day's weigh-in or replaces it.
   @Post('weight-entries')
   @HttpCode(200)
   @RequiresScope('weight-entries:write')

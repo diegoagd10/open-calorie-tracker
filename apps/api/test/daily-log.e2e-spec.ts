@@ -12,7 +12,6 @@ const PASSWORD = 'correct-horse-battery-staple'
 const DATE = '2026-10-24'
 const TIME_ZONE = 'America/New_York'
 
-// New York is on daylight saving time (UTC-4) from 2026-10-23 to 2026-10-25.
 const newYorkTime = (localDateTime: string) => new Date(`${localDateTime}-04:00`)
 
 type Totals = Record<keyof typeof DEFAULT_DAILY_GOALS | 'foodEntries', number>
@@ -228,7 +227,6 @@ describe('GET /v1/daily-log (e2e)', () => {
     })
 
     it('uses the time zone to decide which day an entry belongs to', async () => {
-      // 2026-10-24 22:00 in New York is already 2026-10-25 in Tokyo.
       await seedFoodEntry(database, { ...tortillas, loggedAt: newYorkTime('2026-10-24T22:00:00') })
 
       const newYork = await dailyLog({ date: '2026-10-24', timeZone: 'America/New_York' })

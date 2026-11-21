@@ -6,7 +6,6 @@ import {
 
 export type FieldErrors<Field extends string> = Partial<Record<Field, string>>
 
-// Keeps the first schema message for each field of the form.
 export const fieldErrorsFrom = <Field extends string>(
   fields: readonly Field[],
   issues: { path: PropertyKey[]; message: string }[],
@@ -19,6 +18,7 @@ export const fieldErrorsFrom = <Field extends string>(
   return errors
 }
 
+// oxlint-disable-next-line local/no-comments
 // The inputs already stop at their maxLength; slicing also covers values set by script.
 export const usernameInput = (value: string) =>
   stripInvalidUsernameCharacters(value).slice(0, USERNAME_MAX_LENGTH)

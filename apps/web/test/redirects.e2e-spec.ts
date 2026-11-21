@@ -17,7 +17,6 @@ describe('Redirects once the account exists (e2e)', () => {
   })
 
   beforeEach(async () => {
-    // A fresh context per test, so no cookies leak between tests.
     page = await (await browser.newContext()).newPage()
     page.setDefaultTimeout(5_000)
   })
@@ -32,7 +31,6 @@ describe('Redirects once the account exists (e2e)', () => {
   const loginThroughApi = async () => {
     const response = await fetch(`${API_URL}/v1/login`, {
       method: 'POST',
-      // Its own client IP, so failed logins in other test files can never lock it out.
       headers: { 'Content-Type': 'application/json', 'X-Forwarded-For': '192.0.2.1' },
       body: JSON.stringify(SEED_USER),
     })

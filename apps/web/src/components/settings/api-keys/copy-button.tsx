@@ -6,7 +6,6 @@ export const SMALL_BUTTON =
 
 const COPIED_BUTTON = `${SMALL_BUTTON} border-accent text-accent-text`
 
-// "Copy", then "Copied" or "Couldn’t copy" for a moment after a click.
 export function CopyButton({
   state,
   onCopy,

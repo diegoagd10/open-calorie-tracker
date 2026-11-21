@@ -9,14 +9,12 @@ import { type DayQuery, type RangeQuery, dayQuerySchema, rangeQuerySchema } from
 export class DailyLogController {
   constructor(private readonly dailyLog: DailyLogService) {}
 
-  // The entries, totals and goals of one calendar day in the user's time zone.
   @Get('daily-log')
   @RequiresScope('daily-log:read')
   get(@UserId() userId: number, @Query(new ZodValidationPipe(dayQuerySchema)) day: DayQuery) {
     return this.dailyLog.dailyLog(userId, day)
   }
 
-  // Each day's calories and number of food entries from one calendar day to another.
   @Get('daily-summaries')
   @RequiresScope('daily-log:read')
   summaries(

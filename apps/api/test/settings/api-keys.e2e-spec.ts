@@ -28,7 +28,6 @@ const KEY_PATTERN = /^oct_live_[A-Za-z0-9]{32}$/
 
 const randomPartOf = (key: string) => key.slice('oct_live_'.length)
 
-// "oct_live_" + the first 4 and the last 4 characters of the random part.
 const previewOf = (key: string) => {
   const random = randomPartOf(key)
   return `oct_live_${random.slice(0, 4)}…${random.slice(-4)}`
@@ -52,7 +51,6 @@ describe('settings: API keys (e2e)', () => {
     await app.close()
   })
 
-  // Sends diego's token unless the test passes another one, or null for none.
   type Bearer = string | null | undefined
 
   const withToken = (pending: request.Test, bearer: Bearer) =>
@@ -257,7 +255,6 @@ describe('settings: API keys (e2e)', () => {
       expect((await remove(99_999)).status).toBe(404)
     })
 
-    // Like every other route with an id in its path.
     it('answers 400 on an id that is not a number', async () => {
       expect((await remove('abc')).status).toBe(400)
     })

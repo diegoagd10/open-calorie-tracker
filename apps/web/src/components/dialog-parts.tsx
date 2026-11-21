@@ -1,8 +1,6 @@
 import type { ReactNode } from 'react'
 import { CloseIcon } from '@/components/icons'
 
-// Parts the log's dialogs share.
-
 export const BUTTON =
   'flex h-12 items-center justify-center gap-2 rounded-full px-4 font-semibold whitespace-nowrap transition disabled:cursor-not-allowed disabled:opacity-60'
 export const SECONDARY_BUTTON = `${BUTTON} border border-line bg-bg`
@@ -13,7 +11,6 @@ type HeaderProps = {
   title: string
   subtitle: string
   icon?: ReactNode
-  // Shows the × button.
   onClose?: () => void
   disabled?: boolean
 }
@@ -43,9 +40,6 @@ export function DialogHeader({ titleId, title, subtitle, icon, onClose, disabled
   )
 }
 
-// How a change moves a total: a solid part up to the lower value and a striped part up to the
-// higher one, e.g. what adding or deleting an entry would do. Colors are CSS colors, e.g.
-// "var(--water)". Decorative: the text next to it says the same.
 export function GoalBar({
   from,
   to,

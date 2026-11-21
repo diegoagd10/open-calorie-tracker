@@ -7,7 +7,6 @@ import { DailyGoalsService } from './daily-goals.service.js'
   imports: [AuthModule],
   controllers: [DailyGoalsController],
   providers: [DailyGoalsService],
-  // The daily log measures each day against these goals.
   exports: [DailyGoalsService],
 })
 export class DailyGoalsModule {}

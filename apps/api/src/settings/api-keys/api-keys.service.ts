@@ -11,12 +11,10 @@ import { createCipheriv, createDecipheriv, createHash, randomBytes, randomInt } 
 import type { Database } from '../../db/database.js'
 import { apiKeys } from '../../db/schema.js'
 
-// Tells an API key apart from an access token.
 export const API_KEY_PREFIX = 'oct_live_'
 const KEY_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
 const KEY_RANDOM_LENGTH = 32
 
-// "oct_live_" + 32 random letters and digits.
 const generateKey = () =>
   API_KEY_PREFIX +
   Array.from(
@@ -24,25 +22,20 @@ const generateKey = () =>
     () => KEY_ALPHABET[randomInt(KEY_ALPHABET.length)],
   ).join('')
 
-// Enough to tell keys apart without revealing them.
 const previewOf = (key: string) => {
   const random = key.slice(API_KEY_PREFIX.length)
   return `${API_KEY_PREFIX}${random.slice(0, 4)}…${random.slice(-4)}`
 }
 
-// Finds a key by its value without decrypting every stored key.
 const hashOf = (key: string) => createHash('sha256').update(key).digest('hex')
 
-// Keys are stored with AES-256-GCM: base64 of the IV, the authentication tag and the ciphertext.
 const CIPHER = 'aes-256-gcm'
 const IV_BYTES = 12
 const TAG_BYTES = 16
 
 type StoredApiKey = typeof apiKeys.$inferSelect
 
-// Built by ApiKeysModule with the API_KEY_SECRET, and by the seed with the same secret.
 export class ApiKeysService {
-  // Derived from API_KEY_SECRET.
   private readonly encryptionKey: Buffer
 
   constructor(
@@ -59,7 +52,6 @@ export class ApiKeysService {
     return Buffer.concat([iv, cipher.getAuthTag(), ciphertext]).toString('base64')
   }
 
-  // Throws when the key was encrypted with another secret.
   private decrypt(stored: string): string {
     const data = Buffer.from(stored, 'base64')
     const decipher = createDecipheriv(CIPHER, this.encryptionKey, data.subarray(0, IV_BYTES))
@@ -82,7 +74,6 @@ export class ApiKeysService {
     }
   }
 
-  // Newest first.
   async list(userId: number): Promise<ApiKey[]> {
     const stored = await this.database.db
       .select()
@@ -92,8 +83,6 @@ export class ApiKeysService {
     return stored.map((key) => this.toApiKey(key))
   }
 
-  // The name is already trimmed by apiKeyCreateSchema. Throws ConflictException when the user
-  // already has a key with that name, regardless of case. `createdAt` is for the seed.
   async create(
     userId: number,
     { name, expiresIn }: ApiKeyCreateInput,
@@ -114,12 +103,10 @@ export class ApiKeysService {
       .onConflictDoNothing()
       .returning()
       .get()
-    // The random part makes a clash of hashes practically impossible, so the name clashed.
     if (created === undefined) throw new ConflictException(API_KEY_NAME_TAKEN_ERROR)
     return this.toApiKey(created)
   }
 
-  // Another user's key answers like a missing one.
   async remove(userId: number, id: number): Promise<void> {
     const removed = await this.database.db
       .delete(apiKeys)
@@ -128,9 +115,6 @@ export class ApiKeysService {
     if (removed.length === 0) throw new NotFoundException()
   }
 
-  // Records that a third-party app used the key and returns its owner. Throws
-  // UnauthorizedException, without saying why, when the key is unknown, revoked or expired; a key
-  // expires at its expiresAt.
   async registerUse(key: string, now = new Date()): Promise<number> {
     const [used] = await this.database.db
       .update(apiKeys)

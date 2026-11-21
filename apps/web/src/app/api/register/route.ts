@@ -6,7 +6,6 @@ import { clientIp, exchangeForSession } from '../token-exchange'
 
 const FORWARDED_STATUSES = new Set([400, 409, 429])
 
-// Registering also logs the new account in.
 export async function POST(request: NextRequest) {
   const input = registerSchema.safeParse(await jsonBody(request))
   if (!input.success) return status(400)

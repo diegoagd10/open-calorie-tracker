@@ -36,7 +36,6 @@ describe('settings: daily goals (e2e)', () => {
     await app.close()
   })
 
-  // Sends diego's token unless the test passes another one, or null for none.
   const read = (bearer: string | null = token) =>
     withBearer(request(app.getHttpServer()).get('/v1/settings/daily-goals'), bearer)
 

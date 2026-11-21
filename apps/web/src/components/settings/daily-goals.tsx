@@ -21,16 +21,13 @@ type Values = Record<GoalKey, string>
 const valuesOf = (goals: DailyGoals) =>
   Object.fromEntries(GOALS.map(({ key }) => [key, String(goals[key])])) as Values
 
-// An empty field or 0 is not a goal; leading zeros are dropped, so "070" is 70.
 const goalIn = (value: string) => {
   const goal = Number(value)
   return value === '' || goal < 1 ? undefined : goal
 }
 
-// The goals the Food Log measures each day against. Save sends only the goals that changed.
 export function DailyGoalsSection() {
   const { goals, failed, saving, save } = useDailyGoals()
-  // What the user typed, over the saved goals. Empty until the goals load.
   const [edits, setEdits] = useState<Partial<Values>>({})
   const [saved, setSaved] = useState(false)
 

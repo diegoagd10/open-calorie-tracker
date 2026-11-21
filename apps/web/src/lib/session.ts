@@ -10,7 +10,6 @@ const requiredEnv = (name: string) => {
   return value
 }
 
-// A cookie scripts cannot read, sent only by this site.
 const SESSION_COOKIE_OPTIONS = {
   httpOnly: true,
   secure: true,
@@ -18,7 +17,6 @@ const SESSION_COOKIE_OPTIONS = {
   path: '/',
 } as const
 
-// Stores the token the API signed in the session cookie, expiring with the token.
 export const startSession = async (accessToken: string) => {
   const expiresAt = decodeJwt(accessToken).exp ?? 0
   ;(await cookies()).set(ACCESS_TOKEN_COOKIE, accessToken, {
@@ -27,15 +25,12 @@ export const startSession = async (accessToken: string) => {
   })
 }
 
-// Deletes the session cookie. The token itself stays valid at the API until it expires.
 export const endSession = async () => {
   ;(await cookies()).set(ACCESS_TOKEN_COOKIE, '', { ...SESSION_COOKIE_OPTIONS, maxAge: 0 })
 }
 
-// The token the API signed, to authenticate calls made on the user's behalf.
 export const sessionToken = async () => (await cookies()).get(ACCESS_TOKEN_COOKIE)?.value
 
-// Checks the token the API signed, with the same secret, issuer and audience it uses.
 export const hasValidSession = async (request: NextRequest): Promise<boolean> => {
   const token = request.cookies.get(ACCESS_TOKEN_COOKIE)?.value
   if (token === undefined) return false

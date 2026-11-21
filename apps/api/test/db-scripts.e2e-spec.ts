@@ -9,6 +9,7 @@ import { Database } from '../src/db/database.js'
 
 const apiDir = fileURLToPath(new URL('..', import.meta.url))
 
+// oxlint-disable-next-line local/no-comments
 // Not dist: `nest build` empties dist, which would pull it from under the API that the web tests
 // start from there. A direct child of apps/api, so the build still finds drizzle/ and node_modules.
 const BUILD_DIR = 'dist-test'
@@ -26,6 +27,7 @@ describe('database scripts (e2e)', () => {
   let dataDir: string
   let databaseUrl: string
 
+  // oxlint-disable-next-line local/no-comments
   // Builds once, the way `nest build` does for the db:seed and db:reset scripts. Not incremental:
   // the build info file is shared with `nest build` and would skip emitting into a fresh folder.
   beforeAll(async () => {
@@ -55,7 +57,6 @@ describe('database scripts (e2e)', () => {
     await rm(dataDir, { recursive: true, force: true })
   })
 
-  // Runs what the db:seed and db:reset scripts run after building.
   const run = (script: 'seed' | 'reset', env: Record<string, string> = {}) =>
     exec(['node', `${BUILD_DIR}/${script}`], { DATABASE_URL: databaseUrl, ...env })
 

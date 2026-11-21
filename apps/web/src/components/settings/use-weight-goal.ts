@@ -1,5 +1,6 @@
 import type { WeightGoal, WeightGoalUpdate } from '@open-calorie-tracker/shared'
 import { useEffect, useRef, useState } from 'react'
+import { logInAgain } from '../requests'
 
 const WEIGHT_GOAL_URL = '/api/weight-goal'
 
@@ -16,11 +17,6 @@ const request = async (init?: RequestInit): Promise<Result> => {
   }
 }
 
-// The session expired: a full navigation lets the proxy clear it and show the login page.
-const logInAgain = () => window.location.assign('/login')
-
-// Loads the user's weight goal and saves it, one save at a time. `goal` is undefined until it
-// loads, and stays so when loading fails; it is null for a user without one.
 export const useWeightGoal = () => {
   const [goal, setGoal] = useState<WeightGoal | null>()
   const [failed, setFailed] = useState(false)
@@ -40,7 +36,6 @@ export const useWeightGoal = () => {
     }
   }, [])
 
-  // Resolves to the saved goal, or undefined when saving failed.
   const save = async (update: WeightGoalUpdate): Promise<WeightGoal | undefined> => {
     if (running.current) return undefined
     running.current = true

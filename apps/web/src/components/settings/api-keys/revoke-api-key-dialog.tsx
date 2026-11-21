@@ -13,14 +13,11 @@ import { API_KEYS_URL } from './use-api-keys'
 
 type RevokeApiKeyDialogProps = {
   apiKey: ApiKey
-  // The timestamp "Last used" counts from.
   now: number
   onKeep: () => void
-  // Called once the key is deleted, or turned out to be gone already.
   onRevoked: () => void
 }
 
-// Asks before deleting a key that still works.
 export function RevokeApiKeyDialog({ apiKey, now, onKeep, onRevoked }: RevokeApiKeyDialogProps) {
   const titleId = useId()
   const { pending, failed, submit } = useSubmission(onRevoked)

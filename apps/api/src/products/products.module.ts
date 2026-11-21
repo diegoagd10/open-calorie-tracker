@@ -7,7 +7,6 @@ import { ProductsService } from './products.service.js'
   imports: [AuthModule],
   controllers: [ProductsController],
   providers: [ProductsService],
-  // The MCP server looks products up too.
   exports: [ProductsService],
 })
 export class ProductsModule {}

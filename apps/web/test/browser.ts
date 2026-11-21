@@ -2,8 +2,6 @@ import type { Browser, BrowserContextOptions, Locator, Page } from 'playwright'
 
 export const TIME_ZONE = 'America/New_York'
 
-// A fresh context per test, so no cookies leak between tests, in the time zone and locale the
-// tests expect. Options such as a mobile device are added on top.
 export const openPage = async (browser: Browser, options: BrowserContextOptions = {}) => {
   const context = await browser.newContext({ timezoneId: TIME_ZONE, locale: 'en-US', ...options })
   const page = await context.newPage()
@@ -11,7 +9,6 @@ export const openPage = async (browser: Browser, options: BrowserContextOptions 
   return { context, page }
 }
 
-// A phone-sized touch screen, for openPage.
 export const MOBILE = {
   viewport: { width: 390, height: 844 },
   deviceScaleFactor: 3,
@@ -22,7 +19,6 @@ export const MOBILE = {
 export const textOf = async (locator: Locator) =>
   (await locator.innerText()).replaceAll(/\s+/g, ' ').trim()
 
-// Waits for the UI to settle on a value, since data loads after the page renders.
 export const eventually = { timeout: 5_000, interval: 100 }
 
 export const box = async (locator: Locator) => {
@@ -31,7 +27,6 @@ export const box = async (locator: Locator) => {
   return bounds
 }
 
-// Whether the two elements overlap vertically, as items of one row do.
 export const sameRow = async (a: Locator, b: Locator) => {
   const first = await box(a)
   const second = await box(b)
@@ -40,8 +35,6 @@ export const sameRow = async (a: Locator, b: Locator) => {
 
 export const isHidden = (locator: Locator) => async () => !(await locator.isVisible())
 
-// Holds the page's requests to the routes matching the pattern until released, e.g. to look at a
-// form while its request is in flight. With a method, other requests go through at once.
 export const holdRequests = async (page: Page, pattern: string, method?: string) => {
   let release = () => {}
   const released = new Promise<void>((resolve) => {

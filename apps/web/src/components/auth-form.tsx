@@ -13,7 +13,6 @@ type AuthFormProps = {
   children: ReactNode
 }
 
-// The card shared by the login and register pages; the title also names the form.
 export function AuthForm({
   title,
   description,

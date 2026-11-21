@@ -15,7 +15,6 @@ describe('settings: profile (e2e)', () => {
   beforeEach(async () => {
     app = await createTestApp()
     database = app.get(Database)
-    // Seeded with a capital, so the answer shows the username as stored.
     await seedUser(database, { username: 'Ana', password: PASSWORD })
     await seedUser(database, { username: OTHER_USERNAME, password: PASSWORD })
   })

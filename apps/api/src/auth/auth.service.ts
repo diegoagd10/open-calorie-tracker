@@ -27,11 +27,8 @@ import { hashPassword, verifyPassword } from './password.js'
 
 type Attempts = { failures: number; lockedUntil: number | undefined }
 
-// Who a valid token is for. A token exchanged from an API key carries its scopes; a login token
-// has none and reaches every endpoint.
 export type TokenSubject = { userId: number; scopes: string[] | undefined }
 
-// Compared against when the username does not exist, so both cases take the same time.
 const dummyHash = hashPassword('dummy-password-for-timing')
 
 const accountLocked = () =>
@@ -39,7 +36,6 @@ const accountLocked = () =>
 
 @Injectable()
 export class AuthService {
-  // Failed logins per (IP, username), so an attacker can only lock an account for their own IP.
   private readonly attempts = new Map<string, Attempts>()
 
   constructor(
@@ -63,14 +59,11 @@ export class AuthService {
     return { accessToken: await this.issueAccessToken(user.id) }
   }
 
-  // Registering also logs the new user in.
   async register(input: RegisterInput): Promise<LoginResponse> {
     const userId = await this.users.register(input)
     return { accessToken: await this.issueAccessToken(userId) }
   }
 
-  // Replaces the user's password once the current one proves it is them. Tokens already issued,
-  // including the one making this request, stay valid until they expire.
   async changePassword(
     userId: number,
     { currentPassword, newPassword }: ChangePasswordInput,
@@ -83,7 +76,6 @@ export class AuthService {
     await this.users.setPassword(userId, newPassword)
   }
 
-  // The token a third-party app gets for the owner of an API key the caller already accepted.
   async issueApiToken(userId: number): Promise<ApiTokenResponse> {
     const scopes = [...API_SCOPES]
     return {
@@ -94,7 +86,6 @@ export class AuthService {
     }
   }
 
-  // Returns who a valid, unexpired token signed by this API is for, or undefined.
   async verifyAccessToken(token: string): Promise<TokenSubject | undefined> {
     const { secret, issuer, audience } = this.config.jwt
     try {
@@ -113,7 +104,6 @@ export class AuthService {
     }
   }
 
-  // Without scopes, a login token; with them, a shorter-lived token for a third-party app.
   private issueAccessToken(userId: number, scopes?: ApiScope[]): Promise<string> {
     const { secret, issuer, audience } = this.config.jwt
     const issuedAt = Math.floor(Date.now() / 1000)
@@ -139,7 +129,6 @@ export class AuthService {
     return false
   }
 
-  // Returns true when this failure locks the account.
   private recordFailure(attemptsKey: string): boolean {
     const failures = (this.attempts.get(attemptsKey)?.failures ?? 0) + 1
     const locked = failures >= MAX_FAILED_ATTEMPTS

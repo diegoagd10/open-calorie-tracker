@@ -8,7 +8,6 @@ type FieldProps<Name extends string> = {
   maxLength: number
   value: string
   error: string | undefined
-  // Shown under the field until an error takes its place.
   hint?: string
   disabled?: boolean
   ref?: Ref<HTMLInputElement>

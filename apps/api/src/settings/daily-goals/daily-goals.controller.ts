@@ -4,7 +4,6 @@ import { AccessTokenGuard, UserId } from '../../auth/access-token.guard.js'
 import { ZodValidationPipe } from '../../common/zod-validation.pipe.js'
 import { DailyGoalsService } from './daily-goals.service.js'
 
-// Served under /v1/settings/daily-goals; see SettingsModule.
 @Controller()
 @UseGuards(AccessTokenGuard)
 export class DailyGoalsController {
