@@ -503,6 +503,16 @@ describe('MCP (e2e)', () => {
       expect((await dailyLog()).entries).toEqual([entry])
     })
 
+    it('E1b — a retry with the same requestId logs food and water once', async () => {
+      const requestId = '0b7f5a3e-6c1d-4f0a-9d53-2f1c8f0f3b11'
+      const food = await succeeded('log_food', { ...OATMEAL, requestId })
+      const water = await succeeded('log_water', { amount: 8, requestId })
+
+      expect(await succeeded('log_food', { ...OATMEAL, requestId })).toEqual(food)
+      expect(await succeeded('log_water', { amount: 8, requestId })).toEqual(water)
+      expect((await dailyLog()).entries).toHaveLength(2)
+    })
+
     it('E2 — logging water on another day', async () => {
       const entry = await succeeded('log_water', {
         amount: 8,

@@ -60,8 +60,13 @@ export const foodEntries = sqliteTable(
     fiber: real('fiber'),
     sugar: real('sugar'),
     sodium: real('sodium'),
+    requestId: text('request_id'),
+    attempt: integer('attempt').notNull().default(1),
   },
-  (table) => [index('food_entries_user_logged_at').on(table.userId, table.loggedAt)],
+  (table) => [
+    index('food_entries_user_logged_at').on(table.userId, table.loggedAt),
+    uniqueIndex('food_entries_user_request_unique').on(table.userId, table.requestId),
+  ],
 )
 
 export type FoodEntry = typeof foodEntries.$inferSelect
@@ -75,8 +80,13 @@ export const waterEntries = sqliteTable(
       .references(() => users.id, { onDelete: 'cascade' }),
     loggedAt: integer('logged_at', { mode: 'timestamp_ms' }).notNull(),
     amount: real('amount').notNull(),
+    requestId: text('request_id'),
+    attempt: integer('attempt').notNull().default(1),
   },
-  (table) => [index('water_entries_user_logged_at').on(table.userId, table.loggedAt)],
+  (table) => [
+    index('water_entries_user_logged_at').on(table.userId, table.loggedAt),
+    uniqueIndex('water_entries_user_request_unique').on(table.userId, table.requestId),
+  ],
 )
 
 export type WaterEntry = typeof waterEntries.$inferSelect

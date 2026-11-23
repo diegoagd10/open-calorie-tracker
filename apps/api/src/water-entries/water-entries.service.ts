@@ -4,7 +4,7 @@ import type {
   WaterEntryInput,
   WaterLogEntry,
 } from '@open-calorie-tracker/shared'
-import { and, eq } from 'drizzle-orm'
+import { and, eq, lt } from 'drizzle-orm'
 import { Database } from '../db/database.js'
 import { type WaterEntry, waterEntries } from '../db/schema.js'
 
@@ -34,7 +34,7 @@ export class WaterEntriesService {
 
   async create(
     userId: number,
-    { amount, loggedAt }: CreateWaterEntryInput,
+    { amount, loggedAt, requestId, attempt = 1 }: CreateWaterEntryInput,
   ): Promise<WaterLogEntry> {
     const entry = await this.database.db
       .insert(waterEntries)
@@ -42,9 +42,26 @@ export class WaterEntriesService {
         userId,
         loggedAt: loggedAt === undefined ? new Date() : new Date(loggedAt),
         amount,
+        requestId,
+        attempt,
+      })
+      .onConflictDoUpdate({
+        target: [waterEntries.userId, waterEntries.requestId],
+        set: { amount, attempt },
+        setWhere: lt(waterEntries.attempt, attempt),
       })
       .returning()
       .get()
+    return entry === undefined ? this.createdBy(userId, requestId) : toWaterLogEntry(entry)
+  }
+
+  private async createdBy(userId: number, requestId: string | undefined): Promise<WaterLogEntry> {
+    const entry = await this.database.db
+      .select()
+      .from(waterEntries)
+      .where(and(eq(waterEntries.userId, userId), eq(waterEntries.requestId, requestId ?? '')))
+      .get()
+    if (entry === undefined) throw new NotFoundException()
     return toWaterLogEntry(entry)
   }
 

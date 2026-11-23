@@ -1494,6 +1494,42 @@ describe('Food (e2e)', () => {
       },
     )
 
+    it('adds the food once when the answer to the first try is lost', async () => {
+      let lost = false
+      await page.route(FOOD_ENTRIES_URL, async (route) => {
+        if (lost) return route.continue()
+        lost = true
+        await route.fetch()
+        await route.abort()
+      })
+      await openDialog()
+      await fillForm(GREEK_YOGURT)
+      await submit().click()
+      await expect.poll(alertText, eventually).toBe(GENERIC_ERROR_MESSAGE)
+
+      await caloriesField().fill('200')
+      await submit().click()
+
+      await expect.poll(isHidden(dialog()), eventually).toBe(true)
+      await expect.poll(entryTexts, eventually).toEqual([expect.stringContaining('300 kcal')])
+    })
+
+    it('shows the food when the answer is lost and the user cancels', async () => {
+      await page.route(FOOD_ENTRIES_URL, async (route) => {
+        await route.fetch()
+        await route.abort()
+      })
+      await openDialog()
+      await fillForm(GREEK_YOGURT)
+      await submit().click()
+      await expect.poll(alertText, eventually).toBe(GENERIC_ERROR_MESSAGE)
+
+      await button('Cancel').click()
+
+      await expect.poll(isHidden(dialog()), eventually).toBe(true)
+      await expect.poll(entryTexts, eventually).toHaveLength(1)
+    })
+
     it('keeps the Edit food dialog open with what was typed when saving fails, and lets the user retry', async () => {
       await seedYogurt()
       await page.route(`${FOOD_ENTRIES_URL}/*`, (route) => route.fulfill({ status: 500 }))

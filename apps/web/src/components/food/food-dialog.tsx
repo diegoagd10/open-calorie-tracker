@@ -17,6 +17,7 @@ import { loggedAtOnDay } from '@/components/food-log/selected-day'
 import { ForkKnifeIcon, MinusIcon, PlusIcon, TrashIcon } from '@/components/icons'
 import { Modal } from '@/components/modal'
 import type { Outcome } from '@/components/requests'
+import { useCreateRequest } from '@/components/use-create-request'
 import { useSubmission } from '@/components/use-submission'
 import { addFood, loadServingSizes, saveServingSize, updateFood } from './food-requests'
 import {
@@ -98,6 +99,7 @@ export function FoodDialog({
   const [calories, setCalories] = useState(initial.calories)
   const [nutrients, setNutrients] = useState<NutrientValues>(initial.nutrients)
   const { pending, failed, submit } = useSubmission(onSaved)
+  const nextAttempt = useCreateRequest()
 
   useEffect(() => {
     let current = true
@@ -128,7 +130,7 @@ export function FoodDialog({
       ({ key }) => perServingValue(nutrients[key]) === perServingValue(initial.nutrients[key]),
     )
 
-  const close = () => !pending && onClose()
+  const close = () => !pending && (failed ? onSaved() : onClose())
 
   const save = async (): Promise<Outcome> => {
     const known = servingSizesLoaded ? servingSizes : await loadServingSizes()
@@ -150,7 +152,11 @@ export function FoodDialog({
       if (value !== undefined) input[key] = value
     }
     return entry === undefined
-      ? addFood({ ...input, ...(day === undefined ? {} : { loggedAt: loggedAtOnDay(day) }) })
+      ? addFood({
+          ...input,
+          ...nextAttempt(),
+          ...(day === undefined ? {} : { loggedAt: loggedAtOnDay(day) }),
+        })
       : updateFood(entry.id, input)
   }
 

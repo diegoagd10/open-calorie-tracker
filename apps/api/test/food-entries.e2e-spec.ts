@@ -129,6 +129,65 @@ describe('food entries (e2e)', () => {
     expect((await dailyLog()).entries).toEqual([entry])
   })
 
+  describe('retries', () => {
+    const requestId = '0b7f5a3e-6c1d-4f0a-9d53-2f1c8f0f3b11'
+
+    it('creates one entry for a request that is sent twice', async () => {
+      const first = await create({ ...greekYogurt(), requestId })
+      const second = await create({ ...greekYogurt(), requestId })
+
+      expect(second.status).toBe(201)
+      expect(second.body).toEqual(first.body)
+      expect((await dailyLog()).entries).toEqual([first.body])
+    })
+
+    it('creates one entry when the same request arrives twice at the same time', async () => {
+      const send = () => create({ ...greekYogurt(), requestId })
+
+      const [first, second] = await Promise.all([send(), send()])
+
+      expect(second.body).toEqual(first.body)
+      expect(await storedEntries()).toHaveLength(1)
+    })
+
+    it('keeps the values of the last attempt, in either order of arrival', async () => {
+      const attempt = (number: number, calories: number) =>
+        create({ ...greekYogurt(), quantity: 1, calories, requestId, attempt: number })
+
+      await attempt(1, 100)
+      expect((await attempt(3, 300)).body).toMatchObject({ calories: 300 })
+      expect((await attempt(2, 200)).body).toMatchObject({ calories: 300 })
+
+      expect((await dailyLog()).entries).toEqual([expect.objectContaining({ calories: 300 })])
+    })
+
+    it('creates an entry for each request, with or without an id', async () => {
+      await create(greekYogurt())
+      await create(greekYogurt())
+      await create({ ...greekYogurt(), requestId })
+
+      expect(await storedEntries()).toHaveLength(3)
+    })
+
+    it('does not mix up users that send the same request id', async () => {
+      const theirToken = await accessTokenFor(app, OTHER_USERNAME, PASSWORD)
+      const theirs = await createServingSize('1 cup (245 g)', theirToken)
+
+      const mine = await create({ ...greekYogurt(), requestId })
+      await create({ ...greekYogurt(), servingSizeId: theirs, requestId, attempt: 2 }, theirToken)
+
+      expect(await storedEntries()).toHaveLength(2)
+      expect((await dailyLog()).entries).toEqual([mine.body])
+    })
+
+    it.each([{ requestId: 'not-a-uuid' }, { attempt: 0 }, { attempt: 1.5 }])(
+      'rejects %j',
+      async (change) => {
+        expect((await create({ ...greekYogurt(), ...change })).status).toBe(400)
+      },
+    )
+  })
+
   it('creates on the selected historical day and edits without moving it', async () => {
     const response = await create({ ...greekYogurt(), loggedAt: '2020-01-01T20:30:00-05:00' })
 

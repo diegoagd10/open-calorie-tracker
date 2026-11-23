@@ -1,0 +1,15 @@
+{
+  "extends": "../../../apps/api/tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "lib": ["esnext", "dom", "dom.iterable"],
+    "declaration": false,
+    "incremental": false,
+    "rootDir": "../../..",
+    "allowImportingTsExtensions": true,
+    "typeRoots": ["../../../apps/web/node_modules/@types"],
+    "types": ["node"],
+    "paths": { "playwright": ["../../../apps/web/node_modules/playwright/index.d.ts"] }
+  },
+  "include": ["*.ts"]
+}

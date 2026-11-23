@@ -646,6 +646,26 @@ describe('Water (e2e)', () => {
       expect(await home.entries().count()).toBe(0)
     })
 
+    it('adds the water once when the answer to the first try is lost', async () => {
+      let lost = false
+      await page.route(WATER_ENTRIES_URL, async (route) => {
+        if (lost) return route.continue()
+        lost = true
+        await route.fetch()
+        await route.abort()
+      })
+      await openAddDialog()
+      await preset(addDialog(), 'Bottle').click()
+      await expect
+        .poll(() => addDialog().getByRole('alert').textContent(), eventually)
+        .toBe(GENERIC_ERROR_MESSAGE)
+
+      await preset(addDialog(), 'Bottle').click()
+
+      await expect.poll(waterSummary, eventually).toContain(ofGoal(16))
+      expect(await home.entries().count()).toBe(1)
+    })
+
     it('keeps the Edit water dialog open with what was typed when saving fails', async () => {
       await seedWater(16)
       await page.route(`${WATER_ENTRIES_URL}/*`, failNetwork)

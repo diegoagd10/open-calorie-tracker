@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { createRequestSchema } from './create-request'
 import { filterDecimalInput, hasAtMostOneDecimal } from './decimal'
 
 export const MAX_WATER_AMOUNT = 128
@@ -21,6 +22,7 @@ export type WaterEntryInput = z.infer<typeof waterEntrySchema>
 
 export const createWaterEntrySchema = waterEntrySchema.extend({
   loggedAt: z.iso.datetime({ offset: true }).optional(),
+  ...createRequestSchema.shape,
 })
 
 export type CreateWaterEntryInput = z.infer<typeof createWaterEntrySchema>

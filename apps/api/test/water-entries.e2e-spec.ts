@@ -77,6 +77,42 @@ describe('water entries (e2e)', () => {
     return entry.id
   }
 
+  describe('retries', () => {
+    const requestId = '0b7f5a3e-6c1d-4f0a-9d53-2f1c8f0f3b11'
+
+    it('creates one entry for a request that is sent twice', async () => {
+      const first = await create({ amount: 8, requestId })
+      const second = await create({ amount: 8, requestId })
+
+      expect(second.status).toBe(201)
+      expect(second.body).toEqual(first.body)
+      expect(await storedEntries(USERNAME)).toHaveLength(1)
+    })
+
+    it('keeps the amount of the last attempt, in either order of arrival', async () => {
+      await create({ amount: 8, requestId, attempt: 1 })
+      expect((await create({ amount: 32, requestId, attempt: 3 })).body).toMatchObject({
+        amount: 32,
+      })
+      expect((await create({ amount: 16, requestId, attempt: 2 })).body).toMatchObject({
+        amount: 32,
+      })
+
+      expect(await storedEntries(USERNAME)).toEqual([expect.objectContaining({ amount: 32 })])
+    })
+
+    it('does not mix up users that send the same request id', async () => {
+      await create({ amount: 8, requestId })
+      await create(
+        { amount: 16, requestId, attempt: 2 },
+        await accessTokenFor(app, OTHER_USERNAME, PASSWORD),
+      )
+
+      expect(await storedEntries(USERNAME)).toEqual([expect.objectContaining({ amount: 8 })])
+      expect(await storedEntries(OTHER_USERNAME)).toEqual([expect.objectContaining({ amount: 16 })])
+    })
+  })
+
   it('creates on the selected historical day and edits without moving it', async () => {
     const response = await create({ amount: 16, loggedAt: '2020-01-01T20:30:00-05:00' })
     expect(response.status).toBe(201)
