@@ -14,6 +14,7 @@ export const FLAGS = {
   mobile: { type: 'boolean' },
   body: { type: 'string' },
   nth: { type: 'string' },
+  pr: { type: 'string' },
 } as const
 export type Flag = keyof typeof FLAGS
 
@@ -30,6 +31,8 @@ export type CommandName =
   | 'press'
   | 'screenshot'
   | 'api'
+  | 'publish'
+export type RecordedCommand = Exclude<CommandName, 'up' | 'down' | 'publish'>
 export type Command = { usage: string; summary: string; flags?: readonly Flag[] }
 
 export type Target = { role: AriaRole; name: string; nth: number | undefined }
@@ -47,6 +50,7 @@ export type Request = { instance: Instance } & (
   | { command: 'press'; key: string }
   | { command: 'screenshot'; path: string | undefined; mobile: boolean }
   | { command: 'api'; method: Method; path: string; body: unknown }
+  | { command: 'publish'; pr: number }
 )
 
 export type Ports = { web: number; api: number; cdp: number }
@@ -67,9 +71,12 @@ export type ProcessName = 'api' | 'web' | 'browser'
 export type App = 'local' | 'docker'
 export const APPS: readonly App[] = ['local', 'docker']
 
+export type Source = { commit: string; clean: boolean }
+
 export type State = {
   app: App
   repo: string
+  source: Source
   dataDir: string
   evidenceDir: string
   webUrl: string
@@ -78,6 +85,14 @@ export type State = {
   seedUser: { username: string; password: string }
   startedAt: string
   processes: Partial<Record<ProcessName, ProcessRecord>>
+}
+
+export type Entry = Pick<State, 'source' | 'app' | 'startedAt'> & {
+  at: string
+  command: RecordedCommand
+  argv: string[]
+  ok: boolean
+  result: unknown
 }
 
 export type Check = { name: string; ok: boolean; detail?: string; next?: string }
@@ -155,9 +170,18 @@ export const COMMANDS: Record<CommandName, Command> = {
       "Calls the API with the browser's session token, as the user login logged in, and prints the status and the parsed body. Exits 0 whatever the status.",
     flags: ['body'],
   },
+  publish: {
+    usage: 'control-oct.ts publish --pr N [--url URL]',
+    summary:
+      'Pushes the screenshots and the transcript of the runs on HEAD from the evidence dir to the branch evidence/pr-N and links them in the Verification section of the PR. Needs no running instance.',
+    flags: ['pr'],
+  },
 }
 
 export const isCommandName = (value: string): value is CommandName => Object.hasOwn(COMMANDS, value)
+
+export const isRecorded = (command: CommandName): command is RecordedCommand =>
+  command !== 'up' && command !== 'down' && command !== 'publish'
 
 export class Failure extends Error {
   next: string
@@ -213,10 +237,17 @@ export const parseInstance = (value: string): Instance => {
 
 export const newState = (
   instance: Instance,
-  { app, repo, seedUser, processes }: Pick<State, 'app' | 'repo' | 'seedUser' | 'processes'>,
+  {
+    app,
+    repo,
+    source,
+    seedUser,
+    processes,
+  }: Pick<State, 'app' | 'repo' | 'source' | 'seedUser' | 'processes'>,
 ): State => ({
   app,
   repo,
+  source,
   dataDir: instance.dataDir,
   evidenceDir: instance.evidenceDir,
   webUrl: instance.urls.web,
@@ -234,14 +265,26 @@ export const field = (value: unknown, key: string): unknown =>
   isObject(value) ? value[key] : undefined
 
 const invalid = (): never => {
-  throw new TypeError('invalid state')
+  throw new TypeError('invalid shape')
 }
 const object = (value: unknown) => (isObject(value) ? value : invalid())
 const string = (value: unknown) => (typeof value === 'string' ? value : invalid())
 const integer = (value: unknown) =>
   typeof value === 'number' && Number.isInteger(value) ? value : invalid()
+const boolean = (value: unknown) => (typeof value === 'boolean' ? value : invalid())
+const strings = (value: unknown) => (Array.isArray(value) ? value.map(string) : invalid())
 
 const app = (value: unknown) => APPS.find((a) => a === value) ?? invalid()
+
+const source = (value: unknown): Source => {
+  const { commit, clean } = object(value)
+  return { commit: string(commit), clean: boolean(clean) }
+}
+
+const recordedCommand = (value: unknown): RecordedCommand => {
+  const command = string(value)
+  return isCommandName(command) && isRecorded(command) ? command : invalid()
+}
 
 const processRecord = (value: unknown): ProcessRecord | undefined => {
   if (value === undefined) return undefined
@@ -259,6 +302,7 @@ export const parseState = (text: string): State | undefined => {
     const {
       app: kind,
       repo,
+      source: from,
       dataDir,
       evidenceDir,
       webUrl,
@@ -278,6 +322,7 @@ export const parseState = (text: string): State | undefined => {
     return {
       app: app(kind),
       repo: string(repo),
+      source: source(from),
       dataDir: string(dataDir),
       evidenceDir: string(evidenceDir),
       webUrl: string(webUrl),
@@ -286,6 +331,33 @@ export const parseState = (text: string): State | undefined => {
       seedUser: { username: string(username), password: string(password) },
       startedAt: string(startedAt),
       processes: Object.fromEntries(Object.entries(records).filter(([, r]) => r !== undefined)),
+    }
+  } catch {
+    return undefined
+  }
+}
+
+export const parseEntry = (text: string): Entry | undefined => {
+  try {
+    const {
+      at,
+      source: from,
+      app: kind,
+      startedAt,
+      command,
+      argv,
+      ok,
+      result,
+    } = object(JSON.parse(text))
+    return {
+      at: string(at),
+      source: source(from),
+      app: app(kind),
+      startedAt: string(startedAt),
+      command: recordedCommand(command),
+      argv: strings(argv),
+      ok: boolean(ok),
+      result,
     }
   } catch {
     return undefined
@@ -355,6 +427,23 @@ const parseBody = (value: string | undefined): unknown => {
   }
 }
 
+const parseScreenshotPath = (path: string | undefined): string | undefined => {
+  if (path !== undefined && !path.endsWith('.png')) {
+    throw new Failure(`[path] must end in .png, got "${path}"`, usage('screenshot'))
+  }
+  return path
+}
+
+const parsePr = (value: string | undefined): number => {
+  if (value === undefined || !/^[1-9]\d*$/.test(value)) {
+    throw new Failure(
+      `--pr must be a PR number, got ${value === undefined ? 'none' : `"${value}"`}`,
+      usage('publish'),
+    )
+  }
+  return Number(value)
+}
+
 export const parseRequest = (command: CommandName, args: string[]): Request | undefined => {
   let parsed
   try {
@@ -410,7 +499,12 @@ export const parseRequest = (command: CommandName, args: string[]): Request | un
       return { instance, command, key: first }
     case 'screenshot':
       if (second !== undefined) throw wrongArity()
-      return { instance, command, path: first, mobile: values.mobile === true }
+      return {
+        instance,
+        command,
+        path: parseScreenshotPath(first),
+        mobile: values.mobile === true,
+      }
     case 'api':
       if (first === undefined || second === undefined || third !== undefined) throw wrongArity()
       return {
@@ -420,5 +514,8 @@ export const parseRequest = (command: CommandName, args: string[]): Request | un
         path: parsePath(command, second),
         body: parseBody(values.body),
       }
+    case 'publish':
+      if (!none) throw wrongArity()
+      return { instance, command, pr: parsePr(values.pr) }
   }
 }
