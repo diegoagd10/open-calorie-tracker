@@ -15,12 +15,14 @@ import {
   Failure,
   field,
   isCommandName,
+  isRecorded,
   newState,
   parseRequest,
   parseState,
   readState,
   writeState,
 } from './model.ts'
+import { publish, readSource, record } from './proof.ts'
 import type {
   App,
   Check,
@@ -421,15 +423,17 @@ const up = async (instance: Instance, app: App) => {
     )
   }
   if (docker) await requireDocker()
+  const before = await readSource(repo)
   if (previous !== undefined) {
-    const checks = await diagnose(previous, instance)
-    if (previous.app === app && checks.every((c) => c.ok)) {
-      return { ok: true, status: 'already-up', ...previous }
+    const failed =
+      previous.app === app
+        ? (await diagnose(previous, instance)).filter((c) => !c.ok).map((c) => c.name)
+        : ['app']
+    if (previous.source.commit !== before.commit || previous.source.clean !== before.clean) {
+      failed.push('source')
     }
-    replaced = {
-      stale: true,
-      failed: previous.app === app ? checks.filter((c) => !c.ok).map((c) => c.name) : ['app'],
-    }
+    if (failed.length === 0) return { ok: true, status: 'already-up', ...previous }
+    replaced = { stale: true, failed }
     await stopInstance(previous, instance, join(tmpdir(), `${instance.project}-down.log`))
   }
 
@@ -458,7 +462,7 @@ const up = async (instance: Instance, app: App) => {
     const held = busy.map((b) => `${b.port} (pid ${b.pids.join(', ') || 'unknown'})`).join(', ')
     throw new Failure(
       `ports ${held} are in use by processes this tool did not start`,
-      `Stop what holds them (pnpm dev:web and dev:api use 3000 and 3001), or pass another --url, e.g. --url http://localhost:${instance.webPort + 10}`,
+      `Stop what holds them (pnpm dev:web and dev:api use 3000 and 3001; an instance of an older control-oct.ts holds all three ports), or pass another --url, e.g. --url http://localhost:${instance.webPort + 10}`,
     )
   }
 
@@ -479,7 +483,12 @@ const up = async (instance: Instance, app: App) => {
     if (docker) await composeDown(instance, join(logsDir, 'docker.log')).catch(() => {})
     throw error
   }
-  const state = newState(instance, { app, repo, seedUser: SEED_USER, processes })
+  const after = await readSource(repo)
+  const source = {
+    commit: before.commit,
+    clean: before.clean && after.clean && after.commit === before.commit,
+  }
+  const state = newState(instance, { app, repo, source, seedUser: SEED_USER, processes })
   await writeState(state)
 
   try {
@@ -571,6 +580,7 @@ const doctor = async (instance: Instance) => {
   return {
     ok: failed === undefined,
     app: state.app,
+    source: state.source,
     webUrl: state.webUrl,
     apiUrl: state.apiUrl,
     evidenceDir: state.evidenceDir,
@@ -657,6 +667,23 @@ const handle = (request: Request) => {
       return screenshot(instance, repo, request.path, request.mobile)
     case 'api':
       return api(instance, repo, request.method, request.path, request.body)
+    case 'publish':
+      return publish(repo, instance.evidenceDir, request.pr)
+  }
+}
+
+const failureResult = (error: unknown) => ({
+  ok: false,
+  error: messageOf(error),
+  next: error instanceof Failure ? error.next : 'Rerun with --help for usage',
+  ...(error instanceof Failure ? error.details : {}),
+})
+
+const attempt = async (request: Request) => {
+  try {
+    return await handle(request)
+  } catch (error) {
+    return failureResult(error)
   }
 }
 
@@ -673,17 +700,14 @@ const main = async (): Promise<void> => {
   }
   const request = parseRequest(command, rest)
   if (request === undefined) return print({ ok: true, ...COMMANDS[command] })
-  const result = await handle(request)
+  const state = isRecorded(command) ? await readState(request.instance) : undefined
+  const result = await attempt(request)
+  if (state?.repo === repo && isRecorded(command)) await record(state, command, rest, result)
   print(result)
   if (!result.ok) process.exitCode = 1
 }
 
 main().catch((error: unknown) => {
-  print({
-    ok: false,
-    error: messageOf(error),
-    next: error instanceof Failure ? error.next : 'Rerun with --help for usage',
-    ...(error instanceof Failure ? error.details : {}),
-  })
+  print(failureResult(error))
   process.exitCode = 1
 })

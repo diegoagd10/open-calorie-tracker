@@ -67,6 +67,6 @@ End state that proves it works:
 - Settings has two buttons named `Save`, one in Daily goals and one in Weight goal. Press `Enter` in a field of the form you mean.
 - `Change password` names both the button in Profile and the dialog's submit button. While the dialog is open, `click` finds only the one in the dialog.
 - After the password change, the `login` check of `doctor` fails, and `login` without `--password` fails too. Run `up` again before the next feature.
-- `GET /v1/settings/api-keys` returns each full key, because the list copies it again. Keep keys out of evidence you publish.
+- `GET /v1/settings/api-keys` returns each full key, because the list copies it again. The transcript redacts them, but a screenshot does not. Never take a screenshot of the open `Key created` dialog.
 - An API key does not work as a bearer token on the REST routes, which answer 401. Exchange it at `POST /v1/token`, or send it as the bearer token of `POST /v1/mcp`, the MCP endpoint.
 - An expired key shows only `Delete`, which deletes it without asking.

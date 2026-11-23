@@ -1,6 +1,7 @@
+import { createHash } from 'node:crypto'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
-import { dirname, join, resolve } from 'node:path'
+import { dirname, join, relative, resolve } from 'node:path'
 import type * as Playwright from 'playwright'
 import type { Browser, Locator, Page } from 'playwright'
 import { MOBILE } from '../../../apps/web/test/browser.ts'
@@ -299,8 +300,13 @@ export const screenshot = (
         deviceScaleFactor: devicePixelRatio,
       }))
       const { data } = await cdp.send('Page.captureScreenshot', { format: 'png' })
-      await writeFile(file, Buffer.from(data, 'base64'))
-      return { ok: true, path: file, mobile, viewport, ...(await where(page)) }
+      const png = Buffer.from(data, 'base64')
+      await writeFile(file, png)
+      const inEvidence = relative(state.evidenceDir, file)
+      const capture = inEvidence.startsWith('../')
+        ? {}
+        : { file: inEvidence, sha256: createHash('sha256').update(png).digest('hex') }
+      return { ok: true, path: file, ...capture, mobile, viewport, ...(await where(page)) }
     } finally {
       if (mobile) {
         await cdp.send('Emulation.clearDeviceMetricsOverride')
