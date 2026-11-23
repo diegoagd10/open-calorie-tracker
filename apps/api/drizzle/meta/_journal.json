@@ -43,6 +43,13 @@
       "when": 1794862954401,
       "tag": "0005_create_weight_entries_and_goals",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1795473860526,
+      "tag": "0006_log_entries_once",
+      "breakpoints": true
     }
   ]
 }

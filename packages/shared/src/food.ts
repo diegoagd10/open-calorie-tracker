@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import type { Nutrient } from './daily-log'
+import { createRequestSchema } from './create-request'
 import { filterDecimalInput, hasAtMostOneDecimal } from './decimal'
 
 export const MAX_FOOD_NAME_LENGTH = 100
@@ -48,6 +49,7 @@ export type FoodEntryInput = z.infer<typeof foodEntrySchema>
 
 export const createFoodEntrySchema = foodEntrySchema.extend({
   loggedAt: z.iso.datetime({ offset: true }).optional(),
+  ...createRequestSchema.shape,
 })
 
 export type CreateFoodEntryInput = z.infer<typeof createFoodEntrySchema>

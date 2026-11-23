@@ -5,7 +5,7 @@ import type {
   FoodEntryInput,
   FoodLogEntry,
 } from '@open-calorie-tracker/shared'
-import { and, eq, sql } from 'drizzle-orm'
+import { and, eq, getTableColumns, lt, sql } from 'drizzle-orm'
 import { Database } from '../db/database.js'
 import {
   type FoodEntry,
@@ -22,6 +22,8 @@ export const toFoodLogEntry = ({
   userId: _userId,
   servingSizeId: _servingSizeId,
   sourceId: _sourceId,
+  requestId: _requestId,
+  attempt: _attempt,
   loggedAt,
   ...entry
 }: StoredFood): FoodLogEntry => ({
@@ -100,6 +102,7 @@ export class FoodEntriesService {
 
   async create(userId: number, input: CreateFoodEntryInput): Promise<FoodLogEntry> {
     const { values, servingSize } = await this.valuesOf(userId, input)
+    const { requestId, attempt = 1 } = input
     const entry = await this.database.db
       .insert(foodEntries)
       .values({
@@ -107,10 +110,34 @@ export class FoodEntriesService {
         userId,
         loggedAt: input.loggedAt === undefined ? new Date() : new Date(input.loggedAt),
         sourceId: sourceIdOf('manual'),
+        requestId,
+        attempt,
+      })
+      .onConflictDoUpdate({
+        target: [foodEntries.userId, foodEntries.requestId],
+        set: { ...values, attempt },
+        setWhere: lt(foodEntries.attempt, attempt),
       })
       .returning()
       .get()
+    if (entry === undefined) return this.createdBy(userId, requestId)
     return toFoodLogEntry({ ...entry, servingSize, source: 'manual' })
+  }
+
+  private async createdBy(userId: number, requestId: string | undefined): Promise<FoodLogEntry> {
+    const entry = await this.database.db
+      .select({
+        ...getTableColumns(foodEntries),
+        servingSize: servingSizes.name,
+        source: foodSources.name,
+      })
+      .from(foodEntries)
+      .innerJoin(servingSizes, eq(foodEntries.servingSizeId, servingSizes.id))
+      .innerJoin(foodSources, eq(foodEntries.sourceId, foodSources.id))
+      .where(and(eq(foodEntries.userId, userId), eq(foodEntries.requestId, requestId ?? '')))
+      .get()
+    if (entry === undefined) throw new NotFoundException()
+    return toFoodLogEntry(entry)
   }
 
   async update(userId: number, id: number, input: FoodEntryInput): Promise<FoodLogEntry> {

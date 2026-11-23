@@ -1,0 +1,21 @@
+{
+  "apps/api/src/db/schema.ts": "09f700cc62efa00a912b81b4b03ab8c8a7ffc1ce",
+  "apps/api/src/food-entries/food-entries.controller.ts": "9388c9d497572c9a9b45587e2e5a01c50c39c82d",
+  "apps/api/src/food-entries/food-entries.service.ts": "328be2c7307b8afc569da537791f6bda2c74d1c4",
+  "apps/api/src/mcp/mcp.service.ts": "826a55c42e6fa84730fa9b8c192f846161ee0159",
+  "apps/api/src/water-entries/water-entries.controller.ts": "65accaadcba1ef26afe0f1398a2528e07c442420",
+  "apps/api/src/water-entries/water-entries.service.ts": "3c9a176a069505a47849acb212c8cdc4091eda14",
+  "apps/web/src/components/food-log/food-log.tsx": "1739bfde61ab198df0f4836564cc8fa798d57a15",
+  "apps/web/src/components/food-log/use-daily-log.ts": "be10dbe52c5414de1744ffc3767fb5ab99e8612c",
+  "apps/web/src/components/food/food-dialog.tsx": "7e8c42a696d4f8703760c240295cc163577c7236",
+  "apps/web/src/components/food/food-requests.ts": "14f1e92ceefe7bdede20fe73b6728c6946a53bb2",
+  "apps/web/src/components/requests.ts": "7f919d26ccee55840458b361d1af7006acc54438",
+  "apps/web/src/components/use-create-request.ts": "fccdc1a210e0d654f467de6a9ba7425df62feb61",
+  "apps/web/src/components/use-submission.ts": "e43010094a9b942396c32221ae94acf78b11a3e1",
+  "apps/web/src/components/water/add-water-dialog.tsx": "8cd6aa47c4095fa196c3b825984f4fd7ad3695fb",
+  "apps/web/src/components/water/use-water-dialogs.tsx": "20a292ea12e7861de0904667bab4a0ec2cc6f440",
+  "apps/web/src/components/water/water-requests.ts": "9d1a2e030d0a0ddaea67c897d99d5183d4f3ae63",
+  "packages/shared/src/create-request.ts": "b099ffcb35d93e806e7fd348738ffefd82f4be6c",
+  "packages/shared/src/food.ts": "784dffae9b20f2466ad28c51ad22887d40a511db",
+  "packages/shared/src/water.ts": "7d298821c8b10cd3caf21b5c83ff450a649296b1"
+}

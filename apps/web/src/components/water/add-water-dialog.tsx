@@ -9,6 +9,7 @@ import { DropIcon } from '@/components/icons'
 import { Modal } from '@/components/modal'
 import { DialogHeader, GoalBar, SECONDARY_BUTTON } from '@/components/dialog-parts'
 import { AmountField, LIMITS_NOTE, PRIMARY_BUTTON, WaterIcon } from './dialog-parts'
+import { useCreateRequest } from '@/components/use-create-request'
 import { useSubmission } from '@/components/use-submission'
 import { addAmounts, loggableAmount } from './water-amount'
 import { addWater } from './water-requests'
@@ -34,11 +35,13 @@ export function AddWaterDialog({
   const [value, setValue] = useState('')
   const { pending, failed, submit } = useSubmission(onAdded)
   const amount = loggableAmount(value)
-  const close = () => !pending && onClose()
+  const nextAttempt = useCreateRequest()
+  const close = () => !pending && (failed ? onAdded() : onClose())
   const log = (newAmount: number) =>
     void submit(() =>
       addWater({
         amount: newAmount,
+        ...nextAttempt(),
         ...(day === undefined ? {} : { loggedAt: loggedAtOnDay(day) }),
       }),
     )

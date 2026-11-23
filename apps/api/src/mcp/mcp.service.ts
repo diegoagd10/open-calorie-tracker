@@ -60,6 +60,9 @@ const foodFields = foodEntrySchema
 const UNITS =
   'Calories are in kcal, sodium in mg, every other nutrient in g, and water in US fluid ounces.'
 
+const RETRIES =
+  'Give each new entry its own requestId, a UUID, and send the same one when you retry, so that the entry is logged once.'
+
 const textOf = (structured: object): CallToolResult => ({
   content: [{ type: 'text', text: JSON.stringify(structured) }],
   structuredContent: structured as Record<string, unknown>,
@@ -95,9 +98,12 @@ export class McpService {
       }),
       tool({
         name: 'log_food',
-        description: `Logs a food the user ate, with its calories and nutrients per serving as the label prints them and how many servings (0.5 to 20, in steps of 0.5). Leave out the nutrients the label does not give. loggedAt is when they ate it, now when left out. ${UNITS}`,
+        description: `Logs a food the user ate, with its calories and nutrients per serving as the label prints them and how many servings (0.5 to 20, in steps of 0.5). Leave out the nutrients the label does not give. loggedAt is when they ate it, now when left out. ${RETRIES} ${UNITS}`,
         scopes: ['food-entries:write', 'serving-sizes:write'],
-        input: foodFields.extend({ loggedAt: createFoodEntrySchema.shape.loggedAt }),
+        input: foodFields.extend({
+          loggedAt: createFoodEntrySchema.shape.loggedAt,
+          requestId: createFoodEntrySchema.shape.requestId,
+        }),
         run: async (userId, { servingSize, ...input }) =>
           foodEntries.create(userId, {
             ...input,
@@ -136,10 +142,9 @@ export class McpService {
       }),
       tool({
         name: 'log_water',
-        description:
-          'Logs water the user drank, in US fluid ounces (a glass is 8). loggedAt is when they drank it, now when left out.',
+        description: `Logs water the user drank, in US fluid ounces (a glass is 8). loggedAt is when they drank it, now when left out. ${RETRIES}`,
         scopes: ['water-entries:write'],
-        input: createWaterEntrySchema,
+        input: createWaterEntrySchema.omit({ attempt: true }),
         run: (userId, input) => waterEntries.create(userId, input),
       }),
       tool({

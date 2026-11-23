@@ -7,13 +7,24 @@ import {
   ACCOUNT_LOCK_DURATION_SECONDS,
   MAX_FAILED_ATTEMPTS,
 } from '../../../packages/shared/src/auth.ts'
-import { type Action, pathsThroughEveryStep } from './graph.ts'
+import { replayPlan } from '../../formal-verification/graph.ts'
 
 type Check = {
   password: string
   resolve: (matches: boolean) => void
   reject: (error: Error) => void
 }
+
+type Action =
+  | 'ArriveWrong'
+  | 'ArriveRight'
+  | 'RefuseLocked'
+  | 'RefuseFull'
+  | 'WrongCounted'
+  | 'WrongLocks'
+  | 'RightConfirmed'
+  | 'CheckThrows'
+  | 'LockRunsOut'
 
 const checks = vi.hoisted((): Check[] => [])
 
@@ -91,7 +102,6 @@ const start = () => {
       vi.setSystemTime(Date.now() + ACCOUNT_LOCK_DURATION_SECONDS * 1000)
       return Promise.resolve('')
     },
-    Done: () => Promise.resolve(''),
   }
   return (action: Action) => steps[action]()
 }
@@ -106,12 +116,11 @@ const EXPECTED: Record<Action, string> = {
   RightConfirmed: '200',
   CheckThrows: '500',
   LockRunsOut: '',
-  Done: '',
 }
 
-const graph = process.env['LOGIN_LOCK_GRAPH']
+const graph = process.env['STATE_GRAPH']
 if (graph === undefined) throw new Error('Run check.ts, which makes the state graph')
-const paths = pathsThroughEveryStep(readFileSync(graph, 'utf8'))
+const { paths, steps: stepCount } = replayPlan(readFileSync(graph, 'utf8'))
 
 beforeEach(() => vi.useFakeTimers({ toFake: ['Date'] }))
 afterEach(() => vi.useRealTimers())
@@ -122,10 +131,11 @@ it('AuthService.login answers every step of the model as the model says', async 
     checks.length = 0
     const take = start()
     const answers: string[] = []
-    for (const action of path) answers.push(`${action}: ${await take(action)}`)
-    expect(answers).toEqual(path.map((action) => `${action}: ${EXPECTED[action]}`))
+    const actions = path.map(({ action }) => action as Action)
+    for (const action of actions) answers.push(`${action}: ${await take(action)}`)
+    expect(answers).toEqual(actions.map((action) => `${action}: ${EXPECTED[action]}`))
   }
-  console.log(`Replayed ${paths.length} steps of the model on AuthService.login`)
+  console.log(`Replayed ${stepCount} steps of the model on AuthService.login`)
 })
 
 const MAX_MICROTASKS = 20
