@@ -1,0 +1,141 @@
+name: Deploy
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      action:
+        description: check only tests the connection; deploy ships the tip of main
+        type: choice
+        options: [check, deploy]
+        default: check
+
+permissions: {}
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    name: Decide what to ship
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'workflow_dispatch' ||
+      (vars.DEPLOY_ON_MERGE == 'true' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.head_repository.full_name == github.repository))
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      request: ${{ steps.plan.outputs.request }}
+      sha: ${{ steps.plan.outputs.sha }}
+    steps:
+      - id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          ACTION: ${{ inputs.action || 'deploy' }}
+          SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+        run: |
+          if [[ $ACTION == check ]]; then
+            echo "request=check" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          tip=$(gh api "repos/$REPO/commits/main" --jq .sha)
+          if [[ $SHA != "$tip" ]]; then
+            echo "::notice::$SHA is no longer the tip of main, so it is not deployed"
+            exit 0
+          fi
+          passed=$(gh api "repos/$REPO/actions/workflows/ci.yml/runs?branch=main&event=push&status=success&head_sha=$SHA" --jq .total_count)
+          if [[ $passed == 0 ]]; then
+            echo "::error::CI has not passed on main for $SHA"
+            exit 1
+          fi
+          echo "request=deploy $SHA" >> "$GITHUB_OUTPUT"
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+
+  images:
+    name: Publish ${{ matrix.target }} image
+    needs: plan
+    if: needs.plan.outputs.sha != ''
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        target: [api, web]
+    env:
+      IMAGE: ghcr.io/${{ github.repository }}-${{ matrix.target }}:${{ needs.plan.outputs.sha }}
+      REVISION: ${{ needs.plan.outputs.sha }}
+      SOURCE: ${{ github.server_url }}/${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.plan.outputs.sha }}
+          persist-credentials: false
+      - run: >-
+          docker build --target ${{ matrix.target }} --tag "$IMAGE"
+          --label "org.opencontainers.image.revision=$REVISION"
+          --label "org.opencontainers.image.source=$SOURCE" .
+      - env:
+          TOKEN: ${{ github.token }}
+        run: |
+          docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin <<< "$TOKEN"
+          docker push "$IMAGE"
+          docker logout ghcr.io
+
+  deploy:
+    name: Run on the server
+    needs: [plan, images]
+    if: >-
+      !cancelled() && needs.plan.outputs.request != '' &&
+      (needs.images.result == 'success' || needs.plan.outputs.request == 'check')
+    runs-on: ubuntu-24.04
+    environment: production
+    timeout-minutes: 45
+    permissions:
+      id-token: write
+    steps:
+      - uses: tailscale/github-action@064b10558093f38325e838ddea35486bdc6b1d5c # v4.4.0
+        with:
+          oauth-client-id: ${{ vars.TS_OAUTH_CLIENT_ID }}
+          audience: ${{ vars.TS_AUDIENCE }}
+          tags: tag:ci
+      - env:
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          HOST: ${{ secrets.DEPLOY_HOST }}
+          SSH_USER: ${{ secrets.DEPLOY_USER }}
+          REQUEST: ${{ needs.plan.outputs.request }}
+        run: |
+          umask 077
+          key=$(mktemp) known=$(mktemp)
+          trap 'rm -f "$key" "$known"' EXIT
+          printf '%s\n' "$SSH_KEY" > "$key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$known"
+          status=0
+          output=$(ssh -i "$key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$known" \
+            -o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=8 \
+            "$SSH_USER@$HOST" "$REQUEST" 2>&1) || status=$?
+          printf '%s\n' "$output" | tee -a "$GITHUB_STEP_SUMMARY"
+          case $status in
+            0) ;;
+            3) echo "::error::Another deploy is running on the server" ;;
+            4) echo "::error::A deploy was interrupted. The next deploy recovers first" ;;
+            10) echo "::error::Not started. The running app was not touched" ;;
+            20) echo "::error::The new version failed. The previous version is running again" ;;
+            30) echo "::error::ROLLBACK FAILED. The app needs you now" ;;
+            255) echo "::error::Lost the connection. A started deploy still finishes; run check" ;;
+            *) echo "::error::The server answered with exit code $status" ;;
+          esac
+          exit "$status"

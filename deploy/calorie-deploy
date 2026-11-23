@@ -1,0 +1,296 @@
+#!/usr/bin/env bash
+set -uo pipefail
+export LC_ALL=C PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+umask 077
+exec </dev/null
+
+readonly PROJECT=calorie
+readonly IMAGES=ghcr.io/diegoagd10/open-calorie-tracker
+readonly REVISION_LABEL=org.opencontainers.image.revision
+readonly STACK=$HOME/stacks/calorie
+readonly STATE=$HOME/calorie/deploy
+readonly BACKUPS=$STATE/backups
+readonly LOGS=$STATE/logs
+readonly JOURNAL=$STATE/in-progress
+readonly DEPLOYED=$STATE/deployed
+readonly LOCK=$STATE/lock
+readonly PULL_TIMEOUT_SECONDS=900
+readonly START_TIMEOUT_SECONDS=180
+readonly KEEP_VERSIONS=3 KEEP_BACKUPS=10 KEEP_FAILED=5 KEEP_LOGS=30
+
+LOG=/dev/null
+DATABASE_OUTCOME=kept
+
+say() {
+  printf '%s %s\n' "$(date -u +%FT%TZ)" "$*" >>"$LOG" || true
+  printf '%s\n' "${*//$HOME/\~}" 2>/dev/null || true
+}
+
+finish() {
+  local code=$1
+  shift
+  say "RESULT $*"
+  exit "$code"
+}
+
+quietly() { "$@" >>"$LOG" 2>&1; }
+
+container() {
+  docker ps -aq --filter "label=com.docker.compose.project=$PROJECT" \
+    --filter "label=com.docker.compose.service=$1" --filter label=com.docker.compose.oneoff=False |
+    head -n 1
+}
+
+running_image() { docker inspect -f '{{.Image}}' "$(container "$1")" 2>>"$LOG"; }
+running_revision() {
+  docker inspect -f "{{index .Config.Labels \"$REVISION_LABEL\"}}" "$(container "$1")" 2>>"$LOG"
+}
+image_id() { docker image inspect -f '{{.Id}}' "$1" 2>>"$LOG"; }
+image_revision() { docker image inspect -f "{{index .Config.Labels \"$REVISION_LABEL\"}}" "$1" 2>>"$LOG"; }
+version_name() { [[ $1 =~ ^[0-9a-f]{40}$ ]] && printf '%s' "$1" || printf 'unlabelled'; }
+
+database_path() {
+  local folder
+  folder=$(docker inspect -f '{{range .Mounts}}{{if eq .Destination "/app/data"}}{{.Source}}{{end}}{{end}}' \
+    "$(container api)" 2>>"$LOG") || return 1
+  [[ -n $folder && -f $folder/sqlite.db ]] && printf '%s/sqlite.db' "$folder"
+}
+
+answers() {
+  local address
+  address=$(docker port "$(container "$1")" "$2/tcp" 2>>"$LOG" | head -n 1)
+  [[ -n $address ]] &&
+    [[ $(curl -s -m 5 -o /dev/null -w '%{http_code}' "http://$address$3" 2>>"$LOG") == 200 ]]
+}
+
+healthy() {
+  local attempts=$1 try
+  for ((try = 1; try <= attempts; try++)); do
+    answers api 3001 /v1/health && answers web 3000 /login && return 0
+    ((try < attempts)) && sleep 2
+  done
+  return 1
+}
+
+runs_tag() {
+  local service id
+  for service in api web; do
+    id=$(image_id "$1-$service:$2") && [[ $(running_image "$service") == "$id" ]] || return 1
+  done
+}
+
+start_tag() {
+  local service
+  for service in api web; do
+    quietly docker tag "$1-$service:$2" "$PROJECT-$service:latest" || return 1
+  done
+  (cd "$STACK" && quietly docker compose up -d --no-build --pull never --wait \
+    --wait-timeout "$START_TIMEOUT_SECONDS") || return 1
+  runs_tag "$1" "$2" && healthy 5
+}
+
+schema_fingerprint() {
+  local schema
+  schema=$(sqlite3 -cmd '.timeout 10000' "$1" \
+    'select type, name, sql from sqlite_schema where sql is not null order by type, name;
+     select id, hash from __drizzle_migrations order by id' 2>>"$LOG") || return 1
+  [[ -n $schema ]] && printf '%s' "$schema" | sha256sum | cut -d ' ' -f 1
+}
+
+copy_database() {
+  local partial=$2.partial
+  if quietly sqlite3 -cmd '.timeout 10000' "$1" ".backup '$partial'" &&
+    [[ $(sqlite3 "$partial" 'pragma integrity_check' 2>>"$LOG") == ok ]] &&
+    schema_fingerprint "$partial" >/dev/null && sync "$partial" && mv "$partial" "$2"; then
+    sync "$(dirname "$2")"
+    return 0
+  fi
+  rm -f "$partial" "$partial-journal"
+  return 1
+}
+
+write_journal() {
+  printf '%s\n' "phase=$1" "target=$TARGET" "database=$DATABASE" "backup=$BACKUP" \
+    "fingerprint=$FINGERPRINT" >"$JOURNAL.partial" &&
+    sync "$JOURNAL.partial" && mv "$JOURNAL.partial" "$JOURNAL" && sync "$STATE"
+}
+
+read_journal() {
+  local key value
+  PHASE='' TARGET='' DATABASE='' BACKUP='' FINGERPRINT=''
+  while IFS='=' read -r key value; do
+    case $key in
+      phase) PHASE=$value ;;
+      target) TARGET=$value ;;
+      database) DATABASE=$value ;;
+      backup) BACKUP=$value ;;
+      fingerprint) FINGERPRINT=$value ;;
+    esac
+  done <"$JOURNAL"
+  [[ $TARGET =~ ^[0-9a-f]{40}$ && -n $PHASE && -n $FINGERPRINT && -f $DATABASE && -f $BACKUP ]]
+}
+
+restore_database() {
+  local kept restoring=$DATABASE.restoring suffix
+  kept=$BACKUPS/failed-$(date -u +%Y%m%dT%H%M%SZ)-${TARGET:0:7}.db
+  if ! copy_database "$DATABASE" "$kept"; then
+    for suffix in '' -wal -shm -journal; do
+      [[ ! -e $DATABASE$suffix ]] || cp -p "$DATABASE$suffix" "$kept$suffix" || return 1
+    done
+  fi
+  say "The newer database, with every entry logged meanwhile, is kept in $kept"
+  cp "$BACKUP" "$restoring" && chmod --reference="$DATABASE" "$restoring" &&
+    [[ $(schema_fingerprint "$restoring") == "$FINGERPRINT" ]] && sync "$restoring" || return 1
+  rm -f "$DATABASE-wal" "$DATABASE-shm" "$DATABASE-journal"
+  mv -f "$restoring" "$DATABASE" && sync "$(dirname "$DATABASE")"
+}
+
+roll_back() {
+  local service id
+  say "Rolling back from ${TARGET:0:7}"
+  DATABASE_OUTCOME=kept
+  write_journal rolling-back || return 1
+  for service in api web; do
+    id=$(container "$service")
+    [[ -z $id ]] && continue
+    quietly docker stop -t 20 "$id" || return 1
+  done
+  if [[ $(schema_fingerprint "$DATABASE") != "$FINGERPRINT" ]]; then
+    restore_database || return 1
+    DATABASE_OUTCOME=restored
+  fi
+  start_tag "$PROJECT" rollback || return 1
+  rm -f "$JOURNAL"
+}
+
+rollback_failed() {
+  say "The app needs you. The database from before the deploy is in $BACKUP"
+  say "Full log on the server: $LOG"
+  finish 30 "rollback-failed"
+}
+
+record_deployed() {
+  rm -f "$JOURNAL"
+  printf '%s\n' "$TARGET" >>"$DEPLOYED"
+}
+
+recover() {
+  read_journal || {
+    say "An interrupted deploy left an unreadable $JOURNAL"
+    finish 30 "rollback-failed"
+  }
+  say "A deploy of ${TARGET:0:7} was interrupted"
+  if [[ $PHASE == switching ]] && start_tag "$IMAGES" "$TARGET"; then
+    record_deployed
+    say "RECOVERED kept-new-version ${TARGET:0:7}"
+  elif roll_back; then
+    say "RECOVERED rolled-back database=$DATABASE_OUTCOME"
+  else
+    rollback_failed
+  fi
+}
+
+newest_first() { find "$1" -maxdepth 1 -type f -name "$2" -printf '%T@ %p\n' | sort -rn | cut -d ' ' -f 2-; }
+
+prune() {
+  local keep service tag file
+  keep=$(tac "$DEPLOYED" | awk '!seen[$0]++' | head -n "$KEEP_VERSIONS")
+  for service in api web; do
+    for tag in $(docker images --format '{{.Tag}}' "$IMAGES-$service"); do
+      [[ $tag =~ ^[0-9a-f]{40}$ ]] && ! grep -qx "$tag" <<<"$keep" &&
+        quietly docker rmi "$IMAGES-$service:$tag"
+    done
+  done
+  {
+    newest_first "$BACKUPS" 'before-*.db' | tail -n "+$((KEEP_BACKUPS + 1))"
+    newest_first "$BACKUPS" 'failed-*.db*' | tail -n "+$((KEEP_FAILED + 1))"
+    newest_first "$LOGS" '*.log' | tail -n "+$((KEEP_LOGS + 1))"
+  } | while read -r file; do rm -f -- "$file"; done
+}
+
+not_started() {
+  say "$1. The running app was not touched."
+  finish 10 "not-started"
+}
+
+deploy() {
+  local requested=$1 service image started
+  mkdir -p "$BACKUPS" "$LOGS" || not_started "Cannot create $STATE"
+  exec 9>>"$LOCK" || not_started "Cannot open $LOCK"
+  flock -n 9 || finish 3 "busy"
+  trap '' HUP PIPE
+  started=$(date -u +%Y%m%dT%H%M%SZ)
+  LOG=$LOGS/$started-${requested:0:7}.log
+  : >"$LOG" || not_started "Cannot write $LOG"
+  say "Deploying ${requested:0:7}"
+
+  [[ ! -e $JOURNAL ]] || recover
+
+  if [[ $(running_revision api) == "$requested" && $(running_revision web) == "$requested" ]] &&
+    healthy 1; then
+    finish 0 "already-running $requested"
+  fi
+
+  TARGET=$requested
+  for service in api web; do
+    image=$IMAGES-$service:$TARGET
+    quietly timeout "$PULL_TIMEOUT_SECONDS" docker pull -q "$image" || not_started "Cannot pull the $service image"
+    [[ $(image_revision "$image") == "$TARGET" ]] || not_started "The $service image belongs to another commit"
+    [[ -n $(container "$service") ]] || not_started "There is no $service container to replace"
+  done
+
+  DATABASE=$(database_path) || not_started "Cannot find the database"
+  BACKUP=$BACKUPS/before-$started-${TARGET:0:7}.db
+  copy_database "$DATABASE" "$BACKUP" || not_started "Cannot back up the database"
+  FINGERPRINT=$(schema_fingerprint "$BACKUP") || not_started "Cannot read the backup"
+  say "Backed up the database to $BACKUP"
+
+  for service in api web; do
+    quietly docker tag "$(running_image "$service")" "$PROJECT-$service:rollback" ||
+      not_started "Cannot mark the running $service image for rollback"
+  done
+  write_journal switching || not_started "Cannot write $JOURNAL"
+  say "Switching from $(version_name "$(running_revision api)")"
+
+  if start_tag "$IMAGES" "$TARGET"; then
+    record_deployed
+    prune
+    finish 0 "deployed $TARGET"
+  fi
+  say "${TARGET:0:7} did not become healthy"
+  for service in api web; do
+    quietly docker logs --tail 50 "$(container "$service")"
+  done
+  roll_back || rollback_failed
+  say "Full log on the server: $LOG"
+  finish 20 "rolled-back database=$DATABASE_OUTCOME"
+}
+
+check() {
+  local service tool
+  for tool in docker sqlite3 flock curl; do
+    command -v "$tool" >/dev/null || finish 1 "unhealthy missing-$tool"
+  done
+  docker info >/dev/null 2>&1 || finish 1 "unhealthy docker-unreachable"
+  (cd "$STACK" && docker compose config -q >/dev/null 2>&1) || finish 1 "unhealthy compose-config"
+  database_path >/dev/null || finish 1 "unhealthy database-not-found"
+  for service in api web; do
+    say "$service $(version_name "$(running_revision "$service")")"
+  done
+  if [[ -e $LOCK ]] && ! flock -n "$LOCK" true; then finish 3 "busy"; fi
+  [[ ! -e $JOURNAL ]] || finish 4 "interrupted"
+  healthy 1 || finish 1 "unhealthy"
+  finish 0 "ok"
+}
+
+main() {
+  local request=${SSH_ORIGINAL_COMMAND-$*}
+  if [[ $request == check ]]; then
+    check
+  elif [[ $request =~ ^deploy\ ([0-9a-f]{40})$ ]]; then
+    deploy "${BASH_REMATCH[1]}"
+  fi
+  finish 2 "rejected"
+}
+
+main "$@"
