@@ -201,6 +201,31 @@ describe('POST /v1/login (e2e)', () => {
       }
     })
 
+    it('checks no more passwords than the limit when logins arrive at the same time', async () => {
+      const ip = '203.0.113.20'
+
+      const responses = await Promise.all([
+        ...Array.from({ length: 20 }, () => failLogin(ip)),
+        login({ username: USERNAME, password: PASSWORD }, ip),
+      ])
+      const statuses = responses.map(({ status }) => status)
+
+      expect(statuses.filter((status) => status === 401)).toHaveLength(MAX_FAILED_ATTEMPTS - 1)
+      expect(statuses).not.toContain(200)
+      expect(statuses).toContain(429)
+      expect((await login({ username: USERNAME, password: PASSWORD }, ip)).status).toBe(423)
+    })
+
+    it('accepts logins again after the ones that arrived at the same time succeed', async () => {
+      const ip = '203.0.113.21'
+      const valid = () => login({ username: USERNAME, password: PASSWORD }, ip)
+
+      const responses = await Promise.all(Array.from({ length: MAX_FAILED_ATTEMPTS }, valid))
+
+      expect(responses.map(({ status }) => status)).toEqual(responses.map(() => 200))
+      expect((await valid()).status).toBe(200)
+    })
+
     describe('lock expiry', () => {
       const lockDurationMs = ACCOUNT_LOCK_DURATION_SECONDS * 1000
 

@@ -1,0 +1,6 @@
+{
+  "apps/api/src/auth/auth.controller.ts": "7b0436b3fc23624e58b6aad76775c0b013b501a2",
+  "apps/api/src/auth/auth.service.ts": "46f24d48ca21b149902e45aebd8ae748a41783a7",
+  "apps/api/src/users/users.service.ts": "2ad1afa18c4a570ac794967fcf5485eab77bfc99",
+  "packages/shared/src/auth.ts": "c7a0abf39c25533990991a2a2d00f1124517400d"
+}
