@@ -1,9 +1,15 @@
 import { DAILY_SUMMARIES_MAX_DAYS } from '@open-calorie-tracker/shared'
 import { z } from 'zod'
 
+// oxlint-disable-next-line local/no-comments
+// Temporal does not know legacy names that Intl accepts, like PST. Intl resolves them to the IANA
+// names that it does know.
+const ianaName = (timeZone: string) =>
+  new Intl.DateTimeFormat('en-US', { timeZone }).resolvedOptions().timeZone
+
 const isTimeZone = (timeZone: string) => {
   try {
-    new Intl.DateTimeFormat('en-US', { timeZone })
+    Temporal.Now.zonedDateTimeISO(ianaName(timeZone))
     return true
   } catch {
     return false
@@ -61,40 +67,9 @@ export const rangeQuerySchema = z
 
 export type RangeQuery = z.infer<typeof rangeQuerySchema>
 
-const utcOffset = (instant: number, timeZone: string) => {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone,
-    hourCycle: 'h23',
-    year: 'numeric',
-    month: 'numeric',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: 'numeric',
-    second: 'numeric',
-  }).formatToParts(instant)
-  const part = (type: Intl.DateTimeFormatPartTypes) =>
-    Number(parts.find((candidate) => candidate.type === type)?.value)
-  const wallClock = Date.UTC(
-    part('year'),
-    part('month') - 1,
-    part('day'),
-    part('hour'),
-    part('minute'),
-    part('second'),
-  )
-  return wallClock - (instant - (instant % 1000))
-}
-
-const midnight = (year: number, month: number, day: number, timeZone: string) => {
-  const wallClock = Date.UTC(year, month - 1, day)
-  const guess = wallClock - utcOffset(wallClock, timeZone)
-  return wallClock - utcOffset(guess, timeZone)
-}
-
 export const dayRange = ({ date, timeZone }: DayQuery) => {
-  const { year, month, day } = parseDate(date)
-  return {
-    start: new Date(midnight(year, month, day, timeZone)),
-    end: new Date(midnight(year, month, day + 1, timeZone)),
-  }
+  const zone = ianaName(timeZone)
+  const startOf = (day: Temporal.PlainDate) => new Date(day.toZonedDateTime(zone).epochMilliseconds)
+  const day = Temporal.PlainDate.from(date)
+  return { start: startOf(day), end: startOf(day.add({ days: 1 })) }
 }

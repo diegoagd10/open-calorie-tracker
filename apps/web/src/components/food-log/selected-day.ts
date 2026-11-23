@@ -8,11 +8,11 @@ export const shiftDay = (date: string, days: number) => {
 
 // oxlint-disable-next-line local/no-comments
 // The Date constructor applies the offset for that date (including DST), not the offset in effect
-// today.
+// today. When the clocks skip the end of that day, it moves a skipped time to the next day.
 export const loggedAtOnDay = (date: string) => {
   const day = parseDay(date)
   const now = new Date()
-  return new Date(
+  const sameTime = new Date(
     day.getUTCFullYear(),
     day.getUTCMonth(),
     day.getUTCDate(),
@@ -20,5 +20,7 @@ export const loggedAtOnDay = (date: string) => {
     now.getMinutes(),
     now.getSeconds(),
     now.getMilliseconds(),
-  ).toISOString()
+  )
+  const nextDay = new Date(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate() + 1)
+  return new Date(Math.min(sameTime.getTime(), nextDay.getTime() - 1)).toISOString()
 }
