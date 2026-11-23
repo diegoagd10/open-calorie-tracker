@@ -22,10 +22,11 @@ import {
 import { SignJWT, jwtVerify } from 'jose'
 import { randomUUID } from 'node:crypto'
 import { AppConfig } from '../config/config.js'
+import type { User } from '../db/schema.js'
 import { UsersService, normalizeUsername } from '../users/users.service.js'
 import { hashPassword, verifyPassword } from './password.js'
 
-type Attempts = { failures: number; lockedUntil: number | undefined }
+type Attempts = { failures: number; checking: number; lockedUntil: number | undefined }
 
 export type TokenSubject = { userId: number; scopes: string[] | undefined }
 
@@ -33,6 +34,16 @@ const dummyHash = hashPassword('dummy-password-for-timing')
 
 const accountLocked = () =>
   new HttpException('Account locked after too many failed login attempts', HttpStatus.LOCKED)
+
+const tooManyAttempts = () =>
+  new HttpException('Too many login attempts at once', HttpStatus.TOO_MANY_REQUESTS)
+
+const recordFailure = (attempts: Attempts): boolean => {
+  attempts.failures++
+  const locked = attempts.failures >= MAX_FAILED_ATTEMPTS
+  if (locked) attempts.lockedUntil = Date.now() + ACCOUNT_LOCK_DURATION_SECONDS * 1000
+  return locked
+}
 
 @Injectable()
 export class AuthService {
@@ -45,17 +56,24 @@ export class AuthService {
 
   async login({ username, password }: LoginInput, ip: string): Promise<LoginResponse> {
     const attemptsKey = JSON.stringify([ip, normalizeUsername(username)])
-    if (this.isLocked(attemptsKey)) throw accountLocked()
+    const attempts = this.reserveCheck(attemptsKey)
 
-    const user = await this.users.findByUsername(username)
-    const passwordMatches = await verifyPassword(password, user?.passwordHash ?? (await dummyHash))
+    let user: User | undefined
+    try {
+      user = await this.users.findByUsername(username)
+      const passwordHash = user?.passwordHash ?? (await dummyHash)
+      if (!(await verifyPassword(password, passwordHash))) user = undefined
+    } finally {
+      attempts.checking--
+    }
 
-    if (user === undefined || !passwordMatches) {
-      if (this.recordFailure(attemptsKey)) throw accountLocked()
+    if (user === undefined) {
+      if (recordFailure(attempts)) throw accountLocked()
       throw new UnauthorizedException('Invalid username or password')
     }
 
-    this.attempts.delete(attemptsKey)
+    attempts.failures = 0
+    if (attempts.checking === 0) this.attempts.delete(attemptsKey)
     return { accessToken: await this.issueAccessToken(user.id) }
   }
 
@@ -120,22 +138,21 @@ export class AuthService {
       .sign(secret)
   }
 
-  private isLocked(attemptsKey: string): boolean {
-    const lockedUntil = this.attempts.get(attemptsKey)?.lockedUntil
-    if (lockedUntil === undefined) return false
-    if (lockedUntil > Date.now()) return true
+  private reserveCheck(attemptsKey: string): Attempts {
+    const attempts = this.currentAttempts(attemptsKey)
+    if (attempts.lockedUntil !== undefined) throw accountLocked()
+    if (attempts.failures + attempts.checking >= MAX_FAILED_ATTEMPTS) throw tooManyAttempts()
 
-    this.attempts.delete(attemptsKey)
-    return false
+    attempts.checking++
+    this.attempts.set(attemptsKey, attempts)
+    return attempts
   }
 
-  private recordFailure(attemptsKey: string): boolean {
-    const failures = (this.attempts.get(attemptsKey)?.failures ?? 0) + 1
-    const locked = failures >= MAX_FAILED_ATTEMPTS
-    this.attempts.set(attemptsKey, {
-      failures,
-      lockedUntil: locked ? Date.now() + ACCOUNT_LOCK_DURATION_SECONDS * 1000 : undefined,
-    })
-    return locked
+  private currentAttempts(attemptsKey: string): Attempts {
+    const attempts = this.attempts.get(attemptsKey)
+    const lockExpired = attempts?.lockedUntil !== undefined && attempts.lockedUntil <= Date.now()
+    return attempts === undefined || lockExpired
+      ? { failures: 0, checking: 0, lockedUntil: undefined }
+      : attempts
   }
 }
