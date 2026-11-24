@@ -23,12 +23,18 @@ const REPO = join(import.meta.dirname, '../..')
 export type Verification = {
   name: string
   skill: string
+  model?: Model
+}
+
+type Model = {
   module: string
   replayed: string
   rules: string[]
   brokenDesigns: { design: string; breaks: string }[]
   replayBounds?: Record<string, number>
 }
+
+type Report = (passed: boolean, line: string) => void
 
 class Failure extends Error {}
 
@@ -108,19 +114,17 @@ const tlc = (
 const blobsOf = (files: string[]) =>
   Object.fromEntries(files.map((file) => [file, run(['git', 'hash-object', file]).output.trim()]))
 
-const check = async (
-  { name, skill, module, replayed, rules, brokenDesigns, replayBounds = {} }: Verification,
-  confirm: boolean,
-): Promise<boolean> => {
+const runSpec = (skill: string, env: NodeJS.ProcessEnv = {}) =>
+  run(['pnpm', 'exec', 'vp', 'test', 'run', '--config', join(skill, 'vite.config.ts')], env)
+
+const checkModel = async (
+  skill: string,
+  { module, replayed, rules, brokenDesigns, replayBounds = {} }: Model,
+  report: Report,
+): Promise<void> => {
   const jar = await findTlc()
   const command = [...findJava(), '-XX:+UseParallelGC', '-cp', jar, 'tlc2.TLC']
-  const coverage = join(skill, 'coverage.json')
   const work = mkdtempSync(join(tmpdir(), 'formal-verification-'))
-  let ok = true
-  const report = (passed: boolean, line: string) => {
-    ok &&= passed
-    console.log(`${passed ? 'PASS' : 'FAIL'}  ${line}`)
-  }
   try {
     for (const extension of ['tla', 'cfg']) {
       copyFileSync(join(skill, `${module}.${extension}`), join(work, `${module}.${extension}`))
@@ -141,10 +145,7 @@ const check = async (
     console.log('\nReplay on the real code')
     const dump = join(work, 'graph.dot')
     tlc(command, work, module, { dump, bounds: replayBounds })
-    const replay = run(
-      ['pnpm', 'exec', 'vp', 'test', 'run', '--config', join(skill, 'vite.config.ts')],
-      { STATE_GRAPH: dump },
-    )
+    const replay = runSpec(skill, { STATE_GRAPH: dump })
     const summary = [...replay.output.matchAll(/^Replayed \d+ steps.*$/gm)].map(([line]) => line)
     const conforms = replay.status === 0 && summary.length > 0
     report(conforms, conforms ? summary.join('. ') : `The replay on ${replayed} failed`)
@@ -155,22 +156,48 @@ const check = async (
       const { violated } = tlc(command, work, module, { design, rule: breaks })
       report(violated === breaks, `${design} ${violated ? 'breaks' : 'does not break'} ${breaks}`)
     }
-
-    console.log('\nCovered code')
-    const recorded = JSON.parse(readFileSync(coverage, 'utf8')) as Record<string, string>
-    const current = blobsOf(Object.keys(recorded))
-    if (confirm && ok) {
-      writeFileSync(coverage, `${JSON.stringify(current, undefined, 2)}\n`)
-      console.log(`Confirmed ${relative(REPO, coverage)}`)
-    } else {
-      for (const [file, blob] of Object.entries(recorded)) {
-        const same = current[file] === blob
-        report(same, `${file} ${same ? 'is as confirmed' : 'changed since it was confirmed'}`)
-      }
-    }
   } finally {
     rmSync(work, { recursive: true })
   }
+}
+
+const checkCode = (skill: string, report: Report): void => {
+  console.log('\nThe real code')
+  const { status, output } = runSpec(skill)
+  const results = [...output.matchAll(/^(PASS|FAIL) {2}(.*)$/gm)]
+  for (const [, result, line = ''] of results) report(result === 'PASS', line)
+  const explained = results.some(([, result]) => result === 'FAIL')
+  if (results.length === 0 || (status !== 0 && !explained)) {
+    report(false, 'The check of the code did not run to its end')
+    console.log(output)
+  }
+}
+
+const checkCoverage = (skill: string, confirm: boolean, report: Report): void => {
+  console.log('\nCovered code')
+  const coverage = join(skill, 'coverage.json')
+  const recorded = JSON.parse(readFileSync(coverage, 'utf8')) as Record<string, string>
+  const current = blobsOf(Object.keys(recorded))
+  if (confirm) {
+    writeFileSync(coverage, `${JSON.stringify(current, undefined, 2)}\n`)
+    console.log(`Confirmed ${relative(REPO, coverage)}`)
+    return
+  }
+  for (const [file, blob] of Object.entries(recorded)) {
+    const same = current[file] === blob
+    report(same, `${file} ${same ? 'is as confirmed' : 'changed since it was confirmed'}`)
+  }
+}
+
+const check = async ({ name, skill, model }: Verification, confirm: boolean): Promise<boolean> => {
+  let ok = true
+  const report: Report = (passed, line) => {
+    ok &&= passed
+    console.log(`${passed ? 'PASS' : 'FAIL'}  ${line}`)
+  }
+  if (model === undefined) checkCode(skill, report)
+  else await checkModel(skill, model, report)
+  checkCoverage(skill, confirm && ok, report)
   console.log(ok ? `\n${name} is verified.` : `\n${name} is NOT verified.`)
   return ok
 }

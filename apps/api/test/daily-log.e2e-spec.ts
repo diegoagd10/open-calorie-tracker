@@ -238,6 +238,35 @@ describe('GET /v1/daily-log (e2e)', () => {
       expect(tokyoDayBefore.entries).toEqual([])
     })
 
+    it.each([
+      ['America/Santiago', '2026-09-05', '2026-09-06', '2026-09-06T04:00:00.000Z'],
+      ['America/Havana', '2026-03-07', '2026-03-08', '2026-03-08T05:00:00.000Z'],
+      ['Atlantic/Azores', '2026-03-28', '2026-03-29', '2026-03-29T01:00:00.000Z'],
+    ])(
+      'ends the day at midnight in %s when the clocks skip it',
+      async (timeZone, day, next, midnight) => {
+        const instant = new Date(midnight)
+        const before = new Date(instant.getTime() - 1)
+        await seedFoodEntry(database, { ...tortillas, name: 'Before', loggedAt: before })
+        await seedFoodEntry(database, { ...tortillas, name: 'After', loggedAt: instant })
+
+        const names = async (date: string) =>
+          (await dailyLog({ date, timeZone })).entries.map(({ name }) => name)
+
+        expect(await names(day)).toEqual(['Before'])
+        expect(await names(next)).toEqual(['After'])
+      },
+    )
+
+    it('accepts the legacy name of a time zone', async () => {
+      await seedFoodEntry(database, {
+        ...tortillas,
+        loggedAt: new Date('2026-10-25T06:59:59.999Z'),
+      })
+
+      expect((await dailyLog({ date: '2026-10-24', timeZone: 'PST' })).entries).toHaveLength(1)
+    })
+
     it("does not return other users' entries", async () => {
       await seedFoodEntry(database, { ...tortillas, username: OTHER_USERNAME, name: 'Pizza' })
       await seedWaterEntry(database, {
