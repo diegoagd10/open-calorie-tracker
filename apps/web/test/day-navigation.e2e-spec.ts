@@ -302,4 +302,21 @@ describe('Selected-day log (e2e)', () => {
       expect(new URL(page.url()).pathname).toBe('/')
     },
   )
+
+  it('keeps water added to a day whose last hour the clocks skip on that day', async () => {
+    const nuuk = await signedInPage(browser, database, { timezoneId: 'America/Nuuk' })
+    try {
+      await nuuk.page.clock.setFixedTime(new Date('2026-04-01T00:30:00Z'))
+      await nuuk.page.goto(`${SEEDED.webUrl}/`)
+      await nuuk.page.getByRole('button', { name: 'Previous week' }).click()
+      await nuuk.page.getByRole('button', { name: '2026-03-28', exact: true }).click()
+      await nuuk.page.getByRole('button', { name: 'Add water' }).click()
+      await nuuk.page.getByRole('dialog').getByRole('button', { name: 'Glass' }).click()
+
+      const water = nuuk.page.getByRole('button', { name: 'Water, 8 fl oz' })
+      await expect.poll(() => water.count(), eventually).toBe(1)
+    } finally {
+      await nuuk.context.close()
+    }
+  })
 })
