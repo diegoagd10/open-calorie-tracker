@@ -8,7 +8,6 @@
   "type": "module",
   "scripts": {
     "build": "nest build",
-    "deploy": "nest deploy",
     "start": "nest start",
     "start:dev": "nest start --watch",
     "start:debug": "nest start --debug --watch",
@@ -32,7 +31,6 @@
   },
   "devDependencies": {
     "@nestjs/cli": "^12.0.13",
-    "@nestjs/mau": "^0.2.9",
     "@nestjs/schematics": "^12.0.13",
     "@nestjs/testing": "^12.5.0",
     "@types/express": "^5.0.0",
