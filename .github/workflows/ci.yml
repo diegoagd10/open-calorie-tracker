@@ -57,6 +57,26 @@ jobs:
       - run: pnpm --filter web exec playwright install --with-deps chromium
       - run: pnpm --filter web exec vp test run
 
+  formal:
+    name: Formal verification
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26
+          cache: pnpm
+      # TLC, the TLA+ model checker, runs on Java.
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 25
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter web exec playwright install --with-deps chromium
+      - run: .claude/formal-verification/check-all.ts
+
   docker:
     name: Docker build
     runs-on: ubuntu-latest
