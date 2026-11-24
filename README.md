@@ -77,39 +77,3 @@ before exposing the web app. Back up by stopping the stack and copying `DATA_PAT
 To update, replace the source with the new commit (keeping `.env` and
 `docker-compose.override.yml`) and run `docker compose up -d --build`; migrations run on startup.
 Tag the running images first to be able to go back.
-
-### Automatic deploys
-
-`.github/workflows/deploy.yml` ships the tip of `main` after CI passes. It publishes both images to
-GHCR under the commit SHA, joins the tailnet for one job and runs `deploy/calorie-deploy` on the
-server over SSH. The script backs up the database, starts the new version, checks `/v1/health` and
-`/login`, and goes back to the previous version when they fail. It restores the backup only when
-the new version migrated the database, and then keeps the newer database beside the backup.
-
-It stays off until it is set up:
-
-1. Server: copy `deploy/calorie-deploy` to `~/bin/` and add the deploy key to
-   `~/.ssh/authorized_keys` as
-   `restrict,command="$HOME/bin/calorie-deploy" ssh-ed25519 …`. The user needs Docker access,
-   `sqlite3`, `flock` and `curl`, and the stack in `~/stacks/calorie` must already run. Later changes
-   to the script or `docker-compose.yml` are copied by hand.
-2. Tailscale: create `tag:ci`, allow it only the server's SSH port, and add a federated identity
-   with the `auth_keys` scope for the subject
-   `repo:diegoagd10/open-calorie-tracker:environment:production`.
-3. GitHub: create the `production` environment, limited to `main`, with the variables
-   `TS_OAUTH_CLIENT_ID` and `TS_AUDIENCE` and the secrets `DEPLOY_SSH_KEY`, `DEPLOY_KNOWN_HOSTS`,
-   `DEPLOY_HOST` and `DEPLOY_USER`.
-4. Run the Deploy workflow by hand with `check`, then with `deploy`. After the first publish, make
-   both GHCR packages public if they are private, or the server cannot pull them.
-5. Set the repository variable `DEPLOY_ON_MERGE` to `true`.
-
-| Result            | Exit code | Meaning                                                             |
-| ----------------- | --------- | ------------------------------------------------------------------- |
-| `deployed`        | 0         | The new version runs. `already-running` and `ok` (check) also are 0 |
-| `unhealthy`       | 1         | `check` found a problem                                             |
-| `rejected`        | 2         | Not a valid request                                                 |
-| `busy`            | 3         | Another deploy is running                                           |
-| `interrupted`     | 4         | `check` found a half-done deploy; the next deploy recovers first    |
-| `not-started`     | 10        | The running app was not touched                                     |
-| `rolled-back`     | 20        | The previous version runs again                                     |
-| `rollback-failed` | 30        | Neither version runs; the output names the backup                   |
