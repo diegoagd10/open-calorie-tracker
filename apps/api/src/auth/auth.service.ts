@@ -141,7 +141,7 @@ export class AuthService {
   private reserveCheck(attemptsKey: string): Attempts {
     const attempts = this.currentAttempts(attemptsKey)
     if (attempts.lockedUntil !== undefined) throw accountLocked()
-    if (attempts.failures + attempts.checking >= MAX_FAILED_ATTEMPTS) throw tooManyAttempts()
+    if (attempts.failures >= MAX_FAILED_ATTEMPTS) throw tooManyAttempts()
 
     attempts.checking++
     this.attempts.set(attemptsKey, attempts)
