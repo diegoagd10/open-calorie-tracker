@@ -203,15 +203,13 @@ const withBlock = (body: string, block: string[]): string => {
   return `${before}${gap(before)}${eol}${text}${eol}${blank}${after}`
 }
 
-type Exec = (
-  command: [string, ...string[]],
-  next: string,
-  options?: { input?: string | Buffer; env?: Record<string, string> },
-) => Promise<string>
+type ExecOptions = { input?: string | Buffer; env?: Record<string, string> }
+
+type Exec = (command: [string, ...string[]], next: string, options?: ExecOptions) => Promise<string>
 
 const execIn =
   (repo: string): Exec =>
-  async ([bin, ...args], next, { input, env } = {}) => {
+  async ([bin, ...args], next, { input, env }: ExecOptions = {}) => {
     const pending = promisify(execFile)(bin, args, {
       cwd: repo,
       env: { ...process.env, ...env },
